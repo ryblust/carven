@@ -3,44 +3,56 @@ export module zero.transpiler.parser;
 import zero.transpiler.token;
 import std;
 
-enum class BlockTag : std::uint64_t {
-    ImportStatement,
-    StructDeclaration,
-    FunctionDeclaration
-};
+namespace {
 
-struct TaggedBlock final {
-    BlockTag tag;
+struct Block final {
+    enum class Category : std::uint64_t {
+        Import,
+        Struct,
+        Function
+    } category;
     std::span<const Token> tokens;
 };
 
-export constexpr auto blockify(std::span<const Token> tokens) noexcept -> std::vector<TaggedBlock> {
-    // auto begin = 0uz;
-    // auto end = tokens.size();
-    auto blocks = std::vector<TaggedBlock>();
+constexpr auto blockify(std::span<const Token> tokens) noexcept -> std::vector<Block> {
+    return {};
+}
 
-    for (auto i = 0uz; i < tokens.size(); i++) {
-        if (tokens[i].type == TokenType::Keyword && tokens[i].lexeme == "import") {
-            const auto s_colon = std::ranges::find_if(tokens.subspan(i), [](Token token) noexcept {
-                return token.type == TokenType::SemiColon;
-            });
+}
 
-            const auto r_brace = std::ranges::find_if(tokens.subspan(i), [](Token token) noexcept {
-                return token.type == TokenType::RightBrace;
-            });
+export struct ImportModuleInfo final {
+    std::string_view module_name;
+    std::vector<std::string_view> using_decls;
+};
 
-            const auto b_size = (std::min(s_colon, r_brace) - (tokens.begin() + i)) + 1;
+struct StructureInfo final {};
+struct FunctionInfo final {};
 
-            blocks.emplace_back(TaggedBlock {
-                .tag = BlockTag::ImportStatement,
-                .tokens = std::span(tokens.subspan(i, b_size)),
-            });
+using ASTNode = std::variant<ImportModuleInfo, StructureInfo, FunctionInfo>;
 
-            i += b_size - 1; continue;
+constexpr auto parse_import_statement(std::span<const Token> tokens) noexcept -> ImportModuleInfo {
+    auto module_info = ImportModuleInfo {
+        .module_name = tokens[1].lexeme,
+        .using_decls = std::vector<std::string_view>()
+    };
+
+    if (tokens[2].type == TokenType::Keyword) {
+        if (tokens[4].type == TokenType::SemiColon) {
+            module_info.using_decls.emplace_back(tokens[3].lexeme);
+        } else {
+            for (auto i = 4uz; i < tokens.size() - 1; i++) {
+                if (tokens[i].type == TokenType::Identifier) {
+                    module_info.using_decls.emplace_back(tokens[i].lexeme);
+                }
+            }
         }
     }
 
-    return blocks;
+    return module_info;
+}
+
+export constexpr auto parse(std::span<const Token> tokens) noexcept -> std::unique_ptr<ASTNode> {
+
 }
 
 // struct NumberLiteral final {

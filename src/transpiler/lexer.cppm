@@ -70,9 +70,9 @@ public:
             case '~': return record_token(Tilde);
 
             case '"': return string_literal();
-        }
 
-        return record_token(Unknown);
+            default:  return record_token(Unknown);
+        }
     }
 private:
     std::uint32_t current_pos = 0;
