@@ -1,11 +1,12 @@
-export module zero.transpiler.token;
+export module zero.frontend.token;
 
 import std;
 
-export enum class TokenType : std::uint64_t {
+export enum class TokenKind : std::uint64_t {
     Identifier,
 
     NumberLiteral,
+    CharLiteral,
     StringLiteral,
 
     Keyword,
@@ -64,23 +65,25 @@ export enum class TokenType : std::uint64_t {
     ColonColon,         //  Lexeme: '::'
 
     End,                //  Special: End of File
+    Error,              //  Sepcial: Error Handling
     Unknown             //  Special: Unknown
 };
 
 export struct Token final {
-    TokenType type;
+    TokenKind kind;
     std::string_view lexeme;
     std::uint32_t line;
     std::uint32_t column;
 };
 
-static constexpr auto display_token_type(TokenType type) noexcept -> const char* {
-    switch (type) {
-        using enum TokenType;
+static constexpr auto display_token_type(TokenKind kind) noexcept -> const char* {
+    switch (kind) {
+        using enum TokenKind;
 
         case Identifier:            return "Identifier";
 
         case NumberLiteral:         return "NumberLiteral";
+        case CharLiteral:           return "CharLiteral";
         case StringLiteral:         return "StringLiteral";
 
         case Keyword:               return "Keyword";
@@ -136,6 +139,7 @@ static constexpr auto display_token_type(TokenType type) noexcept -> const char*
         case RightShiftEqual:       return "RightShiftEqual";
 
         case End:                   return "End";
+        case Error:                 return "Error";
         default:                    return "Unknown";
     }
 }
@@ -148,7 +152,7 @@ template<> struct std::formatter<Token> final {
     constexpr auto format(Token token, auto&& context) const noexcept {
         return std::format_to(context.out(),
             "{:<25}{:<25}Line: {:<15}Column: {:<15}",
-            display_token_type(token.type), token.lexeme, token.line, token.column
+            display_token_type(token.kind), token.lexeme, token.line, token.column
         );
     }
 };

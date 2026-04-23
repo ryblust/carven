@@ -1,0 +1,15 @@
+import std using { println, vector }
+
+enum Color {
+    Red, Green, Blue,
+}
+
+struct Foo {
+    docs: vector,
+    id: i32,
+    color: Color,
+}
+
+fn main() {
+    println("Hello World");
+}

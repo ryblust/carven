@@ -5,7 +5,7 @@ build/
 # MacOS Cache
 .DS_Store
 
-
+.claude
 .idea
 compile_commands.json
 .vscode

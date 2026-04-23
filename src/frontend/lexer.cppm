@@ -1,6 +1,6 @@
-export module zero.transpiler.lexer;
+export module zero.frontend.lexer;
 
-import zero.transpiler.token;
+import zero.frontend.token;
 import std;
 
 namespace {
@@ -26,7 +26,7 @@ public:
     explicit constexpr Lexer(std::string_view s) noexcept : source(s) {}
 
     constexpr auto next() noexcept -> Token {
-        using enum TokenType;
+        using enum TokenKind;
 
         skip_meaningless();
 
@@ -57,6 +57,7 @@ public:
             case '-': return record_token(match('=') ? MinusEqual : match('-') ? MinusMinus : match('>') ? Arrow : Minus);
             case '*': return record_token(match('=') ?  StarEqual :  Star);
             case '/': return record_token(match('=') ? SlashEqual : Slash);
+            case '%': return record_token(match('=') ? PercentEqual : Percent);
 
             case '!': return record_token(match('=') ?  BangEqual : Bang);
             case '=': return record_token(match('=') ? EqualEqual : match('>') ? FatArrow : Equal);
@@ -69,7 +70,8 @@ public:
             case '^': return record_token(match('=') ? CaretEqual : Caret);
             case '~': return record_token(Tilde);
 
-            case '"': return string_literal();
+            case '"':  return string_literal();
+            case '\'': return char_literal();
 
             default:  return record_token(Unknown);
         }
@@ -112,7 +114,7 @@ private:
     }
 
     constexpr auto match(char expected) noexcept -> bool {
-        if (eof() || current() != expected) {
+        if (eof() || (current() != expected)) {
             return false;
         }
 
@@ -138,6 +140,7 @@ private:
             "var",
             "let",
             "const",
+            "as",
             "if",
             "else",
             "while",
@@ -152,10 +155,10 @@ private:
         }
 
         if (std::ranges::contains(keywords, source.substr(start_pos, current_pos - start_pos))) {
-            return record_token(TokenType::Keyword);
+            return record_token(TokenKind::Keyword);
         }
 
-        return record_token(TokenType::Identifier);
+        return record_token(TokenKind::Identifier);
     }
 
     constexpr auto number_literal() noexcept -> Token {
@@ -170,7 +173,37 @@ private:
             }
         }
 
-        return record_token(TokenType::NumberLiteral);
+        return record_token(TokenKind::NumberLiteral);
+    }
+
+    constexpr auto char_literal() noexcept -> Token {
+        advance();
+
+        /// TODO: Unterminated char literal
+        // if (eof()) {
+        //     std::println("unterminated char literal");
+        //     std::exit(0);
+        // }
+
+        /// TODO: Expected closing quote
+        // if (peek() != '\'') {
+        //     std::println("expected closing quote");
+        // }
+
+        if (peek() == '\\') {
+            advance();
+
+            /// TODO: Invalid escape char
+            // if (eof()) {
+            //     std::println("Invalid escape char");
+            // }
+
+            advance();
+        }
+
+        advance();
+
+        return record_token(TokenKind::CharLiteral);
     }
 
     constexpr auto string_literal() noexcept -> Token {
@@ -185,7 +218,13 @@ private:
             advance();
         }
 
-        return record_token(TokenType::StringLiteral);
+        /// TODO: Unterminated string literal
+        // else {
+        //     std::println("Unterminated string literal!");
+        //     std::exit(-1);
+        // }
+
+        return record_token(TokenKind::StringLiteral);
     }
 
     constexpr auto skip_meaningless() noexcept -> void {
@@ -215,7 +254,7 @@ private:
         }
     }
 
-    constexpr auto record_token(TokenType type) const noexcept -> Token {
+    constexpr auto record_token(TokenKind type) const noexcept -> Token {
         return { type, source.substr(start_pos, current_pos - start_pos), start_line, start_column };
     }
 };
@@ -226,7 +265,7 @@ export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<
     auto lexer  = Lexer(source);
     auto tokens = std::vector<Token>();
 
-    for (auto t = lexer.next(); t.type != TokenType::End; t = lexer.next()) {
+    for (auto t = lexer.next(); t.kind != TokenKind::End; t = lexer.next()) {
         tokens.emplace_back(t);
     }
 

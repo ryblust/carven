@@ -1,11 +1,13 @@
+add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = ".vscode"})
 
 target("zero")
-    add_cxxflags("-fno-rtti")
+    -- add_cxxflags("-fno-rtti")
     set_exceptions("no-cxx")
     set_languages("c++26")
-    set_optimize("none")
     set_warnings("allextra")
-
-    add_files("src/transpiler/*.cppm")
-    add_files("src/main.cpp")
+    add_files("src/common/*.cppm")
+    add_files("src/driver/*.cppm")
+    add_files("src/frontend/*.cppm")
+    add_files("src/backend/*.cppm")
+    add_files("src/zero.cpp")
