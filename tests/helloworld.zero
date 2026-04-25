@@ -5,7 +5,6 @@ enum Color {
 }
 
 struct Foo {
-    docs: vector,
     id: i32,
     color: Color,
 }

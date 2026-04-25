@@ -1,5 +1,6 @@
 export module zero.frontend.lexer;
 
+import zero.common.source;
 import zero.frontend.token;
 import std;
 
@@ -86,7 +87,7 @@ private:
     std::uint32_t start_column = 1;
 
     std::string_view source;
-private:
+
     constexpr auto advance() noexcept -> char {
         if (eof()) {
             return '\0';
@@ -179,25 +180,8 @@ private:
     constexpr auto char_literal() noexcept -> Token {
         advance();
 
-        /// TODO: Unterminated char literal
-        // if (eof()) {
-        //     std::println("unterminated char literal");
-        //     std::exit(0);
-        // }
-
-        /// TODO: Expected closing quote
-        // if (peek() != '\'') {
-        //     std::println("expected closing quote");
-        // }
-
         if (peek() == '\\') {
             advance();
-
-            /// TODO: Invalid escape char
-            // if (eof()) {
-            //     std::println("Invalid escape char");
-            // }
-
             advance();
         }
 
@@ -217,12 +201,6 @@ private:
         if (!eof()) {
             advance();
         }
-
-        /// TODO: Unterminated string literal
-        // else {
-        //     std::println("Unterminated string literal!");
-        //     std::exit(-1);
-        // }
 
         return record_token(TokenKind::StringLiteral);
     }
@@ -255,7 +233,7 @@ private:
     }
 
     constexpr auto record_token(TokenKind type) const noexcept -> Token {
-        return { type, source.substr(start_pos, current_pos - start_pos), start_line, start_column };
+        return { type, Span { start_pos, current_pos } };
     }
 };
 

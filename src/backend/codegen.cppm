@@ -1,12 +1,13 @@
-export module zero.backend.emit;
+export module zero.backend.codegen;
 
+import zero.common.source;
 import zero.frontend.token;
 import zero.frontend.parser;
 import std;
 
 namespace {
 
-constexpr auto format_tokens(std::span<const Token> tokens) noexcept -> std::string {
+constexpr auto format_tokens(std::span<const Token> tokens, std::string_view source) noexcept -> std::string {
     auto result = std::string();
 
     for (auto i = 0uz; i < tokens.size(); ++i) {
@@ -25,7 +26,7 @@ constexpr auto format_tokens(std::span<const Token> tokens) noexcept -> std::str
                 result.push_back(' ');
             }
         }
-        result.append(tokens[i].lexeme);
+        result.append(source.substr(tokens[i].span.start, tokens[i].span.end - tokens[i].span.start));
     }
 
     return result;
@@ -49,63 +50,65 @@ constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view
     return zero_type;
 }
 
-constexpr auto emit_import(const ImportItem& item) noexcept -> std::string {
-    auto result = std::string("import ").append(item.module_name).append(";\n");
+constexpr auto generate_import(const ImportItem& item, std::string_view source) noexcept -> std::string {
+    const auto mod = source.substr(item.module_name.start, item.module_name.end - item.module_name.start);
+    auto result = std::string("import ").append(mod).append(";\n");
 
     for (const auto& decl : item.using_decls) {
-        result.append("using ").append(item.module_name)
-                               .append("::").append(decl).append(";\n");
+        result.append("using ").append(mod)
+                               .append("::").append(source.substr(decl.start, decl.end - decl.start)).append(";\n");
     }
 
     return result;
 }
 
-constexpr auto emit_enum(const EnumItem& item) noexcept -> std::string {
-    auto result = std::string("enum class ").append(item.name).append(" {\n");
+constexpr auto generate_enum(const EnumItem& item, std::string_view source) noexcept -> std::string {
+    auto result = std::string("enum class ").append(source.substr(item.name.start, item.name.end - item.name.start)).append(" {\n");
 
     for (const auto& field : item.fields) {
-        result.append("    ").append(field).append(",\n");
+        result.append("    ").append(source.substr(field.start, field.end - field.start)).append(",\n");
     }
 
     return result.append("};\n");
 }
 
-constexpr auto emit_struct(const StructItem& item) noexcept -> std::string {
-    auto result = std::string("struct ").append(item.name).append(" {\n");
+constexpr auto generate_struct(const StructItem& item, std::string_view source) noexcept -> std::string {
+    auto result = std::string("struct ").append(source.substr(item.name.start, item.name.end - item.name.start)).append(" {\n");
 
     for (const auto& field : item.fields) {
-        result.append("    ").append(map_type(field.type));
+        result.append("    ").append(map_type(source.substr(field.type.start, field.type.end - field.type.start)));
         result.push_back(' ');
-        result.append(field.name).append(";\n");
+        result.append(source.substr(field.name.start, field.name.end - field.name.start)).append(";\n");
     }
 
     return result.append("};\n");
 }
 
-constexpr auto emit_function(const FunctionItem& item) noexcept -> std::string {
-    auto result = std::string("auto ").append(item.name).append("(");
+constexpr auto generate_function(const FunctionItem& item, std::string_view source) noexcept -> std::string {
+    const auto name = source.substr(item.name.start, item.name.end - item.name.start);
+    auto result = std::string("auto ").append(name).append("(");
 
     for (auto i = 0uz; i < item.params.size(); ++i) {
         const auto& p = item.params[i];
-        result.append(map_type(p.type));
+        result.append(map_type(source.substr(p.type.start, p.type.end - p.type.start)));
         result.push_back(' ');
-        result.append(p.name);
+        result.append(source.substr(p.name.start, p.name.end - p.name.start));
         if (i + 1 < item.params.size()) result.append(", ");
     }
 
     result.append(")");
 
-    if (item.name == "main") {
+    if (name == "main") {
         result.append(" -> int");
-    } else if (item.return_type.empty()) {
+    } else if (item.return_type == Span{}) {
         result.append(" -> void");
     } else {
-        result.append(" -> ").append(map_type(item.return_type));
+        result.append(" -> ").append(map_type(source.substr(item.return_type.start, item.return_type.end - item.return_type.start)));
     }
 
     if (item.body_tokens.size() > 2) {
         const auto body_inner = item.body_tokens.subspan(1, item.body_tokens.size() - 2);
-        result.append(" {\n    ").append(format_tokens(body_inner));
+        result.append(" {\n    ").append(format_tokens(body_inner, source));
         result.push_back('\n');
     } else {
         result.append(" {\n");
@@ -116,20 +119,20 @@ constexpr auto emit_function(const FunctionItem& item) noexcept -> std::string {
 
 } // namespace
 
-export constexpr auto codegen(std::span<const TopLevelItem> items) noexcept -> std::string {
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source) noexcept -> std::string {
     auto result = std::string();
 
     for (const auto& item : items) {
-        std::visit([&result](const auto& concrete) {
+        std::visit([&result, source](const auto& concrete) {
             using T = std::decay_t<decltype(concrete)>;
             if constexpr (std::is_same_v<T, ImportItem>)
-                result.append(emit_import(concrete));
+                result.append(generate_import(concrete, source));
             else if constexpr (std::is_same_v<T, EnumItem>)
-                result.append(emit_enum(concrete));
+                result.append(generate_enum(concrete, source));
             else if constexpr (std::is_same_v<T, StructItem>)
-                result.append(emit_struct(concrete));
+                result.append(generate_struct(concrete, source));
             else if constexpr (std::is_same_v<T, FunctionItem>)
-                result.append(emit_function(concrete));
+                result.append(generate_function(concrete, source));
         }, item);
         result.push_back('\n');
     }

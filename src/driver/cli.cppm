@@ -1,5 +1,9 @@
 export module zero.driver.cli;
 
+import zero.driver.pipeline;
+import zero.frontend.lexer;
+import zero.frontend.parser;
+import zero.common.source;
 import std;
 
 namespace {
@@ -18,24 +22,136 @@ struct Command final {
 };
 
 constexpr auto GLOBAL_FLAGS = std::array {
-    Flag{ .long_name = "--help",    .short_name = "-h", .description = "Show help message"          },
-    Flag{ .long_name = "--version", .short_name = "-V", .description = "Show Zero version"          },
-    Flag{ .long_name = "--verbose", .short_name = "-v", .description = "Enable verbose diagnostics" },
-    Flag{ .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
+    Flag { .long_name = "--help",    .short_name = "-h", .description = "Show help message"          },
+    Flag { .long_name = "--version", .short_name = "-V", .description = "Show Zero version"          },
+    Flag { .long_name = "--verbose", .short_name = "-v", .description = "Enable verbose diagnostics" },
+    Flag { .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
 };
 
-auto cmd_build(std::span<const char* const> args) -> int;
-auto cmd_run(std::span<const char* const> args) -> int;
-auto cmd_check(std::span<const char* const> args) -> int;
-auto cmd_tokens(std::span<const char* const> args) -> int;
-auto cmd_ast(std::span<const char* const> args) -> int;
+auto read_file(std::string_view path) noexcept -> std::optional<std::string> {
+    auto file = std::ifstream(std::string(path), std::ios::ate | std::ios::binary);
+    if (!file.is_open()) return std::nullopt;
+
+    const auto size = file.tellg();
+    file.seekg(0);
+
+    auto content = std::string(static_cast<std::size_t>(size), '\0');
+    file.read(content.data(), size);
+    return content;
+}
+
+auto run(std::span<const char* const> args) -> int {
+    if (args.empty()) {
+        std::println("zero run: error: no input file");
+        return 1;
+    }
+
+    const auto filename = std::string_view(args[0]);
+    const auto content = read_file(filename);
+    if (!content) {
+        std::println("zero run: error: cannot read '{}'", filename);
+        return 1;
+    }
+
+    const auto output = transpile(*content);
+    std::print("{}", output);
+    return 0;
+}
+
+auto tokens(std::span<const char* const> args) -> int {
+    if (args.empty()) {
+        std::println("zero tokens: error: no input file");
+        return 1;
+    }
+
+    const auto filename = std::string_view(args[0]);
+    const auto content = read_file(filename);
+    if (!content) {
+        std::println("zero tokens: error: cannot read '{}'", filename);
+        return 1;
+    }
+
+    const auto tokens = tokenize(*content);
+    for (const auto& token : tokens) {
+        std::println("{}", token);
+    }
+    return 0;
+}
+
+auto ast(std::span<const char* const> args) -> int {
+    if (args.empty()) {
+        std::println("zero ast: error: no input file");
+        return 1;
+    }
+
+    const auto filename = std::string_view(args[0]);
+    const auto content = read_file(filename);
+    if (!content) {
+        std::println("zero ast: error: cannot read '{}'", filename);
+        return 1;
+    }
+
+    const auto source = SourceFile { .filename = filename, .content = *content };
+    const auto tokens = tokenize(source.content);
+    const auto items  = parse(tokens, source.content);
+
+    for (const auto& item : items) {
+        std::visit([&]<typename T>(const T& it) {
+            if constexpr (std::is_same_v<T, ImportItem>) {
+                std::println("ImportItem");
+                std::println("  module: {}", source.text(it.module_name));
+                if (!it.using_decls.empty()) {
+                    std::println("  using:");
+                    for (const auto& decl : it.using_decls) {
+                        std::println("    - {}", source.text(decl));
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, EnumItem>) {
+                std::println("EnumItem");
+                std::println("  name: {}", source.text(it.name));
+                for (const auto& field : it.fields) {
+                    std::println("    - {}", source.text(field));
+                }
+            } else if constexpr (std::is_same_v<T, StructItem>) {
+                std::println("StructItem");
+                std::println("  name: {}", source.text(it.name));
+                for (const auto& field : it.fields) {
+                    std::println("    - {}: {}", source.text(field.name), source.text(field.type));
+                }
+            } else if constexpr (std::is_same_v<T, FunctionItem>) {
+                std::println("FunctionItem");
+                std::println("  name: {}", source.text(it.name));
+                if (!it.params.empty()) {
+                    std::println("  params:");
+                    for (const auto& p : it.params) {
+                        std::println("    - {}: {}", source.text(p.name), source.text(p.type));
+                    }
+                }
+                if (it.return_type != Span{}) {
+                    std::println("  returns: {}", source.text(it.return_type));
+                }
+            }
+        }, item);
+    }
+    return 0;
+}
+
+auto build(std::span<const char* const> /*args*/) -> int {
+    std::println("zero build: not yet implemented");
+    return 0;
+}
+
+auto check(std::span<const char* const> /*args*/) -> int {
+    std::println("zero check: not yet implemented");
+    return 0;
+}
 
 constexpr auto COMMANDS = std::array {
-    Command{ .name = "build",  .description = "Build current Zero project",           .flags = {}, .handler = cmd_build  },
-    Command{ .name = "run",    .description = "Build and run a single file",          .flags = {}, .handler = cmd_run    },
-    Command{ .name = "check",  .description = "Parse and type-check without codegen", .flags = {}, .handler = cmd_check  },
-    Command{ .name = "tokens", .description = "Dump lexer tokens",                    .flags = {}, .handler = cmd_tokens },
-    Command{ .name = "ast",    .description = "Dump parsed AST",                      .flags = {}, .handler = cmd_ast    },
+    Command { .name = "run",    .description = "Transpile and run a .zero file",       .flags = {}, .handler = run    },
+    Command { .name = "tokens", .description = "Lex a file and dump the token stream", .flags = {}, .handler = tokens },
+    Command { .name = "ast",    .description = "Parse a file and dump the AST",        .flags = {}, .handler = ast    },
+    Command { .name = "build",  .description = "Build a Zero project",                 .flags = {}, .handler = build  },
+    Command { .name = "check",  .description = "Parse and check without codegen",      .flags = {}, .handler = check  },
 };
 
 auto render_flag(Flag flag) noexcept -> void {
@@ -77,39 +193,13 @@ auto render_command_help(const Command& command) noexcept -> void {
     }
 }
 
-auto cmd_build(std::span<const char* const> /*args*/) -> int {
-    std::println("zero build: not yet implemented");
-    return 0;
-}
-
-auto cmd_run(std::span<const char* const> /*args*/) -> int {
-    std::println("zero run: not yet implemented");
-    return 0;
-}
-
-auto cmd_check(std::span<const char* const> /*args*/) -> int {
-    std::println("zero check: not yet implemented");
-    return 0;
-}
-
-auto cmd_tokens(std::span<const char* const> /*args*/) -> int {
-    std::println("zero tokens: not yet implemented");
-    return 0;
-}
-
-auto cmd_ast(std::span<const char* const> /*args*/) -> int {
-    std::println("zero ast: not yet implemented");
-    return 0;
-}
-
-}
+} // namespace
 
 export auto __zero_main__(int argc, char** argv) noexcept -> int {
     if (argc == 1) {
         std::println("zero: error: no input files");
         std::println("Run 'zero --help' for usage information.");
-
-        return 0;
+        return 1;
     }
 
     const auto arg = std::string_view(argv[1]);
@@ -126,7 +216,7 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
 
     for (const auto& command : COMMANDS) {
         if (arg == command.name) {
-            auto flags = std::span<const char* const>(argv + 2, static_cast<std::size_t>(argc - 2));
+            const auto flags = std::span<const char* const>(argv + 2, static_cast<std::size_t>(argc - 2));
 
             for (const auto flag : flags) {
                 if (std::string_view(flag) == "--help" || std::string_view(flag) == "-h") {
@@ -141,6 +231,5 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
 
     std::println("zero: error: unknown command '{}'", arg);
     std::println("Run 'zero --help' for usage information.");
-
-    return 0;
+    return 1;
 }
