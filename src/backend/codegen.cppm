@@ -166,6 +166,14 @@ constexpr auto generate_import_preamble() noexcept -> std::string {
     return std::string("import std;\n\n");
 }
 
+template<class... Ts>
+struct Overloaded : Ts... {
+    using Ts::operator()...;
+};
+
+template<class... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
 } // namespace
 
 export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, TranspileOptions opts) noexcept -> std::string {
@@ -182,19 +190,11 @@ export constexpr auto generate(std::span<const TopLevelItem> items, std::string_
     }
 
     for (const auto& item : items) {
-        std::visit([&result, source](const auto& concrete) {
-            using T = std::decay_t<decltype(concrete)>;
-
-            if constexpr (std::is_same_v<T, ImportItem>) {
-                result.append(generate_import(concrete, source));
-            } else if constexpr (std::is_same_v<T, EnumItem>) {
-                result.append(generate_enum(concrete, source));
-            } else if constexpr (std::is_same_v<T, StructItem>) {
-                result.append(generate_struct(concrete, source));
-            } else if constexpr (std::is_same_v<T, FunctionItem>) {
-                result.append(generate_function(concrete, source));
-            }
-
+        std::visit(Overloaded {
+            [&](const   ImportItem& it) { result.append(generate_import  (it, source)); },
+            [&](const     EnumItem& it) { result.append(generate_enum    (it, source)); },
+            [&](const   StructItem& it) { result.append(generate_struct  (it, source)); },
+            [&](const FunctionItem& it) { result.append(generate_function(it, source)); },
         }, item);
         result.push_back('\n');
     }
