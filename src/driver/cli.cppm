@@ -199,7 +199,8 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
     if (argc == 1) {
         std::println("zero: error: no input files");
         std::println("Run 'zero --help' for usage information.");
-        return 1;
+
+        return 0;
     }
 
     const auto arg = std::string_view(argv[1]);
@@ -231,5 +232,6 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
 
     std::println("zero: error: unknown command '{}'", arg);
     std::println("Run 'zero --help' for usage information.");
-    return 1;
+
+    return 0;
 }

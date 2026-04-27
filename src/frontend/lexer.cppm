@@ -178,27 +178,29 @@ private:
     }
 
     constexpr auto char_literal() noexcept -> Token {
-        advance();
-
-        if (peek() == '\\') {
-            advance();
-            advance();
-        }
-
-        advance();
-
-        return record_token(TokenKind::CharLiteral);
-    }
-
-    constexpr auto string_literal() noexcept -> Token {
-        while (!eof() && current() != '"') {
+        if (!eof() && current() != '\'' && current() != '\n') {
             if (current() == '\\') {
                 advance();
             }
             advance();
         }
 
-        if (!eof()) {
+        if (!eof() && current() == '\'') {
+            advance();
+        }
+
+        return record_token(TokenKind::CharLiteral);
+    }
+
+    constexpr auto string_literal() noexcept -> Token {
+        while (!eof() && current() != '"' && current() != '\n') {
+            if (current() == '\\') {
+                advance();
+            }
+            advance();
+        }
+
+        if (!eof() && current() == '"') {
             advance();
         }
 

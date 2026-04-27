@@ -55,8 +55,9 @@ constexpr auto generate_import(const ImportItem& item, std::string_view source) 
     auto result = std::string("import ").append(mod).append(";\n");
 
     for (const auto& decl : item.using_decls) {
-        result.append("using ").append(mod)
-                               .append("::").append(source.substr(decl.start, decl.end - decl.start)).append(";\n");
+        result.append("using ")
+               .append(mod)
+              .append("::").append(source.substr(decl.start, decl.end - decl.start)).append(";\n");
     }
 
     return result;
