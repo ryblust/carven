@@ -31,16 +31,16 @@ Entry point: `transpile()` in `zero.driver.pipeline` — pure `constexpr` functi
 
 ### Source model
 
-AST types store `Span` (not `std::string_view`) to avoid lifetime coupling. A `Span` is just two offsets — it doesn't know about the text. Callers extract text via `std::string_view::substr(span.start, span.end - span.start)`. `SourceFile` is a CLI-layer convenience for bundling `filename + content`; the compiler core (`parse`, `generate`) operates on raw `std::string_view`.
+AST types store `Span` (not `std::string_view`) to avoid lifetime coupling. A `Span` is just two offsets — it doesn't know about the text. Callers extract text via `text_at(source, span)`. `SourceFile` is a CLI-layer convenience for bundling `filename + content`; the compiler core (`parse`, `generate`) operates on raw `std::string_view`.
 
 ### Interface design
 
 Each compiler stage depends only on the data it consumes, not on convenience wrappers. This keeps interfaces minimal and testing trivial:
 
 ```
-tokenize(std::string_view)             → std::vector<Token>
-parse(std::span<Token>, string_view)   → std::vector<TopLevelItem>
-generate(std::span<TopLevelItem>, string_view) → std::string
+tokenize(std::string_view)                        → std::vector<Token>
+parse(std::span<Token>, string_view)              → std::vector<TopLevelItem>
+generate(std::span<const TopLevelItem>, string_view, TranspileOptions) → std::string
 ```
 
 - `parse` and `generate` take `std::string_view` — they don't know `SourceFile` exists
@@ -82,6 +82,8 @@ Every local variable is `const` unless it must be mutated. If you can write `con
 - Unused parameters: `[[maybe_unused]]` attribute, not `/*name*/` comments
 
 ### Formatting
+
+- Pre-increment `++i` in for-loop expressions, not `i++`
 
 - `Type {` with space before `{` on aggregates spanning multiple lines; `Type{` fine for single-line (`Span{}`)
 - Designated initializers: one field per line; space-separated unless clean column alignment is possible

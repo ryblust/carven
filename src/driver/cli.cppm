@@ -37,58 +37,61 @@ auto read_file(std::string_view path) noexcept -> std::optional<std::string> {
 
     auto content = std::string(static_cast<std::size_t>(size), '\0');
     file.read(content.data(), size);
+
     return content;
 }
 
 auto run(std::span<const char* const> args, TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero run: error: no input file");
-        return 1;
+        return 0;
     }
 
     const auto filename = std::string_view(args[0]);
     const auto content = read_file(filename);
     if (!content) {
         std::println("zero run: error: cannot read '{}'", filename);
-        return 1;
+        return 0;
     }
 
     const auto output = transpile(*content, opts);
     std::print("{}", output);
+
     return 0;
 }
 
 auto tokens(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero tokens: error: no input file");
-        return 1;
+        return 0;
     }
 
     const auto filename = std::string_view(args[0]);
     const auto content = read_file(filename);
     if (!content) {
         std::println("zero tokens: error: cannot read '{}'", filename);
-        return 1;
+        return 0;
     }
 
     const auto tokens = tokenize(*content);
     for (const auto& token : tokens) {
         std::println("{}", token);
     }
+
     return 0;
 }
 
 auto ast(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero ast: error: no input file");
-        return 1;
+        return 0;
     }
 
     const auto filename = std::string_view(args[0]);
     const auto content = read_file(filename);
     if (!content) {
         std::println("zero ast: error: cannot read '{}'", filename);
-        return 1;
+        return 0;
     }
 
     const auto source = SourceFile { .filename = filename, .content = *content };
@@ -99,40 +102,41 @@ auto ast(std::span<const char* const> args, [[maybe_unused]] TranspileOptions op
         std::visit([&]<typename T>(const T& it) {
             if constexpr (std::is_same_v<T, ImportItem>) {
                 std::println("ImportItem");
-                std::println("  module: {}", source.text(it.module_name));
+                std::println("  module: {}", text_at(source.content,it.module_name));
                 if (!it.using_decls.empty()) {
                     std::println("  using:");
                     for (const auto& decl : it.using_decls) {
-                        std::println("    - {}", source.text(decl));
+                        std::println("    - {}", text_at(source.content,decl));
                     }
                 }
             } else if constexpr (std::is_same_v<T, EnumItem>) {
                 std::println("EnumItem");
-                std::println("  name: {}", source.text(it.name));
+                std::println("  name: {}", text_at(source.content,it.name));
                 for (const auto& field : it.fields) {
-                    std::println("    - {}", source.text(field));
+                    std::println("    - {}", text_at(source.content,field));
                 }
             } else if constexpr (std::is_same_v<T, StructItem>) {
                 std::println("StructItem");
-                std::println("  name: {}", source.text(it.name));
+                std::println("  name: {}", text_at(source.content,it.name));
                 for (const auto& field : it.fields) {
-                    std::println("    - {}: {}", source.text(field.name), source.text(field.type));
+                    std::println("    - {}: {}", text_at(source.content,field.name), text_at(source.content,field.type));
                 }
             } else if constexpr (std::is_same_v<T, FunctionItem>) {
                 std::println("FunctionItem");
-                std::println("  name: {}", source.text(it.name));
+                std::println("  name: {}", text_at(source.content,it.name));
                 if (!it.params.empty()) {
                     std::println("  params:");
                     for (const auto& p : it.params) {
-                        std::println("    - {}: {}", source.text(p.name), source.text(p.type));
+                        std::println("    - {}: {}", text_at(source.content,p.name), text_at(source.content,p.type));
                     }
                 }
-                if (it.return_type != Span{}) {
-                    std::println("  returns: {}", source.text(it.return_type));
+                if (it.return_type.start != 0 || it.return_type.end != 0) {
+                    std::println("  returns: {}", text_at(source.content,it.return_type));
                 }
             }
         }, item);
     }
+
     return 0;
 }
 
@@ -205,7 +209,6 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
     if (argc == 1) {
         std::println("zero: error: no input files");
         std::println("Run 'zero --help' for usage information.");
-
         return 0;
     }
 
@@ -247,7 +250,7 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                     else if (val == "c++26") opts.standard = CppStandard::Cpp26;
                     else {
                         std::println("zero: error: unknown standard '{}'", val);
-                        return 1;
+                        return 0;
                     }
                 } else if (sv == "--no-default-include-std") {
                     opts.default_include_std = false;

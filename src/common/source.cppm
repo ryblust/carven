@@ -5,8 +5,6 @@ import std;
 export struct Span final {
     std::uint32_t start;
     std::uint32_t end;
-
-    constexpr auto operator==(const Span&) const noexcept -> bool = default;
 };
 
 export enum class CppStandard : std::uint8_t {
@@ -26,8 +24,8 @@ export struct TranspileOptions final {
 export struct SourceFile final {
     std::string_view filename;
     std::string_view content;
-
-    constexpr auto text(Span span) const noexcept -> std::string_view {
-        return content.substr(span.start, span.end - span.start);
-    }
 };
+
+export constexpr auto text_at(std::string_view text, Span span) noexcept -> std::string_view {
+    return text.substr(span.start, span.end - span.start);
+}

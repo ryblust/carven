@@ -26,7 +26,7 @@ constexpr auto format_tokens(std::span<const Token> tokens, std::string_view sou
                 result.push_back(' ');
             }
         }
-        result.append(source.substr(tokens[i].span.start, tokens[i].span.end - tokens[i].span.start));
+        result.append(text_at(source, tokens[i].span));
     }
 
     return result;
@@ -50,49 +50,49 @@ constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view
 }
 
 constexpr auto generate_import(const ImportItem& item, std::string_view source) noexcept -> std::string {
-    const auto mod = source.substr(item.module_name.start, item.module_name.end - item.module_name.start);
+    const auto mod = text_at(source, item.module_name);
     auto result = std::string("import ").append(mod).append(";\n");
 
     for (const auto& decl : item.using_decls) {
         result.append("using ")
               .append(mod)
-              .append("::").append(source.substr(decl.start, decl.end - decl.start)).append(";\n");
+              .append("::").append(text_at(source, decl)).append(";\n");
     }
 
     return result;
 }
 
 constexpr auto generate_enum(const EnumItem& item, std::string_view source) noexcept -> std::string {
-    auto result = std::string("enum class ").append(source.substr(item.name.start, item.name.end - item.name.start)).append(" {\n");
+    auto result = std::string("enum class ").append(text_at(source, item.name)).append(" {\n");
 
     for (const auto& field : item.fields) {
-        result.append("    ").append(source.substr(field.start, field.end - field.start)).append(",\n");
+        result.append("    ").append(text_at(source, field)).append(",\n");
     }
 
     return result.append("};\n");
 }
 
 constexpr auto generate_struct(const StructItem& item, std::string_view source) noexcept -> std::string {
-    auto result = std::string("struct ").append(source.substr(item.name.start, item.name.end - item.name.start)).append(" {\n");
+    auto result = std::string("struct ").append(text_at(source, item.name)).append(" {\n");
 
     for (const auto& field : item.fields) {
-        result.append("    ").append(map_type(source.substr(field.type.start, field.type.end - field.type.start)));
+        result.append("    ").append(map_type(text_at(source, field.type)));
         result.push_back(' ');
-        result.append(source.substr(field.name.start, field.name.end - field.name.start)).append(";\n");
+        result.append(text_at(source, field.name)).append(";\n");
     }
 
     return result.append("};\n");
 }
 
 constexpr auto generate_function(const FunctionItem& item, std::string_view source) noexcept -> std::string {
-    const auto name = source.substr(item.name.start, item.name.end - item.name.start);
+    const auto name = text_at(source, item.name);
     auto result = std::string("auto ").append(name).append("(");
 
     for (auto i = 0uz; i < item.params.size(); ++i) {
         const auto& p = item.params[i];
-        result.append(map_type(source.substr(p.type.start, p.type.end - p.type.start)));
+        result.append(map_type(text_at(source, p.type)));
         result.push_back(' ');
-        result.append(source.substr(p.name.start, p.name.end - p.name.start));
+        result.append(text_at(source, p.name));
 
         if (i + 1 < item.params.size()) result.append(", ");
     }
@@ -101,10 +101,10 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
 
     if (name == "main") {
         result.append(" -> int");
-    } else if (item.return_type == Span{}) {
+    } else if (item.return_type.start == 0 && item.return_type.end == 0) {
         result.append(" -> void");
     } else {
-        result.append(" -> ").append(map_type(source.substr(item.return_type.start, item.return_type.end - item.return_type.start)));
+        result.append(" -> ").append(map_type(text_at(source, item.return_type)));
     }
 
     if (item.body_tokens.size() > 2) {
@@ -119,7 +119,7 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
 }
 
 constexpr auto CPP_HEADERS_BASE = std::string_view {
-#include "headers/base.inc"
+    #include "headers/base.inc"
 };
 
 constexpr auto CPP_HEADERS_17 = std::string_view {
@@ -142,7 +142,7 @@ constexpr auto is_std_import(std::span<const TopLevelItem> items, std::string_vi
     for (const auto& item : items) {
         if (std::holds_alternative<ImportItem>(item)) {
             if (const auto& mod = std::get<ImportItem>(item);
-                    source.substr(mod.module_name.start, mod.module_name.end - mod.module_name.start) == "std") {
+                    text_at(source, mod.module_name) == "std") {
                 return true;
             }
         }

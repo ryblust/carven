@@ -32,7 +32,7 @@ constexpr auto blockify(std::span<const Token> tokens, std::string_view source) 
             continue;
         }
 
-        const auto keyword = source.substr(token.span.start, token.span.end - token.span.start);
+        const auto keyword = text_at(source, token.span);
 
         if (keyword == "import") {
             const auto end = std::ranges::find_if(begin, tokens.end(), [](Token t) {
@@ -55,7 +55,7 @@ constexpr auto blockify(std::span<const Token> tokens, std::string_view source) 
             if (lbrace != tokens.end()) {
                 auto depth = 1uz;
                 auto end = lbrace + 1;
-                for (; end < tokens.end() && depth > 0; end++) {
+                for (; end < tokens.end() && depth > 0; ++end) {
                     if (end->kind == TokenKind::LeftBrace) depth++;
                     else if (end->kind == TokenKind::RightBrace) depth--;
                 }
@@ -121,7 +121,7 @@ constexpr auto parse_import_block(std::span<const Token> tokens) noexcept -> Imp
         if (tokens[4].kind == TokenKind::SemiColon) {
             import_item.using_decls.emplace_back(tokens[3].span);
         } else {
-            for (auto i = 4uz; i < tokens.size() - 1; i++) {
+            for (auto i = 4uz; i < tokens.size() - 1; ++i) {
                 if (tokens[i].kind == TokenKind::Identifier) {
                     import_item.using_decls.emplace_back(tokens[i].span);
                 }
@@ -223,7 +223,7 @@ constexpr auto parse_function_block(std::span<const Token> tokens) noexcept -> F
 constexpr auto parse_blocks(std::span<const Block> blocks) noexcept -> std::vector<TopLevelItem> {
     auto items = std::vector<TopLevelItem>(blocks.size());
 
-    for (auto i = 0uz; i < items.size(); i++) {
+    for (auto i = 0uz; i < items.size(); ++i) {
         if (blocks[i].category == Block::Category::Import) {
             items[i] = parse_import_block(blocks[i].tokens);
         } else if (blocks[i].category == Block::Category::Enum) {
