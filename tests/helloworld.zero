@@ -1,14 +1,3 @@
-import std using { println, vector }
-
-enum Color {
-    Red, Green, Blue,
-}
-
-struct Foo {
-    id: i32,
-    color: Color,
-}
-
 fn main() {
-    println("Hello World");
+    std::println("Hello World");
 }

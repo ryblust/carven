@@ -56,7 +56,7 @@ constexpr auto generate_import(const ImportItem& item, std::string_view source) 
 
     for (const auto& decl : item.using_decls) {
         result.append("using ")
-               .append(mod)
+              .append(mod)
               .append("::").append(source.substr(decl.start, decl.end - decl.start)).append(";\n");
     }
 
@@ -120,7 +120,7 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
 
 } // namespace
 
-export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source) noexcept -> std::string {
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, [[maybe_unused]] TranspileOptions opts) noexcept -> std::string {
     auto result = std::string();
 
     for (const auto& item : items) {

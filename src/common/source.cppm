@@ -9,6 +9,18 @@ export struct Span final {
     constexpr auto operator==(const Span&) const noexcept -> bool = default;
 };
 
+export enum class CppStandard : std::uint8_t {
+    Cpp14,
+    Cpp17,
+    Cpp20,
+    Cpp23,
+    Cpp26,
+};
+
+export struct TranspileOptions final {
+    CppStandard standard = CppStandard::Cpp20;
+};
+
 export struct SourceFile final {
     std::string_view filename;
     std::string_view content;

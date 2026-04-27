@@ -18,7 +18,7 @@ struct Command final {
     std::string_view name;
     std::string_view description;
     std::span<const Flag> flags;
-    auto (*handler)(std::span<const char* const> args) -> int;
+    auto (*handler)(std::span<const char* const> args, TranspileOptions opts) -> int;
 };
 
 constexpr auto GLOBAL_FLAGS = std::array {
@@ -40,7 +40,7 @@ auto read_file(std::string_view path) noexcept -> std::optional<std::string> {
     return content;
 }
 
-auto run(std::span<const char* const> args) -> int {
+auto run(std::span<const char* const> args, TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero run: error: no input file");
         return 1;
@@ -53,12 +53,12 @@ auto run(std::span<const char* const> args) -> int {
         return 1;
     }
 
-    const auto output = transpile(*content);
+    const auto output = transpile(*content, opts);
     std::print("{}", output);
     return 0;
 }
 
-auto tokens(std::span<const char* const> args) -> int {
+auto tokens(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero tokens: error: no input file");
         return 1;
@@ -78,7 +78,7 @@ auto tokens(std::span<const char* const> args) -> int {
     return 0;
 }
 
-auto ast(std::span<const char* const> args) -> int {
+auto ast(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     if (args.empty()) {
         std::println("zero ast: error: no input file");
         return 1;
@@ -136,18 +136,22 @@ auto ast(std::span<const char* const> args) -> int {
     return 0;
 }
 
-auto build(std::span<const char* const> /*args*/) -> int {
+auto build([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     std::println("zero build: not yet implemented");
     return 0;
 }
 
-auto check(std::span<const char* const> /*args*/) -> int {
+auto check([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
     std::println("zero check: not yet implemented");
     return 0;
 }
 
+constexpr auto RUN_FLAGS = std::array {
+    Flag { .long_name = "-std=c++XX", .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26). Default: c++20" },
+};
+
 constexpr auto COMMANDS = std::array {
-    Command { .name = "run",    .description = "Transpile and run a .zero file",       .flags = {}, .handler = run    },
+    Command { .name = "run",    .description = "Transpile and run a .zero file",       .flags = RUN_FLAGS, .handler = run },
     Command { .name = "tokens", .description = "Lex a file and dump the token stream", .flags = {}, .handler = tokens },
     Command { .name = "ast",    .description = "Parse a file and dump the AST",        .flags = {}, .handler = ast    },
     Command { .name = "build",  .description = "Build a Zero project",                 .flags = {}, .handler = build  },
@@ -217,16 +221,38 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
 
     for (const auto& command : COMMANDS) {
         if (arg == command.name) {
-            const auto flags = std::span<const char* const>(argv + 2, static_cast<std::size_t>(argc - 2));
+            const auto raw_args = std::span<const char* const>(argv + 2, static_cast<std::size_t>(argc - 2));
 
-            for (const auto flag : flags) {
+            for (const auto flag : raw_args) {
                 if (std::string_view(flag) == "--help" || std::string_view(flag) == "-h") {
                     render_command_help(command);
                     return 0;
                 }
             }
 
-            return command.handler(flags);
+            auto opts = TranspileOptions {};
+            auto clean_args = std::vector<const char*>();
+            clean_args.reserve(raw_args.size());
+
+            for (const auto a : raw_args) {
+                const auto sv = std::string_view(a);
+                if (sv.starts_with("-std=")) {
+                    const auto val = sv.substr(5);
+                    if      (val == "c++14") opts.standard = CppStandard::Cpp14;
+                    else if (val == "c++17") opts.standard = CppStandard::Cpp17;
+                    else if (val == "c++20") opts.standard = CppStandard::Cpp20;
+                    else if (val == "c++23") opts.standard = CppStandard::Cpp23;
+                    else if (val == "c++26") opts.standard = CppStandard::Cpp26;
+                    else {
+                        std::println("zero: error: unknown standard '{}'", val);
+                        return 1;
+                    }
+                } else {
+                    clean_args.push_back(a);
+                }
+            }
+
+            return command.handler(clean_args, opts);
         }
     }
 
