@@ -19,6 +19,8 @@ export enum class CppStandard : std::uint8_t {
 
 export struct TranspileOptions final {
     CppStandard standard = CppStandard::Cpp20;
+    bool default_include_std = true;  // emit #include for all std headers (C++17 and below)
+    bool default_import_std  = true;  // emit import std; (C++20 and above)
 };
 
 export struct SourceFile final {

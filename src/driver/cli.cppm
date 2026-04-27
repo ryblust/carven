@@ -147,7 +147,9 @@ auto check([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] 
 }
 
 constexpr auto RUN_FLAGS = std::array {
-    Flag { .long_name = "-std=c++XX", .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26). Default: c++20" },
+    Flag { .long_name = "-std=c++XX",               .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26). Default: c++20" },
+    Flag { .long_name = "--no-default-include-std", .short_name = "", .description = "Disable auto #include of all std headers (C++17-)"        },
+    Flag { .long_name = "--no-default-import-std",  .short_name = "", .description = "Disable auto import std; (C++20+)"                        },
 };
 
 constexpr auto COMMANDS = std::array {
@@ -247,6 +249,10 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                         std::println("zero: error: unknown standard '{}'", val);
                         return 1;
                     }
+                } else if (sv == "--no-default-include-std") {
+                    opts.default_include_std = false;
+                } else if (sv == "--no-default-import-std") {
+                    opts.default_import_std = false;
                 } else {
                     clean_args.push_back(a);
                 }
