@@ -45,7 +45,6 @@ constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view
     if (zero_type == "f32")  return "float";
     if (zero_type == "f64")  return "double";
     if (zero_type == "char") return "char";
-    if (zero_type == "str")  return "std::string_view";
 
     return zero_type;
 }
@@ -94,6 +93,7 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
         result.append(map_type(source.substr(p.type.start, p.type.end - p.type.start)));
         result.push_back(' ');
         result.append(source.substr(p.name.start, p.name.end - p.name.start));
+
         if (i + 1 < item.params.size()) result.append(", ");
     }
 
@@ -118,73 +118,48 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
     return result.append("}\n");
 }
 
-constexpr auto CPP_HEADERS_BASE = std::array {
-    "algorithm", "array", "atomic", "bitset",
-    "chrono", "complex", "condition_variable",
-    "deque", "exception", "forward_list", "fstream", "functional", "future",
-    "initializer_list", "iomanip", "ios", "iosfwd", "iostream", "istream", "iterator",
-    "limits", "list", "locale",
-    "map", "memory", "mutex",
-    "new", "numeric",
-    "ostream",
-    "queue",
-    "random", "ratio", "regex",
-    "scoped_allocator", "set", "shared_mutex", "sstream", "stack", "stdexcept", "streambuf", "string", "strstream", "system_error",
-    "thread", "tuple", "type_traits", "typeindex", "typeinfo",
-    "unordered_map", "unordered_set", "utility",
-    "valarray", "variant", "vector",
-    "cassert", "cctype", "cerrno", "cfenv", "cfloat", "cinttypes", "climits", "clocale", "cmath",
-    "csetjmp", "csignal", "cstdarg", "cstddef", "cstdint", "cstdio", "cstdlib", "cstring", "ctime",
-    "cuchar", "cwchar", "cwctype",
+constexpr auto CPP_HEADERS_BASE = std::string_view {
+#include "headers/base.inc"
 };
 
-constexpr auto CPP_HEADERS_17 = std::array {
-    "any", "charconv", "execution", "filesystem", "memory_resource", "optional", "string_view", "variant",
+constexpr auto CPP_HEADERS_17 = std::string_view {
+    #include "headers/std17.inc"
 };
 
-constexpr auto CPP_HEADERS_20 = std::array {
-    "barrier", "bit", "compare", "concepts", "coroutine",
-    "format", "numbers", "ranges", "semaphore", "source_location",
-    "span", "spanstream", "stop_token", "syncstream", "version",
+constexpr auto CPP_HEADERS_20 = std::string_view {
+    #include "headers/std20.inc"
 };
 
-constexpr auto CPP_HEADERS_23 = std::array {
-    "expected", "flat_map", "flat_set", "generator", "mdspan", "print", "stacktrace", "stdfloat",
+constexpr auto CPP_HEADERS_23 = std::string_view {
+    #include "headers/std23.inc"
 };
 
-constexpr auto CPP_HEADERS_26 = std::array {
-    "hazard_pointer", "inplace_vector", "linalg", "rcu", "simd",
+constexpr auto CPP_HEADERS_26 = std::string_view {
+    #include "headers/std26.inc"
 };
 
 constexpr auto is_std_import(std::span<const TopLevelItem> items, std::string_view source) noexcept -> bool {
     for (const auto& item : items) {
         if (std::holds_alternative<ImportItem>(item)) {
-            const auto& imp = std::get<ImportItem>(item);
-            if (source.substr(imp.module_name.start, imp.module_name.end - imp.module_name.start) == "std")
+            if (const auto& mod = std::get<ImportItem>(item);
+                    source.substr(mod.module_name.start, mod.module_name.end - mod.module_name.start) == "std") {
                 return true;
+            }
         }
     }
+
     return false;
 }
 
 constexpr auto generate_include_preamble(CppStandard standard) noexcept -> std::string {
-    auto result = std::string();
-    for (const auto header : CPP_HEADERS_BASE)
-        result.append("#include <").append(header).append(">\n");
-    if (standard >= CppStandard::Cpp17)
-        for (const auto header : CPP_HEADERS_17)
-            result.append("#include <").append(header).append(">\n");
-    if (standard >= CppStandard::Cpp20)
-        for (const auto header : CPP_HEADERS_20)
-            result.append("#include <").append(header).append(">\n");
-    if (standard >= CppStandard::Cpp23)
-        for (const auto header : CPP_HEADERS_23)
-            result.append("#include <").append(header).append(">\n");
-    if (standard >= CppStandard::Cpp26)
-        for (const auto header : CPP_HEADERS_26)
-            result.append("#include <").append(header).append(">\n");
-    result.push_back('\n');
-    return result;
+    auto result = std::string(CPP_HEADERS_BASE);
+
+    if (standard >= CppStandard::Cpp17) result.append(CPP_HEADERS_17);
+    if (standard >= CppStandard::Cpp20) result.append(CPP_HEADERS_20);
+    if (standard >= CppStandard::Cpp23) result.append(CPP_HEADERS_23);
+    if (standard >= CppStandard::Cpp26) result.append(CPP_HEADERS_26);
+
+    return result.append("\n");
 }
 
 constexpr auto generate_import_preamble() noexcept -> std::string {
@@ -197,24 +172,29 @@ export constexpr auto generate(std::span<const TopLevelItem> items, std::string_
     auto result = std::string();
 
     if (opts.standard <= CppStandard::Cpp17) {
-        if (opts.default_include_std)
+        if (opts.default_include_std) {
             result.append(generate_include_preamble(opts.standard));
+        }
     } else {
-        if (opts.default_import_std && !is_std_import(items, source))
+        if (opts.default_import_std && !is_std_import(items, source)) {
             result.append(generate_import_preamble());
+        }
     }
 
     for (const auto& item : items) {
         std::visit([&result, source](const auto& concrete) {
             using T = std::decay_t<decltype(concrete)>;
-            if constexpr (std::is_same_v<T, ImportItem>)
+
+            if constexpr (std::is_same_v<T, ImportItem>) {
                 result.append(generate_import(concrete, source));
-            else if constexpr (std::is_same_v<T, EnumItem>)
+            } else if constexpr (std::is_same_v<T, EnumItem>) {
                 result.append(generate_enum(concrete, source));
-            else if constexpr (std::is_same_v<T, StructItem>)
+            } else if constexpr (std::is_same_v<T, StructItem>) {
                 result.append(generate_struct(concrete, source));
-            else if constexpr (std::is_same_v<T, FunctionItem>)
+            } else if constexpr (std::is_same_v<T, FunctionItem>) {
                 result.append(generate_function(concrete, source));
+            }
+
         }, item);
         result.push_back('\n');
     }
