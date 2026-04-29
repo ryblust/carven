@@ -5,8 +5,6 @@ import zero.frontend.token;
 import zero.frontend.parser;
 import std;
 
-namespace {
-
 constexpr auto format_tokens(std::span<const Token> tokens, std::string_view source) noexcept -> std::string {
     auto result = std::string();
 
@@ -173,8 +171,6 @@ struct Overloaded : Ts... {
 
 template<class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
-
-} // namespace
 
 export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, TranspileOptions opts) noexcept -> std::string {
     auto result = std::string();

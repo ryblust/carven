@@ -6,8 +6,6 @@ import zero.frontend.parser;
 import zero.common.source;
 import std;
 
-namespace {
-
 struct Flag final {
     std::string_view long_name;
     std::string_view short_name;
@@ -202,8 +200,6 @@ auto render_command_help(const Command& command) noexcept -> void {
         }
     }
 }
-
-} // namespace
 
 export auto __zero_main__(int argc, char** argv) noexcept -> int {
     if (argc == 1) {

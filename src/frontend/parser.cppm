@@ -4,8 +4,6 @@ import zero.common.source;
 import zero.frontend.token;
 import std;
 
-namespace {
-
 struct Block final {
     enum class Category : std::uint64_t {
         Import,
@@ -72,8 +70,6 @@ constexpr auto blockify(std::span<const Token> tokens, std::string_view source) 
     return blocks;
 }
 
-}
-
 export struct ImportItem final {
     Span module_name;
     std::vector<Span> using_decls;
@@ -106,10 +102,6 @@ export struct FunctionItem final {
     Span return_type;
     std::span<const Token> body_tokens;
 };
-
-export using TopLevelItem = std::variant<ImportItem, EnumItem, StructItem, FunctionItem>;
-
-namespace {
 
 constexpr auto parse_import_block(std::span<const Token> tokens) noexcept -> ImportItem {
     auto import_item = ImportItem {
@@ -220,6 +212,8 @@ constexpr auto parse_function_block(std::span<const Token> tokens) noexcept -> F
     };
 }
 
+export using TopLevelItem = std::variant<ImportItem, EnumItem, StructItem, FunctionItem>;
+
 constexpr auto parse_blocks(std::span<const Block> blocks) noexcept -> std::vector<TopLevelItem> {
     auto items = std::vector<TopLevelItem>(blocks.size());
 
@@ -236,8 +230,6 @@ constexpr auto parse_blocks(std::span<const Block> blocks) noexcept -> std::vect
     }
 
     return items;
-}
-
 }
 
 export constexpr auto parse(std::span<const Token> tokens, std::string_view source) noexcept -> std::vector<TopLevelItem> {
