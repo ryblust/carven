@@ -3,67 +3,62 @@ export module zero.frontend.token;
 import zero.common.source;
 import std;
 
-export enum class TokenKind : std::uint64_t {
+export enum class TokenKind : std::uint32_t {
     Identifier,
-
     NumberLiteral,
     CharLiteral,
     StringLiteral,
-
     Keyword,
 
-    Comma,      // ,
-    Dot,        // .
-    Colon,      // :
-    SemiColon,  // ;
-    LeftParen,  // (
-    RightParen, // )
-    LeftBracket,  // [
-    RightBracket, // ]
-    LeftBrace,    // {
-    RightBrace,   // }
+    Comma,                  // ,
+    Dot,                    // .
+    Colon,                  // :
+    SemiColon,              // ;
+    LeftParen,              // (
+    RightParen,             // )
+    LeftBracket,            // [
+    RightBracket,           // ]
+    LeftBrace,              // {
+    RightBrace,             // }
 
-    Plus,    // +
-    Minus,   // -
-    Star,    // *
-    Slash,   // /
-    Percent, // %
-    Bang,    // !
-    Equal,   // =
-    Less,    // <
-    Greater, // >
+    Plus,                   // +
+    Minus,                  // -
+    Star,                   // *
+    Slash,                  // /
+    Percent,                // %
+    Bang,                   // !
+    Equal,                  // =
+    Less,                   // <
+    Greater,                // >
+    PlusEqual,              // +=
+    MinusEqual,             // -=
+    StarEqual,              // *=
+    SlashEqual,             // /=
+    PercentEqual,           // %=
+    BangEqual,              // !=
+    EqualEqual,             // ==
+    LessEqual,              // <=
+    GreaterEqual,           // >=
+    PlusPlus,               // ++
+    MinusMinus,             // --
 
-    PlusEqual,    // +=
-    MinusEqual,   // -=
-    StarEqual,    // *=
-    SlashEqual,   // /=
-    PercentEqual, // %=
-    BangEqual,    // !=
-    EqualEqual,   // ==
-    LessEqual,    // <=
-    GreaterEqual, // >=
-    PlusPlus,     // ++
-    MinusMinus,   // --
+    Ampersand,              // &
+    Pipe,                   // |
+    Caret,                  // ^
+    Tilde,                  // ~
+    AmpersandAmpersand,     // &&
+    PipePipe,               // ||
+    LeftShift,              // <<
+    RightShift,             // >>
+    AmpersandEqual,         // &=
+    PipeEqual,              // |=
+    CaretEqual,             // ^=
+    LeftShiftEqual,         // <<=
+    RightShiftEqual,        // >>=
 
-    Ampersand, // &
-    Pipe,      // |
-    Caret,     // ^
-    Tilde,     // ~
-
-    AmpersandAmpersand, // &&
-    PipePipe,           // ||
-
-    LeftShift,        // <<
-    RightShift,       // >>
-    AmpersandEqual,   // &=
-    PipeEqual,        // |=
-    CaretEqual,       // ^=
-    LeftShiftEqual,   // <<=
-    RightShiftEqual,  // >>=
-
-    Arrow,     // ->
-    FatArrow,  // =>
-    ColonColon,// ::
+    Arrow,                  // ->
+    FatArrow,               // =>
+    ColonColon,             // ::
 
     End,
     Error,

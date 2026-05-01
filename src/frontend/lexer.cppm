@@ -1,6 +1,5 @@
 export module zero.frontend.lexer;
 
-import zero.common.source;
 import zero.frontend.token;
 import std;
 
@@ -32,10 +31,9 @@ public:
         if (eof()) return record_token(End);
 
         start_pos = current_pos;
-        start_line = current_line;
-        start_column = current_column;
 
-        const auto c = advance();
+        const auto c = current();
+        advance();
 
         if (is_ident(c)) return identifier_or_keyword();
         if (is_digit(c)) return number_literal();
@@ -77,31 +75,11 @@ public:
     }
 private:
     std::uint32_t current_pos = 0;
-    std::uint32_t current_line = 1;
-    std::uint32_t current_column = 1;
-
     std::uint32_t start_pos = 0;
-    std::uint32_t start_line = 1;
-    std::uint32_t start_column = 1;
-
     std::string_view source;
 
-    constexpr auto advance() noexcept -> char {
-        if (eof()) {
-            return '\0';
-        }
-
-        const auto c = current();
-        current_pos++;
-
-        if (c == '\n') {
-            current_column = 1;
-            current_line++;
-        } else {
-            current_column++;
-        }
-
-        return c;
+    constexpr auto advance() noexcept -> void {
+        if (!eof()) ++current_pos;
     }
 
     constexpr auto eof() const noexcept -> bool {
@@ -232,14 +210,15 @@ private:
         }
     }
 
-    constexpr auto record_token(TokenKind type) const noexcept -> Token {
-        return { type, Span { start_pos, current_pos } };
+    constexpr auto record_token(TokenKind kind) const noexcept -> Token {
+        return { kind,  { start_pos, current_pos } };
     }
 };
 
 export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
-    auto lexer  = Lexer(source);
+    auto lexer = Lexer(source);
     auto tokens = std::vector<Token>();
+    tokens.reserve(source.size() / 5);
 
     for (auto t = lexer.next(); t.kind != TokenKind::End; t = lexer.next()) {
         tokens.emplace_back(t);
