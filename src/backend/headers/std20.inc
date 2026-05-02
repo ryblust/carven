@@ -9,7 +9,6 @@
 "#include <semaphore>\n"
 "#include <source_location>\n"
 "#include <span>\n"
-"#include <spanstream>\n"
 "#include <stop_token>\n"
 "#include <syncstream>\n"
 "#include <version>\n"

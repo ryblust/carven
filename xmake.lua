@@ -8,6 +8,7 @@ target("zero")
     set_languages("c++latest")
     set_exceptions("no-cxx")
     set_warnings("allextra")
+    set_rundir("$(projectdir)")
 
     add_files("src/common/*.cppm")
     add_files("src/driver/*.cppm")

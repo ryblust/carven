@@ -15,11 +15,28 @@ export enum class CppStandard : std::uint8_t {
     Cpp26,
 };
 
-export struct TranspileOptions final {
-    CppStandard standard = CppStandard::Cpp20;
-    bool default_include_std = true;  // emit #include for all std headers (C++17 and below)
-    bool default_import_std  = true;  // emit import std; (C++20 and above)
-};
+export constexpr auto display_cpp_standard(CppStandard standard) noexcept -> std::string_view {
+    switch (standard) {
+        using enum CppStandard;
+        case Cpp14: return "c++14";
+        case Cpp17: return "c++17";
+        case Cpp20: return "c++20";
+        case Cpp23: return "c++23";
+        case Cpp26: return "c++26";
+    }
+
+    return "c++23";
+}
+
+export constexpr auto parse_cpp_standard(std::string_view value) noexcept -> std::optional<CppStandard> {
+    if (value == "c++14") return CppStandard::Cpp14;
+    if (value == "c++17") return CppStandard::Cpp17;
+    if (value == "c++20") return CppStandard::Cpp20;
+    if (value == "c++23") return CppStandard::Cpp23;
+    if (value == "c++26") return CppStandard::Cpp26;
+
+    return std::nullopt;
+}
 
 export struct SourceFile final {
     std::string_view filename;

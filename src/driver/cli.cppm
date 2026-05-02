@@ -1,9 +1,10 @@
 export module zero.driver.cli;
 
+import zero.common.io;
+import zero.common.source;
 import zero.driver.pipeline;
 import zero.frontend.lexer;
 import zero.frontend.parser;
-import zero.common.source;
 import std;
 
 struct Flag final {
@@ -16,7 +17,7 @@ struct Command final {
     std::string_view name;
     std::string_view description;
     std::span<const Flag> flags;
-    auto (*handler)(std::span<const char* const> args, TranspileOptions opts) -> int;
+    auto (*handler)(std::span<const char* const> args, const Driver& driver) -> int;
 };
 
 constexpr auto GLOBAL_FLAGS = std::array {
@@ -26,49 +27,33 @@ constexpr auto GLOBAL_FLAGS = std::array {
     Flag { .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
 };
 
-auto read_file(std::string_view path) noexcept -> std::optional<std::string> {
-    auto file = std::ifstream(std::string(path), std::ios::ate | std::ios::binary);
-    if (!file.is_open()) return std::nullopt;
-
-    const auto size = file.tellg();
-    file.seekg(0);
-
-    auto content = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(content.data(), size);
-
-    return content;
-}
-
-auto run(std::span<const char* const> args, TranspileOptions opts) -> int {
+auto run(std::span<const char* const> args, const Driver& driver) -> int {
     if (args.empty()) {
         std::println("zero run: error: no input file");
-        return 0;
+        return 1;
     }
 
     const auto filename = std::string_view(args[0]);
-    const auto content = read_file(filename);
+    const auto content = read_text_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero run: error: cannot read '{}'", filename);
-        return 0;
+        return 1;
     }
 
-    const auto output = transpile(*content, opts);
-    std::print("{}", output);
-
-    return 0;
+    return driver.run_single_file(SourceFile { .filename = filename, .content = *content });
 }
 
-auto tokens(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
+auto tokens(std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
     if (args.empty()) {
         std::println("zero tokens: error: no input file");
-        return 0;
+        return 1;
     }
 
     const auto filename = std::string_view(args[0]);
-    const auto content = read_file(filename);
+    const auto content = read_text_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero tokens: error: cannot read '{}'", filename);
-        return 0;
+        return 1;
     }
 
     const auto tokens = tokenize(*content);
@@ -79,24 +64,30 @@ auto tokens(std::span<const char* const> args, [[maybe_unused]] TranspileOptions
     return 0;
 }
 
-auto ast(std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
+auto ast(std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
     if (args.empty()) {
         std::println("zero ast: error: no input file");
-        return 0;
+        return 1;
     }
 
     const auto filename = std::string_view(args[0]);
-    const auto content = read_file(filename);
+    const auto content = read_text_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero ast: error: cannot read '{}'", filename);
-        return 0;
+        return 1;
     }
 
     const auto source = SourceFile { .filename = filename, .content = *content };
     const auto tokens = tokenize(source.content);
-    const auto items  = parse(tokens, source.content);
+    const auto parse_result = parse(tokens, source.content);
+    if (parse_result.has_errors()) {
+        for (const auto& error : parse_result.errors) {
+            std::println("{}", format_parse_error(error));
+        }
+        return 1;
+    }
 
-    for (const auto& item : items) {
+    for (const auto& item : parse_result.items) {
         std::visit([&]<typename T>(const T& it) {
             if constexpr (std::is_same_v<T, ImportItem>) {
                 std::println("ImportItem");
@@ -138,20 +129,41 @@ auto ast(std::span<const char* const> args, [[maybe_unused]] TranspileOptions op
     return 0;
 }
 
-auto build([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
+auto build([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
     std::println("zero build: not yet implemented");
     return 0;
 }
 
-auto check([[maybe_unused]] std::span<const char* const> args, [[maybe_unused]] TranspileOptions opts) -> int {
-    std::println("zero check: not yet implemented");
+auto check(std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
+    if (args.empty()) {
+        std::println("zero check: error: no input file");
+        return 1;
+    }
+
+    const auto filename = std::string_view(args[0]);
+    const auto content = read_text_file(std::filesystem::path(filename));
+    if (!content) {
+        std::println("zero check: error: cannot read '{}'", filename);
+        return 1;
+    }
+
+    const auto tokens = tokenize(*content);
+    const auto parse_result = parse(tokens, *content);
+    if (parse_result.has_errors()) {
+        for (const auto& error : parse_result.errors) {
+            std::println("{}", format_parse_error(error));
+        }
+        return 1;
+    }
+
+    std::println("zero check: ok");
     return 0;
 }
 
 constexpr auto RUN_FLAGS = std::array {
-    Flag { .long_name = "-std=c++XX",               .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26). Default: c++20" },
-    Flag { .long_name = "--no-default-include-std", .short_name = "", .description = "Disable auto #include of all std headers (C++17-)"        },
-    Flag { .long_name = "--no-default-import-std",  .short_name = "", .description = "Disable auto import std; (C++20+)"                        },
+    Flag { .long_name = "-std=c++XX",               .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)" },
+    Flag { .long_name = "--output-dir",             .short_name = "", .description = "Build cache output directory"             },
+    Flag { .long_name = "--no-default-include-std", .short_name = "", .description = "Disable auto #include of std headers"     },
 };
 
 constexpr auto COMMANDS = std::array {
@@ -164,9 +176,9 @@ constexpr auto COMMANDS = std::array {
 
 auto render_flag(Flag flag) noexcept -> void {
     if (flag.short_name.empty()) {
-        std::println("    {:<18}{}", flag.long_name, flag.description);
+        std::println("    {:<28}{}", flag.long_name, flag.description);
     } else {
-        std::println("    {:<12}{:<6}{}", flag.long_name, flag.short_name, flag.description);
+        std::println("    {:<18}{:<10}{}", flag.long_name, flag.short_name, flag.description);
     }
 }
 
@@ -231,33 +243,39 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                 }
             }
 
-            auto opts = TranspileOptions {};
+            auto driver = Driver {};
             auto clean_args = std::vector<const char*>();
             clean_args.reserve(raw_args.size());
 
-            for (const auto a : raw_args) {
-                const auto sv = std::string_view(a);
-                if (sv.starts_with("-std=")) {
+            for (auto i = 0uz; i < raw_args.size(); ++i) {
+                const auto sv = std::string_view(raw_args[i]);
+                if (sv == "-std") {
+                    std::println("zero: error: expected '-std=c++XX'");
+                    return 1;
+                } else if (sv.starts_with("-std=")) {
                     const auto val = sv.substr(5);
-                    if      (val == "c++14") opts.standard = CppStandard::Cpp14;
-                    else if (val == "c++17") opts.standard = CppStandard::Cpp17;
-                    else if (val == "c++20") opts.standard = CppStandard::Cpp20;
-                    else if (val == "c++23") opts.standard = CppStandard::Cpp23;
-                    else if (val == "c++26") opts.standard = CppStandard::Cpp26;
-                    else {
+                    const auto standard = parse_cpp_standard(val);
+                    if (!standard) {
                         std::println("zero: error: unknown standard '{}'", val);
-                        return 0;
+                        return 1;
                     }
+                    driver.standard = *standard;
+                } else if (sv == "--output-dir") {
+                    if (i + 1 >= raw_args.size()) {
+                        std::println("zero: error: expected value after --output-dir");
+                        return 1;
+                    }
+                    driver.output_dir = raw_args[++i];
+                } else if (sv.starts_with("--output-dir=")) {
+                    driver.output_dir = sv.substr(13);
                 } else if (sv == "--no-default-include-std") {
-                    opts.default_include_std = false;
-                } else if (sv == "--no-default-import-std") {
-                    opts.default_import_std = false;
+                    driver.default_include_std = false;
                 } else {
-                    clean_args.push_back(a);
+                    clean_args.push_back(raw_args[i]);
                 }
             }
 
-            return command.handler(clean_args, opts);
+            return command.handler(clean_args, driver);
         }
     }
 

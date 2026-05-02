@@ -1,34 +1,8 @@
 export module zero.backend.codegen;
 
 import zero.common.source;
-import zero.frontend.token;
 import zero.frontend.parser;
 import std;
-
-constexpr auto format_tokens(std::span<const Token> tokens, std::string_view source) noexcept -> std::string {
-    auto result = std::string();
-
-    for (auto i = 0uz; i < tokens.size(); ++i) {
-        if (i > 0) {
-            const auto prev = tokens[i - 1].kind;
-            const auto curr = tokens[i].kind;
-            if (curr != TokenKind::SemiColon
-                && curr != TokenKind::Comma
-                && curr != TokenKind::LeftParen
-                && curr != TokenKind::RightParen
-                && curr != TokenKind::RightBrace
-                && curr != TokenKind::RightBracket
-                && prev != TokenKind::LeftParen
-                && prev != TokenKind::LeftBrace
-                && prev != TokenKind::LeftBracket) {
-                result.push_back(' ');
-            }
-        }
-        result.append(text_at(source, tokens[i].span));
-    }
-
-    return result;
-}
 
 constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view {
     if (zero_type == "i8")   return "std::int8_t";
@@ -105,10 +79,12 @@ constexpr auto generate_function(const FunctionItem& item, std::string_view sour
         result.append(" -> ").append(map_type(text_at(source, item.return_type)));
     }
 
-    if (item.body_tokens.size() > 2) {
-        const auto body_inner = item.body_tokens.subspan(1, item.body_tokens.size() - 2);
-        result.append(" {\n    ").append(format_tokens(body_inner, source));
-        result.push_back('\n');
+    const auto body = text_at(source, item.body_span);
+    if (!body.empty()) {
+        result.append(" {").append(body);
+        if (!body.ends_with('\n')) {
+            result.push_back('\n');
+        }
     } else {
         result.append(" {\n");
     }
@@ -136,19 +112,6 @@ constexpr auto CPP_HEADERS_26 = std::string_view {
     #include "headers/std26.inc"
 };
 
-constexpr auto is_std_import(std::span<const TopLevelItem> items, std::string_view source) noexcept -> bool {
-    for (const auto& item : items) {
-        if (std::holds_alternative<ImportItem>(item)) {
-            if (const auto& mod = std::get<ImportItem>(item);
-                    text_at(source, mod.module_name) == "std") {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 constexpr auto generate_include_preamble(CppStandard standard) noexcept -> std::string {
     auto result = std::string(CPP_HEADERS_BASE);
 
@@ -160,10 +123,6 @@ constexpr auto generate_include_preamble(CppStandard standard) noexcept -> std::
     return result.append("\n");
 }
 
-constexpr auto generate_import_preamble() noexcept -> std::string {
-    return std::string("import std;\n\n");
-}
-
 template<class... Ts>
 struct Overloaded : Ts... {
     using Ts::operator()...;
@@ -172,24 +131,20 @@ struct Overloaded : Ts... {
 template<class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
-export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, TranspileOptions opts) noexcept -> std::string {
+export constexpr auto generate(
+    std::span<const TopLevelItem> items, std::string_view source, CppStandard standard, bool default_include_std
+) noexcept -> std::string {
     auto result = std::string();
 
-    if (opts.standard <= CppStandard::Cpp17) {
-        if (opts.default_include_std) {
-            result.append(generate_include_preamble(opts.standard));
-        }
-    } else {
-        if (opts.default_import_std && !is_std_import(items, source)) {
-            result.append(generate_import_preamble());
-        }
+    if (default_include_std) {
+        result.append(generate_include_preamble(standard));
     }
 
     for (const auto& item : items) {
         std::visit(Overloaded {
-            [&](const   ImportItem& it) { result.append(generate_import  (it, source)); },
-            [&](const     EnumItem& it) { result.append(generate_enum    (it, source)); },
-            [&](const   StructItem& it) { result.append(generate_struct  (it, source)); },
+            [&](const ImportItem&   it) { result.append(generate_import  (it, source)); },
+            [&](const EnumItem&     it) { result.append(generate_enum    (it, source)); },
+            [&](const StructItem&   it) { result.append(generate_struct  (it, source)); },
             [&](const FunctionItem& it) { result.append(generate_function(it, source)); },
         }, item);
         result.push_back('\n');
