@@ -6,10 +6,12 @@ A programming language that transpiles `.zero` source files to standard C++ code
 
 ## C++ Coding Style
 
-### Naming Convention
+### Naming
 - Functions: `snake_case`
 - Types: `PascalCase`
+- Fields: `snake_case`
 - Enums: `PascalCase`
+- Enum Value: `PascalCase`
 - Modules: `zero.<layer>.<name>`
 
 ### Basic
@@ -23,12 +25,13 @@ A programming language that transpiles `.zero` source files to standard C++ code
 - Use braces `{}` when `if`/`else`/`for`/`while` body is on its own line; omit braces for single-line e.g. `if (x) return true;`
 - Prefer non-owning view types (std::string_view, std::span) for read-only or borrowed function parameters
 - Use `std::string_view` instead of `const std::string&`
-- Use `std::span` instead of `const std::vector&`, `std::array` and C-Style array
+- Use `std::span` instead of `const std::vector&`, `std::array` and C-style array
 - Use pass-by-value for trivial types instead of pass-by-const-reference e.g. `auto foo(Token)` instead of `auto foo(const Token&)`
 - Only comment non-obvious logic, intentional design decisions, and hidden constraints
 - A magic number or a workaround for a specific compiler bug deserves a brief comment
 
-## Build System
+## Building
+Targeting on C++26 and build via xmake
 ```shell
 xmake build              # Build the zero transpiler
 xmake run zero [args...] # Run the executable and pass the args
