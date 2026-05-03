@@ -112,13 +112,13 @@ constexpr auto CPP_HEADERS_26 = std::string_view {
     #include "headers/std26.inc"
 };
 
-constexpr auto generate_include_preamble(CppStandard standard) noexcept -> std::string {
+constexpr auto generate_include_preamble(std::uint8_t standard) noexcept -> std::string {
     auto result = std::string(CPP_HEADERS_BASE);
 
-    if (standard >= CppStandard::Cpp17) result.append(CPP_HEADERS_17);
-    if (standard >= CppStandard::Cpp20) result.append(CPP_HEADERS_20);
-    if (standard >= CppStandard::Cpp23) result.append(CPP_HEADERS_23);
-    if (standard >= CppStandard::Cpp26) result.append(CPP_HEADERS_26);
+    if (standard >= 17) result.append(CPP_HEADERS_17);
+    if (standard >= 20) result.append(CPP_HEADERS_20);
+    if (standard >= 23) result.append(CPP_HEADERS_23);
+    if (standard >= 26) result.append(CPP_HEADERS_26);
 
     return result.append("\n");
 }
@@ -132,7 +132,7 @@ template<class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
 export constexpr auto generate(
-    std::span<const TopLevelItem> items, std::string_view source, CppStandard standard, bool default_include_std
+    std::span<const TopLevelItem> items, std::string_view source, std::uint8_t standard, bool default_include_std
 ) noexcept -> std::string {
     auto result = std::string();
 

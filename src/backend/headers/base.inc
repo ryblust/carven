@@ -60,7 +60,6 @@
 "#include <stdexcept>\n"
 "#include <streambuf>\n"
 "#include <string>\n"
-"#include <strstream>\n"
 "#include <system_error>\n"
 "#include <thread>\n"
 "#include <tuple>\n"
@@ -71,5 +70,4 @@
 "#include <unordered_set>\n"
 "#include <utility>\n"
 "#include <valarray>\n"
-"#include <variant>\n"
 "#include <vector>\n"

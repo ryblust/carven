@@ -6,7 +6,6 @@ import zero.common.source;
 import zero.frontend.lexer;
 import zero.frontend.parser;
 import zero.backend.codegen;
-
 import std;
 
 export struct TranspileResult final {
@@ -19,10 +18,14 @@ export struct TranspileResult final {
 };
 
 export struct Driver final {
-    CppStandard standard = CppStandard::Cpp23;
+    std::uint8_t language_standard = 23;
     bool default_include_std = true;
     std::filesystem::path output_dir = ".zero/build";
+#if defined(_WIN32)
+    std::string compiler = "clang-cl";
+#else
     std::string compiler = "c++";
+#endif
 
     auto transpile(SourceFile file) const noexcept -> TranspileResult;
     auto run_single_file(SourceFile file) const noexcept -> int;
@@ -56,13 +59,11 @@ auto short_hash(std::string_view value) noexcept -> std::string {
 }
 
 auto stable_source_path(std::string_view filename) noexcept -> std::filesystem::path {
-    auto error = std::error_code {};
+    auto error = std::error_code();
     auto path = std::filesystem::weakly_canonical(std::filesystem::path(filename), error);
 
     if (!error) return path;
-
     path = std::filesystem::absolute(std::filesystem::path(filename), error);
-
     if (!error) return path;
 
     return std::filesystem::path(filename);
@@ -90,7 +91,7 @@ auto build_artifacts(std::string_view filename, const std::filesystem::path& out
 }
 
 auto needs_compile(const std::filesystem::path& cpp_path, const std::filesystem::path& exe_path) noexcept -> bool {
-    auto error = std::error_code {};
+    auto error = std::error_code();
 
     if (!std::filesystem::exists(exe_path, error)) {
         return true;
@@ -119,6 +120,7 @@ auto compiler_from_environment(std::string_view fallback) noexcept -> std::strin
     return std::string(fallback);
 }
 
+
 constexpr auto display_command(std::span<const std::string> args) noexcept -> std::string {
     auto result = std::string();
 
@@ -145,7 +147,7 @@ auto Driver::transpile(SourceFile file) const noexcept -> TranspileResult {
     }
 
     return {
-        .output = generate(parse_result.items, file.content, standard, default_include_std),
+        .output = generate(parse_result.items, file.content, language_standard, default_include_std),
         .errors = {}
     };
 }
@@ -174,13 +176,21 @@ auto Driver::run_single_file(SourceFile file) const noexcept -> int {
 
     if (needs_compile(artifacts.cpp_path, artifacts.exe_path)) {
         const auto selected_compiler = compiler_from_environment(compiler);
-        const auto compile_args = std::vector<std::string> {
+        const auto is_clang_cl = selected_compiler.contains("clang-cl");
+        auto compile_args = std::vector<std::string> {
             selected_compiler,
-            std::format("-std={}", display_cpp_standard(standard)),
-            artifacts.cpp_path.string(),
-            "-o",
-            artifacts.exe_path.string()
         };
+
+        if (is_clang_cl) {
+            compile_args.emplace_back("-Xclang");
+            compile_args.emplace_back(std::format("-std=c++{}", language_standard));
+        } else {
+            compile_args.emplace_back(std::format("-std=c++{}", language_standard));
+        }
+
+        compile_args.emplace_back(artifacts.cpp_path.string());
+        compile_args.emplace_back("-o");
+        compile_args.emplace_back(artifacts.exe_path.string());
 
         const auto compile_result = run_process(compile_args);
         if (!compile_result.started) {

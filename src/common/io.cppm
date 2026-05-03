@@ -17,7 +17,7 @@ export auto read_text_file(const std::filesystem::path& path) noexcept -> std::o
 }
 
 export auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool {
-    auto error = std::error_code {};
+    auto error = std::error_code();
     std::filesystem::create_directories(dir, error);
 
     return !error;

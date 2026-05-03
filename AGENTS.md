@@ -47,11 +47,18 @@ Layer responsibilities:
 - Use pass-by-value for trivial types instead of pass-by-const-reference e.g. `auto foo(Token)` instead of `auto foo(const Token&)`
 - Only comment non-obvious logic, intentional design decisions, and hidden constraints
 - A magic number or a workaround for a specific compiler bug deserves a brief comment
+- Use `Type()` for default initialization e.g. `auto x = Span();`, not `auto x = Span{};`. Use `Type{ .field = val }` only for aggregate initialization with designated initializers
 
 ## Building
 
-The `zero` transpiler itself targets C++26 and builds via xmake.
+The `zero` transpiler itself targets C++26 and builds via xmake. Configure the toolchain if .xmake directory does not exist
 ```shell
+# Windows
+xmake f --toolchain=clang-cl -m debug
+
+# macOS
+xmake f --toolchain=llvm --sdk=/opt/hombrew/Cellar/llvm/22.1.4 -m debug
+
 xmake build              # Build the zero transpiler
 xmake run zero [args...] # Run the executable and pass the args
 ```

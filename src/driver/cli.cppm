@@ -243,7 +243,7 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                 }
             }
 
-            auto driver = Driver {};
+            auto driver = Driver();
             auto clean_args = std::vector<const char*>();
             clean_args.reserve(raw_args.size());
 
@@ -254,12 +254,15 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                     return 1;
                 } else if (sv.starts_with("-std=")) {
                     const auto val = sv.substr(5);
-                    const auto standard = parse_cpp_standard(val);
-                    if (!standard) {
+                    if (val == "c++14")      driver.language_standard = 14;
+                    else if (val == "c++17") driver.language_standard = 17;
+                    else if (val == "c++20") driver.language_standard = 20;
+                    else if (val == "c++23") driver.language_standard = 23;
+                    else if (val == "c++26") driver.language_standard = 26;
+                    else {
                         std::println("zero: error: unknown standard '{}'", val);
                         return 1;
                     }
-                    driver.standard = *standard;
                 } else if (sv == "--output-dir") {
                     if (i + 1 >= raw_args.size()) {
                         std::println("zero: error: expected value after --output-dir");

@@ -410,7 +410,7 @@ private:
             return std::nullopt;
         }
 
-        auto return_type = Span {};
+        auto return_type = Span();
         if (match(TokenKind::Arrow)) {
             const auto type = expect_type("expected function return type");
             if (!type) {

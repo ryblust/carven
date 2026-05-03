@@ -27,11 +27,9 @@ public:
         using enum TokenKind;
 
         skip_meaningless();
-
         if (eof()) return record_token(End);
 
         start_pos = current_pos;
-
         const auto c = current();
         advance();
 
