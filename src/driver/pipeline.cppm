@@ -1,6 +1,6 @@
 export module zero.driver.pipeline;
 
-import zero.common.io;
+import zero.common.file;
 import zero.common.process;
 import zero.common.source;
 import zero.frontend.lexer;

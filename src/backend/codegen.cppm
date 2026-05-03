@@ -16,7 +16,8 @@ constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view
     if (zero_type == "bool") return "bool";
     if (zero_type == "f32")  return "float";
     if (zero_type == "f64")  return "double";
-    if (zero_type == "char") return "char";
+    if (zero_type == "char")  return "char";
+    if (zero_type == "usize") return "std::size_t";
 
     return zero_type;
 }

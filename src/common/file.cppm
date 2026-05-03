@@ -1,16 +1,17 @@
-export module zero.common.io;
+export module zero.common.file;
 
 import std;
 
 export auto read_text_file(const std::filesystem::path& path) noexcept -> std::optional<std::string> {
-    auto file = std::ifstream(path, std::ios::ate | std::ios::binary);
+    auto error = std::error_code();
+    const auto size = std::filesystem::file_size(path, error);
+    if (error) return std::nullopt;
+
+    auto file = std::ifstream(path, std::ios::binary);
     if (!file.is_open()) return std::nullopt;
 
-    const auto size = file.tellg();
-    file.seekg(0);
-
     auto content = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(content.data(), size);
+    file.read(content.data(), static_cast<std::streamsize>(size));
     if (!file.good()) return std::nullopt;
 
     return content;

@@ -1,6 +1,6 @@
 export module zero.driver.cli;
 
-import zero.common.io;
+import zero.common.file;
 import zero.common.source;
 import zero.driver.pipeline;
 import zero.frontend.lexer;
@@ -40,7 +40,7 @@ auto run(std::span<const char* const> args, const Driver& driver) -> int {
         return 1;
     }
 
-    return driver.run_single_file(SourceFile { .filename = filename, .content = *content });
+    return driver.run_single_file(SourceFile{ .filename = filename, .content = *content });
 }
 
 auto tokens(std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
@@ -77,7 +77,7 @@ auto ast(std::span<const char* const> args, [[maybe_unused]] const Driver& drive
         return 1;
     }
 
-    const auto source = SourceFile { .filename = filename, .content = *content };
+    const auto source = SourceFile{ .filename = filename, .content = *content };
     const auto tokens = tokenize(source.content);
     const auto parse_result = parse(tokens, source.content);
     if (parse_result.has_errors()) {

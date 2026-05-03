@@ -1,3 +1,7 @@
+0. refactor driver layer
+
+    Extract logic from pipeline and cli
+
 1. `zero run` single file
 
     implement @src/driver/pipeline.cppm: `Driver::run_single_file`

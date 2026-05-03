@@ -108,6 +108,7 @@ template<> struct std::formatter<Token> final {
             case MinusEqual:            return "MinusEqual";
             case StarEqual:             return "StarEqual";
             case SlashEqual:            return "SlashEqual";
+            case PercentEqual:          return "PercentEqual";
             case BangEqual:             return "BangEqual";
             case EqualEqual:            return "EqualEqual";
             case LessEqual:             return "LessEqual";
@@ -158,6 +159,8 @@ template<> struct std::range_formatter<Token> final {
     }
 
     constexpr auto format(const auto& tokens, auto&& context) const noexcept {
+        if (tokens.empty()) return context.out();
+
         for (auto i = 0uz; i < tokens.size() - 1; ++i) {
             std::format_to(context.out(), "{}\n", tokens[i]);
         }
