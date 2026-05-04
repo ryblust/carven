@@ -27,7 +27,7 @@ public:
         using enum TokenKind;
 
         skip_meaningless();
-        if (eof()) return record_token(End);
+        if (eof()) return token(End);
 
         start_pos = current_pos;
         const auto c = current();
@@ -37,38 +37,38 @@ public:
         if (is_digit(c)) return number_literal();
 
         switch (c) {
-            case '(': return record_token(LeftParen);
-            case ')': return record_token(RightParen);
-            case '[': return record_token(LeftBracket);
-            case ']': return record_token(RightBracket);
-            case '{': return record_token(LeftBrace);
-            case '}': return record_token(RightBrace);
-            case ',': return record_token(Comma);
-            case '.': return record_token(Dot);
-            case ';': return record_token(SemiColon);
-            case ':': return record_token(match(':') ? ColonColon : Colon);
+            case '(': return token(LeftParen);
+            case ')': return token(RightParen);
+            case '[': return token(LeftBracket);
+            case ']': return token(RightBracket);
+            case '{': return token(LeftBrace);
+            case '}': return token(RightBrace);
+            case ',': return token(Comma);
+            case '.': return token(Dot);
+            case ';': return token(SemiColon);
+            case ':': return token(match(':') ? ColonColon : Colon);
 
-            case '+': return record_token(match('=') ?  PlusEqual : match('+') ? PlusPlus : Plus);
-            case '-': return record_token(match('=') ? MinusEqual : match('-') ? MinusMinus : match('>') ? Arrow : Minus);
-            case '*': return record_token(match('=') ?  StarEqual :  Star);
-            case '/': return record_token(match('=') ? SlashEqual : Slash);
-            case '%': return record_token(match('=') ? PercentEqual : Percent);
+            case '+': return token(match('=') ?    PlusEqual : match('+') ?   PlusPlus : Plus);
+            case '-': return token(match('=') ?   MinusEqual : match('-') ? MinusMinus : match('>') ? Arrow : Minus);
+            case '*': return token(match('=') ?    StarEqual :    Star);
+            case '/': return token(match('=') ?   SlashEqual :   Slash);
+            case '%': return token(match('=') ? PercentEqual : Percent);
 
-            case '!': return record_token(match('=') ?  BangEqual : Bang);
-            case '=': return record_token(match('=') ? EqualEqual : match('>') ? FatArrow : Equal);
+            case '!': return token(match('=') ?  BangEqual : Bang);
+            case '=': return token(match('=') ? EqualEqual : match('>') ? FatArrow : Equal);
 
-            case '<': return record_token(match('<') ? match('=') ?  LeftShiftEqual :  LeftShift : match('=') ?    LessEqual :    Less);
-            case '>': return record_token(match('>') ? match('=') ? RightShiftEqual : RightShift : match('=') ? GreaterEqual : Greater);
+            case '<': return token(match('<') ? match('=') ?  LeftShiftEqual :  LeftShift : match('=') ?    LessEqual :    Less);
+            case '>': return token(match('>') ? match('=') ? RightShiftEqual : RightShift : match('=') ? GreaterEqual : Greater);
 
-            case '&': return record_token(match('&') ? AmpersandAmpersand : match('=') ? AmpersandEqual : Ampersand);
-            case '|': return record_token(match('|') ? PipePipe : match('=') ? PipeEqual : Pipe);
-            case '^': return record_token(match('=') ? CaretEqual : Caret);
-            case '~': return record_token(Tilde);
+            case '&': return token(match('&') ? AmpersandAmpersand : match('=') ? AmpersandEqual : Ampersand);
+            case '|': return token(match('|') ? PipePipe : match('=') ? PipeEqual : Pipe);
+            case '^': return token(match('=') ? CaretEqual : Caret);
+            case '~': return token(Tilde);
 
             case '"':  return string_literal();
             case '\'': return char_literal();
 
-            default:  return record_token(Unknown);
+            default:  return token(Unknown);
         }
     }
 private:
@@ -130,10 +130,10 @@ private:
         }
 
         if (std::ranges::contains(keywords, source.substr(start_pos, current_pos - start_pos))) {
-            return record_token(TokenKind::Keyword);
+            return token(TokenKind::Keyword);
         }
 
-        return record_token(TokenKind::Identifier);
+        return token(TokenKind::Identifier);
     }
 
     constexpr auto number_literal() noexcept -> Token {
@@ -148,7 +148,7 @@ private:
             }
         }
 
-        return record_token(TokenKind::NumberLiteral);
+        return token(TokenKind::NumberLiteral);
     }
 
     constexpr auto char_literal() noexcept -> Token {
@@ -163,7 +163,7 @@ private:
             advance();
         }
 
-        return record_token(TokenKind::CharLiteral);
+        return token(TokenKind::CharLiteral);
     }
 
     constexpr auto string_literal() noexcept -> Token {
@@ -178,7 +178,7 @@ private:
             advance();
         }
 
-        return record_token(TokenKind::StringLiteral);
+        return token(TokenKind::StringLiteral);
     }
 
     constexpr auto skip_meaningless() noexcept -> void {
@@ -208,7 +208,7 @@ private:
         }
     }
 
-    constexpr auto record_token(TokenKind kind) const noexcept -> Token {
+    constexpr auto token(TokenKind kind) const noexcept -> Token {
         return { kind,  { start_pos, current_pos } };
     }
 };

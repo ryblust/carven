@@ -33,7 +33,9 @@ xmake run zero check <file>    # Parse without codegen
 xmake clean
 ```
 
-Run flags: `-std=c++xx` (14/17/20/23/26), `--output-dir <path>`, `--no-default-include-std`
+Run flags: `-std=c++<value>` (14/17/20/23/26), `--output-dir=<path>`, `--no-default-include-std`
+
+Build config in `xmake.lua`: RTTI disabled (`-fno-rtti` / `/GR-`), exceptions disabled (`no-cxx`), all-extra warnings, C++latest, default mode `debug`.
 
 ## Architecture
 
@@ -41,7 +43,12 @@ Layer responsibilities (dependency flows downward):
 - `zero.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
 - `zero.frontend.*` — lexer (`token.cppm`), parser (`parser.cppm`), token types. No backend/driver imports
 - `zero.backend.*` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `zero.driver.*` — orchestration: transpile/build/run pipeline, CLI dispatch
+- `zero.driver.*` — orchestration, split into 4 modules:
+  - `toolchain` — C++ build toolchain: artifact paths, compiler detection, compilation
+  - `pipeline` — transpile core: Driver config, `transpile()`, `run_single_file()`
+  - `handlers` — command implementations: `run`/`tokens`/`ast`/`check`/`build`
+  - `cli` — entry point: argument parsing, flag extraction, help rendering
+  - Dependency chain: `cli → handlers → pipeline → toolchain`
 
 ### Key Design Decisions
 
@@ -71,6 +78,13 @@ Layer responsibilities (dependency flows downward):
 - Prefer `std::ranges`/`std::views` over `<algorithm>`; explicit loops OK for lexing/parsing state machines or low-level
 - Braces `{}` when body is on its own line; omit for single-line (e.g., `if (x) return true;`)
 - `Type()` for default init, `Type{ .field = val }` for aggregate init with designated initializers
+- Use `if`-with-initializer to limit variable scope and unwrap optionals:
+  `if (const auto content = read_file(path); content) { ... } else { ... }`
+- Don't bind intermediate variables for single-use values; pass them directly
+- Range-for directly on function return temporaries: `for (const auto token : tokenize(source))`
+- Don't wrap `const char*`/`string_view` in `std::filesystem::path` for function params; the implicit conversion suffices
+- Omit type name in aggregate init when context provides it: `run_single_file({ .filename = ..., .content = ... })`
+- Separate logical blocks within a function with a blank line
 
 ## Conventional Commits
 
@@ -82,5 +96,5 @@ Format: `<type>(<scope>, ...): <description>`
 
 - Don't add broad abstractions before a second use case
 - Don't use shell-string command execution; use argv-based process helpers
-- Don't put transpilation/compile/run logic in CLI handlers
+- Don't put transpilation/compile/run logic in CLI handlers or the `cli` module; that belongs in `pipeline`
 - Don't introduce statement/expression parsing unless explicitly asked
