@@ -169,7 +169,7 @@ auto Driver::run_single_file(SourceFile file) const noexcept -> int {
 
     const auto artifacts = build_artifacts(file.filename, output_dir);
 
-    if (!write_text_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
+    if (!write_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
         std::println("zero run: error: cannot write '{}'", artifacts.cpp_path.string());
         return 1;
     }

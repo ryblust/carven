@@ -10,13 +10,16 @@ Zero is a programming language that transpiles `.zero` source files to standard 
 
 ```shell
 # Configure (Windows, first time or after clean)
-xmake f --toolchain=clang-cl -m debug
+xmake f --toolchain=clang-cl
 
 # Configure (macOS)
-xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4 -m debug
+xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4
 
-# Build the transpiler
+# Build the project
 xmake build
+
+# Rebuild the project
+xmake build -r
 
 # Run a .zero file (transpile + compile + execute)
 xmake run zero run tests/helloworld.zero
@@ -25,9 +28,12 @@ xmake run zero run tests/helloworld.zero
 xmake run zero tokens <file>   # Lex and dump token stream
 xmake run zero ast <file>      # Parse and dump AST
 xmake run zero check <file>    # Parse without codegen
+
+# Clean the build artifacts
+xmake clean
 ```
 
-Run flags: `-std=c++XX` (14/17/20/23/26), `--output-dir <path>`, `--no-default-include-std`
+Run flags: `-std=c++xx` (14/17/20/23/26), `--output-dir <path>`, `--no-default-include-std`
 
 ## Architecture
 
@@ -68,7 +74,7 @@ Layer responsibilities (dependency flows downward):
 
 ## Conventional Commits
 
-Format: `<type>(<scope>): <description>`
+Format: `<type>(<scope>, ...): <description>`
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`
 - Scopes: match `src/` subdirectories or feature names
 

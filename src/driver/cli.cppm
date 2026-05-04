@@ -32,15 +32,13 @@ auto run(std::span<const char* const> args, const Driver& driver) -> int {
         std::println("zero run: error: no input file");
         return 1;
     }
-
     const auto filename = std::string_view(args[0]);
-    const auto content = read_text_file(std::filesystem::path(filename));
+    const auto content = read_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero run: error: cannot read '{}'", filename);
         return 1;
     }
-
-    return driver.run_single_file(SourceFile{ .filename = filename, .content = *content });
+    return driver.run_single_file(SourceFile{ .filename = std::string(filename), .content = std::move(*content) });
 }
 
 auto tokens(std::span<const char* const> args, [[maybe_unused]] const Driver& driver) -> int {
@@ -48,9 +46,8 @@ auto tokens(std::span<const char* const> args, [[maybe_unused]] const Driver& dr
         std::println("zero tokens: error: no input file");
         return 1;
     }
-
     const auto filename = std::string_view(args[0]);
-    const auto content = read_text_file(std::filesystem::path(filename));
+    const auto content = read_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero tokens: error: cannot read '{}'", filename);
         return 1;
@@ -69,15 +66,14 @@ auto ast(std::span<const char* const> args, [[maybe_unused]] const Driver& drive
         std::println("zero ast: error: no input file");
         return 1;
     }
-
     const auto filename = std::string_view(args[0]);
-    const auto content = read_text_file(std::filesystem::path(filename));
+    const auto content = read_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero ast: error: cannot read '{}'", filename);
         return 1;
     }
 
-    const auto source = SourceFile{ .filename = filename, .content = *content };
+    const auto source = SourceFile{ .filename = std::string(filename), .content = std::move(*content) };
     const auto tokens = tokenize(source.content);
     const auto parse_result = parse(tokens, source.content);
     if (parse_result.has_errors()) {
@@ -139,9 +135,8 @@ auto check(std::span<const char* const> args, [[maybe_unused]] const Driver& dri
         std::println("zero check: error: no input file");
         return 1;
     }
-
     const auto filename = std::string_view(args[0]);
-    const auto content = read_text_file(std::filesystem::path(filename));
+    const auto content = read_file(std::filesystem::path(filename));
     if (!content) {
         std::println("zero check: error: cannot read '{}'", filename);
         return 1;
@@ -161,8 +156,8 @@ auto check(std::span<const char* const> args, [[maybe_unused]] const Driver& dri
 }
 
 constexpr auto RUN_FLAGS = std::array {
-    Flag { .long_name = "-std=c++XX",               .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)" },
-    Flag { .long_name = "--output-dir",             .short_name = "", .description = "Build cache output directory"             },
+    Flag { .long_name = "-std=c++<value>",          .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)" },
+    Flag { .long_name = "--output-dir=<path>",      .short_name = "", .description = "Build cache output directory"             },
     Flag { .long_name = "--no-default-include-std", .short_name = "", .description = "Disable auto #include of std headers"     },
 };
 
@@ -249,10 +244,7 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
 
             for (auto i = 0uz; i < raw_args.size(); ++i) {
                 const auto sv = std::string_view(raw_args[i]);
-                if (sv == "-std") {
-                    std::println("zero: error: expected '-std=c++XX'");
-                    return 1;
-                } else if (sv.starts_with("-std=")) {
+                if (sv.starts_with("-std=")) {
                     const auto val = sv.substr(5);
                     if (val == "c++14")      driver.language_standard = 14;
                     else if (val == "c++17") driver.language_standard = 17;
@@ -263,12 +255,6 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
                         std::println("zero: error: unknown standard '{}'", val);
                         return 1;
                     }
-                } else if (sv == "--output-dir") {
-                    if (i + 1 >= raw_args.size()) {
-                        std::println("zero: error: expected value after --output-dir");
-                        return 1;
-                    }
-                    driver.output_dir = raw_args[++i];
                 } else if (sv.starts_with("--output-dir=")) {
                     driver.output_dir = sv.substr(13);
                 } else if (sv == "--no-default-include-std") {

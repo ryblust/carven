@@ -8,8 +8,8 @@ export struct Span final {
 };
 
 export struct SourceFile final {
-    std::string_view filename;
-    std::string_view content;
+    std::string filename;
+    std::string content;
 };
 
 export constexpr auto text_at(std::string_view text, Span span) noexcept -> std::string_view {

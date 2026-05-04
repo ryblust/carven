@@ -2,7 +2,7 @@ export module zero.common.file;
 
 import std;
 
-export auto read_text_file(const std::filesystem::path& path) noexcept -> std::optional<std::string> {
+export auto read_file(const std::filesystem::path& path) noexcept -> std::optional<std::string> {
     auto error = std::error_code();
     const auto size = std::filesystem::file_size(path, error);
     if (error) return std::nullopt;
@@ -24,8 +24,8 @@ export auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool 
     return !error;
 }
 
-export auto write_text_file_if_changed(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
-    const auto existing = read_text_file(path);
+export auto write_file_if_changed(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
+    const auto existing = read_file(path);
     if (existing && *existing == content) return true;
 
     auto file = std::ofstream(path, std::ios::binary | std::ios::trunc);
