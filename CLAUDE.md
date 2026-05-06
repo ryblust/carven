@@ -12,7 +12,7 @@ Zero is a programming language that transpiles `.zero` source files to standard 
 # Configure (Windows, first time or after clean)
 xmake f --toolchain=clang-cl
 
-# Configure (macOS)
+# Configure (macOS) — adjust LLVM path to match installed version
 xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4
 
 # Build the project
@@ -41,14 +41,15 @@ Build config in `xmake.lua`: RTTI disabled (`-fno-rtti` / `/GR-`), exceptions di
 
 Layer responsibilities (dependency flows downward):
 - `zero.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
-- `zero.frontend.*` — lexer (`token.cppm`), parser (`parser.cppm`), token types. No backend/driver imports
+- `zero.frontend.*` — lexer (`lexer.cppm`), parser (`parser.cppm`), token types (`token.cppm`). No backend/driver imports
 - `zero.backend.*` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `zero.driver.*` — orchestration, split into 4 modules:
+- `zero.driver.*` — orchestration, split into 5 modules:
   - `toolchain` — C++ build toolchain: artifact paths, compiler detection, compilation
-  - `pipeline` — transpile core: Driver config, `transpile()`, `run_single_file()`
-  - `handlers` — command implementations: `run`/`tokens`/`ast`/`check`/`build`
-  - `cli` — entry point: argument parsing, flag extraction, help rendering
-  - Dependency chain: `cli → handlers → pipeline → toolchain`
+  - `pipeline` — transpile core: `Driver` config, `parse_cli_args()`, `transpile()`, `run_single_file()`
+  - `handler` — command implementations: `run`/`tokens`/`ast`/`check`/`build`
+  - `command` — command registry: `Command`/`Flag` types, `COMMANDS` table, `find_command()`, help rendering
+  - `cli` — entry point: `__zero_main__()` pure routing, `dispatch()` command execution
+  - Dependency chain: `cli → command → handler → pipeline → toolchain`
 
 ### Key Design Decisions
 
@@ -57,6 +58,8 @@ Layer responsibilities (dependency flows downward):
 - **Type mapping**: zero types (i32, f64, bool, etc.) map to C++ equivalents in codegen
 - **Build artifacts**: output goes to `.zero/build/` with filename hashing for cache invalidation
 - **Compiler selection**: uses `CXX` env var, falls back to `clang-cl` (Windows) or `c++` (other)
+- **Span lifecycle**: AST nodes store `Span` (byte offsets into source), not owned strings. Codegen extracts text via `text_at(source, span)`. The source string MUST outlive all AST/symbol references
+- **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.zero` files — this is a single-file model
 
 ## Coding Style
 
@@ -70,7 +73,7 @@ Layer responsibilities (dependency flows downward):
 - `const`/`constexpr` on all non-mutated variables; prefer `constexpr` for pure functions
 - `noexcept` on project functions; no `try`/`catch`/`throw`
 - `std::print`/`std::println` instead of `std::cout`/`printf`
-- `std::optional`/`std::expected` for error handling
+- `std::optional` for optional values; custom result types with boolean/check methods for error handling (e.g., `TranspileResult::has_errors()`, `ProcessResult.started`)
 - `std::string_view` over `const std::string&`; `std::span` over `const std::vector&`
 - Prefer non-owning view types (std::string_view, std::span) for read-only or borrowed function parameters
 - Pass-by-value for trivial types (e.g., `auto foo(Token)` not `auto foo(const Token&)`)
@@ -97,4 +100,3 @@ Format: `<type>(<scope>, ...): <description>`
 - Don't add broad abstractions before a second use case
 - Don't use shell-string command execution; use argv-based process helpers
 - Don't put transpilation/compile/run logic in CLI handlers or the `cli` module; that belongs in `pipeline`
-- Don't introduce statement/expression parsing unless explicitly asked

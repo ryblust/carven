@@ -72,11 +72,8 @@ export auto needs_compile(const std::filesystem::path& cpp_path, const std::file
 }
 
 export auto compiler_from_environment(std::string_view fallback) noexcept -> std::string {
-    if (const auto* value = std::getenv("CXX"); value != nullptr && std::string_view(value).size() > 0) {
-        return value;
-    }
-
-    return std::string(fallback);
+    const auto compiler = std::getenv("CXX");
+    return (compiler != nullptr && std::string_view(compiler).size() > 0) ? compiler : fallback.data();
 }
 
 export constexpr auto display_command(std::span<const std::string> args) noexcept -> std::string {

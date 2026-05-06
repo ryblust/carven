@@ -27,10 +27,39 @@ export struct Driver final {
 #else
     std::string compiler = "c++";
 #endif
+    std::vector<std::string_view> input_files;
 
+    auto parse_cli_args(int argc, char** argv) noexcept -> bool;
+    auto has_input_files() const noexcept -> bool { return !input_files.empty(); }
     auto transpile(SourceFile file) const noexcept -> TranspileResult;
     auto run_single_file(SourceFile file) const noexcept -> int;
 };
+
+auto Driver::parse_cli_args(int argc, char** argv) noexcept -> bool {
+    for (auto i = 2; i < argc; ++i) {
+        const auto arg = std::string_view(argv[i]);
+        if (arg.starts_with("-std=")) {
+            const auto val = arg.substr(5);
+            if      (val == "c++14") language_standard = 14;
+            else if (val == "c++17") language_standard = 17;
+            else if (val == "c++20") language_standard = 20;
+            else if (val == "c++23") language_standard = 23;
+            else if (val == "c++26") language_standard = 26;
+            else {
+                std::println("zero: error: unknown standard '{}'", val);
+                return false;
+            }
+        } else if (arg.starts_with("--output-dir=")) {
+            output_dir = arg.substr(13);
+        } else if (arg == "--no-default-include-std") {
+            default_include_std = false;
+        } else {
+            input_files.push_back(arg);
+        }
+    }
+
+    return true;
+}
 
 auto Driver::transpile(SourceFile file) const noexcept -> TranspileResult {
     auto parse_result = parse(tokenize(file.content), file.content);
