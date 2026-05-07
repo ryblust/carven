@@ -5,11 +5,11 @@ import zero.driver.pipeline;
 import std;
 
 export auto __zero_main__(int argc, char** argv) noexcept -> int {
-    const auto args = std::span(argv, argc)
+    const auto args = std::span(argv, static_cast<std::size_t>(argc))
         | std::views::transform([](const char* s) noexcept { return std::string_view(s); })
         | std::ranges::to<std::vector<std::string_view>>();
 
-    if (argc == 1) return render_help();
+    if (args.size() == 1) return render_help();
 
     if (args[1] ==    "--help" || args[1] == "-h")  return render_help();
     if (args[1] == "--version" || args[1] == "-V")  return render_version();
@@ -21,7 +21,7 @@ export auto __zero_main__(int argc, char** argv) noexcept -> int {
         return 1;
     }
 
-    if (argc > 2) {
+    if (args.size() > 2) {
         if (args[2] == "--help" || args[2] == "-h") return render_command_help(*command);
     }
 
