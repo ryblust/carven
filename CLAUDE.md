@@ -43,13 +43,7 @@ Layer responsibilities (dependency flows downward):
 - `zero.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
 - `zero.frontend.*` — lexer (`lexer.cppm`), parser (`parser.cppm`), token types (`token.cppm`). No backend/driver imports
 - `zero.backend.*` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `zero.driver.*` — orchestration, split into 5 modules:
-  - `toolchain` — C++ build toolchain: artifact paths, compiler detection, compilation
-  - `pipeline` — transpile core: `Driver` config, `parse_cli_args()`, `transpile()`, `run_single_file()`
-  - `handler` — command implementations: `run`/`tokens`/`ast`/`check`/`build`
-  - `command` — command registry: `Command`/`Flag` types, `COMMANDS` table, `find_command()`, help rendering
-  - `cli` — entry point: `__zero_main__()` pure routing, `dispatch()` command execution
-  - Dependency chain: `cli → command → handler → pipeline → toolchain`
+- `zero.driver.*` — orchestration: CLI entry (`cli`), command registry & help (`command`), command impls (`handler`), transpile pipeline (`pipeline`), C++ toolchain (`toolchain`).
 
 ### Key Design Decisions
 
@@ -94,9 +88,3 @@ Layer responsibilities (dependency flows downward):
 Format: `<type>(<scope>, ...): <description>`
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`
 - Scopes: match `src/` subdirectories or feature names
-
-## Avoid
-
-- Don't add broad abstractions before a second use case
-- Don't use shell-string command execution; use argv-based process helpers
-- Don't put transpilation/compile/run logic in CLI handlers or the `cli` module; that belongs in `pipeline`

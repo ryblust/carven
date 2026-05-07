@@ -29,15 +29,16 @@ export struct Driver final {
 #endif
     std::vector<std::string_view> input_files;
 
-    auto parse_cli_args(int argc, char** argv) noexcept -> bool;
+    auto parse_flags(int argc, char** argv) noexcept -> bool;
     auto has_input_files() const noexcept -> bool { return !input_files.empty(); }
     auto transpile(SourceFile file) const noexcept -> TranspileResult;
     auto run_single_file(SourceFile file) const noexcept -> int;
 };
 
-auto Driver::parse_cli_args(int argc, char** argv) noexcept -> bool {
+auto Driver::parse_flags(int argc, char** argv) noexcept -> bool {
     for (auto i = 2; i < argc; ++i) {
         const auto arg = std::string_view(argv[i]);
+
         if (arg.starts_with("-std=")) {
             const auto val = arg.substr(5);
             if      (val == "c++14") language_standard = 14;
@@ -130,7 +131,7 @@ auto Driver::run_single_file(SourceFile file) const noexcept -> int {
         }
     }
 
-    const auto run_args = std::vector<std::string> { artifacts.exe_path.string() };
+    const auto run_args = std::vector<std::string>{ artifacts.exe_path.string() };
     const auto run_result = run_process(run_args);
     if (!run_result.started) {
         std::println("zero run: error: cannot run '{}'", artifacts.exe_path.string());

@@ -1,20 +1,12 @@
-# Code Review — Zero Transpiler (2026-05-04)
+# Code Review — Zero Transpiler
 
 ## 一、架构设计审查
 
-### 1. 分层结构 ⭐ 良好
-
-四层架构 (`common → frontend → backend → driver`) 依赖方向清晰，每层职责单一。当前 10 个源文件、约 800 行代码的规模下，这个分层很合适——没有过度分解。
-
-### 2. AST 设计的生命周期隐患
+### 1. AST 设计的生命周期隐患
 
 `parser.cppm` 中所有 AST 节点使用 `Span` 存储信息而非解析后的字符串。代码生成时通过 `text_at(source, span)` 还原。这在 parser 阶段零拷贝、高效，但调用方必须确保 source 的生命周期覆盖 AST 的使用。当前单文件 transpile 场景下没问题，未来如果需要缓存 AST 或跨模块分析，这会成为 bug 来源。
 
 **结论**：目前不需要改，但值得在注释或 CLAUDE.md 中说明 Span 的生命周期依赖。
-
-### 3. CLI 层耦合度偏高 → 已重构 ✅
-
-`cli.cppm` 原来同时承担了命令解析/flag 处理、handler 实现、格式化输出。重构后拆成 5 个模块，`__zero_main__` 变为纯路由表：
 
 ```
 driver/
@@ -25,8 +17,6 @@ driver/
   toolchain.cppm   — C++ 工具链：编译、产物路径管理
 ```
 
-依赖链：`cli → command → handler → pipeline → toolchain`。pipeline 不依赖任何 driver 层模块。
-
 ---
 
 ## 二、逐文件代码审查
@@ -36,11 +26,6 @@ driver/
 - `Span.end` 是 exclusive 语义，但未在注释中说明。所有 parser 和 codegen 代码依赖这个语义。
 - `text_at` 没有边界检查（span.end > text.size()）。当前调用方均来自 parser，保证 span 合法。
 - `Span` 的零值（start=0, end=0）被用作 "不存在" 的语义（如 `FunctionItem.return_type`），建议用 `std::optional<Span>` 或 `is_valid()` 让意图更明确。
-- `SourceFile` 已改为 owning（`std::string` 替代 `std::string_view`），生命周期隐患已消除。✅
-
-### `src/common/file.cppm`
-
-- `read_file`（原 `read_text_file`）已改名，与 `write_file_if_changed`（原 `write_text_file_if_changed`）命名风格统一。✅
 
 ### `src/common/process.cppm`
 
@@ -68,10 +53,6 @@ driver/
 - **bug**：`generate_function` 中硬编码 `main` 返回 `int`，如果用户写了 `fn main() -> i32`，codegen 会静默覆盖为 `int`。应该优先使用用户声明的返回类型，只在无声明时默认 `int`。
 - **Type mapping 的 fallback**：未知类型直接 pass through，让 C++ 编译器报错——可行但错误信息对用户不友好。
 - **巧妙设计**：用 `#include "headers/base.inc"` 在编译期将 std headers 嵌入 `constexpr std::string_view`。
-
-### `src/driver/` — 已重构 ✅
-
-拆成 5 模块：`cli`（入口路由）、`command`（命令注册表 + help 渲染）、`handler`（命令实现）、`pipeline`（转译核心）、`toolchain`（C++ 编译支持）。见上文。
 
 ---
 
@@ -105,7 +86,3 @@ lexer 已识别 `if`、`else`、`while`、`for`、`return` 等 keywords 但 pars
 | **P3** | `CreateProcessA` ANSI 编码问题 | 待修复 |
 | **P3** | process.cppm: Windows 命令行转义不完整 | 待修复 |
 | **P3** | 注释风格完善（span exclusive 语义、仅行注释） | 待修复 |
-| ~~P0~~ | ~~CLI handler 重复代码~~ | ✅ 讨论后决定保持直白风格，不抽取 |
-| ~~P0~~ | ~~`SourceFile` 悬空指针~~ | ✅ 改为 owning string |
-| ~~P3~~ | ~~命名不一致~~ | ✅ `read_file` / `write_file_if_changed` 统一 |
-| ~~P0~~ | ~~driver 层架构混乱~~ | ✅ 拆成 4 模块，依赖链清晰 |

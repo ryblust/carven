@@ -84,7 +84,7 @@ export auto render_command_help(Command command) noexcept -> int {
     return 0;
 }
 
-export auto find_command(std::string_view name) noexcept -> std::optional<Command> {
+export auto constexpr find_command(std::string_view name) noexcept -> std::optional<Command> {
     if (const auto it = std::ranges::find(COMMANDS, name, &Command::name); it != COMMANDS.end()) {
         return *it;
     }
