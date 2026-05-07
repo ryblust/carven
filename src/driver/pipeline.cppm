@@ -29,16 +29,14 @@ export struct Driver final {
 #endif
     std::vector<std::string_view> input_files;
 
-    auto parse_flags(int argc, char** argv) noexcept -> bool;
+    auto parse_flags(std::span<const std::string_view> args) noexcept -> bool;
     auto has_input_files() const noexcept -> bool { return !input_files.empty(); }
     auto transpile(SourceFile file) const noexcept -> TranspileResult;
     auto run_single_file(SourceFile file) const noexcept -> int;
 };
 
-auto Driver::parse_flags(int argc, char** argv) noexcept -> bool {
-    for (auto i = 2; i < argc; ++i) {
-        const auto arg = std::string_view(argv[i]);
-
+auto Driver::parse_flags(std::span<const std::string_view> args) noexcept -> bool {
+    for (const auto arg : args) {
         if (arg.starts_with("-std=")) {
             const auto val = arg.substr(5);
             if      (val == "c++14") language_standard = 14;

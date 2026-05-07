@@ -16,3 +16,7 @@ target("zero")
     add_files("src/frontend/*.cppm")
     add_files("src/backend/*.cppm")
     add_files("src/zero.cpp")
+
+    for _, testfile in ipairs(os.files("tests/test_*.cpp")) do
+        add_tests(path.basename(testfile), { files = testfile, remove_files = "src/zero.cpp" })
+    end

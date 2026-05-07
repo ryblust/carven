@@ -21,6 +21,9 @@ xmake build
 # Rebuild the project
 xmake build -r
 
+# Run all test cases(-v for verbose)
+xmake test -v
+
 # Run a .zero file (transpile + compile + execute)
 xmake run zero run tests/helloworld.zero
 
@@ -75,6 +78,8 @@ Layer responsibilities (dependency flows downward):
 - Prefer `std::ranges`/`std::views` over `<algorithm>`; explicit loops OK for lexing/parsing state machines or low-level
 - Braces `{}` when body is on its own line; omit for single-line (e.g., `if (x) return true;`)
 - `Type()` for default init, `Type{ .field = val }` for aggregate init with designated initializers
+- Single-line initializer lists: no space between `>` and `{` — `std::vector<int>{ 1, 2, 3 }`
+- Multi-line initializer lists: space between `>` and `{` — `std::vector<int> {` on the opening line
 - Use `if`-with-initializer to limit variable scope and unwrap optionals:
   `if (const auto content = read_file(path); content) { ... } else { ... }`
 - Don't bind intermediate variables for single-use values; pass them directly

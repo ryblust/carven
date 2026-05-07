@@ -140,6 +140,16 @@ export constexpr auto display_token_type(TokenKind kind) noexcept -> const char*
     }
 }
 
+template<> struct std::formatter<TokenKind> final {
+    constexpr auto parse(const auto& context) const noexcept {
+        return context.begin();
+    }
+
+    constexpr auto format(TokenKind kind, auto&& context) const noexcept {
+        return std::format_to(context.out(), "{}", display_token_type(kind));
+    }
+};
+
 template<> struct std::formatter<Token> final {
     constexpr auto parse(const auto& context) const noexcept {
         return context.begin();
