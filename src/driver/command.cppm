@@ -4,7 +4,7 @@ import zero.driver.handler;
 import zero.driver.pipeline;
 import std;
 
-export struct Flag final {
+struct Flag final {
     std::string_view long_name;
     std::string_view short_name;
     std::string_view description;
@@ -38,7 +38,7 @@ constexpr auto COMMANDS = std::array<Command, 5> {{
     { .name = "check",  .description = "Parse and check without codegen",      .flags = {}, .handler = check  },
 }};
 
-export auto render_flag(Flag flag) noexcept -> void {
+auto render_flag(Flag flag) noexcept -> void {
     if (flag.short_name.empty()) {
         std::println("    {:<28}{}", flag.long_name, flag.description);
     } else {

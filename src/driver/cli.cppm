@@ -5,9 +5,7 @@ import zero.driver.pipeline;
 import std;
 
 export auto __zero_main__(int argc, char** argv) noexcept -> int {
-    if (argc == 1) {
-        return render_help();
-    }
+    if (argc == 1) return render_help();
 
     const auto arg = std::string_view(argv[1]);
     if (arg ==    "--help" || arg == "-h")  return render_help();
