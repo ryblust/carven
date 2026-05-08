@@ -2,10 +2,19 @@ export module zero.common.source;
 
 import std;
 
+export template<class... Ts>
+struct Overloaded : Ts... { using Ts::operator()...; };
+export template<class... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
 export struct Span final {
     std::uint32_t start;
     std::uint32_t end;
 };
+
+export constexpr auto is_empty(Span span) noexcept -> bool {
+    return span.start >= span.end;
+}
 
 export struct SourceFile final {
     std::string filename;
@@ -13,6 +22,9 @@ export struct SourceFile final {
 };
 
 export constexpr auto text_at(std::string_view text, Span span) noexcept -> std::string_view {
+    if (span.start > text.size() || span.end > text.size() || span.end < span.start) {
+        return {};
+    }
     return text.substr(span.start, span.end - span.start);
 }
 

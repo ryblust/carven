@@ -15,14 +15,17 @@ xmake f --toolchain=clang-cl
 # Configure (macOS) — adjust LLVM path to match installed version
 xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4
 
-# Build the project
+# Clean the build artifacts
+xmake clean
+
+# Delete the build directory before rebuild
+rm -rf build
+
+# Build the project(you can use -r for rebuild to reduce bugs)
 xmake build
 
-# Rebuild the project
-xmake build -r
-
-# Run all test cases(-v for verbose)
-xmake test -v
+# Run all test cases(you can use -v for verbose)
+xmake test
 
 # Run a .zero file (transpile + compile + execute)
 xmake run zero run tests/helloworld.zero
@@ -32,8 +35,6 @@ xmake run zero tokens <file>   # Lex and dump token stream
 xmake run zero ast <file>      # Parse and dump AST
 xmake run zero check <file>    # Parse without codegen
 
-# Clean the build artifacts
-xmake clean
 ```
 
 Run flags: `-std=c++<value>` (14/17/20/23/26), `--output-dir=<path>`, `--no-default-include-std`
@@ -50,12 +51,7 @@ Layer responsibilities (dependency flows downward):
 
 ### Key Design Decisions
 
-- **Source-slice passthrough**: function bodies are not parsed into statements/expressions. The parser records a `body_span` and codegen copies the original source text verbatim
-- **AST structure**: `TopLevelItem = variant<ImportItem, EnumItem, StructItem, FunctionItem>`
-- **Type mapping**: zero types (i32, f64, bool, etc.) map to C++ equivalents in codegen
-- **Build artifacts**: output goes to `.zero/build/` with filename hashing for cache invalidation
-- **Compiler selection**: uses `CXX` env var, falls back to `clang-cl` (Windows) or `c++` (other)
-- **Span lifecycle**: AST nodes store `Span` (byte offsets into source), not owned strings. Codegen extracts text via `text_at(source, span)`. The source string MUST outlive all AST/symbol references
+- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `text_at(source, span)`. The source string MUST outlive all AST references
 - **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.zero` files — this is a single-file model
 
 ## Coding Style
@@ -67,25 +63,34 @@ Layer responsibilities (dependency flows downward):
 - Modules: `zero.<layer>.<name>`
 
 ### C++ Conventions
+
+**Types & qualifiers**
 - `const`/`constexpr` on all non-mutated variables; prefer `constexpr` for pure functions
 - `noexcept` on project functions; no `try`/`catch`/`throw`
-- `std::print`/`std::println` instead of `std::cout`/`printf`
 - `std::optional` for optional values; custom result types with boolean/check methods for error handling (e.g., `TranspileResult::has_errors()`, `ProcessResult.started`)
-- `std::string_view` over `const std::string&`; `std::span` over `const std::vector&`
-- Prefer non-owning view types (std::string_view, std::span) for read-only or borrowed function parameters
 - Pass-by-value for trivial types (e.g., `auto foo(Token)` not `auto foo(const Token&)`)
-- Pre-increment `++i` in loops
-- Prefer `std::ranges`/`std::views` over `<algorithm>`; explicit loops OK for lexing/parsing state machines or low-level
-- Braces `{}` when body is on its own line; omit for single-line (e.g., `if (x) return true;`)
+
+**Parameters & views**
+- `std::string_view` over `const std::string&`; `std::span` over `const std::vector&`
+- Don't wrap `const char*`/`string_view` in `std::filesystem::path` for function params
+
+**Syntax & formatting**
 - `Type()` for default init, `Type{ .field = val }` for aggregate init with designated initializers
 - Single-line initializer lists: no space between `>` and `{` — `std::vector<int>{ 1, 2, 3 }`
 - Multi-line initializer lists: space between `>` and `{` — `std::vector<int> {` on the opening line
+- Braces `{}` when body is on its own line; omit for single-line (e.g., `if (x) return true;`)
+- Pre-increment `++i` in loops
+- Omit type name in aggregate init when context provides it: `run_single_file({ .filename = ..., .content = ... })`
+
+**Control flow & scope**
 - Use `if`-with-initializer to limit variable scope and unwrap optionals:
   `if (const auto content = read_file(path); content) { ... } else { ... }`
 - Don't bind intermediate variables for single-use values; pass them directly
 - Range-for directly on function return temporaries: `for (const auto token : tokenize(source))`
-- Don't wrap `const char*`/`string_view` in `std::filesystem::path` for function params; the implicit conversion suffices
-- Omit type name in aggregate init when context provides it: `run_single_file({ .filename = ..., .content = ... })`
+
+**API surface**
+- `std::print`/`std::println` instead of `std::cout`/`printf`
+- Prefer `std::ranges`/`std::views` over `<algorithm>`; explicit loops OK for lexing/parsing state machines or low-level
 - Separate logical blocks within a function with a blank line
 
 ## Conventional Commits

@@ -30,12 +30,16 @@ constexpr auto RUN_FLAGS = std::array<Flag, 3> {{
     { .long_name = "--no-default-include-std", .short_name = "", .description = "Disable auto #include of std headers"     },
 }};
 
-constexpr auto COMMANDS = std::array<Command, 5> {{
-    { .name = "run",    .description = "Transpile and run a .zero file",       .flags = RUN_FLAGS, .handler = run },
-    { .name = "tokens", .description = "Lex a file and dump the token stream", .flags = {}, .handler = tokens },
-    { .name = "ast",    .description = "Parse a file and dump the AST",        .flags = {}, .handler = ast    },
-    { .name = "build",  .description = "Build a Zero project",                 .flags = {}, .handler = build  },
-    { .name = "check",  .description = "Parse and check without codegen",      .flags = {}, .handler = check  },
+constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{
+    { .long_name = "--only-tokens", .short_name = "", .description = "Show only token stream" },
+    { .long_name = "--only-ast",    .short_name = "", .description = "Show only AST"         },
+}};
+
+constexpr auto COMMANDS = std::array<Command, 4> {{
+    { .name = "run",   .description = "Transpile and run a .zero file",  .flags = RUN_FLAGS,  .handler = run  },
+    { .name = "dump",  .description = "Dump token stream and AST",       .flags = DUMP_FLAGS, .handler = dump },
+    { .name = "build", .description = "Build a Zero project",            .flags = {},          .handler = build },
+    { .name = "check", .description = "Parse and check without codegen", .flags = {},          .handler = check },
 }};
 
 auto render_flag(Flag flag) noexcept -> void {

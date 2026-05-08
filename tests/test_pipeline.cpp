@@ -10,7 +10,7 @@ static auto test_transpile_empty_function() noexcept -> void {
     driver.default_include_std = false;
     const auto result = driver.transpile({.filename = "test.zero", .content = "fn main() {}"});
     CHECK(!result.has_errors());
-    CHECK(result.output.contains("auto main() -> int"));
+    CHECK(result.output.contains("auto main() noexcept -> int"));
 }
 
 static auto test_transpile_parse_error() noexcept -> void {
@@ -30,7 +30,7 @@ static auto test_transpile_with_params_and_return() noexcept -> void {
         .content = "fn add(a: i32, b: i32) -> i32 {}"
     });
     CHECK(!result.has_errors());
-    CHECK(result.output.contains("auto add(std::int32_t a, std::int32_t b) -> std::int32_t"));
+    CHECK(result.output.contains("auto add(std::int32_t a, std::int32_t b) noexcept -> std::int32_t"));
 }
 
 static auto test_transpile_import() noexcept -> void {

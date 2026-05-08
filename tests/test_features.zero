@@ -1,0 +1,9 @@
+fn main() {
+    let x: i32 = 5;
+    var y = 10;
+    let z = x + y;
+    if z > 10 {
+        std::println("z > 10");
+    }
+    std::println("done");
+}

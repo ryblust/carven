@@ -5,6 +5,7 @@ import zero.common.process;
 import zero.common.source;
 import zero.driver.toolchain;
 import zero.frontend.lexer;
+import zero.frontend.ast;
 import zero.frontend.parser;
 import zero.backend.codegen;
 import std;
@@ -21,6 +22,8 @@ export struct TranspileResult final {
 export struct Driver final {
     std::uint8_t language_standard = 23;
     bool default_include_std = true;
+    bool only_tokens = false;
+    bool only_ast = false;
     std::filesystem::path output_dir = ".zero/build";
 #if defined(_WIN32)
     std::string compiler = "clang-cl";
@@ -52,6 +55,10 @@ auto Driver::parse_flags(std::span<const std::string_view> args) noexcept -> boo
             output_dir = arg.substr(13);
         } else if (arg == "--no-default-include-std") {
             default_include_std = false;
+        } else if (arg == "--only-tokens") {
+            only_tokens = true;
+        } else if (arg == "--only-ast") {
+            only_ast = true;
         } else {
             input_files.push_back(arg);
         }
