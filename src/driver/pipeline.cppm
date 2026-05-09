@@ -32,35 +32,35 @@ export struct Driver final {
 #endif
     std::vector<std::string_view> input_files;
 
-    auto parse_flags(std::span<const std::string_view> args) noexcept -> bool;
+    auto parse_flags(std::span<const char* const> args) noexcept -> bool;
     auto has_input_files() const noexcept -> bool { return !input_files.empty(); }
     auto transpile(SourceFile file) const noexcept -> TranspileResult;
     auto run_single_file(SourceFile file) const noexcept -> int;
 };
 
-auto Driver::parse_flags(std::span<const std::string_view> args) noexcept -> bool {
-    for (const auto arg : args) {
-        if (arg.starts_with("-std=")) {
-            const auto val = arg.substr(5);
-            if      (val == "c++14") language_standard = 14;
-            else if (val == "c++17") language_standard = 17;
-            else if (val == "c++20") language_standard = 20;
-            else if (val == "c++23") language_standard = 23;
-            else if (val == "c++26") language_standard = 26;
+auto Driver::parse_flags(std::span<const char* const> flags) noexcept -> bool {
+    for (const std::string_view flag : flags) {
+        if (flag.starts_with("-std=")) {
+            const auto standard = flag.substr(5);
+            if      (standard == "c++14") language_standard = 14;
+            else if (standard == "c++17") language_standard = 17;
+            else if (standard == "c++20") language_standard = 20;
+            else if (standard == "c++23") language_standard = 23;
+            else if (standard == "c++26") language_standard = 26;
             else {
-                std::println("zero: error: unknown standard '{}'", val);
+                std::println("zero: error: unknown standard '{}'", standard);
                 return false;
             }
-        } else if (arg.starts_with("--output-dir=")) {
-            output_dir = arg.substr(13);
-        } else if (arg == "--no-default-include-std") {
+        } else if (flag.starts_with("--output-dir=")) {
+            output_dir = flag.substr(13);
+        } else if (flag == "--no-default-include-std") {
             default_include_std = false;
-        } else if (arg == "--only-tokens") {
+        } else if (flag == "--only-tokens") {
             only_tokens = true;
-        } else if (arg == "--only-ast") {
+        } else if (flag == "--only-ast") {
             only_ast = true;
         } else {
-            input_files.push_back(arg);
+            input_files.push_back(flag);
         }
     }
 

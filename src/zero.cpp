@@ -1,5 +1,5 @@
 import zero.driver.cli;
 
-auto main(int argc, char** argv) noexcept -> int {
+auto main(int argc, const char** argv) noexcept -> int {
     return __zero_main__(argc, argv);
 }
