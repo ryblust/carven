@@ -15,10 +15,10 @@ xmake f --toolchain=clang-cl
 # Configure (macOS) — adjust LLVM path to match installed version
 xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4
 
-# Clean the build artifacts
+# Clean the build artifacts (preserves BMI cache)
 xmake clean
 
-# Delete the build directory before rebuild
+# Delete the build directory (nukes BMI cache — use after code changes to avoid stale BMI issues)
 rm -rf build
 
 # Build the project(you can use -r for rebuild to reduce bugs)
@@ -26,6 +26,9 @@ xmake build
 
 # Run all test cases(you can use -v for verbose)
 xmake test
+
+# After code changes: always rm -rf build before xmake build && xmake test
+# Stale BMI cache can cause linker errors or constexpr mismatch diagnostics
 
 # Run a .zero file (transpile + compile + execute)
 xmake run zero run tests/helloworld.zero
