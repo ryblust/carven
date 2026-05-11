@@ -1,13 +1,11 @@
-#pragma once
+export module zero.tests.utils;
 
-#include <print>
-#include <source_location>
-#include <string_view>
+import std;
 
-static auto current_test = std::string_view();
-static auto failed_count = 0;
+export auto current_test = std::string_view();
+export auto failed_count = 0;
 
-[[maybe_unused]] static auto check(
+export auto check(
     bool condition,
     std::string_view expr,
     std::source_location loc = std::source_location::current()
@@ -22,8 +20,8 @@ static auto failed_count = 0;
     }
 }
 
-template<typename A, typename E>
-[[maybe_unused]] static auto check_eq(
+export template<typename A, typename E>
+auto check_eq(
     A&& actual,
     E&& expected,
     std::string_view actual_expr,
@@ -42,10 +40,7 @@ template<typename A, typename E>
     }
 }
 
-#define CHECK(expr)     check((expr), #expr)
-#define CHECK_EQ(a, e)  check_eq((a), (e), #a, #e)
-
-[[maybe_unused]] static auto print_test_result() noexcept -> int {
+export auto print_test_result() noexcept -> int {
     if (failed_count == 0) {
         std::println("All tests passed.");
         return 0;

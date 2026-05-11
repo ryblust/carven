@@ -2,9 +2,9 @@ export module zero.common.source;
 
 import std;
 
-export template<class... Ts>
-struct Overloaded : Ts... { using Ts::operator()...; };
-export template<class... Ts>
+export template<typename ... Ts>
+struct Overloaded final : Ts... { using Ts::operator()...; };
+export template<typename ... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
 export struct Span final {
@@ -12,36 +12,18 @@ export struct Span final {
     std::uint32_t end;
 };
 
-export constexpr auto is_empty(Span span) noexcept -> bool {
-    return span.start >= span.end;
-}
-
 export struct SourceFile final {
     std::string filename;
     std::string content;
 };
 
-export constexpr auto text_at(std::string_view text, Span span) noexcept -> std::string_view {
-    if (span.start > text.size() || span.end > text.size() || span.end < span.start) {
-        return {};
-    }
-    return text.substr(span.start, span.end - span.start);
-}
-
-export struct LineColumn final {
+export struct SourceLocation final {
     std::uint32_t line;
     std::uint32_t column;
 };
 
-export constexpr auto line_column_at(std::string_view text, std::uint32_t offset) noexcept -> LineColumn {
-    auto line = 1u, last_newline = 0u;
+export auto is_empty(Span span) noexcept -> bool;
 
-    for (auto i = 0uz; i < offset && i < text.size(); ++i) {
-        if (text[i] == '\n') {
-            ++line;
-            last_newline = i + 1;
-        }
-    }
+export auto text_at(std::string_view text, Span span) noexcept -> std::string_view;
 
-    return { .line = line, .column = offset - last_newline + 1 };
-}
+export auto location_at(std::string_view text, std::uint32_t offset) noexcept -> SourceLocation;

@@ -1,7 +1,9 @@
 import zero.driver.toolchain;
+import zero.tests.utils;
+import std;
 
-#include "test_utils.h"
-#include <string>
+#define CHECK(expr)     check((expr), #expr)
+#define CHECK_EQ(a, e)  check_eq((a), (e), #a, #e)
 
 static auto test_display_command_simple() noexcept -> void {
     current_test = "display_command simple";

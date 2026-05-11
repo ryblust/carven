@@ -1,29 +1,31 @@
-export module zero.frontend.lexer;
+module zero.frontend.lexer;
 
-import zero.frontend.token;
+import zero.frontend.lexer.token;
 import std;
 
-constexpr auto is_alpha(char c) noexcept -> bool {
+namespace {
+
+auto is_alpha(char c) noexcept -> bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-constexpr auto is_digit(char c) noexcept -> bool {
+auto is_digit(char c) noexcept -> bool {
     return c >= '0' && c <= '9';
 }
 
-constexpr auto is_ident(char c) noexcept -> bool {
+auto is_ident(char c) noexcept -> bool {
     return is_alpha(c) || c == '_';
 }
 
-constexpr auto is_ident_continue(char c) noexcept -> bool {
+auto is_ident_continue(char c) noexcept -> bool {
     return is_ident(c) || is_digit(c);
 }
 
 class Lexer final {
 public:
-    explicit constexpr Lexer(std::string_view s) noexcept : source(s) {}
+    explicit Lexer(std::string_view s) noexcept : source(s) {}
 
-    constexpr auto next() noexcept -> Token {
+    auto next() noexcept -> Token {
         using enum TokenKind;
 
         skip_meaningless();
@@ -76,19 +78,19 @@ private:
     std::uint32_t start_pos = 0;
     std::string_view source;
 
-    constexpr auto advance() noexcept -> void {
+    auto advance() noexcept -> void {
         if (!eof()) ++current_pos;
     }
 
-    constexpr auto eof() const noexcept -> bool {
+    auto eof() const noexcept -> bool {
         return current_pos >= source.size();
     }
 
-    constexpr auto current() const noexcept -> char {
+    auto current() const noexcept -> char {
         return eof() ? '\0' : source[current_pos];
     }
 
-    constexpr auto match(char expected) noexcept -> bool {
+    auto match(char expected) noexcept -> bool {
         if (eof() || (current() != expected)) {
             return false;
         }
@@ -98,13 +100,13 @@ private:
         return true;
     }
 
-    constexpr auto peek(std::size_t offset = 1) const noexcept -> char {
+    auto peek(std::size_t offset = 1) const noexcept -> char {
         const auto index = current_pos + offset;
 
         return index < source.size() ? source[index] : '\0';
     }
 
-    constexpr auto identifier_or_keyword() noexcept -> Token {
+    auto identifier_or_keyword() noexcept -> Token {
         static constexpr auto keywords = std::array {
             "import",
             "export",
@@ -136,7 +138,7 @@ private:
         return token(TokenKind::Identifier);
     }
 
-    constexpr auto number_literal() noexcept -> Token {
+    auto number_literal() noexcept -> Token {
         while (is_digit(current())) {
             advance();
         }
@@ -151,7 +153,7 @@ private:
         return token(TokenKind::NumberLiteral);
     }
 
-    constexpr auto char_literal() noexcept -> Token {
+    auto char_literal() noexcept -> Token {
         if (!eof() && current() != '\'' && current() != '\n') {
             if (current() == '\\') {
                 advance();
@@ -166,7 +168,7 @@ private:
         return token(TokenKind::CharLiteral);
     }
 
-    constexpr auto string_literal() noexcept -> Token {
+    auto string_literal() noexcept -> Token {
         while (!eof() && current() != '"' && current() != '\n') {
             if (current() == '\\') {
                 advance();
@@ -181,7 +183,7 @@ private:
         return token(TokenKind::StringLiteral);
     }
 
-    constexpr auto skip_meaningless() noexcept -> void {
+    auto skip_meaningless() noexcept -> void {
         while (!eof()) {
             switch (current()) {
                 case ' ':
@@ -208,12 +210,14 @@ private:
         }
     }
 
-    constexpr auto token(TokenKind kind) const noexcept -> Token {
+    auto token(TokenKind kind) const noexcept -> Token {
         return { kind,  { start_pos, current_pos } };
     }
 };
 
-export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
+} // namespace
+
+auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
     auto lexer = Lexer(source);
     auto tokens = std::vector<Token>();
     tokens.reserve(source.size() / 5);

@@ -1,17 +1,15 @@
 import zero.common.source;
-import zero.frontend.token;
+import zero.frontend.lexer.token;
 import zero.frontend.lexer;
+import zero.tests.utils;
+import std;
 
-#include "test_utils.h"
-#include <string_view>
-#include <vector>
+#define CHECK(expr)     check((expr), #expr)
+#define CHECK_EQ(a, e)  check_eq((a), (e), #a, #e)
 
 using enum TokenKind;
 
-static auto tokens_match(
-    std::span<const Token> tokens,
-    std::span<const TokenKind> expected
-) noexcept -> bool {
+static auto tokens_match(std::span<const Token> tokens, std::span<const TokenKind> expected) noexcept -> bool {
     if (tokens.size() != expected.size()) {
         std::println("  token count mismatch: expected {}, got {}", expected.size(), tokens.size());
         return false;

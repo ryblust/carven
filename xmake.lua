@@ -11,12 +11,11 @@ target("zero")
     set_warnings("allextra")
     set_rundir("$(projectdir)")
 
-    add_files("src/common/*.cppm")
-    add_files("src/driver/*.cppm")
-    add_files("src/frontend/*.cppm")
-    add_files("src/backend/*.cppm")
-    add_files("src/zero.cpp")
+    add_files("src/**.cppm", "src/**.cpp")
 
     for _, testfile in ipairs(os.files("tests/test_*.cpp")) do
-        add_tests(path.basename(testfile), { files = testfile, remove_files = "src/zero.cpp" })
+        add_tests(path.basename(testfile), {
+            files = { "tests/utils.cppm", testfile },
+            remove_files = "src/zero.cpp"
+        })
     end

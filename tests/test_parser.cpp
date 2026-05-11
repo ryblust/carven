@@ -1,12 +1,13 @@
 import zero.common.source;
-import zero.frontend.token;
+import zero.frontend.lexer.token;
 import zero.frontend.lexer;
-import zero.frontend.ast;
+import zero.frontend.parser.ast;
 import zero.frontend.parser;
+import zero.tests.utils;
+import std;
 
-#include "test_utils.h"
-#include <string_view>
-#include <variant>
+#define CHECK(expr)     check((expr), #expr)
+#define CHECK_EQ(a, e)  check_eq((a), (e), #a, #e)
 
 using enum TokenKind;
 
@@ -22,8 +23,6 @@ template<typename T>
 static auto as(const Expr& expr) noexcept -> const T* {
     return std::get_if<T>(&expr);
 }
-
-// --------------- Basic expressions ---------------
 
 static auto test_int_literal() noexcept -> void {
     current_test = "int literal";
@@ -57,8 +56,6 @@ static auto test_true_false_literals() noexcept -> void {
     { auto r = parse_expr_src("true"); CHECK(root_expr(r) && as<LiteralExpr>(*root_expr(r))); }
     { auto r = parse_expr_src("false"); CHECK(root_expr(r) && as<LiteralExpr>(*root_expr(r))); }
 }
-
-// --------------- Binary expressions ---------------
 
 static auto test_simple_binary() noexcept -> void {
     current_test = "simple binary 1 + 2";
@@ -131,8 +128,6 @@ static auto test_bitwise_precedence() noexcept -> void {
     } else CHECK(false);
 }
 
-// --------------- Assignment ---------------
-
 static auto test_simple_assignment() noexcept -> void {
     current_test = "simple assignment x = 5";
     auto r = parse_expr_src("x = 5");
@@ -167,8 +162,6 @@ static auto test_right_assoc_assignment() noexcept -> void {
         }
     } else CHECK(false);
 }
-
-// --------------- Prefix expressions ---------------
 
 static auto test_prefix_negation() noexcept -> void {
     current_test = "prefix negation: -x";
@@ -215,8 +208,6 @@ static auto test_prefix_preinc() noexcept -> void {
         CHECK(p != nullptr && p->op == UnaryOp::PreInc);
     } else CHECK(false);
 }
-
-// --------------- Postfix expressions ---------------
 
 static auto test_postfix_inc() noexcept -> void {
     current_test = "postfix increment: x++";
@@ -313,8 +304,6 @@ static auto test_comma_expr() noexcept -> void {
     const auto* e = root_expr(r);
     CHECK(e && as<CommaExpr>(*e) != nullptr);
 }
-
-// --------------- Full function parse ---------------
 
 static auto test_parse_empty_function() noexcept -> void {
     current_test = "parse empty function";

@@ -1,8 +1,10 @@
 import zero.driver.pipeline;
 import zero.common.source;
+import zero.tests.utils;
+import std;
 
-#include "test_utils.h"
-#include <string_view>
+#define CHECK(expr)     check((expr), #expr)
+#define CHECK_EQ(a, e)  check_eq((a), (e), #a, #e)
 
 static auto test_transpile_empty_function() noexcept -> void {
     current_test = "transpile empty function";

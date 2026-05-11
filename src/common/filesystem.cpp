@@ -1,8 +1,8 @@
-export module zero.common.file;
+module zero.common.filesystem;
 
 import std;
 
-export auto read_file(const std::filesystem::path& path) noexcept -> std::optional<std::string> {
+auto read_file(const std::filesystem::path& path) noexcept -> std::optional<std::string> {
     auto file = std::ifstream(path, std::ios::binary | std::ios::ate);
     if (!file) return std::nullopt;
 
@@ -18,13 +18,13 @@ export auto read_file(const std::filesystem::path& path) noexcept -> std::option
     return buffer;
 }
 
-export auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool {
+auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool {
     auto error = std::error_code();
     std::filesystem::create_directories(dir, error);
     return !error;
 }
 
-export auto write_file_if_changed(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
+auto write_file_if_changed(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
     if (const auto existing = read_file(path); existing && *existing == content) {
         return true;
     }

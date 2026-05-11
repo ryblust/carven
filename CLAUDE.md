@@ -31,12 +31,10 @@ xmake test
 # Stale BMI cache can cause linker errors or constexpr mismatch diagnostics
 
 # Run a .zero file (transpile + compile + execute)
-xmake run zero run tests/helloworld.zero
+xmake run zero run tests/test_helloworld.zero
 
 # Other commands
-xmake run zero tokens <file>   # Lex and dump token stream
-xmake run zero ast <file>      # Parse and dump AST
-xmake run zero check <file>    # Parse without codegen
+xmake run zero dump <file>    # Dump token stream and AST
 
 ```
 
@@ -48,9 +46,10 @@ Build config in `xmake.lua`: RTTI disabled (`-fno-rtti` / `/GR-`), exceptions di
 
 Layer responsibilities (dependency flows downward):
 - `zero.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
-- `zero.frontend.*` — lexer (`lexer.cppm`), parser (`parser.cppm`), token types (`token.cppm`). No backend/driver imports
+- `zero.frontend.lexer.*` — token types (`token`), lexer (`lexer`). No backend/driver imports
+- `zero.frontend.parser.*` — AST nodes (`ast`), parser (`parser`), implementation partitions (`impl`/`decl`/`stmt`/`expr`). No backend/driver imports
 - `zero.backend.*` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `zero.driver.*` — orchestration: CLI entry (`cli`), command registry & help (`command`), command impls (`handler`), transpile pipeline (`pipeline`), C++ toolchain (`toolchain`).
+- `zero.driver.*` — orchestration: CLI entry (`zero.cpp`), command registry & help (`command`), command impls (`handler`), transpile pipeline (`pipeline`), C++ toolchain (`toolchain`).
 
 ### Key Design Decisions
 
