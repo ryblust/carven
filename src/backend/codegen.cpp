@@ -6,7 +6,7 @@ import std;
 
 namespace {
 
-auto map_type(std::string_view zero_type) noexcept -> std::string_view {
+constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view {
     if (zero_type == "i8")    return "std::int8_t";
     if (zero_type == "i16")   return "std::int16_t";
     if (zero_type == "i32")   return "std::int32_t";
