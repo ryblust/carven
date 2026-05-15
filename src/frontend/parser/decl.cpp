@@ -2,7 +2,7 @@ module zero.frontend.parser:decl;
 
 import :impl;
 import zero.common.source;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.parser.ast;
 import std;
 
@@ -17,11 +17,14 @@ auto Parser::parse_import() noexcept -> std::optional<ImportItem> {
 
     auto item = ImportItem {
         .module_name = module_name->span,
-        .using_decls = {}
+        .using_decls = {},
+        .is_std_module = text_at(source, module_name->span) == "std"
     };
 
     if (match_keyword("using")) {
-        if (match(TokenKind::LeftBrace)) {
+        if (match(TokenKind::Star)) {
+            item.using_wildcard = true;
+        } else if (match(TokenKind::LeftBrace)) {
             while (!eof() && !check(TokenKind::RightBrace)) {
                 const auto decl = expect_name("expected using declaration name");
                 if (decl) item.using_decls.emplace_back(decl->span);
@@ -47,10 +50,7 @@ auto Parser::parse_import() noexcept -> std::optional<ImportItem> {
         }
     }
 
-    if (!expect(TokenKind::SemiColon, "expected ';' after import")) {
-        synchronize_to_item_end();
-        return std::nullopt;
-    }
+    match(TokenKind::SemiColon);
 
     return item;
 }
@@ -166,14 +166,14 @@ auto Parser::parse_params() noexcept -> std::optional<std::vector<FunctionParam>
         const auto param_name = expect_name("expected function parameter name");
         if (!param_name) return std::nullopt;
 
-        if (!expect(TokenKind::Colon, "expected ':' after function parameter name")) {
-            return std::nullopt;
+        auto type_span = Span();
+        if (match(TokenKind::Colon)) {
+            const auto param_type = expect_type("expected function parameter type");
+            if (!param_type) return std::nullopt;
+            type_span = param_type->span;
         }
 
-        const auto param_type = expect_type("expected function parameter type");
-        if (!param_type) return std::nullopt;
-
-        params.emplace_back(param_name->span, param_type->span);
+        params.emplace_back(param_name->span, type_span);
 
         if (match(TokenKind::Comma)) continue;
         if (!check(TokenKind::RightParen)) {

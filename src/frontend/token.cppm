@@ -1,4 +1,4 @@
-export module zero.frontend.lexer.token;
+export module zero.frontend.token;
 
 import zero.common.source;
 import std;

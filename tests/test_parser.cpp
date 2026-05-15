@@ -1,5 +1,5 @@
 import zero.common.source;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.lexer;
 import zero.frontend.parser.ast;
 import zero.frontend.parser;

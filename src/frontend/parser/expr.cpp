@@ -2,7 +2,7 @@ module zero.frontend.parser:expr;
 
 import :impl;
 import zero.common.source;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.parser.ast;
 import std;
 
@@ -10,17 +10,17 @@ auto Parser::parse_assignment_expr() noexcept -> Expr* {
     const auto lhs = parse_binary_expr(PrecedenceLevel::LogicalOr);
 
     if (check(TokenKind::Equal)) {
-        const auto eq_tok = advance();
+        const auto eq_token = advance();
         const auto rhs = parse_assignment_expr();
-        return make_expr(AssignExpr{ .lhs = lhs, .eq = eq_tok->span, .rhs = rhs });
+        return make_expr(AssignExpr{ .lhs = lhs, .eq = eq_token->span, .rhs = rhs });
     }
 
     const auto* next = peek();
     if (next != nullptr) {
         if (const auto op = compound_assign_op(next->kind)) {
-            const auto op_tok = advance();
+            const auto op_token = advance();
             const auto rhs = parse_assignment_expr();
-            return make_expr(CompoundAssignExpr{ .lhs = lhs, .op = *op, .span = op_tok->span, .rhs = rhs });
+            return make_expr(CompoundAssignExpr{ .lhs = lhs, .op = *op, .span = op_token->span, .rhs = rhs });
         }
     }
 
@@ -30,11 +30,11 @@ auto Parser::parse_assignment_expr() noexcept -> Expr* {
 auto Parser::parse_binary_expr(PrecedenceLevel level) noexcept -> Expr* {
     auto lhs = parse_next_tighter(level);
     while (true) {
-        const auto* tok = peek();
-        if (tok == nullptr) break;
-        const auto op = token_to_binop(tok->kind, level);
+        const auto* token = peek();
+        if (token == nullptr) break;
+        const auto op = token_to_binop(token->kind, level);
         if (!op) break;
-        const auto span = tok->span;
+        const auto span = token->span;
         advance();
         const auto rhs = parse_next_tighter(level);
         lhs = make_expr(BinaryExpr{ .lhs = lhs, .op = *op, .span = span, .rhs = rhs });
@@ -59,12 +59,12 @@ auto Parser::parse_next_tighter(PrecedenceLevel level) noexcept -> Expr* {
 }
 
 auto Parser::parse_prefix_expr() noexcept -> Expr* {
-    const auto* tok = peek();
-    if (tok == nullptr) {
+    const auto* token = peek();
+    if (token == nullptr) {
         return make_expr(LiteralExpr{ eof_span() });
     }
 
-    switch (tok->kind) {
+    switch (token->kind) {
         using enum TokenKind;
         case Bang: {
             const auto op_span = advance()->span;
@@ -105,10 +105,10 @@ auto Parser::parse_postfix_expr() noexcept -> Expr* {
 
 auto Parser::parse_postfix_ops(Expr* lhs) noexcept -> Expr* {
     while (true) {
-        const auto* tok = peek();
-        if (tok == nullptr) break;
+        const auto* token = peek();
+        if (token == nullptr) break;
 
-        switch (tok->kind) {
+        switch (token->kind) {
             using enum TokenKind;
             case LeftParen: {
                 const auto lparen = advance()->span;
@@ -168,12 +168,12 @@ auto Parser::parse_postfix_ops(Expr* lhs) noexcept -> Expr* {
 }
 
 auto Parser::parse_primary_expr() noexcept -> Expr* {
-    const auto* tok = peek();
-    if (tok == nullptr) {
+    const auto* token = peek();
+    if (token == nullptr) {
         return make_expr(LiteralExpr{ eof_span() });
     }
 
-    switch (tok->kind) {
+    switch (token->kind) {
         using enum TokenKind;
         case NumberLiteral:
         case StringLiteral:
@@ -182,13 +182,15 @@ auto Parser::parse_primary_expr() noexcept -> Expr* {
             return make_expr(LiteralExpr{ span });
         }
         case Keyword: {
-            const auto keyword = text_at(source, tok->span);
+            const auto keyword = text_at(source, token->span);
             if (keyword == "true" || keyword == "false") {
                 const auto span = advance()->span;
                 return make_expr(LiteralExpr{ span });
             }
             if (keyword == "if") return parse_if_expr();
-            [[fallthrough]];
+            push_error("keyword '" + std::string(keyword) + "' cannot be used as an identifier", token->span);
+            advance();
+            return make_expr(LiteralExpr{ token->span });
         }
         case Identifier: {
             const auto span = advance()->span;
@@ -204,7 +206,7 @@ auto Parser::parse_primary_expr() noexcept -> Expr* {
             return make_expr(GroupExpr{ .lparen = lparen, .inner = inner, .rparen = rparen->span });
         }
         default: {
-            const auto span = tok->span;
+            const auto span = token->span;
             push_error("unexpected token in expression", span);
             advance();
             return make_expr(LiteralExpr{ span });
@@ -213,18 +215,18 @@ auto Parser::parse_primary_expr() noexcept -> Expr* {
 }
 
 auto Parser::parse_if_expr() noexcept -> Expr* {
-    const auto kw = advance();
+    const auto keyword = advance();
 
     const auto condition = parse_expr();
 
     if (!check(TokenKind::LeftBrace)) {
         push_error("expected '{' after if condition", current_span());
-        return make_expr(LiteralExpr{ kw->span });
+        return make_expr(LiteralExpr{ keyword->span });
     }
 
     auto then_branch = parse_block();
     if (!then_branch) {
-        return make_expr(LiteralExpr{ kw->span });
+        return make_expr(LiteralExpr{ keyword->span });
     }
 
     std::optional<Span> else_kw;
@@ -235,17 +237,17 @@ auto Parser::parse_if_expr() noexcept -> Expr* {
 
         if (!check(TokenKind::LeftBrace)) {
             push_error("expected '{' after else", current_span());
-            return make_expr(LiteralExpr{ kw->span });
+            return make_expr(LiteralExpr{ keyword->span });
         }
         auto parsed_else = parse_block();
         if (!parsed_else) {
-            return make_expr(LiteralExpr{ kw->span });
+            return make_expr(LiteralExpr{ keyword->span });
         }
         else_branch = std::move(*parsed_else);
     }
 
-    return make_expr(IfExpr{
-        .keyword = kw->span,
+    return make_expr(IfExpr {
+        .keyword = keyword->span,
         .condition = condition,
         .then_branch = std::move(*then_branch),
         .else_kw = else_kw,

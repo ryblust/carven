@@ -1,6 +1,6 @@
 export module zero.frontend.parser;
 
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.parser.ast;
 import std;
 

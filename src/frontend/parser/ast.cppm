@@ -19,9 +19,30 @@ export enum class BinOp {
 export enum class UnaryOp { Plus, Neg, BitNot, LogicalNot, PreInc, PreDec, AddressOf, Deref, };
 export enum class PostfixOp { PostInc, PostDec, };
 
-export auto to_string(BinOp op) noexcept -> const char*;
-export auto to_string(UnaryOp op) noexcept -> const char*;
-export auto to_string(PostfixOp op) noexcept -> const char*;
+export constexpr auto to_string(BinOp op) noexcept -> const char* {
+    using enum BinOp;
+    switch (op) {
+        case Add: return "+";  case Sub:    return "-";  case Mul:   return "*";  case Div:    return "/";
+        case Mod: return "%";  case BitAnd: return "&";  case BitOr: return "|";  case BitXor: return "^";
+        case Shl: return "<<"; case Shr:    return ">>"; case Eq:    return "=="; case Ne:     return "!=";
+        case Lt:  return "<";  case Le:     return "<="; case Gt:    return ">";  case Ge:     return ">=";
+        case LogicalAnd: return "&&"; case LogicalOr: return "||"; default: return "?";
+    }
+}
+
+export constexpr auto to_string(UnaryOp op) noexcept -> const char* {
+    using enum UnaryOp;
+    switch (op) {
+        case Plus:       return "+"; case Neg:    return "-";  case BitNot: return "~";
+        case LogicalNot: return "!"; case PreInc: return "++"; case PreDec: return "--";
+        case AddressOf:  return "&"; case Deref:  return "*";  default:     return "?";
+    }
+}
+
+export constexpr auto to_string(PostfixOp op) noexcept -> const char* {
+    using enum PostfixOp;
+    switch (op) { case PostInc: return "++"; case PostDec: return "--"; default: return "?"; }
+}
 
 export struct Expr;
 export struct Stmt;
@@ -139,9 +160,7 @@ export struct ReturnStmt final {
 
 export struct WhileStmt final {
     Span keyword;
-    Span lparen;
     Expr* condition;
-    Span rparen;
     Stmt* body;
 };
 
@@ -211,6 +230,8 @@ export struct FunctionItem final {
 export struct ImportItem final {
     Span module_name;
     std::vector<Span> using_decls;
+    bool using_wildcard = false;
+    bool is_std_module = false;
 };
 
 export struct EnumItem final {

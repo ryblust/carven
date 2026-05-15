@@ -2,26 +2,26 @@ module zero.frontend.parser:stmt;
 
 import :impl;
 import zero.common.source;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.parser.ast;
 import std;
 
 auto Parser::parse_stmt() noexcept -> Stmt* {
-    const auto* tok = peek();
-    if (tok == nullptr) return nullptr;
+    const auto* token = peek();
+    if (token == nullptr) return nullptr;
 
-    if (tok->kind == TokenKind::SemiColon) {
+    if (token->kind == TokenKind::SemiColon) {
         const auto span = advance()->span;
         return make_stmt(EmptyStmt{ span });
     }
 
-    if (tok->kind == TokenKind::Keyword) {
-        const auto kw = text_at(source, tok->span);
-        if (kw == "let" || kw == "var" || kw == "const") return parse_var_decl();
-        if (kw == "return") return parse_return_stmt();
-        if (kw == "while") return parse_while_stmt();
-        if (kw == "for") return parse_for_stmt();
-        if (kw == "if") {
+    if (token->kind == TokenKind::Keyword) {
+        const auto keyword = text_at(source, token->span);
+        if (keyword == "let" || keyword == "var" || keyword == "const") return parse_var_decl();
+        if (keyword == "return") return parse_return_stmt();
+        if (keyword == "while") return parse_while_stmt();
+        if (keyword == "for") return parse_for_stmt();
+        if (keyword == "if") {
             const auto expr = parse_if_expr();
             return make_stmt(ExprStmt{ .expr = expr, .semicolon = Span{} });
         }
@@ -32,15 +32,19 @@ auto Parser::parse_stmt() noexcept -> Stmt* {
 
 auto Parser::parse_expr_stmt() noexcept -> Stmt* {
     const auto expr = parse_expr();
-    const auto semi = expect(TokenKind::SemiColon, "expected ';' after expression");
-    if (!semi) {
-        return make_stmt(EmptyStmt{ eof_span() });
+    if (const auto semi = match(TokenKind::SemiColon)) {
+        return make_stmt(ExprStmt{ .expr = expr, .semicolon = semi->span });
     }
-    return make_stmt(ExprStmt{ .expr = expr, .semicolon = semi->span });
+    // Semicolon is optional at end of block or end of input
+    if (check(TokenKind::RightBrace) || eof()) {
+        return make_stmt(ExprStmt{ .expr = expr, .semicolon = Span{} });
+    }
+    push_error("expected ';' after expression", current_span());
+    return make_stmt(EmptyStmt{ eof_span() });
 }
 
 auto Parser::parse_var_decl() noexcept -> Stmt* {
-    const auto kw = advance();
+    const auto keyword = advance();
     const auto name = expect_name("expected variable name");
     if (!name) {
         synchronize_to_stmt_end();
@@ -65,9 +69,9 @@ auto Parser::parse_var_decl() noexcept -> Stmt* {
         init = parse_expr();
     }
 
-    const auto keyword = text_at(source, kw->span);
-    if ((keyword == "let" || keyword == "const") && init == nullptr) {
-        push_error(std::string(keyword) + " requires an initializer", kw->span);
+    const auto keyword_text = text_at(source, keyword->span);
+    if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
+        push_error(std::string(keyword_text) + " requires an initializer", keyword->span);
     }
 
     const auto semi = expect(TokenKind::SemiColon, "expected ';' after variable declaration");
@@ -76,8 +80,8 @@ auto Parser::parse_var_decl() noexcept -> Stmt* {
         return nullptr;
     }
 
-    return make_stmt(VarDecl{
-        .keyword = kw->span,
+    return make_stmt(VarDecl {
+        .keyword = keyword->span,
         .name = name->span,
         .type = type_span,
         .eq = eq_span,
@@ -87,7 +91,7 @@ auto Parser::parse_var_decl() noexcept -> Stmt* {
 }
 
 auto Parser::parse_return_stmt() noexcept -> Stmt* {
-    const auto kw = advance();
+    const auto keyword = advance();
     Expr* value = nullptr;
     if (!check(TokenKind::SemiColon)) {
         value = parse_expr();
@@ -97,7 +101,7 @@ auto Parser::parse_return_stmt() noexcept -> Stmt* {
         synchronize_to_stmt_end();
         return nullptr;
     }
-    return make_stmt(ReturnStmt{ .keyword = kw->span, .value = value, .semicolon = semi->span });
+    return make_stmt(ReturnStmt{ .keyword = keyword->span, .value = value, .semicolon = semi->span });
 }
 
 auto Parser::parse_stmt_or_block() noexcept -> Stmt* {
@@ -109,16 +113,12 @@ auto Parser::parse_stmt_or_block() noexcept -> Stmt* {
 }
 
 auto Parser::parse_while_stmt() noexcept -> Stmt* {
-    const auto kw = advance();
-    const auto lparen = expect(TokenKind::LeftParen, "expected '(' after while");
-    if (!lparen) { synchronize_to_stmt_end(); return nullptr; }
+    const auto keyword = advance();
     const auto condition = parse_expr();
-    const auto rparen = expect(TokenKind::RightParen, "expected ')' after while condition");
-    if (!rparen) { synchronize_to_stmt_end(); return nullptr; }
     if (const auto body = parse_stmt_or_block()) {
-        return make_stmt(WhileStmt{
-            .keyword = kw->span, .lparen = lparen->span,
-            .condition = condition, .rparen = rparen->span,
+        return make_stmt(WhileStmt {
+            .keyword = keyword->span,
+            .condition = condition,
             .body = body
         });
     }
@@ -126,18 +126,21 @@ auto Parser::parse_while_stmt() noexcept -> Stmt* {
 }
 
 auto Parser::parse_for_stmt() noexcept -> Stmt* {
-    const auto kw = advance();
+    const auto keyword = advance();
     const auto lparen = expect(TokenKind::LeftParen, "expected '(' after for");
     if (!lparen) { synchronize_to_stmt_end(); return nullptr; }
 
     ForInit* for_init = nullptr;
+    auto init_semi_span = Span();
     if (!check(TokenKind::SemiColon)) {
-        const auto* tok = peek();
-        if (tok != nullptr && tok->kind == TokenKind::Keyword) {
-            const auto kw_text = text_at(source, tok->span);
-            if (kw_text == "let" || kw_text == "var" || kw_text == "const") {
+        const auto* token = peek();
+        if (token != nullptr && token->kind == TokenKind::Keyword) {
+            const auto keyword_text = text_at(source, token->span);
+            if (keyword_text == "let" || keyword_text == "var" || keyword_text == "const") {
                 if (auto decl = parse_var_decl()) {
-                    for_init = make_for_init(std::get<VarDecl>(std::move(*decl)));
+                    auto& var_decl = std::get<VarDecl>(*decl);
+                    init_semi_span = var_decl.semicolon;
+                    for_init = make_for_init(std::move(var_decl));
                 }
             } else {
                 const auto expr = parse_expr();
@@ -148,8 +151,13 @@ auto Parser::parse_for_stmt() noexcept -> Stmt* {
             for_init = make_for_init(ExprStmt{ .expr = expr, .semicolon = Span{} });
         }
     }
-    const auto init_semi = expect(TokenKind::SemiColon, "expected ';' after for-init");
-    if (!init_semi) { synchronize_to_stmt_end(); return nullptr; }
+    if (!is_empty(init_semi_span)) {
+        // semicolon was consumed by parse_var_decl
+    } else {
+        const auto init_semi = expect(TokenKind::SemiColon, "expected ';' after for-init");
+        if (!init_semi) { synchronize_to_stmt_end(); return nullptr; }
+        init_semi_span = init_semi->span;
+    }
 
     Expr* condition = nullptr;
     if (!check(TokenKind::SemiColon)) {
@@ -165,12 +173,13 @@ auto Parser::parse_for_stmt() noexcept -> Stmt* {
     const auto rparen = expect(TokenKind::RightParen, "expected ')' after for-step");
     if (!rparen) { synchronize_to_stmt_end(); return nullptr; }
 
-    const auto body = parse_stmt_or_block();
-
-    return make_stmt(ForStmt{
-        .keyword = kw->span, .lparen = lparen->span,
-        .init = for_init, .init_semi = init_semi->span,
-        .condition = condition, .cond_semi = cond_semi->span,
-        .step = step, .rparen = rparen->span, .body = body
-    });
+    if (const auto body = parse_stmt_or_block()) {
+        return make_stmt(ForStmt {
+            .keyword = keyword->span, .lparen = lparen->span,
+            .init = for_init, .init_semi = init_semi_span,
+            .condition = condition, .cond_semi = cond_semi->span,
+            .step = step, .rparen = rparen->span, .body = body
+        });
+    }
+    return nullptr;
 }

@@ -1,7 +1,7 @@
 module zero.frontend.parser:impl;
 
 import zero.common.source;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.parser.ast;
 import std;
 
@@ -10,7 +10,7 @@ enum class PrecedenceLevel {
     Equality, Relational, Shift, Additive, Multiplicative,
 };
 
-auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
+constexpr auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
     using enum TokenKind;
     using enum BinOp;
     switch (kind) {
@@ -28,7 +28,7 @@ auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
     }
 }
 
-auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
+constexpr auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
     using enum TokenKind;
     using enum BinOp;
     switch (level) {
@@ -114,9 +114,9 @@ public:
     auto parse_expr() noexcept -> Expr* {
         const auto lhs = parse_assignment_expr();
         if (check(TokenKind::Comma)) {
-            const auto comma_tok = advance();
+            const auto comma_token = advance();
             const auto rhs = parse_expr();
-            return make_expr(CommaExpr{ .lhs = lhs, .comma = comma_tok->span, .rhs = rhs });
+            return make_expr(CommaExpr{ .lhs = lhs, .comma = comma_token->span, .rhs = rhs });
         }
         return lhs;
     }
@@ -202,28 +202,28 @@ private:
         return advance();
     }
 
-    auto expect(TokenKind kind, std::string message) noexcept -> std::optional<Token> {
+    auto expect(TokenKind kind, std::string_view message) noexcept -> std::optional<Token> {
         if (auto token = match(kind)) return token;
-        push_error(std::move(message), current_span());
+        push_error(message, current_span());
         return std::nullopt;
     }
 
-    auto expect_name(std::string message) noexcept -> std::optional<Token> {
-        return expect(TokenKind::Identifier, std::move(message));
+    auto expect_name(std::string_view message) noexcept -> std::optional<Token> {
+        return expect(TokenKind::Identifier, message);
     }
 
-    auto expect_type(std::string message) noexcept -> std::optional<Token> {
+    auto expect_type(std::string_view message) noexcept -> std::optional<Token> {
         const auto* token = peek();
         if (token != nullptr && (token->kind == TokenKind::Identifier || token->kind == TokenKind::Keyword)) {
             return advance();
         }
 
-        push_error(std::move(message), current_span());
+        push_error(message, current_span());
         return std::nullopt;
     }
 
-    auto push_error(std::string message, Span span) noexcept -> void {
-        result.errors.emplace_back(std::move(message), span, location_at(source, span.start));
+    auto push_error(std::string_view message, Span span) noexcept -> void {
+        result.errors.emplace_back(std::string(message), span, location_at(source, span.start));
     }
 
     auto is_top_level_start(Token token) const noexcept -> bool {
@@ -272,13 +272,13 @@ private:
 
     auto synchronize_to_stmt_end() noexcept -> void {
         while (!eof()) {
-            const auto* tok = peek();
-            if (tok == nullptr) return;
-            if (tok->kind == TokenKind::SemiColon || tok->kind == TokenKind::RightBrace) {
+            const auto* token = peek();
+            if (token == nullptr) return;
+            if (token->kind == TokenKind::SemiColon || token->kind == TokenKind::RightBrace) {
                 advance();
                 return;
             }
-            if (is_top_level_start(*tok)) return;
+            if (is_top_level_start(*token)) return;
             advance();
         }
     }
@@ -320,7 +320,7 @@ auto Parser::parse_block() noexcept -> std::optional<BlockStmt> {
     const auto rbrace = expect(TokenKind::RightBrace, "expected '}'");
     if (!rbrace) return std::nullopt;
 
-    return BlockStmt{
+    return BlockStmt {
         .lbrace = lbrace->span,
         .statements = std::move(statements),
         .rbrace = rbrace->span

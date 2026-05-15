@@ -1,14 +1,17 @@
-module zero.driver.handler;
+export module zero.driver.dump;
 
 import zero.common.filesystem;
 import zero.common.source;
 import zero.driver.pipeline;
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import zero.frontend.lexer;
 import zero.frontend.parser.ast;
 import zero.frontend.parser;
+import zero.frontend.ast_walker;
 
 import std;
+
+export auto dump(const Driver& driver) noexcept -> int;
 
 namespace {
 
@@ -19,56 +22,57 @@ auto dump_indent(std::string& out, int level) noexcept -> void {
 auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int level) noexcept -> void;
 auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, int level) noexcept -> void;
 
-auto dump_item(const ImportItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
-    dump_indent(out, level);
-    out.append("Import: ").append(text_at(source, item.module_name));
-    if (!item.using_decls.empty()) {
-        out.append(" { ");
-        for (auto i = 0uz; i < item.using_decls.size(); ++i) {
-            if (i > 0) out.append(", ");
-            out.append(text_at(source, item.using_decls[i]));
+auto dump_top_level(const TopLevelItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
+    std::visit(Overloaded {
+        [&](const ImportItem& it) -> void {
+            dump_indent(out, level);
+            out.append("Import: ").append(text_at(source, it.module_name));
+            if (!it.using_decls.empty()) {
+                out.append(" { ");
+                for (auto i = 0uz; i < it.using_decls.size(); ++i) {
+                    if (i > 0) out.append(", ");
+                    out.append(text_at(source, it.using_decls[i]));
+                }
+                out.append(" }");
+            }
+            out.push_back('\n');
+        },
+        [&](const EnumItem& it) -> void {
+            dump_indent(out, level);
+            out.append("Enum: ").append(text_at(source, it.name));
+            if (!is_empty(it.size)) out.append(": ").append(text_at(source, it.size));
+            out.append(" { ");
+            for (auto i = 0uz; i < it.fields.size(); ++i) {
+                if (i > 0) out.append(", ");
+                out.append(text_at(source, it.fields[i]));
+            }
+            out.append(" }\n");
+        },
+        [&](const StructItem& it) -> void {
+            dump_indent(out, level);
+            out.append("Struct: ").append(text_at(source, it.name)).append(" {\n");
+            for (const auto& field : it.fields) {
+                dump_indent(out, level + 1);
+                out.append(text_at(source, field.name)).append(": ").append(text_at(source, field.type)).append("\n");
+            }
+            dump_indent(out, level);
+            out.append("}\n");
+        },
+        [&](const FunctionItem& it) -> void {
+            dump_indent(out, level);
+            out.append("fn ").append(text_at(source, it.name)).append("(");
+            for (auto i = 0uz; i < it.params.size(); ++i) {
+                if (i > 0) out.append(", ");
+                out.append(text_at(source, it.params[i].name)).append(": ").append(text_at(source, it.params[i].type));
+            }
+            out.append(")");
+            if (!is_empty(it.return_type)) out.append(" -> ").append(text_at(source, it.return_type));
+            out.append(" {\n");
+            walk_stmts(it.body->statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
+            dump_indent(out, level);
+            out.append("}\n");
         }
-        out.append(" }");
-    }
-    out.push_back('\n');
-}
-
-auto dump_item(const EnumItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
-    dump_indent(out, level);
-    out.append("Enum: ").append(text_at(source, item.name));
-    if (!is_empty(item.size)) out.append(": ").append(text_at(source, item.size));
-    out.append(" { ");
-    for (auto i = 0uz; i < item.fields.size(); ++i) {
-        if (i > 0) out.append(", ");
-        out.append(text_at(source, item.fields[i]));
-    }
-    out.append(" }\n");
-}
-
-auto dump_item(const StructItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
-    dump_indent(out, level);
-    out.append("Struct: ").append(text_at(source, item.name)).append(" {\n");
-    for (const auto& field : item.fields) {
-        dump_indent(out, level + 1);
-        out.append(text_at(source, field.name)).append(": ").append(text_at(source, field.type)).append("\n");
-    }
-    dump_indent(out, level);
-    out.append("}\n");
-}
-
-auto dump_item(const FunctionItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
-    dump_indent(out, level);
-    out.append("fn ").append(text_at(source, item.name)).append("(");
-    for (auto i = 0uz; i < item.params.size(); ++i) {
-        if (i > 0) out.append(", ");
-        out.append(text_at(source, item.params[i].name)).append(": ").append(text_at(source, item.params[i].type));
-    }
-    out.append(")");
-    if (!is_empty(item.return_type)) out.append(" -> ").append(text_at(source, item.return_type));
-    out.append(" {\n");
-    for (const auto* stmt : item.body->statements) dump_stmt(*stmt, source, out, level + 1);
-    dump_indent(out, level);
-    out.append("}\n");
+    }, item);
 }
 
 auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int level) noexcept -> void {
@@ -156,12 +160,12 @@ auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int 
             out.append("If(");
             dump_expr(*e.condition, source, out, level);
             out.append(") {\n");
-            for (const auto* stmt : e.then_branch.statements) dump_stmt(*stmt, source, out, level + 1);
+            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
             out.append("}");
             if (e.else_branch.has_value()) {
                 out.append(" else {\n");
-                for (const auto* stmt : e.else_branch->statements) dump_stmt(*stmt, source, out, level + 1);
+                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
                 dump_indent(out, level);
                 out.append("}");
             }
@@ -174,7 +178,7 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, int 
         [&](const BlockStmt& s) -> void {
             dump_indent(out, level);
             out.append("Block {\n");
-            for (const auto* st : s.statements) dump_stmt(*st, source, out, level + 1);
+            walk_stmts(s.statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
             out.append("}\n");
         },
@@ -211,46 +215,47 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, int 
             out.append("while (");
             dump_expr(*s.condition, source, out, level);
             out.append(") ");
-            if (const auto body = std::get_if<BlockStmt>(s.body)) {
-                out.append("{\n");
-                for (const auto* st : body->statements) dump_stmt(*st, source, out, level + 1);
-                dump_indent(out, level);
-                out.append("}\n");
-            } else {
-                out.append("\n");
-                dump_stmt(*s.body, source, out, level + 1);
-            }
+            walk_body(s.body, [&](const Stmt& body_stmt) {
+                if (std::get_if<BlockStmt>(s.body)) {
+                    out.append("{\n");
+                    dump_stmt(body_stmt, source, out, level + 1);
+                    dump_indent(out, level);
+                    out.append("}\n");
+                } else {
+                    out.append("\n");
+                    dump_stmt(body_stmt, source, out, level + 1);
+                }
+            });
         },
         [&](const ForStmt& s) -> void {
             dump_indent(out, level);
             out.append("for (");
             if (s.init != nullptr) {
-                std::visit(Overloaded {
-                    [&](const VarDecl& d) -> void {
-                        out.append(text_at(source, d.keyword)).append(" ").append(text_at(source, d.name));
-                        if (!is_empty(d.type)) out.append(": ").append(text_at(source, d.type));
-                        if (d.init != nullptr) {
-                            out.append(" = ");
-                            dump_expr(*d.init, source, out, level);
-                        }
-                    },
-                    [&](const ExprStmt& es) -> void { dump_expr(*es.expr, source, out, level); }
-                }, *s.init);
+                walk_for_init(*s.init, [&](const VarDecl& d) {
+                    out.append(text_at(source, d.keyword)).append(" ").append(text_at(source, d.name));
+                    if (!is_empty(d.type)) out.append(": ").append(text_at(source, d.type));
+                    if (d.init != nullptr) {
+                        out.append(" = ");
+                        dump_expr(*d.init, source, out, level);
+                    }
+                }, [&](const ExprStmt& es) { dump_expr(*es.expr, source, out, level); });
             }
             out.append("; ");
             if (s.condition != nullptr) dump_expr(*s.condition, source, out, level);
             out.append("; ");
             if (s.step != nullptr) dump_expr(*s.step, source, out, level);
             out.append(") ");
-            if (const auto body = std::get_if<BlockStmt>(s.body)) {
-                out.append("{\n");
-                for (const auto* st : body->statements) dump_stmt(*st, source, out, level + 1);
-                dump_indent(out, level);
-                out.append("}\n");
-            } else {
-                out.append("\n");
-                dump_stmt(*s.body, source, out, level + 1);
-            }
+            walk_body(s.body, [&](const Stmt& body_stmt) {
+                if (std::get_if<BlockStmt>(s.body)) {
+                    out.append("{\n");
+                    dump_stmt(body_stmt, source, out, level + 1);
+                    dump_indent(out, level);
+                    out.append("}\n");
+                } else {
+                    out.append("\n");
+                    dump_stmt(body_stmt, source, out, level + 1);
+                }
+            });
         }
     }, stmt);
 }
@@ -260,7 +265,7 @@ auto dump_ast(const ParseResult& result, std::string_view source) noexcept -> st
     out.reserve(source.size() * 4);
 
     for (const auto& item : result.items) {
-        std::visit([&](const auto& it) -> void { dump_item(it, source, out, 0); }, item);
+        dump_top_level(item, source, out, 0);
     }
 
     return out;
@@ -268,18 +273,7 @@ auto dump_ast(const ParseResult& result, std::string_view source) noexcept -> st
 
 } // namespace
 
-auto run(const Driver& driver) -> int {
-    if (const auto content = read_file(driver.input_files[0]); content) {
-        return driver.run_single_file({
-            .filename = std::string(driver.input_files[0]), .content = std::move(*content)
-        });
-    } else {
-        std::println("zero run: error: cannot read '{}'", driver.input_files[0]);
-        return 1;
-    }
-}
-
-auto dump(const Driver& driver) -> int {
+export auto dump(const Driver& driver) noexcept -> int {
     const auto content = read_file(driver.input_files[0]);
     if (!content) {
         std::println("zero dump: error: cannot read '{}'", driver.input_files[0]);
@@ -295,7 +289,7 @@ auto dump(const Driver& driver) -> int {
             std::println("{:>4}:{:<2}    {:<20}  {}",
                 pos.line, pos.column, display_token_type(token.kind), text_at(source, token.span));
         }
-        if (!driver.only_tokens) std::println("");
+        if (!driver.only_tokens) std::println();
     }
 
     if (!driver.only_tokens) {
@@ -307,15 +301,5 @@ auto dump(const Driver& driver) -> int {
         std::print("{}", dump_ast(result, source));
     }
 
-    return 0;
-}
-
-auto build([[maybe_unused]] const Driver& driver) -> int {
-    std::println("zero build: not yet implemented");
-    return 0;
-}
-
-auto check([[maybe_unused]] const Driver& driver) -> int {
-    std::println("zero check: not yet implemented");
     return 0;
 }

@@ -13,7 +13,7 @@ Zero is a programming language that transpiles `.zero` source files to standard 
 xmake f --toolchain=clang-cl
 
 # Configure (macOS) — adjust LLVM path to match installed version
-xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.4
+xmake f --toolchain=llvm --sdk=/opt/homebrew/Cellar/llvm/22.1.5
 
 # Clean the build artifacts (preserves BMI cache)
 xmake clean

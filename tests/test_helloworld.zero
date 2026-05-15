@@ -1,3 +1,5 @@
+import std using { println };
+
 fn main() {
-    std::println("Hello World");
+    println("Hello World");
 }

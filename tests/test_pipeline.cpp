@@ -9,8 +9,7 @@ import std;
 static auto test_transpile_empty_function() noexcept -> void {
     current_test = "transpile empty function";
     auto driver = Driver();
-    driver.default_include_std = false;
-    const auto result = driver.transpile({.filename = "test.zero", .content = "fn main() {}"});
+    const auto result = transpile(driver, {.filename = "test.zero", .content = "fn main() {}"});
     CHECK(!result.has_errors());
     CHECK(result.output.contains("auto main() noexcept -> int"));
 }
@@ -18,7 +17,7 @@ static auto test_transpile_empty_function() noexcept -> void {
 static auto test_transpile_parse_error() noexcept -> void {
     current_test = "transpile parse error";
     auto driver = Driver();
-    const auto result = driver.transpile({.filename = "test.zero", .content = "!!! not valid"});
+    const auto result = transpile(driver, {.filename = "test.zero", .content = "!!! not valid"});
     CHECK(result.has_errors());
     CHECK(result.output.empty());
 }
@@ -26,8 +25,7 @@ static auto test_transpile_parse_error() noexcept -> void {
 static auto test_transpile_with_params_and_return() noexcept -> void {
     current_test = "transpile with params and return";
     auto driver = Driver();
-    driver.default_include_std = false;
-    const auto result = driver.transpile({
+    const auto result = transpile(driver, {
         .filename = "test.zero",
         .content = "fn add(a: i32, b: i32) -> i32 {}"
     });
@@ -38,20 +36,18 @@ static auto test_transpile_with_params_and_return() noexcept -> void {
 static auto test_transpile_import() noexcept -> void {
     current_test = "transpile import";
     auto driver = Driver();
-    driver.default_include_std = false;
-    const auto result = driver.transpile({
+    const auto result = transpile(driver, {
         .filename = "test.zero",
         .content = "import std;"
     });
     CHECK(!result.has_errors());
-    CHECK(result.output.contains("import std;"));
+    CHECK(!result.output.contains("import std;"));
 }
 
 static auto test_transpile_import_with_using() noexcept -> void {
     current_test = "transpile import with using";
     auto driver = Driver();
-    driver.default_include_std = false;
-    const auto result = driver.transpile({
+    const auto result = transpile(driver, {
         .filename = "test.zero",
         .content = "import std using { println, format };"
     });
@@ -64,7 +60,7 @@ static auto test_parse_flags_defaults() noexcept -> void {
     current_test = "parse_flags defaults";
     auto driver = Driver();
     CHECK_EQ(driver.language_standard, static_cast<std::uint8_t>(23));
-    CHECK_EQ(driver.default_include_std, true);
+    CHECK_EQ(driver.import_std, false);
     CHECK(driver.input_files.empty());
 }
 
@@ -83,11 +79,11 @@ static auto test_parse_flags_output_dir() noexcept -> void {
     CHECK_EQ(driver.output_dir.string(), std::string("/tmp/out"));
 }
 
-static auto test_parse_flags_no_default_include() noexcept -> void {
-    current_test = "parse_flags no default include";
+static auto test_parse_flags_import_std() noexcept -> void {
+    current_test = "parse_flags import std";
     auto driver = Driver();
-    driver.parse_flags({"--no-default-include-std", "file.zero"});
-    CHECK_EQ(driver.default_include_std, false);
+    driver.parse_flags({"--import-std", "file.zero"});
+    CHECK_EQ(driver.import_std, true);
 }
 
 static auto test_parse_flags_unknown_standard() noexcept -> void {
@@ -115,7 +111,7 @@ auto main() noexcept -> int {
     test_parse_flags_defaults();
     test_parse_flags_standard();
     test_parse_flags_output_dir();
-    test_parse_flags_no_default_include();
+    test_parse_flags_import_std();
     test_parse_flags_unknown_standard();
     test_parse_flags_input_files();
 

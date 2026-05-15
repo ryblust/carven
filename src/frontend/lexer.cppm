@@ -1,6 +1,6 @@
-module zero.frontend.lexer;
+export module zero.frontend.lexer;
 
-import zero.frontend.lexer.token;
+import zero.frontend.token;
 import std;
 
 namespace {
@@ -217,10 +217,10 @@ private:
 
 } // namespace
 
-auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
+export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
     auto lexer = Lexer(source);
     auto tokens = std::vector<Token>();
-    tokens.reserve(source.size() / 3);
+    tokens.reserve(source.size() / 4);
 
     for (auto t = lexer.next(); t.kind != TokenKind::End; t = lexer.next()) {
         tokens.emplace_back(t);
