@@ -33,44 +33,49 @@ export struct Driver final {
 #endif
     std::vector<std::string_view> input_files;
 
-    auto parse_flags(std::span<const char* const> flags) noexcept -> bool {
-        for (const std::string_view flag : flags) {
-            if (flag.starts_with("-std=")) {
-                const auto standard = flag.substr(5);
-                if      (standard == "c++14") language_standard = 14;
-                else if (standard == "c++17") language_standard = 17;
-                else if (standard == "c++20") language_standard = 20;
-                else if (standard == "c++23") language_standard = 23;
-                else if (standard == "c++26") language_standard = 26;
-                else {
-                    std::println("zero: error: unknown standard '{}'", standard);
-                    return false;
-                }
-            } else if (flag.starts_with("--output-dir=")) {
-                output_dir = flag.substr(13);
-            } else if (flag == "--import-std") {
-                import_std = true;
-            } else if (flag == "-E") {
-                emit_only = true;
-            } else if (flag == "--only-tokens") {
-                only_tokens = true;
-            } else if (flag == "--only-ast") {
-                only_ast = true;
-            } else if (flag.starts_with('-')) {
-                std::println("zero: error: unknown flag '{}'", flag);
-                return false;
-            } else {
-                input_files.push_back(flag);
-            }
-        }
-
-        return true;
-    }
-
-    auto has_input_files() const noexcept -> bool { return !input_files.empty(); }
+    constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> bool;
+    constexpr auto has_input_files() const noexcept -> bool;
 };
 
-export auto transpile(const Driver& driver, SourceFile file) noexcept -> TranspileResult {
+constexpr auto Driver::parse_flags(std::span<const char* const> flags) noexcept -> bool {
+    for (const std::string_view flag : flags) {
+        if (flag.starts_with("-std=")) {
+            const auto standard = flag.substr(5);
+            if      (standard == "c++14") language_standard = 14;
+            else if (standard == "c++17") language_standard = 17;
+            else if (standard == "c++20") language_standard = 18;
+            else if (standard == "c++23") language_standard = 23;
+            else if (standard == "c++26") language_standard = 26;
+            else {
+                std::println("zero: error: unknown standard '{}'", standard);
+                return false;
+            }
+        } else if (flag.starts_with("--output-dir=")) {
+            output_dir = flag.substr(13);
+        } else if (flag == "--import-std") {
+            import_std = true;
+        } else if (flag == "-E") {
+            emit_only = true;
+        } else if (flag == "--only-tokens") {
+            only_tokens = true;
+        } else if (flag == "--only-ast") {
+            only_ast = true;
+        } else if (flag.starts_with('-')) {
+            std::println("zero: error: unknown flag '{}'", flag);
+            return false;
+        } else {
+            input_files.push_back(flag);
+        }
+    }
+
+    return true;
+}
+
+constexpr auto Driver::has_input_files() const noexcept -> bool {
+    return !input_files.empty();
+}
+
+export constexpr auto transpile(const Driver& driver, SourceFile file) noexcept -> TranspileResult {
     auto parse_result = parse(tokenize(file.content), file.content);
 
     if (parse_result.has_errors()) {
@@ -83,8 +88,8 @@ export auto transpile(const Driver& driver, SourceFile file) noexcept -> Transpi
     auto emit_std_module = driver.import_std;
     if (!emit_std_module) {
         for (const auto& item : parse_result.items) {
-            if (const auto imp = std::get_if<ImportItem>(&item)) {
-                if (imp->is_std_module) {
+            if (const auto import_module = std::get_if<ImportItem>(&item)) {
+                if (import_module->is_std_module) {
                     emit_std_module = true;
                     break;
                 }

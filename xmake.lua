@@ -2,7 +2,7 @@ add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = ".vscode"})
 set_defaultmode("debug")
 -- set_policy("build.c++.modules.non_cascading_changes", true)
-set_policy("build.c++.modules.reuse.strict", true)
+-- set_policy("build.c++.modules.reuse.strict", true)
 set_policy("build.progress_style", "multirow")
 
 target("zero")

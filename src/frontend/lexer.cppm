@@ -3,8 +3,6 @@ export module zero.frontend.lexer;
 import zero.frontend.token;
 import std;
 
-namespace {
-
 constexpr auto is_alpha(char c) noexcept -> bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
@@ -214,8 +212,6 @@ private:
         return { kind,  { start_pos, current_pos } };
     }
 };
-
-} // namespace
 
 export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
     auto lexer = Lexer(source);

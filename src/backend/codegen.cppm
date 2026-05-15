@@ -24,19 +24,19 @@ constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view
 }
 
 constexpr auto generate_import(const ImportItem& item, std::string_view source) noexcept -> std::string {
-    const auto mod = text_at(source, item.module_name);
+    const auto module_name = text_at(source, item.module_name);
     auto result = std::string();
 
     if (!item.is_std_module) {
-        result.append("import ").append(mod).append(";\n");
+        result.append("import ").append(module_name).append(";\n");
     }
 
     if (item.using_wildcard) {
-        result.append("using namespace ").append(mod).append(";\n");
+        result.append("using namespace ").append(module_name).append(";\n");
     } else {
         for (const auto& decl : item.using_decls) {
             result.append("using ")
-                  .append(mod)
+                  .append(module_name)
                   .append("::").append(text_at(source, decl)).append(";\n");
         }
     }
@@ -329,9 +329,7 @@ constexpr auto generate_include_preamble(std::uint8_t standard) noexcept -> cons
     ;
 }
 
-export constexpr auto generate(
-    std::span<const TopLevelItem> items, std::string_view source, std::uint8_t standard, bool default_include_std
-) noexcept -> std::string {
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, std::uint8_t standard, bool default_include_std) noexcept -> std::string {
     auto result = std::string();
 
     if (default_include_std) {
