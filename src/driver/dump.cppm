@@ -5,15 +5,9 @@ import zero.common.source;
 import zero.driver.pipeline;
 import zero.frontend.token;
 import zero.frontend.lexer;
-import zero.frontend.parser.ast;
+import zero.frontend.ast;
 import zero.frontend.parser;
-import zero.frontend.ast_walker;
-
 import std;
-
-export auto dump(const Driver& driver) noexcept -> int;
-
-namespace {
 
 auto dump_indent(std::string& out, int level) noexcept -> void {
     for (auto i = 0; i < level; ++i) out.append("  ");
@@ -270,8 +264,6 @@ auto dump_ast(const ParseResult& result, std::string_view source) noexcept -> st
 
     return out;
 }
-
-} // namespace
 
 export auto dump(const Driver& driver) noexcept -> int {
     const auto content = read_file(driver.input_files[0]);

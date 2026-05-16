@@ -1,7 +1,7 @@
 import zero.common.source;
 import zero.frontend.token;
 import zero.frontend.lexer;
-import zero.frontend.parser.ast;
+import zero.frontend.ast;
 import zero.frontend.parser;
 import zero.tests.utils;
 import std;
@@ -214,7 +214,7 @@ static auto test_postfix_inc() noexcept -> void {
     auto r = parse_expr_src("x++");
     if (const auto* e = root_expr(r)) {
         const auto* p = as<PostfixExpr>(*e);
-        CHECK(p != nullptr && p->op == PostfixOp::PostInc);
+        CHECK(p != nullptr && p->op == UnaryOp::PostInc);
         if (p) CHECK(as<IdentExpr>(*p->lhs) != nullptr);
     } else CHECK(false);
 }

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Zero is a programming language that transpiles `.zero` source files to standard C++ code. The transpiler itself is written in C++26 using modules (`.cppm` files) and builds with xmake.
 
+Full language grammar and supported features are documented in [`docs/grammar.md`](docs/grammar.md).
+
 ## Build & Run
 
 ```shell

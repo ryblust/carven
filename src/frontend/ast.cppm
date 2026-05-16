@@ -1,4 +1,4 @@
-export module zero.frontend.parser.ast;
+export module zero.frontend.ast;
 
 import zero.common.source;
 import std;
@@ -9,15 +9,17 @@ export struct ParseError final {
     SourceLocation location;
 };
 
-export auto format_parse_error(const ParseError& error) noexcept -> std::string;
+export auto format_parse_error(const ParseError& error) noexcept -> std::string {
+    return std::format("error:{}:{}: {}", error.location.line, error.location.column, error.message);
+}
 
-export enum class BinOp {
-    Add, Sub, Mul, Div, Mod, BitAnd, BitOr, BitXor,
-    Shl, Shr, Eq, Ne, Lt, Le, Gt, Ge, LogicalAnd, LogicalOr,
+export enum class UnaryOp {
+    Plus, Neg, BitNot, LogicalNot, PreInc, PreDec, PostInc, PostDec, AddressOf, Deref,
 };
 
-export enum class UnaryOp { Plus, Neg, BitNot, LogicalNot, PreInc, PreDec, AddressOf, Deref, };
-export enum class PostfixOp { PostInc, PostDec, };
+export enum class BinOp {
+    Add, Sub, Mul, Div, Mod, BitAnd, BitOr, BitXor, Shl, Shr, Eq, Ne, Lt, Le, Gt, Ge, LogicalAnd, LogicalOr,
+};
 
 export constexpr auto to_string(BinOp op) noexcept -> const char* {
     using enum BinOp;
@@ -33,15 +35,11 @@ export constexpr auto to_string(BinOp op) noexcept -> const char* {
 export constexpr auto to_string(UnaryOp op) noexcept -> const char* {
     using enum UnaryOp;
     switch (op) {
-        case Plus:       return "+"; case Neg:    return "-";  case BitNot: return "~";
-        case LogicalNot: return "!"; case PreInc: return "++"; case PreDec: return "--";
-        case AddressOf:  return "&"; case Deref:  return "*";  default:     return "?";
+        case Plus:       return "+";  case Neg:     return "-";  case BitNot: return "~";
+        case LogicalNot: return "!";  case PreInc:  return "++"; case PreDec: return "--";
+        case PostInc:    return "++"; case PostDec: return "--";
+        case AddressOf:  return "&";  case Deref:   return "*";  default:     return "?";
     }
-}
-
-export constexpr auto to_string(PostfixOp op) noexcept -> const char* {
-    using enum PostfixOp;
-    switch (op) { case PostInc: return "++"; case PostDec: return "--"; default: return "?"; }
 }
 
 export struct Expr;
@@ -64,7 +62,7 @@ export struct PrefixExpr final {
 
 export struct PostfixExpr final {
     Expr* lhs;
-    PostfixOp op;
+    UnaryOp op;
     Span span;
 };
 
@@ -259,15 +257,39 @@ export struct ParseResult final {
     std::vector<std::unique_ptr<Stmt>> stmts;
     std::vector<std::unique_ptr<ForInit>> for_inits;
 
-    auto has_errors() const noexcept -> bool;
+    constexpr auto has_errors() const noexcept -> bool {
+        return !errors.empty();
+    }
 };
+
+export template<typename F>
+constexpr auto walk_stmts(const std::vector<Stmt*>& statements, F&& visit) noexcept -> void {
+    for (const auto* stmt : statements) visit(*stmt);
+}
+
+export template<typename F>
+constexpr auto walk_body(const Stmt* body, F&& visit) noexcept -> void {
+    if (const auto block = std::get_if<BlockStmt>(body)) {
+        for (const auto* stmt : block->statements) visit(*stmt);
+    } else {
+        visit(*body);
+    }
+}
+
+export template<typename F, typename G>
+constexpr auto walk_for_init(const ForInit& init, F&& visit_var_decl, G&& visit_expr_stmt) noexcept -> void {
+    std::visit(Overloaded {
+        [&](const VarDecl& d) { visit_var_decl(d); },
+        [&](const ExprStmt& es) { visit_expr_stmt(es); }
+    }, init);
+}
 
 template<> struct std::formatter<BinOp> {
     constexpr auto parse(const auto& ctx) noexcept {
         return ctx.begin();
     }
 
-    auto format(BinOp op, auto& ctx) const noexcept {
+    constexpr auto format(BinOp op, auto& ctx) const noexcept {
         return std::format_to(ctx.out(), "{}", to_string(op));
     }
 };
@@ -277,17 +299,8 @@ template<> struct std::formatter<UnaryOp> {
         return ctx.begin();
     }
 
-    auto format(UnaryOp op, auto& ctx) const noexcept {
+    constexpr auto format(UnaryOp op, auto& ctx) const noexcept {
         return std::format_to(ctx.out(), "{}", to_string(op));
     }
 };
 
-template<> struct std::formatter<PostfixOp> {
-    constexpr auto parse(const auto& ctx) noexcept {
-        return ctx.begin();
-    }
-
-    auto format(PostfixOp op, auto& ctx) const noexcept {
-        return std::format_to(ctx.out(), "{}", to_string(op));
-    }
-};

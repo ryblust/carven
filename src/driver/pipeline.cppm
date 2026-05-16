@@ -5,7 +5,7 @@ import zero.common.process;
 import zero.common.source;
 import zero.driver.toolchain;
 import zero.frontend.lexer;
-import zero.frontend.parser.ast;
+import zero.frontend.ast;
 import zero.frontend.parser;
 import zero.backend.codegen;
 import std;

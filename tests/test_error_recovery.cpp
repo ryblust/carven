@@ -1,6 +1,6 @@
 import zero.frontend.token;
 import zero.frontend.lexer;
-import zero.frontend.parser.ast;
+import zero.frontend.ast;
 import zero.frontend.parser;
 import zero.tests.utils;
 import std;

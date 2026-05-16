@@ -18,13 +18,6 @@ export struct Command final {
     auto (*handler)(const Driver& driver) -> int;
 };
 
-export auto render_help() noexcept -> int;
-export auto render_version() noexcept -> int;
-export auto render_command_help(Command command) noexcept -> int;
-export constexpr auto find_command(std::string_view name) noexcept -> std::optional<Command>;
-
-namespace {
-
 constexpr auto GLOBAL_FLAGS = std::array<Flag, 4> {{
     { .long_name = "--help",    .short_name = "-h", .description = "Show help message"          },
     { .long_name = "--version", .short_name = "-V", .description = "Show Zero version"          },
@@ -58,8 +51,6 @@ auto render_flag(Flag flag) noexcept -> void {
         std::println("    {:<18}{:<10}{}", flag.long_name, flag.short_name, flag.description);
     }
 }
-
-} // namespace
 
 export auto render_help() noexcept -> int {
     std::println("Zero Language Toolchain\n");

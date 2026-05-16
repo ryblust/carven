@@ -3,12 +3,7 @@ export module zero.driver.handler;
 import zero.common.filesystem;
 import zero.common.source;
 import zero.driver.pipeline;
-
 import std;
-
-export auto   run(const Driver& driver) noexcept -> int;
-export auto build(const Driver& driver) noexcept -> int;
-export auto check(const Driver& driver) noexcept -> int;
 
 export auto run(const Driver& driver) noexcept -> int {
     if (const auto content = read_file(driver.input_files[0]); content) {

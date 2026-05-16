@@ -1,8 +1,7 @@
 export module zero.backend.codegen;
 
 import zero.common.source;
-import zero.frontend.parser.ast;
-import zero.frontend.ast_walker;
+import zero.frontend.ast;
 import std;
 
 constexpr auto map_type(std::string_view zero_type) noexcept -> std::string_view {
