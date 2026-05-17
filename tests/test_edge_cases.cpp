@@ -51,9 +51,9 @@ static auto test_deep_binary_expr() noexcept -> void {
     for (auto i = 2; i <= 50; ++i) {
         source.append(" + ").append(std::to_string(i));
     }
-    const auto result = parse_expr_tokens(tokenize(source), source);
+    auto wrapped = std::string("fn __t() { ") + source + "; }";
+    const auto result = parse(tokenize(wrapped), wrapped);
     CHECK(!result.has_errors());
-    CHECK(!result.exprs.empty());
 }
 
 static auto test_deep_nested_blocks() noexcept -> void {

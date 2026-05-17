@@ -9,14 +9,14 @@ import zero.frontend.ast;
 import zero.frontend.parser;
 import std;
 
-auto dump_indent(std::string& out, int level) noexcept -> void {
-    for (auto i = 0; i < level; ++i) out.append("  ");
+auto dump_indent(std::string& out, std::size_t level) noexcept -> void {
+    for (auto i = 0uz; i < level; ++i) out.append("  ");
 }
 
-auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int level) noexcept -> void;
-auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, int level) noexcept -> void;
+auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std::size_t level) noexcept -> void;
+auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std::size_t level) noexcept -> void;
 
-auto dump_top_level(const TopLevelItem& item, std::string_view source, std::string& out, int level) noexcept -> void {
+auto dump_top_level(const TopLevelItem& item, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
         [&](const ImportItem& it) -> void {
             dump_indent(out, level);
@@ -69,7 +69,7 @@ auto dump_top_level(const TopLevelItem& item, std::string_view source, std::stri
     }, item);
 }
 
-auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int level) noexcept -> void {
+auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
         [&](const LiteralExpr& e) -> void {
             out.append("Literal(").append(text_at(source, e.token)).append(")");
@@ -78,19 +78,19 @@ auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int 
             out.append("Ident(").append(text_at(source, e.name)).append(")");
         },
         [&](const PrefixExpr& e) -> void {
-            out.append("Prefix(").append(to_string(e.op)).append(" ");
+            out += std::format("Prefix({} ", e.op);
             dump_expr(*e.rhs, source, out, level);
             out.append(")");
         },
         [&](const PostfixExpr& e) -> void {
             out.append("Postfix(");
             dump_expr(*e.lhs, source, out, level);
-            out.append(" ").append(to_string(e.op)).append(")");
+            out += std::format(" {})", e.op);
         },
         [&](const BinaryExpr& e) -> void {
             out.append("Binary(");
             dump_expr(*e.lhs, source, out, level);
-            out.append(" ").append(to_string(e.op)).append(" ");
+            out += std::format(" {} ", e.op);
             dump_expr(*e.rhs, source, out, level);
             out.append(")");
         },
@@ -139,7 +139,7 @@ auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int 
         [&](const CompoundAssignExpr& e) -> void {
             out.append("CompoundAssign(");
             dump_expr(*e.lhs, source, out, level);
-            out.append(" ").append(to_string(e.op)).append("= ");
+            out += std::format(" {}=", e.op);
             dump_expr(*e.rhs, source, out, level);
             out.append(")");
         },
@@ -167,7 +167,7 @@ auto dump_expr(const Expr& expr, std::string_view source, std::string& out, int 
     }, expr);
 }
 
-auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, int level) noexcept -> void {
+auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
         [&](const BlockStmt& s) -> void {
             dump_indent(out, level);
@@ -279,7 +279,8 @@ export auto dump(const Driver& driver) noexcept -> int {
         for (const auto token : tokens) {
             const auto pos = location_at(source, token.span.start);
             std::println("{:>4}:{:<2}    {:<20}  {}",
-                pos.line, pos.column, display_token_type(token.kind), text_at(source, token.span));
+                pos.line, pos.column, std::format("{}", token.kind), text_at(source, token.span)
+            );
         }
         if (!driver.only_tokens) std::println();
     }
@@ -287,7 +288,7 @@ export auto dump(const Driver& driver) noexcept -> int {
     if (!driver.only_tokens) {
         const auto result = parse(tokens, source);
         if (result.has_errors()) {
-            for (const auto& error : result.errors) std::println("{}", format_parse_error(error));
+            for (const auto& error : result.errors) std::println("{}", error);
             return 1;
         }
         std::print("{}", dump_ast(result, source));

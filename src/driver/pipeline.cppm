@@ -108,7 +108,7 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
 
     if (transpile_result.has_errors()) {
         for (const auto& error : transpile_result.errors) {
-            std::println("{}", format_parse_error(error));
+            std::println("{}", error);
         }
         return 1;
     }

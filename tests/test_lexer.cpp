@@ -17,7 +17,7 @@ static auto tokens_match(std::span<const Token> tokens, std::span<const TokenKin
     for (auto i = 0uz; i < tokens.size(); ++i) {
         if (tokens[i].kind != expected[i]) {
             std::println("  mismatch at index {}: expected {}, got {}",
-                i, display_token_type(expected[i]), display_token_type(tokens[i].kind));
+                i, std::format("{}", expected[i]), std::format("{}", tokens[i].kind));
             return false;
         }
     }

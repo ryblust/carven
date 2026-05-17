@@ -5,84 +5,31 @@ import zero.frontend.token;
 import zero.frontend.ast;
 import std;
 
-enum class PrecedenceLevel {
-    LogicalOr, LogicalAnd, BitwiseOr, BitwiseXor, BitwiseAnd,
-    Equality, Relational, Shift, Additive, Multiplicative,
+export struct ParseError final {
+    std::string message;
+    Span span;
+    SourceLocation location;
 };
 
-constexpr auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
-    using enum TokenKind;
-    using enum BinOp;
-    switch (kind) {
-        case PlusEqual:       return Add;
-        case MinusEqual:      return Sub;
-        case StarEqual:       return Mul;
-        case SlashEqual:      return Div;
-        case PercentEqual:    return Mod;
-        case AmpersandEqual:  return BitAnd;
-        case PipeEqual:       return BitOr;
-        case CaretEqual:      return BitXor;
-        case LeftShiftEqual:  return Shl;
-        case RightShiftEqual: return Shr;
-        default:              return std::nullopt;
-    }
-}
+template<> struct std::formatter<ParseError> final {
+    constexpr auto parse(const auto& context) const noexcept { return context.begin(); }
 
-constexpr auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
-    using enum TokenKind;
-    using enum BinOp;
-    switch (level) {
-        case PrecedenceLevel::LogicalOr: {
-            if (kind == PipePipe) return LogicalOr;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::LogicalAnd: {
-            if (kind == AmpersandAmpersand) return LogicalAnd;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::BitwiseOr: {
-            if (kind == Pipe) return BitOr;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::BitwiseXor: {
-            if (kind == Caret) return BitXor;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::BitwiseAnd: {
-            if (kind == Ampersand) return BitAnd;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::Equality: {
-            if (kind == EqualEqual) return Eq;
-            if (kind == BangEqual)  return Ne;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::Relational: {
-            if (kind == Less)          return Lt;
-            if (kind == LessEqual)     return Le;
-            if (kind == Greater)       return Gt;
-            if (kind == GreaterEqual)  return Ge;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::Shift: {
-            if (kind == LeftShift)  return Shl;
-            if (kind == RightShift) return Shr;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::Additive: {
-            if (kind == Plus)  return Add;
-            if (kind == Minus) return Sub;
-            return std::nullopt;
-        }
-        case PrecedenceLevel::Multiplicative: {
-            if (kind == Star)     return Mul;
-            if (kind == Slash)    return Div;
-            if (kind == Percent)  return Mod;
-            return std::nullopt;
-        }
+    auto format(const ParseError& error, auto&& context) const noexcept {
+        return std::format_to(context.out(), "error:{}: {}", error.location, error.message);
     }
-    return std::nullopt;
-}
+};
+
+export struct ParseResult final {
+    std::vector<TopLevelItem> items;
+    std::vector<std::unique_ptr<Expr>> exprs;
+    std::vector<std::unique_ptr<Stmt>> stmts;
+    std::vector<std::unique_ptr<ForInit>> for_inits;
+    std::vector<ParseError> errors;
+
+    constexpr auto has_errors() const noexcept -> bool {
+        return !errors.empty();
+    }
+};
 
 class Parser final {
 public:
@@ -111,23 +58,89 @@ public:
         return std::move(result);
     }
 
-    constexpr auto parse_expr() noexcept -> Expr* {
-        const auto lhs = parse_assignment_expr();
-        if (check(TokenKind::Comma)) {
-            const auto comma_token = advance();
-            const auto rhs = parse_expr();
-            return make_expr(CommaExpr{ .lhs = lhs, .comma = comma_token->span, .rhs = rhs });
-        }
-        return lhs;
-    }
-
-    constexpr auto take_result() noexcept -> ParseResult { return std::move(result); }
-
 private:
     std::span<const Token> tokens;
     std::string_view source;
     std::size_t current = 0;
     ParseResult result;
+
+    enum class PrecedenceLevel : std::uint32_t {
+        LogicalOr, LogicalAnd, BitwiseOr, BitwiseXor, BitwiseAnd, Equality, Relational, Shift, Additive, Multiplicative,
+    };
+
+    static constexpr auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
+        using enum TokenKind;
+        using enum BinOp;
+        switch (kind) {
+            case PlusEqual:       return Add;
+            case MinusEqual:      return Sub;
+            case StarEqual:       return Mul;
+            case SlashEqual:      return Div;
+            case PercentEqual:    return Mod;
+            case AmpersandEqual:  return BitAnd;
+            case PipeEqual:       return BitOr;
+            case CaretEqual:      return BitXor;
+            case LeftShiftEqual:  return Shl;
+            case RightShiftEqual: return Shr;
+            default:              return std::nullopt;
+        }
+    }
+
+    static constexpr auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
+        using enum TokenKind;
+        using enum BinOp;
+        switch (level) {
+            case PrecedenceLevel::LogicalOr: {
+                if (kind == PipePipe) return LogicalOr;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::LogicalAnd: {
+                if (kind == AmpersandAmpersand) return LogicalAnd;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::BitwiseOr: {
+                if (kind == Pipe) return BitOr;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::BitwiseXor: {
+                if (kind == Caret) return BitXor;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::BitwiseAnd: {
+                if (kind == Ampersand) return BitAnd;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::Equality: {
+                if (kind == EqualEqual) return Eq;
+                if (kind == BangEqual)  return Ne;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::Relational: {
+                if (kind == Less)          return Lt;
+                if (kind == LessEqual)     return Le;
+                if (kind == Greater)       return Gt;
+                if (kind == GreaterEqual)  return Ge;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::Shift: {
+                if (kind == LeftShift)  return Shl;
+                if (kind == RightShift) return Shr;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::Additive: {
+                if (kind == Plus)  return Add;
+                if (kind == Minus) return Sub;
+                return std::nullopt;
+            }
+            case PrecedenceLevel::Multiplicative: {
+                if (kind == Star)     return Mul;
+                if (kind == Slash)    return Div;
+                if (kind == Percent)  return Mod;
+                return std::nullopt;
+            }
+        }
+        return std::nullopt;
+    }
 
     constexpr auto eof() const noexcept -> bool {
         return current >= tokens.size();
@@ -279,7 +292,16 @@ private:
         return raw;
     }
 
-public:
+    constexpr auto parse_expr() noexcept -> Expr* {
+        const auto lhs = parse_assignment_expr();
+        if (check(TokenKind::Comma)) {
+            const auto comma_token = advance();
+            const auto rhs = parse_expr();
+            return make_expr(CommaExpr{ .lhs = lhs, .comma = comma_token->span, .rhs = rhs });
+        }
+        return lhs;
+    }
+
     constexpr auto parse_block() noexcept -> std::optional<BlockStmt> {
         const auto lbrace = expect(TokenKind::LeftBrace, "expected '{'");
         if (!lbrace) return std::nullopt;
@@ -432,10 +454,9 @@ public:
             if (token != nullptr && token->kind == TokenKind::Keyword) {
                 const auto keyword_text = text_at(source, token->span);
                 if (keyword_text == "let" || keyword_text == "var" || keyword_text == "const") {
-                    if (auto decl = parse_var_decl()) {
-                        auto& var_decl = std::get<VarDecl>(*decl);
-                        init_semi_span = var_decl.semicolon;
-                        for_init = make_for_init(std::move(var_decl));
+                    if (auto* var_decl = std::get_if<VarDecl>(parse_var_decl())) {
+                        init_semi_span = var_decl->semicolon;
+                        for_init = make_for_init(std::move(*var_decl));
                     }
                 } else {
                     const auto expr = parse_expr();
@@ -949,22 +970,15 @@ public:
         }
 
         auto block_ptr = make_stmt(std::move(*block));
-        auto& block_stmt = std::get<BlockStmt>(*block_ptr);
         return FunctionItem {
             .name = name->span,
             .params = std::move(*params),
             .return_type = return_type,
-            .body = &block_stmt
+            .body = std::get_if<BlockStmt>(block_ptr)
         };
     }
 };
 
 export constexpr auto parse(std::span<const Token> tokens, std::string_view source) noexcept -> ParseResult {
     return Parser(tokens, source).parse();
-}
-
-export constexpr auto parse_expr_tokens(std::span<const Token> tokens, std::string_view source) noexcept -> ParseResult {
-    auto parser = Parser(tokens, source);
-    parser.parse_expr();
-    return parser.take_result();
 }

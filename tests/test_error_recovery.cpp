@@ -70,9 +70,8 @@ static auto test_bad_while_condition() noexcept -> void {
 
 static auto test_unexpected_token_in_expr() noexcept -> void {
     current_test = "unexpected token in expression";
-    const auto result = parse_expr_tokens(tokenize("1 + @ + 2"), "1 + @ + 2");
+    const auto result = parse(tokenize("fn __t() { 1 + @ + 2; }"), "fn __t() { 1 + @ + 2; }");
     CHECK(result.has_errors());
-    CHECK(!result.exprs.empty());
 }
 
 static auto test_unterminated_block() noexcept -> void {

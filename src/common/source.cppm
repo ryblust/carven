@@ -22,6 +22,16 @@ export struct SourceLocation final {
     std::uint32_t column;
 };
 
+template<> struct std::formatter<SourceLocation> final {
+    constexpr auto parse(const auto& context) const noexcept {
+        return context.begin();
+    }
+
+    auto format(const SourceLocation& location, auto&& context) const noexcept {
+        return std::format_to(context.out(), "{}:{}", location.line, location.column);
+    }
+};
+
 export constexpr auto is_empty(Span span) noexcept -> bool {
     return span.start >= span.end;
 }

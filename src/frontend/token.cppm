@@ -65,12 +65,7 @@ export enum class TokenKind : std::uint32_t {
     Unknown
 };
 
-export struct Token final {
-    TokenKind kind;
-    Span span;
-};
-
-export constexpr auto display_token_type(TokenKind kind) noexcept -> const char* {
+constexpr auto to_string(TokenKind kind) noexcept -> const char* {
     switch (kind) {
         using enum TokenKind;
 
@@ -146,8 +141,13 @@ template<> struct std::formatter<TokenKind> final {
     }
 
     auto format(TokenKind kind, auto&& context) const noexcept {
-        return std::format_to(context.out(), "{}", display_token_type(kind));
+        return std::format_to(context.out(), "{}", to_string(kind));
     }
+};
+
+export struct Token final {
+    TokenKind kind;
+    Span span;
 };
 
 template<> struct std::formatter<Token> final {
@@ -158,7 +158,7 @@ template<> struct std::formatter<Token> final {
     auto format(Token token, auto&& context) const noexcept {
         return std::format_to(context.out(),
             "{:<25}[{}..{}]",
-            display_token_type(token.kind), token.span.start, token.span.end
+            to_string(token.kind), token.span.start, token.span.end
         );
     }
 };

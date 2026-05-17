@@ -3,25 +3,35 @@ export module zero.frontend.ast;
 import zero.common.source;
 import std;
 
-export struct ParseError final {
-    std::string message;
-    Span span;
-    SourceLocation location;
-};
-
-export auto format_parse_error(const ParseError& error) noexcept -> std::string {
-    return std::format("error:{}:{}: {}", error.location.line, error.location.column, error.message);
-}
-
-export enum class UnaryOp {
+export enum class UnaryOp : std::uint32_t {
     Plus, Neg, BitNot, LogicalNot, PreInc, PreDec, PostInc, PostDec, AddressOf, Deref,
 };
 
-export enum class BinOp {
+constexpr auto to_string(UnaryOp op) noexcept -> const char* {
+    using enum UnaryOp;
+    switch (op) {
+        case Plus:       return "+";  case Neg:     return "-";  case BitNot: return "~";
+        case LogicalNot: return "!";  case PreInc:  return "++"; case PreDec: return "--";
+        case PostInc:    return "++"; case PostDec: return "--";
+        case AddressOf:  return "&";  case Deref:   return "*";  default:     return "?";
+    }
+}
+
+template<> struct std::formatter<UnaryOp> final {
+    constexpr auto parse(const auto& context) const noexcept {
+        return context.begin();
+    }
+
+    auto format(UnaryOp op, auto&& context) const noexcept {
+        return std::format_to(context.out(), "{}", to_string(op));
+    }
+};
+
+export enum class BinOp : std::uint32_t {
     Add, Sub, Mul, Div, Mod, BitAnd, BitOr, BitXor, Shl, Shr, Eq, Ne, Lt, Le, Gt, Ge, LogicalAnd, LogicalOr,
 };
 
-export constexpr auto to_string(BinOp op) noexcept -> const char* {
+constexpr auto to_string(BinOp op) noexcept -> const char* {
     using enum BinOp;
     switch (op) {
         case Add: return "+";  case Sub:    return "-";  case Mul:   return "*";  case Div:    return "/";
@@ -32,15 +42,15 @@ export constexpr auto to_string(BinOp op) noexcept -> const char* {
     }
 }
 
-export constexpr auto to_string(UnaryOp op) noexcept -> const char* {
-    using enum UnaryOp;
-    switch (op) {
-        case Plus:       return "+";  case Neg:     return "-";  case BitNot: return "~";
-        case LogicalNot: return "!";  case PreInc:  return "++"; case PreDec: return "--";
-        case PostInc:    return "++"; case PostDec: return "--";
-        case AddressOf:  return "&";  case Deref:   return "*";  default:     return "?";
+template<> struct std::formatter<BinOp> final {
+    constexpr auto parse(const auto& context) const noexcept {
+        return context.begin();
     }
-}
+
+    auto format(BinOp op, auto&& context) const noexcept {
+        return std::format_to(context.out(), "{}", to_string(op));
+    }
+};
 
 export struct Expr;
 export struct Stmt;
@@ -250,18 +260,6 @@ export struct StructItem final {
 
 export using TopLevelItem = std::variant<ImportItem, EnumItem, StructItem, FunctionItem>;
 
-export struct ParseResult final {
-    std::vector<TopLevelItem> items;
-    std::vector<ParseError> errors;
-    std::vector<std::unique_ptr<Expr>> exprs;
-    std::vector<std::unique_ptr<Stmt>> stmts;
-    std::vector<std::unique_ptr<ForInit>> for_inits;
-
-    constexpr auto has_errors() const noexcept -> bool {
-        return !errors.empty();
-    }
-};
-
 export template<typename F>
 constexpr auto walk_stmts(const std::vector<Stmt*>& statements, F&& visit) noexcept -> void {
     for (const auto* stmt : statements) visit(*stmt);
@@ -283,24 +281,3 @@ constexpr auto walk_for_init(const ForInit& init, F&& visit_var_decl, G&& visit_
         [&](const ExprStmt& es) { visit_expr_stmt(es); }
     }, init);
 }
-
-template<> struct std::formatter<BinOp> {
-    constexpr auto parse(const auto& ctx) noexcept {
-        return ctx.begin();
-    }
-
-    constexpr auto format(BinOp op, auto& ctx) const noexcept {
-        return std::format_to(ctx.out(), "{}", to_string(op));
-    }
-};
-
-template<> struct std::formatter<UnaryOp> {
-    constexpr auto parse(const auto& ctx) noexcept {
-        return ctx.begin();
-    }
-
-    constexpr auto format(UnaryOp op, auto& ctx) const noexcept {
-        return std::format_to(ctx.out(), "{}", to_string(op));
-    }
-};
-
