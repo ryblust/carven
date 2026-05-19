@@ -27,16 +27,14 @@ constexpr auto generate_import(const ImportItem& item, std::string_view source) 
     auto result = std::string();
 
     if (!item.is_std_module) {
-        result.append("import ").append(module_name).append(";\n");
+        result += std::format("import {};\n", module_name);
     }
 
     if (item.using_wildcard) {
-        result.append("using namespace ").append(module_name).append(";\n");
+        result += std::format("using namespace {};\n", module_name);
     } else {
-        for (const auto& decl : item.using_decls) {
-            result.append("using ")
-                  .append(module_name)
-                  .append("::").append(text_at(source, decl)).append(";\n");
+        for (const auto decl : item.using_decls) {
+            result += std::format("using {}::{};\n", module_name, text_at(source, decl));
         }
     }
 
@@ -44,31 +42,29 @@ constexpr auto generate_import(const ImportItem& item, std::string_view source) 
 }
 
 constexpr auto generate_enum(const EnumItem& item, std::string_view source) noexcept -> std::string {
-    auto result = std::string("enum class ").append(text_at(source, item.name));
+    auto result = std::format("enum class {}", text_at(source, item.name));
 
     if (!is_empty(item.size)) {
-        result.append(" : ").append(map_type(text_at(source, item.size)));
+        result += std::format(" : {}", map_type(text_at(source, item.size)));
     }
 
-    result.append(" {\n");
+    result += " {\n";
 
-    for (const auto& field : item.fields) {
-        result.append("    ").append(text_at(source, field)).append(",\n");
+    for (const auto field : item.fields) {
+        result += std::format("    {},\n", text_at(source, field));
     }
 
-    return result.append("};\n");
+    return result += "};\n";
 }
 
 constexpr auto generate_struct(const StructItem& item, std::string_view source) noexcept -> std::string {
-    auto result = std::string("struct ").append(text_at(source, item.name)).append(" {\n");
+    auto result = std::format("struct {} {{\n", text_at(source, item.name));
 
-    for (const auto& field : item.fields) {
-        result.append("    ").append(map_type(text_at(source, field.type)));
-        result.push_back(' ');
-        result.append(text_at(source, field.name)).append(";\n");
+    for (const auto field : item.fields) {
+        result += std::format("    {} {};\n", map_type(text_at(source, field.type)), text_at(source, field.name));
     }
 
-    return result.append("};\n");
+    return result += "};\n";
 }
 
 constexpr auto generate_stmt(const Stmt& stmt, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
@@ -76,94 +72,91 @@ constexpr auto generate_expr(const Expr& expr, std::string_view source, std::uin
 
 constexpr auto generate_function(const FunctionItem& item, std::string_view source) noexcept -> std::string {
     const auto name = text_at(source, item.name);
-    auto result = std::string("auto ").append(name).append("(");
+    auto result = std::format("auto {}(", name);
 
     for (auto i = 0uz; i < item.params.size(); ++i) {
-        const auto& p = item.params[i];
+        const auto p = item.params[i];
+        if (i > 0) result += ", ";
         if (is_empty(p.type)) {
-            result.append("auto ");
+            result += std::format("auto {}", text_at(source, p.name));
         } else {
-            result.append(map_type(text_at(source, p.type)));
-            result.push_back(' ');
+            result += std::format("{} {}", map_type(text_at(source, p.type)), text_at(source, p.name));
         }
-        result.append(text_at(source, p.name));
-
-        if (i + 1 < item.params.size()) result.append(", ");
     }
 
-    result.append(") noexcept");
+    result += ") noexcept";
 
     if (name == "main") {
-        result.append(" -> int");
+        result += " -> int";
     } else if (!is_empty(item.return_type)) {
-        result.append(" -> ").append(map_type(text_at(source, item.return_type)));
+        result += std::format(" -> {}", map_type(text_at(source, item.return_type)));
     }
 
-    result.append(" {\n");
+    result += " {\n";
 
-    walk_stmts(item.body->statements, [&](const Stmt& stmt) {
-        result.append(generate_stmt(stmt, source, 4));
+    walk_stmts(item.body->statements, [&](const Stmt& stmt) noexcept {
+        result += generate_stmt(stmt, source, 4);
     });
 
-    return result.append("}\n");
+    return result += "}\n";
 }
 
 constexpr auto generate_stmt(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     const auto pad = std::string(indent, ' ');
 
     return std::visit(Overloaded {
-        [&](const BlockStmt& s) -> std::string {
+        [&](const BlockStmt& s) noexcept -> std::string {
             auto r = pad + "{\n";
-            walk_stmts(s.statements, [&](const Stmt& stmt) {
-                r.append(generate_stmt(stmt, source, indent + 4));
+            walk_stmts(s.statements, [&](const Stmt& stmt) noexcept {
+                r += generate_stmt(stmt, source, indent + 4);
             });
             return r + pad + "}\n";
         },
-        [&](const ExprStmt& s) -> std::string {
+        [&](const ExprStmt& s) noexcept -> std::string {
             return generate_expr(*s.expr, source, indent) + ";\n";
         },
-        [&](const EmptyStmt&) -> std::string {
+        [&](const EmptyStmt&) noexcept -> std::string {
             return pad + ";\n";
         },
-        [&](const VarDecl& s) -> std::string {
+        [&](const VarDecl& s) noexcept -> std::string {
             const auto keyword_text = text_at(source, s.keyword);
             auto r = pad;
 
             if (keyword_text == "let") {
-                r.append("const auto ");
+                r += "const auto ";
             } else if (keyword_text == "const") {
-                r.append("constexpr auto ");
+                r += "constexpr auto ";
             } else {
-                r.append("auto ");
+                r += "auto ";
             }
 
-            r.append(text_at(source, s.name));
+            r += text_at(source, s.name);
 
             const auto has_type = !is_empty(s.type);
             if (s.init != nullptr) {
-                r.append(" = ");
+                r += " = ";
                 if (has_type) {
-                    r.append(map_type(text_at(source, s.type))).append("(");
-                    r.append(generate_expr(*s.init, source));
-                    r.append(")");
+                    r += std::format("{}(", map_type(text_at(source, s.type)));
+                    r += generate_expr(*s.init, source);
+                    r += ")";
                 } else {
-                    r.append(generate_expr(*s.init, source));
+                    r += generate_expr(*s.init, source);
                 }
             } else if (has_type) {
-                r.append(" = ").append(map_type(text_at(source, s.type))).append("()");
+                r += std::format(" = {}()", map_type(text_at(source, s.type)));
             }
 
-            return r.append(";\n");
+            return r += ";\n";
         },
-        [&](const ReturnStmt& s) -> std::string {
+        [&](const ReturnStmt& s) noexcept -> std::string {
             if (s.value != nullptr) {
                 return pad + "return " + generate_expr(*s.value, source) + ";\n";
             }
             return pad + "return;\n";
         },
-        [&](const WhileStmt& s) -> std::string {
+        [&](const WhileStmt& s) noexcept -> std::string {
             auto r = pad + "while (" + generate_expr(*s.condition, source, 0) + ") ";
-            walk_body(s.body, [&](const Stmt& body_stmt) {
+            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
                 if (std::get_if<BlockStmt>(s.body)) {
                     r += "{\n";
                     r += generate_stmt(body_stmt, source, indent + 4);
@@ -174,42 +167,42 @@ constexpr auto generate_stmt(const Stmt& stmt, std::string_view source, std::uin
             });
             return r;
         },
-        [&](const ForStmt& s) -> std::string {
+        [&](const ForStmt& s) noexcept -> std::string {
             auto r = pad + "for (";
             if (s.init != nullptr) {
-                walk_for_init(*s.init, [&](const VarDecl& d) {
+                walk_for_init(*s.init, [&](const VarDecl& d) noexcept {
                     const auto keyword_text = text_at(source, d.keyword);
                     if (keyword_text == "let") {
-                        r.append("const auto ");
+                        r += "const auto ";
                     } else if (keyword_text == "const") {
-                        r.append("constexpr auto ");
+                        r += "constexpr auto ";
                     } else {
-                        r.append("auto ");
+                        r += "auto ";
                     }
-                    r.append(text_at(source, d.name));
+                    r += text_at(source, d.name);
                     const auto has_type = !is_empty(d.type);
                     if (d.init != nullptr) {
-                        r.append(" = ");
+                        r += " = ";
                         if (has_type) {
-                            r.append(map_type(text_at(source, d.type))).append("(");
-                            r.append(generate_expr(*d.init, source));
-                            r.append(")");
+                            r += std::format("{}(", map_type(text_at(source, d.type)));
+                            r += generate_expr(*d.init, source);
+                            r += ")";
                         } else {
-                            r.append(generate_expr(*d.init, source));
+                            r += generate_expr(*d.init, source);
                         }
                     } else if (has_type) {
-                        r.append(" = ").append(map_type(text_at(source, d.type))).append("()");
+                        r += std::format(" = {}()", map_type(text_at(source, d.type)));
                     }
-                }, [&](const ExprStmt& es) {
-                    r.append(generate_expr(*es.expr, source));
+                }, [&](const ExprStmt& es) noexcept {
+                    r += generate_expr(*es.expr, source);
                 });
             }
-            r.append("; ");
-            if (s.condition != nullptr) r.append(generate_expr(*s.condition, source));
-            r.append("; ");
-            if (s.step != nullptr) r.append(generate_expr(*s.step, source));
+            r += "; ";
+            if (s.condition != nullptr) r += generate_expr(*s.condition, source);
+            r += "; ";
+            if (s.step != nullptr) r += generate_expr(*s.step, source);
             r += ") ";
-            walk_body(s.body, [&](const Stmt& body_stmt) {
+            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
                 if (std::get_if<BlockStmt>(s.body)) {
                     r += "{\n";
                     r += generate_stmt(body_stmt, source, indent + 4);
@@ -293,13 +286,13 @@ constexpr auto generate_expr(const Expr& expr, std::string_view source, std::uin
 
             auto r = pad + "if (" + generate_expr(*e.condition, source, 0) + ") ";
             r += "{\n";
-            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) {
+            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) noexcept {
                 r += generate_stmt(stmt, source, indent + 4);
             });
             r += pad + "}";
             if (e.else_branch.has_value()) {
                 r += " else {\n";
-                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) {
+                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) noexcept {
                     r += generate_stmt(stmt, source, indent + 4);
                 });
                 r += pad + "}";
@@ -332,17 +325,17 @@ export constexpr auto generate(std::span<const TopLevelItem> items, std::string_
     auto result = std::string();
 
     if (default_include_std) {
-        result.append(generate_include_preamble(standard));
+        result += generate_include_preamble(standard);
     }
 
     for (const auto& item : items) {
         std::visit(Overloaded {
-            [&](const ImportItem&   it) { result.append(generate_import  (it, source)); },
-            [&](const EnumItem&     it) { result.append(generate_enum    (it, source)); },
-            [&](const StructItem&   it) { result.append(generate_struct  (it, source)); },
-            [&](const FunctionItem& it) { result.append(generate_function(it, source)); },
+            [&](const ImportItem&   it) noexcept { result += generate_import  (it, source); },
+            [&](const EnumItem&     it) noexcept { result += generate_enum    (it, source); },
+            [&](const StructItem&   it) noexcept { result += generate_struct  (it, source); },
+            [&](const FunctionItem& it) noexcept { result += generate_function(it, source); },
         }, item);
-        result.push_back('\n');
+        result += '\n';
     }
 
     return result;

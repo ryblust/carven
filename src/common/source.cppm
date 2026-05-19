@@ -27,7 +27,7 @@ template<> struct std::formatter<SourceLocation> final {
         return context.begin();
     }
 
-    auto format(const SourceLocation& location, auto&& context) const noexcept {
+    auto format(SourceLocation location, auto&& context) const noexcept {
         return std::format_to(context.out(), "{}:{}", location.line, location.column);
     }
 };

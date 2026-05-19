@@ -13,10 +13,6 @@ import std;
 export struct TranspileResult final {
     std::string output;
     std::vector<ParseError> errors;
-
-    auto has_errors() const noexcept -> bool {
-        return !errors.empty();
-    }
 };
 
 export struct Driver final {
@@ -33,52 +29,47 @@ export struct Driver final {
 #endif
     std::vector<std::string_view> input_files;
 
-    constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> bool;
-    constexpr auto has_input_files() const noexcept -> bool;
 };
 
-constexpr auto Driver::parse_flags(std::span<const char* const> flags) noexcept -> bool {
+export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> std::optional<Driver> {
+    auto driver = Driver{};
     for (const std::string_view flag : flags) {
         if (flag.starts_with("-std=")) {
             const auto standard = flag.substr(5);
-            if      (standard == "c++14") language_standard = 14;
-            else if (standard == "c++17") language_standard = 17;
-            else if (standard == "c++20") language_standard = 18;
-            else if (standard == "c++23") language_standard = 23;
-            else if (standard == "c++26") language_standard = 26;
+            if      (standard == "c++14") driver.language_standard = 14;
+            else if (standard == "c++17") driver.language_standard = 17;
+            else if (standard == "c++20") driver.language_standard = 20;
+            else if (standard == "c++23") driver.language_standard = 23;
+            else if (standard == "c++26") driver.language_standard = 26;
             else {
                 std::println("zero: error: unknown standard '{}'", standard);
-                return false;
+                return std::nullopt;
             }
         } else if (flag.starts_with("--output-dir=")) {
-            output_dir = flag.substr(13);
+            driver.output_dir = flag.substr(13);
         } else if (flag == "--import-std") {
-            import_std = true;
+            driver.import_std = true;
         } else if (flag == "-E") {
-            emit_only = true;
+            driver.emit_only = true;
         } else if (flag == "--only-tokens") {
-            only_tokens = true;
+            driver.only_tokens = true;
         } else if (flag == "--only-ast") {
-            only_ast = true;
+            driver.only_ast = true;
         } else if (flag.starts_with('-')) {
             std::println("zero: error: unknown flag '{}'", flag);
-            return false;
+            return std::nullopt;
         } else {
-            input_files.push_back(flag);
+            driver.input_files.push_back(flag);
         }
     }
 
-    return true;
-}
-
-constexpr auto Driver::has_input_files() const noexcept -> bool {
-    return !input_files.empty();
+    return driver;
 }
 
 export constexpr auto transpile(const Driver& driver, SourceFile file) noexcept -> TranspileResult {
     auto parse_result = parse(tokenize(file.content), file.content);
 
-    if (parse_result.has_errors()) {
+    if (!parse_result.errors.empty()) {
         return {
             .output = {},
             .errors = std::move(parse_result.errors)
@@ -106,10 +97,8 @@ export constexpr auto transpile(const Driver& driver, SourceFile file) noexcept 
 export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> int {
     const auto transpile_result = transpile(driver, file);
 
-    if (transpile_result.has_errors()) {
-        for (const auto& error : transpile_result.errors) {
-            std::println("{}", error);
-        }
+    if (!transpile_result.errors.empty()) {
+        std::println("{}", transpile_result.errors);
         return 1;
     }
 
@@ -136,14 +125,12 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
         auto compile_args = std::vector<std::string> {
             selected_compiler,
         };
-
         if (is_clang_cl) {
             compile_args.emplace_back("-Xclang");
             compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
         } else {
             compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
         }
-
         compile_args.emplace_back(artifacts.cpp_path.string());
         compile_args.emplace_back("-o");
         compile_args.emplace_back(artifacts.exe_path.string());
@@ -161,7 +148,7 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
         }
     }
 
-    const auto run_args = std::vector<std::string>{ artifacts.exe_path.string() };
+    const auto run_args = std::vector<std::string> { artifacts.exe_path.string() };
     const auto run_result = run_process(run_args);
     if (!run_result.started) {
         std::println("zero run: error: cannot run '{}'", artifacts.exe_path.string());

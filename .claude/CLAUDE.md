@@ -40,10 +40,6 @@ xmake run zero dump <file>    # Dump token stream and AST
 
 ```
 
-Run flags: `-std=c++<value>` (14/17/20/23/26), `--output-dir=<path>`, `--no-default-include-std`
-
-Build config in `xmake.lua`: RTTI disabled (`-fno-rtti` / `/GR-`), exceptions disabled (`no-cxx`), all-extra warnings, C++latest, default mode `debug`.
-
 ## Architecture
 
 Layer responsibilities (dependency flows downward):
@@ -66,36 +62,7 @@ Layer responsibilities (dependency flows downward):
 - Fields: `snake_case`
 - Modules: `zero.<layer>.<name>`
 
-### C++ Conventions
-
-**Types & qualifiers**
-- `const`/`constexpr` on all non-mutated variables; prefer `constexpr` for pure functions
-- `noexcept` on project functions; no `try`/`catch`/`throw`
-- `std::optional` for optional values; custom result types with boolean/check methods for error handling (e.g., `TranspileResult::has_errors()`, `ProcessResult.started`)
-- Pass-by-value for trivial types (e.g., `auto foo(Token)` not `auto foo(const Token&)`)
-
-**Parameters & views**
-- `std::string_view` over `const std::string&`; `std::span` over `const std::vector&`
-- Don't wrap `const char*`/`string_view` in `std::filesystem::path` for function params
-
-**Syntax & formatting**
-- `Type()` for default init, `Type{ .field = val }` for aggregate init with designated initializers
-- Single-line initializer lists: no space between `>` and `{` — `std::vector<int>{ 1, 2, 3 }`
-- Multi-line initializer lists: space between `>` and `{` — `std::vector<int> {` on the opening line
-- Braces `{}` when body is on its own line; omit for single-line (e.g., `if (x) return true;`)
-- Pre-increment `++i` in loops
-- Omit type name in aggregate init when context provides it: `run_single_file({ .filename = ..., .content = ... })`
-
-**Control flow & scope**
-- Use `if`-with-initializer to limit variable scope and unwrap optionals:
-  `if (const auto content = read_file(path); content) { ... } else { ... }`
-- Don't bind intermediate variables for single-use values; pass them directly
-- Range-for directly on function return temporaries: `for (const auto token : tokenize(source))`
-
-**API surface**
-- `std::print`/`std::println` instead of `std::cout`/`printf`
-- Prefer `std::ranges`/`std::views` over `<algorithm>`; explicit loops OK for lexing/parsing state machines or low-level
-- Separate logical blocks within a function with a blank line
+For all C++ design conventions (initialization, type design, error handling, control flow, formatting, parameter passing), see [`cpp-design`](.claude/spec/cpp-design.md).
 
 ## Conventional Commits
 

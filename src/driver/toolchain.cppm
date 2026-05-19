@@ -51,16 +51,12 @@ export auto compiler_from_environment(std::string_view fallback) noexcept -> std
 
 export auto display_command(std::span<const std::string> args) noexcept -> std::string {
     auto result = std::string();
-
     for (auto i = 0uz; i < args.size(); ++i) {
-        if (i > 0) result.push_back(' ');
+        if (i > 0) result += ' ';
         const auto needs_quotes = args[i].contains(' ') || args[i].contains('\t');
-
-        if (needs_quotes) result.push_back('"');
-        result.append(args[i]);
-
-        if (needs_quotes) result.push_back('"');
+        if (needs_quotes) result += '"';
+        result += args[i];
+        if (needs_quotes) result += '"';
     }
-
     return result;
 }

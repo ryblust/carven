@@ -1,12 +1,45 @@
-1. tests for transpiler
+1. full tests for the zero transpiler
 
-2. doc comment token `//! ///`
+2. builtin array
 
-3. `if` expression
+    ```zero
+    let a = [1, 2, 3];
+    ```
 
-4. `match` expression
+    ```cpp
+    const auto a = std::array{ 1, 2, 3 };
+    ```
 
-5. inline test in source code
+3. for loops and ranges
+    ```zero
+    for i in 1..10 {
+        println("{}", i)
+    }
+
+    var datas = [1, 2, 3];
+
+    for data in datas {
+        data += 2;
+    }
+    ```
+
+    ```cpp
+    for (auto&& i : std::views::iota(1, 10)) {
+        println("{}", i);
+    }
+
+    auto datas = std::array{1, 2, 3};
+
+    for (auto&& data : datas ) {
+        data += 2;
+    }
+    ```
+
+3. `match` expression
+
+4. doc comment token `//! ///`
+
+5. inline test in zero
 
     Proposal Syntax
     - `#test "test C/C++ like preprocessor" {}`
@@ -14,8 +47,7 @@
     - `test "test is a keyword" {}`
     - `[[test]] fn test_cpp_attribute_like {}`
 
-
-6. inline C++ source code
+6. inline C++ source code in zero
 
     Proposal Syntax
     - `#cpp {}`

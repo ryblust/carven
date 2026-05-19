@@ -14,7 +14,7 @@ target("zero")
     set_warnings("allextra")
     set_rundir("$(projectdir)")
 
-    add_files("src/**.cppm", "src/**.cpp")
+    add_files("src/**.cppm", "src/zero.cpp")
 
     for _, testfile in ipairs(os.files("tests/test_*.cpp")) do
         add_tests(path.basename(testfile), {

@@ -21,12 +21,12 @@ auto main(int argc, const char** argv) noexcept -> int {
         if (flag == "--help" || flag == "-h") return render_command_help(*command);
     }
 
-    auto driver = Driver();
-    if (!driver.parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)})) return 1;
-    if (!driver.has_input_files()) {
+    const auto driver = parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)});
+    if (!driver) return 1;
+    if (driver->input_files.empty()) {
         std::println("zero {}: error: no input file", command->name);
         return 1;
     }
 
-    return command->handler(driver);
+    return command->handler(*driver);
 }

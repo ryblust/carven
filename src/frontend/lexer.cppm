@@ -92,15 +92,12 @@ private:
         if (eof() || (current() != expected)) {
             return false;
         }
-
         advance();
-
         return true;
     }
 
     constexpr auto peek(std::size_t offset = 1) const noexcept -> char {
         const auto index = current_pos + offset;
-
         return index < source.size() ? source[index] : '\0';
     }
 
@@ -190,26 +187,23 @@ private:
                 case '\n':
                     advance();
                     continue;
-
                 case '/':
                     if (peek() == '/') {
                         advance();
                         advance();
-
                         while (!eof() && current() != '\n') {
                             advance();
                         }
                         continue;
                     }
                     return;
-
                 default: return;
             }
         }
     }
 
     constexpr auto token(TokenKind kind) const noexcept -> Token {
-        return { kind,  { start_pos, current_pos } };
+        return { kind, { start_pos, current_pos } };
     }
 };
 

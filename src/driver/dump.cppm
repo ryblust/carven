@@ -10,7 +10,7 @@ import zero.frontend.parser;
 import std;
 
 auto dump_indent(std::string& out, std::size_t level) noexcept -> void {
-    for (auto i = 0uz; i < level; ++i) out.append("  ");
+    for (auto i = 0uz; i < level; ++i) out += "  ";
 }
 
 auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std::size_t level) noexcept -> void;
@@ -18,150 +18,150 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std:
 
 auto dump_top_level(const TopLevelItem& item, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
-        [&](const ImportItem& it) -> void {
+        [&](const ImportItem& it) noexcept -> void {
             dump_indent(out, level);
-            out.append("Import: ").append(text_at(source, it.module_name));
+            out += std::format("Import: {}", text_at(source, it.module_name));
             if (!it.using_decls.empty()) {
-                out.append(" { ");
+                out += " { ";
                 for (auto i = 0uz; i < it.using_decls.size(); ++i) {
-                    if (i > 0) out.append(", ");
-                    out.append(text_at(source, it.using_decls[i]));
+                    if (i > 0) out += ", ";
+                    out += text_at(source, it.using_decls[i]);
                 }
-                out.append(" }");
+                out += " }";
             }
-            out.push_back('\n');
+            out += '\n';
         },
-        [&](const EnumItem& it) -> void {
+        [&](const EnumItem& it) noexcept -> void {
             dump_indent(out, level);
-            out.append("Enum: ").append(text_at(source, it.name));
-            if (!is_empty(it.size)) out.append(": ").append(text_at(source, it.size));
-            out.append(" { ");
+            out += std::format("Enum: {}", text_at(source, it.name));
+            if (!is_empty(it.size)) out += std::format(": {}", text_at(source, it.size));
+            out += " { ";
             for (auto i = 0uz; i < it.fields.size(); ++i) {
-                if (i > 0) out.append(", ");
-                out.append(text_at(source, it.fields[i]));
+                if (i > 0) out += ", ";
+                out += text_at(source, it.fields[i]);
             }
-            out.append(" }\n");
+            out += " }\n";
         },
-        [&](const StructItem& it) -> void {
+        [&](const StructItem& it) noexcept -> void {
             dump_indent(out, level);
-            out.append("Struct: ").append(text_at(source, it.name)).append(" {\n");
+            out += std::format("Struct: {} {{\n", text_at(source, it.name));
             for (const auto& field : it.fields) {
                 dump_indent(out, level + 1);
-                out.append(text_at(source, field.name)).append(": ").append(text_at(source, field.type)).append("\n");
+                out += std::format("{}: {}\n", text_at(source, field.name), text_at(source, field.type));
             }
             dump_indent(out, level);
-            out.append("}\n");
+            out += "}\n";
         },
-        [&](const FunctionItem& it) -> void {
+        [&](const FunctionItem& it) noexcept -> void {
             dump_indent(out, level);
-            out.append("fn ").append(text_at(source, it.name)).append("(");
+            out += std::format("fn {}(", text_at(source, it.name));
             for (auto i = 0uz; i < it.params.size(); ++i) {
-                if (i > 0) out.append(", ");
-                out.append(text_at(source, it.params[i].name)).append(": ").append(text_at(source, it.params[i].type));
+                if (i > 0) out += ", ";
+                out += std::format("{}: {}", text_at(source, it.params[i].name), text_at(source, it.params[i].type));
             }
-            out.append(")");
-            if (!is_empty(it.return_type)) out.append(" -> ").append(text_at(source, it.return_type));
-            out.append(" {\n");
-            walk_stmts(it.body->statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
+            out += ")";
+            if (!is_empty(it.return_type)) out += std::format(" -> {}", text_at(source, it.return_type));
+            out += " {\n";
+            walk_stmts(it.body->statements, [&](const Stmt& stmt) noexcept { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
-            out.append("}\n");
+            out += "}\n";
         }
     }, item);
 }
 
 auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
-        [&](const LiteralExpr& e) -> void {
-            out.append("Literal(").append(text_at(source, e.token)).append(")");
+        [&](const LiteralExpr& e) noexcept -> void {
+            out += std::format("Literal({})", text_at(source, e.token));
         },
-        [&](const IdentExpr& e) -> void {
-            out.append("Ident(").append(text_at(source, e.name)).append(")");
+        [&](const IdentExpr& e) noexcept -> void {
+            out += std::format("Ident({})", text_at(source, e.name));
         },
-        [&](const PrefixExpr& e) -> void {
+        [&](const PrefixExpr& e) noexcept -> void {
             out += std::format("Prefix({} ", e.op);
             dump_expr(*e.rhs, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const PostfixExpr& e) -> void {
-            out.append("Postfix(");
+        [&](const PostfixExpr& e) noexcept -> void {
+            out += "Postfix(";
             dump_expr(*e.lhs, source, out, level);
             out += std::format(" {})", e.op);
         },
-        [&](const BinaryExpr& e) -> void {
-            out.append("Binary(");
+        [&](const BinaryExpr& e) noexcept -> void {
+            out += "Binary(";
             dump_expr(*e.lhs, source, out, level);
             out += std::format(" {} ", e.op);
             dump_expr(*e.rhs, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const CallExpr& e) -> void {
-            out.append("Call(");
+        [&](const CallExpr& e) noexcept -> void {
+            out += "Call(";
             dump_expr(*e.callee, source, out, level);
             for (const auto* arg : e.args) {
-                out.append(" ");
+                out += " ";
                 dump_expr(*arg, source, out, level);
             }
-            out.append(")");
+            out += ")";
         },
-        [&](const IndexExpr& e) -> void {
-            out.append("Index(");
+        [&](const IndexExpr& e) noexcept -> void {
+            out += "Index(";
             dump_expr(*e.lhs, source, out, level);
-            out.append("[");
+            out += "[";
             dump_expr(*e.index, source, out, level);
-            out.append("])");
+            out += "])";
         },
-        [&](const FieldExpr& e) -> void {
-            out.append("Field(");
+        [&](const FieldExpr& e) noexcept -> void {
+            out += "Field(";
             dump_expr(*e.lhs, source, out, level);
-            out.append(text_at(source, e.dot)).append(text_at(source, e.field)).append(")");
+            out += std::format("{}{})", text_at(source, e.dot), text_at(source, e.field));
         },
-        [&](const TernaryExpr& e) -> void {
-            out.append("Ternary(");
+        [&](const TernaryExpr& e) noexcept -> void {
+            out += "Ternary(";
             dump_expr(*e.condition, source, out, level);
-            out.append(" ? ");
+            out += " ? ";
             dump_expr(*e.then_branch, source, out, level);
-            out.append(" : ");
+            out += " : ";
             dump_expr(*e.else_branch, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const GroupExpr& e) -> void {
-            out.append("Group(");
+        [&](const GroupExpr& e) noexcept -> void {
+            out += "Group(";
             dump_expr(*e.inner, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const AssignExpr& e) -> void {
-            out.append("Assign(");
+        [&](const AssignExpr& e) noexcept -> void {
+            out += "Assign(";
             dump_expr(*e.lhs, source, out, level);
-            out.append(" = ");
+            out += " = ";
             dump_expr(*e.rhs, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const CompoundAssignExpr& e) -> void {
-            out.append("CompoundAssign(");
+        [&](const CompoundAssignExpr& e) noexcept -> void {
+            out += "CompoundAssign(";
             dump_expr(*e.lhs, source, out, level);
             out += std::format(" {}=", e.op);
             dump_expr(*e.rhs, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const CommaExpr& e) -> void {
-            out.append("Comma(");
+        [&](const CommaExpr& e) noexcept -> void {
+            out += "Comma(";
             dump_expr(*e.lhs, source, out, level);
-            out.append(", ");
+            out += ", ";
             dump_expr(*e.rhs, source, out, level);
-            out.append(")");
+            out += ")";
         },
-        [&](const IfExpr& e) -> void {
-            out.append("If(");
+        [&](const IfExpr& e) noexcept -> void {
+            out += "If(";
             dump_expr(*e.condition, source, out, level);
-            out.append(") {\n");
-            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
+            out += ") {\n";
+            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) noexcept { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
-            out.append("}");
+            out += "}";
             if (e.else_branch.has_value()) {
-                out.append(" else {\n");
-                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
+                out += " else {\n";
+                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) noexcept { dump_stmt(stmt, source, out, level + 1); });
                 dump_indent(out, level);
-                out.append("}");
+                out += "}";
             }
         }
     }, expr);
@@ -169,84 +169,84 @@ auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std:
 
 auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std::size_t level) noexcept -> void {
     std::visit(Overloaded {
-        [&](const BlockStmt& s) -> void {
+        [&](const BlockStmt& s) noexcept -> void {
             dump_indent(out, level);
-            out.append("Block {\n");
-            walk_stmts(s.statements, [&](const Stmt& stmt) { dump_stmt(stmt, source, out, level + 1); });
+            out += "Block {\n";
+            walk_stmts(s.statements, [&](const Stmt& stmt) noexcept { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
-            out.append("}\n");
+            out += "}\n";
         },
-        [&](const ExprStmt& s) -> void {
+        [&](const ExprStmt& s) noexcept -> void {
             dump_indent(out, level);
             dump_expr(*s.expr, source, out, level);
-            out.append(";\n");
+            out += ";\n";
         },
-        [&](const EmptyStmt&) -> void {
+        [&](const EmptyStmt&) noexcept -> void {
             dump_indent(out, level);
-            out.append(";\n");
+            out += ";\n";
         },
-        [&](const VarDecl& s) -> void {
+        [&](const VarDecl& s) noexcept -> void {
             dump_indent(out, level);
-            out.append(text_at(source, s.keyword)).append(" ").append(text_at(source, s.name));
-            if (!is_empty(s.type)) out.append(": ").append(text_at(source, s.type));
+            out += std::format("{} {}", text_at(source, s.keyword), text_at(source, s.name));
+            if (!is_empty(s.type)) out += std::format(": {}", text_at(source, s.type));
             if (s.init != nullptr) {
-                out.append(" = ");
+                out += " = ";
                 dump_expr(*s.init, source, out, level);
             }
-            out.append(";\n");
+            out += ";\n";
         },
-        [&](const ReturnStmt& s) -> void {
+        [&](const ReturnStmt& s) noexcept -> void {
             dump_indent(out, level);
-            out.append("return");
+            out += "return";
             if (s.value != nullptr) {
-                out.append(" ");
+                out += " ";
                 dump_expr(*s.value, source, out, level);
             }
-            out.append(";\n");
+            out += ";\n";
         },
-        [&](const WhileStmt& s) -> void {
+        [&](const WhileStmt& s) noexcept -> void {
             dump_indent(out, level);
-            out.append("while (");
+            out += "while (";
             dump_expr(*s.condition, source, out, level);
-            out.append(") ");
-            walk_body(s.body, [&](const Stmt& body_stmt) {
+            out += ") ";
+            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
                 if (std::get_if<BlockStmt>(s.body)) {
-                    out.append("{\n");
+                    out += "{\n";
                     dump_stmt(body_stmt, source, out, level + 1);
                     dump_indent(out, level);
-                    out.append("}\n");
+                    out += "}\n";
                 } else {
-                    out.append("\n");
+                    out += "\n";
                     dump_stmt(body_stmt, source, out, level + 1);
                 }
             });
         },
-        [&](const ForStmt& s) -> void {
+        [&](const ForStmt& s) noexcept -> void {
             dump_indent(out, level);
-            out.append("for (");
+            out += "for (";
             if (s.init != nullptr) {
-                walk_for_init(*s.init, [&](const VarDecl& d) {
-                    out.append(text_at(source, d.keyword)).append(" ").append(text_at(source, d.name));
-                    if (!is_empty(d.type)) out.append(": ").append(text_at(source, d.type));
+                walk_for_init(*s.init, [&](const VarDecl& d) noexcept {
+                    out += std::format("{} {}", text_at(source, d.keyword), text_at(source, d.name));
+                    if (!is_empty(d.type)) out += std::format(": {}", text_at(source, d.type));
                     if (d.init != nullptr) {
-                        out.append(" = ");
+                        out += " = ";
                         dump_expr(*d.init, source, out, level);
                     }
-                }, [&](const ExprStmt& es) { dump_expr(*es.expr, source, out, level); });
+                }, [&](const ExprStmt& es) noexcept { dump_expr(*es.expr, source, out, level); });
             }
-            out.append("; ");
+            out += "; ";
             if (s.condition != nullptr) dump_expr(*s.condition, source, out, level);
-            out.append("; ");
+            out += "; ";
             if (s.step != nullptr) dump_expr(*s.step, source, out, level);
-            out.append(") ");
-            walk_body(s.body, [&](const Stmt& body_stmt) {
+            out += ") ";
+            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
                 if (std::get_if<BlockStmt>(s.body)) {
-                    out.append("{\n");
+                    out += "{\n";
                     dump_stmt(body_stmt, source, out, level + 1);
                     dump_indent(out, level);
-                    out.append("}\n");
+                    out += "}\n";
                 } else {
-                    out.append("\n");
+                    out += "\n";
                     dump_stmt(body_stmt, source, out, level + 1);
                 }
             });
@@ -287,8 +287,8 @@ export auto dump(const Driver& driver) noexcept -> int {
 
     if (!driver.only_tokens) {
         const auto result = parse(tokens, source);
-        if (result.has_errors()) {
-            for (const auto& error : result.errors) std::println("{}", error);
+        if (!result.errors.empty()) {
+            std::println("{}", result.errors);
             return 1;
         }
         std::print("{}", dump_ast(result, source));

@@ -277,7 +277,7 @@ constexpr auto walk_body(const Stmt* body, F&& visit) noexcept -> void {
 export template<typename F, typename G>
 constexpr auto walk_for_init(const ForInit& init, F&& visit_var_decl, G&& visit_expr_stmt) noexcept -> void {
     std::visit(Overloaded {
-        [&](const VarDecl& d) { visit_var_decl(d); },
-        [&](const ExprStmt& es) { visit_expr_stmt(es); }
+        [&](const VarDecl& d) noexcept { visit_var_decl(d); },
+        [&](const ExprStmt& es) noexcept { visit_expr_stmt(es); }
     }, init);
 }
