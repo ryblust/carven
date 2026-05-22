@@ -84,7 +84,7 @@ All C++ code can be classified into three conceptual layers:
     * Do not wrap `const char*` or `string_view` in `std::filesystem::path` for function parameters — let the caller decide the conversion.
 * **Output and I/O:**
     * Use `std::print` / `std::println` over `std::cout` / `printf`.
-    * Prefer `std::format` for string composition; use `.append()` only for plain literal fragments.
+    * Prefer `str += std::format` for string composition; use `append` only for when you have to.
 
 ## 3. Initialization & Formatting Rules
 

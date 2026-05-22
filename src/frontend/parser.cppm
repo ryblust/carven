@@ -1,8 +1,8 @@
-export module zero.frontend.parser;
+export module carven.frontend.parser;
 
-import zero.common.source;
-import zero.frontend.token;
-import zero.frontend.ast;
+import carven.common.source;
+import carven.frontend.token;
+import carven.frontend.ast;
 import std;
 
 export struct ParseError final {
@@ -67,7 +67,6 @@ private:
     static constexpr auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
         using enum TokenKind;
         using enum BinOp;
-
         switch (kind) {
             case PlusEqual:       return Add;
             case MinusEqual:      return Sub;
@@ -86,7 +85,6 @@ private:
     static constexpr auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
         using enum TokenKind;
         using enum BinOp;
-
         switch (level) {
             case PrecedenceLevel::LogicalOr: {
                 if (kind == PipePipe) return LogicalOr;
@@ -147,7 +145,6 @@ private:
 
     constexpr auto eof_span() const noexcept -> Span {
         const auto pos = static_cast<std::uint32_t>(source.size());
-
         return { .start = pos, .end = pos };
     }
 
@@ -159,7 +156,6 @@ private:
 
     constexpr auto peek(std::size_t offset = 0) const noexcept -> const Token* {
         const auto index = current + offset;
-
         return index < tokens.size() ? &tokens[index] : nullptr;
     }
 
@@ -171,7 +167,6 @@ private:
 
     constexpr auto check(TokenKind kind) const noexcept -> bool {
         const auto token = peek();
-
         return token != nullptr && token->kind == kind;
     }
 
@@ -187,7 +182,6 @@ private:
 
     constexpr auto check_keyword(std::string_view keyword) const noexcept -> bool {
         const auto token = peek();
-
         return token != nullptr && is_keyword(*token, keyword);
     }
 
@@ -302,7 +296,6 @@ private:
         auto ptr = std::make_unique<ForInit>(std::forward<decltype(args)>(args)...);
         auto raw = ptr.get();
         result.for_inits.emplace_back(std::move(ptr));
-
         return raw;
     }
 
@@ -321,9 +314,7 @@ private:
     constexpr auto parse_block() noexcept -> std::optional<BlockStmt> {
         const auto lbrace = expect(TokenKind::LeftBrace, "expected '{'");
         if (!lbrace) return std::nullopt;
-
         auto statements = std::vector<Stmt*>();
-
         while (!eof() && !check(TokenKind::RightBrace)) {
             if (auto stmt = parse_stmt()) {
                 statements.emplace_back(stmt);
@@ -332,7 +323,6 @@ private:
 
         const auto rbrace = expect(TokenKind::RightBrace, "expected '}'");
         if (!rbrace) return std::nullopt;
-
         return BlockStmt {
             .lbrace = lbrace->span,
             .statements = std::move(statements),
@@ -343,12 +333,10 @@ private:
     constexpr auto parse_stmt() noexcept -> Stmt* {
         const auto token = peek();
         if (token == nullptr) return nullptr;
-
         if (token->kind == TokenKind::SemiColon) {
             const auto span = advance()->span;
             return make_stmt(EmptyStmt { .semicolon = span });
         }
-
         if (token->kind == TokenKind::Keyword) {
             const auto keyword = text_at(source, token->span);
             if (keyword == "let" || keyword == "var" || keyword == "const") return parse_var_decl();
@@ -360,7 +348,6 @@ private:
                 return make_stmt(ExprStmt { .expr = expr, .semicolon = Span{} });
             }
         }
-
         return parse_expr_stmt();
     }
 
@@ -399,9 +386,10 @@ private:
             eq_span = advance()->span;
             init = parse_expr();
         }
+
         const auto keyword_text = text_at(source, keyword->span);
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
-            push_error(std::string(keyword_text) + " requires an initializer", keyword->span);
+            push_error(std::format("{} requires an initializer", keyword_text), keyword->span);
         }
         const auto semi = expect(TokenKind::SemiColon, "expected ';' after variable declaration");
         if (!semi) {
@@ -458,7 +446,6 @@ private:
     constexpr auto parse_for_stmt() noexcept -> Stmt* {
         const auto keyword = advance();
         const auto lparen = expect(TokenKind::LeftParen, "expected '(' after for");
-
         if (!lparen) { synchronize_to_stmt_end(); return nullptr; }
 
         ForInit* for_init = nullptr;
@@ -725,20 +712,16 @@ private:
     constexpr auto parse_if_expr() noexcept -> Expr* {
         const auto keyword = advance();
         const auto condition = parse_expr();
-
         if (!check(TokenKind::LeftBrace)) {
             push_error("expected '{' after if condition", current_span());
             return make_expr(LiteralExpr { .token = keyword->span });
         }
-
         auto then_branch = parse_block();
         if (!then_branch) {
             return make_expr(LiteralExpr { .token = keyword->span });
         }
-
         std::optional<Span> else_kw;
         std::optional<BlockStmt> else_branch;
-
         if (const auto next = peek(); next != nullptr && is_keyword(*next, "else")) {
             else_kw = advance()->span;
             if (!check(TokenKind::LeftBrace)) {
@@ -763,7 +746,6 @@ private:
 
     constexpr auto parse_import() noexcept -> std::optional<ImportItem> {
         advance();
-
         const auto module_name = expect_name("expected import module name");
         if (!module_name) {
             synchronize_to_item_end();
@@ -806,13 +788,11 @@ private:
         }
 
         match(TokenKind::SemiColon);
-
         return item;
     }
 
     constexpr auto parse_enum() noexcept -> std::optional<EnumItem> {
         advance();
-
         const auto name = expect_name("expected enum name");
         if (!name) {
             synchronize_to_item_end();
@@ -861,7 +841,6 @@ private:
 
     constexpr auto parse_struct() noexcept -> std::optional<StructItem> {
         advance();
-
         const auto name = expect_name("expected struct name");
         if (!name) {
             synchronize_to_item_end();
@@ -898,7 +877,10 @@ private:
 
             item.fields.emplace_back(field_name->span, field_type->span);
 
-            if (match(TokenKind::Comma) || match(TokenKind::SemiColon)) continue;
+            if (match(TokenKind::Comma) || match(TokenKind::SemiColon)) {
+                continue;
+            }
+
             if (!check(TokenKind::RightBrace)) {
                 push_error("expected ',' or '}' after struct field", current_span());
                 synchronize_to_item_end();
@@ -916,7 +898,6 @@ private:
 
     constexpr auto parse_params() noexcept -> std::optional<std::vector<FunctionParam>> {
         auto params = std::vector<FunctionParam>();
-
         while (!eof() && !check(TokenKind::RightParen)) {
             const auto param_name = expect_name("expected function parameter name");
             if (!param_name) return std::nullopt;
@@ -942,29 +923,24 @@ private:
 
     constexpr auto parse_function() noexcept -> std::optional<FunctionItem> {
         advance();
-
         const auto name = expect_name("expected function name");
         if (!name) {
             synchronize_to_item_end();
             return std::nullopt;
         }
-
         if (!expect(TokenKind::LeftParen, "expected '(' after function name")) {
             synchronize_to_item_end();
             return std::nullopt;
         }
-
         auto params = parse_params();
         if (!params) {
             synchronize_to_item_end();
             return std::nullopt;
         }
-
         if (!expect(TokenKind::RightParen, "expected ')' after function parameters")) {
             synchronize_to_item_end();
             return std::nullopt;
         }
-
         auto return_type = Span{};
         if (match(TokenKind::Arrow)) {
             const auto type = expect_type("expected function return type");
@@ -974,7 +950,6 @@ private:
             }
             return_type = type->span;
         }
-
         auto block = parse_block();
         if (!block) {
             synchronize_to_item_end();

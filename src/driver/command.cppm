@@ -1,8 +1,8 @@
-export module zero.driver.command;
+export module carven.driver.command;
 
-import zero.driver.dump;
-import zero.driver.handler;
-import zero.driver.pipeline;
+import carven.driver.dump;
+import carven.driver.handler;
+import carven.driver.pipeline;
 import std;
 
 export struct Flag final {
@@ -20,7 +20,7 @@ export struct Command final {
 
 constexpr auto GLOBAL_FLAGS = std::array<Flag, 4> {{
     { .long_name = "--help",    .short_name = "-h", .description = "Show help message"          },
-    { .long_name = "--version", .short_name = "-V", .description = "Show Zero version"          },
+    { .long_name = "--version", .short_name = "-V", .description = "Show Carven version"          },
     { .long_name = "--verbose", .short_name = "-v", .description = "Enable verbose diagnostics" },
     { .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
 }};
@@ -38,9 +38,9 @@ constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{
 }};
 
 constexpr auto COMMANDS = std::array<Command, 4> {{
-    { .name = "run",   .description = "Transpile and run a .zero file",  .flags = RUN_FLAGS,   .handler = run   },
+    { .name = "run",   .description = "Transpile and run a .cv file",  .flags = RUN_FLAGS,   .handler = run   },
     { .name = "dump",  .description = "Dump token stream and AST",       .flags = DUMP_FLAGS,  .handler = dump  },
-    { .name = "build", .description = "Build a Zero project",            .flags = {},          .handler = build },
+    { .name = "build", .description = "Build a Carven project",            .flags = {},          .handler = build },
     { .name = "check", .description = "Parse and check without codegen", .flags = {},          .handler = check },
 }};
 
@@ -53,8 +53,8 @@ auto render_flag(Flag flag) noexcept -> void {
 }
 
 export auto render_help() noexcept -> int {
-    std::println("Zero Language Toolchain\n");
-    std::println("USAGE:\n    zero <command> [options...]\n");
+    std::println("Carven Language Toolchain\n");
+    std::println("USAGE:\n    carven <command> [options...]\n");
     std::println("COMMANDS:");
 
     for (const auto& command : COMMANDS) {
@@ -66,18 +66,18 @@ export auto render_help() noexcept -> int {
         render_flag(flag);
     }
 
-    std::println("\nRun 'zero <command> --help' for more information on a specific command.");
+    std::println("\nRun 'carven <command> --help' for more information on a specific command.");
     return 0;
 }
 
 export auto render_version() noexcept -> int {
-    std::println("zero 0.1.0");
+    std::println("carven 0.1.0");
     return 0;
 }
 
 export auto render_command_help(Command command) noexcept -> int {
-    std::println("zero {} — {}\n", command.name, command.description);
-    std::println("USAGE:\n    zero {} [options...]\n", command.name);
+    std::println("carven {} — {}\n", command.name, command.description);
+    std::println("USAGE:\n    carven {} [options...]\n", command.name);
 
     if (command.flags.empty()) {
         std::println("No command-specific options.");

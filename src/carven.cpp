@@ -1,5 +1,5 @@
-import zero.driver.command;
-import zero.driver.pipeline;
+import carven.driver.command;
+import carven.driver.pipeline;
 import std;
 
 auto main(int argc, const char** argv) noexcept -> int {
@@ -11,8 +11,8 @@ auto main(int argc, const char** argv) noexcept -> int {
 
     const auto command = find_command(arg);
     if (!command) {
-        std::println("zero: error: unknown command '{}'", arg);
-        std::println("Run 'zero --help' for usage information.");
+        std::println("carven: error: unknown command '{}'", arg);
+        std::println("Run 'carven --help' for usage information.");
         return 1;
     }
 
@@ -24,7 +24,7 @@ auto main(int argc, const char** argv) noexcept -> int {
     const auto driver = parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)});
     if (!driver) return 1;
     if (driver->input_files.empty()) {
-        std::println("zero {}: error: no input file", command->name);
+        std::println("carven {}: error: no input file", command->name);
         return 1;
     }
 

@@ -1,6 +1,6 @@
-export module zero.frontend.token;
+export module carven.frontend.token;
 
-import zero.common.source;
+import carven.common.source;
 import std;
 
 export enum class TokenKind : std::uint32_t {
@@ -169,7 +169,9 @@ template<> struct std::range_formatter<Token> final {
     }
 
     auto format(const auto& tokens, auto&& context) const noexcept {
-        if (tokens.empty()) return context.out();
+        if (tokens.empty()) {
+            return context.out();
+        }
 
         for (auto i = 0uz; i < tokens.size() - 1; ++i) {
             std::format_to(context.out(), "{}\n", tokens[i]);

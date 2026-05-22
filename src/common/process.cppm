@@ -10,7 +10,7 @@ module;
     #include <unistd.h>
 #endif
 
-export module zero.common.process;
+export module carven.common.process;
 
 import std;
 
@@ -28,21 +28,19 @@ export auto run_process(std::span<const std::string> args) noexcept -> ProcessRe
     for (auto i = 0uz; i < args.size(); ++i) {
         if (i > 0) command += ' ';
         const auto needs_quotes = args[i].contains(' ') || args[i].contains('\t');
-        if (needs_quotes) command += '"';
-        command += args[i];
-        if (needs_quotes) command += '"';
+        command += needs_quotes ? std::format("\"{}\"", args[i]) : args[i];
     }
 
-    auto si = STARTUPINFOA();
+    auto si = STARTUPINFOA{};
     si.cb = sizeof(si);
-    auto pi = PROCESS_INFORMATION();
+    auto pi = PROCESS_INFORMATION{};
+    auto exit_code = DWORD{};
 
     if (!CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
         return { .started = false, .exit_code = 1 };
     }
 
     WaitForSingleObject(pi.hProcess, INFINITE);
-    auto exit_code = DWORD();
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -77,6 +75,7 @@ export auto run_process(std::span<const std::string> args) noexcept -> ProcessRe
     if (WIFSIGNALED(status)) {
         return { .started = true, .exit_code = 128 + WTERMSIG(status) };
     }
+
     return { .started = true, .exit_code = 1 };
 #endif
 }

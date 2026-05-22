@@ -1,16 +1,16 @@
-export module zero.driver.dump;
+export module carven.driver.dump;
 
-import zero.common.filesystem;
-import zero.common.source;
-import zero.driver.pipeline;
-import zero.frontend.token;
-import zero.frontend.lexer;
-import zero.frontend.ast;
-import zero.frontend.parser;
+import carven.common.filesystem;
+import carven.common.source;
+import carven.driver.pipeline;
+import carven.frontend.token;
+import carven.frontend.lexer;
+import carven.frontend.ast;
+import carven.frontend.parser;
 import std;
 
 auto dump_indent(std::string& out, std::size_t level) noexcept -> void {
-    for (auto i = 0uz; i < level; ++i) out += "  ";
+    out.append(level * 2, ' ');
 }
 
 auto dump_expr(const Expr& expr, std::string_view source, std::string& out, std::size_t level) noexcept -> void;
@@ -33,9 +33,10 @@ auto dump_top_level(const TopLevelItem& item, std::string_view source, std::stri
         },
         [&](const EnumItem& it) noexcept -> void {
             dump_indent(out, level);
-            out += std::format("Enum: {}", text_at(source, it.name));
-            if (!is_empty(it.size)) out += std::format(": {}", text_at(source, it.size));
-            out += " { ";
+            out += std::format("Enum: {}{} {{ ",
+                text_at(source, it.name),
+                is_empty(it.size) ? "" : std::format(": {}", text_at(source, it.size))
+            );
             for (auto i = 0uz; i < it.fields.size(); ++i) {
                 if (i > 0) out += ", ";
                 out += text_at(source, it.fields[i]);
@@ -59,9 +60,9 @@ auto dump_top_level(const TopLevelItem& item, std::string_view source, std::stri
                 if (i > 0) out += ", ";
                 out += std::format("{}: {}", text_at(source, it.params[i].name), text_at(source, it.params[i].type));
             }
-            out += ")";
-            if (!is_empty(it.return_type)) out += std::format(" -> {}", text_at(source, it.return_type));
-            out += " {\n";
+            out += std::format("){} {{\n",
+                is_empty(it.return_type) ? "" : std::format(" -> {}", text_at(source, it.return_type))
+            );
             walk_stmts(it.body->statements, [&](const Stmt& stmt) noexcept { dump_stmt(stmt, source, out, level + 1); });
             dump_indent(out, level);
             out += "}\n";
@@ -187,8 +188,11 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std:
         },
         [&](const VarDecl& s) noexcept -> void {
             dump_indent(out, level);
-            out += std::format("{} {}", text_at(source, s.keyword), text_at(source, s.name));
-            if (!is_empty(s.type)) out += std::format(": {}", text_at(source, s.type));
+            out += std::format("{} {}{}",
+                text_at(source, s.keyword),
+                text_at(source, s.name),
+                is_empty(s.type) ? "" : std::format(": {}", text_at(source, s.type))
+            );
             if (s.init != nullptr) {
                 out += " = ";
                 dump_expr(*s.init, source, out, level);
@@ -196,13 +200,13 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std:
             out += ";\n";
         },
         [&](const ReturnStmt& s) noexcept -> void {
-            dump_indent(out, level);
-            out += "return";
             if (s.value != nullptr) {
-                out += " ";
+                std::format_to(std::back_inserter(out), "{:{}}return ", "", level * 2);
                 dump_expr(*s.value, source, out, level);
+                out += ";\n";
+            } else {
+                std::format_to(std::back_inserter(out), "{:{}}return;\n", "", level * 2);
             }
-            out += ";\n";
         },
         [&](const WhileStmt& s) noexcept -> void {
             dump_indent(out, level);
@@ -226,8 +230,11 @@ auto dump_stmt(const Stmt& stmt, std::string_view source, std::string& out, std:
             out += "for (";
             if (s.init != nullptr) {
                 walk_for_init(*s.init, [&](const VarDecl& d) noexcept {
-                    out += std::format("{} {}", text_at(source, d.keyword), text_at(source, d.name));
-                    if (!is_empty(d.type)) out += std::format(": {}", text_at(source, d.type));
+                    out += std::format("{} {}{}",
+                        text_at(source, d.keyword),
+                        text_at(source, d.name),
+                        is_empty(d.type) ? "" : std::format(": {}", text_at(source, d.type))
+                    );
                     if (d.init != nullptr) {
                         out += " = ";
                         dump_expr(*d.init, source, out, level);
@@ -268,7 +275,7 @@ auto dump_ast(const ParseResult& result, std::string_view source) noexcept -> st
 export auto dump(const Driver& driver) noexcept -> int {
     const auto content = read_file(driver.input_files[0]);
     if (!content) {
-        std::println("zero dump: error: cannot read '{}'", driver.input_files[0]);
+        std::println("carven dump: error: cannot read '{}'", driver.input_files[0]);
         return 1;
     }
 

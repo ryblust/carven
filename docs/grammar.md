@@ -1,6 +1,6 @@
-# Zero Language Grammar
+# The Carven Programming Language Grammar
 
-Zero transpiles to standard C++. The syntax is Rust-inspired: no parens for `while`, optional semicolons at
+Carven transpiles to standard C++. The syntax is Rust-inspired: no parens for `while`, optional semicolons at
 block-end for expressions, `let`/`var`/`const` for variable declarations, and `fn` for functions. Single-file
 model — `import` statements generate C++ module imports verbatim; the transpiler does not resolve imported files.
 
@@ -21,7 +21,7 @@ import <module> using * ;
 
 ## Top-Level Items
 
-A Zero source file contains a sequence of:
+A Carven source file contains a sequence of:
 
 - `import` statements
 - `fn` function definitions
@@ -193,12 +193,12 @@ Standard infix binary operators with the precedence table above. Left-associativ
 
 ### Ternary
 
-Ternary expressions are not directly writable in Zero source. They are an AST node emitted by the codegen
+Ternary expressions are not directly writable in Carven source. They are an AST node emitted by the codegen
 optimization for single-expression `if`/`else` branches.
 
 ## Built-in Types
 
-| Zero | C++ |
+| Carven | C++ |
 |------|-----|
 | `i8`  | `std::int8_t`  |
 | `i16` | `std::int16_t` |

@@ -1,4 +1,4 @@
-export module zero.common.filesystem;
+export module carven.common.filesystem;
 
 import std;
 
@@ -10,7 +10,6 @@ export auto read_file(const std::filesystem::path& path) noexcept -> std::option
     if (size == -1) return std::nullopt;
 
     auto buffer = std::string(static_cast<std::size_t>(size), '\0');
-
     file.seekg(0);
     file.read(buffer.data(), size);
     if (file.gcount() != size) return std::nullopt;
@@ -21,7 +20,6 @@ export auto read_file(const std::filesystem::path& path) noexcept -> std::option
 export auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool {
     auto error = std::error_code();
     std::filesystem::create_directories(dir, error);
-
     return !error;
 }
 

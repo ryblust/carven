@@ -1,7 +1,7 @@
 # Xmake cache
 .xmake/
 build/
-.zero
+.carven
 
 # MacOS Cache
 .DS_Store

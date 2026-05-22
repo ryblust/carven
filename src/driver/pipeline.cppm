@@ -1,13 +1,13 @@
-export module zero.driver.pipeline;
+export module carven.driver.pipeline;
 
-import zero.common.filesystem;
-import zero.common.process;
-import zero.common.source;
-import zero.driver.toolchain;
-import zero.frontend.lexer;
-import zero.frontend.ast;
-import zero.frontend.parser;
-import zero.backend.codegen;
+import carven.common.filesystem;
+import carven.common.process;
+import carven.common.source;
+import carven.driver.toolchain;
+import carven.frontend.lexer;
+import carven.frontend.ast;
+import carven.frontend.parser;
+import carven.backend.codegen;
 import std;
 
 export struct TranspileResult final {
@@ -21,7 +21,7 @@ export struct Driver final {
     bool emit_only = false;
     bool only_tokens = false;
     bool only_ast = false;
-    std::filesystem::path output_dir = ".zero/build";
+    std::filesystem::path output_dir = ".carven/build";
 #if defined(_WIN32)
     std::string compiler = "clang-cl";
 #else
@@ -33,6 +33,7 @@ export struct Driver final {
 
 export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> std::optional<Driver> {
     auto driver = Driver{};
+
     for (const std::string_view flag : flags) {
         if (flag.starts_with("-std=")) {
             const auto standard = flag.substr(5);
@@ -42,7 +43,7 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
             else if (standard == "c++23") driver.language_standard = 23;
             else if (standard == "c++26") driver.language_standard = 26;
             else {
-                std::println("zero: error: unknown standard '{}'", standard);
+                std::println("carven: error: unknown standard '{}'", standard);
                 return std::nullopt;
             }
         } else if (flag.starts_with("--output-dir=")) {
@@ -56,7 +57,7 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
         } else if (flag == "--only-ast") {
             driver.only_ast = true;
         } else if (flag.starts_with('-')) {
-            std::println("zero: error: unknown flag '{}'", flag);
+            std::println("carven: error: unknown flag '{}'", flag);
             return std::nullopt;
         } else {
             driver.input_files.push_back(flag);
@@ -66,8 +67,8 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
     return driver;
 }
 
-export constexpr auto transpile(const Driver& driver, SourceFile file) noexcept -> TranspileResult {
-    auto parse_result = parse(tokenize(file.content), file.content);
+export constexpr auto transpile(const Driver& driver, std::string_view source) noexcept -> TranspileResult {
+    auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
         return {
@@ -89,13 +90,13 @@ export constexpr auto transpile(const Driver& driver, SourceFile file) noexcept 
     }
 
     return {
-        .output = generate(parse_result.items, file.content, driver.language_standard, emit_std_module),
+        .output = generate(parse_result.items, source, driver.language_standard, emit_std_module),
         .errors = {}
     };
 }
 
-export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> int {
-    const auto transpile_result = transpile(driver, file);
+export auto run_single_file(const Driver& driver, const SourceFile& file) noexcept -> int {
+    const auto transpile_result = transpile(driver, file.content);
 
     if (!transpile_result.errors.empty()) {
         std::println("{}", transpile_result.errors);
@@ -108,14 +109,14 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
     }
 
     if (!ensure_directory(driver.output_dir)) {
-        std::println("zero run: error: cannot create output directory '{}'", driver.output_dir.string());
+        std::println("carven run: error: cannot create output directory '{}'", driver.output_dir.string());
         return 1;
     }
 
     const auto artifacts = build_artifacts(file.filename, driver.output_dir);
 
     if (!write_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
-        std::println("zero run: error: cannot write '{}'", artifacts.cpp_path.string());
+        std::println("carven run: error: cannot write '{}'", artifacts.cpp_path.string());
         return 1;
     }
 
@@ -125,6 +126,7 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
         auto compile_args = std::vector<std::string> {
             selected_compiler,
         };
+
         if (is_clang_cl) {
             compile_args.emplace_back("-Xclang");
             compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
@@ -137,12 +139,12 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
 
         const auto compile_result = run_process(compile_args);
         if (!compile_result.started) {
-            std::println("zero run: error: cannot start C++ compiler '{}'", selected_compiler);
+            std::println("carven run: error: cannot start C++ compiler '{}'", selected_compiler);
             return 1;
         }
 
         if (compile_result.exit_code != 0) {
-            std::println("zero run: error: C++ compile failed");
+            std::println("carven run: error: C++ compile failed");
             std::println("command: {}", display_command(compile_args));
             return compile_result.exit_code;
         }
@@ -151,7 +153,7 @@ export auto run_single_file(const Driver& driver, SourceFile file) noexcept -> i
     const auto run_args = std::vector<std::string> { artifacts.exe_path.string() };
     const auto run_result = run_process(run_args);
     if (!run_result.started) {
-        std::println("zero run: error: cannot run '{}'", artifacts.exe_path.string());
+        std::println("carven run: error: cannot run '{}'", artifacts.exe_path.string());
         return 1;
     }
 

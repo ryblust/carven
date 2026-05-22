@@ -1,6 +1,6 @@
-export module zero.frontend.lexer;
+export module carven.frontend.lexer;
 
-import zero.frontend.token;
+import carven.frontend.token;
 import std;
 
 constexpr auto is_alpha(char c) noexcept -> bool {
@@ -25,7 +25,6 @@ public:
 
     constexpr auto next() noexcept -> Token {
         using enum TokenKind;
-
         skip_meaningless();
         if (eof()) return token(End);
 
@@ -129,7 +128,6 @@ private:
         if (std::ranges::contains(keywords, source.substr(start_pos, current_pos - start_pos))) {
             return token(TokenKind::Keyword);
         }
-
         return token(TokenKind::Identifier);
     }
 
@@ -155,7 +153,6 @@ private:
             }
             advance();
         }
-
         if (!eof() && current() == '\'') {
             advance();
         }
@@ -170,7 +167,6 @@ private:
             }
             advance();
         }
-
         if (!eof() && current() == '"') {
             advance();
         }

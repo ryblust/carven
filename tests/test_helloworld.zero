@@ -1,5 +1,0 @@
-import std using { println };
-
-fn main() {
-    println("Hello World");
-}

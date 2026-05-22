@@ -1,25 +1,26 @@
 add_rules("mode.debug", "mode.release")
-add_rules("plugin.compile_commands.autoupdate", {outputdir = ".vscode"})
+add_rules("plugin.compile_commands.autoupdate", { outputdir = ".vscode" })
 set_defaultmode("debug")
 -- set_policy("build.c++.modules.non_cascading_changes", true)
 -- set_policy("build.c++.modules.reuse.strict", true)
-set_policy("build.progress_style", "multirow")
+-- set_policy("build.progress_style", "multirow")
 
-target("zero")
-    add_cxxflags("-fno-rtti", { tools = { "clang", "gcc" }})
-    add_cxxflags("/GR-", { tools = { "clang_cl", "cl" }})
+add_cxxflags("-fno-rtti", { tools = { "clang", "gcc" }})
+add_cxxflags("/GR-", { tools = { "clang_cl", "cl" }})
+set_languages("c++latest")
+set_exceptions("no-cxx")
+set_warnings("allextra")
+set_rundir("$(projectdir)")
 
-    set_languages("c++latest")
-    set_exceptions("no-cxx")
-    set_warnings("allextra")
-    set_rundir("$(projectdir)")
+target("carven")
+    add_files("src/**.cppm", { public = true })
+    add_files("src/carven.cpp")
 
-    add_files("src/**.cppm", "src/zero.cpp")
-
-    for _, testfile in ipairs(os.files("tests/test_*.cpp")) do
-        add_tests(path.basename(testfile), {
-            realtime_output = true,
-            files = { "tests/utils.cppm", testfile },
-            remove_files = "src/zero.cpp",
-        })
+    for _, file in ipairs(os.files("tests/test_*.cpp")) do
+        local name = path.basename(file)
+        target("carven_" .. name)
+            add_deps("carven")
+            add_files("tests/" .. name .. ".cpp")
+            add_defines("DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN")
+            add_tests(name, { realtime_output = true })
     end

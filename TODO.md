@@ -1,8 +1,8 @@
-1. full tests for the zero transpiler
+1. full tests for the carven transpiler
 
 2. builtin array
 
-    ```zero
+    ```carven
     let a = [1, 2, 3];
     ```
 
@@ -11,7 +11,7 @@
     ```
 
 3. for loops and ranges
-    ```zero
+    ```carven
     for i in 1..10 {
         println("{}", i)
     }
@@ -35,11 +35,11 @@
     }
     ```
 
-3. `match` expression
+4. `match` expression
 
-4. doc comment token `//! ///`
+5. doc comment token `//! ///`
 
-5. inline test in zero
+6. inline test in carven
 
     Proposal Syntax
     - `#test "test C/C++ like preprocessor" {}`
@@ -47,7 +47,7 @@
     - `test "test is a keyword" {}`
     - `[[test]] fn test_cpp_attribute_like {}`
 
-6. inline C++ source code in zero
+7. inline C++ source code in carven
 
     Proposal Syntax
     - `#cpp {}`

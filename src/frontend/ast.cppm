@@ -1,6 +1,6 @@
-export module zero.frontend.ast;
+export module carven.frontend.ast;
 
-import zero.common.source;
+import carven.common.source;
 import std;
 
 export enum class UnaryOp : std::uint32_t {
@@ -261,7 +261,7 @@ export struct StructItem final {
 export using TopLevelItem = std::variant<ImportItem, EnumItem, StructItem, FunctionItem>;
 
 export template<typename F>
-constexpr auto walk_stmts(const std::vector<Stmt*>& statements, F&& visit) noexcept -> void {
+constexpr auto walk_stmts(std::span<Stmt* const> statements, F&& visit) noexcept -> void {
     for (const auto* stmt : statements) visit(*stmt);
 }
 

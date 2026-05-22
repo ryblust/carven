@@ -1,9 +1,10 @@
-export module zero.common.source;
+export module carven.common.source;
 
 import std;
 
 export template<typename ... Ts>
 struct Overloaded final : Ts... { using Ts::operator()...; };
+
 export template<typename ... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
@@ -40,6 +41,7 @@ export constexpr auto text_at(std::string_view text, Span span) noexcept -> std:
     if (span.start > text.size() || span.end > text.size() || span.end < span.start) {
         return {};
     }
+
     return text.substr(span.start, span.end - span.start);
 }
 
