@@ -28,7 +28,6 @@ export struct Driver final {
     std::string compiler = "c++";
 #endif
     std::vector<std::string_view> input_files;
-
 };
 
 export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> std::optional<Driver> {
@@ -123,9 +122,7 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
     if (needs_compile(artifacts.cpp_path, artifacts.exe_path)) {
         const auto selected_compiler = compiler_from_environment(driver.compiler);
         const auto is_clang_cl = selected_compiler.contains("clang-cl");
-        auto compile_args = std::vector<std::string> {
-            selected_compiler,
-        };
+        auto compile_args = std::vector { selected_compiler };
 
         if (is_clang_cl) {
             compile_args.emplace_back("-Xclang");
@@ -133,6 +130,7 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
         } else {
             compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
         }
+
         compile_args.emplace_back(artifacts.cpp_path.string());
         compile_args.emplace_back("-o");
         compile_args.emplace_back(artifacts.exe_path.string());
@@ -144,8 +142,12 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
         }
 
         if (compile_result.exit_code != 0) {
-            std::println("carven run: error: C++ compile failed");
-            std::println("command: {}", display_command(compile_args));
+            auto command = std::string();
+            for (auto i = 0uz; i < compile_args.size(); ++i) {
+                if (i > 0) command += ' ';
+                command += compile_args[i];
+            }
+            std::println("carven run: error: C++ compile failed\ncommand: {}", command);
             return compile_result.exit_code;
         }
     }

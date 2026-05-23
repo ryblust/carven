@@ -363,12 +363,12 @@ private:
         return make_stmt(EmptyStmt { .semicolon = eof_span() });
     }
 
-    constexpr auto parse_var_decl() noexcept -> Stmt* {
+    constexpr auto parse_var_decl_data() noexcept -> std::optional<VarDecl> {
         const auto keyword = advance();
         const auto name = expect_name("expected variable name");
         if (!name) {
             synchronize_to_stmt_end();
-            return nullptr;
+            return std::nullopt;
         }
         auto type_span = Span{};
         if (check(TokenKind::Colon)) {
@@ -376,7 +376,7 @@ private:
             const auto type = expect_type("expected type after ':'");
             if (!type) {
                 synchronize_to_stmt_end();
-                return nullptr;
+                return std::nullopt;
             }
             type_span = type->span;
         }
@@ -394,16 +394,22 @@ private:
         const auto semi = expect(TokenKind::SemiColon, "expected ';' after variable declaration");
         if (!semi) {
             synchronize_to_stmt_end();
-            return nullptr;
+            return std::nullopt;
         }
-        return make_stmt(VarDecl {
+        return VarDecl {
             .keyword = keyword->span,
             .name = name->span,
             .type = type_span,
             .eq = eq_span,
             .init = init,
             .semicolon = semi->span
-        });
+        };
+    }
+
+    constexpr auto parse_var_decl() noexcept -> Stmt* {
+        auto decl = parse_var_decl_data();
+        if (!decl) return nullptr;
+        return make_stmt(std::move(*decl));
     }
 
     constexpr auto parse_return_stmt() noexcept -> Stmt* {
@@ -456,9 +462,9 @@ private:
             if (token != nullptr && token->kind == TokenKind::Keyword) {
                 const auto keyword_text = text_at(source, token->span);
                 if (keyword_text == "let" || keyword_text == "var" || keyword_text == "const") {
-                    if (auto* var_decl = std::get_if<VarDecl>(parse_var_decl())) {
-                        init_semi_span = var_decl->semicolon;
-                        for_init = make_for_init(std::move(*var_decl));
+                    if (auto decl = parse_var_decl_data()) {
+                        init_semi_span = decl->semicolon;
+                        for_init = make_for_init(std::move(*decl));
                     }
                 } else {
                     const auto expr = parse_expr();
@@ -494,10 +500,15 @@ private:
 
         if (const auto body = parse_stmt_or_block()) {
             return make_stmt(ForStmt {
-                .keyword = keyword->span, .lparen = lparen->span,
-                .init = for_init, .init_semi = init_semi_span,
-                .condition = condition, .cond_semi = cond_semi->span,
-                .step = step, .rparen = rparen->span, .body = body
+                .keyword = keyword->span,
+                .lparen = lparen->span,
+                .init = for_init,
+                .init_semi = init_semi_span,
+                .condition = condition,
+                .cond_semi = cond_semi->span,
+                .step = step,
+                .rparen = rparen->span,
+                .body = body
             });
         }
 

@@ -21,6 +21,6 @@ target("carven")
         target("carven_" .. name)
             add_deps("carven")
             add_files("tests/" .. name .. ".cpp")
-            add_defines("DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN")
+            add_defines("DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN", "DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS")
             add_tests(name, { realtime_output = true })
     end

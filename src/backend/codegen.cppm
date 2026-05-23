@@ -148,17 +148,21 @@ constexpr auto generate_stmt(const Stmt& stmt, std::string_view source, std::uin
                 : std::format("{}return;", padding);
         },
         [&](const WhileStmt& s) noexcept -> std::string {
-            auto result = std::format("{}while ({}) ", padding, generate_expr(*s.condition, source));
+            auto result = std::format("{}while ({})", padding, generate_expr(*s.condition, source));
 
-            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                if (std::get_if<BlockStmt>(s.body)) {
-                    std::format_to(std::back_inserter(result), "{{\n{}\n{}}}",
-                        generate_stmt(body_stmt, source, indent + 4), padding
-                    );
-                } else {
-                    std::format_to(std::back_inserter(result), "\n{}", generate_stmt(body_stmt, source, indent + 4));
-                }
-            });
+            if (std::get_if<BlockStmt>(s.body)) {
+                result += " {\n";
+                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
+                    result += generate_stmt(body_stmt, source, indent + 4);
+                    result += '\n';
+                });
+                std::format_to(std::back_inserter(result), "{}}}", padding);
+            } else {
+                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
+                    std::format_to(std::back_inserter(result), "\n{}",
+                        generate_stmt(body_stmt, source, indent + 4));
+                });
+            }
 
             return result;
         },
@@ -179,18 +183,21 @@ constexpr auto generate_stmt(const Stmt& stmt, std::string_view source, std::uin
 
             const auto condition = s.condition != nullptr ? generate_expr(*s.condition, source) : "";
             const auto step = s.step != nullptr ? generate_expr(*s.step, source) : "";
-            auto result = std::format("{}for ({}; {}; {}) ", padding, init, condition, step);
+            auto result = std::format("{}for ({}; {}; {})", padding, init, condition, step);
 
-            walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                if (std::get_if<BlockStmt>(s.body)) {
-                    std::format_to(
-                        std::back_inserter(result), "{{\n{}\n{}}}",
-                        generate_stmt(body_stmt, source, indent + 4), padding
-                    );
-                } else {
-                    std::format_to(std::back_inserter(result), "\n{}", generate_stmt(body_stmt, source, indent + 4));
-                }
-            });
+            if (std::get_if<BlockStmt>(s.body)) {
+                result += " {\n";
+                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
+                    result += generate_stmt(body_stmt, source, indent + 4);
+                    result += '\n';
+                });
+                std::format_to(std::back_inserter(result), "{}}}", padding);
+            } else {
+                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
+                    std::format_to(std::back_inserter(result), "\n{}",
+                        generate_stmt(body_stmt, source, indent + 4));
+                });
+            }
 
             return result;
         }

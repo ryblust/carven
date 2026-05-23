@@ -38,11 +38,9 @@ export constexpr auto is_empty(Span span) noexcept -> bool {
 }
 
 export constexpr auto text_at(std::string_view text, Span span) noexcept -> std::string_view {
-    if (span.start > text.size() || span.end > text.size() || span.end < span.start) {
-        return {};
-    }
-
-    return text.substr(span.start, span.end - span.start);
+    return span.start <= span.end && span.end <= text.size()
+        ? std::string_view(text.data() + span.start, span.end - span.start)
+        : std::string_view();
 }
 
 export constexpr auto location_at(std::string_view text, std::uint32_t offset) noexcept -> SourceLocation {
