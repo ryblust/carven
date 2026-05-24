@@ -209,10 +209,10 @@ constexpr auto generate_expr(const Expr& expr, std::string_view source, std::uin
 
     return std::visit(Overloaded {
         [&](const LiteralExpr& e) noexcept {
-            return padding + text_at(source, e.token);
+            return std::format("{}{}", padding, text_at(source, e.token));
         },
         [&](const IdentExpr& e) noexcept {
-            return padding + text_at(source, e.name);
+            return std::format("{}{}", padding, text_at(source, e.name));
         },
         [&](const PrefixExpr& e) noexcept {
             return std::format("{}{}{}", padding, text_at(source, e.span), generate_expr(*e.rhs, source));
