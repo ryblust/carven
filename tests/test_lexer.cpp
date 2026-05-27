@@ -9,22 +9,36 @@ TEST_CASE("Lexer: keywords") {
     SUBCASE("import") {
         const auto tokens = tokenize("import");
         CHECK_EQ(tokens.size(), 1u);
-        CHECK_EQ(tokens[0].kind, TokenKind::Keyword);
+        CHECK_EQ(tokens[0].kind, TokenKind::Import);
         CHECK_EQ(text_at("import", tokens[0].span), "import");
     }
 
-    SUBCASE("all 17 keywords recognized as Keyword kind") {
-        static constexpr auto keywords = std::array {
-            "import", "export", "using", "enum", "struct", "fn",
-            "var", "let", "const", "as",
-            "if", "else", "while", "for", "return",
-            "true", "false",
-        };
-        for (const auto kw : keywords) {
-            const auto tokens = tokenize(kw);
+    SUBCASE("all 17 keywords recognized as correct TokenKind") {
+        static constexpr auto keywords = std::array<std::pair<std::string_view, TokenKind>, 17> {{
+            { "import", TokenKind::Import },
+            { "export", TokenKind::Export },
+            { "using",  TokenKind::Using  },
+            { "fn",     TokenKind::Fn     },
+            { "struct", TokenKind::Struct },
+            { "enum",   TokenKind::Enum   },
+            { "var",    TokenKind::Var    },
+            { "let",    TokenKind::Let    },
+            { "const",  TokenKind::Const  },
+            { "if",     TokenKind::If     },
+            { "else",   TokenKind::Else   },
+            { "for",    TokenKind::For    },
+            { "while",  TokenKind::While  },
+            { "as",     TokenKind::As     },
+            { "true",   TokenKind::True   },
+            { "false",  TokenKind::False  },
+            { "return", TokenKind::Return },
+        }};
+
+        for (const auto [text, kind] : keywords) {
+            const auto tokens = tokenize(text);
             CHECK_EQ(tokens.size(), 1u);
-            CHECK_EQ(tokens[0].kind, TokenKind::Keyword);
-            CHECK_EQ(text_at(kw, tokens[0].span), kw);
+            CHECK_EQ(tokens[0].kind, kind);
+            CHECK_EQ(text_at(text, tokens[0].span), text);
         }
     }
 }
@@ -361,7 +375,7 @@ TEST_CASE("Lexer: tokenize import std") {
     static constexpr auto source = std::string_view("import std;");
     const auto tokens = tokenize(source);
     CHECK_EQ(tokens.size(), 3u);
-    CHECK_EQ(tokens[0].kind, TokenKind::Keyword);
+    CHECK_EQ(tokens[0].kind, TokenKind::Import);
     CHECK_EQ(text_at(source, tokens[0].span), "import");
     CHECK_EQ(tokens[1].kind, TokenKind::Identifier);
     CHECK_EQ(text_at(source, tokens[1].span), "std");

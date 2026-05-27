@@ -8,7 +8,24 @@ export enum class TokenKind : std::uint32_t {
     NumberLiteral,
     CharLiteral,
     StringLiteral,
-    Keyword,
+
+    As,                     // as
+    Const,                  // const
+    Else,                   // else
+    Enum,                   // enum
+    Export,                 // export
+    False,                  // false
+    Fn,                     // fn
+    For,                    // for
+    If,                     // if
+    Import,                 // import
+    Let,                    // let
+    Return,                 // return
+    Struct,                 // struct
+    True,                   // true
+    Using,                  // using
+    Var,                    // var
+    While,                  // while
 
     Comma,                  // ,
     Dot,                    // .
@@ -75,7 +92,23 @@ constexpr auto to_string(TokenKind kind) noexcept -> const char* {
         case CharLiteral:           return "CharLiteral";
         case StringLiteral:         return "StringLiteral";
 
-        case Keyword:               return "Keyword";
+        case As:                    return "as";
+        case Const:                 return "const";
+        case Else:                  return "else";
+        case Enum:                  return "enum";
+        case Export:                return "export";
+        case False:                 return "false";
+        case Fn:                    return "fn";
+        case For:                   return "for";
+        case If:                    return "if";
+        case Import:                return "import";
+        case Let:                   return "let";
+        case Return:                return "return";
+        case Struct:                return "struct";
+        case True:                  return "true";
+        case Using:                 return "using";
+        case Var:                   return "var";
+        case While:                 return "while";
 
         case Comma:                 return "Comma";
         case Dot:                   return "Dot";

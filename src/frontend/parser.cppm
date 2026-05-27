@@ -36,18 +36,25 @@ public:
             const auto token = peek();
             if (token == nullptr) break;
 
-            if (is_keyword(*token, "import")) {
-                if (auto item = parse_import()) result.items.emplace_back(std::move(*item));
-            } else if (is_keyword(*token, "enum")) {
-                if (auto item = parse_enum()) result.items.emplace_back(std::move(*item));
-            } else if (is_keyword(*token, "struct")) {
-                if (auto item = parse_struct()) result.items.emplace_back(std::move(*item));
-            } else if (is_keyword(*token, "fn")) {
-                if (auto item = parse_function()) result.items.emplace_back(std::move(*item));
-            } else {
-                push_error("expected top-level item", token->span);
-                advance();
-                synchronize_top_level();
+            switch (token->kind) {
+                using enum TokenKind;
+                case Import:
+                    if (auto item = parse_import()) result.items.emplace_back(std::move(*item));
+                    break;
+                case Enum:
+                    if (auto item = parse_enum()) result.items.emplace_back(std::move(*item));
+                    break;
+                case Struct:
+                    if (auto item = parse_struct()) result.items.emplace_back(std::move(*item));
+                    break;
+                case Fn:
+                    if (auto item = parse_function()) result.items.emplace_back(std::move(*item));
+                    break;
+                default:
+                    push_error("expected top-level item", token->span);
+                    advance();
+                    synchronize_top_level();
+                    break;
             }
         }
 
@@ -176,20 +183,6 @@ private:
         return advance();
     }
 
-    constexpr auto is_keyword(Token token, std::string_view keyword) const noexcept -> bool {
-        return token.kind == TokenKind::Keyword && text_at(source, token.span) == keyword;
-    }
-
-    constexpr auto check_keyword(std::string_view keyword) const noexcept -> bool {
-        const auto token = peek();
-        return token != nullptr && is_keyword(*token, keyword);
-    }
-
-    constexpr auto match_keyword(std::string_view keyword) noexcept -> std::optional<Token> {
-        if (!check_keyword(keyword)) return std::nullopt;
-
-        return advance();
-    }
 
     constexpr auto expect(TokenKind kind, std::string_view message) noexcept -> std::optional<Token> {
         if (auto token = match(kind)) return token;
@@ -206,7 +199,7 @@ private:
     constexpr auto expect_type(std::string_view message) noexcept -> std::optional<Token> {
         const auto token = peek();
 
-        if (token != nullptr && (token->kind == TokenKind::Identifier || token->kind == TokenKind::Keyword)) {
+        if (token != nullptr && token->kind == TokenKind::Identifier) {
             return advance();
         }
 
@@ -220,10 +213,10 @@ private:
     }
 
     constexpr auto is_top_level_start(Token token) const noexcept -> bool {
-        return is_keyword(token, "import")
-            || is_keyword(token, "enum")
-            || is_keyword(token, "struct")
-            || is_keyword(token, "fn");
+        return token.kind == TokenKind::Import
+            || token.kind == TokenKind::Enum
+            || token.kind == TokenKind::Struct
+            || token.kind == TokenKind::Fn;
     }
 
     constexpr auto synchronize_top_level() noexcept -> void {
@@ -337,16 +330,19 @@ private:
             const auto span = advance()->span;
             return make_stmt(EmptyStmt { .semicolon = span });
         }
-        if (token->kind == TokenKind::Keyword) {
-            const auto keyword = text_at(source, token->span);
-            if (keyword == "let" || keyword == "var" || keyword == "const") return parse_var_decl();
-            if (keyword == "return") return parse_return_stmt();
-            if (keyword == "while") return parse_while_stmt();
-            if (keyword == "for") return parse_for_stmt();
-            if (keyword == "if") {
+        switch (token->kind) {
+            using enum TokenKind;
+            case Let:
+            case Var:
+            case Const: return parse_var_decl();
+            case Return: return parse_return_stmt();
+            case While: return parse_while_stmt();
+            case For: return parse_for_stmt();
+            case If: {
                 const auto expr = parse_if_expr();
                 return make_stmt(ExprStmt { .expr = expr, .semicolon = Span{} });
             }
+            default: break;
         }
         return parse_expr_stmt();
     }
@@ -459,16 +455,14 @@ private:
 
         if (!check(TokenKind::SemiColon)) {
             const auto token = peek();
-            if (token != nullptr && token->kind == TokenKind::Keyword) {
-                const auto keyword_text = text_at(source, token->span);
-                if (keyword_text == "let" || keyword_text == "var" || keyword_text == "const") {
-                    if (auto decl = parse_var_decl_data()) {
-                        init_semi_span = decl->semicolon;
-                        for_init = make_for_init(std::move(*decl));
-                    }
-                } else {
-                    const auto expr = parse_expr();
-                    for_init = make_for_init(ExprStmt { .expr = expr, .semicolon = Span{} });
+            if (token != nullptr && (
+                token->kind == TokenKind::Let ||
+                token->kind == TokenKind::Var ||
+                token->kind == TokenKind::Const
+            )) {
+                if (auto decl = parse_var_decl_data()) {
+                    init_semi_span = decl->semicolon;
+                    for_init = make_for_init(std::move(*decl));
                 }
             } else {
                 const auto expr = parse_expr();
@@ -687,13 +681,27 @@ private:
                 const auto span = advance()->span;
                 return make_expr(LiteralExpr { .token = span });
             }
-            case Keyword: {
+            case True:
+            case False: {
+                const auto span = advance()->span;
+                return make_expr(LiteralExpr { .token = span });
+            }
+            case If: return parse_if_expr();
+            case Enum:
+            case Struct:
+            case Fn:
+            case Var:
+            case Let:
+            case Const:
+            case As:
+            case While:
+            case For:
+            case Return:
+            case Import:
+            case Export:
+            case Using:
+            case Else: {
                 const auto keyword = text_at(source, token->span);
-                if (keyword == "true" || keyword == "false") {
-                    const auto span = advance()->span;
-                    return make_expr(LiteralExpr { .token = span });
-                }
-                if (keyword == "if") return parse_if_expr();
                 push_error(std::format("keyword '{}' cannot be used as an identifier", keyword), token->span);
                 advance();
                 return make_expr(LiteralExpr { .token = token->span });
@@ -733,7 +741,7 @@ private:
         }
         std::optional<Span> else_kw;
         std::optional<BlockStmt> else_branch;
-        if (const auto next = peek(); next != nullptr && is_keyword(*next, "else")) {
+        if (const auto next = peek(); next != nullptr && next->kind == TokenKind::Else) {
             else_kw = advance()->span;
             if (!check(TokenKind::LeftBrace)) {
                 push_error("expected '{' after else", current_span());
@@ -769,7 +777,7 @@ private:
             .is_std_module = text_at(source, module_name->span) == "std"
         };
 
-        if (match_keyword("using")) {
+        if (match(TokenKind::Using)) {
             if (match(TokenKind::Star)) {
                 item.using_wildcard = true;
             } else if (match(TokenKind::LeftBrace)) {

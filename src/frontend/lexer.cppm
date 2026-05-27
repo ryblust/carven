@@ -101,33 +101,34 @@ private:
     }
 
     constexpr auto identifier_or_keyword() noexcept -> Token {
-        static constexpr auto keywords = std::array {
-            "import",
-            "export",
-            "using",
-            "enum",
-            "struct",
-            "fn",
-            "var",
-            "let",
-            "const",
-            "as",
-            "if",
-            "else",
-            "while",
-            "for",
-            "return",
-            "true",
-            "false",
-        };
+        static constexpr auto keywords = std::array<std::pair<std::string_view, TokenKind>, 17> {{
+            { "import", TokenKind::Import },
+            { "export", TokenKind::Export },
+            { "using",  TokenKind::Using  },
+            { "fn",     TokenKind::Fn     },
+            { "struct", TokenKind::Struct },
+            { "enum",   TokenKind::Enum   },
+            { "var",    TokenKind::Var    },
+            { "let",    TokenKind::Let    },
+            { "const",  TokenKind::Const  },
+            { "if",     TokenKind::If     },
+            { "else",   TokenKind::Else   },
+            { "for",    TokenKind::For    },
+            { "while",  TokenKind::While  },
+            { "as",     TokenKind::As     },
+            { "true",   TokenKind::True   },
+            { "false",  TokenKind::False  },
+            { "return", TokenKind::Return },
+        }};
 
         while (is_ident_continue(current())) {
             advance();
         }
 
-        if (std::ranges::contains(keywords, source.substr(start_pos, current_pos - start_pos))) {
-            return token(TokenKind::Keyword);
+        for (const auto text = source.substr(start_pos, current_pos - start_pos); const auto [name, kind] : keywords) {
+            if (name == text) return token(kind);
         }
+
         return token(TokenKind::Identifier);
     }
 

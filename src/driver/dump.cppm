@@ -19,14 +19,18 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
     return std::visit(Overloaded {
         [&](const ImportItem& it) noexcept -> std::string {
             auto result = std::format("{}Import: {}", pad, text_at(source, it.module_name));
+
             if (!it.using_decls.empty()) {
                 result += " { ";
+
                 for (auto i = 0uz; i < it.using_decls.size(); ++i) {
                     if (i > 0) result += ", ";
                     result += text_at(source, it.using_decls[i]);
                 }
+
                 result += " }";
             }
+
             return result += '\n';
         },
         [&](const EnumItem& it) noexcept -> std::string {
@@ -35,34 +39,50 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
                 text_at(source, it.name),
                 is_empty(it.size) ? "" : std::format(": {}", text_at(source, it.size))
             );
+
             for (auto i = 0uz; i < it.fields.size(); ++i) {
                 if (i > 0) result += ", ";
                 result += text_at(source, it.fields[i]);
             }
+
             return result += " }\n";
         },
         [&](const StructItem& it) noexcept -> std::string {
             auto result = std::format("{}Struct: {} {{\n", pad, text_at(source, it.name));
             const auto field_pad = std::string(indent + 2, ' ');
+
             for (const auto& field : it.fields) {
-                std::format_to(std::back_inserter(result), "{}{}: {}\n",
-                    field_pad, text_at(source, field.name), text_at(source, field.type));
+                std::format_to(
+                    std::back_inserter(result),
+                    "{}{}: {}\n",
+                    field_pad, text_at(source, field.name), text_at(source, field.type)
+                );
             }
+
             return std::format("{}{}}}\n", result, pad);
         },
         [&](const FunctionItem& it) noexcept -> std::string {
             auto result = std::format("{}fn {}(", pad, text_at(source, it.name));
+
             for (auto i = 0uz; i < it.params.size(); ++i) {
                 if (i > 0) result += ", ";
-                std::format_to(std::back_inserter(result), "{}: {}",
-                    text_at(source, it.params[i].name), text_at(source, it.params[i].type));
+                std::format_to(
+                    std::back_inserter(result),
+                    "{}: {}",
+                    text_at(source, it.params[i].name), text_at(source, it.params[i].type)
+                );
             }
-            std::format_to(std::back_inserter(result), "){} {{\n",
+
+            std::format_to(
+                std::back_inserter(result),
+                "){} {{\n",
                 is_empty(it.return_type) ? "" : std::format(" -> {}", text_at(source, it.return_type))
             );
+
             walk_stmts(it.body->statements, [&](const Stmt& stmt) noexcept {
                 result += dump(stmt, source, indent + 2);
             });
+
             return std::format("{}{}}}\n", result, pad);
         }
     }, item);
