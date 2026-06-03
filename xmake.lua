@@ -12,15 +12,15 @@ set_exceptions("no-cxx")
 set_warnings("allextra")
 set_rundir("$(projectdir)")
 
+target("carven-modules")
+    set_kind("moduleonly")
+    add_files("src/**.cppm")
+
 target("carven")
-    add_files("src/**.cppm", { public = true })
+    add_deps("carven-modules")
     add_files("src/carven.cpp")
 
-    for _, file in ipairs(os.files("tests/test_*.cpp")) do
-        local name = path.basename(file)
-        target("carven_" .. name)
-            add_deps("carven")
-            add_files("tests/" .. name .. ".cpp")
-            add_defines("DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN", "DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS")
-            add_tests(name, { realtime_output = true })
-    end
+target("carven-test")
+    add_deps("carven-modules")
+    add_defines("DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS")
+    add_files("tests/test_*.cpp")

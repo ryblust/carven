@@ -9,9 +9,10 @@ import carven.backend.codegen;
 import std;
 
 // Helper: parse and generate C++ — default to C++23, no std preamble
-static auto gen(std::string_view source, bool import_std = false, std::uint8_t standard = 23) noexcept -> std::string {
-    const auto result = parse(tokenize(source), source);
-    return generate(result.items, source, standard, import_std);
+static auto gen(std::string_view source_text, bool import_std = false, std::uint8_t standard = 23) noexcept -> std::string {
+    const auto sf = SourceFile(source_text, "<test>");
+    const auto result = parse(tokenize(sf.text()), sf);
+    return generate(result.items, sf, standard, import_std);
 }
 
 TEST_CASE("Codegen: type mapping") {
@@ -78,29 +79,29 @@ TEST_CASE("Codegen: include preamble") {
 
 TEST_CASE("Codegen: import items") {
     SUBCASE("non-std module") {
-        static constexpr auto source = std::string_view("import mylib;");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("import mylib;", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("import mylib;"));
     }
 
     SUBCASE("with using declaration") {
-        static constexpr auto source = std::string_view("import mylib using some_func;");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("import mylib using some_func;", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("using mylib::some_func;"));
     }
 
     SUBCASE("with using wildcard") {
-        static constexpr auto source = std::string_view("import mylib using *");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("import mylib using *", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("using namespace mylib;"));
     }
 
     SUBCASE("std module emits no import statement") {
-        static constexpr auto source = std::string_view("import std;");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("import std;", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(!cpp.contains("import std;"));
     }
@@ -108,15 +109,15 @@ TEST_CASE("Codegen: import items") {
 
 TEST_CASE("Codegen: enum") {
     SUBCASE("basic enum") {
-        static constexpr auto source = std::string_view("enum Color { Red, Green, Blue }");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("enum Color { Red, Green, Blue }", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("enum class Color {\n    Red,\n    Green,\n    Blue,\n};"));
     }
 
     SUBCASE("enum with size type") {
-        static constexpr auto source = std::string_view("enum Color : u8 { Red, Green }");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("enum Color : u8 { Red, Green }", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("enum class Color : std::uint8_t"));
     }
@@ -124,8 +125,8 @@ TEST_CASE("Codegen: enum") {
 
 TEST_CASE("Codegen: struct") {
     SUBCASE("basic struct") {
-        static constexpr auto source = std::string_view("struct Point { x: i32, y: i32 }");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("struct Point { x: i32, y: i32 }", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("struct Point {"));
         CHECK(cpp.contains("std::int32_t x;"));
@@ -240,8 +241,8 @@ TEST_CASE("Codegen: for statements") {
 
 TEST_CASE("Codegen: if expression") {
     SUBCASE("ternary optimization for single-expression branches") {
-        static constexpr auto source = std::string_view("fn main() { let x = if true { 1 } else { 2 }; }");
-        const auto result = parse(tokenize(source), source);
+        const auto source = SourceFile("fn main() { let x = if true { 1 } else { 2 }; }", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         // Should optimize to ternary
         CHECK(cpp.contains("true ? 1 : 2"));
@@ -340,13 +341,13 @@ TEST_CASE("Codegen: expression generation") {
 }
 
 TEST_CASE("Codegen: helloworld full output") {
-    static constexpr auto source = std::string_view(
+    const auto source = SourceFile(
         "import std;\n"
         "fn main() {\n"
         "    std::println(\"Hello World\");\n"
         "}\n"
     );
-    const auto result = parse(tokenize(source), source);
+    const auto result = parse(tokenize(source.text()), source);
     const auto cpp = generate(result.items, source, 23, false);
     // With std module auto-detection, should include preamble
     CHECK(cpp.contains("auto main() noexcept -> int"));

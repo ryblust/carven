@@ -21,7 +21,7 @@ export struct Driver final {
     bool emit_only = false;
     bool only_tokens = false;
     bool only_ast = false;
-    std::filesystem::path output_dir = ".carven/build";
+    std::string_view output_dir = ".carven/build";
 #if defined(_WIN32)
     std::string compiler = "clang-cl";
 #else
@@ -66,8 +66,8 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
     return driver;
 }
 
-export constexpr auto transpile(const Driver& driver, std::string_view source) noexcept -> TranspileResult {
-    auto parse_result = parse(tokenize(source), source);
+export constexpr auto transpile(const Driver& driver, const SourceFile& source) noexcept -> TranspileResult {
+    auto parse_result = parse(tokenize(source.text()), source);
 
     if (!parse_result.errors.empty()) {
         return {
@@ -95,7 +95,7 @@ export constexpr auto transpile(const Driver& driver, std::string_view source) n
 }
 
 export auto run_single_file(const Driver& driver, const SourceFile& file) noexcept -> int {
-    const auto transpile_result = transpile(driver, file.content);
+    const auto transpile_result = transpile(driver, file);
 
     if (!transpile_result.errors.empty()) {
         std::println("{}", transpile_result.errors);
@@ -108,11 +108,11 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
     }
 
     if (!ensure_directory(driver.output_dir)) {
-        std::println("carven run: error: cannot create output directory '{}'", driver.output_dir.string());
+        std::println("carven run: error: cannot create output directory '{}'", driver.output_dir);
         return 1;
     }
 
-    const auto artifacts = build_artifacts(file.filename, driver.output_dir);
+    const auto artifacts = build_artifacts(file.filepath(), driver.output_dir);
 
     if (!write_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
         std::println("carven run: error: cannot write '{}'", artifacts.cpp_path.string());

@@ -17,103 +17,194 @@ TEST_CASE("Span") {
     }
 }
 
-TEST_CASE("is_empty") {
+TEST_CASE("Span::empty") {
     SUBCASE("empty span (start == end)") {
-        CHECK(is_empty(Span { .start = 3, .end = 3 }));
+        CHECK(Span { .start = 3, .end = 3 }.empty());
     }
 
     SUBCASE("invalid span (start > end)") {
-        CHECK(is_empty(Span { .start = 5, .end = 2 }));
+        CHECK(Span { .start = 5, .end = 2 }.empty());
     }
 
     SUBCASE("non-empty span") {
-        CHECK(!is_empty(Span { .start = 0, .end = 5 }));
+        CHECK(!Span { .start = 0, .end = 5 }.empty());
     }
 }
 
-TEST_CASE("text_at") {
-    static constexpr auto source = std::string_view("hello world\nfoo bar");
+TEST_CASE("SourceFile::slice") {
+    const auto source = SourceFile("hello world\nfoo bar", "test.cv");
 
     SUBCASE("extract substring by span") {
-        CHECK_EQ(text_at(source, Span { .start = 0, .end = 5 }), "hello");
-        CHECK_EQ(text_at(source, Span { .start = 6, .end = 11 }), "world");
-        CHECK_EQ(text_at(source, Span { .start = 12, .end = 15 }), "foo");
+        CHECK_EQ(source.slice(Span { .start = 0, .end = 5 }), "hello");
+        CHECK_EQ(source.slice(Span { .start = 6, .end = 11 }), "world");
+        CHECK_EQ(source.slice(Span { .start = 12, .end = 15 }), "foo");
     }
 
     SUBCASE("whole source") {
-        CHECK_EQ(text_at(source, Span { .start = 0, .end = 19 }), "hello world\nfoo bar");
+        CHECK_EQ(source.slice(Span { .start = 0, .end = 19 }), "hello world\nfoo bar");
     }
 
     SUBCASE("empty span returns empty") {
-        CHECK_EQ(text_at(source, Span { .start = 3, .end = 3 }), "");
+        CHECK_EQ(source.slice(Span { .start = 3, .end = 3 }), "");
     }
 
     SUBCASE("start beyond size returns empty") {
-        CHECK_EQ(text_at(source, Span { .start = 999, .end = 1000 }), "");
+        CHECK_EQ(source.slice(Span { .start = 999, .end = 1000 }), "");
     }
 
     SUBCASE("end beyond size returns empty") {
-        CHECK_EQ(text_at(source, Span { .start = 0, .end = 999 }), "");
+        CHECK_EQ(source.slice(Span { .start = 0, .end = 999 }), "");
     }
 
     SUBCASE("inverted span returns empty") {
-        CHECK_EQ(text_at(source, Span { .start = 10, .end = 2 }), "");
+        CHECK_EQ(source.slice(Span { .start = 10, .end = 2 }), "");
     }
 }
 
-TEST_CASE("location_at") {
-    static constexpr auto source = std::string_view("line1\nline2\nline3\n");
+TEST_CASE("SourceFile::location") {
+    const auto source = SourceFile("line1\nline2\nline3\n", "test.cv");
 
     SUBCASE("first line first char") {
-        const auto loc = location_at(source, 0);
+        const auto loc = source.location(0);
         CHECK_EQ(loc.line, 1u);
         CHECK_EQ(loc.column, 1u);
     }
 
     SUBCASE("first line mid char") {
-        const auto loc = location_at(source, 3);
+        const auto loc = source.location(3);
         CHECK_EQ(loc.line, 1u);
         CHECK_EQ(loc.column, 4u);
     }
 
     SUBCASE("start of second line") {
-        const auto loc = location_at(source, 6);
+        const auto loc = source.location(6);
         CHECK_EQ(loc.line, 2u);
         CHECK_EQ(loc.column, 1u);
     }
 
     SUBCASE("mid of second line") {
-        const auto loc = location_at(source, 9);
+        const auto loc = source.location(9);
         CHECK_EQ(loc.line, 2u);
         CHECK_EQ(loc.column, 4u);
     }
 
     SUBCASE("third line") {
-        const auto loc = location_at(source, 12);
+        const auto loc = source.location(12);
         CHECK_EQ(loc.line, 3u);
         CHECK_EQ(loc.column, 1u);
     }
 
     SUBCASE("offset at end") {
-        const auto loc = location_at(source, 18);
+        const auto loc = source.location(18);
         CHECK_EQ(loc.line, 4u);
         CHECK_EQ(loc.column, 1u);
     }
+}
 
-    SUBCASE("offset beyond end") {
-        const auto loc = location_at(source, 999);
-        CHECK_EQ(loc.line, 4u);
-        CHECK_EQ(loc.column, 982u);
+TEST_CASE("SourceFile metadata") {
+    const auto file = SourceFile("let x = 1;", "test.cv");
+    CHECK_EQ(file.filepath(), "test.cv");
+    CHECK_EQ(file.text(), "let x = 1;");
+}
+
+TEST_CASE("SourceFile empty content") {
+    const auto source = SourceFile("", "empty.cv");
+
+    SUBCASE("text is empty") {
+        CHECK_EQ(source.text(), "");
+    }
+
+    SUBCASE("slice returns empty") {
+        CHECK_EQ(source.slice(Span { .start = 0, .end = 0 }), "");
     }
 }
 
-TEST_CASE("SourceLocation formatting") {
-    const auto loc = SourceLocation { .line = 5, .column = 12 };
-    CHECK_EQ(std::format("{}", loc), "5:12");
+TEST_CASE("SourceFile single line no newline") {
+    const auto source = SourceFile("hello", "test.cv");
+
+    SUBCASE("text") {
+        CHECK_EQ(source.text(), "hello");
+    }
+
+    SUBCASE("slice") {
+        CHECK_EQ(source.slice(Span { .start = 0, .end = 5 }), "hello");
+        CHECK_EQ(source.slice(Span { .start = 1, .end = 4 }), "ell");
+    }
+
+    SUBCASE("location") {
+        const auto loc = source.location(0);
+        CHECK_EQ(loc.line, 1u);
+        CHECK_EQ(loc.column, 1u);
+
+        const auto loc2 = source.location(4);
+        CHECK_EQ(loc2.line, 1u);
+        CHECK_EQ(loc2.column, 5u);
+    }
 }
 
-TEST_CASE("SourceFile") {
-    const auto sf = SourceFile { .filename = "test.cv", .content = "let x = 1;" };
-    CHECK_EQ(sf.filename, "test.cv");
-    CHECK_EQ(sf.content, "let x = 1;");
+TEST_CASE("SourceFile move constructor") {
+    auto original = SourceFile("moved content", "moved.cv");
+    const auto moved = std::move(original);
+
+    SUBCASE("moved-to has correct data") {
+        CHECK_EQ(moved.text(), "moved content");
+        CHECK_EQ(moved.filepath(), "moved.cv");
+    }
+
+    SUBCASE("moved-to location works") {
+        const auto loc = moved.location(0);
+        CHECK_EQ(loc.line, 1u);
+        CHECK_EQ(loc.column, 1u);
+    }
+
+    SUBCASE("moved-from is empty") {
+        CHECK_EQ(original.text(), "");
+    }
+}
+
+TEST_CASE("SourceFile move assignment") {
+    auto a = SourceFile("first", "a.cv");
+    auto b = SourceFile("second", "b.cv");
+
+    a = std::move(b);
+
+    SUBCASE("assigned-to has correct data") {
+        CHECK_EQ(a.text(), "second");
+        CHECK_EQ(a.filepath(), "b.cv");
+    }
+
+    SUBCASE("assigned-from is empty") {
+        CHECK_EQ(b.text(), "");
+    }
+}
+
+TEST_CASE("SourceFile from_file mmap path") {
+    auto source = SourceFile::from_file("tests/helloworld.cv");
+    REQUIRE(source.has_value());
+
+    SUBCASE("text is non-empty") {
+        CHECK(!source->text().empty());
+    }
+
+    SUBCASE("filepath is preserved") {
+        CHECK_EQ(source->filepath(), "tests/helloworld.cv");
+    }
+
+    SUBCASE("location on first line") {
+        const auto loc = source->location(0);
+        CHECK_EQ(loc.line, 1u);
+        CHECK_EQ(loc.column, 1u);
+    }
+
+    SUBCASE("slice works") {
+        const auto nl = static_cast<std::uint32_t>(source->text().find('\n'));
+        const auto first_line = source->slice(Span { .start = 0, .end = nl });
+        CHECK(!first_line.empty());
+    }
+
+    SUBCASE("move from_file result") {
+        const auto moved = std::move(*source);
+        CHECK(!moved.text().empty());
+        CHECK_EQ(moved.filepath(), "tests/helloworld.cv");
+    }
 }

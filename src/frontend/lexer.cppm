@@ -154,6 +154,7 @@ private:
             }
             advance();
         }
+
         if (!eof() && current() == '\'') {
             advance();
         }
@@ -168,6 +169,7 @@ private:
             }
             advance();
         }
+
         if (!eof() && current() == '"') {
             advance();
         }

@@ -1,7 +1,7 @@
 #include "doctest.h"
 
-import carven.driver.pipeline;
 import carven.common.source;
+import carven.driver.pipeline;
 import std;
 
 TEST_CASE("Pipeline: parse_flags") {
@@ -118,49 +118,49 @@ TEST_CASE("Pipeline: parse_flags") {
 
 TEST_CASE("Pipeline: transpile") {
     SUBCASE("transpile simple function") {
-        const auto driver = Driver {};
-        static constexpr auto source = std::string_view("fn main() { }");
+        const auto driver = Driver{};
+        const auto source = SourceFile("fn main() { }", "<test>");
         const auto result = transpile(driver, source);
         CHECK(result.errors.empty());
         CHECK(!result.output.empty());
     }
 
     SUBCASE("transpile includes preamble when import_std is set") {
-        auto driver = Driver {};
+        auto driver = Driver{};
         driver.import_std = true;
-        static constexpr auto source = std::string_view("fn main() { }");
+        const auto source = SourceFile("fn main() { }", "<test>");
         const auto result = transpile(driver, source);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile auto-detects import std") {
-        const auto driver = Driver {};
-        static constexpr auto source = std::string_view("import std;\nfn main() { }");
+        const auto driver = Driver{};
+        const auto source = SourceFile("import std;\nfn main() { }", "<test>");
         const auto result = transpile(driver, source);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile returns errors on invalid source") {
-        const auto driver = Driver {};
-        static constexpr auto source = std::string_view("@ invalid @");
+        const auto driver = Driver{};
+        const auto source = SourceFile("@ invalid @", "<test>");
         const auto result = transpile(driver, source);
         CHECK(!result.errors.empty());
     }
 
     SUBCASE("transpile with c++26 standard") {
-        auto driver = Driver {};
+        auto driver = Driver{};
         driver.language_standard = 26;
         driver.import_std = true;
-        static constexpr auto source = std::string_view("fn main() { }");
+        const auto source = SourceFile("fn main() { }", "<test>");
         const auto result = transpile(driver, source);
         CHECK(result.errors.empty());
     }
 
     SUBCASE("transpile helloworld") {
-        const auto driver = Driver {};
-        static constexpr auto source = std::string_view(
+        const auto driver = Driver{};
+        const auto source = SourceFile(
             "import std;\n"
             "fn main() {\n"
             "    std::println(\"Hello World\");\n"

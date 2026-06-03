@@ -11,28 +11,23 @@ Full language grammar and supported features are documented in [`docs/grammar.md
 ## Build & Run
 
 ```shell
-# Configure (Windows, first time or after clean)
-xmake f --toolchain=clang-cl
+xmake f --toolchain=clang-cl # Windows
+xmake f --toolchain=llvm # macOS
 
-# Configure (macOS) — adjust LLVM path to match installed version
-xmake f --toolchain=llvm
+# Use after encouter with BMI cache issues
+rm -rf build
 
-# Clean all the build artifacts and toolchain configuration
-# Nukes BMI cache (use after encouter an unexpected build error)
-# Remeber to reset the toolchain configuration by using xmake f --toolchain
-xmake clean --all
-
-# Build the project(you can use -r for rebuild to reduce bugs)
+# Build the project
 xmake build
 
-# Run all test cases(you can use -v for verbose)
-xmake test
+# Run all test cases
+xmake run carven-test
 
-# Run a .cv file (transpile + compile + execute)
+# Run a .cv file
 xmake run carven run tests/helloworld.cv
 
-# Other commands
-xmake run carven dump <file>    # Dump token stream and AST
+#  # Dump tokens and AST
+xmake run carven dump <file>
 
 ```
 
@@ -47,7 +42,7 @@ Layer responsibilities (dependency flows downward):
 
 ### Key Design Decisions
 
-- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `text_at(source, span)`. The source string MUST outlive all AST references
+- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `SourceFile::slice(span)`. The `SourceFile` MUST outlive all AST references
 - **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.cv` files — this is a single-file model
 
 ## Coding Style

@@ -29,7 +29,7 @@ export struct ParseResult final {
 
 class Parser final {
 public:
-    constexpr Parser(std::span<const Token> t, std::string_view s) noexcept : tokens(t), source(s) {}
+    constexpr Parser(std::span<const Token> tokens, const SourceFile& file) noexcept : tokens(tokens), source(file) {}
 
     constexpr auto parse() noexcept -> ParseResult {
         while (!eof()) {
@@ -63,7 +63,7 @@ public:
 
 private:
     std::span<const Token> tokens;
-    std::string_view source;
+    const SourceFile& source;
     std::size_t current = 0;
     ParseResult result;
 
@@ -74,6 +74,7 @@ private:
     static constexpr auto compound_assign_op(TokenKind kind) noexcept -> std::optional<BinOp> {
         using enum TokenKind;
         using enum BinOp;
+
         switch (kind) {
             case PlusEqual:       return Add;
             case MinusEqual:      return Sub;
@@ -92,6 +93,7 @@ private:
     static constexpr auto token_to_binop(TokenKind kind, PrecedenceLevel level) noexcept -> std::optional<BinOp> {
         using enum TokenKind;
         using enum BinOp;
+
         switch (level) {
             case PrecedenceLevel::LogicalOr: {
                 if (kind == PipePipe) return LogicalOr;
@@ -151,7 +153,7 @@ private:
     }
 
     constexpr auto eof_span() const noexcept -> Span {
-        const auto pos = static_cast<std::uint32_t>(source.size());
+        const auto pos = static_cast<std::uint32_t>(source.text().size());
         return { .start = pos, .end = pos };
     }
 
@@ -209,7 +211,7 @@ private:
     }
 
     constexpr auto push_error(std::string_view message, Span span) noexcept -> void {
-        result.errors.emplace_back(std::string(message), span, location_at(source, span.start));
+        result.errors.emplace_back(std::string(message), span, source.location(span.start));
     }
 
     constexpr auto is_top_level_start(Token token) const noexcept -> bool {
@@ -325,25 +327,31 @@ private:
 
     constexpr auto parse_stmt() noexcept -> Stmt* {
         const auto token = peek();
-        if (token == nullptr) return nullptr;
+
+        if (token == nullptr) {
+            return nullptr;
+        }
+
         if (token->kind == TokenKind::SemiColon) {
             const auto span = advance()->span;
             return make_stmt(EmptyStmt { .semicolon = span });
         }
+
         switch (token->kind) {
             using enum TokenKind;
             case Let:
             case Var:
-            case Const: return parse_var_decl();
+            case Const:  return parse_var_decl();
             case Return: return parse_return_stmt();
-            case While: return parse_while_stmt();
-            case For: return parse_for_stmt();
+            case While:  return parse_while_stmt();
+            case For:    return parse_for_stmt();
             case If: {
                 const auto expr = parse_if_expr();
-                return make_stmt(ExprStmt { .expr = expr, .semicolon = Span{} });
+                return make_stmt(ExprStmt { .expr = expr, .semicolon = {} });
             }
             default: break;
         }
+
         return parse_expr_stmt();
     }
 
@@ -353,7 +361,7 @@ private:
             return make_stmt(ExprStmt { .expr = expr, .semicolon = semi->span });
         }
         if (check(TokenKind::RightBrace) || eof()) {
-            return make_stmt(ExprStmt { .expr = expr, .semicolon = Span{} });
+            return make_stmt(ExprStmt { .expr = expr, .semicolon = {} });
         }
         push_error("expected ';' after expression", current_span());
         return make_stmt(EmptyStmt { .semicolon = eof_span() });
@@ -383,7 +391,7 @@ private:
             init = parse_expr();
         }
 
-        const auto keyword_text = text_at(source, keyword->span);
+        const auto keyword_text = source.slice(keyword->span);
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
             push_error(std::format("{} requires an initializer", keyword_text), keyword->span);
         }
@@ -470,7 +478,7 @@ private:
             }
         }
 
-        if (!is_empty(init_semi_span)) {
+        if (!init_semi_span.empty()) {
             // semicolon was consumed by parse_var_decl
         } else {
             const auto init_semi = expect(TokenKind::SemiColon, "expected ';' after for-init");
@@ -643,7 +651,7 @@ private:
                 case Arrow:
                 case ColonColon: {
                     const auto op_span = advance()->span;
-                    const auto field_name = expect_name(std::format("expected field name after '{}'", text_at(source, op_span)));
+                    const auto field_name = expect_name(std::format("expected field name after '{}'", source.slice(op_span)));
                     if (!field_name) {
                         lhs = make_expr(LiteralExpr { .token = op_span });
                         break;
@@ -701,7 +709,7 @@ private:
             case Export:
             case Using:
             case Else: {
-                const auto keyword = text_at(source, token->span);
+                const auto keyword = source.slice(token->span);
                 push_error(std::format("keyword '{}' cannot be used as an identifier", keyword), token->span);
                 advance();
                 return make_expr(LiteralExpr { .token = token->span });
@@ -774,7 +782,7 @@ private:
         auto item = ImportItem {
             .module_name = module_name->span,
             .using_decls = {},
-            .is_std_module = text_at(source, module_name->span) == "std"
+            .is_std_module = source.slice(module_name->span) == "std"
         };
 
         if (match(TokenKind::Using)) {
@@ -985,6 +993,6 @@ private:
     }
 };
 
-export constexpr auto parse(std::span<const Token> tokens, std::string_view source) noexcept -> ParseResult {
+export constexpr auto parse(std::span<const Token> tokens, const SourceFile& source) noexcept -> ParseResult {
     return Parser(tokens, source).parse();
 }

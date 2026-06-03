@@ -1,16 +1,18 @@
 #include "doctest.h"
 
-import carven.common.source;
 import carven.frontend.token;
 import carven.frontend.lexer;
 import std;
+
+#define CHECK_LEXEME_EQ(source, span, expected) \
+    CHECK_EQ(std::string_view(source).substr((span).start, (span).end - (span).start), (expected))
 
 TEST_CASE("Lexer: keywords") {
     SUBCASE("import") {
         const auto tokens = tokenize("import");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::Import);
-        CHECK_EQ(text_at("import", tokens[0].span), "import");
+        CHECK_LEXEME_EQ("import", tokens[0].span, "import");
     }
 
     SUBCASE("all 17 keywords recognized as correct TokenKind") {
@@ -38,7 +40,7 @@ TEST_CASE("Lexer: keywords") {
             const auto tokens = tokenize(text);
             CHECK_EQ(tokens.size(), 1u);
             CHECK_EQ(tokens[0].kind, kind);
-            CHECK_EQ(text_at(text, tokens[0].span), text);
+            CHECK_LEXEME_EQ(text, tokens[0].span, text);
         }
     }
 }
@@ -48,14 +50,14 @@ TEST_CASE("Lexer: identifiers") {
         const auto tokens = tokenize("hello");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::Identifier);
-        CHECK_EQ(text_at("hello", tokens[0].span), "hello");
+        CHECK_LEXEME_EQ("hello", tokens[0].span, "hello");
     }
 
     SUBCASE("identifier with underscores and digits") {
         const auto tokens = tokenize("my_var_123");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::Identifier);
-        CHECK_EQ(text_at("my_var_123", tokens[0].span), "my_var_123");
+        CHECK_LEXEME_EQ("my_var_123", tokens[0].span, "my_var_123");
     }
 
     SUBCASE("identifier starting with underscore") {
@@ -76,42 +78,42 @@ TEST_CASE("Lexer: number literals") {
         const auto tokens = tokenize("42");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("42", tokens[0].span), "42");
+        CHECK_LEXEME_EQ("42", tokens[0].span, "42");
     }
 
     SUBCASE("zero") {
         const auto tokens = tokenize("0");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("0", tokens[0].span), "0");
+        CHECK_LEXEME_EQ("0", tokens[0].span, "0");
     }
 
     SUBCASE("float") {
         const auto tokens = tokenize("3.14");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("3.14", tokens[0].span), "3.14");
+        CHECK_LEXEME_EQ("3.14", tokens[0].span, "3.14");
     }
 
     SUBCASE("float starting with zero") {
         const auto tokens = tokenize("0.5");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("0.5", tokens[0].span), "0.5");
+        CHECK_LEXEME_EQ("0.5", tokens[0].span, "0.5");
     }
 
     SUBCASE("large integer") {
         const auto tokens = tokenize("1234567890");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("1234567890", tokens[0].span), "1234567890");
+        CHECK_LEXEME_EQ("1234567890", tokens[0].span, "1234567890");
     }
 
     SUBCASE("dot followed by non-digit is integer then dot") {
         const auto tokens = tokenize("42.x");
         CHECK_EQ(tokens.size(), 3u);
         CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
-        CHECK_EQ(text_at("42.x", tokens[0].span), "42");
+        CHECK_LEXEME_EQ("42.x", tokens[0].span, "42");
         CHECK_EQ(tokens[1].kind, TokenKind::Dot);
     }
 }
@@ -121,14 +123,14 @@ TEST_CASE("Lexer: char literals") {
         const auto tokens = tokenize("'a'");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::CharLiteral);
-        CHECK_EQ(text_at("'a'", tokens[0].span), "'a'");
+        CHECK_LEXEME_EQ("'a'", tokens[0].span, "'a'");
     }
 
     SUBCASE("escaped single quote") {
         const auto tokens = tokenize("'\\''");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::CharLiteral);
-        CHECK_EQ(text_at("'\\''", tokens[0].span), "'\\''");
+        CHECK_LEXEME_EQ("'\\''", tokens[0].span, "'\\''");
     }
 
     SUBCASE("escaped backslash") {
@@ -156,14 +158,14 @@ TEST_CASE("Lexer: string literals") {
         const auto tokens = tokenize("\"hello\"");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::StringLiteral);
-        CHECK_EQ(text_at("\"hello\"", tokens[0].span), "\"hello\"");
+        CHECK_LEXEME_EQ("\"hello\"", tokens[0].span, "\"hello\"");
     }
 
     SUBCASE("empty string") {
         const auto tokens = tokenize("\"\"");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::StringLiteral);
-        CHECK_EQ(text_at("\"\"", tokens[0].span), "\"\"");
+        CHECK_LEXEME_EQ("\"\"", tokens[0].span, "\"\"");
     }
 
     SUBCASE("string with escaped quote") {
@@ -251,7 +253,7 @@ TEST_CASE("Lexer: comments") {
         const auto tokens = tokenize("// comment\na");
         CHECK_EQ(tokens.size(), 1u);
         CHECK_EQ(tokens[0].kind, TokenKind::Identifier);
-        CHECK_EQ(text_at("// comment\na", tokens[0].span), "a");
+        CHECK_LEXEME_EQ("// comment\na", tokens[0].span, "a");
     }
 
     SUBCASE("code followed by comment") {
@@ -342,23 +344,23 @@ TEST_CASE("Lexer: token spans") {
         // let
         CHECK_EQ(tokens[0].span.start, 0u);
         CHECK_EQ(tokens[0].span.end, 3u);
-        CHECK_EQ(text_at(source, tokens[0].span), "let");
+        CHECK_LEXEME_EQ(source, tokens[0].span, "let");
         // x
         CHECK_EQ(tokens[1].span.start, 4u);
         CHECK_EQ(tokens[1].span.end, 5u);
-        CHECK_EQ(text_at(source, tokens[1].span), "x");
+        CHECK_LEXEME_EQ(source, tokens[1].span, "x");
         // =
         CHECK_EQ(tokens[2].span.start, 6u);
         CHECK_EQ(tokens[2].span.end, 7u);
-        CHECK_EQ(text_at(source, tokens[2].span), "=");
+        CHECK_LEXEME_EQ(source, tokens[2].span, "=");
         // 1
         CHECK_EQ(tokens[3].span.start, 8u);
         CHECK_EQ(tokens[3].span.end, 9u);
-        CHECK_EQ(text_at(source, tokens[3].span), "1");
+        CHECK_LEXEME_EQ(source, tokens[3].span, "1");
         // ;
         CHECK_EQ(tokens[4].span.start, 9u);
         CHECK_EQ(tokens[4].span.end, 10u);
-        CHECK_EQ(text_at(source, tokens[4].span), ";");
+        CHECK_LEXEME_EQ(source, tokens[4].span, ";");
     }
 
     SUBCASE("multi-char token span covers full operator") {
@@ -366,7 +368,7 @@ TEST_CASE("Lexer: token spans") {
         const auto tokens = tokenize(source);
         CHECK_EQ(tokens.size(), 3u);
         CHECK_EQ(tokens[1].kind, TokenKind::PlusEqual);
-        CHECK_EQ(text_at(source, tokens[1].span), "+=");
+        CHECK_LEXEME_EQ(source, tokens[1].span, "+=");
         CHECK_EQ(tokens[1].span.end - tokens[1].span.start, 2u);
     }
 }
@@ -376,8 +378,8 @@ TEST_CASE("Lexer: tokenize import std") {
     const auto tokens = tokenize(source);
     CHECK_EQ(tokens.size(), 3u);
     CHECK_EQ(tokens[0].kind, TokenKind::Import);
-    CHECK_EQ(text_at(source, tokens[0].span), "import");
+    CHECK_LEXEME_EQ(source, tokens[0].span, "import");
     CHECK_EQ(tokens[1].kind, TokenKind::Identifier);
-    CHECK_EQ(text_at(source, tokens[1].span), "std");
+    CHECK_LEXEME_EQ(source, tokens[1].span, "std");
     CHECK_EQ(tokens[2].kind, TokenKind::SemiColon);
 }

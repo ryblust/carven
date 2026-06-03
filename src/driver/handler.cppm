@@ -1,15 +1,12 @@
 export module carven.driver.handler;
 
-import carven.common.filesystem;
 import carven.common.source;
 import carven.driver.pipeline;
 import std;
 
 export auto run(const Driver& driver) noexcept -> int {
-    if (const auto content = read_file(driver.input_files[0]); content) {
-        return run_single_file(driver, {
-            .filename = std::string(driver.input_files[0]), .content = std::move(*content)
-        });
+    if (auto source = SourceFile::from_file(driver.input_files[0]); source) {
+        return run_single_file(driver, std::move(*source));
     } else {
         std::println("carven run: error: cannot read '{}'", driver.input_files[0]);
         return 1;
