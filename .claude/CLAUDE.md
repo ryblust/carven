@@ -14,7 +14,7 @@ Full language grammar and supported features are documented in [`docs/grammar.md
 xmake f --toolchain=clang-cl # Windows
 xmake f --toolchain=llvm # macOS
 
-# Use after encouter with BMI cache issues
+# Use after encountering BMI cache issues
 rm -rf build
 
 # Build the project
@@ -26,7 +26,7 @@ xmake run carven-test
 # Run a .cv file
 xmake run carven run tests/helloworld.cv
 
-#  # Dump tokens and AST
+# Dump tokens and AST
 xmake run carven dump <file>
 
 ```
@@ -35,10 +35,16 @@ xmake run carven dump <file>
 
 Layer responsibilities (dependency flows downward):
 - `carven.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
-- `carven.frontend.lexer.*` — token types (`token`), lexer (`lexer`). No backend/driver imports
-- `carven.frontend.parser.*` — AST nodes (`ast`), parser (`parser`), implementation partitions (`impl`/`decl`/`stmt`/`expr`). No backend/driver imports
-- `carven.backend.*` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `carven.driver.*` — orchestration: CLI entry (`carven.cpp`), command registry & help (`command`), command impls (`handler`), transpile pipeline (`pipeline`), C++ toolchain (`toolchain`).
+- `carven.frontend.token` — token type and formatters
+- `carven.frontend.lexer` — lexer (tokenizer). No backend/driver imports
+- `carven.frontend.ast` — AST node types and walker utilities
+- `carven.frontend.parser` — parser, error types, arena allocators. No backend/driver imports
+- `carven.backend.codegen` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
+- `carven.driver.command` — CLI commands and help text
+- `carven.driver.pipeline` — transpile pipeline, flag parsing, Driver struct
+- `carven.driver.handler` — command implementations (run, build, check)
+- `carven.driver.dump` — token stream and AST dump
+- `carven.driver.toolchain` — C++ compiler discovery and artifact path building
 
 ### Key Design Decisions
 
