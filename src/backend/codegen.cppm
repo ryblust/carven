@@ -22,230 +22,315 @@ constexpr auto map_type(std::string_view carven_type) noexcept -> std::string_vi
     return carven_type;
 }
 
-constexpr auto generate_import(const ImportItem& item, const SourceFile& source) noexcept -> std::string {
-    auto result = std::string("");
+constexpr auto generate_import(std::string& result, const ImportItem& item, const SourceFile& source) noexcept -> void {
     const auto name = source.slice(item.module_name);
 
     if (!item.is_std_module) {
-        std::format_to(std::back_inserter(result), "import {};\n", name);
+        result += "import ";
+        result += name;
+        result += ";\n";
     }
     if (item.using_wildcard) {
-        std::format_to(std::back_inserter(result), "using namespace {};\n", name);
+        result += "using namespace ";
+        result += name;
+        result += ";\n";
     } else {
         for (const auto decl : item.using_decls) {
-            std::format_to(std::back_inserter(result), "using {}::{};\n", name, source.slice(decl));
+            result += "using ";
+            result += name;
+            result += "::";
+            result += source.slice(decl);
+            result += ";\n";
         }
     }
-
-    return result;
 }
 
-constexpr auto generate_enum(const EnumItem& item, const SourceFile& source) noexcept -> std::string {
-    auto result = std::format("enum class {}{} {{\n",
-        source.slice(item.name),
-        item.size.empty() ? "" : std::format(" : {}", map_type(source.slice(item.size)))
-    );
+constexpr auto generate_enum(std::string& result, const EnumItem& item, const SourceFile& source) noexcept -> void {
+    result += "enum class ";
+    result += source.slice(item.name);
+    if (!item.size.empty()) {
+        result += " : ";
+        result += map_type(source.slice(item.size));
+    }
+    result += " {\n";
 
     for (const auto field : item.fields) {
-        std::format_to(std::back_inserter(result), "    {},\n", source.slice(field));
+        result += "    ";
+        result += source.slice(field);
+        result += ",\n";
     }
 
-    return result += "};";
+    result += "};";
 }
 
-constexpr auto generate_struct(const StructItem& item, const SourceFile& source) noexcept -> std::string {
-    auto result = std::format("struct {} {{\n", source.slice(item.name));
+constexpr auto generate_struct(std::string& result, const StructItem& item, const SourceFile& source) noexcept -> void {
+    result += "struct ";
+    result += source.slice(item.name);
+    result += " {\n";
 
     for (const auto field : item.fields) {
-        std::format_to(
-            std::back_inserter(result),
-            "    {} {};\n",
-            map_type(source.slice(field.type)), source.slice(field.name)
-        );
+        result += "    ";
+        result += map_type(source.slice(field.type));
+        result += ' ';
+        result += source.slice(field.name);
+        result += ";\n";
     }
 
-    return result += "};";
+    result += "};";
 }
 
-constexpr auto generate_stmt(const Stmt& stmt, const SourceFile& source, std::uint32_t indent = 0) noexcept -> std::string;
-constexpr auto generate_expr(const Expr& expr, const SourceFile& source) noexcept -> std::string;
+constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> void;
+constexpr auto generate_expr(std::string& result, const Expr& expr, const SourceFile& source) noexcept -> void;
 
-constexpr auto generate_var_decl(const VarDecl& s, const SourceFile& source, std::string_view padding = "") noexcept -> std::string {
+constexpr auto generate_var_decl(std::string& result, const VarDecl& s, const SourceFile& source, std::string_view padding = "") noexcept -> void {
     const auto keyword = source.slice(s.keyword);
-    auto result = std::format("{}{}{}",
-        padding,
-        keyword == "let" ? "const auto " : keyword == "const" ? "constexpr auto " : "auto ",
-        source.slice(s.name)
-    );
 
-    if (const auto has_type = !s.type.empty(); s.init != nullptr) {
-        result += has_type
-            ? std::format(" = {}({})", map_type(source.slice(s.type)), generate_expr(*s.init, source))
-            : std::format(" = {}", generate_expr(*s.init, source));
-    } else if (has_type) {
-        std::format_to(std::back_inserter(result), " = {}()", map_type(source.slice(s.type)));
+    result += padding;
+    result += keyword == "let" ? "const auto " : keyword == "const" ? "constexpr auto " : "auto ";
+    result += source.slice(s.name);
+
+    if (s.init != nullptr) {
+        if (!s.type.empty()) {
+            result += " = ";
+            result += map_type(source.slice(s.type));
+            result += '(';
+            generate_expr(result, *s.init, source);
+            result += ')';
+        } else {
+            result += " = ";
+            generate_expr(result, *s.init, source);
+        }
+    } else if (!s.type.empty()) {
+        result += " = ";
+        result += map_type(source.slice(s.type));
+        result += "()";
     }
-
-    return result;
 }
 
-constexpr auto generate_function(const FunctionItem& item, const SourceFile& source) noexcept -> std::string {
+constexpr auto generate_function(std::string& result, const FunctionItem& item, const SourceFile& source) noexcept -> void {
     const auto name = source.slice(item.name);
-    auto params = std::string();
+
+    result += "auto ";
+    result += name;
+    result += '(';
 
     for (auto i = 0uz; i < item.params.size(); ++i) {
+        if (i > 0) result += ", ";
         const auto p = item.params[i];
-        if (i > 0) params += ", ";
-
-        params += p.type.empty()
-            ? std::format("auto {}", source.slice(p.name))
-            : std::format("{} {}", map_type(source.slice(p.type)), source.slice(p.name));
+        if (p.type.empty()) {
+            result += "auto ";
+        } else {
+            result += map_type(source.slice(p.type));
+            result += ' ';
+        }
+        result += source.slice(p.name);
     }
 
-    const auto return_type = [&] noexcept -> std::string {
-        if (name == "main") return " -> int";
-        if (!item.return_type.empty()) {
-            return std::format(" -> {}", map_type(source.slice(item.return_type)));
-        } else {
-            return "";
-        }
-    }();
+    result += ") noexcept";
 
-    auto result = std::format("auto {}({}) noexcept{} {{\n", name, params, return_type);
+    if (name == "main") {
+        result += " -> int";
+    } else if (!item.return_type.empty()) {
+        result += " -> ";
+        result += map_type(source.slice(item.return_type));
+    }
+
+    result += " {\n";
 
     for (const auto* stmt : item.body->statements) {
-        result += generate_stmt(*stmt, source, 4);
+        generate_stmt(result, *stmt, source, 4);
         result += '\n';
     }
 
-    return result += '}';
+    result += '}';
 }
 
-constexpr auto generate_stmt(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
+constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> void {
     const auto padding = std::string(indent, ' ');
 
     switch (stmt.kind) {
         case StmtKind::Block: {
             const auto& s = *static_cast<const BlockStmt*>(&stmt);
-            auto result = padding + "{\n";
+            result += padding;
+            result += "{\n";
             for (const auto* body_stmt : s.statements) {
-                result += generate_stmt(*body_stmt, source, indent + 4);
+                generate_stmt(result, *body_stmt, source, indent + 4);
                 result += '\n';
             }
-            return result + padding + '}';
+            result += padding;
+            result += '}';
+            return;
         }
         case StmtKind::ExprStmt: {
             const auto& s = *static_cast<const ExprStmt*>(&stmt);
-            return std::format("{}{};", padding, generate_expr(*s.expr, source));
+            result += padding;
+            generate_expr(result, *s.expr, source);
+            result += ';';
+            return;
         }
         case StmtKind::Empty:
-            return padding + ";";
+            result += padding;
+            result += ';';
+            return;
         case StmtKind::VarDecl: {
             const auto& s = *static_cast<const VarDecl*>(&stmt);
-            return std::format("{};", generate_var_decl(s, source, padding));
+            generate_var_decl(result, s, source, padding);
+            result += ';';
+            return;
         }
         case StmtKind::Return: {
             const auto& s = *static_cast<const ReturnStmt*>(&stmt);
-            return s.value != nullptr
-                ? std::format("{}return {};", padding, generate_expr(*s.value, source))
-                : std::format("{}return;", padding);
+            result += padding;
+            result += "return";
+            if (s.value != nullptr) {
+                result += ' ';
+                generate_expr(result, *s.value, source);
+            }
+            result += ';';
+            return;
         }
         case StmtKind::While: {
             const auto& s = *static_cast<const WhileStmt*>(&stmt);
-            auto result = std::format("{}while ({})", padding, generate_expr(*s.condition, source));
+            result += padding;
+            result += "while (";
+            generate_expr(result, *s.condition, source);
+            result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
-                    result += generate_stmt(*body_stmt, source, indent + 4);
+                    generate_stmt(result, *body_stmt, source, indent + 4);
                     result += '\n';
                 }
-                std::format_to(std::back_inserter(result), "{}}}", padding);
+                result += padding;
+                result += '}';
             } else {
-                std::format_to(std::back_inserter(result), "\n{}",
-                    generate_stmt(*s.body, source, indent + 4));
+                result += '\n';
+                generate_stmt(result, *s.body, source, indent + 4);
             }
-            return result;
+            return;
         }
         case StmtKind::For: {
             const auto& s = *static_cast<const ForStmt*>(&stmt);
-            auto init = std::string();
+            result += padding;
+            result += "for (";
             std::visit(Overloaded {
-                [&](VarDecl* d) noexcept { if (d) init = generate_var_decl(*d, source); },
-                [&](ExprStmt* es) noexcept { if (es) init = generate_expr(*es->expr, source); }
+                [&](VarDecl* d) noexcept {
+                    if (d) generate_var_decl(result, *d, source);
+                },
+                [&](ExprStmt* es) noexcept {
+                    if (es) generate_expr(result, *es->expr, source);
+                }
             }, s.init);
-            const auto condition = s.condition != nullptr ? generate_expr(*s.condition, source) : "";
-            const auto step = s.step != nullptr ? generate_expr(*s.step, source) : "";
-            auto result = std::format("{}for ({}; {}; {})", padding, init, condition, step);
+            result += "; ";
+            if (s.condition != nullptr) generate_expr(result, *s.condition, source);
+            result += "; ";
+            if (s.step != nullptr) generate_expr(result, *s.step, source);
+            result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
-                    result += generate_stmt(*body_stmt, source, indent + 4);
+                    generate_stmt(result, *body_stmt, source, indent + 4);
                     result += '\n';
                 }
-                std::format_to(std::back_inserter(result), "{}}}", padding);
+                result += padding;
+                result += '}';
             } else {
-                std::format_to(std::back_inserter(result), "\n{}",
-                    generate_stmt(*s.body, source, indent + 4));
+                result += '\n';
+                generate_stmt(result, *s.body, source, indent + 4);
             }
-            return result;
+            return;
         }
     }
 }
 
-constexpr auto generate_expr(const Expr& expr, const SourceFile& source) noexcept -> std::string {
+constexpr auto generate_expr(std::string& result, const Expr& expr, const SourceFile& source) noexcept -> void {
     switch (expr.kind) {
         case ExprKind::Literal: {
             const auto& e = *static_cast<const LiteralExpr*>(&expr);
-            return std::format("{}", source.slice(e.token));
+            result += source.slice(e.token);
+            return;
         }
         case ExprKind::Ident: {
             const auto& e = *static_cast<const IdentExpr*>(&expr);
-            return std::format("{}", source.slice(e.name));
+            result += source.slice(e.name);
+            return;
         }
         case ExprKind::Prefix: {
             const auto& e = *static_cast<const PrefixExpr*>(&expr);
-            return std::format("{}{}", source.slice(e.span), generate_expr(*e.rhs, source));
+            result += source.slice(e.span);
+            generate_expr(result, *e.rhs, source);
+            return;
         }
         case ExprKind::Postfix: {
             const auto& e = *static_cast<const PostfixExpr*>(&expr);
-            return std::format("{}{}", generate_expr(*e.lhs, source), source.slice(e.span));
+            generate_expr(result, *e.lhs, source);
+            result += source.slice(e.span);
+            return;
         }
         case ExprKind::Binary: {
             const auto& e = *static_cast<const BinaryExpr*>(&expr);
-            return std::format("{} {} {}", generate_expr(*e.lhs, source), source.slice(e.span), generate_expr(*e.rhs, source));
+            generate_expr(result, *e.lhs, source);
+            result += ' ';
+            result += source.slice(e.span);
+            result += ' ';
+            generate_expr(result, *e.rhs, source);
+            return;
         }
         case ExprKind::Call: {
             const auto& e = *static_cast<const CallExpr*>(&expr);
-            auto args = std::string();
+            generate_expr(result, *e.callee, source);
+            result += '(';
             for (auto i = 0uz; i < e.args.size(); ++i) {
-                if (i > 0) args += ", ";
-                args += generate_expr(*e.args[i], source);
+                if (i > 0) result += ", ";
+                generate_expr(result, *e.args[i], source);
             }
-            return std::format("{}({})", generate_expr(*e.callee, source), args);
+            result += ')';
+            return;
         }
         case ExprKind::Index: {
             const auto& e = *static_cast<const IndexExpr*>(&expr);
-            return std::format("{}[{}]", generate_expr(*e.lhs, source), generate_expr(*e.index, source));
+            generate_expr(result, *e.lhs, source);
+            result += '[';
+            generate_expr(result, *e.index, source);
+            result += ']';
+            return;
         }
         case ExprKind::Field: {
             const auto& e = *static_cast<const FieldExpr*>(&expr);
-            return std::format("{}{}{}", generate_expr(*e.lhs, source), source.slice(e.dot), source.slice(e.field));
+            generate_expr(result, *e.lhs, source);
+            result += source.slice(e.dot);
+            result += source.slice(e.field);
+            return;
         }
         case ExprKind::Group: {
             const auto& e = *static_cast<const GroupExpr*>(&expr);
-            return std::format("({})", generate_expr(*e.inner, source));
+            result += '(';
+            generate_expr(result, *e.inner, source);
+            result += ')';
+            return;
         }
         case ExprKind::Assign: {
             const auto& e = *static_cast<const AssignExpr*>(&expr);
-            return std::format("{} = {}", generate_expr(*e.lhs, source), generate_expr(*e.rhs, source));
+            generate_expr(result, *e.lhs, source);
+            result += " = ";
+            generate_expr(result, *e.rhs, source);
+            return;
         }
         case ExprKind::CompoundAssign: {
             const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
-            return std::format("{} {} {}", generate_expr(*e.lhs, source), source.slice(e.span), generate_expr(*e.rhs, source));
+            generate_expr(result, *e.lhs, source);
+            result += ' ';
+            result += source.slice(e.span);
+            result += ' ';
+            generate_expr(result, *e.rhs, source);
+            return;
         }
         case ExprKind::Comma: {
             const auto& e = *static_cast<const CommaExpr*>(&expr);
-            return std::format("{}, {}", generate_expr(*e.lhs, source), generate_expr(*e.rhs, source));
+            generate_expr(result, *e.lhs, source);
+            result += ", ";
+            generate_expr(result, *e.rhs, source);
+            return;
         }
         case ExprKind::If: {
             const auto& e = *static_cast<const IfExpr*>(&expr);
@@ -260,15 +345,19 @@ constexpr auto generate_expr(const Expr& expr, const SourceFile& source) noexcep
             const auto else_is_expr = else_expr != nullptr && else_expr->kind == StmtKind::ExprStmt;
 
             if (then_is_expr && else_is_expr) {
-                return std::format("{} ? {} : {}",
-                    generate_expr(*e.condition, source),
-                    generate_expr(*then_expr->expr, source),
-                    generate_expr(*else_expr->expr, source));
+                generate_expr(result, *e.condition, source);
+                result += " ? ";
+                generate_expr(result, *then_expr->expr, source);
+                result += " : ";
+                generate_expr(result, *else_expr->expr, source);
+                return;
             }
 
-            auto result = std::format("if ({}) {{\n", generate_expr(*e.condition, source));
+            result += "if (";
+            generate_expr(result, *e.condition, source);
+            result += ") {\n";
             for (const auto* stmt : e.then_branch->statements) {
-                result += generate_stmt(*stmt, source, 4);
+                generate_stmt(result, *stmt, source, 4);
                 result += '\n';
             }
             result += '}';
@@ -276,13 +365,13 @@ constexpr auto generate_expr(const Expr& expr, const SourceFile& source) noexcep
             if (e.else_branch) {
                 result += " else {\n";
                 for (const auto* stmt : e.else_branch->statements) {
-                    result += generate_stmt(*stmt, source, 4);
+                    generate_stmt(result, *stmt, source, 4);
                     result += '\n';
                 }
                 result += '}';
             }
 
-            return result;
+            return;
         }
     }
 }
@@ -307,6 +396,7 @@ constexpr auto generate_include_preamble(std::uint8_t standard) noexcept -> cons
 
 export constexpr auto generate(std::span<const TopLevelItem> items, const SourceFile& source, std::uint8_t standard, bool default_include_std) noexcept -> std::string {
     auto result = std::string();
+    result.reserve(source.text().size() * 2);
 
     if (default_include_std) {
         result += generate_include_preamble(standard);
@@ -315,10 +405,10 @@ export constexpr auto generate(std::span<const TopLevelItem> items, const Source
 
     for (const auto& item : items) {
         std::visit(Overloaded {
-            [&](const ImportItem&   it) noexcept { result += generate_import  (it, source); },
-            [&](const EnumItem&     it) noexcept { result += generate_enum    (it, source); },
-            [&](const StructItem&   it) noexcept { result += generate_struct  (it, source); },
-            [&](const FunctionItem& it) noexcept { result += generate_function(it, source); },
+            [&](const ImportItem&   it) noexcept { generate_import  (result, it, source); },
+            [&](const EnumItem&     it) noexcept { generate_enum    (result, it, source); },
+            [&](const StructItem&   it) noexcept { generate_struct  (result, it, source); },
+            [&](const FunctionItem& it) noexcept { generate_function(result, it, source); },
         }, item);
         result += "\n\n";
     }

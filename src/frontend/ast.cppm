@@ -57,42 +57,38 @@ export enum class StmtKind : std::uint8_t {
 
 export struct Expr {
     ExprKind kind;
-protected:
-    constexpr Expr(ExprKind k) noexcept : kind(k) {}
 };
 
 export struct Stmt {
     StmtKind kind;
-protected:
-    constexpr Stmt(StmtKind k) noexcept : kind(k) {}
 };
 
 export struct LiteralExpr final : Expr {
-    constexpr LiteralExpr(Span t) noexcept : Expr(ExprKind::Literal), token(t) {}
+    static constexpr auto kind = ExprKind::Literal;
     Span token;
 };
 
 export struct IdentExpr final : Expr {
-    constexpr IdentExpr(Span n) noexcept : Expr(ExprKind::Ident), name(n) {}
+    static constexpr auto kind = ExprKind::Ident;
     Span name;
 };
 
 export struct PrefixExpr final : Expr {
-    constexpr PrefixExpr(UnaryOp o, Span s, Expr* r) noexcept : Expr(ExprKind::Prefix), op(o), span(s), rhs(r) {}
+    static constexpr auto kind = ExprKind::Prefix;
     UnaryOp op;
     Span span;
     Expr* rhs;
 };
 
 export struct PostfixExpr final : Expr {
-    constexpr PostfixExpr(Expr* l, UnaryOp o, Span s) noexcept : Expr(ExprKind::Postfix), lhs(l), op(o), span(s) {}
+    static constexpr auto kind = ExprKind::Postfix;
     Expr* lhs;
     UnaryOp op;
     Span span;
 };
 
 export struct BinaryExpr final : Expr {
-    constexpr BinaryExpr(Expr* l, BinOp o, Span s, Expr* r) noexcept : Expr(ExprKind::Binary), lhs(l), op(o), span(s), rhs(r) {}
+    static constexpr auto kind = ExprKind::Binary;
     Expr* lhs;
     BinOp op;
     Span span;
@@ -100,7 +96,7 @@ export struct BinaryExpr final : Expr {
 };
 
 export struct CallExpr final : Expr {
-    constexpr CallExpr(Expr* c, Span l, std::vector<Expr*> a, Span r) noexcept : Expr(ExprKind::Call), callee(c), lparen(l), args(std::move(a)), rparen(r) {}
+    static constexpr auto kind = ExprKind::Call;
     Expr* callee;
     Span lparen;
     std::vector<Expr*> args;
@@ -108,7 +104,7 @@ export struct CallExpr final : Expr {
 };
 
 export struct IndexExpr final : Expr {
-    constexpr IndexExpr(Expr* l, Span lb, Expr* i, Span rb) noexcept : Expr(ExprKind::Index), lhs(l), lbracket(lb), index(i), rbracket(rb) {}
+    static constexpr auto kind = ExprKind::Index;
     Expr* lhs;
     Span lbracket;
     Expr* index;
@@ -116,28 +112,28 @@ export struct IndexExpr final : Expr {
 };
 
 export struct FieldExpr final : Expr {
-    constexpr FieldExpr(Expr* l, Span d, Span f) noexcept : Expr(ExprKind::Field), lhs(l), dot(d), field(f) {}
+    static constexpr auto kind = ExprKind::Field;
     Expr* lhs;
     Span dot;
     Span field;
 };
 
 export struct GroupExpr final : Expr {
-    constexpr GroupExpr(Span l, Expr* i, Span r) noexcept : Expr(ExprKind::Group), lparen(l), inner(i), rparen(r) {}
+    static constexpr auto kind = ExprKind::Group;
     Span lparen;
     Expr* inner;
     Span rparen;
 };
 
 export struct AssignExpr final : Expr {
-    constexpr AssignExpr(Expr* l, Span e, Expr* r) noexcept : Expr(ExprKind::Assign), lhs(l), eq(e), rhs(r) {}
+    static constexpr auto kind = ExprKind::Assign;
     Expr* lhs;
     Span eq;
     Expr* rhs;
 };
 
 export struct CompoundAssignExpr final : Expr {
-    constexpr CompoundAssignExpr(Expr* l, BinOp o, Span s, Expr* r) noexcept : Expr(ExprKind::CompoundAssign), lhs(l), op(o), span(s), rhs(r) {}
+    static constexpr auto kind = ExprKind::CompoundAssign;
     Expr* lhs;
     BinOp op;
     Span span;
@@ -145,7 +141,7 @@ export struct CompoundAssignExpr final : Expr {
 };
 
 export struct CommaExpr final : Expr {
-    constexpr CommaExpr(Expr* l, Span c, Expr* r) noexcept : Expr(ExprKind::Comma), lhs(l), comma(c), rhs(r) {}
+    static constexpr auto kind = ExprKind::Comma;
     Expr* lhs;
     Span comma;
     Expr* rhs;
@@ -154,7 +150,7 @@ export struct CommaExpr final : Expr {
 export struct BlockStmt;
 
 export struct IfExpr final : Expr {
-    constexpr IfExpr(Span kw, Expr* cond, BlockStmt* tb, Span ek = {}, BlockStmt* eb = nullptr) noexcept : Expr(ExprKind::If), keyword(kw), condition(cond), then_branch(tb), else_kw(ek), else_branch(eb) {}
+    static constexpr auto kind = ExprKind::If;
     Span keyword;
     Expr* condition;
     BlockStmt* then_branch;
@@ -163,25 +159,25 @@ export struct IfExpr final : Expr {
 };
 
 export struct BlockStmt final : Stmt {
-    constexpr BlockStmt(Span l, std::vector<Stmt*> ss, Span r) noexcept : Stmt(StmtKind::Block), lbrace(l), statements(std::move(ss)), rbrace(r) {}
+    static constexpr auto kind = StmtKind::Block;
     Span lbrace;
     std::vector<Stmt*> statements;
     Span rbrace;
 };
 
 export struct ExprStmt final : Stmt {
-    constexpr ExprStmt(Expr* e, Span s) noexcept : Stmt(StmtKind::ExprStmt), expr(e), semicolon(s) {}
+    static constexpr auto kind = StmtKind::ExprStmt;
     Expr* expr;
     Span semicolon;
 };
 
 export struct EmptyStmt final : Stmt {
-    constexpr EmptyStmt(Span s) noexcept : Stmt(StmtKind::Empty), semicolon(s) {}
+    static constexpr auto kind = StmtKind::Empty;
     Span semicolon;
 };
 
 export struct VarDecl final : Stmt {
-    constexpr VarDecl(Span kw, Span nm, Span tp, Span e, Span sc, Expr* i) noexcept : Stmt(StmtKind::VarDecl), keyword(kw), name(nm), type(tp), eq(e), semicolon(sc), init(i) {}
+    static constexpr auto kind = StmtKind::VarDecl;
     Span keyword;
     Span name;
     Span type;
@@ -191,21 +187,21 @@ export struct VarDecl final : Stmt {
 };
 
 export struct ReturnStmt final : Stmt {
-    constexpr ReturnStmt(Span kw, Span sc, Expr* v) noexcept : Stmt(StmtKind::Return), keyword(kw), semicolon(sc), value(v) {}
+    static constexpr auto kind = StmtKind::Return;
     Span keyword;
     Span semicolon;
     Expr* value;
 };
 
 export struct WhileStmt final : Stmt {
-    constexpr WhileStmt(Span kw, Expr* c, Stmt* b) noexcept : Stmt(StmtKind::While), keyword(kw), condition(c), body(b) {}
+    static constexpr auto kind = StmtKind::While;
     Span keyword;
     Expr* condition;
     Stmt* body;
 };
 
 export struct ForStmt final : Stmt {
-    constexpr ForStmt(Span kw, Span lp, std::variant<VarDecl*, ExprStmt*> fi, Span is, Span cs, Expr* cond, Expr* step, Span rp, Stmt* b) noexcept : Stmt(StmtKind::For), keyword(kw), lparen(lp), init(fi), init_semi(is), cond_semi(cs), condition(cond), step(step), rparen(rp), body(b) {}
+    static constexpr auto kind = StmtKind::For;
     Span keyword;
     Span lparen;
     std::variant<VarDecl*, ExprStmt*> init;
@@ -259,8 +255,8 @@ public:
     template<typename T, typename... Args>
     constexpr auto alloc(Args&&... args) noexcept -> T* {
         if consteval {
-            auto* p = new T(std::forward<Args>(args)...);
-            constexpr_nodes.emplace_back(p, [](void* vp) noexcept { delete static_cast<T*>(vp); });
+            auto* p = new T {{T::kind}, std::forward<Args>(args)... };
+            cleanup.emplace_back(p, [](void* vp) static noexcept { delete static_cast<T*>(vp); });
             return p;
         } else {
             constexpr auto align = alignof(T);
@@ -269,7 +265,7 @@ public:
                 blocks.emplace_back(std::make_unique<std::byte[]>(block_size));
                 cur = 0;
             }
-            const auto ptr = std::construct_at(reinterpret_cast<T*>(blocks.back().get() + cur), std::forward<Args>(args)...);
+            auto* ptr = new(reinterpret_cast<void*>(blocks.back().get() + cur)) T {{T::kind}, std::forward<Args>(args)... };
             offset = cur + sizeof(T);
             return ptr;
         }
@@ -277,8 +273,8 @@ public:
 
     constexpr ~Arena() noexcept {
         if consteval {
-            for (auto& node : constexpr_nodes) {
-                node.deleter(node.ptr);
+            for (const auto [ptr, deleter] : cleanup) {
+                deleter(ptr);
             }
         }
     }
@@ -286,21 +282,9 @@ public:
     constexpr Arena() noexcept = default;
     constexpr Arena(Arena&&) noexcept = default;
     constexpr auto operator=(Arena&&) noexcept -> Arena& = default;
-
 private:
     static constexpr auto block_size = 65536uz;
     std::vector<std::unique_ptr<std::byte[]>> blocks;
     std::size_t offset = block_size;
-
-    struct ConstexprNode final {
-        void* ptr;
-        void (*deleter)(void*) noexcept;
-    };
-    std::vector<ConstexprNode> constexpr_nodes;
+    std::vector<std::pair<void*, void (*)(void*) noexcept>> cleanup;
 };
-
-static_assert(([] static noexcept {
-    Arena arena;
-    arena.alloc<LiteralExpr>(Span{});
-    return true;
-} (), true));
