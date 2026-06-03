@@ -383,3 +383,59 @@ TEST_CASE("Lexer: tokenize import std") {
     CHECK_LEXEME_EQ(source, tokens[1].span, "std");
     CHECK_EQ(tokens[2].kind, TokenKind::SemiColon);
 }
+
+TEST_CASE("Lexer: underscore identifier") {
+    const auto tokens = tokenize("_");
+    CHECK_EQ(tokens.size(), 1u);
+    CHECK_EQ(tokens[0].kind, TokenKind::Identifier);
+    CHECK_LEXEME_EQ("_", tokens[0].span, "_");
+}
+
+TEST_CASE("Lexer: number literals edge cases") {
+    SUBCASE("leading dot starts expression") {
+        const auto tokens = tokenize(".5");
+        CHECK_EQ(tokens.size(), 2u);
+        CHECK_EQ(tokens[0].kind, TokenKind::Dot);
+        CHECK_EQ(tokens[1].kind, TokenKind::NumberLiteral);
+        CHECK_LEXEME_EQ(".5", tokens[1].span, "5");
+    }
+
+    SUBCASE("float with no fractional part") {
+        const auto tokens = tokenize("0.");
+        CHECK_EQ(tokens.size(), 2u);
+        CHECK_EQ(tokens[0].kind, TokenKind::NumberLiteral);
+        CHECK_EQ(tokens[1].kind, TokenKind::Dot);
+        CHECK_LEXEME_EQ("0.", tokens[0].span, "0");
+    }
+}
+
+TEST_CASE("Lexer: char escape sequences") {
+    SUBCASE("tab") {
+        const auto tokens = tokenize("'\\t'");
+        CHECK_EQ(tokens[0].kind, TokenKind::CharLiteral);
+        CHECK_LEXEME_EQ("'\\t'", tokens[0].span, "'\\t'");
+    }
+
+    SUBCASE("carriage return") {
+        const auto tokens = tokenize("'\\r'");
+        CHECK_EQ(tokens[0].kind, TokenKind::CharLiteral);
+        CHECK_LEXEME_EQ("'\\r'", tokens[0].span, "'\\r'");
+    }
+}
+
+TEST_CASE("Lexer: string escape sequences") {
+    SUBCASE("string with tab") {
+        const auto tokens = tokenize("\"a\\tb\"");
+        CHECK_EQ(tokens[0].kind, TokenKind::StringLiteral);
+        CHECK_LEXEME_EQ("\"a\\tb\"", tokens[0].span, "\"a\\tb\"");
+    }
+}
+
+TEST_CASE("Lexer: operator disambiguation") {
+    SUBCASE("&&& as && then &") {
+        const auto tokens = tokenize("&&&");
+        CHECK_EQ(tokens.size(), 2u);
+        CHECK_EQ(tokens[0].kind, TokenKind::AmpersandAmpersand);
+        CHECK_EQ(tokens[1].kind, TokenKind::Ampersand);
+    }
+}

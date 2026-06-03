@@ -208,3 +208,54 @@ TEST_CASE("SourceFile from_file mmap path") {
         CHECK_EQ(moved.filepath(), "tests/helloworld.cv");
     }
 }
+
+TEST_CASE("SourceFile self-move assignment") {
+    auto source = SourceFile("self move test", "self.cv");
+    auto& ref = source;
+    source = std::move(ref);
+    CHECK_EQ(source.text(), "self move test");
+}
+
+TEST_CASE("SourceFile move assignment with location") {
+    auto a = SourceFile("location test", "a.cv");
+    auto b = SourceFile("other", "b.cv");
+
+    a = std::move(b);
+
+    SUBCASE("assigned-to location works") {
+        const auto loc = a.location(0);
+        CHECK_EQ(loc.line, 1u);
+        CHECK_EQ(loc.column, 1u);
+    }
+}
+
+TEST_CASE("SourceFile from_file nonexistent") {
+    auto source = SourceFile::from_file("nonexistent_file_12345.cv");
+    CHECK(!source.has_value());
+}
+
+TEST_CASE("SourceFile from_file empty file") {
+    const auto dir  = std::filesystem::temp_directory_path();
+    const auto path = dir / "carven_test_empty.cv";
+
+    {
+        std::ofstream ofs(path, std::ios::trunc);
+        ofs.close();
+    }
+
+    auto source = SourceFile::from_file(path.string());
+    REQUIRE(source.has_value());
+    CHECK_EQ(source->text(), "");
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("SourceFile::location beyond source") {
+    const auto source = SourceFile("hello\nworld", "test.cv");
+
+    SUBCASE("offset far beyond source length") {
+        const auto loc = source.location(9999);
+        CHECK_EQ(loc.line, 2u);
+        CHECK_EQ(loc.column, 9994u);
+    }
+}

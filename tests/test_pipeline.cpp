@@ -2,6 +2,8 @@
 
 import carven.common.source;
 import carven.driver.pipeline;
+import carven.driver.handler;
+import carven.driver.dump;
 import std;
 
 TEST_CASE("Pipeline: parse_flags") {
@@ -170,5 +172,53 @@ TEST_CASE("Pipeline: transpile") {
         CHECK(result.errors.empty());
         CHECK(result.output.contains("auto main() noexcept -> int"));
         CHECK(result.output.contains("std::println(\"Hello World\")"));
+    }
+}
+
+TEST_CASE("Handler: run") {
+    SUBCASE("nonexistent file returns 1") {
+        auto driver = Driver{};
+        driver.input_files.push_back("nonexistent_file_for_test_123.cv");
+        const auto result = run(driver);
+        CHECK_EQ(result, 1);
+    }
+}
+
+TEST_CASE("Handler: build and check stubs") {
+    SUBCASE("build returns 0") {
+        auto driver = Driver{};
+        CHECK_EQ(build(driver), 0);
+    }
+    SUBCASE("check returns 0") {
+        auto driver = Driver{};
+        CHECK_EQ(check(driver), 0);
+    }
+}
+
+TEST_CASE("Dump: tokens and AST") {
+    SUBCASE("dump valid file") {
+        auto driver = Driver{};
+        driver.input_files.push_back("tests/helloworld.cv");
+        CHECK_EQ(dump(driver), 0);
+    }
+
+    SUBCASE("dump nonexistent file returns 1") {
+        auto driver = Driver{};
+        driver.input_files.push_back("nonexistent_file_for_test_123.cv");
+        CHECK_EQ(dump(driver), 1);
+    }
+
+    SUBCASE("dump with --only-tokens") {
+        auto driver = Driver{};
+        driver.input_files.push_back("tests/helloworld.cv");
+        driver.only_tokens = true;
+        CHECK_EQ(dump(driver), 0);
+    }
+
+    SUBCASE("dump with --only-ast") {
+        auto driver = Driver{};
+        driver.input_files.push_back("tests/helloworld.cv");
+        driver.only_ast = true;
+        CHECK_EQ(dump(driver), 0);
     }
 }

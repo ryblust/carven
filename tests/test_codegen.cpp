@@ -353,3 +353,112 @@ TEST_CASE("Codegen: helloworld full output") {
     CHECK(cpp.contains("auto main() noexcept -> int"));
     CHECK(cpp.contains("std::println(\"Hello World\")"));
 }
+
+TEST_CASE("Codegen: all type mappings") {
+    SUBCASE("i8") {
+        const auto cpp = gen("fn main() { var x: i8 = 1; }");
+        CHECK(cpp.contains("std::int8_t"));
+    }
+    SUBCASE("i16") {
+        const auto cpp = gen("fn main() { var x: i16 = 1; }");
+        CHECK(cpp.contains("std::int16_t"));
+    }
+    SUBCASE("u16") {
+        const auto cpp = gen("fn main() { var x: u16 = 1; }");
+        CHECK(cpp.contains("std::uint16_t"));
+    }
+    SUBCASE("u32") {
+        const auto cpp = gen("fn main() { var x: u32 = 1; }");
+        CHECK(cpp.contains("std::uint32_t"));
+    }
+    SUBCASE("u64") {
+        const auto cpp = gen("fn main() { var x: u64 = 1; }");
+        CHECK(cpp.contains("std::uint64_t"));
+    }
+    SUBCASE("bool") {
+        const auto cpp = gen("fn main() { var x: bool = true; }");
+        CHECK(cpp.contains("bool"));
+    }
+    SUBCASE("f32") {
+        const auto cpp = gen("fn main() { var x: f32 = 1.0; }");
+        CHECK(cpp.contains("float"));
+    }
+    SUBCASE("char") {
+        const auto cpp = gen("fn main() { var x: char = 'a'; }");
+        CHECK(cpp.contains("char"));
+    }
+    SUBCASE("user-defined type passes through") {
+        const auto cpp = gen("fn main() { var x: MyType = something; }");
+        CHECK(cpp.contains("MyType"));
+    }
+}
+
+TEST_CASE("Codegen: all compound assignment operators") {
+    SUBCASE("/= compound") { const auto cpp = gen("fn main() { x /= 2; }"); CHECK(cpp.contains("/=")); }
+    SUBCASE("%= compound") { const auto cpp = gen("fn main() { x %= 2; }"); CHECK(cpp.contains("%=")); }
+    SUBCASE("&= compound") { const auto cpp = gen("fn main() { x &= 2; }"); CHECK(cpp.contains("&=")); }
+    SUBCASE("|= compound") { const auto cpp = gen("fn main() { x |= 2; }"); CHECK(cpp.contains("|=")); }
+    SUBCASE("^= compound") { const auto cpp = gen("fn main() { x ^= 2; }"); CHECK(cpp.contains("^=")); }
+    SUBCASE("<<= compound") { const auto cpp = gen("fn main() { x <<= 2; }"); CHECK(cpp.contains("<<=")); }
+    SUBCASE(">>= compound") { const auto cpp = gen("fn main() { x >>= 2; }"); CHECK(cpp.contains(">>=")); }
+}
+
+TEST_CASE("Codegen: prefix addressof and deref") {
+    SUBCASE("addressof") {
+        const auto cpp = gen("fn main() { &x; }");
+        CHECK(cpp.contains("&x"));
+    }
+    SUBCASE("deref") {
+        const auto cpp = gen("fn main() { *p; }");
+        CHECK(cpp.contains("*p"));
+    }
+}
+
+TEST_CASE("Codegen: field access operators") {
+    SUBCASE("scope access") {
+        const auto cpp = gen("fn main() { ns::name; }");
+        CHECK(cpp.contains("::"));
+    }
+    SUBCASE("arrow access") {
+        const auto cpp = gen("fn main() { p->field; }");
+        CHECK(cpp.contains("->"));
+    }
+}
+
+TEST_CASE("Codegen: empty types") {
+    SUBCASE("empty enum") {
+        const auto source = SourceFile("enum Void {}", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
+        const auto cpp = generate(result.items, source, 23, false);
+        CHECK(cpp.contains("enum class Void {\n};"));
+    }
+    SUBCASE("empty struct") {
+        const auto source = SourceFile("struct Empty {}", "<test>");
+        const auto result = parse(tokenize(source.text()), source);
+        const auto cpp = generate(result.items, source, 23, false);
+        CHECK(cpp.contains("struct Empty {\n};"));
+    }
+}
+
+TEST_CASE("Codegen: nested control flow") {
+    SUBCASE("if inside while") {
+        const auto cpp = gen("fn main() { while true { if x { return; } } }");
+        CHECK(cpp.contains("while"));
+        CHECK(cpp.contains("if"));
+    }
+    SUBCASE("for inside if") {
+        const auto cpp = gen("fn main() { if x { for ( ; ; ) { } } }");
+        CHECK(cpp.contains("if"));
+        CHECK(cpp.contains("for"));
+    }
+    SUBCASE("while inside for") {
+        const auto cpp = gen("fn main() { for ( ; ; ) { while true { } } }");
+        CHECK(cpp.contains("for"));
+        CHECK(cpp.contains("while"));
+    }
+}
+
+TEST_CASE("Codegen: return complex expression") {
+    const auto cpp = gen("fn main() { return a + b * c; }");
+    CHECK(cpp.contains("return a + b * c;"));
+}

@@ -8,10 +8,7 @@ export struct BuildArtifacts final {
 };
 
 auto source_stem(std::string_view filename) noexcept -> std::string {
-    const auto path = std::filesystem::path(filename);
-    const auto stem = path.stem().string();
-
-    return stem.empty() ? "main" : stem;
+    return std::filesystem::path(filename).stem().string();
 }
 
 auto executable_extension() noexcept -> std::string_view {

@@ -919,3 +919,78 @@ TEST_CASE("Parser: error recovery") {
         CHECK(fn != nullptr);
     }
 }
+
+TEST_CASE("Parser: all compound assignment operators") {
+    SUBCASE("/= compound") {
+        const auto source = SourceFile("fn main() { x /= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("%= compound") {
+        const auto source = SourceFile("fn main() { x %= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("&= compound") {
+        const auto source = SourceFile("fn main() { x &= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("|= compound") {
+        const auto source = SourceFile("fn main() { x |= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("^= compound") {
+        const auto source = SourceFile("fn main() { x ^= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("<<= compound") {
+        const auto source = SourceFile("fn main() { x <<= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE(">>= compound") {
+        const auto source = SourceFile("fn main() { x >>= 2; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+}
+
+TEST_CASE("Parser: const in for init") {
+    const auto source = SourceFile("fn main() { for (const i = 0; i < 5; i++) { } }", "<test>");
+    const auto result = do_parse(source);
+    CHECK(result.errors.empty());
+}
+
+TEST_CASE("Parser: trailing commas") {
+    SUBCASE("struct field trailing comma") {
+        const auto source = SourceFile("struct Foo { x: i32, }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("enum field trailing comma") {
+        const auto source = SourceFile("enum Bar { A, }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+}
+
+TEST_CASE("Parser: deeply nested expressions") {
+    const auto source = SourceFile("fn main() { (((a + b) * (c + d)) + e); }", "<test>");
+    const auto result = do_parse(source);
+    CHECK(result.errors.empty());
+}
+
+TEST_CASE("Parser: chained postfix") {
+    const auto source = SourceFile("fn main() { a[0](1).b(); }", "<test>");
+    const auto result = do_parse(source);
+    CHECK(result.errors.empty());
+}
+
+TEST_CASE("Parser: EOF mid-parse") {
+    const auto source = SourceFile("fn main() { let x = ", "<test>");
+    const auto result = do_parse(source);
+    CHECK(!result.errors.empty());
+}
