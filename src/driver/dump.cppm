@@ -78,9 +78,9 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
                 it.return_type.empty() ? "" : std::format(" -> {}", source.slice(it.return_type))
             );
 
-            walk_stmts(it.body->statements, [&](const Stmt& stmt) noexcept {
-                result += dump(stmt, source, indent + 2);
-            });
+            for (const auto* stmt : it.body->statements) {
+                result += dump(*stmt, source, indent + 2);
+            }
 
             return std::format("{}{}}}\n", result, pad);
         }
@@ -89,175 +89,173 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
 
 
 auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
-    return std::visit(Overloaded {
-        [&](const LiteralExpr& e) noexcept {
+    switch (expr.kind) {
+        case ExprKind::Literal: {
+            const auto& e = *static_cast<const LiteralExpr*>(&expr);
             return std::format("Literal({})", source.slice(e.token));
-        },
-        [&](const IdentExpr& e) noexcept {
+        }
+        case ExprKind::Ident: {
+            const auto& e = *static_cast<const IdentExpr*>(&expr);
             return std::format("Ident({})", source.slice(e.name));
-        },
-        [&](const PrefixExpr& e) noexcept {
+        }
+        case ExprKind::Prefix: {
+            const auto& e = *static_cast<const PrefixExpr*>(&expr);
             return std::format("Prefix({} {})", e.op, dump(*e.rhs, source));
-        },
-        [&](const PostfixExpr& e) noexcept {
+        }
+        case ExprKind::Postfix: {
+            const auto& e = *static_cast<const PostfixExpr*>(&expr);
             return std::format("Postfix({} {})", dump(*e.lhs, source), e.op);
-        },
-        [&](const BinaryExpr& e) noexcept {
+        }
+        case ExprKind::Binary: {
+            const auto& e = *static_cast<const BinaryExpr*>(&expr);
             return std::format("Binary({} {} {})", dump(*e.lhs, source), e.op, dump(*e.rhs, source));
-        },
-        [&](const CallExpr& e) noexcept -> std::string {
+        }
+        case ExprKind::Call: {
+            const auto& e = *static_cast<const CallExpr*>(&expr);
             auto result = std::format("Call({}", dump(*e.callee, source));
             for (const auto* arg : e.args) {
                 result += ' ';
                 result += dump(*arg, source);
             }
             return result += ')';
-        },
-        [&](const IndexExpr& e) noexcept {
+        }
+        case ExprKind::Index: {
+            const auto& e = *static_cast<const IndexExpr*>(&expr);
             return std::format("Index({}[{}])", dump(*e.lhs, source), dump(*e.index, source));
-        },
-        [&](const FieldExpr& e) noexcept {
+        }
+        case ExprKind::Field: {
+            const auto& e = *static_cast<const FieldExpr*>(&expr);
             return std::format("Field({}{}{})", dump(*e.lhs, source), source.slice(e.dot), source.slice(e.field));
-        },
-        [&](const TernaryExpr& e) noexcept {
-            return std::format("Ternary({} ? {} : {})",
-                dump(*e.condition, source), dump(*e.then_branch, source), dump(*e.else_branch, source));
-        },
-        [&](const GroupExpr& e) noexcept {
+        }
+        case ExprKind::Group: {
+            const auto& e = *static_cast<const GroupExpr*>(&expr);
             return std::format("Group({})", dump(*e.inner, source));
-        },
-        [&](const AssignExpr& e) noexcept {
+        }
+        case ExprKind::Assign: {
+            const auto& e = *static_cast<const AssignExpr*>(&expr);
             return std::format("Assign({} = {})", dump(*e.lhs, source), dump(*e.rhs, source));
-        },
-        [&](const CompoundAssignExpr& e) noexcept {
+        }
+        case ExprKind::CompoundAssign: {
+            const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
             return std::format("CompoundAssign({} {}={})", dump(*e.lhs, source), e.op, dump(*e.rhs, source));
-        },
-        [&](const CommaExpr& e) noexcept {
+        }
+        case ExprKind::Comma: {
+            const auto& e = *static_cast<const CommaExpr*>(&expr);
             return std::format("Comma({}, {})", dump(*e.lhs, source), dump(*e.rhs, source));
-        },
-        [&](const IfExpr& e) noexcept -> std::string {
+        }
+        case ExprKind::If: {
+            const auto& e = *static_cast<const IfExpr*>(&expr);
             const auto pad = std::string(indent, ' ');
             auto result = std::format("If({}) {{\n", dump(*e.condition, source));
 
-            walk_stmts(e.then_branch.statements, [&](const Stmt& stmt) noexcept {
-                result += dump(stmt, source, indent + 2);
-            });
+            for (const auto* stmt : e.then_branch->statements) {
+                result += dump(*stmt, source, indent + 2);
+            }
 
             std::format_to(std::back_inserter(result), "{}}}", pad);
-            if (e.else_branch.has_value()) {
+            if (e.else_branch) {
                 result += " else {\n";
-                walk_stmts(e.else_branch->statements, [&](const Stmt& stmt) noexcept {
-                    result += dump(stmt, source, indent + 2);
-                });
+                for (const auto* stmt : e.else_branch->statements) {
+                    result += dump(*stmt, source, indent + 2);
+                }
                 std::format_to(std::back_inserter(result), "{}}}", pad);
             }
 
             return result;
         }
-    }, expr);
+    }
 }
 
 auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
     const auto pad = std::string(indent, ' ');
 
-    return std::visit(Overloaded {
-        [&](const BlockStmt& s) noexcept -> std::string {
+    switch (stmt.kind) {
+        case StmtKind::Block: {
+            const auto& s = *static_cast<const BlockStmt*>(&stmt);
             auto result = std::format("{}Block {{\n", pad);
-
-            walk_stmts(s.statements, [&](const Stmt& stmt) noexcept {
-                result += dump(stmt, source, indent + 2);
-            });
-
+            for (const auto* body_stmt : s.statements) {
+                result += dump(*body_stmt, source, indent + 2);
+            }
             return std::format("{}{}}}\n", result, pad);
-        },
-        [&](const ExprStmt& s) noexcept {
-            return std::format("{}{};\n", pad, dump(*s.expr, source, indent));
-        },
-        [&](const EmptyStmt&) noexcept {
-            return pad + ";\n";
-        },
-        [&](const VarDecl& s) noexcept -> std::string {
+        }
+        case StmtKind::ExprStmt: {
+            const auto& s = *static_cast<const ExprStmt*>(&stmt);
+            return std::format("{}{};\n", pad, dump(*s.expr, source));
+        }
+        case StmtKind::Empty: return pad + ";\n";
+        case StmtKind::VarDecl: {
+            const auto& s = *static_cast<const VarDecl*>(&stmt);
             auto result = std::format("{}{} {}{}",
                 pad,
                 source.slice(s.keyword),
                 source.slice(s.name),
                 s.type.empty() ? "" : std::format(": {}", source.slice(s.type))
             );
-
             if (s.init != nullptr) {
                 result += " = ";
                 result += dump(*s.init, source);
             }
-
             return result += ";\n";
-        },
-        [&](const ReturnStmt& s) noexcept {
+        }
+        case StmtKind::Return: {
+            const auto& s = *static_cast<const ReturnStmt*>(&stmt);
             if (s.value != nullptr) {
                 return std::format("{}return {};\n", pad, dump(*s.value, source));
             }
-
             return pad + "return;\n";
-        },
-        [&](const WhileStmt& s) noexcept -> std::string {
+        }
+        case StmtKind::While: {
+            const auto& s = *static_cast<const WhileStmt*>(&stmt);
             auto result = std::format("{}while ({})", pad, dump(*s.condition, source, indent));
-
-            if (std::get_if<BlockStmt>(s.body)) {
+            if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                    result += dump(body_stmt, source, indent + 2);
-                });
+                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                    result += dump(*body_stmt, source, indent + 2);
+                }
                 std::format_to(std::back_inserter(result), "{}}}\n", pad);
             } else {
-                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                    result += '\n';
-                    result += dump(body_stmt, source, indent + 2);
-                });
+                result += '\n';
+                result += dump(*s.body, source, indent + 2);
             }
-
             return result;
-        },
-        [&](const ForStmt& s) noexcept -> std::string {
+        }
+        case StmtKind::For: {
+            const auto& s = *static_cast<const ForStmt*>(&stmt);
             auto init_str = std::string();
-
-            if (s.init != nullptr) {
-                walk_for_init(*s.init,
-                    [&](const VarDecl& d) noexcept {
+            std::visit(Overloaded {
+                [&](VarDecl* d) noexcept {
+                    if (d) {
                         init_str = std::format("{} {}{}",
-                            source.slice(d.keyword),
-                            source.slice(d.name),
-                            d.type.empty() ? "" : std::format(": {}", source.slice(d.type))
+                            source.slice(d->keyword),
+                            source.slice(d->name),
+                            d->type.empty() ? "" : std::format(": {}", source.slice(d->type))
                         );
-                        if (d.init != nullptr) {
+                        if (d->init != nullptr) {
                             init_str += " = ";
-                            init_str += dump(*d.init, source);
+                            init_str += dump(*d->init, source);
                         }
-                    },
-                    [&](const ExprStmt& es) noexcept {
-                        init_str = dump(*es.expr, source);
                     }
-                );
-            }
-
+                },
+                [&](ExprStmt* es) noexcept {
+                    if (es) init_str = dump(*es->expr, source);
+                }
+            }, s.init);
             const auto condition = s.condition != nullptr ? dump(*s.condition, source) : std::string();
             const auto step = s.step != nullptr ? dump(*s.step, source) : std::string();
             auto result = std::format("{}for ({}; {}; {})", pad, init_str, condition, step);
-
-            if (std::get_if<BlockStmt>(s.body)) {
+            if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                    result += dump(body_stmt, source, indent + 2);
-                });
+                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                    result += dump(*body_stmt, source, indent + 2);
+                }
                 std::format_to(std::back_inserter(result), "{}}}\n", pad);
             } else {
-                walk_body(s.body, [&](const Stmt& body_stmt) noexcept {
-                    result += '\n';
-                    result += dump(body_stmt, source, indent + 2);
-                });
+                result += '\n';
+                result += dump(*s.body, source, indent + 2);
             }
-
             return result;
         }
-    }, stmt);
+    }
 }
 
 

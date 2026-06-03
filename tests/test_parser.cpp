@@ -215,7 +215,7 @@ TEST_CASE("Parser: variable declarations") {
         const auto result = do_parse(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = std::get_if<VarDecl>(fn->body->statements[0]);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK_EQ(source.slice(decl->keyword), "let");
         CHECK_EQ(source.slice(decl->name), "x");
@@ -227,7 +227,7 @@ TEST_CASE("Parser: variable declarations") {
         const auto source = SourceFile("fn main() { var y = 10; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = std::get_if<VarDecl>(fn->body->statements[0]);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK_EQ(source.slice(decl->keyword), "var");
         CHECK_EQ(source.slice(decl->name), "y");
@@ -237,7 +237,7 @@ TEST_CASE("Parser: variable declarations") {
         const auto source = SourceFile("fn main() { var y: i32; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = std::get_if<VarDecl>(fn->body->statements[0]);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK_EQ(source.slice(decl->keyword), "var");
         CHECK_EQ(source.slice(decl->type), "i32");
@@ -248,7 +248,7 @@ TEST_CASE("Parser: variable declarations") {
         const auto source = SourceFile("fn main() { const N = 42; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = std::get_if<VarDecl>(fn->body->statements[0]);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK_EQ(source.slice(decl->keyword), "const");
     }
@@ -271,7 +271,7 @@ TEST_CASE("Parser: return") {
         const auto source = SourceFile("fn main() { return; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ret = std::get_if<ReturnStmt>(fn->body->statements[0]);
+        const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
         CHECK(ret != nullptr);
         CHECK(ret->value == nullptr);
     }
@@ -280,7 +280,7 @@ TEST_CASE("Parser: return") {
         const auto source = SourceFile("fn main() { return 42; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ret = std::get_if<ReturnStmt>(fn->body->statements[0]);
+        const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
         CHECK(ret != nullptr);
         CHECK(ret->value != nullptr);
     }
@@ -291,25 +291,25 @@ TEST_CASE("Parser: while") {
         const auto source = SourceFile("fn main() { while true { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<WhileStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(std::get_if<BlockStmt>(loop->body) != nullptr);
+        CHECK(loop->body->kind == StmtKind::Block);
     }
 
     SUBCASE("while with single statement body") {
         const auto source = SourceFile("fn main() { while true return; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<WhileStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(std::get_if<ReturnStmt>(loop->body) != nullptr);
+        CHECK(static_cast<const ReturnStmt*>(loop->body) != nullptr);
     }
 
     SUBCASE("while with condition expression") {
         const auto source = SourceFile("fn main() { while x > 0 { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<WhileStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
         CHECK(loop->condition != nullptr);
     }
@@ -320,9 +320,9 @@ TEST_CASE("Parser: for") {
         const auto source = SourceFile("fn main() { for (var i = 0; i < 10; i++) { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<ForStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(loop->init != nullptr);
+        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
         CHECK(loop->condition != nullptr);
         CHECK(loop->step != nullptr);
     }
@@ -331,9 +331,9 @@ TEST_CASE("Parser: for") {
         const auto source = SourceFile("fn main() { for ( ; ; ) { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<ForStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(loop->init == nullptr);
+        CHECK(!std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
         CHECK(loop->condition == nullptr);
         CHECK(loop->step == nullptr);
     }
@@ -342,18 +342,18 @@ TEST_CASE("Parser: for") {
         const auto source = SourceFile("fn main() { for (let i = 0; i < 10; i++) { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<ForStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(loop->init != nullptr);
+        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
     }
 
     SUBCASE("for with expr init") {
         const auto source = SourceFile("fn main() { for (i = 0; i < 10; i++) { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = std::get_if<ForStmt>(fn->body->statements[0]);
+        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(loop->init != nullptr);
+        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
     }
 }
 
@@ -362,22 +362,22 @@ TEST_CASE("Parser: if expression") {
         const auto source = SourceFile("fn main() { if true { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto expr_stmt = std::get_if<ExprStmt>(fn->body->statements[0]);
+        const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
         CHECK(expr_stmt != nullptr);
-        const auto if_expr = std::get_if<IfExpr>(expr_stmt->expr);
+        const auto if_expr = static_cast<const IfExpr*>(expr_stmt->expr);
         CHECK(if_expr != nullptr);
-        CHECK(!if_expr->else_kw.has_value());
+        CHECK(if_expr->else_kw.empty());
     }
 
     SUBCASE("if with else") {
         const auto source = SourceFile("fn main() { if true { } else { } }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto expr_stmt = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto if_expr = std::get_if<IfExpr>(expr_stmt->expr);
+        const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto if_expr = static_cast<const IfExpr*>(expr_stmt->expr);
         CHECK(if_expr != nullptr);
-        CHECK(if_expr->else_kw.has_value());
-        CHECK(if_expr->else_branch.has_value());
+        CHECK(!if_expr->else_kw.empty());
+        CHECK(if_expr->else_branch != nullptr);
     }
 }
 
@@ -386,8 +386,8 @@ TEST_CASE("Parser: literal expressions") {
         const auto source = SourceFile("fn main() { 42; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto lit = std::get_if<LiteralExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto lit = static_cast<const LiteralExpr*>(es->expr);
         CHECK(lit != nullptr);
         CHECK_EQ(source.slice(lit->token), "42");
     }
@@ -396,8 +396,8 @@ TEST_CASE("Parser: literal expressions") {
         const auto source = SourceFile("fn main() { 3.14; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto lit = std::get_if<LiteralExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto lit = static_cast<const LiteralExpr*>(es->expr);
         CHECK(lit != nullptr);
         CHECK_EQ(source.slice(lit->token), "3.14");
     }
@@ -406,8 +406,8 @@ TEST_CASE("Parser: literal expressions") {
         const auto source = SourceFile("fn main() { \"hello\"; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto lit = std::get_if<LiteralExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto lit = static_cast<const LiteralExpr*>(es->expr);
         CHECK(lit != nullptr);
         CHECK_EQ(source.slice(lit->token), "\"hello\"");
     }
@@ -416,8 +416,8 @@ TEST_CASE("Parser: literal expressions") {
         const auto source = SourceFile("fn main() { 'a'; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto lit = std::get_if<LiteralExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto lit = static_cast<const LiteralExpr*>(es->expr);
         CHECK(lit != nullptr);
         CHECK_EQ(source.slice(lit->token), "'a'");
     }
@@ -426,10 +426,10 @@ TEST_CASE("Parser: literal expressions") {
         const auto source = SourceFile("fn main() { true; false; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es1 = std::get_if<ExprStmt>(fn->body->statements[0]);
-        CHECK(std::get_if<LiteralExpr>(es1->expr) != nullptr);
-        const auto es2 = std::get_if<ExprStmt>(fn->body->statements[1]);
-        CHECK(std::get_if<LiteralExpr>(es2->expr) != nullptr);
+        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        CHECK(static_cast<const LiteralExpr*>(es1->expr) != nullptr);
+        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
+        CHECK(static_cast<const LiteralExpr*>(es2->expr) != nullptr);
     }
 }
 
@@ -438,8 +438,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { foo; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto ident = std::get_if<IdentExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto ident = static_cast<const IdentExpr*>(es->expr);
         CHECK(ident != nullptr);
         CHECK_EQ(source.slice(ident->name), "foo");
     }
@@ -448,8 +448,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { -x; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::Neg);
     }
@@ -458,8 +458,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { !flag; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::LogicalNot);
     }
@@ -468,8 +468,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { ~mask; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::BitNot);
     }
@@ -478,8 +478,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { ++i; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::PreInc);
     }
@@ -488,8 +488,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { --i; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::PreDec);
     }
@@ -498,8 +498,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { &x; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::AddressOf);
     }
@@ -508,8 +508,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { *p; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto pre = std::get_if<PrefixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto pre = static_cast<const PrefixExpr*>(es->expr);
         CHECK(pre != nullptr);
         CHECK_EQ(pre->op, UnaryOp::Deref);
     }
@@ -518,8 +518,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { i++; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto post = std::get_if<PostfixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto post = static_cast<const PostfixExpr*>(es->expr);
         CHECK(post != nullptr);
         CHECK_EQ(post->op, UnaryOp::PostInc);
     }
@@ -528,8 +528,8 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { i--; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto post = std::get_if<PostfixExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto post = static_cast<const PostfixExpr*>(es->expr);
         CHECK(post != nullptr);
         CHECK_EQ(post->op, UnaryOp::PostDec);
     }
@@ -540,8 +540,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { foo(); }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto call = std::get_if<CallExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto call = static_cast<const CallExpr*>(es->expr);
         CHECK(call != nullptr);
         CHECK(call->args.empty());
     }
@@ -550,8 +550,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { foo(1); }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto call = std::get_if<CallExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto call = static_cast<const CallExpr*>(es->expr);
         CHECK(call != nullptr);
         CHECK_EQ(call->args.size(), 1u);
     }
@@ -560,8 +560,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { add(1, 2, 3); }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto call = std::get_if<CallExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto call = static_cast<const CallExpr*>(es->expr);
         CHECK(call != nullptr);
         CHECK_EQ(call->args.size(), 3u);
     }
@@ -570,8 +570,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { arr[0]; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto idx = std::get_if<IndexExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto idx = static_cast<const IndexExpr*>(es->expr);
         CHECK(idx != nullptr);
     }
 
@@ -579,8 +579,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { obj.field; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto field = std::get_if<FieldExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto field = static_cast<const FieldExpr*>(es->expr);
         CHECK(field != nullptr);
         CHECK_EQ(source.slice(field->dot), ".");
         CHECK_EQ(source.slice(field->field), "field");
@@ -590,8 +590,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { ptr->field; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto field = std::get_if<FieldExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto field = static_cast<const FieldExpr*>(es->expr);
         CHECK(field != nullptr);
         CHECK_EQ(source.slice(field->dot), "->");
     }
@@ -600,8 +600,8 @@ TEST_CASE("Parser: postfix operations") {
         const auto source = SourceFile("fn main() { ns::name; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto field = std::get_if<FieldExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto field = static_cast<const FieldExpr*>(es->expr);
         CHECK(field != nullptr);
         CHECK_EQ(source.slice(field->dot), "::");
     }
@@ -612,8 +612,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a * b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Mul);
     }
@@ -622,8 +622,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a / b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Div);
     }
@@ -632,8 +632,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a % b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Mod);
     }
@@ -642,8 +642,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a + b - c; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Sub);
     }
@@ -652,8 +652,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a << b >> c; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Shr);
     }
@@ -662,14 +662,14 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a < b; b > c; c <= d; d >= e; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es1 = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto es2 = std::get_if<ExprStmt>(fn->body->statements[1]);
-        const auto es3 = std::get_if<ExprStmt>(fn->body->statements[2]);
-        const auto es4 = std::get_if<ExprStmt>(fn->body->statements[3]);
-        const auto bin_expr_lt = std::get_if<BinaryExpr>(es1->expr);
-        const auto bin_expr_gt = std::get_if<BinaryExpr>(es2->expr);
-        const auto bin_expr_le = std::get_if<BinaryExpr>(es3->expr);
-        const auto bin_expr_ge = std::get_if<BinaryExpr>(es4->expr);
+        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
+        const auto es3 = static_cast<const ExprStmt*>(fn->body->statements[2]);
+        const auto es4 = static_cast<const ExprStmt*>(fn->body->statements[3]);
+        const auto bin_expr_lt = static_cast<const BinaryExpr*>(es1->expr);
+        const auto bin_expr_gt = static_cast<const BinaryExpr*>(es2->expr);
+        const auto bin_expr_le = static_cast<const BinaryExpr*>(es3->expr);
+        const auto bin_expr_ge = static_cast<const BinaryExpr*>(es4->expr);
         REQUIRE(bin_expr_lt != nullptr);
         REQUIRE(bin_expr_gt != nullptr);
         REQUIRE(bin_expr_le != nullptr);
@@ -685,13 +685,13 @@ TEST_CASE("Parser: binary expressions") {
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         // a == b
-        const auto es1 = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin_expr_eq = std::get_if<BinaryExpr>(es1->expr);
+        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin_expr_eq = static_cast<const BinaryExpr*>(es1->expr);
         REQUIRE(bin_expr_eq != nullptr);
         CHECK_EQ(bin_expr_eq->op, BinOp::Eq);
         // c != d
-        const auto es2 = std::get_if<ExprStmt>(fn->body->statements[1]);
-        const auto bin_expr_ne = std::get_if<BinaryExpr>(es2->expr);
+        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
+        const auto bin_expr_ne = static_cast<const BinaryExpr*>(es2->expr);
         REQUIRE(bin_expr_ne != nullptr);
         CHECK_EQ(bin_expr_ne->op, BinOp::Ne);
     }
@@ -700,8 +700,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a & b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::BitAnd);
     }
@@ -710,8 +710,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a ^ b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::BitXor);
     }
@@ -720,8 +720,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a | b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::BitOr);
     }
@@ -730,8 +730,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a && b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::LogicalAnd);
     }
@@ -740,8 +740,8 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a || b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         REQUIRE(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::LogicalOr);
     }
@@ -750,12 +750,12 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = SourceFile("fn main() { a + b * c; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto bin = std::get_if<BinaryExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Add);
         // rhs should be b * c
-        CHECK(std::get_if<BinaryExpr>(bin->rhs) != nullptr);
+        CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
     }
 }
 
@@ -764,8 +764,8 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = SourceFile("fn main() { x = 5; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto assign = std::get_if<AssignExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto assign = static_cast<const AssignExpr*>(es->expr);
         CHECK(assign != nullptr);
     }
 
@@ -773,19 +773,19 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = SourceFile("fn main() { a = b = c = 0; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto assign = std::get_if<AssignExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto assign = static_cast<const AssignExpr*>(es->expr);
         CHECK(assign != nullptr);
         // right-associative: a = (b = (c = 0))
-        CHECK(std::get_if<AssignExpr>(assign->rhs) != nullptr);
+        CHECK(static_cast<const AssignExpr*>(assign->rhs) != nullptr);
     }
 
     SUBCASE("compound assignment +=") {
         const auto source = SourceFile("fn main() { x += 1; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto ca = std::get_if<CompoundAssignExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
         CHECK(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Add);
     }
@@ -794,8 +794,8 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = SourceFile("fn main() { x -= 1; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto ca = std::get_if<CompoundAssignExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
         REQUIRE(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Sub);
     }
@@ -804,8 +804,8 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = SourceFile("fn main() { x *= 2; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto ca = std::get_if<CompoundAssignExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
         REQUIRE(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Mul);
     }
@@ -816,8 +816,8 @@ TEST_CASE("Parser: group and comma expressions") {
         const auto source = SourceFile("fn main() { (a + b); }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto group = std::get_if<GroupExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto group = static_cast<const GroupExpr*>(es->expr);
         CHECK(group != nullptr);
     }
 
@@ -825,8 +825,8 @@ TEST_CASE("Parser: group and comma expressions") {
         const auto source = SourceFile("fn main() { a, b; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = std::get_if<ExprStmt>(fn->body->statements[0]);
-        const auto comma = std::get_if<CommaExpr>(es->expr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto comma = static_cast<const CommaExpr*>(es->expr);
         CHECK(comma != nullptr);
     }
 }
@@ -837,10 +837,10 @@ TEST_CASE("Parser: if as expression value") {
         const auto result = do_parse(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = std::get_if<VarDecl>(fn->body->statements[0]);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK(decl->init != nullptr);
-        CHECK(std::get_if<IfExpr>(decl->init) != nullptr);
+        CHECK(static_cast<const IfExpr*>(decl->init) != nullptr);
     }
 }
 
@@ -849,7 +849,7 @@ TEST_CASE("Parser: block and empty statements") {
         const auto source = SourceFile("fn main() { ; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(std::get_if<EmptyStmt>(fn->body->statements[0]) != nullptr);
+        CHECK(static_cast<const EmptyStmt*>(fn->body->statements[0]) != nullptr);
     }
 
     SUBCASE("multiple statements") {

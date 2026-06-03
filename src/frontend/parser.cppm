@@ -21,10 +21,8 @@ template<> struct std::formatter<ParseError> final {
 
 export struct ParseResult final {
     std::vector<TopLevelItem> items;
-    std::vector<std::unique_ptr<Expr>> exprs;
-    std::vector<std::unique_ptr<Stmt>> stmts;
-    std::vector<std::unique_ptr<ForInit>> for_inits;
     std::vector<ParseError> errors;
+    Arena storage;
 };
 
 class Parser final {
@@ -38,18 +36,10 @@ public:
 
             switch (token->kind) {
                 using enum TokenKind;
-                case Import:
-                    if (auto item = parse_import()) result.items.emplace_back(std::move(*item));
-                    break;
-                case Enum:
-                    if (auto item = parse_enum()) result.items.emplace_back(std::move(*item));
-                    break;
-                case Struct:
-                    if (auto item = parse_struct()) result.items.emplace_back(std::move(*item));
-                    break;
-                case Fn:
-                    if (auto item = parse_function()) result.items.emplace_back(std::move(*item));
-                    break;
+                case Import:   parse_import();   break;
+                case Enum:    parse_enum();    break;
+                case Struct:  parse_struct();  break;
+                case Fn:      parse_function(); break;
                 default:
                     push_error("expected top-level item", token->span);
                     advance();
@@ -58,6 +48,7 @@ public:
             }
         }
 
+        result.storage = std::move(arena);
         return std::move(result);
     }
 
@@ -65,6 +56,7 @@ private:
     std::span<const Token> tokens;
     const SourceFile& source;
     std::size_t current = 0;
+    Arena arena;
     ParseResult result;
 
     enum class PrecedenceLevel : std::uint32_t {
@@ -95,54 +87,44 @@ private:
         using enum BinOp;
 
         switch (level) {
-            case PrecedenceLevel::LogicalOr: {
+            case PrecedenceLevel::LogicalOr:
                 if (kind == PipePipe) return LogicalOr;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::LogicalAnd: {
+            case PrecedenceLevel::LogicalAnd:
                 if (kind == AmpersandAmpersand) return LogicalAnd;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::BitwiseOr: {
+            case PrecedenceLevel::BitwiseOr:
                 if (kind == Pipe) return BitOr;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::BitwiseXor: {
+            case PrecedenceLevel::BitwiseXor:
                 if (kind == Caret) return BitXor;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::BitwiseAnd: {
+            case PrecedenceLevel::BitwiseAnd:
                 if (kind == Ampersand) return BitAnd;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::Equality: {
+            case PrecedenceLevel::Equality:
                 if (kind == EqualEqual) return Eq;
                 if (kind == BangEqual)  return Ne;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::Relational: {
+            case PrecedenceLevel::Relational:
                 if (kind == Less)          return Lt;
                 if (kind == LessEqual)     return Le;
                 if (kind == Greater)       return Gt;
                 if (kind == GreaterEqual)  return Ge;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::Shift: {
+            case PrecedenceLevel::Shift:
                 if (kind == LeftShift)  return Shl;
                 if (kind == RightShift) return Shr;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::Additive: {
+            case PrecedenceLevel::Additive:
                 if (kind == Plus)  return Add;
                 if (kind == Minus) return Sub;
                 return std::nullopt;
-            }
-            case PrecedenceLevel::Multiplicative: {
+            case PrecedenceLevel::Multiplicative:
                 if (kind == Star)     return Mul;
                 if (kind == Slash)    return Div;
                 if (kind == Percent)  return Mod;
                 return std::nullopt;
-            }
         }
 
         return std::nullopt;
@@ -168,10 +150,9 @@ private:
         return index < tokens.size() ? &tokens[index] : nullptr;
     }
 
-    constexpr auto advance() noexcept -> std::optional<Token> {
-        if (eof()) return std::nullopt;
-
-        return tokens[current++];
+    constexpr auto advance() noexcept -> const Token* {
+        if (eof()) return nullptr;
+        return &tokens[current++];
     }
 
     constexpr auto check(TokenKind kind) const noexcept -> bool {
@@ -179,35 +160,28 @@ private:
         return token != nullptr && token->kind == kind;
     }
 
-    constexpr auto match(TokenKind kind) noexcept -> std::optional<Token> {
-        if (!check(kind)) return std::nullopt;
-
+    constexpr auto match(TokenKind kind) noexcept -> const Token* {
+        if (!check(kind)) return nullptr;
         return advance();
     }
 
 
-    constexpr auto expect(TokenKind kind, std::string_view message) noexcept -> std::optional<Token> {
-        if (auto token = match(kind)) return token;
-
+    constexpr auto expect(TokenKind kind, std::string_view message) noexcept -> const Token* {
+        if (const auto token = match(kind)) return token;
         push_error(message, current_span());
-
-        return std::nullopt;
+        return nullptr;
     }
 
-    constexpr auto expect_name(std::string_view message) noexcept -> std::optional<Token> {
+    constexpr auto expect_name(std::string_view message) noexcept -> const Token* {
         return expect(TokenKind::Identifier, message);
     }
 
-    constexpr auto expect_type(std::string_view message) noexcept -> std::optional<Token> {
-        const auto token = peek();
-
-        if (token != nullptr && token->kind == TokenKind::Identifier) {
+    constexpr auto expect_type(std::string_view message) noexcept -> const Token* {
+        if (const auto token = peek(); token != nullptr && token->kind == TokenKind::Identifier) {
             return advance();
         }
-
         push_error(message, current_span());
-
-        return std::nullopt;
+        return nullptr;
     }
 
     constexpr auto push_error(std::string_view message, Span span) noexcept -> void {
@@ -273,25 +247,9 @@ private:
         }
     }
 
-    constexpr auto make_expr(auto&&... args) noexcept -> Expr* {
-        auto ptr = std::make_unique<Expr>(std::forward<decltype(args)>(args)...);
-        auto raw = ptr.get();
-        result.exprs.emplace_back(std::move(ptr));
-        return raw;
-    }
-
-    constexpr auto make_stmt(auto&&... args) noexcept -> Stmt* {
-        auto ptr = std::make_unique<Stmt>(std::forward<decltype(args)>(args)...);
-        auto raw = ptr.get();
-        result.stmts.emplace_back(std::move(ptr));
-        return raw;
-    }
-
-    constexpr auto make_for_init(auto&&... args) noexcept -> ForInit* {
-        auto ptr = std::make_unique<ForInit>(std::forward<decltype(args)>(args)...);
-        auto raw = ptr.get();
-        result.for_inits.emplace_back(std::move(ptr));
-        return raw;
+    template<typename T, typename... Args>
+    constexpr auto alloc(Args&&... args) noexcept -> T* {
+        return arena.alloc<T>(std::forward<Args>(args)...);
     }
 
     constexpr auto parse_expr() noexcept -> Expr* {
@@ -300,15 +258,15 @@ private:
         if (check(TokenKind::Comma)) {
             const auto comma_token = advance();
             const auto rhs = parse_expr();
-            return make_expr(CommaExpr { .lhs = lhs, .comma = comma_token->span, .rhs = rhs });
+            return alloc<CommaExpr>(lhs, comma_token->span, rhs);
         }
 
         return lhs;
     }
 
-    constexpr auto parse_block() noexcept -> std::optional<BlockStmt> {
+    constexpr auto parse_block() noexcept -> BlockStmt* {
         const auto lbrace = expect(TokenKind::LeftBrace, "expected '{'");
-        if (!lbrace) return std::nullopt;
+        if (!lbrace) return nullptr;
         auto statements = std::vector<Stmt*>();
         while (!eof() && !check(TokenKind::RightBrace)) {
             if (auto stmt = parse_stmt()) {
@@ -317,12 +275,8 @@ private:
         }
 
         const auto rbrace = expect(TokenKind::RightBrace, "expected '}'");
-        if (!rbrace) return std::nullopt;
-        return BlockStmt {
-            .lbrace = lbrace->span,
-            .statements = std::move(statements),
-            .rbrace = rbrace->span
-        };
+        if (!rbrace) return nullptr;
+        return alloc<BlockStmt>(lbrace->span, std::move(statements), rbrace->span);
     }
 
     constexpr auto parse_stmt() noexcept -> Stmt* {
@@ -334,7 +288,7 @@ private:
 
         if (token->kind == TokenKind::SemiColon) {
             const auto span = advance()->span;
-            return make_stmt(EmptyStmt { .semicolon = span });
+            return alloc<EmptyStmt>(span);
         }
 
         switch (token->kind) {
@@ -347,7 +301,7 @@ private:
             case For:    return parse_for_stmt();
             case If: {
                 const auto expr = parse_if_expr();
-                return make_stmt(ExprStmt { .expr = expr, .semicolon = {} });
+                return alloc<ExprStmt>(expr, Span{});
             }
             default: break;
         }
@@ -358,21 +312,21 @@ private:
     constexpr auto parse_expr_stmt() noexcept -> Stmt* {
         const auto expr = parse_expr();
         if (const auto semi = match(TokenKind::SemiColon)) {
-            return make_stmt(ExprStmt { .expr = expr, .semicolon = semi->span });
+            return alloc<ExprStmt>(expr, semi->span);
         }
         if (check(TokenKind::RightBrace) || eof()) {
-            return make_stmt(ExprStmt { .expr = expr, .semicolon = {} });
+            return alloc<ExprStmt>(expr, Span{});
         }
         push_error("expected ';' after expression", current_span());
-        return make_stmt(EmptyStmt { .semicolon = eof_span() });
+        return alloc<EmptyStmt>(eof_span());
     }
 
-    constexpr auto parse_var_decl_data() noexcept -> std::optional<VarDecl> {
+    constexpr auto parse_var_decl_data() noexcept -> VarDecl* {
         const auto keyword = advance();
         const auto name = expect_name("expected variable name");
         if (!name) {
             synchronize_to_stmt_end();
-            return std::nullopt;
+            return nullptr;
         }
         auto type_span = Span{};
         if (check(TokenKind::Colon)) {
@@ -380,7 +334,7 @@ private:
             const auto type = expect_type("expected type after ':'");
             if (!type) {
                 synchronize_to_stmt_end();
-                return std::nullopt;
+                return nullptr;
             }
             type_span = type->span;
         }
@@ -395,25 +349,19 @@ private:
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
             push_error(std::format("{} requires an initializer", keyword_text), keyword->span);
         }
-        const auto semi = expect(TokenKind::SemiColon, "expected ';' after variable declaration");
-        if (!semi) {
-            synchronize_to_stmt_end();
-            return std::nullopt;
-        }
-        return VarDecl {
-            .keyword = keyword->span,
-            .name = name->span,
-            .type = type_span,
-            .eq = eq_span,
-            .init = init,
-            .semicolon = semi->span
-        };
+        return alloc<VarDecl>(keyword->span, name->span, type_span, eq_span, Span{}, init);
     }
 
     constexpr auto parse_var_decl() noexcept -> Stmt* {
         auto decl = parse_var_decl_data();
         if (!decl) return nullptr;
-        return make_stmt(std::move(*decl));
+        const auto semi = expect(TokenKind::SemiColon, "expected ';' after variable declaration");
+        if (!semi) {
+            synchronize_to_stmt_end();
+            return nullptr;
+        }
+        decl->semicolon = semi->span;
+        return decl;
     }
 
     constexpr auto parse_return_stmt() noexcept -> Stmt* {
@@ -427,13 +375,12 @@ private:
             synchronize_to_stmt_end();
             return nullptr;
         }
-        return make_stmt(ReturnStmt { .keyword = keyword->span, .value = value, .semicolon = semi->span });
+        return alloc<ReturnStmt>(keyword->span, semi->span, value);
     }
 
     constexpr auto parse_stmt_or_block() noexcept -> Stmt* {
         if (check(TokenKind::LeftBrace)) {
-            if (auto block = parse_block()) return make_stmt(std::move(*block));
-            return nullptr;
+            return parse_block();
         }
         return parse_stmt();
     }
@@ -443,11 +390,7 @@ private:
         const auto condition = parse_expr();
 
         if (const auto body = parse_stmt_or_block()) {
-            return make_stmt(WhileStmt {
-                .keyword = keyword->span,
-                .condition = condition,
-                .body = body
-            });
+            return alloc<WhileStmt>(keyword->span, condition, body);
         }
 
         return nullptr;
@@ -458,8 +401,7 @@ private:
         const auto lparen = expect(TokenKind::LeftParen, "expected '(' after for");
         if (!lparen) { synchronize_to_stmt_end(); return nullptr; }
 
-        ForInit* for_init = nullptr;
-        auto init_semi_span = Span{};
+        std::variant<VarDecl*, ExprStmt*> for_init;
 
         if (!check(TokenKind::SemiColon)) {
             const auto token = peek();
@@ -469,22 +411,17 @@ private:
                 token->kind == TokenKind::Const
             )) {
                 if (auto decl = parse_var_decl_data()) {
-                    init_semi_span = decl->semicolon;
-                    for_init = make_for_init(std::move(*decl));
+                    for_init = decl;
                 }
             } else {
                 const auto expr = parse_expr();
-                for_init = make_for_init(ExprStmt { .expr = expr, .semicolon = Span{} });
+                for_init = alloc<ExprStmt>(expr, Span{});
             }
         }
 
-        if (!init_semi_span.empty()) {
-            // semicolon was consumed by parse_var_decl
-        } else {
-            const auto init_semi = expect(TokenKind::SemiColon, "expected ';' after for-init");
-            if (!init_semi) { synchronize_to_stmt_end(); return nullptr; }
-            init_semi_span = init_semi->span;
-        }
+        const auto init_semi = expect(TokenKind::SemiColon, "expected ';' after for-init");
+        if (!init_semi) { synchronize_to_stmt_end(); return nullptr; }
+        const auto init_semi_span = init_semi->span;
 
         Expr* condition = nullptr;
         if (!check(TokenKind::SemiColon)) {
@@ -501,17 +438,8 @@ private:
         if (!rparen) { synchronize_to_stmt_end(); return nullptr; }
 
         if (const auto body = parse_stmt_or_block()) {
-            return make_stmt(ForStmt {
-                .keyword = keyword->span,
-                .lparen = lparen->span,
-                .init = for_init,
-                .init_semi = init_semi_span,
-                .condition = condition,
-                .cond_semi = cond_semi->span,
-                .step = step,
-                .rparen = rparen->span,
-                .body = body
-            });
+            return alloc<ForStmt>(keyword->span, lparen->span, for_init, init_semi_span,
+                                  cond_semi->span, condition, step, rparen->span, body);
         }
 
         return nullptr;
@@ -522,14 +450,14 @@ private:
         if (check(TokenKind::Equal)) {
             const auto eq_token = advance();
             const auto rhs = parse_assignment_expr();
-            return make_expr(AssignExpr { .lhs = lhs, .eq = eq_token->span, .rhs = rhs });
+            return alloc<AssignExpr>(lhs, eq_token->span, rhs);
         }
         const auto next = peek();
         if (next != nullptr) {
             if (const auto op = compound_assign_op(next->kind)) {
                 const auto op_token = advance();
                 const auto rhs = parse_assignment_expr();
-                return make_expr(CompoundAssignExpr { .lhs = lhs, .op = *op, .span = op_token->span, .rhs = rhs });
+                return alloc<CompoundAssignExpr>(lhs, *op, op_token->span, rhs);
             }
         }
         return lhs;
@@ -545,7 +473,7 @@ private:
             const auto span = token->span;
             advance();
             const auto rhs = parse_next_tighter(level);
-            lhs = make_expr(BinaryExpr { .lhs = lhs, .op = *op, .span = span, .rhs = rhs });
+            lhs = alloc<BinaryExpr>(lhs, *op, span, rhs);
         }
         return lhs;
     }
@@ -569,38 +497,38 @@ private:
     constexpr auto parse_prefix_expr() noexcept -> Expr* {
         const auto token = peek();
         if (token == nullptr) {
-            return make_expr(LiteralExpr { .token = eof_span() });
+            return alloc<LiteralExpr>(eof_span());
         }
 
         switch (token->kind) {
             using enum TokenKind;
             case Bang: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::LogicalNot, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::LogicalNot, op_span, parse_prefix_expr());
             }
             case Minus: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::Neg, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::Neg, op_span, parse_prefix_expr());
             }
             case Tilde: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::BitNot, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::BitNot, op_span, parse_prefix_expr());
             }
             case PlusPlus: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::PreInc, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::PreInc, op_span, parse_prefix_expr());
             }
             case MinusMinus: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::PreDec, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::PreDec, op_span, parse_prefix_expr());
             }
             case Ampersand: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::AddressOf, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::AddressOf, op_span, parse_prefix_expr());
             }
             case Star: {
                 const auto op_span = advance()->span;
-                return make_expr(PrefixExpr { .op = UnaryOp::Deref, .span = op_span, .rhs = parse_prefix_expr() });
+                return alloc<PrefixExpr>(UnaryOp::Deref, op_span, parse_prefix_expr());
             }
             default: return parse_postfix_expr();
         }
@@ -630,10 +558,10 @@ private:
                     }
                     const auto rparen = expect(RightParen, "expected ')' after function arguments");
                     if (!rparen) {
-                        lhs = make_expr(LiteralExpr { .token = lparen });
+                        lhs = alloc<LiteralExpr>(lparen);
                         break;
                     }
-                    lhs = make_expr(CallExpr { .callee = lhs, .lparen = lparen, .args = std::move(args), .rparen = rparen->span });
+                    lhs = alloc<CallExpr>(lhs, lparen, std::move(args), rparen->span);
                     break;
                 }
                 case LeftBracket: {
@@ -641,10 +569,10 @@ private:
                     const auto index = parse_expr();
                     const auto rbracket = expect(RightBracket, "expected ']' after index");
                     if (!rbracket) {
-                        lhs = make_expr(LiteralExpr { .token = lbracket });
+                        lhs = alloc<LiteralExpr>(lbracket);
                         break;
                     }
-                    lhs = make_expr(IndexExpr { .lhs = lhs, .lbracket = lbracket, .index = index, .rbracket = rbracket->span });
+                    lhs = alloc<IndexExpr>(lhs, lbracket, index, rbracket->span);
                     break;
                 }
                 case Dot:
@@ -653,20 +581,20 @@ private:
                     const auto op_span = advance()->span;
                     const auto field_name = expect_name(std::format("expected field name after '{}'", source.slice(op_span)));
                     if (!field_name) {
-                        lhs = make_expr(LiteralExpr { .token = op_span });
+                        lhs = alloc<LiteralExpr>(op_span);
                         break;
                     }
-                    lhs = make_expr(FieldExpr { .lhs = lhs, .dot = op_span, .field = field_name->span });
+                    lhs = alloc<FieldExpr>(lhs, op_span, field_name->span);
                     break;
                 }
                 case PlusPlus: {
                     const auto op_span = advance()->span;
-                    lhs = make_expr(PostfixExpr { .lhs = lhs, .op = UnaryOp::PostInc, .span = op_span });
+                    lhs = alloc<PostfixExpr>(lhs, UnaryOp::PostInc, op_span);
                     break;
                 }
                 case MinusMinus: {
                     const auto op_span = advance()->span;
-                    lhs = make_expr(PostfixExpr { .lhs = lhs, .op = UnaryOp::PostDec, .span = op_span });
+                    lhs = alloc<PostfixExpr>(lhs, UnaryOp::PostDec, op_span);
                     break;
                 }
                 default: return lhs;
@@ -678,7 +606,7 @@ private:
     constexpr auto parse_primary_expr() noexcept -> Expr* {
         const auto token = peek();
         if (token == nullptr) {
-            return make_expr(LiteralExpr { .token = eof_span() });
+            return alloc<LiteralExpr>(eof_span());
         }
 
         switch (token->kind) {
@@ -687,12 +615,12 @@ private:
             case StringLiteral:
             case CharLiteral: {
                 const auto span = advance()->span;
-                return make_expr(LiteralExpr { .token = span });
+                return alloc<LiteralExpr>(span);
             }
             case True:
             case False: {
                 const auto span = advance()->span;
-                return make_expr(LiteralExpr { .token = span });
+                return alloc<LiteralExpr>(span);
             }
             case If: return parse_if_expr();
             case Enum:
@@ -712,26 +640,26 @@ private:
                 const auto keyword = source.slice(token->span);
                 push_error(std::format("keyword '{}' cannot be used as an identifier", keyword), token->span);
                 advance();
-                return make_expr(LiteralExpr { .token = token->span });
+                return alloc<LiteralExpr>(token->span);
             }
             case Identifier: {
                 const auto span = advance()->span;
-                return make_expr(IdentExpr { .name = span });
+                return alloc<IdentExpr>(span);
             }
             case LeftParen: {
                 const auto lparen = advance()->span;
                 const auto inner = parse_expr();
                 const auto rparen = expect(RightParen, "expected ')' after grouped expression");
                 if (!rparen) {
-                    return make_expr(LiteralExpr { .token = lparen });
+                    return alloc<LiteralExpr>(lparen);
                 }
-                return make_expr(GroupExpr { .lparen = lparen, .inner = inner, .rparen = rparen->span });
+                return alloc<GroupExpr>(lparen, inner, rparen->span);
             }
             default: {
                 const auto span = token->span;
                 push_error("unexpected token in expression", span);
                 advance();
-                return make_expr(LiteralExpr { .token = span });
+                return alloc<LiteralExpr>(span);
             }
         }
     }
@@ -741,42 +669,36 @@ private:
         const auto condition = parse_expr();
         if (!check(TokenKind::LeftBrace)) {
             push_error("expected '{' after if condition", current_span());
-            return make_expr(LiteralExpr { .token = keyword->span });
+            return alloc<LiteralExpr>(keyword->span);
         }
         auto then_branch = parse_block();
         if (!then_branch) {
-            return make_expr(LiteralExpr { .token = keyword->span });
+            return alloc<LiteralExpr>(keyword->span);
         }
-        std::optional<Span> else_kw;
-        std::optional<BlockStmt> else_branch;
+        Span else_kw;
+        BlockStmt* else_branch = nullptr;
         if (const auto next = peek(); next != nullptr && next->kind == TokenKind::Else) {
             else_kw = advance()->span;
             if (!check(TokenKind::LeftBrace)) {
                 push_error("expected '{' after else", current_span());
-                return make_expr(LiteralExpr { .token = keyword->span });
+                return alloc<LiteralExpr>(keyword->span);
             }
             auto parsed_else = parse_block();
             if (!parsed_else) {
-                return make_expr(LiteralExpr { .token = keyword->span });
+                return alloc<LiteralExpr>(keyword->span);
             }
-            else_branch = std::move(*parsed_else);
+            else_branch = parsed_else;
         }
 
-        return make_expr(IfExpr {
-            .keyword = keyword->span,
-            .condition = condition,
-            .then_branch = std::move(*then_branch),
-            .else_kw = else_kw,
-            .else_branch = std::move(else_branch)
-        });
+        return alloc<IfExpr>(keyword->span, condition, then_branch, else_kw, else_branch);
     }
 
-    constexpr auto parse_import() noexcept -> std::optional<ImportItem> {
+    constexpr auto parse_import() noexcept -> void {
         advance();
         const auto module_name = expect_name("expected import module name");
         if (!module_name) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
         auto item = ImportItem {
@@ -796,34 +718,34 @@ private:
                     if (!match(TokenKind::Comma) && !check(TokenKind::RightBrace)) {
                         push_error("expected ',' or '}' in using declaration list", current_span());
                         synchronize_to_item_end();
-                        return std::nullopt;
+                        return;
                     }
                 }
 
                 if (!expect(TokenKind::RightBrace, "expected '}' after using declaration list")) {
                     synchronize_to_item_end();
-                    return std::nullopt;
+                    return;
                 }
             } else {
                 const auto decl = expect_name("expected using declaration name");
                 if (!decl) {
                     synchronize_to_item_end();
-                    return std::nullopt;
+                    return;
                 }
                 item.using_decls.emplace_back(decl->span);
             }
         }
 
         match(TokenKind::SemiColon);
-        return item;
+        result.items.emplace_back(std::move(item));
     }
 
-    constexpr auto parse_enum() noexcept -> std::optional<EnumItem> {
+    constexpr auto parse_enum() noexcept -> void {
         advance();
         const auto name = expect_name("expected enum name");
         if (!name) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
         auto item = EnumItem {
@@ -836,14 +758,14 @@ private:
             const auto size = expect_type("expected enum size type");
             if (!size) {
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
             item.size = size->span;
         }
 
         if (!expect(TokenKind::LeftBrace, "expected '{' before enum fields")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
         while (!eof() && !check(TokenKind::RightBrace)) {
@@ -854,24 +776,24 @@ private:
             if (!check(TokenKind::RightBrace)) {
                 push_error("expected ',' or '}' after enum field", current_span());
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
         }
 
         if (!expect(TokenKind::RightBrace, "expected '}' after enum fields")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
-        return item;
+        result.items.emplace_back(std::move(item));
     }
 
-    constexpr auto parse_struct() noexcept -> std::optional<StructItem> {
+    constexpr auto parse_struct() noexcept -> void {
         advance();
         const auto name = expect_name("expected struct name");
         if (!name) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
         auto item = StructItem {
@@ -881,25 +803,25 @@ private:
 
         if (!expect(TokenKind::LeftBrace, "expected '{' before struct fields")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
         while (!eof() && !check(TokenKind::RightBrace)) {
             const auto field_name = expect_name("expected struct field name");
             if (!field_name) {
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
 
             if (!expect(TokenKind::Colon, "expected ':' after struct field name")) {
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
 
             const auto field_type = expect_type("expected struct field type");
             if (!field_type) {
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
 
             item.fields.emplace_back(field_name->span, field_type->span);
@@ -911,16 +833,16 @@ private:
             if (!check(TokenKind::RightBrace)) {
                 push_error("expected ',' or '}' after struct field", current_span());
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
         }
 
         if (!expect(TokenKind::RightBrace, "expected '}' after struct fields")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
-        return item;
+        result.items.emplace_back(std::move(item));
     }
 
     constexpr auto parse_params() noexcept -> std::optional<std::vector<FunctionParam>> {
@@ -948,48 +870,47 @@ private:
         return params;
     }
 
-    constexpr auto parse_function() noexcept -> std::optional<FunctionItem> {
+    constexpr auto parse_function() noexcept -> void {
         advance();
         const auto name = expect_name("expected function name");
         if (!name) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
         if (!expect(TokenKind::LeftParen, "expected '(' after function name")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
         auto params = parse_params();
         if (!params) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
         if (!expect(TokenKind::RightParen, "expected ')' after function parameters")) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
         auto return_type = Span{};
         if (match(TokenKind::Arrow)) {
             const auto type = expect_type("expected function return type");
             if (!type) {
                 synchronize_to_item_end();
-                return std::nullopt;
+                return;
             }
             return_type = type->span;
         }
         auto block = parse_block();
         if (!block) {
             synchronize_to_item_end();
-            return std::nullopt;
+            return;
         }
 
-        auto block_ptr = make_stmt(std::move(*block));
-        return FunctionItem {
+        result.items.emplace_back(FunctionItem {
             .name = name->span,
             .params = std::move(*params),
             .return_type = return_type,
-            .body = std::get_if<BlockStmt>(block_ptr)
-        };
+            .body = block
+        });
     }
 };
 
