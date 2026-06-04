@@ -1,63 +1,77 @@
-# Carven 语言设计哲学
+# Design Philosophy
 
-## 目标
+Carven is a programming language that transpiles to C++. It does not seek to replace
+C++ — it offers C++ programmers a simpler, more elegant path to the same machine.
 
-Carven 是一门转译为 C++ 的编程语言。它的存在不是为了取代 C++，而是给 C++ 程序员一个**更优雅、更简单**的选择。
+## Principles
 
-## 核心原则
+### 1. Reduce cognitive overhead
 
-### 1. 简化 C++，降低心智负担
+C++ is powerful, but its syntax is verbose and carries decades of accumulated
+complexity. Carven lets programmers express the same intent in fewer, clearer
+lines — preserving C++'s semantic model while shedding the ceremony.
 
-C++ 是一门强大的语言，但它的语法冗长、历史包袱沉重。Carven 的目标是让程序员写更少的代码表达同样的意图——把 C++ 中繁琐、啰嗦、容易出错的语法糖化掉，同时保留 C++ 的语义模型。
+### 2. No backward-compatibility tax
 
-### 2. 摒弃旧时代兼容性
+C++ pays a permanent cost for its history: header files, the preprocessor, C
+compatibility layers, and syntax frozen by standards decades old. Carven owes
+none of these debts. It starts from a clean slate and keeps only what modern C++
+actually needs.
 
-C++ 背负着几十年的兼容性包袱：头文件、预处理器宏、C 兼容层、各种过时的语法。Carven 不需要这些——它从零开始设计语法，只保留现代 C++ 的精华。
+### 3. Embrace modern language design
 
-### 3. 拥抱现代编程语言特性
+Type inference, expression-oriented control flow, pattern matching, and concise
+functional constructs are the baseline, not afterthoughts. Underneath, the
+semantics remain C++. The syntax reads like a language designed in the 2020s.
 
-借鉴当代语言的优秀设计：类型推断、表达式导向、模式匹配、简洁的函数式特性等。底层仍然是 C++ 的语义模型，但语法层应该像 2020 年代设计的语言。
+### 4. Trust the programmer
 
-### 4. 信任程序员（不追求 Rust 式安全）
+Carven does not pursue the ownership, borrowing, or lifetime guarantees of Rust.
+It inherits C++'s "trust the programmer" philosophy — control is not surrendered
+in the name of safety. This does not mean Carven is deliberately unsafe; it
+adopts modern C++ best practices, but never at the cost of restricting what the
+programmer can do.
 
-Carven **不**追求 Rust 那样的 ownership/borrowing/lifetime 强安全性保证。它保持 C++ "trust the programmer" 的哲学——把控制权交给程序员，安全不是第一设计目标。
+### 5. Principle of least surprise
 
-这并不意味着 Carven 故意不安全——它会采用现代 C++ 最佳实践，但不会为了安全而限制程序员的能力。
+- A C++ programmer reading Carven code should broadly understand what it does.
+- Novelty should never come at the expense of clarity. Carven is syntactic sugar
+  for C++, not a new language.
+- The generated C++ must remain readable and debuggable.
 
-### 5. 最小惊讶原则
+### 6. Context-free grammar
 
-- 如果一个 C++ 程序员看 Carven 代码能大致猜出它的含义，那设计方向就是对的
-- 不要为了"新颖"而偏离 C++ 语义太远——Carven 是 C++ 的糖衣，不是一门新语言
-- 转译输出的 C++ 代码应该可读、可调试
+Carven's parser decides structure by token type alone — it performs no
+symbol-table lookup. This means:
 
-### 6. 上下文无关的语法
+- The same syntax never produces a different AST depending on context.
+- There is no C++ "most vexing parse" class of problem.
+- Where semantic distinction is needed, the syntax makes it explicit (keywords,
+  token types, delimiters).
 
-Carven 的语法设计遵循上下文无关原则——parser 仅通过 token 类型决定语法结构，不需要符号表查询。这意味着：
+The parser already accepts omitted semicolons before `}` — turning that into
+implicit block returns is purely a codegen change.
 
-- 同一个语法构造不会因上下文不同而产生不同的 AST
-- 不存在 C++ 的 "most vexing parse" 类问题
-- 需要语义区分时，使用显式的语法标记（关键字、token 类型、分隔符）
+### 7. Progressive complexity
 
-### 7. 渐进式可扩展
+- Fundamentals first: variables, functions, control flow, structs, enums.
+- Advanced features on demand: pattern matching, generics, traits.
+- Interop with C++ is direct and deliberate: inline C++ blocks, import
+  pass-through.
 
-- 基础特性先行（变量、函数、控制流、结构体、枚举）
-- 高级特性按需添加（match、泛型、trait 等）
-- 与 C++ 互操作简单直接（inline C++ 代码、import 透传）
+## Influences
 
-## 设计参考
+Carven's syntax is informed by several languages:
 
-Carven 的语法设计受以下语言启发：
+- **Rust** — `let`/`fn`/`match`, expression orientation, no-paren conditions
+- **Zig** — compile-time execution, lean type system
+- **Swift** — labelled arguments, readability
+- **Kotlin** — modern syntactic sugar, concise expressiveness
 
-- **Rust** — `let`/`fn`/`match`、表达式导向、无括号 while 条件
-- **Zig** — 编译期执行、简洁的类型系统
-- **Swift** — 参数标签、清晰的可读性
-- **Kotlin** — 现代语法糖、简洁表达能力
+Carven is none of these. It is C++, re-skinned.
 
-但 Carven **不是**其中任何一个——它始终是 C++ 的语法糖。
+## Syntax Conventions
 
-## 语法风格约定
-
-- 不要求语句周围的分号（但不禁止）
-- while/if 条件不需要括号（C++ 习惯的包袱）
-- 类型后置（`name: Type` 而非 `Type name`），与现代 C++ 和 Rust 保持一致
-- 块表达式优先于块语句（`if` 是表达式，可以返回值）
+- Types follow names (`name: Type`), consistent with modern C++ and Rust.
+- Control-flow conditions omit parentheses.
+- Blocks are preferred as expressions over statements (`if` returns a value).
