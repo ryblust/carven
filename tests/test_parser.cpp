@@ -7,7 +7,7 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
-static constexpr auto do_parse(const SourceFile& file) noexcept -> ParseResult {
+static inline auto do_parse(const SourceFile& file) noexcept -> ParseResult {
     return parse(tokenize(file.text()), file);
 }
 
@@ -322,7 +322,7 @@ TEST_CASE("Parser: for") {
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
+        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
         CHECK(loop->condition != nullptr);
         CHECK(loop->step != nullptr);
     }
@@ -333,7 +333,7 @@ TEST_CASE("Parser: for") {
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(!std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
+        CHECK(!std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
         CHECK(loop->condition == nullptr);
         CHECK(loop->step == nullptr);
     }
@@ -344,7 +344,7 @@ TEST_CASE("Parser: for") {
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
+        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
     }
 
     SUBCASE("for with expr init") {
@@ -353,7 +353,7 @@ TEST_CASE("Parser: for") {
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
         CHECK(loop != nullptr);
-        CHECK(std::visit([](auto* p) noexcept -> bool { return p != nullptr; }, loop->init));
+        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
     }
 }
 

@@ -5,7 +5,7 @@ import std;
 
 TEST_CASE("Filesystem: ensure_directory") {
     const auto base = std::filesystem::temp_directory_path();
-    const auto dir  = base / "carven_test_dir";
+    const auto dir = base / "carven_test_dir";
 
     // Clean up from any previous run
     std::filesystem::remove_all(dir);
@@ -35,7 +35,7 @@ TEST_CASE("Filesystem: write_file_if_changed") {
 
         // Verify content
         auto in = std::ifstream(path);
-        auto content = std::string(std::istreambuf_iterator<char>(in), {});
+        const auto content = std::string(std::istreambuf_iterator<char>(in), {});
         CHECK_EQ(content, "int x = 1;");
     }
 
@@ -51,7 +51,7 @@ TEST_CASE("Filesystem: write_file_if_changed") {
         write_file_if_changed(path, "int x = 3;");
         CHECK(write_file_if_changed(path, "int x = 4;"));
         auto in = std::ifstream(path);
-        auto content = std::string(std::istreambuf_iterator<char>(in), {});
+        const auto content = std::string(std::istreambuf_iterator<char>(in), {});
         CHECK_EQ(content, "int x = 4;");
     }
 

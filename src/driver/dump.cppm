@@ -78,7 +78,7 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
                 it.return_type.empty() ? "" : std::format(" -> {}", source.slice(it.return_type))
             );
 
-            for (const auto* stmt : it.body->statements) {
+            for (const auto stmt : it.body->statements) {
                 result += dump(*stmt, source, indent + 2);
             }
 
@@ -86,7 +86,6 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
         }
     }, item);
 }
-
 
 auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
     switch (expr.kind) {
@@ -113,7 +112,7 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
         case ExprKind::Call: {
             const auto& e = *static_cast<const CallExpr*>(&expr);
             auto result = std::format("Call({}", dump(*e.callee, source));
-            for (const auto* arg : e.args) {
+            for (const auto arg : e.args) {
                 result += ' ';
                 result += dump(*arg, source);
             }
@@ -148,14 +147,14 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
             const auto pad = std::string(indent, ' ');
             auto result = std::format("If({}) {{\n", dump(*e.condition, source));
 
-            for (const auto* stmt : e.then_branch->statements) {
+            for (const auto stmt : e.then_branch->statements) {
                 result += dump(*stmt, source, indent + 2);
             }
 
             std::format_to(std::back_inserter(result), "{}}}", pad);
             if (e.else_branch) {
                 result += " else {\n";
-                for (const auto* stmt : e.else_branch->statements) {
+                for (const auto stmt : e.else_branch->statements) {
                     result += dump(*stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}", pad);
@@ -188,7 +187,7 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
                     }
                     result += " => {\n";
                 }
-                for (const auto* stmt : arm.body->statements) {
+                for (const auto stmt : arm.body->statements) {
                     result += dump(*stmt, source, indent + 4);
                 }
                 result += pad + "  }\n";
@@ -206,7 +205,7 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
         case StmtKind::Block: {
             const auto& s = *static_cast<const BlockStmt*>(&stmt);
             auto result = std::format("{}Block {{\n", pad);
-            for (const auto* body_stmt : s.statements) {
+            for (const auto body_stmt : s.statements) {
                 result += dump(*body_stmt, source, indent + 2);
             }
             return std::format("{}{}}}\n", result, pad);
@@ -242,7 +241,7 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
             auto result = std::format("{}while ({})", pad, dump(*s.condition, source, indent));
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}\n", pad);
@@ -278,7 +277,7 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
             auto result = std::format("{}for ({}; {}; {})", pad, init_str, condition, step);
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}\n", pad);
@@ -290,7 +289,6 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
         }
     }
 }
-
 
 auto dump_ast(const ParseResult& parse_result, const SourceFile& source) noexcept -> std::string {
     auto result = std::string();

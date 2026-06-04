@@ -24,32 +24,20 @@ xmake build
 xmake run carven-test
 
 # Run a .cv file
-xmake run carven run tests/helloworld.cv
+xmake run carven run <file>
 
 # Dump tokens and AST
 xmake run carven dump <file>
 
 ```
 
-## Architecture
+## Key Design Decisions
 
-Layer responsibilities (dependency flows downward):
-- `carven.common.*` — shared utilities: source spans, file/process helpers. No frontend/backend/driver imports
-- `carven.frontend.token` — token type and formatters
-- `carven.frontend.lexer` — lexer (tokenizer). No backend/driver imports
-- `carven.frontend.ast` — AST node types and walker utilities
-- `carven.frontend.parser` — parser, error types, arena allocators. No backend/driver imports
-- `carven.backend.codegen` — C++ code generation from AST. No file I/O, process execution, or CLI parsing
-- `carven.driver.command` — CLI commands and help text
-- `carven.driver.pipeline` — transpile pipeline, flag parsing, Driver struct
-- `carven.driver.handler` — command implementations (run, build, check)
-- `carven.driver.dump` — token stream and AST dump
-- `carven.driver.toolchain` — C++ compiler discovery and artifact path building
-
-### Key Design Decisions
-
-- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `SourceFile::slice(span)`. The `SourceFile` MUST outlive all AST references
-- **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.cv` files — this is a single-file model
+- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `SourceFile::slice(span)`. The `SourceFile` MUST outlive all AST references.
+- **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.cv` files — this is a single-file model.
+- **Arena allocator**: AST nodes allocated via bump-pointer `Arena`. Use `alloc<T>(args...)` — never `new` for AST nodes.
+- **Context-free parser**: Parser distinguishes constructs by token type only, never by symbol table lookup. Semantic decisions deferred to codegen.
+- **Monadic error handling**: `std::optional<T>` and `std::expected<T, E>`. No exceptions (`-fno-exceptions`). Every function `noexcept`.
 
 ## Coding Style
 
@@ -59,7 +47,12 @@ Layer responsibilities (dependency flows downward):
 - Fields: `snake_case`
 - Modules: `carven.<layer>.<name>`
 
-For all C++ design conventions (initialization, type design, error handling, control flow, formatting, parameter passing), see [`cpp-design`](.claude/specs/cpp-design-philosophy.md).
+C++ conventions are defined in two specs under `.claude/specs/`:
+
+- [`cpp-design`](.claude/specs/cpp-design.md) — design philosophy and API patterns
+- [`cpp-format`](.claude/specs/cpp-format.md) — formatting rules
+
+All agents must apply both when writing, modifying, or reviewing C++ code.
 
 ## Conventional Commits
 

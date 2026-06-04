@@ -8,7 +8,7 @@ import carven.common.process;
 import std;
 
 static auto run_and_capture(const std::string& cmd) noexcept -> std::pair<int, std::string> {
-    auto* pipe = popen(cmd.c_str(), "r");
+    auto pipe = popen(cmd.c_str(), "r");
     if (!pipe) return {-1, ""};
     std::string stdout;
     char buf[4096];

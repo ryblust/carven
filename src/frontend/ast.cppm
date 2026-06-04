@@ -157,16 +157,16 @@ export struct ArrayExpr final : Expr {
 export struct BlockStmt;
 
 export struct MatchArm final {
-    std::vector<Expr*> patterns;   // literal expressions for value match, IdentExpr for type match
-    bool is_wildcard;              // true for _ => ...
-    Span arrow;                    // =>
-    BlockStmt* body;               // { ... }
+    std::vector<Expr*> patterns;
+    bool is_wildcard;
+    Span arrow;
+    BlockStmt* body;
 };
 
 export struct MatchExpr final : Expr {
     static constexpr auto kind = ExprKind::Match;
-    Span keyword;                  // match
-    Expr* value;                   // matched expression
+    Span keyword;
+    Expr* value;
     Span lbrace;
     std::vector<MatchArm> arms;
     Span rbrace;
@@ -278,7 +278,7 @@ public:
     template<typename T, typename... Args>
     constexpr auto alloc(Args&&... args) noexcept -> T* {
         if consteval {
-            auto* p = new T {{T::kind}, std::forward<Args>(args)... };
+            const auto p = new T {{T::kind}, std::forward<Args>(args)... };
             cleanup.emplace_back(p, [](void* vp) static noexcept { delete static_cast<T*>(vp); });
             return p;
         } else {
@@ -288,7 +288,7 @@ public:
                 blocks.emplace_back(std::make_unique<std::byte[]>(block_size));
                 cur = 0;
             }
-            auto* ptr = new(reinterpret_cast<void*>(blocks.back().get() + cur)) T {{T::kind}, std::forward<Args>(args)... };
+            const auto ptr = new(reinterpret_cast<void*>(blocks.back().get() + cur)) T {{T::kind}, std::forward<Args>(args)... };
             offset = cur + sizeof(T);
             return ptr;
         }

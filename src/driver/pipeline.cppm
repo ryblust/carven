@@ -152,7 +152,7 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
         }
     }
 
-    const auto run_args = std::vector<std::string> { artifacts.exe_path.string() };
+    const auto run_args = std::vector { artifacts.exe_path.string() };
     const auto run_result = run_process(run_args);
     if (!run_result.started) {
         std::println("carven run: error: cannot run '{}'", artifacts.exe_path.string());

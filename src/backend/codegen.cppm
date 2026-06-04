@@ -165,7 +165,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
 
     result += " {\n";
 
-    for (const auto* stmt : item.body->statements) {
+    for (const auto stmt : item.body->statements) {
         generate_stmt(result, *stmt, source, 4);
         result += '\n';
     }
@@ -181,7 +181,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const Source
             const auto& s = *static_cast<const BlockStmt*>(&stmt);
             result += padding;
             result += "{\n";
-            for (const auto* body_stmt : s.statements) {
+            for (const auto body_stmt : s.statements) {
                 generate_stmt(result, *body_stmt, source, indent + 4);
                 result += '\n';
             }
@@ -225,7 +225,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const Source
             result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     generate_stmt(result, *body_stmt, source, indent + 4);
                     result += '\n';
                 }
@@ -256,7 +256,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const Source
             result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto* body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     generate_stmt(result, *body_stmt, source, indent + 4);
                     result += '\n';
                 }
@@ -384,7 +384,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
             result += "if (";
             generate_expr(result, *e.condition, source);
             result += ") {\n";
-            for (const auto* stmt : e.then_branch->statements) {
+            for (const auto stmt : e.then_branch->statements) {
                 generate_stmt(result, *stmt, source, 4);
                 result += '\n';
             }
@@ -392,7 +392,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
 
             if (e.else_branch) {
                 result += " else {\n";
-                for (const auto* stmt : e.else_branch->statements) {
+                for (const auto stmt : e.else_branch->statements) {
                     generate_stmt(result, *stmt, source, 4);
                     result += '\n';
                 }
@@ -416,7 +416,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
             if (e.arms.empty()) return;
 
             // Check if any arm has type patterns
-            bool has_type = false;
+            auto has_type = false;
             for (const auto& arm : e.arms) {
                 if (!arm.is_wildcard && !arm.patterns.empty()
                     && arm.patterns[0]->kind == ExprKind::Ident) {
@@ -450,7 +450,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                         for (auto j = 0uz; j < arm.patterns.size(); ++j) {
                             if (j > 0) result += " || ";
                             if (is_type_arm) {
-                                const auto* ident = static_cast<const IdentExpr*>(arm.patterns[j]);
+                                const auto ident = static_cast<const IdentExpr*>(arm.patterns[j]);
                                 result += "std::is_same_v<_T, ";
                                 result += map_type(source.slice(ident->name));
                                 result += '>';
@@ -462,7 +462,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                         result += ") {\n";
                     }
 
-                    for (const auto* stmt : arm.body->statements) {
+                    for (const auto stmt : arm.body->statements) {
                         generate_stmt(result, *stmt, source, 4);
                         result += '\n';
                     }
@@ -473,7 +473,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
             } else {
                 // Value-only match
                 // Check if all arms are single-expression (for ternary optimization)
-                bool all_single_expr = true;
+                auto all_single_expr = true;
                 for (const auto& arm : e.arms) {
                     if (arm.body->statements.size() != 1
                         || arm.body->statements[0]->kind != StmtKind::ExprStmt) {
@@ -498,7 +498,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                             }
                             result += " ? ";
                         }
-                        const auto* es = static_cast<const ExprStmt*>(arm.body->statements[0]);
+                        const auto es = static_cast<const ExprStmt*>(arm.body->statements[0]);
                         generate_expr(result, *es->expr, source);
                     }
                 } else {
@@ -521,7 +521,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                             result += ") {\n";
                         }
 
-                        for (const auto* stmt : arm.body->statements) {
+                        for (const auto stmt : arm.body->statements) {
                             generate_stmt(result, *stmt, source, 4);
                             result += '\n';
                         }

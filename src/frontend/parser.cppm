@@ -165,7 +165,6 @@ private:
         return advance();
     }
 
-
     constexpr auto expect(TokenKind kind, std::string_view message) noexcept -> const Token* {
         if (const auto token = match(kind)) return token;
         push_error(message, current_span());
@@ -195,7 +194,7 @@ private:
             }
             const auto rbracket = expect(TokenKind::RightBracket, "expected ']' after array size");
             if (!rbracket) return std::nullopt;
-            return Span{lbracket.start, rbracket->span.end};
+            return Span { lbracket.start, rbracket->span.end };
         }
 
         if (start->kind == TokenKind::Identifier) {
@@ -433,7 +432,7 @@ private:
                 token->kind == TokenKind::Var ||
                 token->kind == TokenKind::Const
             )) {
-                if (auto decl = parse_var_decl_data()) {
+                if (const auto decl = parse_var_decl_data()) {
                     for_init = decl;
                 }
             } else {
@@ -558,7 +557,7 @@ private:
     }
 
     constexpr auto parse_postfix_expr() noexcept -> Expr* {
-        auto expr = parse_primary_expr();
+        const auto expr = parse_primary_expr();
         return parse_postfix_ops(expr);
     }
 
@@ -755,7 +754,7 @@ private:
         if (!arrow) return std::nullopt;
         arm.arrow = arrow->span;
 
-        auto body = parse_block();
+        const auto body = parse_block();
         if (!body) {
             push_error("expected block body after '=>'", current_span());
             return std::nullopt;
@@ -810,7 +809,7 @@ private:
             push_error("expected '{' after if condition", current_span());
             return alloc<LiteralExpr>(keyword->span);
         }
-        auto then_branch = parse_block();
+        const auto then_branch = parse_block();
         if (!then_branch) {
             return alloc<LiteralExpr>(keyword->span);
         }
@@ -822,7 +821,7 @@ private:
                 push_error("expected '{' after else", current_span());
                 return alloc<LiteralExpr>(keyword->span);
             }
-            auto parsed_else = parse_block();
+            const auto parsed_else = parse_block();
             if (!parsed_else) {
                 return alloc<LiteralExpr>(keyword->span);
             }

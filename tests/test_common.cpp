@@ -230,7 +230,7 @@ TEST_CASE("SourceFile move assignment with location") {
 }
 
 TEST_CASE("SourceFile from_file nonexistent") {
-    auto source = SourceFile::from_file("nonexistent_file_12345.cv");
+    const auto source = SourceFile::from_file("nonexistent_file_12345.cv");
     CHECK(!source.has_value());
 }
 
@@ -243,7 +243,7 @@ TEST_CASE("SourceFile from_file empty file") {
         ofs.close();
     }
 
-    auto source = SourceFile::from_file(path.string());
+    const auto source = SourceFile::from_file(path.string());
     REQUIRE(source.has_value());
     CHECK_EQ(source->text(), "");
 

@@ -5,7 +5,7 @@ import std;
 
 TEST_CASE("Pipeline: parse_flags") {
     SUBCASE("defaults") {
-        const auto args = std::array<const char*, 0> {};
+        const auto args = std::array<const char*, 0>{};
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK_EQ(driver->language_standard, 23);
@@ -103,7 +103,7 @@ TEST_CASE("Pipeline: parse_flags") {
 
     SUBCASE("multiple flags combined") {
         const auto args = std::array<const char*, 4> {
-            "-std=c++20", "--import-std", "-E", "main.cv"
+            "-std=c++20", "--import-std", "-E", "main.cv",
         };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());

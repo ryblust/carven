@@ -39,7 +39,7 @@ public:
         : fpath(path), is_mmaped(false), source(content), line_offsets(build_line_offsets(content)) {}
 
     [[nodiscard]] static auto from_file(std::string_view fpath) noexcept -> std::optional<SourceFile> {
-        auto mapped = map_file(fpath);
+        const auto mapped = map_file(fpath);
         if (!mapped) return std::nullopt;
 
         return SourceFile(fpath, mapped->first, mapped->second);
