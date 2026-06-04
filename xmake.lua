@@ -22,5 +22,4 @@ target("carven")
 
 target("carven-test")
     add_deps("carven-modules")
-    add_defines("DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS")
     add_files("tests/test_*.cpp")

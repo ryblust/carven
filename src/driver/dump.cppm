@@ -163,6 +163,39 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
 
             return result;
         }
+        case ExprKind::Array: {
+            const auto& e = *static_cast<const ArrayExpr*>(&expr);
+            auto result = std::string("[");
+            for (auto i = 0uz; i < e.elements.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += dump(*e.elements[i], source);
+            }
+            result += ']';
+            return result;
+        }
+        case ExprKind::Match: {
+            const auto& e = *static_cast<const MatchExpr*>(&expr);
+            const auto pad = std::string(indent, ' ');
+            auto result = std::format("match {} {{\n", dump(*e.value, source));
+            for (const auto& arm : e.arms) {
+                result += pad + "  ";
+                if (arm.is_wildcard) {
+                    result += "_ => {\n";
+                } else {
+                    for (auto j = 0uz; j < arm.patterns.size(); ++j) {
+                        if (j > 0) result += " | ";
+                        result += dump(*arm.patterns[j], source);
+                    }
+                    result += " => {\n";
+                }
+                for (const auto* stmt : arm.body->statements) {
+                    result += dump(*stmt, source, indent + 4);
+                }
+                result += pad + "  }\n";
+            }
+            std::format_to(std::back_inserter(result), "{}}}", pad);
+            return result;
+        }
     }
 }
 

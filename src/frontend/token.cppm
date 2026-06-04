@@ -20,6 +20,7 @@ export enum class TokenKind : std::uint32_t {
     If,                     // if
     Import,                 // import
     Let,                    // let
+    Match,                  // match
     Return,                 // return
     Struct,                 // struct
     True,                   // true
@@ -103,6 +104,7 @@ constexpr auto to_string(TokenKind kind) noexcept -> const char* {
         case If:                    return "if";
         case Import:                return "import";
         case Let:                   return "let";
+        case Match:                 return "match";
         case Return:                return "return";
         case Struct:                return "struct";
         case True:                  return "true";

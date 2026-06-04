@@ -22,6 +22,34 @@ constexpr auto map_type(std::string_view carven_type) noexcept -> std::string_vi
     return carven_type;
 }
 
+constexpr auto generate_type(std::string& result, Span type_span, const SourceFile& source) noexcept -> void {
+    if (type_span.empty()) return;
+    const auto text = source.slice(type_span);
+    if (text.starts_with('[')) {
+        const auto semicolon = text.find(';');
+        if (semicolon == std::string_view::npos) {
+            result += text; // fallback: shouldn't happen for valid array types
+            return;
+        }
+        const auto inner_type = text.substr(1, semicolon - 1);
+        const auto size       = text.substr(semicolon + 1, text.size() - semicolon - 2);
+        result += "std::array<";
+        result += map_type(inner_type);
+        result += ", ";
+        // trim whitespace from size
+        const auto first = size.find_first_not_of(" \t\n\r");
+        const auto last  = size.find_last_not_of(" \t\n\r");
+        if (first != std::string_view::npos) {
+            result += size.substr(first, last - first + 1);
+        } else {
+            result += size;
+        }
+        result += '>';
+    } else {
+        result += map_type(text);
+    }
+}
+
 constexpr auto generate_import(std::string& result, const ImportItem& item, const SourceFile& source) noexcept -> void {
     const auto name = source.slice(item.module_name);
 
@@ -50,7 +78,7 @@ constexpr auto generate_enum(std::string& result, const EnumItem& item, const So
     result += source.slice(item.name);
     if (!item.size.empty()) {
         result += " : ";
-        result += map_type(source.slice(item.size));
+        generate_type(result, item.size, source);
     }
     result += " {\n";
 
@@ -70,7 +98,7 @@ constexpr auto generate_struct(std::string& result, const StructItem& item, cons
 
     for (const auto field : item.fields) {
         result += "    ";
-        result += map_type(source.slice(field.type));
+        generate_type(result, field.type, source);
         result += ' ';
         result += source.slice(field.name);
         result += ";\n";
@@ -92,7 +120,7 @@ constexpr auto generate_var_decl(std::string& result, const VarDecl& s, const So
     if (s.init != nullptr) {
         if (!s.type.empty()) {
             result += " = ";
-            result += map_type(source.slice(s.type));
+            generate_type(result, s.type, source);
             result += '(';
             generate_expr(result, *s.init, source);
             result += ')';
@@ -102,7 +130,7 @@ constexpr auto generate_var_decl(std::string& result, const VarDecl& s, const So
         }
     } else if (!s.type.empty()) {
         result += " = ";
-        result += map_type(source.slice(s.type));
+        generate_type(result, s.type, source);
         result += "()";
     }
 }
@@ -120,7 +148,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
         if (p.type.empty()) {
             result += "auto ";
         } else {
-            result += map_type(source.slice(p.type));
+            generate_type(result, p.type, source);
             result += ' ';
         }
         result += source.slice(p.name);
@@ -132,7 +160,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
         result += " -> int";
     } else if (!item.return_type.empty()) {
         result += " -> ";
-        result += map_type(source.slice(item.return_type));
+        generate_type(result, item.return_type, source);
     }
 
     result += " {\n";
@@ -369,6 +397,137 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                     result += '\n';
                 }
                 result += '}';
+            }
+
+            return;
+        }
+        case ExprKind::Array: {
+            const auto& e = *static_cast<const ArrayExpr*>(&expr);
+            result += "std::array { ";
+            for (auto i = 0uz; i < e.elements.size(); ++i) {
+                if (i > 0) result += ", ";
+                generate_expr(result, *e.elements[i], source);
+            }
+            result += " }";
+            return;
+        }
+        case ExprKind::Match: {
+            const auto& e = *static_cast<const MatchExpr*>(&expr);
+            if (e.arms.empty()) return;
+
+            // Check if any arm has type patterns
+            bool has_type = false;
+            for (const auto& arm : e.arms) {
+                if (!arm.is_wildcard && !arm.patterns.empty()
+                    && arm.patterns[0]->kind == ExprKind::Ident) {
+                    has_type = true;
+                    break;
+                }
+            }
+
+            if (has_type) {
+                // Emit match value into _cv, compute _T for type checks
+                result += "auto&& _cv = ";
+                generate_expr(result, *e.value, source);
+                result += ";\n";
+                result += "using _T = std::remove_cvref_t<decltype(_cv)>;\n";
+
+                auto else_depth = 0u;
+                for (auto i = 0uz; i < e.arms.size(); ++i) {
+                    const auto& arm = e.arms[i];
+
+                    if (i > 0) {
+                        result += " else {\n";
+                        ++else_depth;
+                    }
+
+                    if (!arm.is_wildcard) {
+                        // Determine if this arm is a type pattern
+                        const auto is_type_arm = !arm.patterns.empty()
+                            && arm.patterns[0]->kind == ExprKind::Ident;
+
+                        result += is_type_arm ? "if constexpr (" : "if (";
+                        for (auto j = 0uz; j < arm.patterns.size(); ++j) {
+                            if (j > 0) result += " || ";
+                            if (is_type_arm) {
+                                const auto* ident = static_cast<const IdentExpr*>(arm.patterns[j]);
+                                result += "std::is_same_v<_T, ";
+                                result += map_type(source.slice(ident->name));
+                                result += '>';
+                            } else {
+                                result += "_cv == ";
+                                generate_expr(result, *arm.patterns[j], source);
+                            }
+                        }
+                        result += ") {\n";
+                    }
+
+                    for (const auto* stmt : arm.body->statements) {
+                        generate_stmt(result, *stmt, source, 4);
+                        result += '\n';
+                    }
+
+                    if (!arm.is_wildcard) result += '}';
+                }
+                for (auto i = 0u; i < else_depth; ++i) result += '}';
+            } else {
+                // Value-only match
+                // Check if all arms are single-expression (for ternary optimization)
+                bool all_single_expr = true;
+                for (const auto& arm : e.arms) {
+                    if (arm.body->statements.size() != 1
+                        || arm.body->statements[0]->kind != StmtKind::ExprStmt) {
+                        all_single_expr = false;
+                        break;
+                    }
+                }
+
+                if (all_single_expr) {
+                    // Ternary chain
+                    for (auto i = 0uz; i < e.arms.size(); ++i) {
+                        const auto& arm = e.arms[i];
+                        if (arm.is_wildcard) {
+                            result += " : ";
+                        } else {
+                            if (i > 0) result += " : ";
+                            for (auto j = 0uz; j < arm.patterns.size(); ++j) {
+                                if (j > 0) result += " || ";
+                                generate_expr(result, *e.value, source);
+                                result += " == ";
+                                generate_expr(result, *arm.patterns[j], source);
+                            }
+                            result += " ? ";
+                        }
+                        const auto* es = static_cast<const ExprStmt*>(arm.body->statements[0]);
+                        generate_expr(result, *es->expr, source);
+                    }
+                } else {
+                    // Flat if/else chain for multi-statement arms
+                    for (auto i = 0uz; i < e.arms.size(); ++i) {
+                        const auto& arm = e.arms[i];
+
+                        if (arm.is_wildcard) {
+                            result += " else {\n";
+                        } else {
+                            if (i == 0) result += "if (";
+                            else result += "else if (";
+
+                            for (auto j = 0uz; j < arm.patterns.size(); ++j) {
+                                if (j > 0) result += " || ";
+                                generate_expr(result, *e.value, source);
+                                result += " == ";
+                                generate_expr(result, *arm.patterns[j], source);
+                            }
+                            result += ") {\n";
+                        }
+
+                        for (const auto* stmt : arm.body->statements) {
+                            generate_stmt(result, *stmt, source, 4);
+                            result += '\n';
+                        }
+                        result += '}';
+                    }
+                }
             }
 
             return;

@@ -36,10 +36,10 @@ public:
 
             switch (token->kind) {
                 using enum TokenKind;
-                case Import:   parse_import();   break;
-                case Enum:    parse_enum();    break;
-                case Struct:  parse_struct();  break;
-                case Fn:      parse_function(); break;
+                case Import: parse_import();   break;
+                case Enum:   parse_enum();     break;
+                case Struct: parse_struct();   break;
+                case Fn:     parse_function(); break;
                 default:
                     push_error("expected top-level item", token->span);
                     advance();
@@ -176,12 +176,35 @@ private:
         return expect(TokenKind::Identifier, message);
     }
 
-    constexpr auto expect_type(std::string_view message) noexcept -> const Token* {
-        if (const auto token = peek(); token != nullptr && token->kind == TokenKind::Identifier) {
-            return advance();
+    constexpr auto parse_type_annotation(std::string_view message) noexcept -> std::optional<Span> {
+        const auto start = peek();
+        if (start == nullptr) {
+            push_error(message, eof_span());
+            return std::nullopt;
         }
+
+        if (start->kind == TokenKind::LeftBracket) {
+            const auto lbracket = advance()->span;
+            const auto inner = expect_name("expected array element type after '['");
+            if (!inner) return std::nullopt;
+            if (!expect(TokenKind::SemiColon, "expected ';' in array type")) return std::nullopt;
+            const auto size_expr = parse_expr();
+            if (!size_expr) {
+                push_error("expected array size expression", current_span());
+                return std::nullopt;
+            }
+            const auto rbracket = expect(TokenKind::RightBracket, "expected ']' after array size");
+            if (!rbracket) return std::nullopt;
+            return Span{lbracket.start, rbracket->span.end};
+        }
+
+        if (start->kind == TokenKind::Identifier) {
+            const auto span = advance()->span;
+            return span;
+        }
+
         push_error(message, current_span());
-        return nullptr;
+        return std::nullopt;
     }
 
     constexpr auto push_error(std::string_view message, Span span) noexcept -> void {
@@ -331,12 +354,12 @@ private:
         auto type_span = Span{};
         if (check(TokenKind::Colon)) {
             advance();
-            const auto type = expect_type("expected type after ':'");
+            const auto type = parse_type_annotation("expected type after ':'");
             if (!type) {
                 synchronize_to_stmt_end();
                 return nullptr;
             }
-            type_span = type->span;
+            type_span = *type;
         }
         auto eq_span = Span{};
         Expr* init = nullptr;
@@ -623,6 +646,7 @@ private:
                 return alloc<LiteralExpr>(span);
             }
             case If: return parse_if_expr();
+            case Match: return parse_match_expr();
             case Enum:
             case Struct:
             case Fn:
@@ -655,6 +679,23 @@ private:
                 }
                 return alloc<GroupExpr>(lparen, inner, rparen->span);
             }
+            case LeftBracket: {
+                const auto lbracket = advance()->span;
+                auto elements = std::vector<Expr*>();
+                if (!check(RightBracket)) {
+                    elements.emplace_back(parse_assignment_expr());
+                    while (check(Comma)) {
+                        advance();
+                        if (check(RightBracket)) break; // trailing comma
+                        elements.emplace_back(parse_assignment_expr());
+                    }
+                }
+                const auto rbracket = expect(RightBracket, "expected ']' after array elements");
+                if (!rbracket) {
+                    return alloc<LiteralExpr>(lbracket);
+                }
+                return alloc<ArrayExpr>(lbracket, std::move(elements), rbracket->span);
+            }
             default: {
                 const auto span = token->span;
                 push_error("unexpected token in expression", span);
@@ -662,6 +703,104 @@ private:
                 return alloc<LiteralExpr>(span);
             }
         }
+    }
+
+    constexpr auto parse_match_pattern() noexcept -> std::optional<MatchArm> {
+        const auto start = peek();
+        if (start == nullptr) return std::nullopt;
+
+        auto arm = MatchArm{};
+
+        if (start->kind == TokenKind::Identifier && source.slice(start->span) == "_") {
+            advance();
+            arm.is_wildcard = true;
+        } else if (start->kind == TokenKind::NumberLiteral
+                || start->kind == TokenKind::StringLiteral
+                || start->kind == TokenKind::CharLiteral
+                || start->kind == TokenKind::True
+                || start->kind == TokenKind::False) {
+            arm.patterns.emplace_back(parse_primary_expr());
+            while (check(TokenKind::Pipe)) {
+                advance();
+                const auto next = peek();
+                if (next == nullptr || !(next->kind == TokenKind::NumberLiteral
+                    || next->kind == TokenKind::StringLiteral
+                    || next->kind == TokenKind::CharLiteral
+                    || next->kind == TokenKind::True
+                    || next->kind == TokenKind::False)) {
+                    push_error("expected literal pattern after '|'", current_span());
+                    return std::nullopt;
+                }
+                arm.patterns.emplace_back(parse_primary_expr());
+            }
+        } else if (start->kind == TokenKind::Identifier) {
+            arm.patterns.emplace_back(alloc<IdentExpr>(start->span));
+            advance();
+            while (check(TokenKind::Pipe)) {
+                advance();
+                const auto next = peek();
+                if (next == nullptr || next->kind != TokenKind::Identifier) {
+                    push_error("expected type pattern after '|'", current_span());
+                    return std::nullopt;
+                }
+                arm.patterns.emplace_back(alloc<IdentExpr>(next->span));
+                advance();
+            }
+        } else {
+            push_error("expected match pattern (literal, type name, or _)", start->span);
+            return std::nullopt;
+        }
+
+        const auto arrow = expect(TokenKind::FatArrow, "expected '=>' after match pattern");
+        if (!arrow) return std::nullopt;
+        arm.arrow = arrow->span;
+
+        auto body = parse_block();
+        if (!body) {
+            push_error("expected block body after '=>'", current_span());
+            return std::nullopt;
+        }
+        arm.body = body;
+
+        return arm;
+    }
+
+    constexpr auto parse_match_expr() noexcept -> Expr* {
+        const auto keyword = advance();
+        const auto value = parse_expr();
+        if (!value) {
+            return alloc<LiteralExpr>(keyword->span);
+        }
+
+        const auto lbrace = expect(TokenKind::LeftBrace, "expected '{' after match expression");
+        if (!lbrace) {
+            return alloc<LiteralExpr>(keyword->span);
+        }
+
+        auto arms = std::vector<MatchArm>();
+        while (!eof() && !check(TokenKind::RightBrace)) {
+            auto arm = parse_match_pattern();
+            if (!arm) {
+                // skip to next arm or closing brace
+                while (!eof() && !check(TokenKind::RightBrace) && !check(TokenKind::FatArrow)) {
+                    advance();
+                }
+                // advance past the FatArrow we stopped at (if any) so we don't loop forever
+                if (check(TokenKind::FatArrow)) advance();
+                continue;
+            }
+            arms.emplace_back(std::move(*arm));
+
+            // optional comma between arms
+            if (check(TokenKind::Comma)) advance();
+        }
+
+        const auto rbracket = expect(TokenKind::RightBrace, "expected '}' after match arms");
+        if (!rbracket) {
+            return alloc<LiteralExpr>(lbrace->span);
+        }
+
+        return alloc<MatchExpr>(keyword->span, value, lbrace->span, std::move(arms), rbracket->span);
     }
 
     constexpr auto parse_if_expr() noexcept -> Expr* {
@@ -755,12 +894,12 @@ private:
         };
 
         if (match(TokenKind::Colon)) {
-            const auto size = expect_type("expected enum size type");
+            const auto size = parse_type_annotation("expected enum size type");
             if (!size) {
                 synchronize_to_item_end();
                 return;
             }
-            item.size = size->span;
+            item.size = *size;
         }
 
         if (!expect(TokenKind::LeftBrace, "expected '{' before enum fields")) {
@@ -818,13 +957,13 @@ private:
                 return;
             }
 
-            const auto field_type = expect_type("expected struct field type");
+            const auto field_type = parse_type_annotation("expected struct field type");
             if (!field_type) {
                 synchronize_to_item_end();
                 return;
             }
 
-            item.fields.emplace_back(field_name->span, field_type->span);
+            item.fields.emplace_back(field_name->span, *field_type);
 
             if (match(TokenKind::Comma) || match(TokenKind::SemiColon)) {
                 continue;
@@ -853,9 +992,9 @@ private:
 
             auto type_span = Span{};
             if (match(TokenKind::Colon)) {
-                const auto param_type = expect_type("expected function parameter type");
+                const auto param_type = parse_type_annotation("expected function parameter type");
                 if (!param_type) return std::nullopt;
-                type_span = param_type->span;
+                type_span = *param_type;
             }
 
             params.emplace_back(param_name->span, type_span);
@@ -892,12 +1031,12 @@ private:
         }
         auto return_type = Span{};
         if (match(TokenKind::Arrow)) {
-            const auto type = expect_type("expected function return type");
+            const auto type = parse_type_annotation("expected function return type");
             if (!type) {
                 synchronize_to_item_end();
                 return;
             }
-            return_type = type->span;
+            return_type = *type;
         }
         auto block = parse_block();
         if (!block) {

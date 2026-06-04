@@ -101,7 +101,7 @@ private:
     }
 
     constexpr auto identifier_or_keyword() noexcept -> Token {
-        static constexpr auto keywords = std::array<std::pair<std::string_view, TokenKind>, 17> {{
+        static constexpr auto keywords = std::array<std::pair<std::string_view, TokenKind>, 18> {{
             { "import", TokenKind::Import },
             { "export", TokenKind::Export },
             { "using",  TokenKind::Using  },
@@ -110,6 +110,7 @@ private:
             { "enum",   TokenKind::Enum   },
             { "var",    TokenKind::Var    },
             { "let",    TokenKind::Let    },
+            { "match",  TokenKind::Match  },
             { "const",  TokenKind::Const  },
             { "if",     TokenKind::If     },
             { "else",   TokenKind::Else   },

@@ -1,0 +1,11 @@
+fn main() {
+    let a: [i32; 3] = [1, 2, 3];
+}
+
+fn sum(data: [i32; 3]) -> i32 {
+    return data[0];
+}
+
+struct Matrix {
+    data: [f64; 16]
+}

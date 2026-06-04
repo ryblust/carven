@@ -48,7 +48,7 @@ template<> struct std::formatter<BinOp> final {
 };
 
 export enum class ExprKind : std::uint8_t {
-    Literal, Ident, Prefix, Postfix, Binary, Call, Index, Field, Group, Assign, CompoundAssign, Comma, If,
+    Literal, Ident, Prefix, Postfix, Binary, Call, Index, Field, Group, Assign, CompoundAssign, Comma, If, Array, Match,
 };
 
 export enum class StmtKind : std::uint8_t {
@@ -147,7 +147,30 @@ export struct CommaExpr final : Expr {
     Expr* rhs;
 };
 
+export struct ArrayExpr final : Expr {
+    static constexpr auto kind = ExprKind::Array;
+    Span lbracket;
+    std::vector<Expr*> elements;
+    Span rbracket;
+};
+
 export struct BlockStmt;
+
+export struct MatchArm final {
+    std::vector<Expr*> patterns;   // literal expressions for value match, IdentExpr for type match
+    bool is_wildcard;              // true for _ => ...
+    Span arrow;                    // =>
+    BlockStmt* body;               // { ... }
+};
+
+export struct MatchExpr final : Expr {
+    static constexpr auto kind = ExprKind::Match;
+    Span keyword;                  // match
+    Expr* value;                   // matched expression
+    Span lbrace;
+    std::vector<MatchArm> arms;
+    Span rbrace;
+};
 
 export struct IfExpr final : Expr {
     static constexpr auto kind = ExprKind::If;

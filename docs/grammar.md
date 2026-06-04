@@ -131,8 +131,27 @@ if <condition> { <body> } else { <body> }
 - Codegen optimization: when both branches are single-expression blocks, emits ternary `? :` instead of
   `if`/`else` blocks.
   - `let x = if true { 1 } else { 2 };` → `const auto x = true ? 1 : 2;`
-- Expression-position keywords: only `true`, `false`, `if` are valid in expression context. Other keywords
+- Expression-position keywords: only `true`, `false`, `if`, `match` are valid in expression context. Other keywords
   (`fn`, `let`, `while`, etc.) produce an error.
+
+### Match Expression
+
+```
+match <expr> {
+    <pattern> => { <body> }
+    <pattern> | <pattern> => { <body> }
+    _ => { <body> }
+}
+```
+
+- `match` is always an expression (like `if`)
+- Patterns are distinguished purely by token type (context-free):
+  - Literals (`42`, `true`, `"hello"`) → runtime value match: `value == pattern`
+  - Identifiers (`i32`, `Point`) → compile-time type match: `if constexpr (std::is_same_v<T, Type>)`
+  - `_` → wildcard (matches everything)
+- Multi-pattern with `|`: `1 | 2 | 3 => ...`
+- Trailing comma allowed after arms
+- Codegen optimization: when all arms are single-expression value matches, emits ternary chain instead of if/else blocks
 
 ## Expressions
 
@@ -142,6 +161,18 @@ if <condition> { <body> } else { <body> }
 - String: `"hello"` (supports `\"` and `\\` escapes)
 - Char: `'a'` (supports `\'` and `\\` escapes)
 - Bool: `true`, `false`
+
+### Array Literals
+
+```
+[ <expr>, <expr>, ... ]
+```
+
+- Array literals generate `std::array { ... }` with CTAD
+- `let a = [1, 2, 3]` → `const auto a = std::array { 1, 2, 3 }`
+- `let m = [[1, 2], [3, 4]]` → nested `std::array { std::array { 1, 2 }, std::array { 3, 4 } }`
+- Trailing comma is allowed
+- Empty arrays (`[]`) require an explicit type annotation
 
 ### Identifiers
 
@@ -216,6 +247,17 @@ optimization for single-expression `if`/`else` branches.
 
 Unrecognized type names pass through unchanged to generated C++.
 
+### Array Types
+
+```
+[ <type> ; <size> ]
+```
+
+- Array type syntax: `[element_type; size]`
+- `let a: [i32; 3] = [1, 2, 3]` → `const auto a = std::array<std::int32_t, 3>{ ... }`
+- `fn f(p: [i32; 3])` → parameter type `std::array<std::int32_t, 3>`
+- The element type is any Carven type; size is a compile-time expression (typically an integer literal)
+
 ## Comments
 
 Line comments: `//` to end of line. No block comments.
@@ -237,7 +279,6 @@ Line comments: `//` to end of line. No block comments.
 ## What Isn't Supported (Yet)
 
 - No struct literals (cannot write `Point { x: 1, y: 2 }` in expressions)
-- No `match`/pattern matching
 - No generics/templates
 - No traits or interfaces
 - No lambdas

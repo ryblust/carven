@@ -1,4 +1,4 @@
-#include "doctest.h"
+#include "test_helpers.h"
 
 import carven.common.source;
 import carven.frontend.token;
@@ -993,4 +993,112 @@ TEST_CASE("Parser: EOF mid-parse") {
     const auto source = SourceFile("fn main() { let x = ", "<test>");
     const auto result = do_parse(source);
     CHECK(!result.errors.empty());
+}
+
+TEST_CASE("Parser: array literals") {
+    SUBCASE("simple array literal") {
+        const auto source = SourceFile("fn main() { let a = [1, 2, 3]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("single element array") {
+        const auto source = SourceFile("fn main() { let a = [42]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("trailing comma") {
+        const auto source = SourceFile("fn main() { let a = [1, 2, 3, ]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("nested array") {
+        const auto source = SourceFile("fn main() { let m = [[1, 2], [3, 4]]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("array as function argument") {
+        const auto source = SourceFile("fn main() { f([1, 2]); }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+}
+
+TEST_CASE("Parser: array type annotation") {
+    SUBCASE("let with array type") {
+        const auto source = SourceFile("fn main() { let a: [i32; 3] = [1, 2, 3]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("function parameter array type") {
+        const auto source = SourceFile("fn f(p: [i32; 3]) { }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("function return array type") {
+        const auto source = SourceFile("fn f() -> [i32; 3] { }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("struct field array type") {
+        const auto source = SourceFile("struct S { f: [f64; 4] }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("var with array type") {
+        const auto source = SourceFile("fn main() { var a: [u8; 16] = [0, 0]; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+}
+
+TEST_CASE("Parser: match expression") {
+    SUBCASE("value match") {
+        const auto source = SourceFile("fn main() { match x { 1 => { a } _ => { b } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("type match") {
+        const auto source = SourceFile("fn main() { match x { i32 => { a } String => { b } _ => { c } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("multi-pattern value") {
+        const auto source = SourceFile("fn main() { match x { 1 | 2 => { a } _ => { b } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("multi-pattern type") {
+        const auto source = SourceFile("fn main() { match x { i32 | f64 => { a } _ => { b } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("mixed value and type") {
+        const auto source = SourceFile("fn main() { match x { 0 => { a } i32 => { b } _ => { c } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("match as expression") {
+        const auto source = SourceFile("fn main() { let a = match x { 1 => { 10 } _ => { 0 } }; }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+    SUBCASE("nested match") {
+        const auto source = SourceFile(
+            "fn main() { match a { 1 => { match b { i32 => { x } _ => { y } } } _ => { z } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
+}
+
+TEST_CASE("Parser: match errors") {
+    SUBCASE("match without braces") {
+        const auto source = SourceFile("fn main() { match x 1 => { } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(!result.errors.empty());
+    }
+    SUBCASE("arm without fat arrow") {
+        const auto source = SourceFile("fn main() { match x { 1 { } } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(!result.errors.empty());
+    }
 }

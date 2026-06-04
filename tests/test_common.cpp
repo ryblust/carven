@@ -1,4 +1,4 @@
-#include "doctest.h"
+#include "test_helpers.h"
 
 import carven.common.source;
 import std;
@@ -179,7 +179,7 @@ TEST_CASE("SourceFile move assignment") {
 }
 
 TEST_CASE("SourceFile from_file mmap path") {
-    auto source = SourceFile::from_file("tests/helloworld.cv");
+    auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
     REQUIRE(source.has_value());
 
     SUBCASE("text is non-empty") {
@@ -187,7 +187,7 @@ TEST_CASE("SourceFile from_file mmap path") {
     }
 
     SUBCASE("filepath is preserved") {
-        CHECK_EQ(source->filepath(), "tests/helloworld.cv");
+        CHECK_EQ(source->filepath(), "tests/fixtures/helloworld.cv");
     }
 
     SUBCASE("location on first line") {
@@ -205,7 +205,7 @@ TEST_CASE("SourceFile from_file mmap path") {
     SUBCASE("move from_file result") {
         const auto moved = std::move(*source);
         CHECK(!moved.text().empty());
-        CHECK_EQ(moved.filepath(), "tests/helloworld.cv");
+        CHECK_EQ(moved.filepath(), "tests/fixtures/helloworld.cv");
     }
 }
 
