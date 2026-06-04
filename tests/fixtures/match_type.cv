@@ -1,9 +1,0 @@
-fn print_type(value) {
-    match value {
-        i32 => { }
-        f64 => { }
-        _ => { }
-    }
-}
-
-fn main() { }

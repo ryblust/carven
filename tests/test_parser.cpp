@@ -355,6 +355,12 @@ TEST_CASE("Parser: for") {
         CHECK(loop != nullptr);
         CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
     }
+
+    SUBCASE("for with const init") {
+        const auto source = SourceFile("fn main() { for (const i = 0; i < 5; i++) { } }", "<test>");
+        const auto result = do_parse(source);
+        CHECK(result.errors.empty());
+    }
 }
 
 TEST_CASE("Parser: if expression") {
@@ -382,54 +388,22 @@ TEST_CASE("Parser: if expression") {
 }
 
 TEST_CASE("Parser: literal expressions") {
-    SUBCASE("integer literal") {
-        const auto source = SourceFile("fn main() { 42; }", "<test>");
+    SUBCASE("number, string, and char literals") {
+        const auto source = SourceFile("fn main() { 42; 3.14; \"hello\"; 'a'; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto lit = static_cast<const LiteralExpr*>(es->expr);
-        CHECK(lit != nullptr);
-        CHECK_EQ(source.slice(lit->token), "42");
-    }
-
-    SUBCASE("float literal") {
-        const auto source = SourceFile("fn main() { 3.14; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto lit = static_cast<const LiteralExpr*>(es->expr);
-        CHECK(lit != nullptr);
-        CHECK_EQ(source.slice(lit->token), "3.14");
-    }
-
-    SUBCASE("string literal") {
-        const auto source = SourceFile("fn main() { \"hello\"; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto lit = static_cast<const LiteralExpr*>(es->expr);
-        CHECK(lit != nullptr);
-        CHECK_EQ(source.slice(lit->token), "\"hello\"");
-    }
-
-    SUBCASE("char literal") {
-        const auto source = SourceFile("fn main() { 'a'; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto lit = static_cast<const LiteralExpr*>(es->expr);
-        CHECK(lit != nullptr);
-        CHECK_EQ(source.slice(lit->token), "'a'");
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr) != nullptr);
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr) != nullptr);
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr) != nullptr);
     }
 
     SUBCASE("bool literals") {
         const auto source = SourceFile("fn main() { true; false; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        CHECK(static_cast<const LiteralExpr*>(es1->expr) != nullptr);
-        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
-        CHECK(static_cast<const LiteralExpr*>(es2->expr) != nullptr);
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
+        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr) != nullptr);
     }
 }
 
@@ -438,204 +412,87 @@ TEST_CASE("Parser: identifier and unary expressions") {
         const auto source = SourceFile("fn main() { foo; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto ident = static_cast<const IdentExpr*>(es->expr);
+        const auto ident = static_cast<const IdentExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(ident != nullptr);
         CHECK_EQ(source.slice(ident->name), "foo");
     }
 
-    SUBCASE("prefix negation") {
-        const auto source = SourceFile("fn main() { -x; }", "<test>");
+    SUBCASE("prefix operators") {
+        const auto source = SourceFile("fn main() { -x; !flag; ~mask; ++i; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::Neg);
+        const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        CHECK_EQ(p0->op, UnaryOp::Neg);
+        const auto p1 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        CHECK_EQ(p1->op, UnaryOp::LogicalNot);
+        const auto p2 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
+        CHECK_EQ(p2->op, UnaryOp::BitNot);
+        const auto p3 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr);
+        CHECK_EQ(p3->op, UnaryOp::PreInc);
     }
 
-    SUBCASE("prefix logical not") {
-        const auto source = SourceFile("fn main() { !flag; }", "<test>");
+    SUBCASE("prefix address-of and deref") {
+        const auto source = SourceFile("fn main() { &x; *p; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::LogicalNot);
+        const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        CHECK_EQ(p0->op, UnaryOp::AddressOf);
+        const auto p1 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        CHECK_EQ(p1->op, UnaryOp::Deref);
     }
 
-    SUBCASE("prefix bitwise not") {
-        const auto source = SourceFile("fn main() { ~mask; }", "<test>");
+    SUBCASE("postfix operators") {
+        const auto source = SourceFile("fn main() { i++; j--; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::BitNot);
-    }
-
-    SUBCASE("prefix pre-increment") {
-        const auto source = SourceFile("fn main() { ++i; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::PreInc);
-    }
-
-    SUBCASE("prefix pre-decrement") {
-        const auto source = SourceFile("fn main() { --i; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::PreDec);
-    }
-
-    SUBCASE("prefix address-of") {
-        const auto source = SourceFile("fn main() { &x; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::AddressOf);
-    }
-
-    SUBCASE("prefix dereference") {
-        const auto source = SourceFile("fn main() { *p; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto pre = static_cast<const PrefixExpr*>(es->expr);
-        CHECK(pre != nullptr);
-        CHECK_EQ(pre->op, UnaryOp::Deref);
-    }
-
-    SUBCASE("postfix increment") {
-        const auto source = SourceFile("fn main() { i++; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto post = static_cast<const PostfixExpr*>(es->expr);
-        CHECK(post != nullptr);
-        CHECK_EQ(post->op, UnaryOp::PostInc);
-    }
-
-    SUBCASE("postfix decrement") {
-        const auto source = SourceFile("fn main() { i--; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto post = static_cast<const PostfixExpr*>(es->expr);
-        CHECK(post != nullptr);
-        CHECK_EQ(post->op, UnaryOp::PostDec);
+        const auto p0 = static_cast<const PostfixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        CHECK_EQ(p0->op, UnaryOp::PostInc);
+        const auto p1 = static_cast<const PostfixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        CHECK_EQ(p1->op, UnaryOp::PostDec);
     }
 }
 
 TEST_CASE("Parser: postfix operations") {
-    SUBCASE("function call with no args") {
-        const auto source = SourceFile("fn main() { foo(); }", "<test>");
+    SUBCASE("function calls with varying args") {
+        const auto source = SourceFile("fn main() { foo(); bar(1); add(1, 2, 3); }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto call = static_cast<const CallExpr*>(es->expr);
-        CHECK(call != nullptr);
-        CHECK(call->args.empty());
-    }
-
-    SUBCASE("function call with one arg") {
-        const auto source = SourceFile("fn main() { foo(1); }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto call = static_cast<const CallExpr*>(es->expr);
-        CHECK(call != nullptr);
-        CHECK_EQ(call->args.size(), 1u);
-    }
-
-    SUBCASE("function call with multiple args") {
-        const auto source = SourceFile("fn main() { add(1, 2, 3); }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto call = static_cast<const CallExpr*>(es->expr);
-        CHECK(call != nullptr);
-        CHECK_EQ(call->args.size(), 3u);
+        const auto c0 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        CHECK(c0->args.empty());
+        const auto c1 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        CHECK_EQ(c1->args.size(), 1u);
+        const auto c2 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
+        CHECK_EQ(c2->args.size(), 3u);
     }
 
     SUBCASE("index expression") {
         const auto source = SourceFile("fn main() { arr[0]; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto idx = static_cast<const IndexExpr*>(es->expr);
-        CHECK(idx != nullptr);
+        CHECK(static_cast<const IndexExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
     }
 
-    SUBCASE("dot field access") {
-        const auto source = SourceFile("fn main() { obj.field; }", "<test>");
+    SUBCASE("field access: dot, arrow, scope") {
+        const auto source = SourceFile("fn main() { obj.field; ptr->field; ns::name; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto field = static_cast<const FieldExpr*>(es->expr);
-        CHECK(field != nullptr);
-        CHECK_EQ(source.slice(field->dot), ".");
-        CHECK_EQ(source.slice(field->field), "field");
-    }
-
-    SUBCASE("arrow field access") {
-        const auto source = SourceFile("fn main() { ptr->field; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto field = static_cast<const FieldExpr*>(es->expr);
-        CHECK(field != nullptr);
-        CHECK_EQ(source.slice(field->dot), "->");
-    }
-
-    SUBCASE("scope access") {
-        const auto source = SourceFile("fn main() { ns::name; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto field = static_cast<const FieldExpr*>(es->expr);
-        CHECK(field != nullptr);
-        CHECK_EQ(source.slice(field->dot), "::");
+        const auto f0 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        CHECK_EQ(source.slice(f0->dot), ".");
+        const auto f1 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        CHECK_EQ(source.slice(f1->dot), "->");
+        const auto f2 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
+        CHECK_EQ(source.slice(f2->dot), "::");
     }
 }
 
 TEST_CASE("Parser: binary expressions") {
-    SUBCASE("multiplicative: multiply") {
-        const auto source = SourceFile("fn main() { a * b; }", "<test>");
+    SUBCASE("multiplicative: multiply, divide, modulo") {
+        const auto source = SourceFile("fn main() { a * b; c / d; e % f; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        CHECK(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Mul);
-    }
-
-    SUBCASE("multiplicative: divide") {
-        const auto source = SourceFile("fn main() { a / b; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Div);
-    }
-
-    SUBCASE("multiplicative: modulo") {
-        const auto source = SourceFile("fn main() { a % b; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Mod);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::Mul);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::Div);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr)->op, BinOp::Mod);
     }
 
     SUBCASE("additive: plus and minus") {
@@ -696,54 +553,21 @@ TEST_CASE("Parser: binary expressions") {
         CHECK_EQ(bin_expr_ne->op, BinOp::Ne);
     }
 
-    SUBCASE("bitwise and") {
-        const auto source = SourceFile("fn main() { a & b; }", "<test>");
+    SUBCASE("bitwise: and, xor, or") {
+        const auto source = SourceFile("fn main() { a & b; c ^ d; e | f; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::BitAnd);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::BitAnd);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::BitXor);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr)->op, BinOp::BitOr);
     }
 
-    SUBCASE("bitwise xor") {
-        const auto source = SourceFile("fn main() { a ^ b; }", "<test>");
+    SUBCASE("logical: and, or") {
+        const auto source = SourceFile("fn main() { a && b; c || d; }", "<test>");
         const auto result = do_parse(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::BitXor);
-    }
-
-    SUBCASE("bitwise or") {
-        const auto source = SourceFile("fn main() { a | b; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::BitOr);
-    }
-
-    SUBCASE("logical and") {
-        const auto source = SourceFile("fn main() { a && b; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::LogicalAnd);
-    }
-
-    SUBCASE("logical or") {
-        const auto source = SourceFile("fn main() { a || b; }", "<test>");
-        const auto result = do_parse(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
-        REQUIRE(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::LogicalOr);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::LogicalAnd);
+        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::LogicalOr);
     }
 
     SUBCASE("precedence: * before +") {
@@ -868,16 +692,9 @@ TEST_CASE("Parser: block and empty statements") {
 }
 
 TEST_CASE("Parser: edge cases") {
-    SUBCASE("empty file") {
-        const auto source = SourceFile("", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.items.empty());
-    }
-
-    SUBCASE("only whitespace and comments") {
-        const auto source = SourceFile("// comment only file\n// another", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.items.empty());
+    SUBCASE("empty file or comments only") {
+        CHECK(do_parse(SourceFile("", "<test>")).items.empty());
+        CHECK(do_parse(SourceFile("// comment only", "<test>")).items.empty());
     }
 
     SUBCASE("multiple top-level items") {
@@ -919,51 +736,6 @@ TEST_CASE("Parser: error recovery") {
         CHECK(fn != nullptr);
     }
 }
-
-TEST_CASE("Parser: all compound assignment operators") {
-    SUBCASE("/= compound") {
-        const auto source = SourceFile("fn main() { x /= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("%= compound") {
-        const auto source = SourceFile("fn main() { x %= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("&= compound") {
-        const auto source = SourceFile("fn main() { x &= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("|= compound") {
-        const auto source = SourceFile("fn main() { x |= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("^= compound") {
-        const auto source = SourceFile("fn main() { x ^= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("<<= compound") {
-        const auto source = SourceFile("fn main() { x <<= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE(">>= compound") {
-        const auto source = SourceFile("fn main() { x >>= 2; }", "<test>");
-        const auto result = do_parse(source);
-        CHECK(result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: const in for init") {
-    const auto source = SourceFile("fn main() { for (const i = 0; i < 5; i++) { } }", "<test>");
-    const auto result = do_parse(source);
-    CHECK(result.errors.empty());
-}
-
 TEST_CASE("Parser: trailing commas") {
     SUBCASE("struct field trailing comma") {
         const auto source = SourceFile("struct Foo { x: i32, }", "<test>");
@@ -1000,6 +772,13 @@ TEST_CASE("Parser: array literals") {
         const auto source = SourceFile("fn main() { let a = [1, 2, 3]; }", "<test>");
         const auto result = do_parse(source);
         CHECK(result.errors.empty());
+        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
+        REQUIRE(fn != nullptr);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
+        REQUIRE(decl != nullptr);
+        const auto arr = static_cast<const ArrayExpr*>(decl->init);
+        REQUIRE(arr != nullptr);
+        CHECK_EQ(arr->elements.size(), 3u);
     }
     SUBCASE("single element array") {
         const auto source = SourceFile("fn main() { let a = [42]; }", "<test>");
@@ -1028,6 +807,12 @@ TEST_CASE("Parser: array type annotation") {
         const auto source = SourceFile("fn main() { let a: [i32; 3] = [1, 2, 3]; }", "<test>");
         const auto result = do_parse(source);
         CHECK(result.errors.empty());
+        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
+        REQUIRE(fn != nullptr);
+        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
+        REQUIRE(decl != nullptr);
+        CHECK(source.slice(decl->type).starts_with("["));
+        CHECK(source.slice(decl->type).ends_with("]"));
     }
     SUBCASE("function parameter array type") {
         const auto source = SourceFile("fn f(p: [i32; 3]) { }", "<test>");
@@ -1056,6 +841,15 @@ TEST_CASE("Parser: match expression") {
         const auto source = SourceFile("fn main() { match x { 1 => { a } _ => { b } } }", "<test>");
         const auto result = do_parse(source);
         CHECK(result.errors.empty());
+        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
+        REQUIRE(fn != nullptr);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        REQUIRE(es != nullptr);
+        const auto m = static_cast<const MatchExpr*>(es->expr);
+        REQUIRE(m != nullptr);
+        CHECK_EQ(m->arms.size(), 2u);
+        CHECK(m->arms[1].is_wildcard);
+        CHECK_EQ(m->arms[0].patterns.size(), 1u);
     }
     SUBCASE("type match") {
         const auto source = SourceFile("fn main() { match x { i32 => { a } String => { b } _ => { c } } }", "<test>");

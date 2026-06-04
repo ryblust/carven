@@ -1,0 +1,19 @@
+import std;
+
+fn print_type(value) {
+    match value {
+        i32 => { std::println("int"); }
+        f64 => { std::println("float"); }
+        _ => { std::println("other"); }
+    }
+}
+
+fn main() {
+    let result = match 2 {
+        1 => { "one" }
+        2 => { "two" }
+        _ => { "other" }
+    };
+    std::println("{}", result);
+    print_type(42);
+}

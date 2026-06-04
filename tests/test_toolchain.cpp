@@ -4,19 +4,10 @@ import carven.driver.toolchain;
 import std;
 
 TEST_CASE("Toolchain: build_artifacts") {
-    SUBCASE("simple filename") {
-        const auto a = build_artifacts("hello.cv", "/tmp/out");
-        CHECK(a.cpp_path.string().ends_with("hello.cpp"));
-    }
-
-    SUBCASE("filename with path") {
-        const auto a = build_artifacts("src/foo.cv", "/tmp/out");
-        CHECK(a.cpp_path.string().ends_with("foo.cpp"));
-    }
-
-    SUBCASE("filename with multiple dots") {
-        const auto a = build_artifacts("foo.bar.cv", "/tmp/out");
-        CHECK(a.cpp_path.string().ends_with("foo.bar.cpp"));
+    SUBCASE("filenames resolve correctly") {
+        CHECK(build_artifacts("hello.cv", "/tmp/out").cpp_path.string().ends_with("hello.cpp"));
+        CHECK(build_artifacts("src/foo.cv", "/tmp/out").cpp_path.string().ends_with("foo.cpp"));
+        CHECK(build_artifacts("foo.bar.cv", "/tmp/out").cpp_path.string().ends_with("foo.bar.cpp"));
     }
 }
 

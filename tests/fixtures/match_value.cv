@@ -1,7 +1,0 @@
-fn main() {
-    match 2 {
-        1 => { "one" }
-        2 => { "two" }
-        _ => { "other" }
-    }
-}

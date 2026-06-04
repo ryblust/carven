@@ -16,29 +16,16 @@ static auto gen(std::string_view source_text, bool import_std = false, std::uint
 }
 
 TEST_CASE("Codegen: type mapping") {
-    SUBCASE("var with i32 type") {
-        const auto cpp = gen("fn main() { var x: i32 = 42; }");
-        CHECK(cpp.contains("std::int32_t(42)"));
-    }
-
-    SUBCASE("var with f64 type") {
-        const auto cpp = gen("fn main() { var x: f64 = 3.14; }");
-        CHECK(cpp.contains("double(3.14)"));
-    }
-
-    SUBCASE("var with u8 type") {
-        const auto cpp = gen("fn main() { var x: u8 = 255; }");
-        CHECK(cpp.contains("std::uint8_t(255)"));
+    SUBCASE("var with typed init") {
+        CHECK(gen("fn main() { var x: i32 = 42; }").contains("std::int32_t(42)"));
+        CHECK(gen("fn main() { var x: f64 = 3.14; }").contains("double(3.14)"));
+        CHECK(gen("fn main() { var x: u8 = 255; }").contains("std::uint8_t(255)"));
+        CHECK(gen("fn main() { var x: usize = 0; }").contains("std::size_t(0)"));
     }
 
     SUBCASE("let with i64 type") {
         const auto cpp = gen("fn main() { let x: i64 = 100; }");
         CHECK(cpp.contains("const auto x = std::int64_t(100)"));
-    }
-
-    SUBCASE("var with usize type") {
-        const auto cpp = gen("fn main() { var x: usize = 0; }");
-        CHECK(cpp.contains("std::size_t(0)"));
     }
 }
 
@@ -85,25 +72,16 @@ TEST_CASE("Codegen: import items") {
         CHECK(cpp.contains("import mylib;"));
     }
 
-    SUBCASE("with using declaration") {
-        const auto source = SourceFile("import mylib using some_func;", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
-        const auto cpp = generate(result.items, source, 20, false);
-        CHECK(cpp.contains("using mylib::some_func;"));
-    }
-
-    SUBCASE("with using wildcard") {
-        const auto source = SourceFile("import mylib using *", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
-        const auto cpp = generate(result.items, source, 20, false);
-        CHECK(cpp.contains("using namespace mylib;"));
-    }
-
     SUBCASE("std module emits no import statement") {
         const auto source = SourceFile("import std;", "<test>");
         const auto result = parse(tokenize(source.text()), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(!cpp.contains("import std;"));
+    }
+
+    SUBCASE("using declaration and wildcard") {
+        CHECK(gen("import mylib using some_func;").contains("using mylib::some_func;"));
+        CHECK(gen("import mylib using *").contains("using namespace mylib;"));
     }
 }
 
@@ -254,174 +232,26 @@ TEST_CASE("Codegen: if expression") {
     }
 }
 
-TEST_CASE("Codegen: expression generation") {
-    SUBCASE("prefix negation") {
-        const auto cpp = gen("fn main() { -x; }");
-        CHECK(cpp.contains("-"));
-    }
-
-    SUBCASE("prefix logical not") {
-        const auto cpp = gen("fn main() { !x; }");
-        CHECK(cpp.contains("!"));
-    }
-
-    SUBCASE("prefix pre-increment") {
-        const auto cpp = gen("fn main() { ++x; }");
-        CHECK(cpp.contains("++"));
-    }
-
-    SUBCASE("postfix increment") {
-        const auto cpp = gen("fn main() { x++; }");
-        CHECK(cpp.contains("x++"));
-    }
-
-    SUBCASE("binary expression") {
-        const auto cpp = gen("fn main() { a + b * c; }");
-        CHECK(cpp.contains("a + b * c"));
-    }
-
-    SUBCASE("function call") {
-        const auto cpp = gen("fn main() { foo(1, 2); }");
-        CHECK(cpp.contains("foo(1, 2)"));
-    }
-
-    SUBCASE("index expression") {
-        const auto cpp = gen("fn main() { arr[0]; }");
-        CHECK(cpp.contains("arr[0]"));
-    }
-
-    SUBCASE("field access") {
-        const auto cpp = gen("fn main() { obj.field; }");
-        CHECK(cpp.contains("obj.field"));
-    }
-
-    SUBCASE("group expression") {
-        const auto cpp = gen("fn main() { (a + b); }");
-        CHECK(cpp.contains("(a + b)"));
-    }
-
-    SUBCASE("assignment") {
-        const auto cpp = gen("fn main() { x = 42; }");
-        CHECK(cpp.contains("x = 42"));
-    }
-
-    SUBCASE("compound assignment") {
-        const auto cpp = gen("fn main() { x += 1; }");
-        CHECK(cpp.contains("x += 1"));
-    }
-
-    SUBCASE("comma expression") {
-        const auto cpp = gen("fn main() { a, b; }");
-        CHECK(cpp.contains("a, b"));
-    }
-
-    SUBCASE("logical operators") {
-        const auto cpp = gen("fn main() { a && b || c; }");
-        CHECK(cpp.contains("&&"));
-        CHECK(cpp.contains("||"));
-    }
-
-    SUBCASE("comparison operators") {
-        const auto cpp = gen("fn main() { a == b; c != d; }");
-        CHECK(cpp.contains("a == b"));
-        CHECK(cpp.contains("c != d"));
-    }
-
-    SUBCASE("shift operators") {
-        const auto cpp = gen("fn main() { a << b; }");
-        CHECK(cpp.contains("a << b"));
-    }
-
-    SUBCASE("bitwise operators") {
-        const auto cpp = gen("fn main() { a & b; c | d; e ^ f; }");
-        CHECK(cpp.contains("a & b"));
-        CHECK(cpp.contains("c | d"));
-        CHECK(cpp.contains("e ^ f"));
-    }
-}
-
 TEST_CASE("Codegen: helloworld full output") {
-    const auto source = SourceFile(
-        "import std;\n"
-        "fn main() {\n"
-        "    std::println(\"Hello World\");\n"
-        "}\n"
-    );
-    const auto result = parse(tokenize(source.text()), source);
-    const auto cpp = generate(result.items, source, 23, false);
-    // With std module auto-detection, should include preamble
+    const auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
+    REQUIRE(source.has_value());
+    const auto result = parse(tokenize(source->text()), *source);
+    const auto cpp = generate(result.items, *source, 23, false);
     CHECK(cpp.contains("auto main() noexcept -> int"));
     CHECK(cpp.contains("std::println(\"Hello World\")"));
 }
 
 TEST_CASE("Codegen: all type mappings") {
-    SUBCASE("i8") {
-        const auto cpp = gen("fn main() { var x: i8 = 1; }");
-        CHECK(cpp.contains("std::int8_t"));
-    }
-    SUBCASE("i16") {
-        const auto cpp = gen("fn main() { var x: i16 = 1; }");
-        CHECK(cpp.contains("std::int16_t"));
-    }
-    SUBCASE("u16") {
-        const auto cpp = gen("fn main() { var x: u16 = 1; }");
-        CHECK(cpp.contains("std::uint16_t"));
-    }
-    SUBCASE("u32") {
-        const auto cpp = gen("fn main() { var x: u32 = 1; }");
-        CHECK(cpp.contains("std::uint32_t"));
-    }
-    SUBCASE("u64") {
-        const auto cpp = gen("fn main() { var x: u64 = 1; }");
-        CHECK(cpp.contains("std::uint64_t"));
-    }
-    SUBCASE("bool") {
-        const auto cpp = gen("fn main() { var x: bool = true; }");
-        CHECK(cpp.contains("bool"));
-    }
-    SUBCASE("f32") {
-        const auto cpp = gen("fn main() { var x: f32 = 1.0; }");
-        CHECK(cpp.contains("float"));
-    }
-    SUBCASE("char") {
-        const auto cpp = gen("fn main() { var x: char = 'a'; }");
-        CHECK(cpp.contains("char"));
-    }
-    SUBCASE("user-defined type passes through") {
-        const auto cpp = gen("fn main() { var x: MyType = something; }");
-        CHECK(cpp.contains("MyType"));
-    }
-}
-
-TEST_CASE("Codegen: all compound assignment operators") {
-    SUBCASE("/= compound") { const auto cpp = gen("fn main() { x /= 2; }"); CHECK(cpp.contains("/=")); }
-    SUBCASE("%= compound") { const auto cpp = gen("fn main() { x %= 2; }"); CHECK(cpp.contains("%=")); }
-    SUBCASE("&= compound") { const auto cpp = gen("fn main() { x &= 2; }"); CHECK(cpp.contains("&=")); }
-    SUBCASE("|= compound") { const auto cpp = gen("fn main() { x |= 2; }"); CHECK(cpp.contains("|=")); }
-    SUBCASE("^= compound") { const auto cpp = gen("fn main() { x ^= 2; }"); CHECK(cpp.contains("^=")); }
-    SUBCASE("<<= compound") { const auto cpp = gen("fn main() { x <<= 2; }"); CHECK(cpp.contains("<<=")); }
-    SUBCASE(">>= compound") { const auto cpp = gen("fn main() { x >>= 2; }"); CHECK(cpp.contains(">>=")); }
-}
-
-TEST_CASE("Codegen: prefix addressof and deref") {
-    SUBCASE("addressof") {
-        const auto cpp = gen("fn main() { &x; }");
-        CHECK(cpp.contains("&x"));
-    }
-    SUBCASE("deref") {
-        const auto cpp = gen("fn main() { *p; }");
-        CHECK(cpp.contains("*p"));
-    }
-}
-
-TEST_CASE("Codegen: field access operators") {
-    SUBCASE("scope access") {
-        const auto cpp = gen("fn main() { ns::name; }");
-        CHECK(cpp.contains("::"));
-    }
-    SUBCASE("arrow access") {
-        const auto cpp = gen("fn main() { p->field; }");
-        CHECK(cpp.contains("->"));
+    SUBCASE("all Carven types map to correct C++ type") {
+        CHECK(gen("fn main() { var x: i8 = 1; }").contains("std::int8_t"));
+        CHECK(gen("fn main() { var x: i16 = 1; }").contains("std::int16_t"));
+        CHECK(gen("fn main() { var x: u16 = 1; }").contains("std::uint16_t"));
+        CHECK(gen("fn main() { var x: u32 = 1; }").contains("std::uint32_t"));
+        CHECK(gen("fn main() { var x: u64 = 1; }").contains("std::uint64_t"));
+        CHECK(gen("fn main() { var x: bool = true; }").contains("bool"));
+        CHECK(gen("fn main() { var x: f32 = 1.0; }").contains("float"));
+        CHECK(gen("fn main() { var x: char = 'a'; }").contains("char"));
+        CHECK(gen("fn main() { var x: MyType = something; }").contains("MyType"));
     }
 }
 

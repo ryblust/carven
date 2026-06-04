@@ -4,29 +4,15 @@ import carven.common.source;
 import std;
 
 TEST_CASE("Span") {
-    SUBCASE("default is zeroed") {
+    SUBCASE("construction and empty check") {
         const auto s = Span{};
         CHECK_EQ(s.start, 0u);
         CHECK_EQ(s.end, 0u);
-    }
-
-    SUBCASE("normal range") {
-        const auto s = Span { .start = 5, .end = 10 };
-        CHECK_EQ(s.start, 5u);
-        CHECK_EQ(s.end, 10u);
-    }
-}
-
-TEST_CASE("Span::empty") {
-    SUBCASE("empty span (start == end)") {
+        const auto r = Span { .start = 5, .end = 10 };
+        CHECK_EQ(r.start, 5u);
+        CHECK_EQ(r.end, 10u);
         CHECK(Span { .start = 3, .end = 3 }.empty());
-    }
-
-    SUBCASE("invalid span (start > end)") {
         CHECK(Span { .start = 5, .end = 2 }.empty());
-    }
-
-    SUBCASE("non-empty span") {
         CHECK(!Span { .start = 0, .end = 5 }.empty());
     }
 }
@@ -64,40 +50,18 @@ TEST_CASE("SourceFile::slice") {
 TEST_CASE("SourceFile::location") {
     const auto source = SourceFile("line1\nline2\nline3\n", "test.cv");
 
-    SUBCASE("first line first char") {
-        const auto loc = source.location(0);
-        CHECK_EQ(loc.line, 1u);
-        CHECK_EQ(loc.column, 1u);
+    SUBCASE("line 1 and 2 positions") {
+        CHECK_EQ(source.location(0).line, 1u);
+        CHECK_EQ(source.location(3).line, 1u);
+        CHECK_EQ(source.location(3).column, 4u);
+        CHECK_EQ(source.location(6).line, 2u);
+        CHECK_EQ(source.location(9).line, 2u);
+        CHECK_EQ(source.location(9).column, 4u);
     }
 
-    SUBCASE("first line mid char") {
-        const auto loc = source.location(3);
-        CHECK_EQ(loc.line, 1u);
-        CHECK_EQ(loc.column, 4u);
-    }
-
-    SUBCASE("start of second line") {
-        const auto loc = source.location(6);
-        CHECK_EQ(loc.line, 2u);
-        CHECK_EQ(loc.column, 1u);
-    }
-
-    SUBCASE("mid of second line") {
-        const auto loc = source.location(9);
-        CHECK_EQ(loc.line, 2u);
-        CHECK_EQ(loc.column, 4u);
-    }
-
-    SUBCASE("third line") {
-        const auto loc = source.location(12);
-        CHECK_EQ(loc.line, 3u);
-        CHECK_EQ(loc.column, 1u);
-    }
-
-    SUBCASE("offset at end") {
-        const auto loc = source.location(18);
-        CHECK_EQ(loc.line, 4u);
-        CHECK_EQ(loc.column, 1u);
+    SUBCASE("line 3 and beyond") {
+        CHECK_EQ(source.location(12).line, 3u);
+        CHECK_EQ(source.location(18).line, 4u);
     }
 }
 

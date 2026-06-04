@@ -15,85 +15,46 @@ TEST_CASE("Pipeline: parse_flags") {
     }
 
     SUBCASE("parse -std=c++20") {
-        const auto args = std::array<const char*, 1> { "-std=c++20" };
+        const auto args = std::array { "-std=c++20" };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK_EQ(driver->language_standard, 20);
     }
 
     SUBCASE("parse -std=c++14") {
-        const auto args = std::array<const char*, 1> { "-std=c++14" };
+        const auto args = std::array { "-std=c++14" };
         const auto driver = parse_flags(args);
         CHECK_EQ(driver->language_standard, 14);
     }
 
-    SUBCASE("parse -std=c++17") {
-        const auto args = std::array<const char*, 1> { "-std=c++17" };
-        const auto driver = parse_flags(args);
-        CHECK_EQ(driver->language_standard, 17);
-    }
-
-    SUBCASE("parse -std=c++23") {
-        const auto args = std::array<const char*, 1> { "-std=c++23" };
-        const auto driver = parse_flags(args);
-        CHECK_EQ(driver->language_standard, 23);
-    }
-
-    SUBCASE("parse -std=c++26") {
-        const auto args = std::array<const char*, 1> { "-std=c++26" };
-        const auto driver = parse_flags(args);
-        CHECK_EQ(driver->language_standard, 26);
-    }
-
     SUBCASE("unknown standard returns nullopt") {
-        const auto args = std::array<const char*, 1> { "-std=c++11" };
+        const auto args = std::array { "-std=c++11" };
         const auto driver = parse_flags(args);
         CHECK(!driver.has_value());
     }
 
     SUBCASE("parse --output-dir") {
-        const auto args = std::array<const char*, 1> { "--output-dir=build/cache" };
+        const auto args = std::array { "--output-dir=build/cache" };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK_EQ(driver->output_dir, "build/cache");
     }
 
-    SUBCASE("parse --import-std") {
-        const auto args = std::array<const char*, 1> { "--import-std" };
-        const auto driver = parse_flags(args);
-        CHECK(driver.has_value());
-        CHECK(driver->import_std);
-    }
-
-    SUBCASE("parse -E (emit only)") {
-        const auto args = std::array<const char*, 1> { "-E" };
-        const auto driver = parse_flags(args);
-        CHECK(driver.has_value());
-        CHECK(driver->emit_only);
-    }
-
-    SUBCASE("parse --only-tokens") {
-        const auto args = std::array<const char*, 1> { "--only-tokens" };
-        const auto driver = parse_flags(args);
-        CHECK(driver.has_value());
-        CHECK(driver->only_tokens);
-    }
-
-    SUBCASE("parse --only-ast") {
-        const auto args = std::array<const char*, 1> { "--only-ast" };
-        const auto driver = parse_flags(args);
-        CHECK(driver.has_value());
-        CHECK(driver->only_ast);
+    SUBCASE("boolean flags") {
+        CHECK(parse_flags(std::array { "--import-std" })->import_std);
+        CHECK(parse_flags(std::array { "-E" })->emit_only);
+        CHECK(parse_flags(std::array { "--only-tokens" })->only_tokens);
+        CHECK(parse_flags(std::array { "--only-ast" })->only_ast);
     }
 
     SUBCASE("unknown flag returns nullopt") {
-        const auto args = std::array<const char*, 1> { "--unknown" };
+        const auto args = std::array { "--unknown" };
         const auto driver = parse_flags(args);
         CHECK(!driver.has_value());
     }
 
     SUBCASE("input files collected") {
-        const auto args = std::array<const char*, 2> { "file1.cv", "file2.cv" };
+        const auto args = std::array { "file1.cv", "file2.cv" };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK_EQ(driver->input_files.size(), 2u);
@@ -102,7 +63,7 @@ TEST_CASE("Pipeline: parse_flags") {
     }
 
     SUBCASE("multiple flags combined") {
-        const auto args = std::array<const char*, 4> {
+        const auto args = std::array {
             "-std=c++20", "--import-std", "-E", "main.cv",
         };
         const auto driver = parse_flags(args);

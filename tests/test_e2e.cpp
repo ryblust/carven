@@ -7,7 +7,7 @@ import carven.common.filesystem;
 import carven.common.process;
 import std;
 
-static auto run_and_capture(const std::string& cmd) noexcept -> std::pair<int, std::string> {
+static auto run_and_capture(std::string cmd) noexcept -> std::pair<int, std::string> {
     auto pipe = popen(cmd.c_str(), "r");
     if (!pipe) return {-1, ""};
     std::string stdout;
@@ -36,10 +36,40 @@ static auto e2e_run(const SourceFile& source) noexcept -> std::pair<int, std::st
     return run_and_capture(path.exe_path.string());
 }
 
+static auto e2e_run_fixture(std::string_view name) noexcept -> std::pair<int, std::string> {
+    const auto source = SourceFile::from_file(name);
+    if (!source.has_value()) return {-1, "cannot open fixture"};
+    return e2e_run(*source);
+}
+
 TEST_CASE("E2E: helloworld") {
-    const auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
-    REQUIRE(source.has_value());
-    const auto [code, stdout] = e2e_run(*source);
+    const auto [code, stdout] = e2e_run_fixture("tests/fixtures/helloworld.cv");
     CHECK_EQ(code, 0);
     CHECK(stdout.contains("Hello World"));
+}
+
+static auto transpile_fixture(std::string_view name) noexcept -> bool {
+    const auto source = SourceFile::from_file(name);
+    if (!source.has_value()) return false;
+    const auto result = transpile(Driver{}, *source);
+    return result.errors.empty() && !result.output.empty();
+}
+
+TEST_CASE("E2E: array") {
+    CHECK(transpile_fixture("tests/fixtures/array.cv"));
+}
+
+TEST_CASE("E2E: match") {
+    const auto [code, stdout] = e2e_run_fixture("tests/fixtures/match.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("two"));
+    CHECK(stdout.contains("int"));
+}
+
+TEST_CASE("E2E: syntax error") {
+    const auto source = SourceFile::from_file("tests/fixtures/error.cv");
+    REQUIRE(source.has_value());
+    const auto driver = Driver{};
+    const auto result = transpile(driver, *source);
+    CHECK(!result.errors.empty());
 }

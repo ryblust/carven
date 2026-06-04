@@ -49,13 +49,9 @@ TEST_CASE("Pipeline: transpile") {
 
     SUBCASE("transpile helloworld") {
         const auto driver = Driver{};
-        const auto source = SourceFile(
-            "import std;\n"
-            "fn main() {\n"
-            "    std::println(\"Hello World\");\n"
-            "}\n"
-        );
-        const auto result = transpile(driver, source);
+        const auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
+        REQUIRE(source.has_value());
+        const auto result = transpile(driver, *source);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("auto main() noexcept -> int"));
         CHECK(result.output.contains("std::println(\"Hello World\")"));
@@ -68,5 +64,12 @@ TEST_CASE("Handler: run") {
         driver.input_files.push_back("nonexistent_file_for_test_123.cv");
         const auto result = run(driver);
         CHECK_EQ(result, 1);
+    }
+
+    SUBCASE("helloworld compiles and runs") {
+        auto driver = Driver{};
+        driver.input_files.push_back("tests/fixtures/helloworld.cv");
+        const auto result = run(driver);
+        CHECK_EQ(result, 0);
     }
 }
