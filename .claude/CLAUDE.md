@@ -54,6 +54,8 @@ C++ conventions are defined in two specs under `.claude/specs/`:
 
 All agents must apply both when writing, modifying, or reviewing C++ code.
 
+Feature design proposals live in [`.claude/proposals/`](.claude/proposals/). When a proposal is fully implemented, delete it.
+
 ## Conventional Commits
 
 Format: `<type>(<scope>, ...): <description>`
