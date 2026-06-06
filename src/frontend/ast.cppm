@@ -279,7 +279,7 @@ public:
     constexpr auto alloc(Args&&... args) noexcept -> T* {
         if consteval {
             const auto p = new T { { T::kind }, std::forward<Args>(args)... };
-            cleanup.emplace_back(p, [](void* vp) static noexcept { delete static_cast<T*>(vp); });
+            constexpr_cleanup.emplace_back(p, [](void* vp) static noexcept { delete static_cast<T*>(vp); });
             return p;
         } else {
             constexpr auto align = alignof(T);
@@ -288,7 +288,7 @@ public:
                 blocks.emplace_back(std::make_unique<std::byte[]>(block_size));
                 cur = 0;
             }
-            const auto ptr = new(reinterpret_cast<void*>(blocks.back().get() + cur)) T { { T::kind }, std::forward<Args>(args)... };
+            const auto ptr = new(blocks.back().get() + cur) T { { T::kind }, std::forward<Args>(args)... };
             offset = cur + sizeof(T);
             return ptr;
         }
@@ -296,7 +296,7 @@ public:
 
     constexpr ~Arena() noexcept {
         if consteval {
-            for (const auto [ptr, deleter] : cleanup) {
+            for (const auto [ptr, deleter] : constexpr_cleanup) {
                 deleter(ptr);
             }
         }
@@ -309,5 +309,5 @@ private:
     static constexpr auto block_size = 65536uz;
     std::vector<std::unique_ptr<std::byte[]>> blocks;
     std::size_t offset = block_size;
-    std::vector<std::pair<void*, void (*)(void*) noexcept>> cleanup;
+    std::vector<std::pair<void*, void (*)(void*) noexcept>> constexpr_cleanup;
 };
