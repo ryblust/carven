@@ -57,7 +57,6 @@ TEST_CASE("Toolchain: compiler_from_environment") {
         CHECK_EQ(compiler_from_environment("default-cc"), "my-compiler");
     }
 
-    // Restore
     if (!saved_str.empty()) {
         setenv("CXX", saved_str.c_str(), 1);
     } else {

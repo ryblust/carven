@@ -36,7 +36,6 @@ constexpr auto generate_type(std::string& result, Span type_span, std::string_vi
         result += "std::array<";
         result += map_type(inner_type);
         result += ", ";
-        // trim whitespace from size
         const auto first = size.find_first_not_of(" \t\n\r");
         const auto last  = size.find_last_not_of(" \t\n\r");
         if (first != std::string_view::npos) {
@@ -415,7 +414,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
             const auto& e = *static_cast<const MatchExpr*>(&expr);
             if (e.arms.empty()) return;
 
-            // Check if any arm has type patterns
             auto has_type = false;
             for (const auto& arm : e.arms) {
                 if (!arm.is_wildcard && !arm.patterns.empty()
@@ -426,7 +424,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
             }
 
             if (has_type) {
-                // Emit match value into _cv, compute _T for type checks
                 result += "auto&& _cv = ";
                 generate_expr(result, *e.value, source);
                 result += ";\n";
@@ -442,7 +439,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                     }
 
                     if (!arm.is_wildcard) {
-                        // Determine if this arm is a type pattern
                         const auto is_type_arm = !arm.patterns.empty()
                             && arm.patterns[0]->kind == ExprKind::Ident;
 
@@ -471,7 +467,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 }
                 for (auto i = 0u; i < else_depth; ++i) result += '}';
             } else {
-                // Value-only match
                 // Check if all arms are single-expression (for ternary optimization)
                 auto all_single_expr = true;
                 for (const auto& arm : e.arms) {
@@ -483,7 +478,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 }
 
                 if (all_single_expr) {
-                    // Ternary chain
                     for (auto i = 0uz; i < e.arms.size(); ++i) {
                         const auto& arm = e.arms[i];
                         if (arm.is_wildcard) {
@@ -502,7 +496,6 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                         generate_expr(result, *es->expr, source);
                     }
                 } else {
-                    // Flat if/else chain for multi-statement arms
                     for (auto i = 0uz; i < e.arms.size(); ++i) {
                         const auto& arm = e.arms[i];
 

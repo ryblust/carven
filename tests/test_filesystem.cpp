@@ -7,7 +7,6 @@ TEST_CASE("Filesystem: ensure_directory") {
     const auto base = std::filesystem::temp_directory_path();
     const auto dir = base / "carven_test_dir";
 
-    // Clean up from any previous run
     std::filesystem::remove_all(dir);
 
     SUBCASE("creates new directory") {
@@ -33,7 +32,6 @@ TEST_CASE("Filesystem: write_file_if_changed") {
         CHECK(write_file_if_changed(path, "int x = 1;"));
         CHECK(std::filesystem::exists(path));
 
-        // Verify content
         auto in = std::ifstream(path);
         const auto content = std::string(std::istreambuf_iterator<char>(in), {});
         CHECK_EQ(content, "int x = 1;");
@@ -42,7 +40,6 @@ TEST_CASE("Filesystem: write_file_if_changed") {
     SUBCASE("same content skips write") {
         write_file_if_changed(path, "int x = 2;");
         CHECK(write_file_if_changed(path, "int x = 2;"));
-        // Verify content is still the original (no rewrite occurred)
         auto in = std::ifstream(path);
         const auto content = std::string(std::istreambuf_iterator<char>(in), {});
         CHECK_EQ(content, "int x = 2;");

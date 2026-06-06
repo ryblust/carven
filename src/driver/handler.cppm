@@ -17,10 +17,10 @@ export auto run(const Driver& driver) noexcept -> int {
 
 export auto build([[maybe_unused]] const Driver& driver) noexcept -> int {
     std::println("carven build: not yet implemented");
-    return 0;
+    return 1;
 }
 
 export auto check([[maybe_unused]] const Driver& driver) noexcept -> int {
     std::println("carven check: not yet implemented");
-    return 0;
+    return 1;
 }

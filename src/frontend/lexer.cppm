@@ -19,6 +19,22 @@ constexpr auto is_ident_continue(char c) noexcept -> bool {
     return is_ident(c) || is_digit(c);
 }
 
+constexpr auto is_hex_digit(char c) noexcept -> bool {
+    return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+constexpr auto is_binary_digit(char c) noexcept -> bool {
+    return c == '0' || c == '1';
+}
+
+constexpr auto is_octal_digit(char c) noexcept -> bool {
+    return c >= '0' && c <= '7';
+}
+
+constexpr auto is_valid_escape(char c) noexcept -> bool {
+    return c == '\'' || c == '"' || c == '\\' || c == 'n' || c == 't' || c == 'r' || c == '0';
+}
+
 class Lexer final {
 public:
     explicit constexpr Lexer(std::string_view s) noexcept : source(s) {}
@@ -134,6 +150,31 @@ private:
     }
 
     constexpr auto number_literal() noexcept -> Token {
+        if (source[start_pos] == '0') {
+            const auto second = current();
+            if (second == 'x' || second == 'X') {
+                advance();
+                while (is_hex_digit(current())) {
+                    advance();
+                }
+                return token(TokenKind::NumberLiteral);
+            }
+            if (second == 'b' || second == 'B') {
+                advance();
+                while (is_binary_digit(current())) {
+                    advance();
+                }
+                return token(TokenKind::NumberLiteral);
+            }
+            if (second == 'o' || second == 'O') {
+                advance();
+                while (is_octal_digit(current())) {
+                    advance();
+                }
+                return token(TokenKind::NumberLiteral);
+            }
+        }
+
         while (is_digit(current())) {
             advance();
         }
@@ -145,19 +186,42 @@ private:
             }
         }
 
+        if ((current() == 'e' || current() == 'E')
+            && (is_digit(peek()) || ((peek() == '+' || peek() == '-') && is_digit(peek(2))))) {
+            advance();
+            if (current() == '+' || current() == '-') advance();
+            while (is_digit(current())) {
+                advance();
+            }
+        }
+
         return token(TokenKind::NumberLiteral);
     }
 
     constexpr auto char_literal() noexcept -> Token {
-        if (!eof() && current() != '\'' && current() != '\n') {
+        auto chars = 0uz;
+        auto valid = true;
+
+        while (!eof() && current() != '\'' && current() != '\n') {
             if (current() == '\\') {
                 advance();
+                if (eof() || current() == '\n') break;
+                if (!is_valid_escape(current())) valid = false;
+                advance();
+            } else {
+                advance();
             }
-            advance();
+            ++chars;
         }
 
-        if (!eof() && current() == '\'') {
-            advance();
+        if (eof() || current() == '\n') {
+            return token(TokenKind::Error);
+        }
+
+        advance();
+
+        if (chars == 0 || chars > 1 || !valid) {
+            return token(TokenKind::Error);
         }
 
         return token(TokenKind::CharLiteral);

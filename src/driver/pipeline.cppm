@@ -66,7 +66,7 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
     return driver;
 }
 
-export constexpr auto transpile(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> TranspileResult {
+export constexpr auto transpile(const Driver& driver, std::string_view source) noexcept -> TranspileResult {
     auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
@@ -95,7 +95,7 @@ export constexpr auto transpile(const Driver& driver, std::string_view source, s
 }
 
 export auto run_single_file(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> int {
-    const auto transpile_result = transpile(driver, source, filepath);
+    const auto transpile_result = transpile(driver, source);
 
     if (!transpile_result.errors.empty()) {
         const auto line_offsets = LineOffsets(source);

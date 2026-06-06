@@ -8,7 +8,7 @@ import std;
 TEST_CASE("Pipeline: transpile") {
     SUBCASE("transpile simple function") {
         const auto driver = Driver{};
-        const auto result = transpile(driver, "fn main() { }", "<test>");
+        const auto result = transpile(driver, "fn main() { }");
         CHECK(result.errors.empty());
         CHECK(!result.output.empty());
     }
@@ -16,21 +16,21 @@ TEST_CASE("Pipeline: transpile") {
     SUBCASE("transpile includes preamble when import_std is set") {
         auto driver = Driver{};
         driver.import_std = true;
-        const auto result = transpile(driver, "fn main() { }", "<test>");
+        const auto result = transpile(driver, "fn main() { }");
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile auto-detects import std") {
         const auto driver = Driver{};
-        const auto result = transpile(driver, "import std;\nfn main() { }", "<test>");
+        const auto result = transpile(driver, "import std;\nfn main() { }");
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile returns errors on invalid source") {
         const auto driver = Driver{};
-        const auto result = transpile(driver, "@ invalid @", "<test>");
+        const auto result = transpile(driver, "@ invalid @");
         CHECK(!result.errors.empty());
     }
 
@@ -38,7 +38,7 @@ TEST_CASE("Pipeline: transpile") {
         auto driver = Driver{};
         driver.language_standard = 26;
         driver.import_std = true;
-        const auto result = transpile(driver, "fn main() { }", "<test>");
+        const auto result = transpile(driver, "fn main() { }");
         CHECK(result.errors.empty());
     }
 
@@ -47,7 +47,7 @@ TEST_CASE("Pipeline: transpile") {
         auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
         REQUIRE(source.has_value());
         const auto text = source->text();
-        const auto result = transpile(driver, text, source->filepath());
+        const auto result = transpile(driver, text);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("auto main() noexcept -> int"));
         CHECK(result.output.contains("std::println(\"Hello World\")"));

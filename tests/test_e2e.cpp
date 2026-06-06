@@ -20,7 +20,7 @@ static auto run_and_capture(std::string cmd) noexcept -> std::pair<int, std::str
 
 static auto e2e_run(std::string_view source, std::string_view filepath) noexcept -> std::pair<int, std::string> {
     const auto driver = Driver{};
-    const auto result = transpile(driver, source, filepath);
+    const auto result = transpile(driver, source);
     if (!result.errors.empty() || result.output.empty()) return {-1, ""};
 
     const auto path = build_artifacts(filepath, driver.output_dir);
@@ -51,7 +51,7 @@ TEST_CASE("E2E: helloworld") {
 static auto transpile_fixture(std::string_view name) noexcept -> bool {
     auto source = SourceFile::from_file(name);
     if (!source.has_value()) return false;
-    const auto result = transpile(Driver{}, source->text(), source->filepath());
+    const auto result = transpile(Driver{}, source->text());
     return result.errors.empty() && !result.output.empty();
 }
 
@@ -70,6 +70,6 @@ TEST_CASE("E2E: syntax error") {
     auto source = SourceFile::from_file("tests/fixtures/error.cv");
     REQUIRE(source.has_value());
     const auto driver = Driver{};
-    const auto result = transpile(driver, source->text(), source->filepath());
+    const auto result = transpile(driver, source->text());
     CHECK(!result.errors.empty());
 }

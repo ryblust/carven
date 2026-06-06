@@ -539,12 +539,10 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a == b; c != d; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        // a == b
         const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
         const auto bin_expr_eq = static_cast<const BinaryExpr*>(es1->expr);
         REQUIRE(bin_expr_eq != nullptr);
         CHECK_EQ(bin_expr_eq->op, BinOp::Eq);
-        // c != d
         const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
         const auto bin_expr_ne = static_cast<const BinaryExpr*>(es2->expr);
         REQUIRE(bin_expr_ne != nullptr);
@@ -576,7 +574,6 @@ TEST_CASE("Parser: binary expressions") {
         const auto bin = static_cast<const BinaryExpr*>(es->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Add);
-        // rhs should be b * c
         CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
     }
 }

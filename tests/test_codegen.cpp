@@ -8,7 +8,6 @@ import carven.frontend.parser;
 import carven.backend.codegen;
 import std;
 
-// Helper: parse and generate C++ — default to C++23, no std preamble
 static auto gen(std::string_view source_text, bool import_std = false, std::uint8_t standard = 23) noexcept -> std::string {
     const auto result = parse(tokenize(source_text), source_text);
     return generate(result.items, source_text, standard, import_std);
@@ -221,7 +220,6 @@ TEST_CASE("Codegen: if expression") {
         const auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
         const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
-        // Should optimize to ternary
         CHECK(cpp.contains("true ? 1 : 2"));
     }
 

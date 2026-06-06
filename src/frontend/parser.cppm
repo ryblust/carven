@@ -361,7 +361,7 @@ private:
 
         const auto keyword_text = slice(source, keyword->span);
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
-            push_error(std::format("{} requires an initializer", keyword_text), keyword->span);
+            push_error(std::string(keyword_text) + " requires an initializer", keyword->span);
         }
         return alloc<VarDecl>(keyword->span, name->span, type_span, eq_span, Span{}, init);
     }
@@ -593,7 +593,7 @@ private:
                 case Arrow:
                 case ColonColon: {
                     const auto op_span = advance()->span;
-                    const auto field_name = expect_name(std::format("expected field name after '{}'", slice(source, op_span)));
+                    const auto field_name = expect_name(std::string("expected field name after '") + slice(source, op_span) + "'");
                     if (!field_name) {
                         lhs = alloc<LiteralExpr>(op_span);
                         break;
@@ -653,7 +653,7 @@ private:
             case Using:
             case Else: {
                 const auto keyword = slice(source, token->span);
-                push_error(std::format("keyword '{}' cannot be used as an identifier", keyword), token->span);
+                push_error(std::string("keyword '") + keyword + "' cannot be used as an identifier", token->span);
                 advance();
                 return alloc<LiteralExpr>(token->span);
             }
@@ -772,7 +772,6 @@ private:
         while (!eof() && !check(TokenKind::RightBrace)) {
             auto arm = parse_match_pattern();
             if (!arm) {
-                // skip to next arm or closing brace
                 while (!eof() && !check(TokenKind::RightBrace) && !check(TokenKind::FatArrow)) {
                     advance();
                 }
@@ -782,7 +781,6 @@ private:
             }
             arms.emplace_back(std::move(*arm));
 
-            // optional comma between arms
             if (check(TokenKind::Comma)) advance();
         }
 
