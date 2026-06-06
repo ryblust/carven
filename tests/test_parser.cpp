@@ -7,39 +7,39 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
-#define PARSE(file) parse(tokenize((file).text()), (file))
+#define PARSE(text) parse(tokenize(text), (text))
 
 TEST_CASE("Parser: import") {
     SUBCASE("basic import") {
-        const auto source = SourceFile("import std;", "<test>");
+        const auto source = "import std;";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         CHECK_EQ(result.items.size(), 1u);
         const auto item = std::get_if<ImportItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->module_name), "std");
+        CHECK_EQ(slice(source, item->module_name), "std");
         CHECK(item->is_std_module);
     }
 
     SUBCASE("import without semicolon") {
-        const auto source = SourceFile("import foo", "<test>");
+        const auto source = "import foo";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         CHECK_EQ(result.items.size(), 1u);
     }
 
     SUBCASE("import with using declaration") {
-        const auto source = SourceFile("import std using println", "<test>");
+        const auto source = "import std using println";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<ImportItem>(&result.items[0]);
         CHECK(item != nullptr);
         CHECK_EQ(item->using_decls.size(), 1u);
-        CHECK_EQ(source.slice(item->using_decls[0]), "println");
+        CHECK_EQ(slice(source, item->using_decls[0]), "println");
     }
 
     SUBCASE("import with using wildcard") {
-        const auto source = SourceFile("import std using *", "<test>");
+        const auto source = "import std using *";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<ImportItem>(&result.items[0]);
@@ -48,18 +48,18 @@ TEST_CASE("Parser: import") {
     }
 
     SUBCASE("import with using brace list") {
-        const auto source = SourceFile("import std using { println, format }", "<test>");
+        const auto source = "import std using { println, format }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<ImportItem>(&result.items[0]);
         CHECK(item != nullptr);
         CHECK_EQ(item->using_decls.size(), 2u);
-        CHECK_EQ(source.slice(item->using_decls[0]), "println");
-        CHECK_EQ(source.slice(item->using_decls[1]), "format");
+        CHECK_EQ(slice(source, item->using_decls[0]), "println");
+        CHECK_EQ(slice(source, item->using_decls[1]), "format");
     }
 
     SUBCASE("import std auto-detection") {
-        const auto source = SourceFile("import std;", "<test>");
+        const auto source = "import std;";
         const auto result = PARSE(source);
         const auto item = std::get_if<ImportItem>(&result.items[0]);
         CHECK(item != nullptr);
@@ -67,7 +67,7 @@ TEST_CASE("Parser: import") {
     }
 
     SUBCASE("non-std module not auto-detected") {
-        const auto source = SourceFile("import other;", "<test>");
+        const auto source = "import other;";
         const auto result = PARSE(source);
         const auto item = std::get_if<ImportItem>(&result.items[0]);
         CHECK(item != nullptr);
@@ -77,30 +77,30 @@ TEST_CASE("Parser: import") {
 
 TEST_CASE("Parser: enum") {
     SUBCASE("basic enum") {
-        const auto source = SourceFile("enum Color { Red, Green, Blue }", "<test>");
+        const auto source = "enum Color { Red, Green, Blue }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<EnumItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->name), "Color");
+        CHECK_EQ(slice(source, item->name), "Color");
         CHECK_EQ(item->fields.size(), 3u);
-        CHECK_EQ(source.slice(item->fields[0]), "Red");
-        CHECK_EQ(source.slice(item->fields[1]), "Green");
-        CHECK_EQ(source.slice(item->fields[2]), "Blue");
+        CHECK_EQ(slice(source, item->fields[0]), "Red");
+        CHECK_EQ(slice(source, item->fields[1]), "Green");
+        CHECK_EQ(slice(source, item->fields[2]), "Blue");
     }
 
     SUBCASE("enum with size type") {
-        const auto source = SourceFile("enum Color : u8 { Red, Green }", "<test>");
+        const auto source = "enum Color : u8 { Red, Green }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<EnumItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->size), "u8");
+        CHECK_EQ(slice(source, item->size), "u8");
         CHECK_EQ(item->fields.size(), 2u);
     }
 
     SUBCASE("single field enum") {
-        const auto source = SourceFile("enum Flag { Active }", "<test>");
+        const auto source = "enum Flag { Active }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<EnumItem>(&result.items[0]);
@@ -109,7 +109,7 @@ TEST_CASE("Parser: enum") {
     }
 
     SUBCASE("empty enum") {
-        const auto source = SourceFile("enum Void {}", "<test>");
+        const auto source = "enum Void {}";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<EnumItem>(&result.items[0]);
@@ -120,21 +120,21 @@ TEST_CASE("Parser: enum") {
 
 TEST_CASE("Parser: struct") {
     SUBCASE("basic struct") {
-        const auto source = SourceFile("struct Point { x: i32, y: i32 }", "<test>");
+        const auto source = "struct Point { x: i32, y: i32 }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<StructItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->name), "Point");
+        CHECK_EQ(slice(source, item->name), "Point");
         CHECK_EQ(item->fields.size(), 2u);
-        CHECK_EQ(source.slice(item->fields[0].name), "x");
-        CHECK_EQ(source.slice(item->fields[0].type), "i32");
-        CHECK_EQ(source.slice(item->fields[1].name), "y");
-        CHECK_EQ(source.slice(item->fields[1].type), "i32");
+        CHECK_EQ(slice(source, item->fields[0].name), "x");
+        CHECK_EQ(slice(source, item->fields[0].type), "i32");
+        CHECK_EQ(slice(source, item->fields[1].name), "y");
+        CHECK_EQ(slice(source, item->fields[1].type), "i32");
     }
 
     SUBCASE("struct with semicolon separators") {
-        const auto source = SourceFile("struct Foo { a: i32; b: i32 }", "<test>");
+        const auto source = "struct Foo { a: i32; b: i32 }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<StructItem>(&result.items[0]);
@@ -143,7 +143,7 @@ TEST_CASE("Parser: struct") {
     }
 
     SUBCASE("single field struct") {
-        const auto source = SourceFile("struct Wrapper { value: i32 }", "<test>");
+        const auto source = "struct Wrapper { value: i32 }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<StructItem>(&result.items[0]);
@@ -154,40 +154,40 @@ TEST_CASE("Parser: struct") {
 
 TEST_CASE("Parser: function") {
     SUBCASE("basic function") {
-        const auto source = SourceFile("fn main() { }", "<test>");
+        const auto source = "fn main() { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->name), "main");
+        CHECK_EQ(slice(source, item->name), "main");
         CHECK(item->params.empty());
         CHECK(item->return_type.empty());
     }
 
     SUBCASE("function with return type") {
-        const auto source = SourceFile("fn add() -> i32 { }", "<test>");
+        const auto source = "fn add() -> i32 { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(source.slice(item->return_type), "i32");
+        CHECK_EQ(slice(source, item->return_type), "i32");
     }
 
     SUBCASE("function with typed parameters") {
-        const auto source = SourceFile("fn add(a: i32, b: i32) -> i32 { }", "<test>");
+        const auto source = "fn add(a: i32, b: i32) -> i32 { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(item != nullptr);
         CHECK_EQ(item->params.size(), 2u);
-        CHECK_EQ(source.slice(item->params[0].name), "a");
-        CHECK_EQ(source.slice(item->params[0].type), "i32");
-        CHECK_EQ(source.slice(item->params[1].name), "b");
-        CHECK_EQ(source.slice(item->params[1].type), "i32");
+        CHECK_EQ(slice(source, item->params[0].name), "a");
+        CHECK_EQ(slice(source, item->params[0].type), "i32");
+        CHECK_EQ(slice(source, item->params[1].name), "b");
+        CHECK_EQ(slice(source, item->params[1].type), "i32");
     }
 
     SUBCASE("function with untyped parameters") {
-        const auto source = SourceFile("fn foo(x, y) { }", "<test>");
+        const auto source = "fn foo(x, y) { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
@@ -198,7 +198,7 @@ TEST_CASE("Parser: function") {
     }
 
     SUBCASE("function with body statements") {
-        const auto source = SourceFile("fn main() { return 0; }", "<test>");
+        const auto source = "fn main() { return 0; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
@@ -209,56 +209,56 @@ TEST_CASE("Parser: function") {
 
 TEST_CASE("Parser: variable declarations") {
     SUBCASE("let with type and init") {
-        const auto source = SourceFile("fn main() { let x: i32 = 5; }", "<test>");
+        const auto source = "fn main() { let x: i32 = 5; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
-        CHECK_EQ(source.slice(decl->keyword), "let");
-        CHECK_EQ(source.slice(decl->name), "x");
-        CHECK_EQ(source.slice(decl->type), "i32");
+        CHECK_EQ(slice(source, decl->keyword), "let");
+        CHECK_EQ(slice(source, decl->name), "x");
+        CHECK_EQ(slice(source, decl->type), "i32");
         CHECK(!decl->eq.empty());
     }
 
     SUBCASE("var with init") {
-        const auto source = SourceFile("fn main() { var y = 10; }", "<test>");
+        const auto source = "fn main() { var y = 10; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
-        CHECK_EQ(source.slice(decl->keyword), "var");
-        CHECK_EQ(source.slice(decl->name), "y");
+        CHECK_EQ(slice(source, decl->keyword), "var");
+        CHECK_EQ(slice(source, decl->name), "y");
     }
 
     SUBCASE("var without init") {
-        const auto source = SourceFile("fn main() { var y: i32; }", "<test>");
+        const auto source = "fn main() { var y: i32; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
-        CHECK_EQ(source.slice(decl->keyword), "var");
-        CHECK_EQ(source.slice(decl->type), "i32");
+        CHECK_EQ(slice(source, decl->keyword), "var");
+        CHECK_EQ(slice(source, decl->type), "i32");
         CHECK(decl->init == nullptr);
     }
 
     SUBCASE("const with init") {
-        const auto source = SourceFile("fn main() { const N = 42; }", "<test>");
+        const auto source = "fn main() { const N = 42; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
-        CHECK_EQ(source.slice(decl->keyword), "const");
+        CHECK_EQ(slice(source, decl->keyword), "const");
     }
 
     SUBCASE("let without init produces error") {
-        const auto source = SourceFile("fn main() { let x: i32; }", "<test>");
+        const auto source = "fn main() { let x: i32; }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
     }
 
     SUBCASE("const without init produces error") {
-        const auto source = SourceFile("fn main() { const x: i32; }", "<test>");
+        const auto source = "fn main() { const x: i32; }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
     }
@@ -266,7 +266,7 @@ TEST_CASE("Parser: variable declarations") {
 
 TEST_CASE("Parser: return") {
     SUBCASE("return void") {
-        const auto source = SourceFile("fn main() { return; }", "<test>");
+        const auto source = "fn main() { return; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
@@ -275,7 +275,7 @@ TEST_CASE("Parser: return") {
     }
 
     SUBCASE("return with value") {
-        const auto source = SourceFile("fn main() { return 42; }", "<test>");
+        const auto source = "fn main() { return 42; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
@@ -286,7 +286,7 @@ TEST_CASE("Parser: return") {
 
 TEST_CASE("Parser: while") {
     SUBCASE("while with block body") {
-        const auto source = SourceFile("fn main() { while true { } }", "<test>");
+        const auto source = "fn main() { while true { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
@@ -295,7 +295,7 @@ TEST_CASE("Parser: while") {
     }
 
     SUBCASE("while with single statement body") {
-        const auto source = SourceFile("fn main() { while true return; }", "<test>");
+        const auto source = "fn main() { while true return; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
@@ -304,7 +304,7 @@ TEST_CASE("Parser: while") {
     }
 
     SUBCASE("while with condition expression") {
-        const auto source = SourceFile("fn main() { while x > 0 { } }", "<test>");
+        const auto source = "fn main() { while x > 0 { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
@@ -315,7 +315,7 @@ TEST_CASE("Parser: while") {
 
 TEST_CASE("Parser: for") {
     SUBCASE("full for loop") {
-        const auto source = SourceFile("fn main() { for (var i = 0; i < 10; i++) { } }", "<test>");
+        const auto source = "fn main() { for (var i = 0; i < 10; i++) { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
@@ -326,7 +326,7 @@ TEST_CASE("Parser: for") {
     }
 
     SUBCASE("for with empty clauses") {
-        const auto source = SourceFile("fn main() { for ( ; ; ) { } }", "<test>");
+        const auto source = "fn main() { for ( ; ; ) { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
@@ -337,7 +337,7 @@ TEST_CASE("Parser: for") {
     }
 
     SUBCASE("for with let init") {
-        const auto source = SourceFile("fn main() { for (let i = 0; i < 10; i++) { } }", "<test>");
+        const auto source = "fn main() { for (let i = 0; i < 10; i++) { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
@@ -346,7 +346,7 @@ TEST_CASE("Parser: for") {
     }
 
     SUBCASE("for with expr init") {
-        const auto source = SourceFile("fn main() { for (i = 0; i < 10; i++) { } }", "<test>");
+        const auto source = "fn main() { for (i = 0; i < 10; i++) { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
@@ -355,7 +355,7 @@ TEST_CASE("Parser: for") {
     }
 
     SUBCASE("for with const init") {
-        const auto source = SourceFile("fn main() { for (const i = 0; i < 5; i++) { } }", "<test>");
+        const auto source = "fn main() { for (const i = 0; i < 5; i++) { } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
@@ -363,7 +363,7 @@ TEST_CASE("Parser: for") {
 
 TEST_CASE("Parser: if expression") {
     SUBCASE("if without else") {
-        const auto source = SourceFile("fn main() { if true { } }", "<test>");
+        const auto source = "fn main() { if true { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -374,7 +374,7 @@ TEST_CASE("Parser: if expression") {
     }
 
     SUBCASE("if with else") {
-        const auto source = SourceFile("fn main() { if true { } else { } }", "<test>");
+        const auto source = "fn main() { if true { } else { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -387,7 +387,7 @@ TEST_CASE("Parser: if expression") {
 
 TEST_CASE("Parser: literal expressions") {
     SUBCASE("number, string, and char literals") {
-        const auto source = SourceFile("fn main() { 42; 3.14; \"hello\"; 'a'; }", "<test>");
+        const auto source = "fn main() { 42; 3.14; \"hello\"; 'a'; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
@@ -397,7 +397,7 @@ TEST_CASE("Parser: literal expressions") {
     }
 
     SUBCASE("bool literals") {
-        const auto source = SourceFile("fn main() { true; false; }", "<test>");
+        const auto source = "fn main() { true; false; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
@@ -407,16 +407,16 @@ TEST_CASE("Parser: literal expressions") {
 
 TEST_CASE("Parser: identifier and unary expressions") {
     SUBCASE("identifier") {
-        const auto source = SourceFile("fn main() { foo; }", "<test>");
+        const auto source = "fn main() { foo; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto ident = static_cast<const IdentExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(ident != nullptr);
-        CHECK_EQ(source.slice(ident->name), "foo");
+        CHECK_EQ(slice(source, ident->name), "foo");
     }
 
     SUBCASE("prefix operators") {
-        const auto source = SourceFile("fn main() { -x; !flag; ~mask; ++i; }", "<test>");
+        const auto source = "fn main() { -x; !flag; ~mask; ++i; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
@@ -430,7 +430,7 @@ TEST_CASE("Parser: identifier and unary expressions") {
     }
 
     SUBCASE("prefix address-of and deref") {
-        const auto source = SourceFile("fn main() { &x; *p; }", "<test>");
+        const auto source = "fn main() { &x; *p; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
@@ -440,7 +440,7 @@ TEST_CASE("Parser: identifier and unary expressions") {
     }
 
     SUBCASE("postfix operators") {
-        const auto source = SourceFile("fn main() { i++; j--; }", "<test>");
+        const auto source = "fn main() { i++; j--; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto p0 = static_cast<const PostfixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
@@ -452,7 +452,7 @@ TEST_CASE("Parser: identifier and unary expressions") {
 
 TEST_CASE("Parser: postfix operations") {
     SUBCASE("function calls with varying args") {
-        const auto source = SourceFile("fn main() { foo(); bar(1); add(1, 2, 3); }", "<test>");
+        const auto source = "fn main() { foo(); bar(1); add(1, 2, 3); }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto c0 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
@@ -464,28 +464,28 @@ TEST_CASE("Parser: postfix operations") {
     }
 
     SUBCASE("index expression") {
-        const auto source = SourceFile("fn main() { arr[0]; }", "<test>");
+        const auto source = "fn main() { arr[0]; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(static_cast<const IndexExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
     }
 
     SUBCASE("field access: dot, arrow, scope") {
-        const auto source = SourceFile("fn main() { obj.field; ptr->field; ns::name; }", "<test>");
+        const auto source = "fn main() { obj.field; ptr->field; ns::name; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto f0 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK_EQ(source.slice(f0->dot), ".");
+        CHECK_EQ(slice(source, f0->dot), ".");
         const auto f1 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(source.slice(f1->dot), "->");
+        CHECK_EQ(slice(source, f1->dot), "->");
         const auto f2 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
-        CHECK_EQ(source.slice(f2->dot), "::");
+        CHECK_EQ(slice(source, f2->dot), "::");
     }
 }
 
 TEST_CASE("Parser: binary expressions") {
     SUBCASE("multiplicative: multiply, divide, modulo") {
-        const auto source = SourceFile("fn main() { a * b; c / d; e % f; }", "<test>");
+        const auto source = "fn main() { a * b; c / d; e % f; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::Mul);
@@ -494,7 +494,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("additive: plus and minus") {
-        const auto source = SourceFile("fn main() { a + b - c; }", "<test>");
+        const auto source = "fn main() { a + b - c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -504,7 +504,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("shift: left and right") {
-        const auto source = SourceFile("fn main() { a << b >> c; }", "<test>");
+        const auto source = "fn main() { a << b >> c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -514,7 +514,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("relational: less, greater, le, ge") {
-        const auto source = SourceFile("fn main() { a < b; b > c; c <= d; d >= e; }", "<test>");
+        const auto source = "fn main() { a < b; b > c; c <= d; d >= e; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -536,7 +536,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("equality: eq and ne") {
-        const auto source = SourceFile("fn main() { a == b; c != d; }", "<test>");
+        const auto source = "fn main() { a == b; c != d; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         // a == b
@@ -552,7 +552,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("bitwise: and, xor, or") {
-        const auto source = SourceFile("fn main() { a & b; c ^ d; e | f; }", "<test>");
+        const auto source = "fn main() { a & b; c ^ d; e | f; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::BitAnd);
@@ -561,7 +561,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("logical: and, or") {
-        const auto source = SourceFile("fn main() { a && b; c || d; }", "<test>");
+        const auto source = "fn main() { a && b; c || d; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::LogicalAnd);
@@ -569,7 +569,7 @@ TEST_CASE("Parser: binary expressions") {
     }
 
     SUBCASE("precedence: * before +") {
-        const auto source = SourceFile("fn main() { a + b * c; }", "<test>");
+        const auto source = "fn main() { a + b * c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -583,7 +583,7 @@ TEST_CASE("Parser: binary expressions") {
 
 TEST_CASE("Parser: assignment and compound assignment") {
     SUBCASE("simple assignment") {
-        const auto source = SourceFile("fn main() { x = 5; }", "<test>");
+        const auto source = "fn main() { x = 5; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -592,7 +592,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
     }
 
     SUBCASE("chained assignment") {
-        const auto source = SourceFile("fn main() { a = b = c = 0; }", "<test>");
+        const auto source = "fn main() { a = b = c = 0; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -603,7 +603,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
     }
 
     SUBCASE("compound assignment +=") {
-        const auto source = SourceFile("fn main() { x += 1; }", "<test>");
+        const auto source = "fn main() { x += 1; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -613,7 +613,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
     }
 
     SUBCASE("compound assignment -=") {
-        const auto source = SourceFile("fn main() { x -= 1; }", "<test>");
+        const auto source = "fn main() { x -= 1; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -623,7 +623,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
     }
 
     SUBCASE("compound assignment *=") {
-        const auto source = SourceFile("fn main() { x *= 2; }", "<test>");
+        const auto source = "fn main() { x *= 2; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -635,7 +635,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
 
 TEST_CASE("Parser: group and comma expressions") {
     SUBCASE("group expression") {
-        const auto source = SourceFile("fn main() { (a + b); }", "<test>");
+        const auto source = "fn main() { (a + b); }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -644,7 +644,7 @@ TEST_CASE("Parser: group and comma expressions") {
     }
 
     SUBCASE("comma expression") {
-        const auto source = SourceFile("fn main() { a, b; }", "<test>");
+        const auto source = "fn main() { a, b; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
@@ -655,7 +655,7 @@ TEST_CASE("Parser: group and comma expressions") {
 
 TEST_CASE("Parser: if as expression value") {
     SUBCASE("if expression assigned to let") {
-        const auto source = SourceFile("fn main() { let x = if true { 1 } else { 2 }; }", "<test>");
+        const auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
@@ -668,14 +668,14 @@ TEST_CASE("Parser: if as expression value") {
 
 TEST_CASE("Parser: block and empty statements") {
     SUBCASE("empty statement") {
-        const auto source = SourceFile("fn main() { ; }", "<test>");
+        const auto source = "fn main() { ; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(static_cast<const EmptyStmt*>(fn->body->statements[0]) != nullptr);
     }
 
     SUBCASE("multiple statements") {
-        const auto source = SourceFile("fn main() { let a = 1; var b = 2; return a + b; }", "<test>");
+        const auto source = "fn main() { let a = 1; var b = 2; return a + b; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
@@ -683,7 +683,7 @@ TEST_CASE("Parser: block and empty statements") {
     }
 
     SUBCASE("semicolon optional before brace") {
-        const auto source = SourceFile("fn main() { call() }", "<test>");
+        const auto source = "fn main() { call() }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
@@ -691,23 +691,22 @@ TEST_CASE("Parser: block and empty statements") {
 
 TEST_CASE("Parser: edge cases") {
     SUBCASE("empty file or comments only") {
-        CHECK(PARSE(SourceFile("", "<test>")).items.empty());
-        CHECK(PARSE(SourceFile("// comment only", "<test>")).items.empty());
+        CHECK(PARSE("").items.empty());
+        CHECK(PARSE("// comment only").items.empty());
     }
 
     SUBCASE("multiple top-level items") {
-        const auto source = SourceFile(
+        const auto source =
             "import std;\n"
             "enum Color { Red, Green }\n"
             "struct Point { x: i32, y: i32 }\n"
-            "fn main() { let p = Point { }; }"
-        );
+            "fn main() { let p = Point { }; }";
         const auto result = PARSE(source);
         CHECK_EQ(result.items.size(), 4u);
     }
 
     SUBCASE("unexpected keyword produces error") {
-        const auto source = SourceFile("fn main() { let; }", "<test>");
+        const auto source = "fn main() { let; }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
     }
@@ -715,7 +714,7 @@ TEST_CASE("Parser: edge cases") {
 
 TEST_CASE("Parser: error recovery") {
     SUBCASE("skips to semicolon after bad statement") {
-        const auto source = SourceFile("fn main() { var 123; x = 1; }", "<test>");
+        const auto source = "fn main() { var 123; x = 1; }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
@@ -725,7 +724,7 @@ TEST_CASE("Parser: error recovery") {
     }
 
     SUBCASE("recovers from bad top-level item") {
-        const auto source = SourceFile("garbage\nfn main() { }", "<test>");
+        const auto source = "garbage\nfn main() { }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
         // Error consumed "garbage", fn should be first item
@@ -736,38 +735,38 @@ TEST_CASE("Parser: error recovery") {
 }
 TEST_CASE("Parser: trailing commas") {
     SUBCASE("struct field trailing comma") {
-        const auto source = SourceFile("struct Foo { x: i32, }", "<test>");
+        const auto source = "struct Foo { x: i32, }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("enum field trailing comma") {
-        const auto source = SourceFile("enum Bar { A, }", "<test>");
+        const auto source = "enum Bar { A, }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
 }
 
 TEST_CASE("Parser: deeply nested expressions") {
-    const auto source = SourceFile("fn main() { (((a + b) * (c + d)) + e); }", "<test>");
+    const auto source = "fn main() { (((a + b) * (c + d)) + e); }";
     const auto result = PARSE(source);
     CHECK(result.errors.empty());
 }
 
 TEST_CASE("Parser: chained postfix") {
-    const auto source = SourceFile("fn main() { a[0](1).b(); }", "<test>");
+    const auto source = "fn main() { a[0](1).b(); }";
     const auto result = PARSE(source);
     CHECK(result.errors.empty());
 }
 
 TEST_CASE("Parser: EOF mid-parse") {
-    const auto source = SourceFile("fn main() { let x = ", "<test>");
+    const auto source = "fn main() { let x = ";
     const auto result = PARSE(source);
     CHECK(!result.errors.empty());
 }
 
 TEST_CASE("Parser: array literals") {
     SUBCASE("simple array literal") {
-        const auto source = SourceFile("fn main() { let a = [1, 2, 3]; }", "<test>");
+        const auto source = "fn main() { let a = [1, 2, 3]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
@@ -779,22 +778,22 @@ TEST_CASE("Parser: array literals") {
         CHECK_EQ(arr->elements.size(), 3u);
     }
     SUBCASE("single element array") {
-        const auto source = SourceFile("fn main() { let a = [42]; }", "<test>");
+        const auto source = "fn main() { let a = [42]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("trailing comma") {
-        const auto source = SourceFile("fn main() { let a = [1, 2, 3, ]; }", "<test>");
+        const auto source = "fn main() { let a = [1, 2, 3, ]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("nested array") {
-        const auto source = SourceFile("fn main() { let m = [[1, 2], [3, 4]]; }", "<test>");
+        const auto source = "fn main() { let m = [[1, 2], [3, 4]]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("array as function argument") {
-        const auto source = SourceFile("fn main() { f([1, 2]); }", "<test>");
+        const auto source = "fn main() { f([1, 2]); }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
@@ -802,33 +801,33 @@ TEST_CASE("Parser: array literals") {
 
 TEST_CASE("Parser: array type annotation") {
     SUBCASE("let with array type") {
-        const auto source = SourceFile("fn main() { let a: [i32; 3] = [1, 2, 3]; }", "<test>");
+        const auto source = "fn main() { let a: [i32; 3] = [1, 2, 3]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
         REQUIRE(fn != nullptr);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         REQUIRE(decl != nullptr);
-        CHECK(source.slice(decl->type).starts_with("["));
-        CHECK(source.slice(decl->type).ends_with("]"));
+        CHECK(slice(source, decl->type).starts_with("["));
+        CHECK(slice(source, decl->type).ends_with("]"));
     }
     SUBCASE("function parameter array type") {
-        const auto source = SourceFile("fn f(p: [i32; 3]) { }", "<test>");
+        const auto source = "fn f(p: [i32; 3]) { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("function return array type") {
-        const auto source = SourceFile("fn f() -> [i32; 3] { }", "<test>");
+        const auto source = "fn f() -> [i32; 3] { }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("struct field array type") {
-        const auto source = SourceFile("struct S { f: [f64; 4] }", "<test>");
+        const auto source = "struct S { f: [f64; 4] }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("var with array type") {
-        const auto source = SourceFile("fn main() { var a: [u8; 16] = [0, 0]; }", "<test>");
+        const auto source = "fn main() { var a: [u8; 16] = [0, 0]; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
@@ -836,7 +835,7 @@ TEST_CASE("Parser: array type annotation") {
 
 TEST_CASE("Parser: match expression") {
     SUBCASE("value match") {
-        const auto source = SourceFile("fn main() { match x { 1 => { a } _ => { b } } }", "<test>");
+        const auto source = "fn main() { match x { 1 => { a } _ => { b } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
@@ -850,33 +849,32 @@ TEST_CASE("Parser: match expression") {
         CHECK_EQ(m->arms[0].patterns.size(), 1u);
     }
     SUBCASE("type match") {
-        const auto source = SourceFile("fn main() { match x { i32 => { a } String => { b } _ => { c } } }", "<test>");
+        const auto source = "fn main() { match x { i32 => { a } String => { b } _ => { c } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("multi-pattern value") {
-        const auto source = SourceFile("fn main() { match x { 1 | 2 => { a } _ => { b } } }", "<test>");
+        const auto source = "fn main() { match x { 1 | 2 => { a } _ => { b } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("multi-pattern type") {
-        const auto source = SourceFile("fn main() { match x { i32 | f64 => { a } _ => { b } } }", "<test>");
+        const auto source = "fn main() { match x { i32 | f64 => { a } _ => { b } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("mixed value and type") {
-        const auto source = SourceFile("fn main() { match x { 0 => { a } i32 => { b } _ => { c } } }", "<test>");
+        const auto source = "fn main() { match x { 0 => { a } i32 => { b } _ => { c } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("match as expression") {
-        const auto source = SourceFile("fn main() { let a = match x { 1 => { 10 } _ => { 0 } }; }", "<test>");
+        const auto source = "fn main() { let a = match x { 1 => { 10 } _ => { 0 } }; }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
     SUBCASE("nested match") {
-        const auto source = SourceFile(
-            "fn main() { match a { 1 => { match b { i32 => { x } _ => { y } } } _ => { z } } }", "<test>");
+        const auto source = "fn main() { match a { 1 => { match b { i32 => { x } _ => { y } } } _ => { z } } }";
         const auto result = PARSE(source);
         CHECK(result.errors.empty());
     }
@@ -884,12 +882,12 @@ TEST_CASE("Parser: match expression") {
 
 TEST_CASE("Parser: match errors") {
     SUBCASE("match without braces") {
-        const auto source = SourceFile("fn main() { match x 1 => { } }", "<test>");
+        const auto source = "fn main() { match x 1 => { } }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
     }
     SUBCASE("arm without fat arrow") {
-        const auto source = SourceFile("fn main() { match x { 1 { } } }", "<test>");
+        const auto source = "fn main() { match x { 1 { } } }";
         const auto result = PARSE(source);
         CHECK(!result.errors.empty());
     }

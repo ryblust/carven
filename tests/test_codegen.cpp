@@ -10,9 +10,8 @@ import std;
 
 // Helper: parse and generate C++ — default to C++23, no std preamble
 static auto gen(std::string_view source_text, bool import_std = false, std::uint8_t standard = 23) noexcept -> std::string {
-    const auto sf = SourceFile(source_text, "<test>");
-    const auto result = parse(tokenize(sf.text()), sf);
-    return generate(result.items, sf, standard, import_std);
+    const auto result = parse(tokenize(source_text), source_text);
+    return generate(result.items, source_text, standard, import_std);
 }
 
 TEST_CASE("Codegen: type mapping") {
@@ -66,15 +65,15 @@ TEST_CASE("Codegen: include preamble") {
 
 TEST_CASE("Codegen: import items") {
     SUBCASE("non-std module") {
-        const auto source = SourceFile("import mylib;", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "import mylib;";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("import mylib;"));
     }
 
     SUBCASE("std module emits no import statement") {
-        const auto source = SourceFile("import std;", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "import std;";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(!cpp.contains("import std;"));
     }
@@ -87,15 +86,15 @@ TEST_CASE("Codegen: import items") {
 
 TEST_CASE("Codegen: enum") {
     SUBCASE("basic enum") {
-        const auto source = SourceFile("enum Color { Red, Green, Blue }", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "enum Color { Red, Green, Blue }";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("enum class Color {\n    Red,\n    Green,\n    Blue,\n};"));
     }
 
     SUBCASE("enum with size type") {
-        const auto source = SourceFile("enum Color : u8 { Red, Green }", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "enum Color : u8 { Red, Green }";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("enum class Color : std::uint8_t"));
     }
@@ -103,8 +102,8 @@ TEST_CASE("Codegen: enum") {
 
 TEST_CASE("Codegen: struct") {
     SUBCASE("basic struct") {
-        const auto source = SourceFile("struct Point { x: i32, y: i32 }", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "struct Point { x: i32, y: i32 }";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         CHECK(cpp.contains("struct Point {"));
         CHECK(cpp.contains("std::int32_t x;"));
@@ -219,8 +218,8 @@ TEST_CASE("Codegen: for statements") {
 
 TEST_CASE("Codegen: if expression") {
     SUBCASE("ternary optimization for single-expression branches") {
-        const auto source = SourceFile("fn main() { let x = if true { 1 } else { 2 }; }", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
         // Should optimize to ternary
         CHECK(cpp.contains("true ? 1 : 2"));
@@ -233,10 +232,11 @@ TEST_CASE("Codegen: if expression") {
 }
 
 TEST_CASE("Codegen: helloworld full output") {
-    const auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
+    auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
     REQUIRE(source.has_value());
-    const auto result = parse(tokenize(source->text()), *source);
-    const auto cpp = generate(result.items, *source, 23, false);
+    const auto text = source->text();
+    const auto result = parse(tokenize(text), text);
+    const auto cpp = generate(result.items, text, 23, false);
     CHECK(cpp.contains("auto main() noexcept -> int"));
     CHECK(cpp.contains("std::println(\"Hello World\")"));
 }
@@ -257,14 +257,14 @@ TEST_CASE("Codegen: all type mappings") {
 
 TEST_CASE("Codegen: empty types") {
     SUBCASE("empty enum") {
-        const auto source = SourceFile("enum Void {}", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "enum Void {}";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 23, false);
         CHECK(cpp.contains("enum class Void {\n};"));
     }
     SUBCASE("empty struct") {
-        const auto source = SourceFile("struct Empty {}", "<test>");
-        const auto result = parse(tokenize(source.text()), source);
+        const auto source = "struct Empty {}";
+        const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 23, false);
         CHECK(cpp.contains("struct Empty {\n};"));
     }

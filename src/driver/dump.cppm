@@ -8,23 +8,23 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
-auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t indent = 0) noexcept -> std::string;
-auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent = 0) noexcept -> std::string;
-auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent = 0) noexcept -> std::string;
+auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
+auto dump(const Expr& expr, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
+auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 
-auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
+auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     const auto pad = std::string(indent, ' ');
 
     return std::visit(Overloaded {
         [&](const ImportItem& it) noexcept -> std::string {
-            auto result = std::format("{}Import: {}", pad, source.slice(it.module_name));
+            auto result = std::format("{}Import: {}", pad, slice(source, it.module_name));
 
             if (!it.using_decls.empty()) {
                 result += " { ";
 
                 for (auto i = 0uz; i < it.using_decls.size(); ++i) {
                     if (i > 0) result += ", ";
-                    result += source.slice(it.using_decls[i]);
+                    result += slice(source, it.using_decls[i]);
                 }
 
                 result += " }";
@@ -35,47 +35,47 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
         [&](const EnumItem& it) noexcept -> std::string {
             auto result = std::format("{}Enum: {}{} {{ ",
                 pad,
-                source.slice(it.name),
-                it.size.empty() ? "" : std::format(": {}", source.slice(it.size))
+                slice(source, it.name),
+                it.size.empty() ? "" : std::format(": {}", slice(source, it.size))
             );
 
             for (auto i = 0uz; i < it.fields.size(); ++i) {
                 if (i > 0) result += ", ";
-                result += source.slice(it.fields[i]);
+                result += slice(source, it.fields[i]);
             }
 
             return result += " }\n";
         },
         [&](const StructItem& it) noexcept -> std::string {
-            auto result = std::format("{}Struct: {} {{\n", pad, source.slice(it.name));
+            auto result = std::format("{}Struct: {} {{\n", pad, slice(source, it.name));
             const auto field_pad = std::string(indent + 2, ' ');
 
             for (const auto& field : it.fields) {
                 std::format_to(
                     std::back_inserter(result),
                     "{}{}: {}\n",
-                    field_pad, source.slice(field.name), source.slice(field.type)
+                    field_pad, slice(source, field.name), slice(source, field.type)
                 );
             }
 
             return std::format("{}{}}}\n", result, pad);
         },
         [&](const FunctionItem& it) noexcept -> std::string {
-            auto result = std::format("{}fn {}(", pad, source.slice(it.name));
+            auto result = std::format("{}fn {}(", pad, slice(source, it.name));
 
             for (auto i = 0uz; i < it.params.size(); ++i) {
                 if (i > 0) result += ", ";
                 std::format_to(
                     std::back_inserter(result),
                     "{}: {}",
-                    source.slice(it.params[i].name), source.slice(it.params[i].type)
+                    slice(source, it.params[i].name), slice(source, it.params[i].type)
                 );
             }
 
             std::format_to(
                 std::back_inserter(result),
                 "){} {{\n",
-                it.return_type.empty() ? "" : std::format(" -> {}", source.slice(it.return_type))
+                it.return_type.empty() ? "" : std::format(" -> {}", slice(source, it.return_type))
             );
 
             for (const auto stmt : it.body->statements) {
@@ -87,15 +87,15 @@ auto dump(const TopLevelItem& item, const SourceFile& source, std::uint32_t inde
     }, item);
 }
 
-auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
+auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     switch (expr.kind) {
         case ExprKind::Literal: {
             const auto& e = *static_cast<const LiteralExpr*>(&expr);
-            return std::format("Literal({})", source.slice(e.token));
+            return std::format("Literal({})", slice(source, e.token));
         }
         case ExprKind::Ident: {
             const auto& e = *static_cast<const IdentExpr*>(&expr);
-            return std::format("Ident({})", source.slice(e.name));
+            return std::format("Ident({})", slice(source, e.name));
         }
         case ExprKind::Prefix: {
             const auto& e = *static_cast<const PrefixExpr*>(&expr);
@@ -124,7 +124,7 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
         }
         case ExprKind::Field: {
             const auto& e = *static_cast<const FieldExpr*>(&expr);
-            return std::format("Field({}{}{})", dump(*e.lhs, source), source.slice(e.dot), source.slice(e.field));
+            return std::format("Field({}{}{})", dump(*e.lhs, source), slice(source, e.dot), slice(source, e.field));
         }
         case ExprKind::Group: {
             const auto& e = *static_cast<const GroupExpr*>(&expr);
@@ -198,7 +198,7 @@ auto dump(const Expr& expr, const SourceFile& source, std::uint32_t indent) noex
     }
 }
 
-auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> std::string {
+auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     const auto pad = std::string(indent, ' ');
 
     switch (stmt.kind) {
@@ -219,9 +219,9 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
             const auto& s = *static_cast<const VarDecl*>(&stmt);
             auto result = std::format("{}{} {}{}",
                 pad,
-                source.slice(s.keyword),
-                source.slice(s.name),
-                s.type.empty() ? "" : std::format(": {}", source.slice(s.type))
+                slice(source, s.keyword),
+                slice(source, s.name),
+                s.type.empty() ? "" : std::format(": {}", slice(source, s.type))
             );
             if (s.init != nullptr) {
                 result += " = ";
@@ -258,9 +258,9 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
                 [&](VarDecl* d) noexcept {
                     if (d) {
                         init_str = std::format("{} {}{}",
-                            source.slice(d->keyword),
-                            source.slice(d->name),
-                            d->type.empty() ? "" : std::format(": {}", source.slice(d->type))
+                            slice(source, d->keyword),
+                            slice(source, d->name),
+                            d->type.empty() ? "" : std::format(": {}", slice(source, d->type))
                         );
                         if (d->init != nullptr) {
                             init_str += " = ";
@@ -290,9 +290,9 @@ auto dump(const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noex
     }
 }
 
-auto dump_ast(const ParseResult& parse_result, const SourceFile& source) noexcept -> std::string {
+auto dump_ast(const ParseResult& parse_result, std::string_view source) noexcept -> std::string {
     auto result = std::string();
-    result.reserve(source.text().size() * 4);
+    result.reserve(source.size() * 4);
 
     for (const auto& item : parse_result.items) {
         result += dump(item, source, 0);
@@ -302,31 +302,37 @@ auto dump_ast(const ParseResult& parse_result, const SourceFile& source) noexcep
 }
 
 export auto dump(const Driver& driver) noexcept -> int {
-    auto source = SourceFile::from_file(driver.input_files[0]);
-    if (!source) {
+    auto src = SourceFile::from_file(driver.input_files[0]);
+    if (!src) {
         std::println("carven dump: error: cannot read '{}'", driver.input_files[0]);
         return 1;
     }
 
-    const auto tokens = tokenize(source->text());
+    const auto text = src->text();
+    const auto tokens = tokenize(text);
 
     if (!driver.only_ast) {
+        const auto line_offsets = LineOffsets(text);
         for (const auto token : tokens) {
-            const auto pos = source->location(token.span.start);
+            const auto pos = line_offsets.location(token.span.start);
             std::println("{:>4}:{:<2}    {:<20}  {}",
-                pos.line, pos.column, std::format("{}", token.kind), source->slice(token.span)
+                pos.line, pos.column, std::format("{}", token.kind), slice(text, token.span)
             );
         }
         if (!driver.only_tokens) std::println();
     }
 
     if (!driver.only_tokens) {
-        const auto parse_result = parse(tokens, *source);
+        const auto parse_result = parse(tokens, text);
         if (!parse_result.errors.empty()) {
-            std::println("{}", parse_result.errors);
+            const auto line_offsets = LineOffsets(text);
+            for (const auto& err : parse_result.errors) {
+                const auto loc = line_offsets.location(err.span.start);
+                std::println("error:{}:{}: {}", loc.line, loc.column, err.message);
+            }
             return 1;
         }
-        std::print("{}", dump_ast(parse_result, *source));
+        std::print("{}", dump_ast(parse_result, text));
     }
 
     return 0;

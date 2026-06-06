@@ -18,12 +18,12 @@ static auto run_and_capture(std::string cmd) noexcept -> std::pair<int, std::str
     return {code, stdout};
 }
 
-static auto e2e_run(const SourceFile& source) noexcept -> std::pair<int, std::string> {
+static auto e2e_run(std::string_view source, std::string_view filepath) noexcept -> std::pair<int, std::string> {
     const auto driver = Driver{};
-    const auto result = transpile(driver, source);
+    const auto result = transpile(driver, source, filepath);
     if (!result.errors.empty() || result.output.empty()) return {-1, ""};
 
-    const auto path = build_artifacts(source.filepath(), driver.output_dir);
+    const auto path = build_artifacts(filepath, driver.output_dir);
     ensure_directory(driver.output_dir);
     write_file_if_changed(path.cpp_path, result.output);
 
@@ -37,9 +37,9 @@ static auto e2e_run(const SourceFile& source) noexcept -> std::pair<int, std::st
 }
 
 static auto e2e_run_fixture(std::string_view name) noexcept -> std::pair<int, std::string> {
-    const auto source = SourceFile::from_file(name);
+    auto source = SourceFile::from_file(name);
     if (!source.has_value()) return {-1, "cannot open fixture"};
-    return e2e_run(*source);
+    return e2e_run(source->text(), source->filepath());
 }
 
 TEST_CASE("E2E: helloworld") {
@@ -49,9 +49,9 @@ TEST_CASE("E2E: helloworld") {
 }
 
 static auto transpile_fixture(std::string_view name) noexcept -> bool {
-    const auto source = SourceFile::from_file(name);
+    auto source = SourceFile::from_file(name);
     if (!source.has_value()) return false;
-    const auto result = transpile(Driver{}, *source);
+    const auto result = transpile(Driver{}, source->text(), source->filepath());
     return result.errors.empty() && !result.output.empty();
 }
 
@@ -67,9 +67,9 @@ TEST_CASE("E2E: match") {
 }
 
 TEST_CASE("E2E: syntax error") {
-    const auto source = SourceFile::from_file("tests/fixtures/error.cv");
+    auto source = SourceFile::from_file("tests/fixtures/error.cv");
     REQUIRE(source.has_value());
     const auto driver = Driver{};
-    const auto result = transpile(driver, *source);
+    const auto result = transpile(driver, source->text(), source->filepath());
     CHECK(!result.errors.empty());
 }

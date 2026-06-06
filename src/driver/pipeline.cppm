@@ -66,8 +66,8 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
     return driver;
 }
 
-export constexpr auto transpile(const Driver& driver, const SourceFile& source) noexcept -> TranspileResult {
-    auto parse_result = parse(tokenize(source.text()), source);
+export constexpr auto transpile(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> TranspileResult {
+    auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
         return {
@@ -94,11 +94,15 @@ export constexpr auto transpile(const Driver& driver, const SourceFile& source) 
     };
 }
 
-export auto run_single_file(const Driver& driver, const SourceFile& file) noexcept -> int {
-    const auto transpile_result = transpile(driver, file);
+export auto run_single_file(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> int {
+    const auto transpile_result = transpile(driver, source, filepath);
 
     if (!transpile_result.errors.empty()) {
-        std::println("{}", transpile_result.errors);
+        const auto line_offsets = LineOffsets(source);
+        for (const auto& err : transpile_result.errors) {
+            const auto loc = line_offsets.location(err.span.start);
+            std::println("error:{}:{}: {}", loc.line, loc.column, err.message);
+        }
         return 1;
     }
 
@@ -112,7 +116,7 @@ export auto run_single_file(const Driver& driver, const SourceFile& file) noexce
         return 1;
     }
 
-    const auto artifacts = build_artifacts(file.filepath(), driver.output_dir);
+    const auto artifacts = build_artifacts(filepath, driver.output_dir);
 
     if (!write_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
         std::println("carven run: error: cannot write '{}'", artifacts.cpp_path.string());

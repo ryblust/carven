@@ -33,10 +33,41 @@ template<> struct std::formatter<SourceLocation> final {
     }
 };
 
+export class LineOffsets final {
+public:
+    explicit constexpr LineOffsets(std::string_view content) noexcept {
+        offsets.reserve(content.size() / 40 + 1);
+        offsets.push_back(0);
+
+        std::size_t pos = 0;
+        while ((pos = content.find('\n', pos)) != std::string_view::npos) {
+            offsets.push_back(static_cast<std::uint32_t>(pos + 1));
+            ++pos;
+        }
+    }
+
+    constexpr auto location(std::uint32_t offset) const noexcept -> SourceLocation {
+        if (offsets.empty()) return { .line = 1, .column = 1 };
+
+        const auto iter = std::ranges::upper_bound(offsets, offset);
+        const auto index = static_cast<std::uint32_t>(iter - offsets.begin() - 1);
+
+        return { .line = index + 1, .column = offset - offsets[index] + 1 };
+    }
+
+private:
+    std::vector<std::uint32_t> offsets;
+};
+
+export constexpr auto slice(std::string_view text, Span span) noexcept -> std::string_view {
+    if (span.start > span.end || span.end > text.size()) return {};
+    return text.substr(span.start, span.end - span.start);
+}
+
 export class SourceFile final {
 public:
     constexpr SourceFile(std::string_view content, std::string_view path = "<string>") noexcept
-        : fpath(path), is_mmaped(false), source(content), line_offsets(build_line_offsets(content)) {}
+        : fpath(path), is_mmaped(false), source(content) {}
 
     [[nodiscard]] static auto from_file(std::string_view fpath) noexcept -> std::optional<SourceFile> {
         const auto mapped = map_file(fpath);
@@ -48,11 +79,7 @@ public:
     SourceFile(const SourceFile&) = delete;
     auto operator=(const SourceFile&) = delete;
 
-    constexpr SourceFile(SourceFile&& other) noexcept
-        : fpath(other.fpath)
-        , is_mmaped(other.is_mmaped)
-        , line_offsets(std::move(other.line_offsets))
-    {
+    constexpr SourceFile(SourceFile&& other) noexcept : fpath(other.fpath), is_mmaped(other.is_mmaped) {
         if (is_mmaped) {
             mmap_data = other.mmap_data;
             mmap_size = other.mmap_size;
@@ -76,7 +103,6 @@ public:
         }
 
         fpath = other.fpath;
-        line_offsets = std::move(other.line_offsets);
 
         if !consteval {
             if (other.is_mmaped) {
@@ -116,23 +142,6 @@ public:
             : source;
     }
 
-    constexpr auto slice(Span span) const noexcept -> std::string_view {
-        const auto src = text();
-        if (src.empty()) return {};
-        return span.start <= span.end && span.end <= src.size()
-            ? std::string_view(src.data() + span.start, span.end - span.start)
-            : std::string_view();
-    }
-
-    constexpr auto location(std::uint32_t offset) const noexcept -> SourceLocation {
-        if (line_offsets.empty()) return { .line = 1, .column = 1 };
-
-        const auto iter = std::ranges::upper_bound(line_offsets, offset);
-        const auto index = static_cast<std::uint32_t>(iter - line_offsets.begin() - 1);
-
-        return { .line = index + 1, .column = offset - line_offsets[index] + 1 };
-    }
-
 private:
     std::string_view fpath;
     bool is_mmaped;
@@ -143,26 +152,10 @@ private:
             std::size_t mmap_size;
         };
     };
-    std::vector<std::uint32_t> line_offsets;
 
     constexpr SourceFile(std::string_view path, void* data, std::size_t size) noexcept
         : fpath(path)
         , is_mmaped(true)
         , mmap_data(data)
-        , mmap_size(size)
-        , line_offsets(build_line_offsets(std::string_view(static_cast<const char*>(data), size))) {}
-
-    static constexpr auto build_line_offsets(std::string_view content) noexcept -> std::vector<std::uint32_t> {
-        auto line_offsets = std::vector<std::uint32_t>();
-        line_offsets.reserve(content.size() / 40 + 1);
-        line_offsets.push_back(0);
-
-        std::size_t pos = 0;
-        while ((pos = content.find('\n', pos)) != std::string_view::npos) {
-            line_offsets.push_back(static_cast<std::uint32_t>(pos + 1));
-            pos++;
-        }
-
-        return line_offsets;
-    }
+        , mmap_size(size) {}
 };

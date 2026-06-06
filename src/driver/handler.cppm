@@ -6,7 +6,9 @@ import std;
 
 export auto run(const Driver& driver) noexcept -> int {
     if (auto source = SourceFile::from_file(driver.input_files[0]); source) {
-        return run_single_file(driver, std::move(*source));
+        const auto text = source->text();
+        const auto filepath = source->filepath();
+        return run_single_file(driver, text, filepath);
     } else {
         std::println("carven run: error: cannot read '{}'", driver.input_files[0]);
         return 1;

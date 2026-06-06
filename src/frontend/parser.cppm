@@ -8,15 +8,6 @@ import std;
 export struct ParseError final {
     std::string message;
     Span span;
-    SourceLocation location;
-};
-
-template<> struct std::formatter<ParseError> final {
-    constexpr auto parse(const auto& context) const noexcept { return context.begin(); }
-
-    auto format(const ParseError& error, auto&& context) const noexcept {
-        return std::format_to(context.out(), "error:{}: {}", error.location, error.message);
-    }
 };
 
 export struct ParseResult final {
@@ -27,7 +18,8 @@ export struct ParseResult final {
 
 class Parser final {
 public:
-    constexpr Parser(std::span<const Token> tokens, const SourceFile& file) noexcept : tokens(tokens), source(file) {}
+    constexpr Parser(std::span<const Token> tokens, std::string_view source) noexcept
+        : tokens(tokens), source(source) {}
 
     constexpr auto parse() noexcept -> ParseResult {
         while (!eof()) {
@@ -54,7 +46,7 @@ public:
 
 private:
     std::span<const Token> tokens;
-    const SourceFile& source;
+    std::string_view source;
     std::size_t current = 0;
     Arena arena;
     ParseResult result;
@@ -135,7 +127,7 @@ private:
     }
 
     constexpr auto eof_span() const noexcept -> Span {
-        const auto pos = static_cast<std::uint32_t>(source.text().size());
+        const auto pos = static_cast<std::uint32_t>(source.size());
         return { .start = pos, .end = pos };
     }
 
@@ -207,7 +199,7 @@ private:
     }
 
     constexpr auto push_error(std::string_view message, Span span) noexcept -> void {
-        result.errors.emplace_back(std::string(message), span, source.location(span.start));
+        result.errors.emplace_back(std::string(message), span);
     }
 
     constexpr auto is_top_level_start(Token token) const noexcept -> bool {
@@ -367,7 +359,7 @@ private:
             init = parse_expr();
         }
 
-        const auto keyword_text = source.slice(keyword->span);
+        const auto keyword_text = slice(source, keyword->span);
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
             push_error(std::format("{} requires an initializer", keyword_text), keyword->span);
         }
@@ -601,7 +593,7 @@ private:
                 case Arrow:
                 case ColonColon: {
                     const auto op_span = advance()->span;
-                    const auto field_name = expect_name(std::format("expected field name after '{}'", source.slice(op_span)));
+                    const auto field_name = expect_name(std::format("expected field name after '{}'", slice(source, op_span)));
                     if (!field_name) {
                         lhs = alloc<LiteralExpr>(op_span);
                         break;
@@ -660,7 +652,7 @@ private:
             case Export:
             case Using:
             case Else: {
-                const auto keyword = source.slice(token->span);
+                const auto keyword = slice(source, token->span);
                 push_error(std::format("keyword '{}' cannot be used as an identifier", keyword), token->span);
                 advance();
                 return alloc<LiteralExpr>(token->span);
@@ -710,7 +702,7 @@ private:
 
         auto arm = MatchArm{};
 
-        if (start->kind == TokenKind::Identifier && source.slice(start->span) == "_") {
+        if (start->kind == TokenKind::Identifier && slice(source, start->span) == "_") {
             advance();
             arm.is_wildcard = true;
         } else if (start->kind == TokenKind::NumberLiteral
@@ -842,7 +834,7 @@ private:
         auto item = ImportItem {
             .module_name = module_name->span,
             .using_decls = {},
-            .is_std_module = source.slice(module_name->span) == "std"
+            .is_std_module = slice(source, module_name->span) == "std"
         };
 
         if (match(TokenKind::Using)) {
@@ -1052,6 +1044,6 @@ private:
     }
 };
 
-export constexpr auto parse(std::span<const Token> tokens, const SourceFile& source) noexcept -> ParseResult {
+export constexpr auto parse(std::span<const Token> tokens, std::string_view source) noexcept -> ParseResult {
     return Parser(tokens, source).parse();
 }

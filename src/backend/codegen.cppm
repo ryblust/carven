@@ -22,9 +22,9 @@ constexpr auto map_type(std::string_view carven_type) noexcept -> std::string_vi
     return carven_type;
 }
 
-constexpr auto generate_type(std::string& result, Span type_span, const SourceFile& source) noexcept -> void {
+constexpr auto generate_type(std::string& result, Span type_span, std::string_view source) noexcept -> void {
     if (type_span.empty()) return;
-    const auto text = source.slice(type_span);
+    const auto text = slice(source, type_span);
     if (text.starts_with('[')) {
         const auto semicolon = text.find(';');
         if (semicolon == std::string_view::npos) {
@@ -50,8 +50,8 @@ constexpr auto generate_type(std::string& result, Span type_span, const SourceFi
     }
 }
 
-constexpr auto generate_import(std::string& result, const ImportItem& item, const SourceFile& source) noexcept -> void {
-    const auto name = source.slice(item.module_name);
+constexpr auto generate_import(std::string& result, const ImportItem& item, std::string_view source) noexcept -> void {
+    const auto name = slice(source, item.module_name);
 
     if (!item.is_std_module) {
         result += "import ";
@@ -67,15 +67,15 @@ constexpr auto generate_import(std::string& result, const ImportItem& item, cons
             result += "using ";
             result += name;
             result += "::";
-            result += source.slice(decl);
+            result += slice(source, decl);
             result += ";\n";
         }
     }
 }
 
-constexpr auto generate_enum(std::string& result, const EnumItem& item, const SourceFile& source) noexcept -> void {
+constexpr auto generate_enum(std::string& result, const EnumItem& item, std::string_view source) noexcept -> void {
     result += "enum class ";
-    result += source.slice(item.name);
+    result += slice(source, item.name);
     if (!item.size.empty()) {
         result += " : ";
         generate_type(result, item.size, source);
@@ -84,38 +84,38 @@ constexpr auto generate_enum(std::string& result, const EnumItem& item, const So
 
     for (const auto field : item.fields) {
         result += "    ";
-        result += source.slice(field);
+        result += slice(source, field);
         result += ",\n";
     }
 
     result += "};";
 }
 
-constexpr auto generate_struct(std::string& result, const StructItem& item, const SourceFile& source) noexcept -> void {
+constexpr auto generate_struct(std::string& result, const StructItem& item, std::string_view source) noexcept -> void {
     result += "struct ";
-    result += source.slice(item.name);
+    result += slice(source, item.name);
     result += " {\n";
 
     for (const auto field : item.fields) {
         result += "    ";
         generate_type(result, field.type, source);
         result += ' ';
-        result += source.slice(field.name);
+        result += slice(source, field.name);
         result += ";\n";
     }
 
     result += "};";
 }
 
-constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> void;
-constexpr auto generate_expr(std::string& result, const Expr& expr, const SourceFile& source) noexcept -> void;
+constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> void;
+constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source) noexcept -> void;
 
-constexpr auto generate_var_decl(std::string& result, const VarDecl& s, const SourceFile& source, std::string_view padding = "") noexcept -> void {
-    const auto keyword = source.slice(s.keyword);
+constexpr auto generate_var_decl(std::string& result, const VarDecl& s, std::string_view source, std::string_view padding = "") noexcept -> void {
+    const auto keyword = slice(source, s.keyword);
 
     result += padding;
     result += keyword == "let" ? "const auto " : keyword == "const" ? "constexpr auto " : "auto ";
-    result += source.slice(s.name);
+    result += slice(source, s.name);
 
     if (s.init != nullptr) {
         if (!s.type.empty()) {
@@ -135,8 +135,8 @@ constexpr auto generate_var_decl(std::string& result, const VarDecl& s, const So
     }
 }
 
-constexpr auto generate_function(std::string& result, const FunctionItem& item, const SourceFile& source) noexcept -> void {
-    const auto name = source.slice(item.name);
+constexpr auto generate_function(std::string& result, const FunctionItem& item, std::string_view source) noexcept -> void {
+    const auto name = slice(source, item.name);
 
     result += "auto ";
     result += name;
@@ -151,7 +151,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
             generate_type(result, p.type, source);
             result += ' ';
         }
-        result += source.slice(p.name);
+        result += slice(source, p.name);
     }
 
     result += ") noexcept";
@@ -173,7 +173,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
     result += '}';
 }
 
-constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const SourceFile& source, std::uint32_t indent) noexcept -> void {
+constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> void {
     const auto padding = std::string(indent, ' ');
 
     switch (stmt.kind) {
@@ -271,35 +271,35 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, const Source
     }
 }
 
-constexpr auto generate_expr(std::string& result, const Expr& expr, const SourceFile& source) noexcept -> void {
+constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source) noexcept -> void {
     switch (expr.kind) {
         case ExprKind::Literal: {
             const auto& e = *static_cast<const LiteralExpr*>(&expr);
-            result += source.slice(e.token);
+            result += slice(source, e.token);
             return;
         }
         case ExprKind::Ident: {
             const auto& e = *static_cast<const IdentExpr*>(&expr);
-            result += source.slice(e.name);
+            result += slice(source, e.name);
             return;
         }
         case ExprKind::Prefix: {
             const auto& e = *static_cast<const PrefixExpr*>(&expr);
-            result += source.slice(e.span);
+            result += slice(source, e.span);
             generate_expr(result, *e.rhs, source);
             return;
         }
         case ExprKind::Postfix: {
             const auto& e = *static_cast<const PostfixExpr*>(&expr);
             generate_expr(result, *e.lhs, source);
-            result += source.slice(e.span);
+            result += slice(source, e.span);
             return;
         }
         case ExprKind::Binary: {
             const auto& e = *static_cast<const BinaryExpr*>(&expr);
             generate_expr(result, *e.lhs, source);
             result += ' ';
-            result += source.slice(e.span);
+            result += slice(source, e.span);
             result += ' ';
             generate_expr(result, *e.rhs, source);
             return;
@@ -326,8 +326,8 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
         case ExprKind::Field: {
             const auto& e = *static_cast<const FieldExpr*>(&expr);
             generate_expr(result, *e.lhs, source);
-            result += source.slice(e.dot);
-            result += source.slice(e.field);
+            result += slice(source, e.dot);
+            result += slice(source, e.field);
             return;
         }
         case ExprKind::Group: {
@@ -348,7 +348,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
             const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
             generate_expr(result, *e.lhs, source);
             result += ' ';
-            result += source.slice(e.span);
+            result += slice(source, e.span);
             result += ' ';
             generate_expr(result, *e.rhs, source);
             return;
@@ -452,7 +452,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, const Source
                             if (is_type_arm) {
                                 const auto ident = static_cast<const IdentExpr*>(arm.patterns[j]);
                                 result += "std::is_same_v<_T, ";
-                                result += map_type(source.slice(ident->name));
+                                result += map_type(slice(source, ident->name));
                                 result += '>';
                             } else {
                                 result += "_cv == ";
@@ -553,9 +553,9 @@ constexpr auto generate_include_preamble(std::uint8_t standard) noexcept -> cons
     ;
 }
 
-export constexpr auto generate(std::span<const TopLevelItem> items, const SourceFile& source, std::uint8_t standard, bool default_include_std) noexcept -> std::string {
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, std::uint8_t standard, bool default_include_std) noexcept -> std::string {
     auto result = std::string();
-    result.reserve(source.text().size() * 2);
+    result.reserve(source.size() * 2);
 
     if (default_include_std) {
         result += generate_include_preamble(standard);
