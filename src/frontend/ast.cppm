@@ -8,8 +8,8 @@ export enum class UnaryOp : std::uint32_t {
 };
 
 constexpr auto to_string(UnaryOp op) noexcept -> const char* {
-    using enum UnaryOp;
     switch (op) {
+        using enum UnaryOp;
         case Neg:        return "-";   case BitNot:     return "~";
         case LogicalNot: return "!";   case PreInc:     return "++";
         case PreDec:     return "--";  case PostInc:    return "++";
@@ -20,6 +20,7 @@ constexpr auto to_string(UnaryOp op) noexcept -> const char* {
 
 template<> struct std::formatter<UnaryOp> final {
     constexpr auto parse(const auto& context) const noexcept { return context.begin(); }
+
     auto format(UnaryOp op, auto&& context) const noexcept {
         return std::format_to(context.out(), "{}", to_string(op));
     }
@@ -30,8 +31,8 @@ export enum class BinOp : std::uint32_t {
 };
 
 constexpr auto to_string(BinOp op) noexcept -> const char* {
-    using enum BinOp;
     switch (op) {
+        using enum BinOp;
         case Add: return "+";  case Sub:    return "-";  case Mul:   return "*";  case Div:    return "/";
         case Mod: return "%";  case BitAnd: return "&";  case BitOr: return "|";  case BitXor: return "^";
         case Shl: return "<<"; case Shr:    return ">>"; case Eq:    return "=="; case Ne:     return "!=";
@@ -42,6 +43,7 @@ constexpr auto to_string(BinOp op) noexcept -> const char* {
 
 template<> struct std::formatter<BinOp> final {
     constexpr auto parse(const auto& context) const noexcept { return context.begin(); }
+
     auto format(BinOp op, auto&& context) const noexcept {
         return std::format_to(context.out(), "{}", to_string(op));
     }
@@ -49,6 +51,10 @@ template<> struct std::formatter<BinOp> final {
 
 export enum class ExprKind : std::uint8_t {
     Literal, Ident, Prefix, Postfix, Binary, Call, Index, Field, Group, Assign, CompoundAssign, Comma, If, Array, Match,
+};
+
+export enum class TypeKind : std::uint8_t {
+    Name, Array,
 };
 
 export enum class StmtKind : std::uint8_t {
@@ -199,11 +205,28 @@ export struct EmptyStmt final : Stmt {
     Span semicolon;
 };
 
+export struct Type {
+    TypeKind kind;
+};
+
+export struct NameType final : Type {
+    static constexpr auto kind = TypeKind::Name;
+    Span span;
+};
+
+export struct ArrayType final : Type {
+    static constexpr auto kind = TypeKind::Array;
+    Span elem_type;
+    Span semicolon;
+    Span size;
+    Span rbracket;
+};
+
 export struct VarDecl final : Stmt {
     static constexpr auto kind = StmtKind::VarDecl;
     Span keyword;
     Span name;
-    Span type;
+    Type* type;
     Span eq;
     Span semicolon;
     Expr* init;
@@ -238,13 +261,13 @@ export struct ForStmt final : Stmt {
 
 export struct FunctionParam final {
     Span name;
-    Span type;
+    Type* type;
 };
 
 export struct FunctionItem final {
     Span name;
     std::vector<FunctionParam> params;
-    Span return_type;
+    Type* return_type;
     BlockStmt* body;
 };
 
@@ -257,13 +280,13 @@ export struct ImportItem final {
 
 export struct EnumItem final {
     Span name;
-    Span size;
+    Type* size;
     std::vector<Span> fields;
 };
 
 export struct StructField final {
     Span name;
-    Span type;
+    Type* type;
 };
 
 export struct StructItem final {

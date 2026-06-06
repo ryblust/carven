@@ -25,11 +25,12 @@ constexpr auto GLOBAL_FLAGS = std::array<Flag, 4> {{
     { .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
 }};
 
-constexpr auto RUN_FLAGS = std::array<Flag, 4> {{
-    { .long_name = "-std=c++<value>",          .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)"                   },
-    { .long_name = "--output-dir=<path>",      .short_name = "", .description = "Build cache output directory"                               },
-    { .long_name = "--import-std",             .short_name = "", .description = "Force #include std headers (auto if source has import std)" },
-    { .long_name = "-E",                       .short_name = "", .description = "Only transpile (emit C++, skip compile)"                    },
+constexpr auto RUN_FLAGS = std::array<Flag, 5> {{
+    { .long_name = "-std=c++<value>",          .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)"                      },
+    { .long_name = "--compiler=<name>",        .short_name = "", .description = "C++ compiler path (default: c++ on macOS/Linux, clang-cl on Win)" },
+    { .long_name = "--output-dir=<path>",      .short_name = "", .description = "Build cache output directory"                                   },
+    { .long_name = "--import-std",             .short_name = "", .description = "Force #include std headers (auto if source has import std)"     },
+    { .long_name = "-E",                       .short_name = "", .description = "Only transpile (emit C++, skip compile)"                        },
 }};
 
 constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{

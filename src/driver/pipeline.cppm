@@ -3,6 +3,7 @@ export module carven.driver.pipeline;
 import carven.common.filesystem;
 import carven.common.process;
 import carven.common.source;
+import carven.driver.report;
 import carven.driver.toolchain;
 import carven.frontend.lexer;
 import carven.frontend.ast;
@@ -32,9 +33,14 @@ export struct Driver final {
 
 export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> std::optional<Driver> {
     auto driver = Driver{};
+    auto double_dash = false;
 
     for (const std::string_view flag : flags) {
-        if (flag.starts_with("-std=")) {
+        if (double_dash) {
+            driver.input_files.push_back(flag);
+        } else if (flag == "--") {
+            double_dash = true;
+        } else if (flag.starts_with("-std=")) {
             const auto standard = flag.substr(5);
             if      (standard == "c++14") driver.language_standard = 14;
             else if (standard == "c++17") driver.language_standard = 17;
@@ -47,6 +53,8 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
             }
         } else if (flag.starts_with("--output-dir=")) {
             driver.output_dir = flag.substr(13);
+        } else if (flag.starts_with("--compiler=")) {
+            driver.compiler = flag.substr(11);
         } else if (flag == "--import-std") {
             driver.import_std = true;
         } else if (flag == "-E") {
@@ -66,7 +74,7 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
     return driver;
 }
 
-export constexpr auto transpile(const Driver& driver, std::string_view source) noexcept -> TranspileResult {
+export constexpr auto transpile(std::string_view source, std::uint8_t language_standard, bool import_std) noexcept -> TranspileResult {
     auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
@@ -76,12 +84,11 @@ export constexpr auto transpile(const Driver& driver, std::string_view source) n
         };
     }
 
-    auto emit_std_module = driver.import_std;
-    if (!emit_std_module) {
+    if (!import_std) {
         for (const auto& item : parse_result.items) {
             if (const auto import_module = std::get_if<ImportItem>(&item)) {
                 if (import_module->is_std_module) {
-                    emit_std_module = true;
+                    import_std = true;
                     break;
                 }
             }
@@ -89,20 +96,16 @@ export constexpr auto transpile(const Driver& driver, std::string_view source) n
     }
 
     return {
-        .output = generate(parse_result.items, source, driver.language_standard, emit_std_module),
+        .output = generate(parse_result.items, source, language_standard, import_std),
         .errors = {}
     };
 }
 
 export auto run_single_file(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> int {
-    const auto transpile_result = transpile(driver, source);
+    const auto transpile_result = transpile(source, driver.language_standard, driver.import_std);
 
     if (!transpile_result.errors.empty()) {
-        const auto line_offsets = LineOffsets(source);
-        for (const auto& err : transpile_result.errors) {
-            const auto loc = line_offsets.location(err.span.start);
-            std::println("error:{}:{}: {}", loc.line, loc.column, err.message);
-        }
+        report_errors(transpile_result.errors, source, filepath);
         return 1;
     }
 
@@ -119,49 +122,36 @@ export auto run_single_file(const Driver& driver, std::string_view source, std::
     const auto artifacts = build_artifacts(filepath, driver.output_dir);
 
     if (!write_file_if_changed(artifacts.cpp_path, transpile_result.output)) {
-        std::println("carven run: error: cannot write '{}'", artifacts.cpp_path.string());
+        std::println("carven run: error: cannot write '{}'", artifacts.cpp_path);
         return 1;
     }
 
     if (needs_compile(artifacts.cpp_path, artifacts.exe_path)) {
-        const auto selected_compiler = compiler_from_environment(driver.compiler);
-        const auto is_clang_cl = selected_compiler.contains("clang-cl");
-        auto compile_args = std::vector { selected_compiler };
-
-        if (is_clang_cl) {
-            compile_args.emplace_back("-Xclang");
-            compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
-        } else {
-            compile_args.emplace_back(std::format("-std=c++{}", driver.language_standard));
-        }
-
-        compile_args.emplace_back(artifacts.cpp_path.string());
-        compile_args.emplace_back("-o");
-        compile_args.emplace_back(artifacts.exe_path.string());
+        const auto compile_args = build_compile_args(driver.compiler, artifacts.cpp_path, artifacts.exe_path, driver.language_standard);
 
         const auto compile_result = run_process(compile_args);
-        if (!compile_result.started) {
-            std::println("carven run: error: cannot start C++ compiler '{}'", selected_compiler);
+        if (compile_result < 0) {
+            std::println("carven run: error: cannot start C++ compiler '{}'", driver.compiler);
             return 1;
         }
 
-        if (compile_result.exit_code != 0) {
+        if (compile_result != 0) {
             auto command = std::string();
             for (auto i = 0uz; i < compile_args.size(); ++i) {
                 if (i > 0) command += ' ';
                 command += compile_args[i];
             }
             std::println("carven run: error: C++ compile failed\ncommand: {}", command);
-            return compile_result.exit_code;
+            return compile_result;
         }
     }
 
-    const auto run_args = std::vector { artifacts.exe_path.string() };
+    const auto run_args = std::vector { artifacts.exe_path };
     const auto run_result = run_process(run_args);
-    if (!run_result.started) {
-        std::println("carven run: error: cannot run '{}'", artifacts.exe_path.string());
+    if (run_result < 0) {
+        std::println("carven run: error: cannot run '{}'", artifacts.exe_path);
         return 1;
     }
 
-    return run_result.exit_code;
+    return run_result;
 }

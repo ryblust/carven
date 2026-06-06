@@ -7,47 +7,38 @@ import std;
 
 TEST_CASE("Pipeline: transpile") {
     SUBCASE("transpile simple function") {
-        const auto driver = Driver{};
-        const auto result = transpile(driver, "fn main() { }");
+        const auto result = transpile("fn main() { }", 23, false);
         CHECK(result.errors.empty());
         CHECK(!result.output.empty());
     }
 
     SUBCASE("transpile includes preamble when import_std is set") {
-        auto driver = Driver{};
-        driver.import_std = true;
-        const auto result = transpile(driver, "fn main() { }");
+        const auto result = transpile("fn main() { }", 23, true);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile auto-detects import std") {
-        const auto driver = Driver{};
-        const auto result = transpile(driver, "import std;\nfn main() { }");
+        const auto result = transpile("import std;\nfn main() { }", 23, false);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("#include"));
     }
 
     SUBCASE("transpile returns errors on invalid source") {
-        const auto driver = Driver{};
-        const auto result = transpile(driver, "@ invalid @");
+        const auto result = transpile("@ invalid @", 23, false);
         CHECK(!result.errors.empty());
     }
 
     SUBCASE("transpile with c++26 standard") {
-        auto driver = Driver{};
-        driver.language_standard = 26;
-        driver.import_std = true;
-        const auto result = transpile(driver, "fn main() { }");
+        const auto result = transpile("fn main() { }", 26, true);
         CHECK(result.errors.empty());
     }
 
     SUBCASE("transpile helloworld") {
-        const auto driver = Driver{};
         auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
         REQUIRE(source.has_value());
         const auto text = source->text();
-        const auto result = transpile(driver, text);
+        const auto result = transpile(text, 23, false);
         CHECK(result.errors.empty());
         CHECK(result.output.contains("auto main() noexcept -> int"));
         CHECK(result.output.contains("std::println(\"Hello World\")"));

@@ -74,4 +74,29 @@ TEST_CASE("Pipeline: parse_flags") {
         CHECK_EQ(driver->input_files.size(), 1u);
         CHECK_EQ(driver->input_files[0], "main.cv");
     }
+
+    SUBCASE("double dash treats remaining args as files") {
+        const auto args = std::array { "--", "-unknown", "file.cv" };
+        const auto driver = parse_flags(args);
+        CHECK(driver.has_value());
+        CHECK_EQ(driver->input_files.size(), 2u);
+        CHECK_EQ(driver->input_files[0], "-unknown");
+        CHECK_EQ(driver->input_files[1], "file.cv");
+    }
+
+    SUBCASE("double dash with no args is a no-op") {
+        const auto args = std::array { "--" };
+        const auto driver = parse_flags(args);
+        CHECK(driver.has_value());
+        CHECK(driver->input_files.empty());
+    }
+
+    SUBCASE("double dash in middle still processes first flags") {
+        const auto args = std::array { "--import-std", "--", "file.cv" };
+        const auto driver = parse_flags(args);
+        CHECK(driver.has_value());
+        CHECK(driver->import_std);
+        CHECK_EQ(driver->input_files.size(), 1u);
+        CHECK_EQ(driver->input_files[0], "file.cv");
+    }
 }

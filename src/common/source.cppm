@@ -138,7 +138,7 @@ public:
     constexpr auto text() const noexcept -> std::string_view {
         if consteval { return source; }
         return is_mmaped
-            ? std::string_view(static_cast<const char*>(mmap_data), mmap_size)
+            ? std::string_view(mmap_data ? static_cast<const char*>(mmap_data) : "", mmap_size)
             : source;
     }
 

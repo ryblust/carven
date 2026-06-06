@@ -231,8 +231,12 @@ private:
         while (!eof() && current() != '"' && current() != '\n') {
             if (current() == '\\') {
                 advance();
+                if (eof() || current() == '\n') break;
+                if (!is_valid_escape(current())) return token(TokenKind::Error);
+                advance();
+            } else {
+                advance();
             }
-            advance();
         }
 
         if (!eof() && current() == '"') {

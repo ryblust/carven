@@ -351,12 +351,12 @@ TEST_CASE("Codegen: match expression") {
     }
     SUBCASE("multi-pattern type") {
         const auto cpp = gen("fn f(v) { match v { i32 | f64 => { a } _ => { b } } }");
-        CHECK(cpp.contains("std::is_same_v<_T, std::int32_t>"));
-        CHECK(cpp.contains("std::is_same_v<_T, double>"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, std::int32_t>"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, double>"));
     }
     SUBCASE("mixed patterns") {
         const auto cpp = gen("fn f(v) { match v { 0 => { a } i32 => { b } _ => { c } } }");
-        CHECK(cpp.contains("_cv"));
-        CHECK(cpp.contains("std::is_same_v"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, std::int32_t>"));
+        CHECK(cpp.contains("v == 0"));
     }
 }

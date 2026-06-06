@@ -8,6 +8,14 @@ fn print_type(value) {
     }
 }
 
+fn print_mixed(v) {
+    match v {
+        0 => { std::println("zero"); }
+        i32 => { std::println("int"); }
+        _ => { std::println("other"); }
+    }
+}
+
 fn main() {
     let result = match 2 {
         1 => { "one" }
@@ -16,4 +24,6 @@ fn main() {
     };
     std::println("{}", result);
     print_type(42);
+    print_mixed(0);
+    print_mixed(42);
 }

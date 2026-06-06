@@ -133,7 +133,6 @@ private:
 
     constexpr auto current_span() const noexcept -> Span {
         if (const auto token = peek()) return token->span;
-
         return eof_span();
     }
 
@@ -167,35 +166,38 @@ private:
         return expect(TokenKind::Identifier, message);
     }
 
-    constexpr auto parse_type_annotation(std::string_view message) noexcept -> std::optional<Span> {
+    constexpr auto parse_type_annotation(std::string_view message) noexcept -> Type* {
         const auto start = peek();
         if (start == nullptr) {
             push_error(message, eof_span());
-            return std::nullopt;
+            return nullptr;
         }
 
         if (start->kind == TokenKind::LeftBracket) {
-            const auto lbracket = advance()->span;
+            advance();
             const auto inner = expect_name("expected array element type after '['");
-            if (!inner) return std::nullopt;
-            if (!expect(TokenKind::SemiColon, "expected ';' in array type")) return std::nullopt;
+            if (!inner) return nullptr;
+            const auto semi = expect(TokenKind::SemiColon, "expected ';' in array type");
+            if (!semi) return nullptr;
+            const auto size_start = peek() ? peek()->span.start : static_cast<std::uint32_t>(source.size());
             const auto size_expr = parse_expr();
             if (!size_expr) {
                 push_error("expected array size expression", current_span());
-                return std::nullopt;
+                return nullptr;
             }
+            const auto size_end = peek() ? peek()->span.start : static_cast<std::uint32_t>(source.size());
             const auto rbracket = expect(TokenKind::RightBracket, "expected ']' after array size");
-            if (!rbracket) return std::nullopt;
-            return Span { lbracket.start, rbracket->span.end };
+            if (!rbracket) return nullptr;
+            return alloc<ArrayType>(inner->span, semi->span, Span { size_start, size_end }, rbracket->span);
         }
 
         if (start->kind == TokenKind::Identifier) {
             const auto span = advance()->span;
-            return span;
+            return alloc<NameType>(span);
         }
 
         push_error(message, current_span());
-        return std::nullopt;
+        return nullptr;
     }
 
     constexpr auto push_error(std::string_view message, Span span) noexcept -> void {
@@ -342,15 +344,14 @@ private:
             synchronize_to_stmt_end();
             return nullptr;
         }
-        auto type_span = Span{};
+        Type* type = nullptr;
         if (check(TokenKind::Colon)) {
             advance();
-            const auto type = parse_type_annotation("expected type after ':'");
+            type = parse_type_annotation("expected type after ':'");
             if (!type) {
                 synchronize_to_stmt_end();
                 return nullptr;
             }
-            type_span = *type;
         }
         auto eq_span = Span{};
         Expr* init = nullptr;
@@ -363,7 +364,7 @@ private:
         if ((keyword_text == "let" || keyword_text == "const") && init == nullptr) {
             push_error(std::string(keyword_text) + " requires an initializer", keyword->span);
         }
-        return alloc<VarDecl>(keyword->span, name->span, type_span, eq_span, Span{}, init);
+        return alloc<VarDecl>(keyword->span, name->span, type, eq_span, Span{}, init);
     }
 
     constexpr auto parse_var_decl() noexcept -> Stmt* {
@@ -883,12 +884,11 @@ private:
         };
 
         if (match(TokenKind::Colon)) {
-            const auto size = parse_type_annotation("expected enum size type");
-            if (!size) {
+            item.size = parse_type_annotation("expected enum size type");
+            if (!item.size) {
                 synchronize_to_item_end();
                 return;
             }
-            item.size = *size;
         }
 
         if (!expect(TokenKind::LeftBrace, "expected '{' before enum fields")) {
@@ -952,7 +952,7 @@ private:
                 return;
             }
 
-            item.fields.emplace_back(field_name->span, *field_type);
+            item.fields.emplace_back(field_name->span, field_type);
 
             if (match(TokenKind::Comma) || match(TokenKind::SemiColon)) {
                 continue;
@@ -979,14 +979,13 @@ private:
             const auto param_name = expect_name("expected function parameter name");
             if (!param_name) return std::nullopt;
 
-            auto type_span = Span{};
+            Type* param_type = nullptr;
             if (match(TokenKind::Colon)) {
-                const auto param_type = parse_type_annotation("expected function parameter type");
+                param_type = parse_type_annotation("expected function parameter type");
                 if (!param_type) return std::nullopt;
-                type_span = *param_type;
             }
 
-            params.emplace_back(param_name->span, type_span);
+            params.emplace_back(param_name->span, param_type);
 
             if (match(TokenKind::Comma)) continue;
             if (!check(TokenKind::RightParen)) {
@@ -1018,14 +1017,13 @@ private:
             synchronize_to_item_end();
             return;
         }
-        auto return_type = Span{};
+        Type* return_type = nullptr;
         if (match(TokenKind::Arrow)) {
-            const auto type = parse_type_annotation("expected function return type");
-            if (!type) {
+            return_type = parse_type_annotation("expected function return type");
+            if (!return_type) {
                 synchronize_to_item_end();
                 return;
             }
-            return_type = *type;
         }
         auto block = parse_block();
         if (!block) {

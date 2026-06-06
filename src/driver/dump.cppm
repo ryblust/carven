@@ -2,6 +2,7 @@ export module carven.driver.dump;
 
 import carven.common.source;
 import carven.driver.pipeline;
+import carven.driver.report;
 import carven.frontend.token;
 import carven.frontend.lexer;
 import carven.frontend.ast;
@@ -11,6 +12,19 @@ import std;
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Expr& expr, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
+
+static auto dump_type(const Type* type, std::string_view source) noexcept -> std::string {
+    if (type == nullptr) return {};
+    switch (type->kind) {
+        case TypeKind::Name:
+            return std::string(slice(source, static_cast<const NameType*>(type)->span));
+        case TypeKind::Array: {
+            const auto arr = static_cast<const ArrayType*>(type);
+            return std::format("[{}; {}]", slice(source, arr->elem_type), slice(source, arr->size));
+        }
+    }
+    return {};
+}
 
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     const auto pad = std::string(indent, ' ');
@@ -36,7 +50,7 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
             auto result = std::format("{}Enum: {}{} {{ ",
                 pad,
                 slice(source, it.name),
-                it.size.empty() ? "" : std::format(": {}", slice(source, it.size))
+                it.size != nullptr ? std::format(": {}", dump_type(it.size, source)) : ""
             );
 
             for (auto i = 0uz; i < it.fields.size(); ++i) {
@@ -54,7 +68,7 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
                 std::format_to(
                     std::back_inserter(result),
                     "{}{}: {}\n",
-                    field_pad, slice(source, field.name), slice(source, field.type)
+                    field_pad, slice(source, field.name), dump_type(field.type, source)
                 );
             }
 
@@ -68,14 +82,14 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
                 std::format_to(
                     std::back_inserter(result),
                     "{}: {}",
-                    slice(source, it.params[i].name), slice(source, it.params[i].type)
+                    slice(source, it.params[i].name), dump_type(it.params[i].type, source)
                 );
             }
 
             std::format_to(
                 std::back_inserter(result),
                 "){} {{\n",
-                it.return_type.empty() ? "" : std::format(" -> {}", slice(source, it.return_type))
+                it.return_type != nullptr ? std::format(" -> {}", dump_type(it.return_type, source)) : ""
             );
 
             for (const auto stmt : it.body->statements) {
@@ -221,7 +235,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                 pad,
                 slice(source, s.keyword),
                 slice(source, s.name),
-                s.type.empty() ? "" : std::format(": {}", slice(source, s.type))
+                s.type != nullptr ? std::format(": {}", dump_type(s.type, source)) : ""
             );
             if (s.init != nullptr) {
                 result += " = ";
@@ -260,7 +274,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                         init_str = std::format("{} {}{}",
                             slice(source, d->keyword),
                             slice(source, d->name),
-                            d->type.empty() ? "" : std::format(": {}", slice(source, d->type))
+                            d->type != nullptr ? std::format(": {}", dump_type(d->type, source)) : ""
                         );
                         if (d->init != nullptr) {
                             init_str += " = ";
@@ -325,11 +339,7 @@ export auto dump(const Driver& driver) noexcept -> int {
     if (!driver.only_tokens) {
         const auto parse_result = parse(tokens, text);
         if (!parse_result.errors.empty()) {
-            const auto line_offsets = LineOffsets(text);
-            for (const auto& err : parse_result.errors) {
-                const auto loc = line_offsets.location(err.span.start);
-                std::println("error:{}:{}: {}", loc.line, loc.column, err.message);
-            }
+            report_errors(parse_result.errors, text, driver.input_files[0]);
             return 1;
         }
         std::print("{}", dump_ast(parse_result, text));

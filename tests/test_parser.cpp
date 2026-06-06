@@ -7,7 +7,7 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
-#define PARSE(text) parse(tokenize(text), (text))
+#define PARSE(text) [](std::string_view s) static noexcept { return parse(tokenize(s), s); }((text))
 
 TEST_CASE("Parser: import") {
     SUBCASE("basic import") {
@@ -95,7 +95,8 @@ TEST_CASE("Parser: enum") {
         CHECK(result.errors.empty());
         const auto item = std::get_if<EnumItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(slice(source, item->size), "u8");
+        CHECK(item->size != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->size)->span), "u8");
         CHECK_EQ(item->fields.size(), 2u);
     }
 
@@ -128,9 +129,11 @@ TEST_CASE("Parser: struct") {
         CHECK_EQ(slice(source, item->name), "Point");
         CHECK_EQ(item->fields.size(), 2u);
         CHECK_EQ(slice(source, item->fields[0].name), "x");
-        CHECK_EQ(slice(source, item->fields[0].type), "i32");
+        CHECK(item->fields[0].type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->fields[0].type)->span), "i32");
         CHECK_EQ(slice(source, item->fields[1].name), "y");
-        CHECK_EQ(slice(source, item->fields[1].type), "i32");
+        CHECK(item->fields[1].type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->fields[1].type)->span), "i32");
     }
 
     SUBCASE("struct with semicolon separators") {
@@ -161,7 +164,7 @@ TEST_CASE("Parser: function") {
         CHECK(item != nullptr);
         CHECK_EQ(slice(source, item->name), "main");
         CHECK(item->params.empty());
-        CHECK(item->return_type.empty());
+        CHECK(item->return_type == nullptr);
     }
 
     SUBCASE("function with return type") {
@@ -170,7 +173,8 @@ TEST_CASE("Parser: function") {
         CHECK(result.errors.empty());
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(item != nullptr);
-        CHECK_EQ(slice(source, item->return_type), "i32");
+        CHECK(item->return_type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->return_type)->span), "i32");
     }
 
     SUBCASE("function with typed parameters") {
@@ -181,9 +185,11 @@ TEST_CASE("Parser: function") {
         CHECK(item != nullptr);
         CHECK_EQ(item->params.size(), 2u);
         CHECK_EQ(slice(source, item->params[0].name), "a");
-        CHECK_EQ(slice(source, item->params[0].type), "i32");
+        CHECK(item->params[0].type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->params[0].type)->span), "i32");
         CHECK_EQ(slice(source, item->params[1].name), "b");
-        CHECK_EQ(slice(source, item->params[1].type), "i32");
+        CHECK(item->params[1].type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(item->params[1].type)->span), "i32");
     }
 
     SUBCASE("function with untyped parameters") {
@@ -193,8 +199,8 @@ TEST_CASE("Parser: function") {
         const auto item = std::get_if<FunctionItem>(&result.items[0]);
         CHECK(item != nullptr);
         CHECK_EQ(item->params.size(), 2u);
-        CHECK(item->params[0].type.empty());
-        CHECK(item->params[1].type.empty());
+        CHECK(item->params[0].type == nullptr);
+        CHECK(item->params[1].type == nullptr);
     }
 
     SUBCASE("function with body statements") {
@@ -217,7 +223,8 @@ TEST_CASE("Parser: variable declarations") {
         CHECK(decl != nullptr);
         CHECK_EQ(slice(source, decl->keyword), "let");
         CHECK_EQ(slice(source, decl->name), "x");
-        CHECK_EQ(slice(source, decl->type), "i32");
+        CHECK(decl->type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(decl->type)->span), "i32");
         CHECK(!decl->eq.empty());
     }
 
@@ -238,7 +245,8 @@ TEST_CASE("Parser: variable declarations") {
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         CHECK(decl != nullptr);
         CHECK_EQ(slice(source, decl->keyword), "var");
-        CHECK_EQ(slice(source, decl->type), "i32");
+        CHECK(decl->type != nullptr);
+        CHECK_EQ(slice(source, static_cast<const NameType*>(decl->type)->span), "i32");
         CHECK(decl->init == nullptr);
     }
 
@@ -566,6 +574,18 @@ TEST_CASE("Parser: binary expressions") {
         CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::LogicalOr);
     }
 
+    SUBCASE("precedence: && binds tighter than ||") {
+        const auto source = "fn main() { a || b && c; }";
+        const auto result = PARSE(source);
+        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
+        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
+        const auto bin = static_cast<const BinaryExpr*>(es->expr);
+        CHECK(bin != nullptr);
+        CHECK_EQ(bin->op, BinOp::LogicalOr);
+        CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
+        CHECK_EQ(static_cast<const BinaryExpr*>(bin->rhs)->op, BinOp::LogicalAnd);
+    }
+
     SUBCASE("precedence: * before +") {
         const auto source = "fn main() { a + b * c; }";
         const auto result = PARSE(source);
@@ -805,8 +825,11 @@ TEST_CASE("Parser: array type annotation") {
         REQUIRE(fn != nullptr);
         const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
         REQUIRE(decl != nullptr);
-        CHECK(slice(source, decl->type).starts_with("["));
-        CHECK(slice(source, decl->type).ends_with("]"));
+        CHECK(decl->type != nullptr);
+        CHECK(decl->type->kind == TypeKind::Array);
+        const auto* arr = static_cast<const ArrayType*>(decl->type);
+        CHECK_EQ(slice(source, arr->elem_type), "i32");
+        CHECK_EQ(slice(source, arr->size), "3");
     }
     SUBCASE("function parameter array type") {
         const auto source = "fn f(p: [i32; 3]) { }";

@@ -22,30 +22,24 @@ constexpr auto map_type(std::string_view carven_type) noexcept -> std::string_vi
     return carven_type;
 }
 
-constexpr auto generate_type(std::string& result, Span type_span, std::string_view source) noexcept -> void {
-    if (type_span.empty()) return;
-    const auto text = slice(source, type_span);
-    if (text.starts_with('[')) {
-        const auto semicolon = text.find(';');
-        if (semicolon == std::string_view::npos) {
-            result += text; // fallback: shouldn't happen for valid array types
-            return;
+constexpr auto generate_type(std::string& result, const Type* type, std::string_view source) noexcept -> void {
+    if (type == nullptr) return;
+    switch (type->kind) {
+        case TypeKind::Name:
+            result += map_type(slice(source, static_cast<const NameType*>(type)->span));
+            break;
+        case TypeKind::Array: {
+            const auto arr = static_cast<const ArrayType*>(type);
+            result += "std::array<";
+            result += map_type(slice(source, arr->elem_type));
+            result += ", ";
+            const auto size = slice(source, arr->size);
+            const auto first = size.find_first_not_of(" \t\n\r");
+            const auto last  = size.find_last_not_of(" \t\n\r");
+            result += (first != std::string_view::npos) ? size.substr(first, last - first + 1) : size;
+            result += '>';
+            break;
         }
-        const auto inner_type = text.substr(1, semicolon - 1);
-        const auto size       = text.substr(semicolon + 1, text.size() - semicolon - 2);
-        result += "std::array<";
-        result += map_type(inner_type);
-        result += ", ";
-        const auto first = size.find_first_not_of(" \t\n\r");
-        const auto last  = size.find_last_not_of(" \t\n\r");
-        if (first != std::string_view::npos) {
-            result += size.substr(first, last - first + 1);
-        } else {
-            result += size;
-        }
-        result += '>';
-    } else {
-        result += map_type(text);
     }
 }
 
@@ -75,7 +69,7 @@ constexpr auto generate_import(std::string& result, const ImportItem& item, std:
 constexpr auto generate_enum(std::string& result, const EnumItem& item, std::string_view source) noexcept -> void {
     result += "enum class ";
     result += slice(source, item.name);
-    if (!item.size.empty()) {
+    if (item.size != nullptr) {
         result += " : ";
         generate_type(result, item.size, source);
     }
@@ -107,9 +101,9 @@ constexpr auto generate_struct(std::string& result, const StructItem& item, std:
 }
 
 constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> void;
-constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source) noexcept -> void;
+constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source, std::uint32_t indent) noexcept -> void;
 
-constexpr auto generate_var_decl(std::string& result, const VarDecl& s, std::string_view source, std::string_view padding = "") noexcept -> void {
+constexpr auto generate_var_decl(std::string& result, const VarDecl& s, std::string_view source, std::uint32_t indent = 0, std::string_view padding = "") noexcept -> void {
     const auto keyword = slice(source, s.keyword);
 
     result += padding;
@@ -117,17 +111,17 @@ constexpr auto generate_var_decl(std::string& result, const VarDecl& s, std::str
     result += slice(source, s.name);
 
     if (s.init != nullptr) {
-        if (!s.type.empty()) {
+        if (s.type != nullptr) {
             result += " = ";
             generate_type(result, s.type, source);
             result += '(';
-            generate_expr(result, *s.init, source);
+            generate_expr(result, *s.init, source, indent);
             result += ')';
         } else {
             result += " = ";
-            generate_expr(result, *s.init, source);
+            generate_expr(result, *s.init, source, indent);
         }
-    } else if (!s.type.empty()) {
+    } else if (s.type != nullptr) {
         result += " = ";
         generate_type(result, s.type, source);
         result += "()";
@@ -144,7 +138,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
     for (auto i = 0uz; i < item.params.size(); ++i) {
         if (i > 0) result += ", ";
         const auto p = item.params[i];
-        if (p.type.empty()) {
+        if (p.type == nullptr) {
             result += "auto ";
         } else {
             generate_type(result, p.type, source);
@@ -157,7 +151,7 @@ constexpr auto generate_function(std::string& result, const FunctionItem& item, 
 
     if (name == "main") {
         result += " -> int";
-    } else if (!item.return_type.empty()) {
+    } else if (item.return_type != nullptr) {
         result += " -> ";
         generate_type(result, item.return_type, source);
     }
@@ -191,7 +185,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
         case StmtKind::ExprStmt: {
             const auto& s = *static_cast<const ExprStmt*>(&stmt);
             result += padding;
-            generate_expr(result, *s.expr, source);
+            generate_expr(result, *s.expr, source, indent);
             result += ';';
             return;
         }
@@ -201,7 +195,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
             return;
         case StmtKind::VarDecl: {
             const auto& s = *static_cast<const VarDecl*>(&stmt);
-            generate_var_decl(result, s, source, padding);
+            generate_var_decl(result, s, source, indent, padding);
             result += ';';
             return;
         }
@@ -211,7 +205,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
             result += "return";
             if (s.value != nullptr) {
                 result += ' ';
-                generate_expr(result, *s.value, source);
+                generate_expr(result, *s.value, source, indent);
             }
             result += ';';
             return;
@@ -220,7 +214,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
             const auto& s = *static_cast<const WhileStmt*>(&stmt);
             result += padding;
             result += "while (";
-            generate_expr(result, *s.condition, source);
+            generate_expr(result, *s.condition, source, indent);
             result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
@@ -245,13 +239,13 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
                     if (d) generate_var_decl(result, *d, source);
                 },
                 [&](ExprStmt* es) noexcept {
-                    if (es) generate_expr(result, *es->expr, source);
+                    if (es) generate_expr(result, *es->expr, source, 0);
                 }
             }, s.init);
             result += "; ";
-            if (s.condition != nullptr) generate_expr(result, *s.condition, source);
+            if (s.condition != nullptr) generate_expr(result, *s.condition, source, 0);
             result += "; ";
-            if (s.step != nullptr) generate_expr(result, *s.step, source);
+            if (s.step != nullptr) generate_expr(result, *s.step, source, 0);
             result += ')';
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
@@ -270,7 +264,7 @@ constexpr auto generate_stmt(std::string& result, const Stmt& stmt, std::string_
     }
 }
 
-constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source) noexcept -> void {
+constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_view source, std::uint32_t indent) noexcept -> void {
     switch (expr.kind) {
         case ExprKind::Literal: {
             const auto& e = *static_cast<const LiteralExpr*>(&expr);
@@ -285,46 +279,46 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
         case ExprKind::Prefix: {
             const auto& e = *static_cast<const PrefixExpr*>(&expr);
             result += slice(source, e.span);
-            generate_expr(result, *e.rhs, source);
+            generate_expr(result, *e.rhs, source, indent);
             return;
         }
         case ExprKind::Postfix: {
             const auto& e = *static_cast<const PostfixExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += slice(source, e.span);
             return;
         }
         case ExprKind::Binary: {
             const auto& e = *static_cast<const BinaryExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += ' ';
             result += slice(source, e.span);
             result += ' ';
-            generate_expr(result, *e.rhs, source);
+            generate_expr(result, *e.rhs, source, indent);
             return;
         }
         case ExprKind::Call: {
             const auto& e = *static_cast<const CallExpr*>(&expr);
-            generate_expr(result, *e.callee, source);
+            generate_expr(result, *e.callee, source, indent);
             result += '(';
             for (auto i = 0uz; i < e.args.size(); ++i) {
                 if (i > 0) result += ", ";
-                generate_expr(result, *e.args[i], source);
+                generate_expr(result, *e.args[i], source, indent);
             }
             result += ')';
             return;
         }
         case ExprKind::Index: {
             const auto& e = *static_cast<const IndexExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += '[';
-            generate_expr(result, *e.index, source);
+            generate_expr(result, *e.index, source, indent);
             result += ']';
             return;
         }
         case ExprKind::Field: {
             const auto& e = *static_cast<const FieldExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += slice(source, e.dot);
             result += slice(source, e.field);
             return;
@@ -332,31 +326,31 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
         case ExprKind::Group: {
             const auto& e = *static_cast<const GroupExpr*>(&expr);
             result += '(';
-            generate_expr(result, *e.inner, source);
+            generate_expr(result, *e.inner, source, indent);
             result += ')';
             return;
         }
         case ExprKind::Assign: {
             const auto& e = *static_cast<const AssignExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += " = ";
-            generate_expr(result, *e.rhs, source);
+            generate_expr(result, *e.rhs, source, indent);
             return;
         }
         case ExprKind::CompoundAssign: {
             const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += ' ';
             result += slice(source, e.span);
             result += ' ';
-            generate_expr(result, *e.rhs, source);
+            generate_expr(result, *e.rhs, source, indent);
             return;
         }
         case ExprKind::Comma: {
             const auto& e = *static_cast<const CommaExpr*>(&expr);
-            generate_expr(result, *e.lhs, source);
+            generate_expr(result, *e.lhs, source, indent);
             result += ", ";
-            generate_expr(result, *e.rhs, source);
+            generate_expr(result, *e.rhs, source, indent);
             return;
         }
         case ExprKind::If: {
@@ -372,29 +366,33 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
             const auto else_is_expr = else_expr != nullptr && else_expr->kind == StmtKind::ExprStmt;
 
             if (then_is_expr && else_is_expr) {
-                generate_expr(result, *e.condition, source);
+                generate_expr(result, *e.condition, source, indent);
                 result += " ? ";
-                generate_expr(result, *then_expr->expr, source);
+                generate_expr(result, *then_expr->expr, source, indent);
                 result += " : ";
-                generate_expr(result, *else_expr->expr, source);
+                generate_expr(result, *else_expr->expr, source, indent);
                 return;
             }
 
+            const auto pad = std::string(indent, ' ');
+
             result += "if (";
-            generate_expr(result, *e.condition, source);
+            generate_expr(result, *e.condition, source, indent);
             result += ") {\n";
             for (const auto stmt : e.then_branch->statements) {
-                generate_stmt(result, *stmt, source, 4);
+                generate_stmt(result, *stmt, source, indent + 4);
                 result += '\n';
             }
+            result += pad;
             result += '}';
 
             if (e.else_branch) {
                 result += " else {\n";
                 for (const auto stmt : e.else_branch->statements) {
-                    generate_stmt(result, *stmt, source, 4);
+                    generate_stmt(result, *stmt, source, indent + 4);
                     result += '\n';
                 }
+                result += pad;
                 result += '}';
             }
 
@@ -405,7 +403,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
             result += "std::array { ";
             for (auto i = 0uz; i < e.elements.size(); ++i) {
                 if (i > 0) result += ", ";
-                generate_expr(result, *e.elements[i], source);
+                generate_expr(result, *e.elements[i], source, indent);
             }
             result += " }";
             return;
@@ -423,19 +421,14 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 }
             }
 
-            if (has_type) {
-                result += "auto&& _cv = ";
-                generate_expr(result, *e.value, source);
-                result += ";\n";
-                result += "using _T = std::remove_cvref_t<decltype(_cv)>;\n";
+            const auto pad = std::string(indent, ' ');
 
-                auto else_depth = 0u;
+            if (has_type) {
                 for (auto i = 0uz; i < e.arms.size(); ++i) {
                     const auto& arm = e.arms[i];
 
                     if (i > 0) {
-                        result += " else {\n";
-                        ++else_depth;
+                        result += " else ";
                     }
 
                     if (!arm.is_wildcard) {
@@ -443,29 +436,35 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                             && arm.patterns[0]->kind == ExprKind::Ident;
 
                         result += is_type_arm ? "if constexpr (" : "if (";
+
                         for (auto j = 0uz; j < arm.patterns.size(); ++j) {
                             if (j > 0) result += " || ";
                             if (is_type_arm) {
                                 const auto ident = static_cast<const IdentExpr*>(arm.patterns[j]);
-                                result += "std::is_same_v<_T, ";
+                                result += "std::is_same_v<std::remove_cvref_t<decltype(";
+                                generate_expr(result, *e.value, source, indent);
+                                result += ")>, ";
                                 result += map_type(slice(source, ident->name));
                                 result += '>';
                             } else {
-                                result += "_cv == ";
-                                generate_expr(result, *arm.patterns[j], source);
+                                generate_expr(result, *e.value, source, indent);
+                                result += " == ";
+                                generate_expr(result, *arm.patterns[j], source, indent);
                             }
                         }
                         result += ") {\n";
+                    } else {
+                        result += "{\n";
                     }
 
                     for (const auto stmt : arm.body->statements) {
-                        generate_stmt(result, *stmt, source, 4);
+                        generate_stmt(result, *stmt, source, indent + 4);
                         result += '\n';
                     }
 
-                    if (!arm.is_wildcard) result += '}';
+                    result += pad;
+                    result += '}';
                 }
-                for (auto i = 0u; i < else_depth; ++i) result += '}';
             } else {
                 // Check if all arms are single-expression (for ternary optimization)
                 auto all_single_expr = true;
@@ -486,38 +485,42 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                             if (i > 0) result += " : ";
                             for (auto j = 0uz; j < arm.patterns.size(); ++j) {
                                 if (j > 0) result += " || ";
-                                generate_expr(result, *e.value, source);
+                                generate_expr(result, *e.value, source, indent);
                                 result += " == ";
-                                generate_expr(result, *arm.patterns[j], source);
+                                generate_expr(result, *arm.patterns[j], source, indent);
                             }
                             result += " ? ";
                         }
                         const auto es = static_cast<const ExprStmt*>(arm.body->statements[0]);
-                        generate_expr(result, *es->expr, source);
+                        generate_expr(result, *es->expr, source, indent);
                     }
                 } else {
                     for (auto i = 0uz; i < e.arms.size(); ++i) {
                         const auto& arm = e.arms[i];
 
+                        if (i > 0) {
+                            result += " else ";
+                        }
+
                         if (arm.is_wildcard) {
-                            result += " else {\n";
+                            result += "{\n";
                         } else {
-                            if (i == 0) result += "if (";
-                            else result += "else if (";
+                            result += "if (";
 
                             for (auto j = 0uz; j < arm.patterns.size(); ++j) {
                                 if (j > 0) result += " || ";
-                                generate_expr(result, *e.value, source);
+                                generate_expr(result, *e.value, source, indent);
                                 result += " == ";
-                                generate_expr(result, *arm.patterns[j], source);
+                                generate_expr(result, *arm.patterns[j], source, indent);
                             }
                             result += ") {\n";
                         }
 
                         for (const auto stmt : arm.body->statements) {
-                            generate_stmt(result, *stmt, source, 4);
+                            generate_stmt(result, *stmt, source, indent + 4);
                             result += '\n';
                         }
+                        result += pad;
                         result += '}';
                     }
                 }

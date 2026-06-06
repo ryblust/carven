@@ -266,9 +266,20 @@ TEST_CASE("Lexer: number literals edge cases") {
 }
 
 TEST_CASE("Lexer: string escape sequences") {
-    SUBCASE("tab") {
-        const auto tokens = tokenize("\"hello\\tworld\"");
-        CHECK_EQ(tokens[0].kind, TokenKind::StringLiteral);
+    SUBCASE("valid escapes") {
+        CHECK_EQ(tokenize("\"\\t\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\n\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\r\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\\\\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\\"\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\0\"")[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokenize("\"\\'\"")[0].kind, TokenKind::StringLiteral);
+    }
+
+    SUBCASE("invalid escapes") {
+        CHECK_EQ(tokenize("\"\\x\"")[0].kind, TokenKind::Error);
+        CHECK_EQ(tokenize("\"\\z\"")[0].kind, TokenKind::Error);
+        CHECK_EQ(tokenize("\"\\g\"")[0].kind, TokenKind::Error);
     }
 }
 
