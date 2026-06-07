@@ -73,6 +73,8 @@ Prefer `constexpr` on every pure function that can be evaluated at compile time.
 
 `const` by default. `const auto` for every local variable that is not explicitly mutated.
 
+`const auto&` for non-trivial types (ownership, invariants, resource management). `const auto` for trivially-copyable scalars (`int`, `float`, `bool`, `enum`), pointers, and trivial small values (`Span`, `std::string_view`).
+
 ## Parameter Policy
 
 Read-only string parameters: `std::string_view`. Not `const std::string&`.

@@ -12,9 +12,9 @@ public:
     constexpr auto analyze(std::span<const TopLevelItem> items) noexcept -> std::vector<ParseError> {
         for (const auto& item : items) {
             std::visit(Overloaded {
-                [&](const ImportItem&   it) noexcept { check_import(it); },
-                [&](const EnumItem&     it) noexcept { check_enum(it); },
-                [&](const StructItem&   it) noexcept { check_struct(it); },
+                [&](const ImportItem&   it) noexcept { check_import(it);   },
+                [&](const EnumItem&     it) noexcept { check_enum(it);     },
+                [&](const StructItem&   it) noexcept { check_struct(it);   },
                 [&](const FunctionItem& it) noexcept { check_function(it); },
             }, item);
         }
@@ -43,14 +43,13 @@ private:
                 check_ident(static_cast<const NameType*>(type)->span);
                 return;
             case TypeKind::Array: {
-                const auto arr = static_cast<const ArrayType*>(type);
-                check_ident(arr->elem_type);
+                check_ident(static_cast<const ArrayType*>(type)->elem_type);
                 return;
             }
         }
     }
 
-    static constexpr auto expr_span(const Expr& expr) noexcept -> Span {
+    constexpr auto expr_span(const Expr& expr) noexcept -> Span {
         switch (expr.kind) {
             case ExprKind::Literal:        return static_cast<const LiteralExpr*>(&expr)->token;
             case ExprKind::Ident:          return static_cast<const IdentExpr*>(&expr)->name;
@@ -71,7 +70,7 @@ private:
         return {};
     }
 
-    static constexpr auto stmt_span(const Stmt& stmt) noexcept -> Span {
+    constexpr auto stmt_span(const Stmt& stmt) noexcept -> Span {
         switch (stmt.kind) {
             case StmtKind::Block:    return static_cast<const BlockStmt*>(&stmt)->lbrace;
             case StmtKind::ExprStmt: return expr_span(*static_cast<const ExprStmt*>(&stmt)->expr);
@@ -129,36 +128,36 @@ private:
                 check_block(*static_cast<const BlockStmt*>(&stmt), allow_return);
                 return;
             case StmtKind::ExprStmt: {
-                const auto& s = *static_cast<const ExprStmt*>(&stmt);
-                const auto is_control_stmt = s.expr->kind == ExprKind::If || s.expr->kind == ExprKind::Match;
-                check_expr(*s.expr, !is_control_stmt, allow_return);
+                const auto s = static_cast<const ExprStmt*>(&stmt);
+                const auto is_control_stmt = s->expr->kind == ExprKind::If || s->expr->kind == ExprKind::Match;
+                check_expr(*s->expr, !is_control_stmt, allow_return);
                 return;
             }
             case StmtKind::Empty:
                 return;
             case StmtKind::VarDecl: {
-                const auto& s = *static_cast<const VarDecl*>(&stmt);
-                check_ident(s.name);
-                check_type(s.type);
-                if (s.init != nullptr) check_expr(*s.init, true, allow_return);
+                const auto s = static_cast<const VarDecl*>(&stmt);
+                check_ident(s->name);
+                check_type(s->type);
+                if (s->init != nullptr) check_expr(*s->init, true, allow_return);
                 return;
             }
             case StmtKind::Return: {
-                const auto& s = *static_cast<const ReturnStmt*>(&stmt);
+                const auto s = static_cast<const ReturnStmt*>(&stmt);
                 if (!allow_return) {
-                    push_error("return is not allowed inside an expression branch", s.keyword);
+                    push_error("return is not allowed inside an expression branch", s->keyword);
                 }
-                if (s.value != nullptr) check_expr(*s.value, true, allow_return);
+                if (s->value != nullptr) check_expr(*s->value, true, allow_return);
                 return;
             }
             case StmtKind::While: {
-                const auto& s = *static_cast<const WhileStmt*>(&stmt);
-                check_expr(*s.condition, true, allow_return);
-                check_stmt(*s.body, allow_return);
+                const auto s = static_cast<const WhileStmt*>(&stmt);
+                check_expr(*s->condition, true, allow_return);
+                check_stmt(*s->body, allow_return);
                 return;
             }
             case StmtKind::For: {
-                const auto& s = *static_cast<const ForStmt*>(&stmt);
+                const auto s = static_cast<const ForStmt*>(&stmt);
                 std::visit(Overloaded {
                     [&](const VarDecl* d) noexcept {
                         if (d != nullptr) check_stmt(*d, allow_return);
@@ -166,10 +165,10 @@ private:
                     [&](const ExprStmt* es) noexcept {
                         if (es != nullptr) check_expr(*es->expr, true, allow_return);
                     },
-                }, s.init);
-                if (s.condition != nullptr) check_expr(*s.condition, true, allow_return);
-                if (s.step != nullptr) check_expr(*s.step, true, allow_return);
-                check_stmt(*s.body, allow_return);
+                }, s->init);
+                if (s->condition != nullptr) check_expr(*s->condition, true, allow_return);
+                if (s->step != nullptr) check_expr(*s->step, true, allow_return);
+                check_stmt(*s->body, allow_return);
                 return;
             }
         }
@@ -189,56 +188,55 @@ private:
                 check_expr(*static_cast<const PostfixExpr*>(&expr)->lhs, true, allow_return);
                 return;
             case ExprKind::Binary: {
-                const auto& e = *static_cast<const BinaryExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_expr(*e.rhs, true, allow_return);
+                const auto e = static_cast<const BinaryExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_expr(*e->rhs, true, allow_return);
                 return;
             }
             case ExprKind::Call: {
-                const auto& e = *static_cast<const CallExpr*>(&expr);
-                check_expr(*e.callee, true, allow_return);
-                for (const auto arg : e.args) check_expr(*arg, true, allow_return);
+                const auto e = static_cast<const CallExpr*>(&expr);
+                check_expr(*e->callee, true, allow_return);
+                for (const auto arg : e->args) check_expr(*arg, true, allow_return);
                 return;
             }
             case ExprKind::Index: {
-                const auto& e = *static_cast<const IndexExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_expr(*e.index, true, allow_return);
+                const auto e = static_cast<const IndexExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_expr(*e->index, true, allow_return);
                 return;
             }
             case ExprKind::Field: {
-                const auto& e = *static_cast<const FieldExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_ident(e.field);
+                const auto e = static_cast<const FieldExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_ident(e->field);
                 return;
             }
             case ExprKind::Group:
                 check_expr(*static_cast<const GroupExpr*>(&expr)->inner, true, allow_return);
                 return;
             case ExprKind::Assign: {
-                const auto& e = *static_cast<const AssignExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_expr(*e.rhs, true, allow_return);
+                const auto e = static_cast<const AssignExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_expr(*e->rhs, true, allow_return);
                 return;
             }
             case ExprKind::CompoundAssign: {
-                const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_expr(*e.rhs, true, allow_return);
+                const auto e = static_cast<const CompoundAssignExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_expr(*e->rhs, true, allow_return);
                 return;
             }
             case ExprKind::Comma: {
-                const auto& e = *static_cast<const CommaExpr*>(&expr);
-                check_expr(*e.lhs, true, allow_return);
-                check_expr(*e.rhs, true, allow_return);
+                const auto e = static_cast<const CommaExpr*>(&expr);
+                check_expr(*e->lhs, true, allow_return);
+                check_expr(*e->rhs, true, allow_return);
                 return;
             }
             case ExprKind::If:
                 check_if(*static_cast<const IfExpr*>(&expr), value_position, allow_return);
                 return;
             case ExprKind::Array: {
-                const auto& e = *static_cast<const ArrayExpr*>(&expr);
-                for (const auto element : e.elements) check_expr(*element, true, allow_return);
+                for (const auto element : static_cast<const ArrayExpr*>(&expr)->elements) check_expr(*element, true, allow_return);
                 return;
             }
             case ExprKind::Match:
@@ -264,11 +262,11 @@ private:
             return;
         }
 
-        const auto& expr_stmt = *static_cast<const ExprStmt*>(last);
-        if (!expr_stmt.semicolon.empty()) {
-            push_error(std::string(label) + " final expression must omit ';'", expr_stmt.semicolon);
+        const auto expr_stmt = static_cast<const ExprStmt*>(last);
+        if (!expr_stmt->semicolon.empty()) {
+            push_error(std::string(label) + " final expression must omit ';'", expr_stmt->semicolon);
         }
-        check_expr(*expr_stmt.expr, true, false);
+        check_expr(*expr_stmt->expr, true, false);
     }
 
     constexpr auto check_if(const IfExpr& expr, bool value_position, bool allow_return) noexcept -> void {

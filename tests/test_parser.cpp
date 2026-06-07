@@ -385,8 +385,7 @@ TEST_CASE("Parser: if expression") {
         const auto source = "fn main() { if true { } else { } }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto if_expr = static_cast<const IfExpr*>(expr_stmt->expr);
+        const auto if_expr = static_cast<const IfExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(if_expr != nullptr);
         CHECK(!if_expr->else_kw.empty());
         CHECK(if_expr->else_branch != nullptr);
@@ -505,8 +504,7 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a + b - c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
+        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Sub);
     }
@@ -515,8 +513,7 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a << b >> c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
+        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Shr);
     }
@@ -525,14 +522,10 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a < b; b > c; c <= d; d >= e; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
-        const auto es3 = static_cast<const ExprStmt*>(fn->body->statements[2]);
-        const auto es4 = static_cast<const ExprStmt*>(fn->body->statements[3]);
-        const auto bin_expr_lt = static_cast<const BinaryExpr*>(es1->expr);
-        const auto bin_expr_gt = static_cast<const BinaryExpr*>(es2->expr);
-        const auto bin_expr_le = static_cast<const BinaryExpr*>(es3->expr);
-        const auto bin_expr_ge = static_cast<const BinaryExpr*>(es4->expr);
+        const auto bin_expr_lt = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
+        const auto bin_expr_gt = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
+        const auto bin_expr_le = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
+        const auto bin_expr_ge = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr);
         REQUIRE(bin_expr_lt != nullptr);
         REQUIRE(bin_expr_gt != nullptr);
         REQUIRE(bin_expr_le != nullptr);
@@ -547,12 +540,10 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a == b; c != d; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es1 = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin_expr_eq = static_cast<const BinaryExpr*>(es1->expr);
+        const auto bin_expr_eq = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         REQUIRE(bin_expr_eq != nullptr);
         CHECK_EQ(bin_expr_eq->op, BinOp::Eq);
-        const auto es2 = static_cast<const ExprStmt*>(fn->body->statements[1]);
-        const auto bin_expr_ne = static_cast<const BinaryExpr*>(es2->expr);
+        const auto bin_expr_ne = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
         REQUIRE(bin_expr_ne != nullptr);
         CHECK_EQ(bin_expr_ne->op, BinOp::Ne);
     }
@@ -578,8 +569,7 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a || b && c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
+        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::LogicalOr);
         CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
@@ -590,8 +580,7 @@ TEST_CASE("Parser: binary expressions") {
         const auto source = "fn main() { a + b * c; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto bin = static_cast<const BinaryExpr*>(es->expr);
+        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(bin != nullptr);
         CHECK_EQ(bin->op, BinOp::Add);
         CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
@@ -603,8 +592,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = "fn main() { x = 5; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto assign = static_cast<const AssignExpr*>(es->expr);
+        const auto assign = static_cast<const AssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(assign != nullptr);
     }
 
@@ -612,8 +600,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = "fn main() { a = b = c = 0; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto assign = static_cast<const AssignExpr*>(es->expr);
+        const auto assign = static_cast<const AssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(assign != nullptr);
         // right-associative: a = (b = (c = 0))
         CHECK(static_cast<const AssignExpr*>(assign->rhs) != nullptr);
@@ -623,8 +610,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = "fn main() { x += 1; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
+        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         CHECK(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Add);
     }
@@ -633,8 +619,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = "fn main() { x -= 1; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
+        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         REQUIRE(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Sub);
     }
@@ -643,8 +628,7 @@ TEST_CASE("Parser: assignment and compound assignment") {
         const auto source = "fn main() { x *= 2; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(es->expr);
+        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
         REQUIRE(ca != nullptr);
         CHECK_EQ(ca->op, BinOp::Mul);
     }
@@ -655,18 +639,14 @@ TEST_CASE("Parser: group and comma expressions") {
         const auto source = "fn main() { (a + b); }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto group = static_cast<const GroupExpr*>(es->expr);
-        CHECK(group != nullptr);
+        CHECK(static_cast<const GroupExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
     }
 
     SUBCASE("comma expression") {
         const auto source = "fn main() { a, b; }";
         const auto result = PARSE(source);
         const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        const auto comma = static_cast<const CommaExpr*>(es->expr);
-        CHECK(comma != nullptr);
+        CHECK(static_cast<const CommaExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
     }
 }
 

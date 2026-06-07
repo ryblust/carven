@@ -105,71 +105,68 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
 auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexcept -> std::string {
     switch (expr.kind) {
         case ExprKind::Literal: {
-            const auto& e = *static_cast<const LiteralExpr*>(&expr);
-            return std::format("Literal({})", slice(source, e.token));
+            return std::format("Literal({})", slice(source, static_cast<const LiteralExpr*>(&expr)->token));
         }
         case ExprKind::Ident: {
-            const auto& e = *static_cast<const IdentExpr*>(&expr);
-            return std::format("Ident({})", slice(source, e.name));
+            return std::format("Ident({})", slice(source, static_cast<const IdentExpr*>(&expr)->name));
         }
         case ExprKind::Prefix: {
-            const auto& e = *static_cast<const PrefixExpr*>(&expr);
-            return std::format("Prefix({} {})", e.op, dump(*e.rhs, source));
+            const auto e = static_cast<const PrefixExpr*>(&expr);
+            return std::format("Prefix({} {})", e->op, dump(*e->rhs, source));
         }
         case ExprKind::Postfix: {
-            const auto& e = *static_cast<const PostfixExpr*>(&expr);
-            return std::format("Postfix({} {})", dump(*e.lhs, source), e.op);
+            const auto e = static_cast<const PostfixExpr*>(&expr);
+            return std::format("Postfix({} {})", dump(*e->lhs, source), e->op);
         }
         case ExprKind::Binary: {
-            const auto& e = *static_cast<const BinaryExpr*>(&expr);
-            return std::format("Binary({} {} {})", dump(*e.lhs, source), e.op, dump(*e.rhs, source));
+            const auto e = static_cast<const BinaryExpr*>(&expr);
+            return std::format("Binary({} {} {})", dump(*e->lhs, source), e->op, dump(*e->rhs, source));
         }
         case ExprKind::Call: {
-            const auto& e = *static_cast<const CallExpr*>(&expr);
-            auto result = std::format("Call({}", dump(*e.callee, source));
-            for (const auto arg : e.args) {
+            const auto e = static_cast<const CallExpr*>(&expr);
+            auto result = std::format("Call({}", dump(*e->callee, source));
+            for (const auto arg : e->args) {
                 result += ' ';
                 result += dump(*arg, source);
             }
             return result += ')';
         }
         case ExprKind::Index: {
-            const auto& e = *static_cast<const IndexExpr*>(&expr);
-            return std::format("Index({}[{}])", dump(*e.lhs, source), dump(*e.index, source));
+            const auto e = static_cast<const IndexExpr*>(&expr);
+            return std::format("Index({}[{}])", dump(*e->lhs, source), dump(*e->index, source));
         }
         case ExprKind::Field: {
-            const auto& e = *static_cast<const FieldExpr*>(&expr);
-            return std::format("Field({}{}{})", dump(*e.lhs, source), slice(source, e.dot), slice(source, e.field));
+            const auto e = static_cast<const FieldExpr*>(&expr);
+            return std::format("Field({}{}{})", dump(*e->lhs, source), slice(source, e->dot), slice(source, e->field));
         }
         case ExprKind::Group: {
-            const auto& e = *static_cast<const GroupExpr*>(&expr);
-            return std::format("Group({})", dump(*e.inner, source));
+            return std::format("Group({})", dump(*static_cast<const GroupExpr*>(&expr)->inner, source));
         }
         case ExprKind::Assign: {
-            const auto& e = *static_cast<const AssignExpr*>(&expr);
-            return std::format("Assign({} = {})", dump(*e.lhs, source), dump(*e.rhs, source));
+            const auto e = static_cast<const AssignExpr*>(&expr);
+            return std::format("Assign({} = {})", dump(*e->lhs, source), dump(*e->rhs, source));
         }
         case ExprKind::CompoundAssign: {
-            const auto& e = *static_cast<const CompoundAssignExpr*>(&expr);
-            return std::format("CompoundAssign({} {}={})", dump(*e.lhs, source), e.op, dump(*e.rhs, source));
+            const auto e = static_cast<const CompoundAssignExpr*>(&expr);
+            return std::format("CompoundAssign({} {}={})", dump(*e->lhs, source), e->op, dump(*e->rhs, source));
         }
         case ExprKind::Comma: {
-            const auto& e = *static_cast<const CommaExpr*>(&expr);
-            return std::format("Comma({}, {})", dump(*e.lhs, source), dump(*e.rhs, source));
+            const auto e = static_cast<const CommaExpr*>(&expr);
+            return std::format("Comma({}, {})", dump(*e->lhs, source), dump(*e->rhs, source));
         }
         case ExprKind::If: {
-            const auto& e = *static_cast<const IfExpr*>(&expr);
+            const auto e = static_cast<const IfExpr*>(&expr);
             const auto padding = std::string(indent, ' ');
-            auto result = std::format("If({}) {{\n", dump(*e.condition, source));
+            auto result = std::format("If({}) {{\n", dump(*e->condition, source));
 
-            for (const auto stmt : e.then_branch->statements) {
+            for (const auto stmt : e->then_branch->statements) {
                 result += dump(*stmt, source, indent + 2);
             }
 
             std::format_to(std::back_inserter(result), "{}}}", padding);
-            if (e.else_branch) {
+            if (e->else_branch) {
                 result += " else {\n";
-                for (const auto stmt : e.else_branch->statements) {
+                for (const auto stmt : e->else_branch->statements) {
                     result += dump(*stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}", padding);
@@ -178,20 +175,20 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
             return result;
         }
         case ExprKind::Array: {
-            const auto& e = *static_cast<const ArrayExpr*>(&expr);
+            const auto e = static_cast<const ArrayExpr*>(&expr);
             auto result = std::string("[");
-            for (auto i = 0uz; i < e.elements.size(); ++i) {
+            for (auto i = 0uz; i < e->elements.size(); ++i) {
                 if (i > 0) result += ", ";
-                result += dump(*e.elements[i], source);
+                result += dump(*e->elements[i], source);
             }
             result += ']';
             return result;
         }
         case ExprKind::Match: {
-            const auto& e = *static_cast<const MatchExpr*>(&expr);
+            const auto e = static_cast<const MatchExpr*>(&expr);
             const auto padding = std::string(indent, ' ');
-            auto result = std::format("match {} {{\n", dump(*e.value, source));
-            for (const auto& arm : e.arms) {
+            auto result = std::format("match {} {{\n", dump(*e->value, source));
+            for (const auto& arm : e->arms) {
                 result += padding + "  ";
                 if (arm.is_wildcard) {
                     result += "_ => {\n";
@@ -218,56 +215,54 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
 
     switch (stmt.kind) {
         case StmtKind::Block: {
-            const auto& s = *static_cast<const BlockStmt*>(&stmt);
             auto result = std::format("{}Block {{\n", padding);
-            for (const auto body_stmt : s.statements) {
+            for (const auto body_stmt : static_cast<const BlockStmt*>(&stmt)->statements) {
                 result += dump(*body_stmt, source, indent + 2);
             }
             return std::format("{}{}}}\n", result, padding);
         }
         case StmtKind::ExprStmt: {
-            const auto& s = *static_cast<const ExprStmt*>(&stmt);
-            return std::format("{}{};\n", padding, dump(*s.expr, source));
+            return std::format("{}{};\n", padding, dump(*static_cast<const ExprStmt*>(&stmt)->expr, source));
         }
         case StmtKind::Empty: return padding + ";\n";
         case StmtKind::VarDecl: {
-            const auto& s = *static_cast<const VarDecl*>(&stmt);
+            const auto s = static_cast<const VarDecl*>(&stmt);
             auto result = std::format("{}{} {}{}",
                 padding,
-                slice(source, s.keyword),
-                slice(source, s.name),
-                s.type != nullptr ? std::format(": {}", dump(s.type, source)) : ""
+                slice(source, s->keyword),
+                slice(source, s->name),
+                s->type != nullptr ? std::format(": {}", dump(s->type, source)) : ""
             );
-            if (s.init != nullptr) {
+            if (s->init != nullptr) {
                 result += " = ";
-                result += dump(*s.init, source);
+                result += dump(*s->init, source);
             }
             return result += ";\n";
         }
         case StmtKind::Return: {
-            const auto& s = *static_cast<const ReturnStmt*>(&stmt);
-            if (s.value != nullptr) {
-                return std::format("{}return {};\n", padding, dump(*s.value, source));
+            const auto s = static_cast<const ReturnStmt*>(&stmt);
+            if (s->value != nullptr) {
+                return std::format("{}return {};\n", padding, dump(*s->value, source));
             }
             return padding + "return;\n";
         }
         case StmtKind::While: {
-            const auto& s = *static_cast<const WhileStmt*>(&stmt);
-            auto result = std::format("{}while ({})", padding, dump(*s.condition, source, indent));
-            if (s.body->kind == StmtKind::Block) {
+            const auto s = static_cast<const WhileStmt*>(&stmt);
+            auto result = std::format("{}while ({})", padding, dump(*s->condition, source, indent));
+            if (s->body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s->body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}\n", padding);
             } else {
                 result += '\n';
-                result += dump(*s.body, source, indent + 2);
+                result += dump(*s->body, source, indent + 2);
             }
             return result;
         }
         case StmtKind::For: {
-            const auto& s = *static_cast<const ForStmt*>(&stmt);
+            const auto s = static_cast<const ForStmt*>(&stmt);
             auto init_str = std::string();
             std::visit(Overloaded {
                 [&](VarDecl* d) noexcept {
@@ -286,19 +281,19 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                 [&](ExprStmt* es) noexcept {
                     if (es) init_str = dump(*es->expr, source);
                 }
-            }, s.init);
-            const auto condition = s.condition != nullptr ? dump(*s.condition, source) : std::string();
-            const auto step = s.step != nullptr ? dump(*s.step, source) : std::string();
+            }, s->init);
+            const auto condition = s->condition != nullptr ? dump(*s->condition, source) : std::string();
+            const auto step = s->step != nullptr ? dump(*s->step, source) : std::string();
             auto result = std::format("{}for ({}; {}; {})", padding, init_str, condition, step);
-            if (s.body->kind == StmtKind::Block) {
+            if (s->body->kind == StmtKind::Block) {
                 result += " {\n";
-                for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
+                for (const auto body_stmt : static_cast<const BlockStmt*>(s->body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
                 std::format_to(std::back_inserter(result), "{}}}\n", padding);
             } else {
                 result += '\n';
-                result += dump(*s.body, source, indent + 2);
+                result += dump(*s->body, source, indent + 2);
             }
             return result;
         }
