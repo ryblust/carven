@@ -12,8 +12,9 @@ import std;
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Expr& expr, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
+auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> std::string;
 
-static auto dump_type(const Type* type, std::string_view source) noexcept -> std::string {
+auto dump(const Type* type, std::string_view source) noexcept -> std::string {
     if (type == nullptr) return {};
     switch (type->kind) {
         case TypeKind::Name:
@@ -27,11 +28,11 @@ static auto dump_type(const Type* type, std::string_view source) noexcept -> std
 }
 
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent) noexcept -> std::string {
-    const auto pad = std::string(indent, ' ');
+    const auto padding = std::string(indent, ' ');
 
     return std::visit(Overloaded {
         [&](const ImportItem& it) noexcept -> std::string {
-            auto result = std::format("{}Import: {}", pad, slice(source, it.module_name));
+            auto result = std::format("{}Import: {}", padding, slice(source, it.module_name));
 
             if (!it.using_decls.empty()) {
                 result += " { ";
@@ -48,9 +49,9 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
         },
         [&](const EnumItem& it) noexcept -> std::string {
             auto result = std::format("{}Enum: {}{} {{ ",
-                pad,
+                padding,
                 slice(source, it.name),
-                it.size != nullptr ? std::format(": {}", dump_type(it.size, source)) : ""
+                it.size != nullptr ? std::format(": {}", dump(it.size, source)) : ""
             );
 
             for (auto i = 0uz; i < it.fields.size(); ++i) {
@@ -61,42 +62,42 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
             return result += " }\n";
         },
         [&](const StructItem& it) noexcept -> std::string {
-            auto result = std::format("{}Struct: {} {{\n", pad, slice(source, it.name));
-            const auto field_pad = std::string(indent + 2, ' ');
+            auto result = std::format("{}Struct: {} {{\n", padding, slice(source, it.name));
+            const auto field_padding = std::string(indent + 2, ' ');
 
             for (const auto& field : it.fields) {
                 std::format_to(
                     std::back_inserter(result),
                     "{}{}: {}\n",
-                    field_pad, slice(source, field.name), dump_type(field.type, source)
+                    field_padding, slice(source, field.name), dump(field.type, source)
                 );
             }
 
-            return std::format("{}{}}}\n", result, pad);
+            return std::format("{}{}}}\n", result, padding);
         },
         [&](const FunctionItem& it) noexcept -> std::string {
-            auto result = std::format("{}fn {}(", pad, slice(source, it.name));
+            auto result = std::format("{}fn {}(", padding, slice(source, it.name));
 
             for (auto i = 0uz; i < it.params.size(); ++i) {
                 if (i > 0) result += ", ";
                 std::format_to(
                     std::back_inserter(result),
                     "{}: {}",
-                    slice(source, it.params[i].name), dump_type(it.params[i].type, source)
+                    slice(source, it.params[i].name), dump(it.params[i].type, source)
                 );
             }
 
             std::format_to(
                 std::back_inserter(result),
                 "){} {{\n",
-                it.return_type != nullptr ? std::format(" -> {}", dump_type(it.return_type, source)) : ""
+                it.return_type != nullptr ? std::format(" -> {}", dump(it.return_type, source)) : ""
             );
 
             for (const auto stmt : it.body->statements) {
                 result += dump(*stmt, source, indent + 2);
             }
 
-            return std::format("{}{}}}\n", result, pad);
+            return std::format("{}{}}}\n", result, padding);
         }
     }, item);
 }
@@ -158,20 +159,20 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
         }
         case ExprKind::If: {
             const auto& e = *static_cast<const IfExpr*>(&expr);
-            const auto pad = std::string(indent, ' ');
+            const auto padding = std::string(indent, ' ');
             auto result = std::format("If({}) {{\n", dump(*e.condition, source));
 
             for (const auto stmt : e.then_branch->statements) {
                 result += dump(*stmt, source, indent + 2);
             }
 
-            std::format_to(std::back_inserter(result), "{}}}", pad);
+            std::format_to(std::back_inserter(result), "{}}}", padding);
             if (e.else_branch) {
                 result += " else {\n";
                 for (const auto stmt : e.else_branch->statements) {
                     result += dump(*stmt, source, indent + 2);
                 }
-                std::format_to(std::back_inserter(result), "{}}}", pad);
+                std::format_to(std::back_inserter(result), "{}}}", padding);
             }
 
             return result;
@@ -188,10 +189,10 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
         }
         case ExprKind::Match: {
             const auto& e = *static_cast<const MatchExpr*>(&expr);
-            const auto pad = std::string(indent, ' ');
+            const auto padding = std::string(indent, ' ');
             auto result = std::format("match {} {{\n", dump(*e.value, source));
             for (const auto& arm : e.arms) {
-                result += pad + "  ";
+                result += padding + "  ";
                 if (arm.is_wildcard) {
                     result += "_ => {\n";
                 } else {
@@ -204,38 +205,38 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
                 for (const auto stmt : arm.body->statements) {
                     result += dump(*stmt, source, indent + 4);
                 }
-                result += pad + "  }\n";
+                result += padding + "  }\n";
             }
-            std::format_to(std::back_inserter(result), "{}}}", pad);
+            std::format_to(std::back_inserter(result), "{}}}", padding);
             return result;
         }
     }
 }
 
 auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexcept -> std::string {
-    const auto pad = std::string(indent, ' ');
+    const auto padding = std::string(indent, ' ');
 
     switch (stmt.kind) {
         case StmtKind::Block: {
             const auto& s = *static_cast<const BlockStmt*>(&stmt);
-            auto result = std::format("{}Block {{\n", pad);
+            auto result = std::format("{}Block {{\n", padding);
             for (const auto body_stmt : s.statements) {
                 result += dump(*body_stmt, source, indent + 2);
             }
-            return std::format("{}{}}}\n", result, pad);
+            return std::format("{}{}}}\n", result, padding);
         }
         case StmtKind::ExprStmt: {
             const auto& s = *static_cast<const ExprStmt*>(&stmt);
-            return std::format("{}{};\n", pad, dump(*s.expr, source));
+            return std::format("{}{};\n", padding, dump(*s.expr, source));
         }
-        case StmtKind::Empty: return pad + ";\n";
+        case StmtKind::Empty: return padding + ";\n";
         case StmtKind::VarDecl: {
             const auto& s = *static_cast<const VarDecl*>(&stmt);
             auto result = std::format("{}{} {}{}",
-                pad,
+                padding,
                 slice(source, s.keyword),
                 slice(source, s.name),
-                s.type != nullptr ? std::format(": {}", dump_type(s.type, source)) : ""
+                s.type != nullptr ? std::format(": {}", dump(s.type, source)) : ""
             );
             if (s.init != nullptr) {
                 result += " = ";
@@ -246,19 +247,19 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
         case StmtKind::Return: {
             const auto& s = *static_cast<const ReturnStmt*>(&stmt);
             if (s.value != nullptr) {
-                return std::format("{}return {};\n", pad, dump(*s.value, source));
+                return std::format("{}return {};\n", padding, dump(*s.value, source));
             }
-            return pad + "return;\n";
+            return padding + "return;\n";
         }
         case StmtKind::While: {
             const auto& s = *static_cast<const WhileStmt*>(&stmt);
-            auto result = std::format("{}while ({})", pad, dump(*s.condition, source, indent));
+            auto result = std::format("{}while ({})", padding, dump(*s.condition, source, indent));
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
-                std::format_to(std::back_inserter(result), "{}}}\n", pad);
+                std::format_to(std::back_inserter(result), "{}}}\n", padding);
             } else {
                 result += '\n';
                 result += dump(*s.body, source, indent + 2);
@@ -274,7 +275,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                         init_str = std::format("{} {}{}",
                             slice(source, d->keyword),
                             slice(source, d->name),
-                            d->type != nullptr ? std::format(": {}", dump_type(d->type, source)) : ""
+                            d->type != nullptr ? std::format(": {}", dump(d->type, source)) : ""
                         );
                         if (d->init != nullptr) {
                             init_str += " = ";
@@ -288,13 +289,13 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
             }, s.init);
             const auto condition = s.condition != nullptr ? dump(*s.condition, source) : std::string();
             const auto step = s.step != nullptr ? dump(*s.step, source) : std::string();
-            auto result = std::format("{}for ({}; {}; {})", pad, init_str, condition, step);
+            auto result = std::format("{}for ({}; {}; {})", padding, init_str, condition, step);
             if (s.body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto body_stmt : static_cast<const BlockStmt*>(s.body)->statements) {
                     result += dump(*body_stmt, source, indent + 2);
                 }
-                std::format_to(std::back_inserter(result), "{}}}\n", pad);
+                std::format_to(std::back_inserter(result), "{}}}\n", padding);
             } else {
                 result += '\n';
                 result += dump(*s.body, source, indent + 2);
@@ -304,7 +305,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
     }
 }
 
-auto dump_ast(const ParseResult& parse_result, std::string_view source) noexcept -> std::string {
+auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> std::string {
     auto result = std::string();
     result.reserve(source.size() * 4);
 
@@ -342,7 +343,7 @@ export auto dump(const Driver& driver) noexcept -> int {
             report_errors(parse_result.errors, text, driver.input_files[0]);
             return 1;
         }
-        std::print("{}", dump_ast(parse_result, text));
+        std::print("{}", dump(parse_result, text));
     }
 
     return 0;

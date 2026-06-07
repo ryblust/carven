@@ -16,6 +16,15 @@ export struct ParseResult final {
     Arena storage;
 };
 
+export constexpr auto has_std_module(std::span<const TopLevelItem> items) noexcept -> bool {
+    return std::ranges::any_of(items, [](const TopLevelItem& item) static noexcept -> bool {
+        if (const auto m = std::get_if<ImportItem>(&item)) {
+            return m->is_std_module;
+        }
+        return false;
+    });
+}
+
 class Parser final {
 public:
     constexpr Parser(std::span<const Token> tokens, std::string_view source) noexcept
@@ -166,10 +175,10 @@ private:
         return expect(TokenKind::Identifier, message);
     }
 
-    constexpr auto parse_type_annotation(std::string_view message) noexcept -> Type* {
+    constexpr auto parse_type_annotation() noexcept -> Type* {
         const auto start = peek();
         if (start == nullptr) {
-            push_error(message, eof_span());
+            push_error("expected type, reached end of file", eof_span());
             return nullptr;
         }
 
@@ -196,7 +205,7 @@ private:
             return alloc<NameType>(span);
         }
 
-        push_error(message, current_span());
+        push_error("expected type, found '" + std::string(slice(source, start->span)) + "'", current_span());
         return nullptr;
     }
 
@@ -347,7 +356,7 @@ private:
         Type* type = nullptr;
         if (check(TokenKind::Colon)) {
             advance();
-            type = parse_type_annotation("expected type after ':'");
+            type = parse_type_annotation();
             if (!type) {
                 synchronize_to_stmt_end();
                 return nullptr;
@@ -884,7 +893,7 @@ private:
         };
 
         if (match(TokenKind::Colon)) {
-            item.size = parse_type_annotation("expected enum size type");
+            item.size = parse_type_annotation();
             if (!item.size) {
                 synchronize_to_item_end();
                 return;
@@ -946,7 +955,7 @@ private:
                 return;
             }
 
-            const auto field_type = parse_type_annotation("expected struct field type");
+            const auto field_type = parse_type_annotation();
             if (!field_type) {
                 synchronize_to_item_end();
                 return;
@@ -981,7 +990,7 @@ private:
 
             Type* param_type = nullptr;
             if (match(TokenKind::Colon)) {
-                param_type = parse_type_annotation("expected function parameter type");
+                param_type = parse_type_annotation();
                 if (!param_type) return std::nullopt;
             }
 
@@ -1019,7 +1028,7 @@ private:
         }
         Type* return_type = nullptr;
         if (match(TokenKind::Arrow)) {
-            return_type = parse_type_annotation("expected function return type");
+            return_type = parse_type_annotation();
             if (!return_type) {
                 synchronize_to_item_end();
                 return;

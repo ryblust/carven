@@ -5,7 +5,7 @@ import std;
 
 TEST_CASE("Toolchain: build_artifacts") {
     SUBCASE("filenames resolve correctly") {
-        CHECK(build_artifacts("hello.cv", "/tmp/out").cpp_path.ends_with("hello.cpp"));
+        CHECK(build_artifacts("hello.cv",   "/tmp/out").cpp_path.ends_with("hello.cpp"));
         CHECK(build_artifacts("src/foo.cv", "/tmp/out").cpp_path.ends_with("foo.cpp"));
         CHECK(build_artifacts("foo.bar.cv", "/tmp/out").cpp_path.ends_with("foo.bar.cpp"));
     }

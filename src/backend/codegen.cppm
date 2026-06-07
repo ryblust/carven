@@ -374,7 +374,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 return;
             }
 
-            const auto pad = std::string(indent, ' ');
+            const auto padding = std::string(indent, ' ');
 
             result += "if (";
             generate_expr(result, *e.condition, source, indent);
@@ -383,7 +383,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 generate_stmt(result, *stmt, source, indent + 4);
                 result += '\n';
             }
-            result += pad;
+            result += padding;
             result += '}';
 
             if (e.else_branch) {
@@ -392,7 +392,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                     generate_stmt(result, *stmt, source, indent + 4);
                     result += '\n';
                 }
-                result += pad;
+                result += padding;
                 result += '}';
             }
 
@@ -421,7 +421,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                 }
             }
 
-            const auto pad = std::string(indent, ' ');
+            const auto padding = std::string(indent, ' ');
 
             if (has_type) {
                 for (auto i = 0uz; i < e.arms.size(); ++i) {
@@ -462,7 +462,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                         result += '\n';
                     }
 
-                    result += pad;
+                    result += padding;
                     result += '}';
                 }
             } else {
@@ -520,7 +520,7 @@ constexpr auto generate_expr(std::string& result, const Expr& expr, std::string_
                             generate_stmt(result, *stmt, source, indent + 4);
                             result += '\n';
                         }
-                        result += pad;
+                        result += padding;
                         result += '}';
                     }
                 }

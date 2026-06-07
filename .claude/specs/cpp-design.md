@@ -57,7 +57,7 @@ Prefer `class` when ANY condition holds: private state, resource ownership, life
 
 ## Error Handling
 
-Exceptions disabled (`-fno-exceptions`). Never `throw`, `try`, `catch`.
+Exceptions disabled. Never `throw`, `try`, `catch`.
 
 Use `std::optional<T>` when absence of value is expected and no error explanation is required.
 
@@ -161,9 +161,7 @@ enum class ParseError {
 
 constexpr auto extract_port(std::string_view text) noexcept -> std::optional<int>;
 
-constexpr auto parse_endpoint(std::string_view config_line) noexcept
-    -> std::expected<EndpointConfig, ParseError>
-{
+constexpr auto parse_endpoint(std::string_view config_line) noexcept -> std::expected<EndpointConfig, ParseError> {
     const auto colon_pos = config_line.find(':');
     if (colon_pos == std::string_view::npos) {
         return std::unexpected(ParseError::MissingDelimiter);

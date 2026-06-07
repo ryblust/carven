@@ -11,8 +11,8 @@ TEST_CASE("Span") {
         const auto r = Span { .start = 5, .end = 10 };
         CHECK_EQ(r.start, 5u);
         CHECK_EQ(r.end, 10u);
-        CHECK(Span { .start = 3, .end = 3 }.empty());
-        CHECK(Span { .start = 5, .end = 2 }.empty());
+        CHECK( Span { .start = 3, .end = 3 }.empty());
+        CHECK( Span { .start = 5, .end = 2 }.empty());
         CHECK(!Span { .start = 0, .end = 5 }.empty());
     }
 }
@@ -21,9 +21,9 @@ TEST_CASE("slice") {
     constexpr auto text = "hello world\nfoo bar";
 
     SUBCASE("extract substring by span") {
-        CHECK_EQ(slice(text, Span { .start = 0, .end = 5 }), "hello");
-        CHECK_EQ(slice(text, Span { .start = 6, .end = 11 }), "world");
-        CHECK_EQ(slice(text, Span { .start = 12, .end = 15 }), "foo");
+        CHECK_EQ(slice(text, Span { .start = 0,  .end =  5 }), "hello");
+        CHECK_EQ(slice(text, Span { .start = 6,  .end = 11 }), "world");
+        CHECK_EQ(slice(text, Span { .start = 12, .end = 15 }),   "foo");
     }
 
     SUBCASE("whole source") {
@@ -50,12 +50,12 @@ TEST_CASE("slice") {
 TEST_CASE("LineOffsets") {
     SUBCASE("line 1 and 2 positions") {
         const auto lo = LineOffsets("line1\nline2\nline3\n");
-        CHECK_EQ(lo.location(0).line, 1u);
+        CHECK_EQ(lo.location(0).line,   1u);
         CHECK_EQ(lo.location(0).column, 1u);
-        CHECK_EQ(lo.location(3).line, 1u);
+        CHECK_EQ(lo.location(3).line,   1u);
         CHECK_EQ(lo.location(3).column, 4u);
-        CHECK_EQ(lo.location(6).line, 2u);
-        CHECK_EQ(lo.location(9).line, 2u);
+        CHECK_EQ(lo.location(6).line,   2u);
+        CHECK_EQ(lo.location(9).line,   2u);
         CHECK_EQ(lo.location(9).column, 4u);
     }
 
@@ -67,9 +67,9 @@ TEST_CASE("LineOffsets") {
 
     SUBCASE("single line no newline") {
         const auto lo = LineOffsets("hello");
-        CHECK_EQ(lo.location(0).line, 1u);
+        CHECK_EQ(lo.location(0).line,   1u);
         CHECK_EQ(lo.location(0).column, 1u);
-        CHECK_EQ(lo.location(4).line, 1u);
+        CHECK_EQ(lo.location(4).line,   1u);
         CHECK_EQ(lo.location(4).column, 5u);
     }
 

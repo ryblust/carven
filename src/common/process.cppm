@@ -14,17 +14,23 @@ export module carven.common.process;
 
 import std;
 
-export auto run_process(std::span<const std::string> args) noexcept -> int {
-    if (args.empty()) return -1;
-
 #if defined(_WIN32)
+auto build_windows_command(std::span<const std::string> args) noexcept -> std::string {
     auto command = std::string();
-
     for (auto i = 0uz; i < args.size(); ++i) {
         if (i > 0) command += ' ';
         const auto needs_quotes = args[i].contains(' ') || args[i].contains('\t');
         command += needs_quotes ? std::format("\"{}\"", args[i]) : args[i];
     }
+    return command;
+}
+#endif
+
+export auto run_process(std::span<const std::string> args) noexcept -> int {
+    if (args.empty()) return -1;
+
+#if defined(_WIN32)
+    auto command = build_windows_command(args);
 
     auto si = STARTUPINFOA{};
     si.cb = sizeof(si);
@@ -93,12 +99,7 @@ export auto run_and_capture(std::span<const std::string> args) noexcept -> std::
     if (args.empty()) return { -1, {} };
 
 #if defined(_WIN32)
-    auto command = std::string();
-    for (auto i = 0uz; i < args.size(); ++i) {
-        if (i > 0) command += ' ';
-        const auto needs_quotes = args[i].contains(' ') || args[i].contains('\t');
-        command += needs_quotes ? std::format("\"{}\"", args[i]) : args[i];
-    }
+    auto command = build_windows_command(args);
 
     auto sa = SECURITY_ATTRIBUTES{};
     sa.nLength = sizeof(sa);

@@ -115,7 +115,7 @@ constexpr auto to_string(TokenKind kind) noexcept -> const char* {
         case Comma:                 return "Comma";
         case Dot:                   return "Dot";
         case Colon:                 return "Colon";
-        case SemiColon:             return "Semicolon";
+        case SemiColon:             return "SemiColon";
         case LeftParen:             return "LeftParen";
         case RightParen:            return "RightParen";
         case LeftBracket:           return "LeftBracket";

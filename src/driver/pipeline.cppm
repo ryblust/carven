@@ -75,7 +75,7 @@ export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -
 }
 
 export constexpr auto transpile(std::string_view source, std::uint8_t language_standard, bool import_std) noexcept -> TranspileResult {
-    auto parse_result = parse(tokenize(source), source);
+    const auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
         return {
@@ -84,19 +84,8 @@ export constexpr auto transpile(std::string_view source, std::uint8_t language_s
         };
     }
 
-    if (!import_std) {
-        for (const auto& item : parse_result.items) {
-            if (const auto import_module = std::get_if<ImportItem>(&item)) {
-                if (import_module->is_std_module) {
-                    import_std = true;
-                    break;
-                }
-            }
-        }
-    }
-
     return {
-        .output = generate(parse_result.items, source, language_standard, import_std),
+        .output = generate(parse_result.items, source, language_standard, import_std || has_std_module(parse_result.items)),
         .errors = {}
     };
 }
