@@ -8,6 +8,7 @@ import carven.driver.toolchain;
 import carven.frontend.lexer;
 import carven.frontend.ast;
 import carven.frontend.parser;
+import carven.frontend.sema;
 import carven.backend.codegen;
 import std;
 
@@ -81,6 +82,14 @@ export constexpr auto transpile(std::string_view source, std::uint8_t language_s
         return {
             .output = {},
             .errors = std::move(parse_result.errors)
+        };
+    }
+
+    auto sema_errors = analyze(parse_result.items, source);
+    if (!sema_errors.empty()) {
+        return {
+            .output = {},
+            .errors = std::move(sema_errors)
         };
     }
 

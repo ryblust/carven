@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working with this repository.
 
 ## Overview
 
@@ -33,10 +33,10 @@ xmake run carven dump <file>
 
 ## Key Design Decisions
 
-- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `SourceFile::slice(span)`. The `SourceFile` MUST outlive all AST references.
+- **Span lifecycle**: AST nodes store `Span` (byte offsets), not owned strings. Codegen extracts text via `slice(source, span)`. The source text MUST outlive all AST references.
 - **Import pass-through**: `import` statements generate C++ module imports verbatim. The transpiler does not resolve or parse imported `.cv` files — this is a single-file model.
 - **Arena allocator**: AST nodes allocated via bump-pointer `Arena`. Use `alloc<T>(args...)` — never `new` for AST nodes.
-- **Context-free parser**: Parser distinguishes constructs by token type only, never by symbol table lookup. Semantic decisions deferred to codegen.
+- **Context-free parser**: Parser distinguishes constructs by token type only, never by symbol table lookup. Semantic checks live in `sema`; lowering decisions live in codegen.
 - **Monadic error handling**: `std::optional<T>` and `std::expected<T, E>`. No exceptions (`-fno-exceptions`). Every function `noexcept`.
 
 ## Coding Style
@@ -47,14 +47,14 @@ xmake run carven dump <file>
 - Fields: `snake_case`
 - Modules: `carven.<layer>.<name>`
 
-C++ conventions are defined in two specs under `.claude/specs/`:
+C++ conventions are defined in two specs under `.agents/specs/`:
 
-- [`cpp-design`](.claude/specs/cpp-design.md) — design philosophy and API patterns
-- [`cpp-format`](.claude/specs/cpp-format.md) — formatting rules
+- [`cpp-design`](.agents/specs/cpp-design.md) — design philosophy and API patterns
+- [`cpp-format`](.agents/specs/cpp-format.md) — formatting rules
 
 All agents must apply both when writing, modifying, or reviewing C++ code.
 
-Feature design proposals live in [`.claude/proposals/`](.claude/proposals/). When a proposal is fully implemented, delete it.
+Feature design proposals live in [`docs/proposals/`](docs/proposals/). When a proposal is fully implemented, delete it.
 
 ## Conventional Commits
 

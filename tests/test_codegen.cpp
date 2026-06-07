@@ -216,11 +216,15 @@ TEST_CASE("Codegen: for statements") {
 }
 
 TEST_CASE("Codegen: if expression") {
-    SUBCASE("ternary optimization for single-expression branches") {
+    SUBCASE("value if lowers to immediately invoked lambda") {
         const auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
         const auto result = parse(tokenize(source), source);
         const auto cpp = generate(result.items, source, 20, false);
-        CHECK(cpp.contains("true ? 1 : 2"));
+        CHECK(cpp.contains("const auto x = ([&]() noexcept {"));
+        CHECK(cpp.contains("if (true) {"));
+        CHECK(cpp.contains("return 1;"));
+        CHECK(cpp.contains("return 2;"));
+        CHECK(!cpp.contains(" ? "));
     }
 
     SUBCASE("if without else generates if block") {
@@ -330,13 +334,18 @@ TEST_CASE("Codegen: array type annotation") {
 }
 
 TEST_CASE("Codegen: match expression") {
-    SUBCASE("value match ternary") {
+    SUBCASE("value match lowers to immediately invoked lambda") {
         const auto cpp = gen("fn main() { let a = match x { 1 => { 10 } _ => { 0 } }; }");
-        CHECK(cpp.contains("x == 1 ? 10 : 0"));
+        CHECK(cpp.contains("const auto a = ([&]() noexcept {"));
+        CHECK(cpp.contains("auto&& __carven_match_0 = x;"));
+        CHECK(cpp.contains("if (__carven_match_0 == 1)"));
+        CHECK(cpp.contains("return 10;"));
+        CHECK(cpp.contains("return 0;"));
     }
     SUBCASE("value match flat if") {
         const auto cpp = gen("fn main() { match x { 1 => { a; b; } _ => { c; } } }");
-        CHECK(cpp.contains("if (x == 1)"));
+        CHECK(cpp.contains("auto&& __carven_match_0 = x;"));
+        CHECK(cpp.contains("if (__carven_match_0 == 1)"));
         CHECK(cpp.contains("else"));
     }
     SUBCASE("type match if constexpr") {
@@ -351,12 +360,12 @@ TEST_CASE("Codegen: match expression") {
     }
     SUBCASE("multi-pattern type") {
         const auto cpp = gen("fn f(v) { match v { i32 | f64 => { a } _ => { b } } }");
-        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, std::int32_t>"));
-        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, double>"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(__carven_match_0)>, std::int32_t>"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(__carven_match_0)>, double>"));
     }
     SUBCASE("mixed patterns") {
         const auto cpp = gen("fn f(v) { match v { 0 => { a } i32 => { b } _ => { c } } }");
-        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(v)>, std::int32_t>"));
-        CHECK(cpp.contains("v == 0"));
+        CHECK(cpp.contains("std::is_same_v<std::remove_cvref_t<decltype(__carven_match_0)>, std::int32_t>"));
+        CHECK(cpp.contains("__carven_match_0 == 0"));
     }
 }

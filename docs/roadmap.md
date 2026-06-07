@@ -2,14 +2,16 @@
 
 Implemented features are documented in [grammar.md](grammar.md).
 
-## In Progress
+## Proposals
 
 | Feature | Status |
 |---------|--------|
-| Range-for loops `for i in 1..10` | proposed |
-| Doc comments `///` / `//!` | proposed |
-| Inline tests | proposed |
-| Inline C++ blocks | proposed |
+| Range-for loops `for i in 1..10` | [proposed](proposals/range-for.md) |
+| Doc comments `///` / `//!` | [proposed](proposals/doc-comments.md) |
+| Inline tests | [proposed](proposals/inline-test.md) |
+| Inline C++ blocks | [proposed](proposals/inline-cpp.md) |
+| Match `is` patterns | [proposed](proposals/match-is-patterns.md) |
+| Carven runtime header | [proposed](proposals/runtime-header.md) |
 
 ## Planned
 

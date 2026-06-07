@@ -135,9 +135,12 @@ if <condition> { <body> } else { <body> }
 
 - `if` is always an expression. When used in statement position it is wrapped in
   an `ExprStmt` node.
-- When both branches consist of a single-expression block, the codegen emits a
-  ternary `? :` instead of `if`/`else`:
-  `let x = if true { 1 } else { 2 };` → `const auto x = true ? 1 : 2;`
+- When used as a value, `if` requires an `else` branch. Each branch must end
+  with an expression that omits the trailing semicolon; earlier statements in
+  the branch are allowed.
+- Value-position `if` lowers to an immediately invoked lambda in generated C++.
+- `return` is not allowed inside value-position `if` branches. Statement-position
+  `if` branches may still use `return` to return from the surrounding function.
 - The keywords `true`, `false`, `if`, and `match` are valid in expression
   position. Other keywords (`fn`, `let`, `while`, etc.) produce an error.
 
@@ -158,10 +161,20 @@ match <expr> {
   - Identifiers (`i32`, `Point`) — compile-time type match via
     `if constexpr (std::is_same_v<T, Type>)`
   - `_` — wildcard, matches everything
+- Identifier patterns are always type patterns. They cannot currently match the
+  value of a variable with the same name. See
+  [Match `is` Patterns](proposals/match-is-patterns.md) for the planned explicit
+  type/value matching extension.
 - Multi-patterns use `|`: `1 | 2 | 3 => ...`
 - Trailing commas are allowed between arms.
-- When all arms are single-expression value matches, the codegen emits a ternary
-  chain in place of `if`/`else` blocks.
+- When used as a value, `match` must include a wildcard `_` arm. The wildcard
+  arm, when present, must be last.
+- Value-position `match` arms must end with an expression that omits the trailing
+  semicolon; earlier statements in the arm are allowed.
+- Value-position `match` lowers to an immediately invoked lambda and evaluates
+  the matched expression once.
+- `return` is not allowed inside value-position `match` arms. Statement-position
+  `match` arms may still use `return` to return from the surrounding function.
 
 ## Expressions
 
@@ -284,6 +297,8 @@ Line comments: `//` to end of line. Block comments are not supported.
 - Functions without an explicit return type omit the trailing return type, relying
   on C++ deduction.
 - Untyped parameters become `auto`.
+- Value-position `if` and `match` expressions are emitted as immediately invoked
+  lambdas.
 - `import std;` does not emit `import std;` in the output. It triggers a
   `#include` preamble instead, selected by the C++ standard level
   (14, 17, 20, 23, or 26).

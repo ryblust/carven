@@ -49,9 +49,6 @@ symbol-table lookup. This means:
 - Where semantic distinction is needed, the syntax makes it explicit (keywords,
   token types, delimiters).
 
-The parser already accepts omitted semicolons before `}` — turning that into
-implicit block returns is purely a codegen change.
-
 ### 7. Progressive complexity
 
 - Fundamentals first: variables, functions, control flow, structs, enums.

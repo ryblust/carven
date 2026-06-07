@@ -53,6 +53,87 @@ TEST_CASE("E2E: match") {
     CHECK(stdout.contains("int"));
 }
 
+TEST_CASE("E2E: if expression lambda lowering") {
+    static constexpr auto source = std::string_view {
+        "import std;\n"
+        "fn main() {\n"
+        "    let x = 1 + if true { 2 } else { 3 };\n"
+        "    std::println(\"{}\", x);\n"
+        "}\n"
+    };
+
+    const auto [code, stdout] = e2e_run(source, "if_expr.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("3"));
+}
+
+TEST_CASE("E2E: multi-statement if expression branch") {
+    static constexpr auto source = std::string_view {
+        "import std;\n"
+        "fn main() {\n"
+        "    var n = 1;\n"
+        "    let x = if true { n += 1; n } else { 0 };\n"
+        "    std::println(\"{}\", x);\n"
+        "}\n"
+    };
+
+    const auto [code, stdout] = e2e_run(source, "if_expr_multistmt.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("2"));
+}
+
+TEST_CASE("E2E: match expression evaluates value once") {
+    static constexpr auto source = std::string_view {
+        "import std;\n"
+        "fn main() {\n"
+        "    var n = 0;\n"
+        "    let x = match ++n { 0 => { 0 } 1 => { n } _ => { 9 } };\n"
+        "    std::println(\"{}\", x);\n"
+        "}\n"
+    };
+
+    const auto [code, stdout] = e2e_run(source, "match_once.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("1"));
+}
+
+TEST_CASE("E2E: type match expression") {
+    static constexpr auto source = std::string_view {
+        "import std;\n"
+        "fn classify(v) {\n"
+        "    return match v { i32 => { 1 } _ => { 0 } };\n"
+        "}\n"
+        "fn main() {\n"
+        "    std::println(\"{}\", classify(42));\n"
+        "}\n"
+    };
+
+    const auto [code, stdout] = e2e_run(source, "type_match_expr.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("1"));
+}
+
+TEST_CASE("E2E: statement control flow return") {
+    static constexpr auto source = std::string_view {
+        "import std;\n"
+        "fn from_if(x: i32) -> i32 {\n"
+        "    if x == 1 { return 7; }\n"
+        "    return 0;\n"
+        "}\n"
+        "fn from_match(x: i32) -> i32 {\n"
+        "    match x { 1 => { return 8; } };\n"
+        "    return 0;\n"
+        "}\n"
+        "fn main() {\n"
+        "    std::println(\"{} {}\", from_if(1), from_match(1));\n"
+        "}\n"
+    };
+
+    const auto [code, stdout] = e2e_run(source, "statement_return.cv");
+    CHECK_EQ(code, 0);
+    CHECK(stdout.contains("7 8"));
+}
+
 TEST_CASE("E2E: syntax error") {
     auto source = SourceFile::from_file("tests/fixtures/error.cv");
     REQUIRE(source.has_value());
