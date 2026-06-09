@@ -1,6 +1,6 @@
 # Carven Language Grammar
 
-Carven transpiles to standard C++. Its syntax draws from Rust and other modern languages:
+Carven transpiles to standard C++. Its syntax draws from Rust and other contemporary languages:
 `while` and `if` conditions omit parentheses, semicolons are optional before `}` at block
 end, variables are declared with `let`/`var`/`const`, and functions use `fn`.
 

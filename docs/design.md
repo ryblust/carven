@@ -3,12 +3,12 @@
 Carven is a programming language layer that transpiles to C++. It offers C++
 programmers a simpler, more direct path to the same machine.
 
-Carven is a compression and refinement of modern C++ engineering practice:
+Carven is a compression and refinement of C++ engineering practice:
 something closer to a higher-level library or macro system than a separate
 runtime or platform. Its purpose is to remove historical ceremony and bring
-modern C++ best practices directly to the surface.
+C++ best practices directly to the surface.
 
-Carven is also implemented in modern C++; its stable engineering model is
+Carven is also implemented in C++; its stable engineering model is
 documented in [implementation.md](implementation.md).
 
 ## Principles
@@ -23,10 +23,10 @@ lines — preserving C++'s semantic model while shedding the ceremony.
 
 C++ pays a permanent cost for its history: header files, the preprocessor, C
 compatibility layers, and syntax frozen by standards decades old. Carven owes
-none of these debts. It starts from a clean slate and keeps only what modern C++
+none of these debts. It starts from a clean slate and keeps only what C++
 actually needs.
 
-### 3. Embrace modern language design
+### 3. Embrace contemporary language design
 
 Type inference, expression-oriented control flow, pattern matching, and concise
 functional constructs are the baseline, not afterthoughts. Underneath, the
@@ -37,7 +37,7 @@ semantics remain C++. The syntax reads like a language designed in the 2020s.
 Carven does not pursue the ownership, borrowing, or lifetime guarantees of Rust.
 It inherits C++'s "trust the programmer" philosophy — control is not surrendered
 in the name of safety. This does not mean Carven is deliberately unsafe; it
-adopts modern C++ best practices, but never at the cost of restricting what the
+adopts C++ best practices, but never at the cost of restricting what the
 programmer can do.
 
 ### 5. Principle of least surprise
@@ -86,12 +86,12 @@ Carven's syntax is informed by several languages:
 - **Rust** — `let`/`fn`/`match`, expression orientation, no-paren conditions
 - **Zig** — compile-time execution, lean type system
 - **Swift** — labelled arguments, readability
-- **Kotlin** — modern syntactic sugar, concise expressiveness
+- **Kotlin** — syntactic sugar, concise expressiveness
 
 Carven is none of these. It is C++, re-skinned.
 
 ## Syntax Conventions
 
-- Types follow names (`name: Type`), consistent with modern C++ and Rust.
+- Types follow names (`name: Type`), consistent with C++ and Rust.
 - Control-flow conditions omit parentheses.
 - Blocks are preferred as expressions over statements (`if` returns a value).

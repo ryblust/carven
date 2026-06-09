@@ -2,7 +2,7 @@
 
 A programming language layer that transpiles to standard C++.
 
-Carven provides a smaller syntax and toolchain surface for modern C++ practice
+Carven provides a smaller syntax and toolchain surface for C++ practice
 while keeping generated C++ readable and build-system integration explicit.
 
 ## Quick Start

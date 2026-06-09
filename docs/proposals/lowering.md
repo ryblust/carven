@@ -2,7 +2,7 @@
 
 ## Goal
 
-Define how Carven preserves one modern language semantics while generating C++
+Define how Carven preserves high-level language semantics while generating C++
 for different target standard levels.
 
 Carven should let users write the same source regardless of whether the current
@@ -15,7 +15,7 @@ semantic contract for the selected standard.
 The first version can stay simple: codegen checks the requested C++ standard and
 emits different C++ text with straightforward conditionals.
 
-For example, `fn main(args)` can initially target a modern non-owning range view:
+For example, `fn main(args)` can initially target a non-owning range view:
 
 ```cpp
 const auto args =
