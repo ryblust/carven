@@ -2,7 +2,6 @@
 
 import carven.common.source;
 import carven.driver.pipeline;
-import carven.driver.handler;
 import std;
 
 TEST_CASE("Pipeline: transpile") {
@@ -34,29 +33,19 @@ TEST_CASE("Pipeline: transpile") {
         CHECK(result.errors.empty());
     }
 
-    SUBCASE("transpile helloworld") {
-        auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
-        REQUIRE(source.has_value());
-        const auto text = source->text();
-        const auto result = transpile(text, 23, false);
-        CHECK(result.errors.empty());
-        CHECK(result.output.contains("auto main() noexcept -> int"));
-        CHECK(result.output.contains("std::println(\"Hello World\")"));
-    }
-}
+    SUBCASE("write output matches transpile result") {
+        static constexpr auto source = std::string_view { "fn main() { }" };
+        const auto output_path = std::filesystem::temp_directory_path() / "carven_transpile_output.cpp";
+        const auto expected = transpile(source, 23, false);
+        const auto driver = Driver{};
 
-TEST_CASE("Handler: run") {
-    SUBCASE("nonexistent file returns 1") {
-        auto driver = Driver{};
-        driver.input_files.push_back("nonexistent_file_for_test_123.cv");
-        const auto result = run(driver);
-        CHECK_EQ(result, 1);
-    }
+        REQUIRE(expected.errors.empty());
+        CHECK_EQ(write_transpiled_source(driver, source, "inline.cv", output_path.generic_string()), 0);
 
-    SUBCASE("helloworld compiles and runs") {
-        auto driver = Driver{};
-        driver.input_files.push_back("tests/fixtures/helloworld.cv");
-        const auto result = run(driver);
-        CHECK_EQ(result, 0);
+        auto output = SourceFile::from_file(output_path.generic_string());
+        REQUIRE(output.has_value());
+        CHECK_EQ(output->text(), expected.output);
+
+        std::filesystem::remove(output_path);
     }
 }

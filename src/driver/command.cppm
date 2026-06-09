@@ -25,12 +25,9 @@ constexpr auto GLOBAL_FLAGS = std::array<Flag, 4> {{
     { .long_name = "--quiet",   .short_name = "-q", .description = "Suppress non-error output"  },
 }};
 
-constexpr auto RUN_FLAGS = std::array<Flag, 5> {{
-    { .long_name = "-std=c++<value>",          .short_name = "", .description = "Target C++ standard (14, 17, 20, 23, 26)"                      },
-    { .long_name = "--compiler=<name>",        .short_name = "", .description = "C++ compiler path (default: c++ on macOS/Linux, clang-cl on Win)" },
-    { .long_name = "--output-dir=<path>",      .short_name = "", .description = "Build cache output directory"                                   },
-    { .long_name = "--import-std",             .short_name = "", .description = "Force #include std headers (auto if source has import std)"     },
-    { .long_name = "-E",                       .short_name = "", .description = "Only transpile (emit C++, skip compile)"                        },
+constexpr auto RUN_FLAGS = std::array<Flag, 2> {{
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file runs"                             },
+    { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers (auto if source has import std)"          },
 }};
 
 constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{
@@ -38,11 +35,28 @@ constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{
     { .long_name = "--only-ast",    .short_name = "", .description = "Show only AST"          },
 }};
 
-constexpr auto COMMANDS = std::array<Command, 4> {{
-    { .name = "run",   .description = "Transpile and run a .cv file",    .flags = RUN_FLAGS,   .handler = run   },
-    { .name = "dump",  .description = "Dump token stream and AST",       .flags = DUMP_FLAGS,  .handler = dump  },
-    { .name = "build", .description = "Build a Carven project",          .flags = {},          .handler = build },
-    { .name = "check", .description = "Parse and check without codegen", .flags = {},          .handler = check },
+constexpr auto INIT_FLAGS = std::array<Flag, 1> {{
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for generated xmake.lua" },
+}};
+
+constexpr auto BUILD_FLAGS = std::array<Flag, 2> {{
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file builds" },
+    { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers for single-file builds" },
+}};
+
+constexpr auto TRANSPILE_FLAGS = std::array<Flag, 3> {{
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for generated output"                 },
+    { .long_name = "-o <path>",       .short_name = "", .description = "Write generated C++ to file instead of stdout"            },
+    { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers (auto if source has import std)" },
+}};
+
+constexpr auto COMMANDS = std::array<Command, 6> {{
+    { .name = "init",      .description = "Create a Carven xmake project",       .flags = INIT_FLAGS,      .handler = init              },
+    { .name = "run",       .description = "Run a .cv file or xmake target",      .flags = RUN_FLAGS,       .handler = run               },
+    { .name = "transpile", .description = "Transpile .cv files to C++",          .flags = TRANSPILE_FLAGS, .handler = transpile_command },
+    { .name = "dump",      .description = "Dump token stream and AST",           .flags = DUMP_FLAGS,      .handler = dump              },
+    { .name = "build",     .description = "Build a .cv file or xmake project",   .flags = BUILD_FLAGS,     .handler = build             },
+    { .name = "check",     .description = "Parse and check without codegen",     .flags = {},              .handler = check             },
 }};
 
 auto render_flag(Flag flag) noexcept -> void {

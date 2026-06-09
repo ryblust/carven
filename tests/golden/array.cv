@@ -1,0 +1,16 @@
+import std;
+
+fn sum(data: [i32; 3]) -> i32 {
+    return data[0];
+}
+
+fn main() {
+    let a = [1, 2, 3];
+    let m = [[1, 2], [3, 4]];
+    let b: [i32; 3] = [1, 2, 3];
+    std::println("{} {} {}", sum(b), a[1], m[1][0]);
+}
+
+struct Matrix {
+    data: [f64; 16]
+}

@@ -48,7 +48,7 @@ public:
     }
 
     constexpr auto generate(std::span<const TopLevelItem> items) noexcept -> std::string {
-        if (default_include_std) {
+        if (default_include_std || needs_standard_preamble(items)) {
             result += generate_include_preamble(standard);
             result += '\n';
         }
@@ -83,6 +83,20 @@ private:
 
     constexpr auto is_control_expr(const Expr& expr) noexcept -> bool {
         return expr.kind == ExprKind::If || expr.kind == ExprKind::Match;
+    }
+
+    constexpr auto is_main_args_function(const FunctionItem& item) const noexcept -> bool {
+        return slice(source, item.name) == "main" && item.params.size() == 1 && item.params[0].type == nullptr;
+    }
+
+    constexpr auto needs_standard_preamble(std::span<const TopLevelItem> items) const noexcept -> bool {
+        for (const auto& item : items) {
+            if (const auto function = std::get_if<FunctionItem>(&item); function != nullptr && is_main_args_function(*function)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     constexpr auto generate_type(const Type* type) noexcept -> void {
@@ -191,6 +205,11 @@ private:
     constexpr auto generate_function(const FunctionItem& item) noexcept -> void {
         const auto name = slice(source, item.name);
 
+        if (is_main_args_function(item)) {
+            generate_main_args_function(item);
+            return;
+        }
+
         result += "auto ";
         result += name;
         result += '(';
@@ -217,6 +236,29 @@ private:
         }
 
         result += " {\n";
+
+        for (const auto stmt : item.body->statements) {
+            generate_stmt(*stmt, 4);
+            result += '\n';
+        }
+
+        result += '}';
+    }
+
+    constexpr auto generate_main_args_function(const FunctionItem& item) noexcept -> void {
+        const auto args_name = slice(source, item.params[0].name);
+
+        result += "auto main(int __carven_argc, char** __carven_argv) noexcept -> int {\n";
+        result += "    const auto ";
+        result += args_name;
+        result += " =\n";
+        result += "        std::views::iota(1, __carven_argc)\n";
+        result += "        | std::views::transform([__carven_argv](int index) noexcept {\n";
+        result += "              return std::pair<std::size_t, std::string_view> {\n";
+        result += "                  static_cast<std::size_t>(index),\n";
+        result += "                  std::string_view(__carven_argv[index]),\n";
+        result += "              };\n";
+        result += "          });\n";
 
         for (const auto stmt : item.body->statements) {
             generate_stmt(*stmt, 4);

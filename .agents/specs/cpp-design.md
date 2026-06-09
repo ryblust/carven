@@ -148,6 +148,16 @@ Loop increment: always `++i`. Never `i++` unless the post-increment value is req
 
 Prefer `std::print` / `std::println`. Avoid `std::cout` / `printf`.
 
+## Build Boundaries
+
+Do not hand-encode C++ compiler orchestration in Carven's normal driver paths.
+Carven owns language tooling: parse, semantic checks, lowering, codegen, and
+project scaffolding. Xmake owns build graphs, generated-file directories,
+compiler invocation, installation, and C++ module/BMI orchestration.
+
+Process helpers are acceptable for invoking xmake or user programs, but normal
+`carven run` / `carven build` behavior should remain xmake-backed.
+
 ## Example
 
 ```cpp

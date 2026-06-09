@@ -17,7 +17,15 @@ Review all changed C++ files against [`cpp-design.md`](../../specs/cpp-design.md
 | > 1500 | 6+ (split by file, each covers both specs) |
 
 3. Each agent reads their files and checks EVERY rule in their assigned spec. Report deviations only — never modify code.
-4. Consolidate output into three sections:
+4. If non-C++ build or tooling files changed, also check the project contracts
+   they encode:
+   - xmake owns normal build, run, install, generated-file, and module/BMI work.
+   - `scripts/install.sh` must not edit shell profiles, mutate PATH, or own
+     upgrades/uninstalls.
+   - Unit tests must not run xmake subprocesses; compiled smoke tests belong in
+     `carven-e2e-test`.
+   - Golden files are updated only through `scripts/update-golden.sh`.
+5. Consolidate output into three sections:
 
 ```
 ## Conflicts

@@ -23,6 +23,16 @@ The header should initially stay minimal:
 - helper traits used by generated pattern matching
 - small utilities that encode Carven semantics but do not belong in user code
 
+The installed layout should treat the runtime header as a toolchain asset:
+
+```text
+<prefix>/include/carven/runtime.hpp
+```
+
+Generated xmake projects should receive that include directory through the
+Carven xmake rule or a future xrepo package, not through ad hoc compiler flags
+assembled by the Carven CLI.
+
 ## Non-Goals
 
 - Do not wrap or replace the C++ standard library.
@@ -35,6 +45,8 @@ The header should initially stay minimal:
 - Range helpers for future `for i in 1..10`
 - Slice/span helpers if Carven adds slice syntax
 - Shared support for generated assertions, inline tests, or panic/trap behavior
+- Lowering helpers for older C++ backend standards. The lowering strategy
+  decides when helpers are needed; the runtime header only provides them.
 
 ## Open Questions
 

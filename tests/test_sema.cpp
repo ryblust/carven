@@ -71,3 +71,20 @@ TEST_CASE("Sema: reserved identifiers") {
         CHECK(!errors.empty());
     }
 }
+
+TEST_CASE("Sema: main args") {
+    SUBCASE("main may accept one untyped parameter") {
+        const auto errors = sema_errors("fn main(args) { }");
+        CHECK(errors.empty());
+    }
+
+    SUBCASE("main rejects typed parameter") {
+        const auto errors = sema_errors("fn main(args: i32) { }");
+        CHECK(!errors.empty());
+    }
+
+    SUBCASE("main rejects multiple parameters") {
+        const auto errors = sema_errors("fn main(args, extra) { }");
+        CHECK(!errors.empty());
+    }
+}

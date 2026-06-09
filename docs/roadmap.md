@@ -12,6 +12,8 @@ Implemented features are documented in [grammar.md](grammar.md).
 | Inline C++ blocks | [proposed](proposals/inline-cpp.md) |
 | Match `is` patterns | [proposed](proposals/match-is-patterns.md) |
 | Carven runtime header | [proposed](proposals/runtime-header.md) |
+| Lowering strategy | [proposed](proposals/lowering.md) |
+| True `import std` | [proposed](proposals/true-import-std.md) |
 
 ## Planned
 

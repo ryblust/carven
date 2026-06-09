@@ -53,13 +53,10 @@ TEST_CASE("Filesystem: write_file_if_changed") {
         CHECK_EQ(content, "int x = 4;");
     }
 
-    SUBCASE("write to read-only directory fails") {
-        const auto ro_dir = base / "readonly";
-        std::filesystem::create_directories(ro_dir);
-        std::filesystem::permissions(ro_dir, std::filesystem::perms::none);
-        CHECK(!write_file_if_changed(ro_dir / "test.cpp", "data"));
-        std::filesystem::permissions(ro_dir, std::filesystem::perms::owner_all);
-        std::filesystem::remove_all(ro_dir);
+    SUBCASE("missing parent directory fails") {
+        const auto missing_parent = base / "missing" / "test.cpp";
+        std::filesystem::remove_all(missing_parent.parent_path());
+        CHECK(!write_file_if_changed(missing_parent, "data"));
     }
 
     std::filesystem::remove_all(base);

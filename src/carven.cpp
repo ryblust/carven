@@ -21,12 +21,9 @@ auto main(int argc, const char** argv) noexcept -> int {
         if (flag == "--help" || flag == "-h") return render_command_help(*command);
     }
 
-    const auto driver = parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)});
+    auto driver = parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)});
     if (!driver) return 1;
-    if (driver->input_files.empty()) {
-        std::println("carven {}: error: no input file", command->name);
-        return 1;
-    }
+    driver->carven_executable = argv[0];
 
     return command->handler(*driver);
 }

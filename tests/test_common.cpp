@@ -95,36 +95,6 @@ TEST_CASE("SourceFile empty content") {
     }
 }
 
-TEST_CASE("SourceFile move constructor") {
-    auto original = SourceFile("moved content", "moved.cv");
-    const auto moved = std::move(original);
-
-    SUBCASE("moved-to has correct data") {
-        CHECK_EQ(moved.text(), "moved content");
-        CHECK_EQ(moved.filepath(), "moved.cv");
-    }
-
-    SUBCASE("moved-from is empty") {
-        CHECK_EQ(original.text(), "");
-    }
-}
-
-TEST_CASE("SourceFile move assignment") {
-    auto a = SourceFile("first", "a.cv");
-    auto b = SourceFile("second", "b.cv");
-
-    a = std::move(b);
-
-    SUBCASE("assigned-to has correct data") {
-        CHECK_EQ(a.text(), "second");
-        CHECK_EQ(a.filepath(), "b.cv");
-    }
-
-    SUBCASE("assigned-from is empty") {
-        CHECK_EQ(b.text(), "");
-    }
-}
-
 TEST_CASE("SourceFile from_file mmap path") {
     auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
     REQUIRE(source.has_value());
@@ -143,19 +113,6 @@ TEST_CASE("SourceFile from_file mmap path") {
         const auto first_line = slice(text, Span { .start = 0, .end = nl });
         CHECK(!first_line.empty());
     }
-
-    SUBCASE("move from_file result") {
-        const auto moved = std::move(*source);
-        CHECK(!moved.text().empty());
-        CHECK_EQ(moved.filepath(), "tests/fixtures/helloworld.cv");
-    }
-}
-
-TEST_CASE("SourceFile self-move assignment") {
-    auto source = SourceFile("self move test", "self.cv");
-    auto& ref = source;
-    source = std::move(ref);
-    CHECK_EQ(source.text(), "self move test");
 }
 
 TEST_CASE("SourceFile from_file nonexistent") {

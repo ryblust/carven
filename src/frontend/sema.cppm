@@ -108,9 +108,17 @@ private:
 
     constexpr auto check_function(const FunctionItem& item) noexcept -> void {
         check_ident(item.name);
+        const auto name = slice(source, item.name);
+        if (name == "main" && item.params.size() > 1) {
+            push_error("main accepts at most one parameter", item.name);
+        }
+
         for (const auto param : item.params) {
             check_ident(param.name);
             check_type(param.type);
+            if (name == "main" && param.type != nullptr) {
+                push_error("main parameter must be untyped", param.name);
+            }
         }
         check_type(item.return_type);
         check_block(*item.body, true);

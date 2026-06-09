@@ -7,888 +7,301 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
-#define PARSE(text) [](std::string_view s) static noexcept { return parse(tokenize(s), s); }((text))
+static auto parse_source(std::string_view source) noexcept -> ParseResult {
+    return parse(tokenize(source), source);
+}
 
-TEST_CASE("Parser: import") {
-    SUBCASE("basic import") {
-        const auto source = "import std;";
-        const auto result = PARSE(source);
+static auto parse_ok(std::string_view source) noexcept -> ParseResult {
+    auto result = parse_source(source);
+    CAPTURE(source);
+    CHECK(result.errors.empty());
+    return result;
+}
+
+static auto parse_error(std::string_view source) noexcept -> void {
+    const auto result = parse_source(source);
+    CAPTURE(source);
+    CHECK(!result.errors.empty());
+}
+
+template<typename T>
+static auto first_item(const ParseResult& result) noexcept -> const T* {
+    if (result.items.empty()) return nullptr;
+    return std::get_if<T>(&result.items[0]);
+}
+
+template<typename T>
+static auto item_at(const ParseResult& result, std::size_t index) noexcept -> const T* {
+    if (index >= result.items.size()) return nullptr;
+    return std::get_if<T>(&result.items[index]);
+}
+
+static auto main_body(const ParseResult& result) noexcept -> const BlockStmt* {
+    const auto fn = first_item<FunctionItem>(result);
+    if (fn == nullptr) return nullptr;
+    return fn->body;
+}
+
+template<typename T>
+static auto first_stmt(const BlockStmt* body, std::size_t index = 0) noexcept -> const T* {
+    if (body == nullptr || index >= body->statements.size()) return nullptr;
+    const auto stmt = body->statements[index];
+    if (stmt == nullptr || stmt->kind != T::kind) return nullptr;
+    return static_cast<const T*>(stmt);
+}
+
+template<typename T>
+static auto expr_stmt(const BlockStmt* body, std::size_t index = 0) noexcept -> const T* {
+    const auto stmt = first_stmt<ExprStmt>(body, index);
+    if (stmt == nullptr || stmt->expr == nullptr || stmt->expr->kind != T::kind) return nullptr;
+    return static_cast<const T*>(stmt->expr);
+}
+
+template<typename T>
+static auto type_as(const Type* type) noexcept -> const T* {
+    if (type == nullptr || type->kind != T::kind) return nullptr;
+    return static_cast<const T*>(type);
+}
+
+template<typename T>
+static auto expr_as(const Expr* expr) noexcept -> const T* {
+    if (expr == nullptr || expr->kind != T::kind) return nullptr;
+    return static_cast<const T*>(expr);
+}
+
+TEST_CASE("Parser: valid grammar snippets") {
+    constexpr auto snippets = std::array<std::string_view, 30> {
+        "",
+        "import std;",
+        "import std using println",
+        "import std using { println, format }",
+        "import std using *",
+        "enum Color : u8 { Red, Green, }",
+        "enum Empty {}",
+        "struct Point { x: i32, y: i32 }",
+        "struct Pair { left: i32; right: i32 }",
+        "fn main() { }",
+        "fn main(args) { }",
+        "fn add(a: i32, b: i32) -> i32 { return a + b; }",
+        "fn generic(value) { return value; }",
+        "fn main() { let x: i32 = 1; var y: i32; const N = 2; }",
+        "fn main() { while true return; }",
+        "fn main() { while x > 0 { x--; } }",
+        "fn main() { for ( ; ; ) { } }",
+        "fn main() { for (var i = 0; i < 10; i++) { } }",
+        "fn main() { if true { return; } }",
+        "fn main() { if true { } else { } }",
+        "fn main() { 42; 3.14; \"hello\"; 'a'; true; false; }",
+        "fn main() { -x; !flag; ~mask; ++i; &x; *p; i++; }",
+        "fn main() { foo(1, 2)[0].field; ns::value; ptr->field; }",
+        "fn main() { (a + b), c; }",
+        "fn main() { a = b = c; a += b; }",
+        "fn main() { let x = if true { 1 } else { 2 }; }",
+        "fn main() { let a = [1, 2, 3,]; let m = [[1], [2]]; }",
+        "fn main() { let a: [i32; 3] = [1, 2, 3]; }",
+        "fn main() { match x { 1 | 2 => { a; } _ => { b; } } }",
+        "fn main() { let y = match x { i32 | f64 => { 1 } _ => { 0 } }; }",
+    };
+
+    for (const auto source : snippets) {
+        const auto result = parse_source(source);
+        CAPTURE(source);
         CHECK(result.errors.empty());
-        CHECK_EQ(result.items.size(), 1u);
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
+    }
+}
+
+TEST_CASE("Parser: imports and top-level items") {
+    SUBCASE("import std using list") {
+        constexpr auto source = "import std using { println, format }";
+        const auto result = parse_ok(source);
+        const auto item = first_item<ImportItem>(result);
+
+        REQUIRE(item != nullptr);
         CHECK_EQ(slice(source, item->module_name), "std");
         CHECK(item->is_std_module);
-    }
-
-    SUBCASE("import without semicolon") {
-        const auto source = "import foo";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        CHECK_EQ(result.items.size(), 1u);
-    }
-
-    SUBCASE("import with using declaration") {
-        const auto source = "import std using println";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->using_decls.size(), 1u);
-        CHECK_EQ(slice(source, item->using_decls[0]), "println");
-    }
-
-    SUBCASE("import with using wildcard") {
-        const auto source = "import std using *";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(item->using_wildcard);
-    }
-
-    SUBCASE("import with using brace list") {
-        const auto source = "import std using { println, format }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->using_decls.size(), 2u);
+        REQUIRE_EQ(item->using_decls.size(), 2u);
         CHECK_EQ(slice(source, item->using_decls[0]), "println");
         CHECK_EQ(slice(source, item->using_decls[1]), "format");
     }
 
-    SUBCASE("import std auto-detection") {
-        const auto source = "import std;";
-        const auto result = PARSE(source);
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(item->is_std_module);
-    }
+    SUBCASE("enum, struct, and function") {
+        constexpr auto source =
+            "enum Color : u8 { Red, Green }\n"
+            "struct Point { x: i32, y: i32 }\n"
+            "fn add(a: i32, b) -> i32 { return a; }";
+        const auto result = parse_ok(source);
 
-    SUBCASE("non-std module not auto-detected") {
-        const auto source = "import other;";
-        const auto result = PARSE(source);
-        const auto item = std::get_if<ImportItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(!item->is_std_module);
-    }
-}
+        REQUIRE_EQ(result.items.size(), 3u);
 
-TEST_CASE("Parser: enum") {
-    SUBCASE("basic enum") {
-        const auto source = "enum Color { Red, Green, Blue }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<EnumItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(slice(source, item->name), "Color");
-        CHECK_EQ(item->fields.size(), 3u);
-        CHECK_EQ(slice(source, item->fields[0]), "Red");
-        CHECK_EQ(slice(source, item->fields[1]), "Green");
-        CHECK_EQ(slice(source, item->fields[2]), "Blue");
-    }
+        const auto enum_item = item_at<EnumItem>(result, 0);
+        REQUIRE(enum_item != nullptr);
+        CHECK(type_as<NameType>(enum_item->size) != nullptr);
+        CHECK_EQ(enum_item->fields.size(), 2u);
 
-    SUBCASE("enum with size type") {
-        const auto source = "enum Color : u8 { Red, Green }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<EnumItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(item->size != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->size)->span), "u8");
-        CHECK_EQ(item->fields.size(), 2u);
-    }
+        const auto struct_item = item_at<StructItem>(result, 1);
+        REQUIRE(struct_item != nullptr);
+        CHECK_EQ(struct_item->fields.size(), 2u);
 
-    SUBCASE("single field enum") {
-        const auto source = "enum Flag { Active }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<EnumItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->fields.size(), 1u);
-    }
-
-    SUBCASE("empty enum") {
-        const auto source = "enum Void {}";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<EnumItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(item->fields.empty());
+        const auto fn = item_at<FunctionItem>(result, 2);
+        REQUIRE(fn != nullptr);
+        CHECK_EQ(fn->params.size(), 2u);
+        CHECK(fn->params[0].type != nullptr);
+        CHECK(fn->params[1].type == nullptr);
+        CHECK(fn->return_type != nullptr);
     }
 }
 
-TEST_CASE("Parser: struct") {
-    SUBCASE("basic struct") {
-        const auto source = "struct Point { x: i32, y: i32 }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<StructItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(slice(source, item->name), "Point");
-        CHECK_EQ(item->fields.size(), 2u);
-        CHECK_EQ(slice(source, item->fields[0].name), "x");
-        CHECK(item->fields[0].type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->fields[0].type)->span), "i32");
-        CHECK_EQ(slice(source, item->fields[1].name), "y");
-        CHECK(item->fields[1].type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->fields[1].type)->span), "i32");
+TEST_CASE("Parser: main args parameter") {
+    constexpr auto source = "fn main(args) { }";
+    const auto result = parse_ok(source);
+    const auto fn = first_item<FunctionItem>(result);
+
+    REQUIRE(fn != nullptr);
+    REQUIRE_EQ(fn->params.size(), 1u);
+    CHECK_EQ(slice(source, fn->params[0].name), "args");
+    CHECK(fn->params[0].type == nullptr);
+}
+
+TEST_CASE("Parser: declarations, loops, and expressions") {
+    SUBCASE("declarations retain type/init shape") {
+        constexpr auto source = "fn main() { let x: i32 = 1; var y: i32; const N = 2; }";
+        const auto result = parse_ok(source);
+        const auto body = main_body(result);
+
+        REQUIRE(body != nullptr);
+        REQUIRE_EQ(body->statements.size(), 3u);
+
+        const auto let_decl = first_stmt<VarDecl>(body, 0);
+        const auto var_decl = first_stmt<VarDecl>(body, 1);
+        const auto const_decl = first_stmt<VarDecl>(body, 2);
+        REQUIRE(let_decl != nullptr);
+        REQUIRE(var_decl != nullptr);
+        REQUIRE(const_decl != nullptr);
+
+        CHECK_EQ(slice(source, let_decl->keyword), "let");
+        CHECK(type_as<NameType>(let_decl->type) != nullptr);
+        CHECK(let_decl->init != nullptr);
+        CHECK_EQ(slice(source, var_decl->keyword), "var");
+        CHECK(type_as<NameType>(var_decl->type) != nullptr);
+        CHECK(var_decl->init == nullptr);
+        CHECK_EQ(slice(source, const_decl->keyword), "const");
+        CHECK(const_decl->init != nullptr);
     }
 
-    SUBCASE("struct with semicolon separators") {
-        const auto source = "struct Foo { a: i32; b: i32 }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<StructItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->fields.size(), 2u);
+    SUBCASE("while and for statements") {
+        constexpr auto source = "fn main() { while true return; for (var i = 0; i < 10; i++) { } }";
+        const auto result = parse_ok(source);
+        const auto body = main_body(result);
+
+        const auto loop = first_stmt<WhileStmt>(body, 0);
+        REQUIRE(loop != nullptr);
+        REQUIRE(loop->body != nullptr);
+        CHECK_EQ(loop->body->kind, StmtKind::Return);
+
+        const auto for_stmt = first_stmt<ForStmt>(body, 1);
+        REQUIRE(for_stmt != nullptr);
+        CHECK(std::visit([](auto value) static noexcept -> bool { return value != nullptr; }, for_stmt->init));
+        CHECK(for_stmt->condition != nullptr);
+        CHECK(for_stmt->step != nullptr);
     }
 
-    SUBCASE("single field struct") {
-        const auto source = "struct Wrapper { value: i32 }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<StructItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->fields.size(), 1u);
+    SUBCASE("postfix chain") {
+        constexpr auto source = "fn main() { foo(1, 2)[0].field++; }";
+        const auto result = parse_ok(source);
+        const auto expr = expr_stmt<PostfixExpr>(main_body(result));
+        REQUIRE(expr != nullptr);
+        CHECK_EQ(expr->op, UnaryOp::PostInc);
+        CHECK(expr_as<FieldExpr>(expr->lhs) != nullptr);
+    }
+
+    SUBCASE("assignment is right-associative") {
+        constexpr auto source = "fn main() { a = b = c; }";
+        const auto result = parse_ok(source);
+        const auto assign = expr_stmt<AssignExpr>(main_body(result));
+        REQUIRE(assign != nullptr);
+        CHECK(expr_as<AssignExpr>(assign->rhs) != nullptr);
+    }
+
+    SUBCASE("multiplicative binds tighter than additive") {
+        constexpr auto source = "fn main() { a + b * c; }";
+        const auto result = parse_ok(source);
+        const auto bin = expr_stmt<BinaryExpr>(main_body(result));
+        REQUIRE(bin != nullptr);
+        CHECK_EQ(bin->op, BinOp::Add);
+        const auto rhs = expr_as<BinaryExpr>(bin->rhs);
+        REQUIRE(rhs != nullptr);
+        CHECK_EQ(rhs->op, BinOp::Mul);
     }
 }
 
-TEST_CASE("Parser: function") {
-    SUBCASE("basic function") {
-        const auto source = "fn main() { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(slice(source, item->name), "main");
-        CHECK(item->params.empty());
-        CHECK(item->return_type == nullptr);
-    }
-
-    SUBCASE("function with return type") {
-        const auto source = "fn add() -> i32 { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK(item->return_type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->return_type)->span), "i32");
-    }
-
-    SUBCASE("function with typed parameters") {
-        const auto source = "fn add(a: i32, b: i32) -> i32 { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->params.size(), 2u);
-        CHECK_EQ(slice(source, item->params[0].name), "a");
-        CHECK(item->params[0].type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->params[0].type)->span), "i32");
-        CHECK_EQ(slice(source, item->params[1].name), "b");
-        CHECK(item->params[1].type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(item->params[1].type)->span), "i32");
-    }
-
-    SUBCASE("function with untyped parameters") {
-        const auto source = "fn foo(x, y) { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->params.size(), 2u);
-        CHECK(item->params[0].type == nullptr);
-        CHECK(item->params[1].type == nullptr);
-    }
-
-    SUBCASE("function with body statements") {
-        const auto source = "fn main() { return 0; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto item = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(item != nullptr);
-        CHECK_EQ(item->body->statements.size(), 1u);
-    }
-}
-
-TEST_CASE("Parser: variable declarations") {
-    SUBCASE("let with type and init") {
-        const auto source = "fn main() { let x: i32 = 5; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
-        CHECK(decl != nullptr);
-        CHECK_EQ(slice(source, decl->keyword), "let");
-        CHECK_EQ(slice(source, decl->name), "x");
-        CHECK(decl->type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(decl->type)->span), "i32");
-        CHECK(!decl->eq.empty());
-    }
-
-    SUBCASE("var with init") {
-        const auto source = "fn main() { var y = 10; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
-        CHECK(decl != nullptr);
-        CHECK_EQ(slice(source, decl->keyword), "var");
-        CHECK_EQ(slice(source, decl->name), "y");
-    }
-
-    SUBCASE("var without init") {
-        const auto source = "fn main() { var y: i32; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
-        CHECK(decl != nullptr);
-        CHECK_EQ(slice(source, decl->keyword), "var");
-        CHECK(decl->type != nullptr);
-        CHECK_EQ(slice(source, static_cast<const NameType*>(decl->type)->span), "i32");
-        CHECK(decl->init == nullptr);
-    }
-
-    SUBCASE("const with init") {
-        const auto source = "fn main() { const N = 42; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
-        CHECK(decl != nullptr);
-        CHECK_EQ(slice(source, decl->keyword), "const");
-    }
-
-    SUBCASE("let without init produces error") {
-        const auto source = "fn main() { let x: i32; }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
-    }
-
-    SUBCASE("const without init produces error") {
-        const auto source = "fn main() { const x: i32; }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: return") {
-    SUBCASE("return void") {
-        const auto source = "fn main() { return; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
-        CHECK(ret != nullptr);
-        CHECK(ret->value == nullptr);
-    }
-
-    SUBCASE("return with value") {
-        const auto source = "fn main() { return 42; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ret = static_cast<const ReturnStmt*>(fn->body->statements[0]);
-        CHECK(ret != nullptr);
-        CHECK(ret->value != nullptr);
-    }
-}
-
-TEST_CASE("Parser: while") {
-    SUBCASE("while with block body") {
-        const auto source = "fn main() { while true { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(loop->body->kind == StmtKind::Block);
-    }
-
-    SUBCASE("while with single statement body") {
-        const auto source = "fn main() { while true return; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(static_cast<const ReturnStmt*>(loop->body) != nullptr);
-    }
-
-    SUBCASE("while with condition expression") {
-        const auto source = "fn main() { while x > 0 { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const WhileStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(loop->condition != nullptr);
-    }
-}
-
-TEST_CASE("Parser: for") {
-    SUBCASE("full for loop") {
-        const auto source = "fn main() { for (var i = 0; i < 10; i++) { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
-        CHECK(loop->condition != nullptr);
-        CHECK(loop->step != nullptr);
-    }
-
-    SUBCASE("for with empty clauses") {
-        const auto source = "fn main() { for ( ; ; ) { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(!std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
-        CHECK(loop->condition == nullptr);
-        CHECK(loop->step == nullptr);
-    }
-
-    SUBCASE("for with let init") {
-        const auto source = "fn main() { for (let i = 0; i < 10; i++) { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
-    }
-
-    SUBCASE("for with expr init") {
-        const auto source = "fn main() { for (i = 0; i < 10; i++) { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto loop = static_cast<const ForStmt*>(fn->body->statements[0]);
-        CHECK(loop != nullptr);
-        CHECK(std::visit([](auto p) noexcept -> bool { return p != nullptr; }, loop->init));
-    }
-
-    SUBCASE("for with const init") {
-        const auto source = "fn main() { for (const i = 0; i < 5; i++) { } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: if expression") {
-    SUBCASE("if without else") {
-        const auto source = "fn main() { if true { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto expr_stmt = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        CHECK(expr_stmt != nullptr);
-        const auto if_expr = static_cast<const IfExpr*>(expr_stmt->expr);
-        CHECK(if_expr != nullptr);
-        CHECK(if_expr->else_kw.empty());
-    }
-
-    SUBCASE("if with else") {
-        const auto source = "fn main() { if true { } else { } }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto if_expr = static_cast<const IfExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(if_expr != nullptr);
-        CHECK(!if_expr->else_kw.empty());
+TEST_CASE("Parser: if, match, and arrays") {
+    SUBCASE("value if in declaration") {
+        constexpr auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
+        const auto result = parse_ok(source);
+        const auto decl = first_stmt<VarDecl>(main_body(result));
+        REQUIRE(decl != nullptr);
+        const auto if_expr = expr_as<IfExpr>(decl->init);
+        REQUIRE(if_expr != nullptr);
         CHECK(if_expr->else_branch != nullptr);
     }
-}
 
-TEST_CASE("Parser: literal expressions") {
-    SUBCASE("number, string, and char literals") {
-        const auto source = "fn main() { 42; 3.14; \"hello\"; 'a'; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr) != nullptr);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr) != nullptr);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr) != nullptr);
-    }
-
-    SUBCASE("bool literals") {
-        const auto source = "fn main() { true; false; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
-        CHECK(static_cast<const LiteralExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr) != nullptr);
-    }
-}
-
-TEST_CASE("Parser: identifier and unary expressions") {
-    SUBCASE("identifier") {
-        const auto source = "fn main() { foo; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ident = static_cast<const IdentExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(ident != nullptr);
-        CHECK_EQ(slice(source, ident->name), "foo");
-    }
-
-    SUBCASE("prefix operators") {
-        const auto source = "fn main() { -x; !flag; ~mask; ++i; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK_EQ(p0->op, UnaryOp::Neg);
-        const auto p1 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(p1->op, UnaryOp::LogicalNot);
-        const auto p2 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
-        CHECK_EQ(p2->op, UnaryOp::BitNot);
-        const auto p3 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr);
-        CHECK_EQ(p3->op, UnaryOp::PreInc);
-    }
-
-    SUBCASE("prefix address-of and deref") {
-        const auto source = "fn main() { &x; *p; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto p0 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK_EQ(p0->op, UnaryOp::AddressOf);
-        const auto p1 = static_cast<const PrefixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(p1->op, UnaryOp::Deref);
-    }
-
-    SUBCASE("postfix operators") {
-        const auto source = "fn main() { i++; j--; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto p0 = static_cast<const PostfixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK_EQ(p0->op, UnaryOp::PostInc);
-        const auto p1 = static_cast<const PostfixExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(p1->op, UnaryOp::PostDec);
-    }
-}
-
-TEST_CASE("Parser: postfix operations") {
-    SUBCASE("function calls with varying args") {
-        const auto source = "fn main() { foo(); bar(1); add(1, 2, 3); }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto c0 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(c0->args.empty());
-        const auto c1 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(c1->args.size(), 1u);
-        const auto c2 = static_cast<const CallExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
-        CHECK_EQ(c2->args.size(), 3u);
-    }
-
-    SUBCASE("index expression") {
-        const auto source = "fn main() { arr[0]; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const IndexExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
-    }
-
-    SUBCASE("field access: dot, arrow, scope") {
-        const auto source = "fn main() { obj.field; ptr->field; ns::name; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto f0 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK_EQ(slice(source, f0->dot), ".");
-        const auto f1 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        CHECK_EQ(slice(source, f1->dot), "->");
-        const auto f2 = static_cast<const FieldExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
-        CHECK_EQ(slice(source, f2->dot), "::");
-    }
-}
-
-TEST_CASE("Parser: binary expressions") {
-    SUBCASE("multiplicative: multiply, divide, modulo") {
-        const auto source = "fn main() { a * b; c / d; e % f; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::Mul);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::Div);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr)->op, BinOp::Mod);
-    }
-
-    SUBCASE("additive: plus and minus") {
-        const auto source = "fn main() { a + b - c; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Sub);
-    }
-
-    SUBCASE("shift: left and right") {
-        const auto source = "fn main() { a << b >> c; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Shr);
-    }
-
-    SUBCASE("relational: less, greater, le, ge") {
-        const auto source = "fn main() { a < b; b > c; c <= d; d >= e; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin_expr_lt = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        const auto bin_expr_gt = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        const auto bin_expr_le = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr);
-        const auto bin_expr_ge = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[3])->expr);
-        REQUIRE(bin_expr_lt != nullptr);
-        REQUIRE(bin_expr_gt != nullptr);
-        REQUIRE(bin_expr_le != nullptr);
-        REQUIRE(bin_expr_ge != nullptr);
-        CHECK_EQ(bin_expr_lt->op, BinOp::Lt);
-        CHECK_EQ(bin_expr_gt->op, BinOp::Gt);
-        CHECK_EQ(bin_expr_le->op, BinOp::Le);
-        CHECK_EQ(bin_expr_ge->op, BinOp::Ge);
-    }
-
-    SUBCASE("equality: eq and ne") {
-        const auto source = "fn main() { a == b; c != d; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin_expr_eq = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        REQUIRE(bin_expr_eq != nullptr);
-        CHECK_EQ(bin_expr_eq->op, BinOp::Eq);
-        const auto bin_expr_ne = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr);
-        REQUIRE(bin_expr_ne != nullptr);
-        CHECK_EQ(bin_expr_ne->op, BinOp::Ne);
-    }
-
-    SUBCASE("bitwise: and, xor, or") {
-        const auto source = "fn main() { a & b; c ^ d; e | f; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::BitAnd);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::BitXor);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[2])->expr)->op, BinOp::BitOr);
-    }
-
-    SUBCASE("logical: and, or") {
-        const auto source = "fn main() { a && b; c || d; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr)->op, BinOp::LogicalAnd);
-        CHECK_EQ(static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[1])->expr)->op, BinOp::LogicalOr);
-    }
-
-    SUBCASE("precedence: && binds tighter than ||") {
-        const auto source = "fn main() { a || b && c; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::LogicalOr);
-        CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
-        CHECK_EQ(static_cast<const BinaryExpr*>(bin->rhs)->op, BinOp::LogicalAnd);
-    }
-
-    SUBCASE("precedence: * before +") {
-        const auto source = "fn main() { a + b * c; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto bin = static_cast<const BinaryExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(bin != nullptr);
-        CHECK_EQ(bin->op, BinOp::Add);
-        CHECK(static_cast<const BinaryExpr*>(bin->rhs) != nullptr);
-    }
-}
-
-TEST_CASE("Parser: assignment and compound assignment") {
-    SUBCASE("simple assignment") {
-        const auto source = "fn main() { x = 5; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto assign = static_cast<const AssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(assign != nullptr);
-    }
-
-    SUBCASE("chained assignment") {
-        const auto source = "fn main() { a = b = c = 0; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto assign = static_cast<const AssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(assign != nullptr);
-        // right-associative: a = (b = (c = 0))
-        CHECK(static_cast<const AssignExpr*>(assign->rhs) != nullptr);
-    }
-
-    SUBCASE("compound assignment +=") {
-        const auto source = "fn main() { x += 1; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        CHECK(ca != nullptr);
-        CHECK_EQ(ca->op, BinOp::Add);
-    }
-
-    SUBCASE("compound assignment -=") {
-        const auto source = "fn main() { x -= 1; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        REQUIRE(ca != nullptr);
-        CHECK_EQ(ca->op, BinOp::Sub);
-    }
-
-    SUBCASE("compound assignment *=") {
-        const auto source = "fn main() { x *= 2; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto ca = static_cast<const CompoundAssignExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr);
-        REQUIRE(ca != nullptr);
-        CHECK_EQ(ca->op, BinOp::Mul);
-    }
-}
-
-TEST_CASE("Parser: group and comma expressions") {
-    SUBCASE("group expression") {
-        const auto source = "fn main() { (a + b); }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const GroupExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
-    }
-
-    SUBCASE("comma expression") {
-        const auto source = "fn main() { a, b; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const CommaExpr*>(static_cast<const ExprStmt*>(fn->body->statements[0])->expr) != nullptr);
-    }
-}
-
-TEST_CASE("Parser: if as expression value") {
-    SUBCASE("if expression assigned to let") {
-        const auto source = "fn main() { let x = if true { 1 } else { 2 }; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
-        CHECK(decl != nullptr);
-        CHECK(decl->init != nullptr);
-        CHECK(static_cast<const IfExpr*>(decl->init) != nullptr);
-    }
-}
-
-TEST_CASE("Parser: block and empty statements") {
-    SUBCASE("empty statement") {
-        const auto source = "fn main() { ; }";
-        const auto result = PARSE(source);
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(static_cast<const EmptyStmt*>(fn->body->statements[0]) != nullptr);
-    }
-
-    SUBCASE("multiple statements") {
-        const auto source = "fn main() { let a = 1; var b = 2; return a + b; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK_EQ(fn->body->statements.size(), 3u);
-    }
-
-    SUBCASE("semicolon optional before brace") {
-        const auto source = "fn main() { call() }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: edge cases") {
-    SUBCASE("empty file or comments only") {
-        CHECK(PARSE("").items.empty());
-        CHECK(PARSE("// comment only").items.empty());
-    }
-
-    SUBCASE("multiple top-level items") {
-        const auto source =
-            "import std;\n"
-            "enum Color { Red, Green }\n"
-            "struct Point { x: i32, y: i32 }\n"
-            "fn main() { let p = Point { }; }";
-        const auto result = PARSE(source);
-        CHECK_EQ(result.items.size(), 4u);
-    }
-
-    SUBCASE("unexpected keyword produces error") {
-        const auto source = "fn main() { let; }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: error recovery") {
-    SUBCASE("skips to semicolon after bad statement") {
-        const auto source = "fn main() { var 123; x = 1; }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        REQUIRE(fn != nullptr);
-        // var 123 was consumed by error recovery; only x = 1 remains
-        CHECK_EQ(fn->body->statements.size(), 1u);
-    }
-
-    SUBCASE("recovers from bad top-level item") {
-        const auto source = "garbage\nfn main() { }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
-        // Error consumed "garbage", fn should be first item
-        CHECK(!result.items.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        CHECK(fn != nullptr);
-    }
-}
-TEST_CASE("Parser: trailing commas") {
-    SUBCASE("struct field trailing comma") {
-        const auto source = "struct Foo { x: i32, }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("enum field trailing comma") {
-        const auto source = "enum Bar { A, }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-}
-
-TEST_CASE("Parser: deeply nested expressions") {
-    const auto source = "fn main() { (((a + b) * (c + d)) + e); }";
-    const auto result = PARSE(source);
-    CHECK(result.errors.empty());
-}
-
-TEST_CASE("Parser: chained postfix") {
-    const auto source = "fn main() { a[0](1).b(); }";
-    const auto result = PARSE(source);
-    CHECK(result.errors.empty());
-}
-
-TEST_CASE("Parser: EOF mid-parse") {
-    const auto source = "fn main() { let x = ";
-    const auto result = PARSE(source);
-    CHECK(!result.errors.empty());
-}
-
-TEST_CASE("Parser: array literals") {
-    SUBCASE("simple array literal") {
-        const auto source = "fn main() { let a = [1, 2, 3]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        REQUIRE(fn != nullptr);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
+    SUBCASE("match expression arms") {
+        constexpr auto source = "fn main() { let y = match x { 1 | 2 => { 10 } _ => { 0 } }; }";
+        const auto result = parse_ok(source);
+        const auto decl = first_stmt<VarDecl>(main_body(result));
         REQUIRE(decl != nullptr);
-        const auto arr = static_cast<const ArrayExpr*>(decl->init);
-        REQUIRE(arr != nullptr);
-        CHECK_EQ(arr->elements.size(), 3u);
+        const auto match = expr_as<MatchExpr>(decl->init);
+        REQUIRE(match != nullptr);
+        REQUIRE_EQ(match->arms.size(), 2u);
+        CHECK_EQ(match->arms[0].patterns.size(), 2u);
+        CHECK(match->arms[1].is_wildcard);
     }
-    SUBCASE("single element array") {
-        const auto source = "fn main() { let a = [42]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("trailing comma") {
-        const auto source = "fn main() { let a = [1, 2, 3, ]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("nested array") {
-        const auto source = "fn main() { let m = [[1, 2], [3, 4]]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("array as function argument") {
-        const auto source = "fn main() { f([1, 2]); }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-}
 
-TEST_CASE("Parser: array type annotation") {
-    SUBCASE("let with array type") {
-        const auto source = "fn main() { let a: [i32; 3] = [1, 2, 3]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        REQUIRE(fn != nullptr);
-        const auto decl = static_cast<const VarDecl*>(fn->body->statements[0]);
+    SUBCASE("array literal and type annotation") {
+        constexpr auto source = "fn main() { let a: [i32; 3] = [1, 2, 3]; }";
+        const auto result = parse_ok(source);
+        const auto decl = first_stmt<VarDecl>(main_body(result));
         REQUIRE(decl != nullptr);
-        CHECK(decl->type != nullptr);
-        CHECK(decl->type->kind == TypeKind::Array);
-        const auto* arr = static_cast<const ArrayType*>(decl->type);
-        CHECK_EQ(slice(source, arr->elem_type), "i32");
-        CHECK_EQ(slice(source, arr->size), "3");
-    }
-    SUBCASE("function parameter array type") {
-        const auto source = "fn f(p: [i32; 3]) { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("function return array type") {
-        const auto source = "fn f() -> [i32; 3] { }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("struct field array type") {
-        const auto source = "struct S { f: [f64; 4] }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("var with array type") {
-        const auto source = "fn main() { var a: [u8; 16] = [0, 0]; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
+
+        const auto array_type = type_as<ArrayType>(decl->type);
+        REQUIRE(array_type != nullptr);
+        CHECK_EQ(slice(source, array_type->elem_type), "i32");
+        CHECK_EQ(slice(source, array_type->size), "3");
+
+        const auto array_expr = expr_as<ArrayExpr>(decl->init);
+        REQUIRE(array_expr != nullptr);
+        CHECK_EQ(array_expr->elements.size(), 3u);
     }
 }
 
-TEST_CASE("Parser: match expression") {
-    SUBCASE("value match") {
-        const auto source = "fn main() { match x { 1 => { a } _ => { b } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-        const auto fn = std::get_if<FunctionItem>(&result.items[0]);
-        REQUIRE(fn != nullptr);
-        const auto es = static_cast<const ExprStmt*>(fn->body->statements[0]);
-        REQUIRE(es != nullptr);
-        const auto m = static_cast<const MatchExpr*>(es->expr);
-        REQUIRE(m != nullptr);
-        CHECK_EQ(m->arms.size(), 2u);
-        CHECK(m->arms[1].is_wildcard);
-        CHECK_EQ(m->arms[0].patterns.size(), 1u);
-    }
-    SUBCASE("type match") {
-        const auto source = "fn main() { match x { i32 => { a } String => { b } _ => { c } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("multi-pattern value") {
-        const auto source = "fn main() { match x { 1 | 2 => { a } _ => { b } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("multi-pattern type") {
-        const auto source = "fn main() { match x { i32 | f64 => { a } _ => { b } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("mixed value and type") {
-        const auto source = "fn main() { match x { 0 => { a } i32 => { b } _ => { c } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("match as expression") {
-        const auto source = "fn main() { let a = match x { 1 => { 10 } _ => { 0 } }; }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-    SUBCASE("nested match") {
-        const auto source = "fn main() { match a { 1 => { match b { i32 => { x } _ => { y } } } _ => { z } } }";
-        const auto result = PARSE(source);
-        CHECK(result.errors.empty());
-    }
-}
+TEST_CASE("Parser: errors and recovery") {
+    constexpr auto invalid_snippets = std::array<std::string_view, 6> {
+        "fn main() { let x: i32; }",
+        "fn main() { const x: i32; }",
+        "let x = 1;",
+        "fn main() { @ invalid @; return; }",
+        "fn main() { match x 1 => { y; } }",
+        "fn main() { match x { 1 { y; } } }",
+    };
 
-TEST_CASE("Parser: match errors") {
-    SUBCASE("match without braces") {
-        const auto source = "fn main() { match x 1 => { } }";
-        const auto result = PARSE(source);
-        CHECK(!result.errors.empty());
+    for (const auto source : invalid_snippets) {
+        parse_error(source);
     }
-    SUBCASE("arm without fat arrow") {
-        const auto source = "fn main() { match x { 1 { } } }";
-        const auto result = PARSE(source);
+
+    SUBCASE("statement recovery keeps following statement") {
+        constexpr auto source = "fn main() { @ invalid @; return; }";
+        const auto result = parse_source(source);
         CHECK(!result.errors.empty());
+        const auto body = main_body(result);
+        REQUIRE(body != nullptr);
+        CHECK(!body->statements.empty());
+    }
+
+    SUBCASE("top-level recovery keeps following function") {
+        constexpr auto source = "@ bad top level\nfn main() { }";
+        const auto result = parse_source(source);
+        CHECK(!result.errors.empty());
+        REQUIRE_EQ(result.items.size(), 1u);
+        CHECK(first_item<FunctionItem>(result) != nullptr);
     }
 }

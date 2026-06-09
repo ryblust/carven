@@ -312,6 +312,11 @@ auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> 
 }
 
 export auto dump(const Driver& driver) noexcept -> int {
+    if (driver.input_files.empty()) {
+        std::println("carven dump: error: no input file");
+        return 1;
+    }
+
     auto src = SourceFile::from_file(driver.input_files[0]);
     if (!src) {
         std::println("carven dump: error: cannot read '{}'", driver.input_files[0]);

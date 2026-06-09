@@ -10,7 +10,6 @@ TEST_CASE("Pipeline: parse_flags") {
         CHECK(driver.has_value());
         CHECK_EQ(driver->language_standard, 23);
         CHECK(!driver->import_std);
-        CHECK(!driver->emit_only);
         CHECK(driver->input_files.empty());
     }
 
@@ -29,27 +28,31 @@ TEST_CASE("Pipeline: parse_flags") {
 
     SUBCASE("unknown standard returns nullopt") {
         const auto args = std::array { "-std=c++11" };
-        const auto driver = parse_flags(args);
+        const auto driver = carven_test::run_silenced([&]() noexcept { return parse_flags(args); });
         CHECK(!driver.has_value());
     }
 
-    SUBCASE("parse --output-dir") {
+    SUBCASE("output-dir flag is no longer accepted") {
         const auto args = std::array { "--output-dir=build/cache" };
-        const auto driver = parse_flags(args);
-        CHECK(driver.has_value());
-        CHECK_EQ(driver->output_dir, "build/cache");
+        const auto driver = carven_test::run_silenced([&]() noexcept { return parse_flags(args); });
+        CHECK(!driver.has_value());
     }
 
     SUBCASE("boolean flags") {
         CHECK(parse_flags(std::array { "--import-std" })->import_std);
-        CHECK(parse_flags(std::array { "-E" })->emit_only);
         CHECK(parse_flags(std::array { "--only-tokens" })->only_tokens);
         CHECK(parse_flags(std::array { "--only-ast" })->only_ast);
     }
 
     SUBCASE("unknown flag returns nullopt") {
         const auto args = std::array { "--unknown" };
-        const auto driver = parse_flags(args);
+        const auto driver = carven_test::run_silenced([&]() noexcept { return parse_flags(args); });
+        CHECK(!driver.has_value());
+    }
+
+    SUBCASE("run emit flag is no longer accepted") {
+        const auto args = std::array { "-E" };
+        const auto driver = carven_test::run_silenced([&]() noexcept { return parse_flags(args); });
         CHECK(!driver.has_value());
     }
 
@@ -64,24 +67,24 @@ TEST_CASE("Pipeline: parse_flags") {
 
     SUBCASE("multiple flags combined") {
         const auto args = std::array {
-            "-std=c++20", "--import-std", "-E", "main.cv",
+            "-std=c++20", "--import-std", "main.cv",
         };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK_EQ(driver->language_standard, 20);
         CHECK(driver->import_std);
-        CHECK(driver->emit_only);
         CHECK_EQ(driver->input_files.size(), 1u);
         CHECK_EQ(driver->input_files[0], "main.cv");
     }
 
-    SUBCASE("double dash treats remaining args as files") {
+    SUBCASE("double dash forwards remaining args") {
         const auto args = std::array { "--", "-unknown", "file.cv" };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
-        CHECK_EQ(driver->input_files.size(), 2u);
-        CHECK_EQ(driver->input_files[0], "-unknown");
-        CHECK_EQ(driver->input_files[1], "file.cv");
+        CHECK(driver->input_files.empty());
+        CHECK_EQ(driver->forwarded_args.size(), 2u);
+        CHECK_EQ(driver->forwarded_args[0], "-unknown");
+        CHECK_EQ(driver->forwarded_args[1], "file.cv");
     }
 
     SUBCASE("double dash with no args is a no-op") {
@@ -89,14 +92,27 @@ TEST_CASE("Pipeline: parse_flags") {
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK(driver->input_files.empty());
+        CHECK(driver->forwarded_args.empty());
     }
 
-    SUBCASE("double dash in middle still processes first flags") {
+    SUBCASE("double dash in middle separates input files from forwarded args") {
         const auto args = std::array { "--import-std", "--", "file.cv" };
         const auto driver = parse_flags(args);
         CHECK(driver.has_value());
         CHECK(driver->import_std);
+        CHECK(driver->input_files.empty());
+        CHECK_EQ(driver->forwarded_args.size(), 1u);
+        CHECK_EQ(driver->forwarded_args[0], "file.cv");
+    }
+
+    SUBCASE("double dash after input forwards target args") {
+        const auto args = std::array { "main.cv", "--", "one", "two" };
+        const auto driver = parse_flags(args);
+        CHECK(driver.has_value());
         CHECK_EQ(driver->input_files.size(), 1u);
-        CHECK_EQ(driver->input_files[0], "file.cv");
+        CHECK_EQ(driver->input_files[0], "main.cv");
+        CHECK_EQ(driver->forwarded_args.size(), 2u);
+        CHECK_EQ(driver->forwarded_args[0], "one");
+        CHECK_EQ(driver->forwarded_args[1], "two");
     }
 }

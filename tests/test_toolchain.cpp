@@ -3,49 +3,69 @@
 import carven.driver.toolchain;
 import std;
 
-TEST_CASE("Toolchain: build_artifacts") {
-    SUBCASE("filenames resolve correctly") {
-        CHECK(build_artifacts("hello.cv",   "/tmp/out").cpp_path.ends_with("hello.cpp"));
-        CHECK(build_artifacts("src/foo.cv", "/tmp/out").cpp_path.ends_with("foo.cpp"));
-        CHECK(build_artifacts("foo.bar.cv", "/tmp/out").cpp_path.ends_with("foo.bar.cpp"));
+TEST_CASE("Toolchain: carven source paths") {
+    CHECK(is_carven_source_path("main.cv"));
+    CHECK(is_carven_source_path("src/main.cv"));
+    CHECK(!is_carven_source_path("main.cpp"));
+    CHECK(!is_carven_source_path("cv"));
+}
+
+TEST_CASE("Toolchain: single file project") {
+    SUBCASE("project path is stable") {
+        const auto a = single_file_project("src/hello.cv");
+        const auto b = single_file_project("src/hello.cv");
+        CHECK_EQ(a.root_dir, b.root_dir);
+        CHECK_EQ(a.target_name, "hello");
+        CHECK(a.root_dir.contains("carven/scripts/hello-"));
     }
 
-    SUBCASE("dotfile filename preserves stem") {
-        CHECK(build_artifacts(".vimrc.cv", "/tmp/out").cpp_path.ends_with(".vimrc.cpp"));
-    }
-
-    SUBCASE("no-extension filename passes through") {
-        CHECK(build_artifacts("Makefile", "/tmp/out").cpp_path.ends_with("Makefile.cpp"));
+    SUBCASE("target name is sanitized") {
+        const auto project = single_file_project("src/my-app.cv");
+        CHECK_EQ(project.target_name, "my_app");
     }
 }
 
-TEST_CASE("Toolchain: needs_compile") {
-    const auto base = std::filesystem::temp_directory_path() / "carven_test_compile";
-    std::filesystem::create_directories(base);
-
-    SUBCASE("exe does not exist returns true") {
-        const auto cpp  = base / "test.cpp";
-        const auto exe  = base / "test";
-        std::ofstream(cpp) << "content";
-        CHECK(needs_compile(cpp.string(), exe.string()));
+TEST_CASE("Toolchain: xmake args") {
+    SUBCASE("build args") {
+        const auto args = build_xmake_build_args("app");
+        REQUIRE_EQ(args.size(), 5u);
+        CHECK_EQ(args[0], "xmake");
+        CHECK_EQ(args[1], "build");
+        CHECK_EQ(args[2], "-F");
+        CHECK_EQ(args[3], "xmake.lua");
+        CHECK_EQ(args[4], "app");
     }
 
-    SUBCASE("cpp newer than exe returns true") {
-        const auto cpp = base / "a.cpp";
-        const auto exe = base / "a";
-        std::ofstream(cpp) << "content";
-        std::ofstream(exe) << "binary";
-        std::filesystem::last_write_time(cpp, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(1));
-        CHECK(needs_compile(cpp.string(), exe.string()));
+    SUBCASE("run args with forwarded args") {
+        const auto forwarded = std::vector<std::string_view> { "--name", "Ada" };
+        const auto args = build_xmake_run_args("app", forwarded);
+        REQUIRE_EQ(args.size(), 7u);
+        CHECK_EQ(args[0], "xmake");
+        CHECK_EQ(args[1], "run");
+        CHECK_EQ(args[2], "-F");
+        CHECK_EQ(args[3], "xmake.lua");
+        CHECK_EQ(args[4], "app");
+        CHECK_EQ(args[5], "--name");
+        CHECK_EQ(args[6], "Ada");
+    }
+}
+
+TEST_CASE("Toolchain: project root discovery") {
+    const auto base = std::filesystem::temp_directory_path() / "carven_test_project_root";
+    const auto nested = base / "a" / "b";
+    std::filesystem::remove_all(base);
+    std::filesystem::create_directories(nested);
+
+    SUBCASE("finds parent xmake.lua") {
+        std::ofstream(base / "xmake.lua") << "target(\"app\")\n";
+        const auto root = find_project_root(nested);
+        REQUIRE(root.has_value());
+        CHECK_EQ(*root, base.generic_string());
     }
 
-    SUBCASE("exe newer than cpp returns false") {
-        const auto cpp = base / "b.cpp";
-        const auto exe = base / "b";
-        std::ofstream(cpp) << "content";
-        std::ofstream(exe) << "binary";
-        std::filesystem::last_write_time(exe, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(1));
-        CHECK(!needs_compile(cpp.string(), exe.string()));
+    SUBCASE("returns nullopt without xmake.lua") {
+        const auto root = find_project_root(nested);
+        CHECK(!root.has_value());
     }
 
     std::filesystem::remove_all(base);

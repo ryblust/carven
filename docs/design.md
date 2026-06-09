@@ -53,8 +53,18 @@ symbol-table lookup. This means:
 
 - Fundamentals first: variables, functions, control flow, structs, enums.
 - Advanced features on demand: pattern matching, generics, traits.
-- Interop with C++ is direct and deliberate: inline C++ blocks, import
-  pass-through.
+- Interop with C++ is direct and deliberate: inline C++ blocks, module imports,
+  and explicit build-system integration.
+
+### 8. Build-system cooperation
+
+Carven should not become a second C++ build system. The language tool owns
+parsing, semantic checks, lowering, and C++ generation; xmake owns dependency
+scanning, compiler invocation, generated-file build directories, installation,
+and future C++ module/BMI orchestration.
+
+This keeps the language implementation focused and gives project users one
+maintained build description: `xmake.lua`.
 
 ## Influences
 

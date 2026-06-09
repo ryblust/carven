@@ -1,0 +1,33 @@
+import std;
+
+enum Mode : u8 {
+    Debug,
+    Release,
+}
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+fn add(a: i32, b) -> i32 {
+    return a + b;
+}
+
+fn main() {
+    let x: i32 = 1;
+    var y: i32;
+    const Limit = 3;
+
+    while x < Limit {
+        y = add(x, y);
+    }
+
+    for (var i = 0; i < Limit; i++) {
+        y += i;
+    }
+
+    if y > 0 {
+        std::println("{}", y);
+    }
+}

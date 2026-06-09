@@ -16,6 +16,8 @@ import <module> using * ;
 - `import std;` triggers emission of a `#include` preamble rather than generating
   `import std;` in the C++ output. This fallback is automatic; the `--import-std` CLI
   flag forces it regardless of source content.
+  True standard-library module output is planned in
+  [True `import std`](proposals/true-import-std.md).
 - `using *` generates `using namespace <module>;`
 - `using { a, b }` generates individual `using <module>::a;` and `using <module>::b;`
   declarations.
@@ -41,6 +43,12 @@ fn <name> ( <params> ) { <body> }
   in the generated C++.
 - Return type is optional. `main` does not require an explicit return type; the
   generated C++ supplies `-> int` automatically.
+- `main` accepts at most one parameter, and that parameter must be untyped:
+  `fn main(args) { ... }`. The parameter name is not special, but `args` is the
+  conventional spelling. It lowers to a non-owning C++ range view of
+  `std::pair<std::size_t, std::string_view>` values. The first field is the
+  original command-line index starting at `1`, and the second field is the
+  argument text.
 - Body: `{ <statements> }`
 
 ### Enums
