@@ -1,0 +1,35 @@
+export module carven.driver.command.run;
+
+import carven.driver.pipeline;
+import carven.driver.request;
+import std;
+
+auto source_file_exists(std::string_view path) noexcept -> bool {
+    auto error = std::error_code();
+    return std::filesystem::is_regular_file(std::filesystem::path(path), error) && !error;
+}
+
+export auto execute(const RunRequest& request, std::string_view carven_executable) noexcept -> int {
+    const auto options = TranspileOptions {
+        .language_standard = request.language_standard,
+        .import_std = request.import_std,
+    };
+
+    return std::visit([&](const auto& mode) noexcept -> int {
+        using Mode = std::remove_cvref_t<decltype(mode)>;
+        if constexpr (std::same_as<Mode, SingleFileRun>) {
+            if (!source_file_exists(mode.source_file)) {
+                std::println("carven run: error: cannot read '{}'", mode.source_file);
+                return 1;
+            }
+            return run_single_file({
+                .source_file = mode.source_file,
+                .forwarded_args = mode.args,
+                .carven_executable = carven_executable,
+                .options = options,
+            });
+        } else {
+            return run_project(mode.target, mode.args);
+        }
+    }, request.mode);
+}

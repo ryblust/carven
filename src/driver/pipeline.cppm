@@ -1,6 +1,5 @@
 export module carven.driver.pipeline;
 
-import carven.common.filesystem;
 import carven.common.process;
 import carven.common.source;
 import carven.driver.report;
@@ -17,63 +16,111 @@ export struct TranspileResult final {
     std::vector<ParseError> errors;
 };
 
-export struct Driver final {
+export struct TranspileOptions final {
     std::uint8_t language_standard = 23;
     bool import_std = false;
-    bool only_tokens = false;
-    bool only_ast = false;
-    std::string carven_executable = "carven";
-    std::optional<std::string_view> output_file;
-    std::vector<std::string_view> input_files;
-    std::vector<std::string_view> forwarded_args;
 };
 
-export constexpr auto parse_flags(std::span<const char* const> flags) noexcept -> std::optional<Driver> {
-    auto driver = Driver{};
-    auto double_dash = false;
+export struct WriteTranspiledSourceConfig final {
+    std::string_view source;
+    std::string_view filepath;
+    std::string_view output_path;
+    TranspileOptions options;
+};
 
-    for (auto i = 0uz; i < flags.size(); ++i) {
-        const auto flag = std::string_view(flags[i]);
-        if (double_dash) {
-            driver.forwarded_args.push_back(flag);
-        } else if (flag == "--") {
-            double_dash = true;
-        } else if (flag.starts_with("-std=")) {
-            const auto standard = flag.substr(5);
-            if      (standard == "c++14") driver.language_standard = 14;
-            else if (standard == "c++17") driver.language_standard = 17;
-            else if (standard == "c++20") driver.language_standard = 20;
-            else if (standard == "c++23") driver.language_standard = 23;
-            else if (standard == "c++26") driver.language_standard = 26;
-            else {
-                std::println("carven: error: unknown standard '{}'", standard);
-                return std::nullopt;
-            }
-        } else if (flag == "-o") {
-            if (i + 1 >= flags.size()) {
-                std::println("carven: error: missing output path after '-o'");
-                return std::nullopt;
-            }
-            ++i;
-            driver.output_file = std::string_view(flags[i]);
-        } else if (flag == "--import-std") {
-            driver.import_std = true;
-        } else if (flag == "--only-tokens") {
-            driver.only_tokens = true;
-        } else if (flag == "--only-ast") {
-            driver.only_ast = true;
-        } else if (flag.starts_with('-')) {
-            std::println("carven: error: unknown flag '{}'", flag);
-            return std::nullopt;
-        } else {
-            driver.input_files.push_back(flag);
-        }
-    }
+export struct SingleFileBuildConfig final {
+    std::string_view source_file;
+    std::string_view carven_executable;
+    TranspileOptions options;
+};
 
-    return std::optional<Driver>{std::move(driver)};
+export struct SingleFileRunConfig final {
+    std::string_view source_file;
+    std::span<const std::string_view> forwarded_args;
+    std::string_view carven_executable;
+    TranspileOptions options;
+};
+
+struct SingleFileProjectConfig final {
+    std::string_view source_file;
+    std::string_view command_name;
+    std::string_view carven_executable;
+    TranspileOptions options = {};
+};
+
+auto write_text_file(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
+    auto file = std::ofstream(path, std::ios::binary | std::ios::trunc);
+    return file.is_open() && file.write(content.data(), content.size()).good();
 }
 
-export constexpr auto transpile(std::string_view source, std::uint8_t language_standard, bool import_std) noexcept -> TranspileResult {
+auto create_output_parent(const std::filesystem::path& path) noexcept -> bool {
+    if (path.has_parent_path()) {
+        auto error = std::error_code();
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (error) {
+            std::println("carven transpile: error: cannot create '{}'", path.parent_path().generic_string());
+            return false;
+        }
+    }
+    return true;
+}
+
+auto absolute_path_text(std::string_view path) noexcept -> std::optional<std::string> {
+    auto error = std::error_code();
+    const auto absolute = std::filesystem::absolute(std::filesystem::path(path), error);
+    if (error) return std::nullopt;
+    return absolute.generic_string();
+}
+
+auto command_program_path(std::string_view program) noexcept -> std::string {
+    const auto program_path = std::filesystem::path(program);
+    if (!program_path.has_parent_path()) {
+        return std::string(program);
+    }
+
+    if (const auto absolute = absolute_path_text(program)) return *absolute;
+    return std::string(program);
+}
+
+auto write_single_file_project(SingleFileProjectConfig project) noexcept -> std::optional<SingleFileConfig> {
+    const auto absolute_source = absolute_path_text(project.source_file);
+    if (!absolute_source) {
+        std::println("carven {}: error: cannot resolve '{}'", project.command_name, project.source_file);
+        return std::nullopt;
+    }
+
+    const auto carven_program = command_program_path(project.carven_executable);
+    const auto config = make_single_file_config({
+        .absolute_source_path = *absolute_source,
+        .carven_program = carven_program,
+        .standard = project.options.language_standard,
+        .import_std = project.options.import_std,
+    });
+    if (!write_single_file_xmake(config)) {
+        std::println("carven {}: error: cannot write temporary xmake project '{}'", project.command_name, config.root_dir);
+        return std::nullopt;
+    }
+
+    return config;
+}
+
+auto run_project_command(std::string_view command_name, const std::vector<std::string>& args) noexcept -> int {
+    const auto root = find_project_root(std::filesystem::current_path());
+    if (!root) {
+        std::println("carven {}: error: cannot find xmake.lua in current directory or parents", command_name);
+        return 1;
+    }
+
+    const auto result = run_process_in_dir(args, *root);
+    if (result < 0) {
+        std::println("carven {}: error: cannot start xmake", command_name);
+        return 1;
+    }
+
+    return result;
+}
+
+export auto transpile(std::string_view source, TranspileOptions options) noexcept -> TranspileResult {
     const auto parse_result = parse(tokenize(source), source);
 
     if (!parse_result.errors.empty()) {
@@ -92,44 +139,33 @@ export constexpr auto transpile(std::string_view source, std::uint8_t language_s
     }
 
     return {
-        .output = generate(parse_result.items, source, language_standard, import_std || has_std_module(parse_result.items)),
+        .output = generate(parse_result.items, source, options.language_standard, options.import_std || has_std_module(parse_result.items)),
         .errors = {}
     };
 }
 
-auto transpile_single_file(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> std::optional<std::string> {
-    const auto transpile_result = transpile(source, driver.language_standard, driver.import_std);
-
-    if (!transpile_result.errors.empty()) {
-        report_errors(transpile_result.errors, source, filepath);
-        return std::nullopt;
-    }
-
-    return transpile_result.output;
-}
-
-export auto print_transpiled_source(const Driver& driver, std::string_view source, std::string_view filepath) noexcept -> int {
-    const auto output = transpile_single_file(driver, source, filepath);
-    if (!output) return 1;
-    std::print("{}", *output);
-    return 0;
-}
-
-export auto write_transpiled_source(const Driver& driver,
-                                    std::string_view source,
-                                    std::string_view filepath,
-                                    std::string_view output_path) noexcept -> int {
-    const auto output = transpile_single_file(driver, source, filepath);
-    if (!output) return 1;
-
-    const auto path = std::filesystem::path(output_path);
-    const auto parent = path.parent_path();
-    if (!parent.empty() && !ensure_directory(parent)) {
-        std::println("carven transpile: error: cannot create '{}'", parent.generic_string());
+export auto print_transpiled_source(std::string_view source, std::string_view filepath, TranspileOptions options) noexcept -> int {
+    const auto result = transpile(source, options);
+    if (!result.errors.empty()) {
+        report_errors(result.errors, source, filepath);
         return 1;
     }
 
-    if (!write_file_if_changed(path, *output)) {
+    std::print("{}", result.output);
+    return 0;
+}
+
+export auto write_transpiled_source(WriteTranspiledSourceConfig request) noexcept -> int {
+    const auto result = transpile(request.source, request.options);
+    if (!result.errors.empty()) {
+        report_errors(result.errors, request.source, request.filepath);
+        return 1;
+    }
+
+    const auto path = std::filesystem::path(request.output_path);
+    if (!create_output_parent(path)) return 1;
+
+    if (!write_text_file(path, result.output)) {
         std::println("carven transpile: error: cannot write '{}'", path.generic_string());
         return 1;
     }
@@ -137,45 +173,17 @@ export auto write_transpiled_source(const Driver& driver,
     return 0;
 }
 
-auto absolute_path_text(std::string_view path) noexcept -> std::optional<std::string> {
-    auto error = std::error_code();
-    const auto absolute = std::filesystem::absolute(std::filesystem::path(path), error);
-    if (error) return std::nullopt;
-    return absolute.generic_string();
-}
+export auto build_single_file(SingleFileBuildConfig request) noexcept -> int {
+    const auto config = write_single_file_project({
+        .source_file = request.source_file,
+        .command_name = "build",
+        .carven_executable = request.carven_executable,
+        .options = request.options,
+    });
+    if (!config) return 1;
 
-auto command_program_path(std::string_view program) noexcept -> std::string {
-    if (program.find('/') == std::string_view::npos && program.find('\\') == std::string_view::npos) {
-        return std::string(program);
-    }
-
-    if (const auto absolute = absolute_path_text(program)) return *absolute;
-    return std::string(program);
-}
-
-auto write_single_file_project(const Driver& driver, std::string_view filepath, std::string_view command_name) noexcept -> std::optional<SingleFileProject> {
-    const auto absolute_source = absolute_path_text(filepath);
-    if (!absolute_source) {
-        std::println("carven {}: error: cannot resolve '{}'", command_name, filepath);
-        return std::nullopt;
-    }
-
-    const auto project = single_file_project(*absolute_source);
-    const auto carven_program = command_program_path(driver.carven_executable);
-    if (!write_single_file_xmake(project, *absolute_source, driver.language_standard, carven_program, driver.import_std)) {
-        std::println("carven {}: error: cannot write temporary xmake project '{}'", command_name, project.root_dir);
-        return std::nullopt;
-    }
-
-    return project;
-}
-
-export auto build_single_file(const Driver& driver, std::string_view filepath) noexcept -> int {
-    const auto project = write_single_file_project(driver, filepath, "build");
-    if (!project) return 1;
-
-    const auto build_args = build_xmake_build_args(project->target_name);
-    const auto build_result = run_process_in_dir(build_args, project->root_dir);
+    const auto build_args = build_xmake_build_args(config->target_name);
+    const auto build_result = run_process_in_dir(build_args, config->root_dir);
     if (build_result < 0) {
         std::println("carven build: error: cannot start xmake");
         return 1;
@@ -187,12 +195,22 @@ export auto build_single_file(const Driver& driver, std::string_view filepath) n
     return build_result;
 }
 
-export auto run_single_file(const Driver& driver, std::string_view filepath) noexcept -> int {
-    const auto project = write_single_file_project(driver, filepath, "run");
-    if (!project) return 1;
+export auto build_project(std::optional<std::string_view> target) noexcept -> int {
+    const auto args = build_xmake_build_args(target.value_or(std::string_view()));
+    return run_project_command("build", args);
+}
 
-    const auto run_args = build_xmake_run_args(project->target_name, driver.forwarded_args);
-    const auto run_result = run_process_in_dir(run_args, project->root_dir);
+export auto run_single_file(SingleFileRunConfig request) noexcept -> int {
+    const auto config = write_single_file_project({
+        .source_file = request.source_file,
+        .command_name = "run",
+        .carven_executable = request.carven_executable,
+        .options = request.options,
+    });
+    if (!config) return 1;
+
+    const auto run_args = build_xmake_run_args(config->target_name, request.forwarded_args);
+    const auto run_result = run_process_in_dir(run_args, config->root_dir);
     if (run_result < 0) {
         std::println("carven run: error: cannot start xmake");
         return 1;
@@ -201,54 +219,18 @@ export auto run_single_file(const Driver& driver, std::string_view filepath) noe
     return run_result;
 }
 
-export auto run_project(const Driver& driver) noexcept -> int {
-    const auto root = find_project_root(std::filesystem::current_path());
-    if (!root) {
-        std::println("carven run: error: cannot find xmake.lua in current directory or parents");
-        return 1;
-    }
-
-    const auto target = driver.input_files.empty() ? std::string_view() : driver.input_files[0];
-    if (target.empty() && !driver.forwarded_args.empty()) {
+export auto run_project(std::optional<std::string_view> target, std::span<const std::string_view> forwarded_args) noexcept -> int {
+    if (!target && !forwarded_args.empty()) {
         std::println("carven run: error: project runtime args require an explicit target");
         return 1;
     }
 
-    const auto args = build_xmake_run_args(target, driver.forwarded_args);
-    const auto result = run_process_in_dir(args, *root);
-    if (result < 0) {
-        std::println("carven run: error: cannot start xmake");
-        return 1;
-    }
-
-    return result;
+    const auto args = build_xmake_run_args(target.value_or(std::string_view()), forwarded_args);
+    return run_project_command("run", args);
 }
 
-export auto build_project(const Driver& driver) noexcept -> int {
-    const auto root = find_project_root(std::filesystem::current_path());
-    if (!root) {
-        std::println("carven build: error: cannot find xmake.lua in current directory or parents");
-        return 1;
-    }
-
-    const auto target = driver.input_files.empty() ? std::string_view() : driver.input_files[0];
-    const auto args = build_xmake_build_args(target);
-    const auto result = run_process_in_dir(args, *root);
-    if (result < 0) {
-        std::println("carven build: error: cannot start xmake");
-        return 1;
-    }
-
-    return result;
-}
-
-export auto init_project(const Driver& driver) noexcept -> int {
-    if (driver.input_files.empty()) {
-        std::println("carven init: error: no project path");
-        return 1;
-    }
-
-    const auto project_dir = std::filesystem::path(driver.input_files[0]);
+export auto init_project(std::string_view project_path, std::uint8_t language_standard, std::string_view carven_executable) noexcept -> int {
+    const auto project_dir = std::filesystem::path(project_path);
     auto error = std::error_code();
     if (std::filesystem::exists(project_dir, error) && !std::filesystem::is_empty(project_dir, error)) {
         std::println("carven init: error: '{}' is not empty", project_dir.generic_string());
@@ -262,23 +244,25 @@ export auto init_project(const Driver& driver) noexcept -> int {
         return 1;
     }
 
-    const auto main_source =
+    static constexpr auto main_source =
         "import std;\n\n"
         "fn main() {\n"
         "    std::println(\"Hello from Carven\");\n"
         "}\n";
-    if (!write_file_if_changed(source_dir / "main.cv", main_source)) {
+
+    if (!write_text_file(source_dir / "main.cv", main_source)) {
         std::println("carven init: error: cannot write '{}/src/main.cv'", project_dir.generic_string());
         return 1;
     }
 
     const auto project_name = sanitize_target_name(project_dir.filename().generic_string());
     const auto sources = std::vector<std::string> { "src/main.cv" };
-    if (!write_file_if_changed(project_dir / "xmake.lua", generated_project_xmake(project_name, sources, driver.language_standard))) {
+
+    if (!write_text_file(project_dir / "xmake.lua", generated_project_xmake(project_name, sources, language_standard))) {
         std::println("carven init: error: cannot write '{}/xmake.lua'", project_dir.generic_string());
         return 1;
     }
-    if (!write_carven_rule(project_dir, driver.carven_executable)) {
+    if (!write_carven_rule(project_dir, carven_executable)) {
         std::println("carven init: error: cannot write '{}/xmake/rules/carven.lua'", project_dir.generic_string());
         return 1;
     }

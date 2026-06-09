@@ -39,7 +39,10 @@ TEST_CASE("Golden: transpile full-file fixtures") {
         REQUIRE(source.has_value());
         REQUIRE(expected.has_value());
 
-        const auto result = transpile(source->text(), 23, false);
+        const auto result = transpile(source->text(), {
+            .language_standard = 23,
+            .import_std = false,
+        });
         REQUIRE(result.errors.empty());
         CHECK_EQ(result.output, expected->text());
     }

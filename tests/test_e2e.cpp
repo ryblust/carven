@@ -1,6 +1,5 @@
 #include "test_helpers.h"
 
-import carven.common.filesystem;
 import carven.common.process;
 import carven.driver.toolchain;
 import std;
@@ -11,13 +10,28 @@ struct E2eProject final {
     std::string build_output;
 };
 
-static auto carven_program() noexcept -> std::string {
-    const auto value = std::getenv("CARVEN_E2E_CARVEN");
-    if (value != nullptr && !std::string_view(value).empty()) {
-        return std::string(value);
-    }
+static auto built_carven_program() noexcept -> std::string {
+    return CARVEN_E2E_TOOL_PATH;
+}
 
-    return "carven";
+static auto lua_string_literal(std::string_view text) noexcept -> std::string {
+    auto result = std::string("\"");
+    for (const auto ch : text) {
+        if (ch == '\\') {
+            result += "\\\\";
+        } else if (ch == '"') {
+            result += "\\\"";
+        } else {
+            result += ch;
+        }
+    }
+    result += '"';
+    return result;
+}
+
+static auto write_text_file(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
+    auto file = std::ofstream(path, std::ios::binary | std::ios::trunc);
+    return file.is_open() && file.write(content.data(), content.size()).good();
 }
 
 static auto copy_carven_rule(const std::filesystem::path& root) noexcept -> bool {
@@ -42,13 +56,12 @@ static auto write_batch_project_files(const std::filesystem::path& root) noexcep
     if (error) return false;
     if (!copy_carven_rule(root)) return false;
 
-    static constexpr auto xmake_lua =
+    const auto xmake_lua =
         "set_project(\"carven-e2e-batch\")\n"
         "add_rules(\"mode.debug\", \"mode.release\")\n"
         "set_languages(\"c++23\")\n"
         "set_defaultmode(\"debug\")\n"
-        "\n"
-        "local carven_program = os.getenv(\"CARVEN_E2E_CARVEN\") or \"carven\"\n"
+        "local carven_program = " + lua_string_literal(built_carven_program()) + "\n"
         "\n"
         "includes(\"xmake/rules/carven.lua\")\n"
         "\n"
@@ -141,12 +154,12 @@ static auto write_batch_project_files(const std::filesystem::path& root) noexcep
         "    std::println(\"{} {}\", first.first, first.second);\n"
         "}\n";
 
-    return write_file_if_changed(root / "xmake.lua", xmake_lua)
-        && write_file_if_changed(root / "hello.cv", hello_source)
-        && write_file_if_changed(root / "array_runtime.cv", array_source)
-        && write_file_if_changed(root / "match_control.cv", match_source)
-        && write_file_if_changed(root / "std_import.cv", std_import_source)
-        && write_file_if_changed(root / "args_probe.cv", args_probe_source);
+    return write_text_file(root / "xmake.lua", xmake_lua)
+        && write_text_file(root / "hello.cv", hello_source)
+        && write_text_file(root / "array_runtime.cv", array_source)
+        && write_text_file(root / "match_control.cv", match_source)
+        && write_text_file(root / "std_import.cv", std_import_source)
+        && write_text_file(root / "args_probe.cv", args_probe_source);
 }
 
 static auto build_e2e_project() noexcept -> E2eProject {
@@ -235,10 +248,10 @@ TEST_CASE("E2E: carven run single file CLI") {
         "    std::println(\"single file\");\n"
         "}\n";
 
-    REQUIRE(write_file_if_changed(source_path, source));
+    REQUIRE(write_text_file(source_path, source));
 
     const auto args = std::vector<std::string> {
-        carven_program(),
+        built_carven_program(),
         "run",
         source_path.generic_string(),
     };

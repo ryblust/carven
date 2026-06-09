@@ -1,8 +1,8 @@
-export module carven.driver.dump;
+export module carven.driver.command.dump;
 
 import carven.common.source;
-import carven.driver.pipeline;
 import carven.driver.report;
+import carven.driver.request;
 import carven.frontend.token;
 import carven.frontend.lexer;
 import carven.frontend.ast;
@@ -311,22 +311,17 @@ auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> 
     return result;
 }
 
-export auto dump(const Driver& driver) noexcept -> int {
-    if (driver.input_files.empty()) {
-        std::println("carven dump: error: no input file");
-        return 1;
-    }
-
-    auto src = SourceFile::from_file(driver.input_files[0]);
+export auto execute(const DumpRequest& request) noexcept -> int {
+    auto src = SourceFile::from_file(request.source_file);
     if (!src) {
-        std::println("carven dump: error: cannot read '{}'", driver.input_files[0]);
+        std::println("carven dump: error: cannot read '{}'", request.source_file);
         return 1;
     }
 
     const auto text = src->text();
     const auto tokens = tokenize(text);
 
-    if (!driver.only_ast) {
+    if (!request.only_ast) {
         const auto line_offsets = LineOffsets(text);
         for (const auto token : tokens) {
             const auto pos = line_offsets.location(token.span.start);
@@ -334,13 +329,13 @@ export auto dump(const Driver& driver) noexcept -> int {
                 pos.line, pos.column, std::format("{}", token.kind), slice(text, token.span)
             );
         }
-        if (!driver.only_tokens) std::println();
+        if (!request.only_tokens) std::println();
     }
 
-    if (!driver.only_tokens) {
+    if (!request.only_tokens) {
         const auto parse_result = parse(tokens, text);
         if (!parse_result.errors.empty()) {
-            report_errors(parse_result.errors, text, driver.input_files[0]);
+            report_errors(parse_result.errors, text, request.source_file);
             return 1;
         }
         std::print("{}", dump(parse_result, text));

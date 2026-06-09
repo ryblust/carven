@@ -70,7 +70,8 @@ Remove the current header-fallback special case:
 
 - remove `ImportItem::is_std_module`
 - remove `has_std_module`
-- remove `Driver::import_std` and the user-facing `--import-std` flag
+- remove `import_std` from command request types and the user-facing
+  `--import-std` flag
 - remove `carven.import_std` from the xmake rule and generated xmake templates
 - change codegen so every import item emits `import <module>;`
 - stop passing an `import_std` boolean through `transpile` and `generate`

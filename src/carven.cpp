@@ -1,5 +1,4 @@
 import carven.driver.command;
-import carven.driver.pipeline;
 import std;
 
 auto main(int argc, const char** argv) noexcept -> int {
@@ -21,9 +20,8 @@ auto main(int argc, const char** argv) noexcept -> int {
         if (flag == "--help" || flag == "-h") return render_command_help(*command);
     }
 
-    auto driver = parse_flags({argv + 2, static_cast<std::size_t>(argc - 2)});
-    if (!driver) return 1;
-    driver->carven_executable = argv[0];
+    const auto invocation = parse_command(arg, {argv + 2, static_cast<std::size_t>(argc - 2)}, argv[0]);
+    if (!invocation) return render_command_error(invocation.error());
 
-    return command->handler(*driver);
+    return dispatch(*invocation);
 }

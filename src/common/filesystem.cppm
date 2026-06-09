@@ -83,25 +83,3 @@ export auto unmap_file(void* data, std::size_t size) noexcept -> void {
     if (data) ::munmap(data, size);
 #endif
 }
-
-export auto ensure_directory(const std::filesystem::path& dir) noexcept -> bool {
-    auto error = std::error_code();
-    std::filesystem::create_directories(dir, error);
-    return !error;
-}
-
-export auto write_file_if_changed(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
-    if (const auto mapped = map_file(path.string())) {
-        const auto existing = std::string_view(static_cast<const char*>(mapped->first), mapped->second);
-        if (existing == content) {
-            unmap_file(mapped->first, mapped->second);
-            return true;
-        }
-        unmap_file(mapped->first, mapped->second);
-    }
-    if (auto file = std::ofstream(path, std::ios::binary | std::ios::trunc); file.is_open()) {
-        return file.write(content.data(), content.size()).good();
-    } else {
-        return false;
-    }
-}

@@ -1,7 +1,11 @@
 ---
 name: spec-review
-description: Review changed C++ code against cpp-design.md and cpp-format.md specs.
+description: Final explicit spec-review pass for changed C++ code against cpp-design.md and cpp-format.md; use only when the user asks for spec-review or a spec compliance review.
 ---
+
+Use this only as a final compliance check when the user explicitly asks for
+`spec-review`, a spec-focused compliance review, or a pre-commit spec pass.
+Ordinary `review` requests are not spec-review requests.
 
 Review all changed C++ files against [`cpp-design.md`](../../specs/cpp-design.md) and [`cpp-format.md`](../../specs/cpp-format.md).
 

@@ -10,18 +10,36 @@ TEST_CASE("Toolchain: carven source paths") {
     CHECK(!is_carven_source_path("cv"));
 }
 
-TEST_CASE("Toolchain: single file project") {
+TEST_CASE("Toolchain: single file config") {
     SUBCASE("project path is stable") {
-        const auto a = single_file_project("src/hello.cv");
-        const auto b = single_file_project("src/hello.cv");
+        const auto a = make_single_file_config({
+            .absolute_source_path = "src/hello.cv",
+            .carven_program = {},
+            .standard = 26,
+            .import_std = false,
+        });
+        const auto b = make_single_file_config({
+            .absolute_source_path = "src/hello.cv",
+            .carven_program = {},
+            .standard = 26,
+            .import_std = false,
+        });
         CHECK_EQ(a.root_dir, b.root_dir);
         CHECK_EQ(a.target_name, "hello");
+        CHECK_EQ(a.absolute_source_path, "src/hello.cv");
+        CHECK_EQ(a.standard, 26);
+        CHECK(!a.import_std);
         CHECK(a.root_dir.contains("carven/scripts/hello-"));
     }
 
     SUBCASE("target name is sanitized") {
-        const auto project = single_file_project("src/my-app.cv");
-        CHECK_EQ(project.target_name, "my_app");
+        const auto config = make_single_file_config({
+            .absolute_source_path = "src/my-app.cv",
+            .carven_program = {},
+            .standard = 26,
+            .import_std = false,
+        });
+        CHECK_EQ(config.target_name, "my_app");
     }
 }
 
