@@ -69,6 +69,13 @@ xmake run carven dump <file>
   nodes.
 - Keep parsing context-free. Do not use symbol table lookup in the parser.
   Put semantic checks in `sema`; put lowering decisions in codegen.
+- Keep the core transpiler path constexpr-friendly where practical:
+  lexer/parser/sema/lowering/codegen/`transpile`.
+- Do not require constexpr support for runtime edges: filesystem, processes,
+  xmake invocation, terminal output, install, or cache management.
+- Keep constexpr core definitions reachable from module interfaces. Do not move
+  them into `.cpp` files or hidden partitions if `static_assert` use would
+  break.
 - Keep `carven run <file.cv>` cache projects under the platform cache
   directory. Do not write temporary script projects into the user's source tree.
 - Preserve project argument forwarding: `carven run <target> -- <args...>`
@@ -85,6 +92,13 @@ xmake run carven dump <file>
 - Ordinary `review` = code review.
 - Report first: correctness bugs, regressions, architecture risks, missing
   tests.
+- Do not flag large `.cppm` files or interface-heavy constexpr core code by
+  default; first identify a concrete bug, portability issue, compile-time
+  problem, or readability failure.
+- Do not suggest `.cpp` files, private module fragments, or internal partitions
+  for core constexpr code unless constexpr reachability is unnecessary.
+- Do not treat broad core `constexpr` use as decorative. It supports
+  `static_assert` tests and the pure transpiler pipeline.
 - For ordinary review, do not load `.agents/specs/`.
 - For ordinary review, do not run `spec-review`.
 - `spec-review` = final pre-commit compliance pass after correctness and

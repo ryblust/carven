@@ -11,7 +11,7 @@ module;
     #include <unistd.h>
 #endif
 
-export module carven.common.filesystem;
+export module carven.common.filemap;
 
 import std;
 

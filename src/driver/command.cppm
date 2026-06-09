@@ -30,8 +30,8 @@ constexpr auto GLOBAL_FLAGS = std::array<Flag, 4> {{
 }};
 
 constexpr auto RUN_FLAGS = std::array<Flag, 2> {{
-    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file runs"                             },
-    { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers (auto if source has import std)"          },
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file runs"                   },
+    { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers (auto if source has import std)" },
 }};
 
 constexpr auto DUMP_FLAGS = std::array<Flag, 2> {{
@@ -44,13 +44,13 @@ constexpr auto INIT_FLAGS = std::array<Flag, 1> {{
 }};
 
 constexpr auto BUILD_FLAGS = std::array<Flag, 2> {{
-    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file builds" },
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for single-file builds"        },
     { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers for single-file builds" },
 }};
 
 constexpr auto TRANSPILE_FLAGS = std::array<Flag, 3> {{
-    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for generated output"                 },
-    { .long_name = "-o <path>",       .short_name = "", .description = "Write generated C++ to file instead of stdout"            },
+    { .long_name = "-std=c++<value>", .short_name = "", .description = "Target C++ standard for generated output"                   },
+    { .long_name = "-o <path>",       .short_name = "", .description = "Write generated C++ to file instead of stdout"              },
     { .long_name = "--import-std",    .short_name = "", .description = "Force #include std headers (auto if source has import std)" },
 }};
 

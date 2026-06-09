@@ -17,3 +17,24 @@ Revisit this when:
 - adding multi-file incremental compilation
 - fuzzing large inputs
 - keeping ASTs alive across compilation units
+
+## Windows process argument quoting is limited
+
+Status: accepted for now.
+
+On Windows, process launching currently builds a command string from argument
+vectors by quoting only arguments that contain spaces or tabs. This is simpler
+than the full Windows command-line escaping rules and may mishandle arguments
+containing quotes, backslashes before quotes, or other edge cases interpreted by
+the child process runtime.
+
+Current impact is acceptable because Carven primarily forwards simple xmake
+commands and common file paths.
+
+Revisit this when:
+
+- forwarding arbitrary user arguments on Windows
+- adding Windows e2e coverage for paths or arguments containing quotes
+- relying on subprocess calls for more than xmake delegation
+- replacing command-string construction with a tested Windows argument quoting
+  helper

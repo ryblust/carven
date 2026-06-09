@@ -1,7 +1,15 @@
 # Design Philosophy
 
-Carven is a programming language that transpiles to C++. It does not seek to replace
-C++ — it offers C++ programmers a simpler, more elegant path to the same machine.
+Carven is a programming language layer that transpiles to C++. It offers C++
+programmers a simpler, more direct path to the same machine.
+
+Carven is a compression and refinement of modern C++ engineering practice:
+something closer to a higher-level library or macro system than a separate
+runtime or platform. Its purpose is to remove historical ceremony and bring
+modern C++ best practices directly to the surface.
+
+Carven is also implemented in modern C++; its stable engineering model is
+documented in [implementation.md](implementation.md).
 
 ## Principles
 
@@ -65,6 +73,11 @@ and future C++ module/BMI orchestration.
 
 This keeps the language implementation focused and gives project users one
 maintained build description: `xmake.lua`.
+
+### 9. Implementation alignment
+
+Implementation choices should reinforce the language design rather than sit
+apart from it. Detailed rules live in [implementation.md](implementation.md).
 
 ## Influences
 

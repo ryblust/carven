@@ -1,6 +1,9 @@
 # Carven
 
-A programming language that transpiles to standard C++.
+A programming language layer that transpiles to standard C++.
+
+Carven provides a smaller syntax and toolchain surface for modern C++ practice
+while keeping generated C++ readable and build-system integration explicit.
 
 ## Quick Start
 
@@ -91,4 +94,5 @@ API changes.
 
 - [Language Grammar](docs/grammar.md)
 - [Design Philosophy](docs/design.md)
+- [Implementation Model](docs/implementation.md)
 - [Feature Roadmap](docs/roadmap.md)

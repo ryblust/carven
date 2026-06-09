@@ -1,6 +1,6 @@
 export module carven.common.source;
 
-import carven.common.filesystem;
+import carven.common.filemap;
 import std;
 
 export template<typename ... Ts>
