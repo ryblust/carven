@@ -4,7 +4,7 @@ import carven.driver.pipeline;
 import carven.driver.request;
 import std;
 
-auto source_file_exists(std::string_view path) noexcept -> bool {
+inline auto source_file_exists(std::string_view path) noexcept -> bool {
     auto error = std::error_code();
     return std::filesystem::is_regular_file(std::filesystem::path(path), error) && !error;
 }

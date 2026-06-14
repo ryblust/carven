@@ -80,7 +80,6 @@ program arguments as xmake options.
 ### Clean Build State
 
 ```shell
-xmake clean -a
 rm -rf build .xmake
 xmake f --toolchain=llvm
 xmake build

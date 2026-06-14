@@ -285,7 +285,7 @@ export auto render_version() noexcept -> int {
 }
 
 export auto render_command_help(Command command) noexcept -> int {
-    std::println("carven {} — {}\n", command.name, command.description);
+    std::println("carven {} - {}\n", command.name, command.description);
     std::println("USAGE:\n    carven {} [options...]\n", command.name);
 
     if (command.flags.empty()) {

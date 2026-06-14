@@ -603,7 +603,7 @@ private:
                 case Arrow:
                 case ColonColon: {
                     const auto op_span = advance()->span;
-                    const auto field_name = expect_name(std::string("expected field name after '") + slice(source, op_span) + "'");
+                    const auto field_name = expect_name(std::string("expected field name after '") + std::string(slice(source, op_span)) + "'");
                     if (!field_name) {
                         lhs = alloc<LiteralExpr>(op_span);
                         break;
@@ -663,7 +663,7 @@ private:
             case Using:
             case Else: {
                 const auto keyword = slice(source, token->span);
-                push_error(std::string("keyword '") + keyword + "' cannot be used as an identifier", token->span);
+                push_error(std::string("keyword '") + std::string(keyword) + "' cannot be used as an identifier", token->span);
                 advance();
                 return alloc<LiteralExpr>(token->span);
             }

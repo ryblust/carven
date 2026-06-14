@@ -14,7 +14,7 @@ static auto built_carven_program() noexcept -> std::string {
     return CARVEN_E2E_TOOL_PATH;
 }
 
-static auto lua_string_literal(std::string_view text) noexcept -> std::string {
+static auto lua_literal(std::string_view text) noexcept -> std::string {
     auto result = std::string("\"");
     for (const auto ch : text) {
         if (ch == '\\') {
@@ -56,12 +56,14 @@ static auto write_batch_project_files(const std::filesystem::path& root) noexcep
     if (error) return false;
     if (!copy_carven_rule(root)) return false;
 
-    const auto xmake_lua =
+    auto xmake_lua = std::string(
         "set_project(\"carven-e2e-batch\")\n"
         "add_rules(\"mode.debug\", \"mode.release\")\n"
         "set_languages(\"c++23\")\n"
         "set_defaultmode(\"debug\")\n"
-        "local carven_program = " + lua_string_literal(built_carven_program()) + "\n"
+    );
+    xmake_lua += "local carven_program = " + lua_literal(built_carven_program()) + "\n";
+    xmake_lua +=
         "\n"
         "includes(\"xmake/rules/carven.lua\")\n"
         "\n"
@@ -172,12 +174,11 @@ static auto build_e2e_project() noexcept -> E2eProject {
         };
     }
 
-    const auto args = build_xmake_build_args();
-    const auto [code, output] = run_and_capture_in_dir(args, root.generic_string());
+    const auto [code, output] = spawn_capture(xmake_build_args(), root.generic_string());
     return {
         .root_dir = root.generic_string(),
         .build_code = code,
-        .build_output = output,
+        .build_output = output.value_or(""),
     };
 }
 
@@ -186,19 +187,18 @@ static auto e2e_project() noexcept -> const E2eProject& {
     return project;
 }
 
-static auto run_e2e_target(std::string_view target, std::span<const std::string_view> forwarded_args) noexcept -> std::pair<int, std::string> {
+static auto run_e2e_target(std::string_view target, std::span<const std::string_view> forwarded_args) noexcept -> std::pair<int, std::optional<std::string>> {
     const auto& project = e2e_project();
+
     if (project.build_code != 0) {
         return { project.build_code, project.build_output };
     }
 
-    const auto args = build_xmake_run_args(target, forwarded_args);
-    return run_and_capture_in_dir(args, project.root_dir);
+    return spawn_capture(xmake_run_args(target, forwarded_args), project.root_dir);
 }
 
-static auto run_e2e_target(std::string_view target) noexcept -> std::pair<int, std::string> {
-    const auto forwarded_args = std::array<std::string_view, 0>{};
-    return run_e2e_target(target, forwarded_args);
+static auto run_e2e_target(std::string_view target) noexcept -> std::pair<int, std::optional<std::string>> {
+    return run_e2e_target(target, {});
 }
 
 TEST_CASE("E2E: batch project builds") {
@@ -210,33 +210,38 @@ TEST_CASE("E2E: batch project builds") {
 TEST_CASE("E2E: hello world") {
     const auto [code, output] = run_e2e_target("hello");
     CHECK_EQ(code, 0);
-    CHECK(output.contains("Hello World\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("Hello World\n"));
 }
 
 TEST_CASE("E2E: array runtime behavior") {
     const auto [code, output] = run_e2e_target("array_runtime");
     CHECK_EQ(code, 0);
-    CHECK(output.contains("array 1 2 3\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("array 1 2 3\n"));
 }
 
 TEST_CASE("E2E: match and control flow") {
     const auto [code, output] = run_e2e_target("match_control");
     CHECK_EQ(code, 0);
-    CHECK(output.contains("control 7 two\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("control 7 two\n"));
 }
 
 TEST_CASE("E2E: import std lowering path") {
     const auto [code, output] = run_e2e_target("std_import");
     CHECK_EQ(code, 0);
-    CHECK(output.contains("std import\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("std import\n"));
 }
 
 TEST_CASE("E2E: target runtime args forwarding") {
     const auto forwarded_args = std::array<std::string_view, 3> { "--name", "Ada", "Lovelace" };
     const auto [code, output] = run_e2e_target("args_probe", forwarded_args);
     CHECK_EQ(code, 0);
-    CHECK(output.contains("3\n"));
-    CHECK(output.contains("1 --name\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("3\n"));
+    CHECK(output->contains("1 --name\n"));
 }
 
 TEST_CASE("E2E: carven run single file CLI") {
@@ -250,13 +255,14 @@ TEST_CASE("E2E: carven run single file CLI") {
 
     REQUIRE(write_text_file(source_path, source));
 
-    const auto args = std::vector<std::string> {
+    auto args = std::vector<std::string> {
         built_carven_program(),
         "run",
         source_path.generic_string(),
     };
-    const auto [code, output] = run_and_capture(args);
-    INFO(output);
+    const auto [code, output] = spawn_capture(args, std::filesystem::current_path().generic_string());
+    INFO(output.value_or(""));
     CHECK_EQ(code, 0);
-    CHECK(output.contains("single file\n"));
+    CHECK(output.has_value());
+    CHECK(output->contains("single file\n"));
 }

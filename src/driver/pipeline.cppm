@@ -96,7 +96,7 @@ auto write_single_file_project(SingleFileProjectConfig project) noexcept -> std:
         .standard = project.options.language_standard,
         .import_std = project.options.import_std,
     });
-    if (!write_single_file_xmake(config)) {
+    if (!write_xmake_single_file(config)) {
         std::println("carven {}: error: cannot write temporary xmake project '{}'", project.command_name, config.root_dir);
         return std::nullopt;
     }
@@ -111,13 +111,13 @@ auto run_project_command(std::string_view command_name, const std::vector<std::s
         return 1;
     }
 
-    const auto result = run_process_in_dir(args, *root);
-    if (result < 0) {
+    const auto exit_code = spawn(args, *root);
+    if (exit_code < 0) {
         std::println("carven {}: error: cannot start xmake", command_name);
         return 1;
     }
 
-    return result;
+    return exit_code;
 }
 
 export auto transpile(std::string_view source, TranspileOptions options) noexcept -> TranspileResult {
@@ -182,21 +182,21 @@ export auto build_single_file(SingleFileBuildConfig request) noexcept -> int {
     });
     if (!config) return 1;
 
-    const auto build_args = build_xmake_build_args(config->target_name);
-    const auto build_result = run_process_in_dir(build_args, config->root_dir);
-    if (build_result < 0) {
+    const auto build_args = xmake_build_args(config->target_name);
+    const auto exit_code = spawn(build_args, config->root_dir);
+    if (exit_code < 0) {
         std::println("carven build: error: cannot start xmake");
         return 1;
     }
-    if (build_result != 0) {
+    if (exit_code != 0) {
         std::println("carven build: error: xmake build failed");
     }
 
-    return build_result;
+    return exit_code;
 }
 
 export auto build_project(std::optional<std::string_view> target) noexcept -> int {
-    const auto args = build_xmake_build_args(target.value_or(std::string_view()));
+    const auto args = xmake_build_args(target.value_or(std::string_view()));
     return run_project_command("build", args);
 }
 
@@ -209,14 +209,13 @@ export auto run_single_file(SingleFileRunConfig request) noexcept -> int {
     });
     if (!config) return 1;
 
-    const auto run_args = build_xmake_run_args(config->target_name, request.forwarded_args);
-    const auto run_result = run_process_in_dir(run_args, config->root_dir);
-    if (run_result < 0) {
+    const auto exit_code = spawn(xmake_run_args(config->target_name, request.forwarded_args), config->root_dir);
+    if (exit_code < 0) {
         std::println("carven run: error: cannot start xmake");
         return 1;
     }
 
-    return run_result;
+    return exit_code;
 }
 
 export auto run_project(std::optional<std::string_view> target, std::span<const std::string_view> forwarded_args) noexcept -> int {
@@ -225,7 +224,7 @@ export auto run_project(std::optional<std::string_view> target, std::span<const 
         return 1;
     }
 
-    const auto args = build_xmake_run_args(target.value_or(std::string_view()), forwarded_args);
+    const auto args = xmake_run_args(target.value_or(std::string_view()), forwarded_args);
     return run_project_command("run", args);
 }
 
@@ -258,11 +257,11 @@ export auto init_project(std::string_view project_path, std::uint8_t language_st
     const auto project_name = sanitize_target_name(project_dir.filename().generic_string());
     const auto sources = std::vector<std::string> { "src/main.cv" };
 
-    if (!write_text_file(project_dir / "xmake.lua", generated_project_xmake(project_name, sources, language_standard))) {
+    if (!write_text_file(project_dir / "xmake.lua", generate_xmake_project(project_name, sources, language_standard))) {
         std::println("carven init: error: cannot write '{}/xmake.lua'", project_dir.generic_string());
         return 1;
     }
-    if (!write_carven_rule(project_dir, carven_executable)) {
+    if (!write_xmake_carven_rule(project_dir, carven_executable)) {
         std::println("carven init: error: cannot write '{}/xmake/rules/carven.lua'", project_dir.generic_string());
         return 1;
     }

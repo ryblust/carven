@@ -45,7 +45,7 @@ TEST_CASE("Toolchain: single file config") {
 
 TEST_CASE("Toolchain: xmake args") {
     SUBCASE("build args") {
-        const auto args = build_xmake_build_args("app");
+        const auto args = xmake_build_args("app");
         REQUIRE_EQ(args.size(), 5u);
         CHECK_EQ(args[0], "xmake");
         CHECK_EQ(args[1], "build");
@@ -56,7 +56,7 @@ TEST_CASE("Toolchain: xmake args") {
 
     SUBCASE("run args with forwarded args") {
         const auto forwarded = std::vector<std::string_view> { "--name", "Ada" };
-        const auto args = build_xmake_run_args("app", forwarded);
+        const auto args = xmake_run_args("app", forwarded);
         REQUIRE_EQ(args.size(), 7u);
         CHECK_EQ(args[0], "xmake");
         CHECK_EQ(args[1], "run");

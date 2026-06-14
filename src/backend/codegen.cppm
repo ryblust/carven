@@ -101,6 +101,7 @@ private:
 
     constexpr auto generate_type(const Type* type) noexcept -> void {
         if (type == nullptr) return;
+
         switch (type->kind) {
             case TypeKind::Name:
                 result += map_type(slice(source, static_cast<const NameType*>(type)->span));
