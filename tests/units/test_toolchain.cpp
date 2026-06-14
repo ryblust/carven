@@ -1,4 +1,5 @@
-#include "test_helpers.h"
+#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
+#include "doctest.h"
 
 import carven.driver.toolchain;
 import std;
@@ -14,13 +15,11 @@ TEST_CASE("Toolchain: single file config") {
     SUBCASE("project path is stable") {
         const auto a = make_single_file_config({
             .absolute_source_path = "src/hello.cv",
-            .carven_program = {},
             .standard = 26,
             .import_std = false,
         });
         const auto b = make_single_file_config({
             .absolute_source_path = "src/hello.cv",
-            .carven_program = {},
             .standard = 26,
             .import_std = false,
         });
@@ -29,13 +28,13 @@ TEST_CASE("Toolchain: single file config") {
         CHECK_EQ(a.absolute_source_path, "src/hello.cv");
         CHECK_EQ(a.standard, 26);
         CHECK(!a.import_std);
-        CHECK(a.root_dir.contains("carven/scripts/hello-"));
+        const auto expected_prefix = (std::filesystem::current_path() / ".carven" / "scripts" / "hello-").generic_string();
+        CHECK(a.root_dir.starts_with(expected_prefix));
     }
 
     SUBCASE("target name is sanitized") {
         const auto config = make_single_file_config({
             .absolute_source_path = "src/my-app.cv",
-            .carven_program = {},
             .standard = 26,
             .import_std = false,
         });
@@ -69,22 +68,33 @@ TEST_CASE("Toolchain: xmake args") {
 }
 
 TEST_CASE("Toolchain: project root discovery") {
-    const auto base = std::filesystem::temp_directory_path() / "carven_test_project_root";
-    const auto nested = base / "a" / "b";
-    std::filesystem::remove_all(base);
-    std::filesystem::create_directories(nested);
-
-    SUBCASE("finds parent xmake.lua") {
-        std::ofstream(base / "xmake.lua") << "target(\"app\")\n";
-        const auto root = find_project_root(nested);
+    SUBCASE("finds current xmake.lua") {
+        const auto root = find_project_root(".");
         REQUIRE(root.has_value());
-        CHECK_EQ(*root, base.generic_string());
+        CHECK_EQ(*root, std::filesystem::absolute(".").generic_string());
     }
 
-    SUBCASE("returns nullopt without xmake.lua") {
-        const auto root = find_project_root(nested);
+    SUBCASE("does not search parent directories") {
+        const auto root = find_project_root("tests/units");
         CHECK(!root.has_value());
     }
+}
 
-    std::filesystem::remove_all(base);
+TEST_CASE("Toolchain: embedded carven rule") {
+    const auto rule = embedded_carven_rule();
+    CHECK(!rule.empty());
+    CHECK(rule.contains("rule(\"carven\")"));
+    CHECK(rule.contains("carven.build.cv"));
+}
+
+TEST_CASE("Toolchain: generated single file xmake does not pin carven program") {
+    const auto config = make_single_file_config({
+        .absolute_source_path = "src/hello.cv",
+        .standard = 23,
+        .import_std = false,
+    });
+
+    const auto content = generate_xmake_single_file(config);
+    CHECK(content.contains("includes(\"xmake/rules/carven.lua\")"));
+    CHECK(!content.contains("carven.program"));
 }

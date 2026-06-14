@@ -5,48 +5,37 @@
 Define how Carven is installed and distributed as a language toolchain.
 
 The immediate goal is to make a locally built Carven usable through `xmake
-install`. Later distribution layers, such as an xrepo package and binary
+install -o <prefix>`. Later distribution layers, such as an xrepo package and binary
 archives, should build on the same install layout instead of inventing separate
 paths.
 
 ## Recommended Order
 
-1. Support `xmake install carven` as the first-class local install path.
+1. Support `xmake install -o <prefix> carven` as the first-class local install
+   path.
 2. Stabilize the installed toolchain layout.
-3. Keep `scripts/install.sh` as a small source-install wrapper.
-4. Add a Homebrew tap for macOS users.
-5. Add an xrepo package that builds and installs Carven from source.
-6. Add binary release packaging, likely through `xmake pack` or CI-specific
+3. Add a Homebrew tap for macOS users.
+4. Add an xrepo package that builds and installs Carven from source.
+5. Add binary release packaging, likely through `xmake pack` or CI-specific
    packaging.
 
 ## Install Layout
 
-`xmake install carven` should eventually install the complete Carven toolchain:
+`xmake install -o <prefix> carven` should install the user-facing Carven
+toolchain entry point:
 
 ```text
 <prefix>/bin/carven
-<prefix>/share/carven/xmake/rules/carven.lua
-<prefix>/include/carven/runtime.hpp
 ```
 
 The binary is the user-facing CLI and the build-time transpiler invoked by xmake
-rules. The shared rule and runtime header are toolchain assets, not per-project
-implementation details.
+rules. The xmake rule is embedded into the CLI at build time and written into
+new projects or cache projects when `carven init` and single-file commands need
+it. That keeps normal installs simple: users install a binary, then projects
+carry the rule they were scaffolded with.
 
-Rule files should be installed as shared data, not next to the executable:
-
-```lua
-target("carven")
-    add_installfiles("(xmake/rules/*.lua)", {prefixdir = "share/carven"})
-```
-
-The parenthesized path keeps the `xmake/rules` directory structure under
-`share/carven`, so adding more rule files later does not require changing the
-install shape.
-
-Keeping rule files out of `bin` follows xmake's normal install model:
-executables live in `bin`, headers live in `include`, and toolchain data lives
-under `share/<tool>`.
+Future runtime headers may still need an installed include layout, but the
+current rule file is not installed under `share`.
 
 ## Local Install
 
@@ -58,31 +47,19 @@ xmake build carven
 xmake install -o ~/.local carven
 ```
 
-The default user-level prefix should be `$HOME/.local`. That installs the CLI
-as `$HOME/.local/bin/carven` and shared assets under
-`$HOME/.local/share/carven`.
+Source-install documentation should pass `-o` explicitly. On Unix-like
+platforms, xmake's default install prefix may be a system directory such as
+`/usr/local`; Carven should not hide that behavior behind a wrapper script.
+The recommended user-level prefix is `$HOME/.local`, which installs the CLI as
+`$HOME/.local/bin/carven`.
 
 This follows the XDG Base Directory Specification's user executable convention:
 user-specific executable files may be stored in `$HOME/.local/bin`, while
 user-specific data defaults to `$HOME/.local/share`.
 
-Carven should also provide a small source install script:
-
-```shell
-./scripts/install.sh
-./scripts/install.sh --prefix /usr/local
-```
-
-The script should only run `xmake build carven` and
-`xmake install -o <prefix> carven`. It must not edit shell profiles, export
-environment variables, create Carven-specific hidden home directories such as
-`~/.carven`, or otherwise mutate user state beyond the install prefix. Without
-`--prefix`, it may create `$HOME/.local/bin` as the standard user executable
-directory. If `<prefix>/bin` is not on `PATH`, the script should report that
-fact and leave the choice to the user.
-
 `xmake install` does not build missing targets automatically, so documentation
-should keep `xmake build carven` and `xmake install carven` as separate steps.
+should keep `xmake build carven` and `xmake install -o <prefix> carven` as
+separate steps.
 
 Uninstall should also stay with xmake instead of growing a Carven-specific
 script:
@@ -98,38 +75,17 @@ xmake clean -a
 ```
 
 For C++ module/BMI cache corruption during Carven development, a stronger local
-reset is acceptable:
+reset that removes the local `build` and `.xmake` directories is acceptable.
+Use the current platform's file-removal tool, then configure and build again.
 
-```shell
-rm -rf build .xmake
-xmake f --toolchain=llvm
-xmake build
-```
+## No Install Wrapper
 
-## Install Script Scope
-
-`scripts/install.sh` is useful and should stay, but it should not become
-Carven's package manager.
-
-Its job is intentionally small:
-
-- build the `carven` target
-- call `xmake install -o <prefix> carven`
-- default to `$HOME/.local`
-- create `$HOME/.local/bin` when using the default prefix
-- report whether `<prefix>/bin` is visible on `PATH`
-
-It should not:
-
-- edit shell profiles
-- own upgrades or uninstalls
-- own build-cache cleanup
-- decide system-wide install policy
-- duplicate the install layout already defined by `xmake install`
-- grow platform-specific package-manager behavior
-
-This keeps source installs pleasant while leaving normal user distribution to
-real package managers.
+Carven should not provide an `install.sh` wrapper around xmake. The install
+contract is already `xmake build carven` followed by
+`xmake install -o <prefix> carven`; adding another script creates a second
+official path without adding install-layout authority. Documentation should
+instead teach users to pass an explicit prefix and leave shell profile, PATH,
+upgrade, and uninstall policy to the user or platform package manager.
 
 ## Homebrew Direction
 
@@ -186,8 +142,6 @@ class Carven < Formula
 
   test do
     assert_match "carven", shell_output("#{bin}/carven --version")
-    assert_path_exists pkgshare/"xmake/rules/carven.lua"
-
     (testpath/"main.cv").write <<~EOS
       fn main() {
       }
@@ -207,8 +161,8 @@ Before publishing the tap, Carven needs:
 - a stable release tag
 - a source tarball checksum
 - a formula test that does not depend on external project state
-- confirmation that the installed rule is available under
-  `share/carven/xmake/rules/carven.lua`
+- confirmation that an installed `carven` can run `carven init`, build the
+  generated project, and transpile a standalone source file
 
 Local formula validation should use:
 
@@ -237,7 +191,7 @@ The package should:
 - use `package:find_tool("carven", {check = "--version"})` for system tool
   discovery when appropriate
 - build from source with xmake
-- install the same layout as `xmake install carven`
+- install the same layout as `xmake install -o <prefix> carven`
 - rely on xmake's default PATH export for `binary` or `toolchain` packages,
   where the package `bin` directory is made available to consumers
 - provide a minimal `on_test` that verifies `carven --version` and a tiny
@@ -292,17 +246,17 @@ The xmake rule and the xrepo package are related but separate concerns:
 - the package installs or discovers the `carven` toolchain
 - the rule teaches xmake how to build `.cv` files
 
-The rule should eventually support this lookup order:
+The rule should support this lookup order:
 
 ```text
-target:values("carven.program")
-CARVEN environment variable
 target:pkg("carven")
 find_tool("carven")
 ```
 
-This lets local development, explicit overrides, xrepo package use, and normal
-PATH-based installs all share the same rule.
+This lets xrepo package use and normal PATH-based installs share the same rule
+without product-specific environment variables. A target-local
+`carven.program` override can remain available for advanced rule consumers, but
+it is not part of normal Carven project setup or user-facing configuration.
 
 ## Binary Packaging
 
@@ -319,11 +273,9 @@ used to define where Carven's toolchain files belong.
 
 ## Open Questions
 
-- Should project scaffolds vendor `xmake/rules/carven.lua` forever, or switch to
-  a shared installed rule when Carven is installed?
-- Should xrepo package rules be the first non-vendored rule mechanism, or should
-  Carven also support loading the shared installed rule from
-  `<prefix>/share/carven/xmake/rules/carven.lua`?
+- Should project scaffolds keep vendoring `xmake/rules/carven.lua` forever, or
+  should a future xrepo package rule become the preferred non-vendored
+  mechanism?
 - Should the runtime header be included by every generated C++ file, or only
   when generated constructs need runtime helpers?
 - What compiler and C++ module capability checks should the future xrepo package

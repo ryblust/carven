@@ -20,34 +20,27 @@ Grammar reference: [`docs/grammar.md`](docs/grammar.md).
   semantics, lowering, generated C++ output, or language feature support.
 - Treat ordinary `review` as code review, not `spec-review`.
 
-## Build & Run
+## Documentation Boundaries
+
+- `README.md` is the public, human-facing guide for installing and using
+  Carven.
+- `AGENTS.md` is only for agent operating rules: context loading, verification,
+  recovery, code constraints, and review behavior.
+- Do not duplicate user tutorials here. If a command is only useful to users,
+  document it in `README.md`; keep this file focused on commands agents need to
+  verify changes.
+
+## Agent Commands
 
 ```shell
 xmake f --toolchain=clang-cl # Windows
 xmake f --toolchain=llvm # macOS
 
-# Build the project
 xmake build
 
-# Run fast unit tests
 xmake run carven-unit-test --no-colors
 
-# Run compiled smoke tests
-xmake run carven-e2e-test --no-colors
-
-# Run a .cv file
-xmake run carven run <file.cv>
-
-# Transpile only
-xmake run carven transpile <file.cv>
-xmake run carven transpile -o out.cpp <file.cv>
-
-# Install locally without editing shell profiles or PATH
-./scripts/install.sh
-
-# Dump tokens and AST
-xmake run carven dump <file>
-
+python3 tests/e2e/run.py
 ```
 
 ## Recovery
@@ -76,16 +69,15 @@ xmake run carven dump <file>
 - Keep constexpr core definitions reachable from module interfaces. Do not move
   them into `.cpp` files or hidden partitions if `static_assert` use would
   break.
-- Keep `carven run <file.cv>` cache projects under the platform cache
-  directory. Do not write temporary script projects into the user's source tree.
+- Keep `carven run <file.cv>` cache projects under the current directory's
+  `.carven/scripts` directory.
 - Preserve project argument forwarding: `carven run <target> -- <args...>`
   delegates to `xmake run <target> <args...>`.
 - Treat `import std;` as a temporary header-preamble fallback. Do not implement
   true standard-library module support unless working on that proposal.
 - Use `std::optional` / `std::expected` for failures. Do not add exceptions.
   Project functions must be `noexcept`.
-- Do not make `scripts/install.sh` edit shell profiles, mutate `PATH`, or own
-  upgrades/uninstalls.
+- Do not add wrapper install scripts that duplicate xmake install.
 
 ## Review Behavior
 
@@ -109,11 +101,14 @@ xmake run carven dump <file>
 - Parser, sema, codegen, diagnostics, CLI logic: run
   `xmake run carven-unit-test --no-colors`.
 - Driver, project mode, xmake integration, install layout, compiled programs, or
-  cache-project behavior: also run `xmake run carven-e2e-test --no-colors`.
-- Unit tests must not run xmake subprocesses.
-- Compiled smoke coverage belongs in `carven-e2e-test`.
+  cache-project behavior: also run `python3 tests/e2e/run.py`.
+- Unit tests live in `tests/units` and must not run xmake subprocesses.
+- Human-reviewed `.cv` to `.cpp` cases live in `tests/cases` and are compared
+  by `tests/e2e/run.py`.
+- Compiled smoke coverage belongs in `tests/e2e/run.py`.
 - Do not recreate the old combined `carven-test` target.
-- Update generated C++ golden files only with `scripts/update-golden.sh`.
+- Do not add an automatic golden/case update mode. If generated C++ case outputs
+  change, update them explicitly and review the diff.
 
 ## Coding Style
 

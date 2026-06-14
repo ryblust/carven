@@ -1,10 +1,11 @@
-#include "test_helpers.h"
+#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
+#include "doctest.h"
 
 import carven.driver.command;
 import std;
 
 static auto parse(std::string_view command, std::span<const char* const> args) noexcept -> std::expected<CommandInvocation, CommandError> {
-    return parse_command(command, args, "/tmp/carven");
+    return parse_command(command, args);
 }
 
 TEST_CASE("Command parser: run") {

@@ -306,7 +306,7 @@ export constexpr auto find_command(std::string_view name) noexcept -> std::optio
     return std::nullopt;
 }
 
-export auto parse_command(std::string_view name, std::span<const char* const> args, std::string_view carven_executable) noexcept -> std::expected<CommandInvocation, CommandError> {
+export auto parse_command(std::string_view name, std::span<const char* const> args) noexcept -> std::expected<CommandInvocation, CommandError> {
     auto request = std::optional<CommandRequest>();
 
     if (name == "init") {
@@ -338,7 +338,6 @@ export auto parse_command(std::string_view name, std::span<const char* const> ar
     }
 
     return CommandInvocation {
-        .carven_executable = carven_executable,
         .request = std::move(*request),
     };
 }
@@ -350,15 +349,6 @@ export auto render_command_error(const CommandError& error) noexcept -> int {
 
 export auto dispatch(const CommandInvocation& invocation) noexcept -> int {
     return std::visit([&](const auto& request) noexcept -> int {
-        using Request = std::remove_cvref_t<decltype(request)>;
-        if constexpr (std::same_as<Request, InitRequest>) {
-            return execute(request, invocation.carven_executable);
-        } else if constexpr (std::same_as<Request, RunRequest>) {
-            return execute(request, invocation.carven_executable);
-        } else if constexpr (std::same_as<Request, BuildRequest>) {
-            return execute(request, invocation.carven_executable);
-        } else {
-            return execute(request);
-        }
+        return execute(request);
     }, invocation.request);
 }

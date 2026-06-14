@@ -17,25 +17,26 @@ rule("carven.build.cv")
     end)
 
     on_buildcmd_file(function (target, batchcmds, sourcefile_cv, opt)
-        local carven_program = target:values("carven.program")
-        if not carven_program then
-            carven_program = os.getenv("CARVEN")
-        end
-        if not carven_program or #carven_program == 0 then
-            local carven = target:pkg("carven")
-            if carven then
-                local tool = carven:find_tool("carven", {check = "--version"})
+        import("lib.detect.find_tool")
+
+        local function find_carven_program(target)
+            local program = target:values("carven.program")
+            if program and #program > 0 then
+                return program
+            end
+
+            local package = target:pkg("carven")
+            if package then
+                local tool = package:find_tool("carven", {check = "--version", force = true})
                 if tool then
-                    carven_program = tool.program
+                    return tool.program
                 end
             end
-        end
-        if not carven_program or #carven_program == 0 then
-            import("lib.detect.find_tool")
-            local carven = assert(find_tool("carven", {check = "--version"}), "carven not found!")
-            carven_program = carven.program
+
+            return assert(find_tool("carven", {check = "--version", force = true}), "carven not found!").program
         end
 
+        local carven_program = find_carven_program(target)
         local sourcefile_cpp = target:autogenfile((sourcefile_cv:gsub("%.cv$", ".cpp")))
         local basedir = path.directory(sourcefile_cpp)
         local objectfile = target:objectfile(sourcefile_cpp)
@@ -59,6 +60,7 @@ rule("carven.build.cv")
         batchcmds:compile(sourcefile_cpp, objectfile)
 
         batchcmds:add_depfiles(sourcefile_cv)
+        batchcmds:add_depvalues(carven_program, standard or "", target:values("carven.import_std") and "import_std" or "no_import_std")
         batchcmds:set_depmtime(os.mtime(objectfile))
         batchcmds:set_depcache(target:dependfile(objectfile))
     end)

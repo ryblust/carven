@@ -20,7 +20,7 @@ auto main(int argc, const char** argv) noexcept -> int {
         if (flag == "--help" || flag == "-h") return render_command_help(*command);
     }
 
-    const auto invocation = parse_command(arg, {argv + 2, static_cast<std::size_t>(argc - 2)}, argv[0]);
+    const auto invocation = parse_command(arg, {argv + 2, static_cast<std::size_t>(argc - 2)});
     if (!invocation) return render_command_error(invocation.error());
 
     return dispatch(*invocation);

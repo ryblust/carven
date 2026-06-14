@@ -2,14 +2,6 @@ export module carven.driver.toolchain;
 
 import std;
 
-inline constexpr auto carven_rule_relative_path = "xmake/rules/carven.lua";
-
-#if defined(_WIN32)
-inline constexpr auto path_list_separator = ';';
-#else
-inline constexpr auto path_list_separator = ':';
-#endif
-
 constexpr auto compute_hash(std::string_view text) noexcept -> std::uint64_t {
     auto hash = 14695981039346656037ull;
     for (const auto ch : text) {
@@ -34,115 +26,15 @@ constexpr auto lua_literal(std::string_view value) noexcept -> std::string {
     return result;
 }
 
-auto resolve_path(std::filesystem::path path) noexcept -> std::optional<std::filesystem::path> {
+auto workspace_cache_dir() noexcept -> std::filesystem::path {
     auto error = std::error_code();
-    if (std::filesystem::is_regular_file(path, error) && !error) return path;
-
-#if defined(_WIN32)
-    if (path.extension() != ".exe") {
-        path += ".exe";
-        error.clear();
-        if (std::filesystem::is_regular_file(path, error) && !error) return path;
-    }
-#endif
-
-    return std::nullopt;
-}
-
-auto find_program(std::string_view program) noexcept -> std::optional<std::filesystem::path> {
-    if (program.empty()) return std::nullopt;
-
-    const auto program_path = std::filesystem::path(program);
-    if (program_path.has_parent_path()) {
-        return resolve_path(program_path);
-    }
-
-    const auto path_value = std::getenv("PATH");
-    if (path_value == nullptr) return std::nullopt;
-
-    const auto path_text = std::string_view(path_value);
-    for (const auto entry : std::views::split(path_text, path_list_separator)) {
-        if (entry.empty()) continue;
-
-        const auto directory = std::filesystem::path(std::string_view(entry));
-        if (const auto candidate = resolve_path(directory / program_path)) return candidate;
-    }
-
-    return std::nullopt;
-}
-
-auto find_ancestor(std::filesystem::path start, const std::filesystem::path& marker) noexcept -> std::optional<std::filesystem::path> {
-    auto error = std::error_code();
-    if (start.empty()) start = std::filesystem::current_path(error);
-    if (error) return std::nullopt;
-
-    if (!std::filesystem::is_directory(start, error)) {
-        if (error) return std::nullopt;
-        start = start.parent_path();
-    }
-
-    auto current = std::filesystem::absolute(start, error);
-    if (error) return std::nullopt;
-
-    while (!current.empty()) {
-        error.clear();
-        if (std::filesystem::is_regular_file(current / marker, error) && !error) return current;
-
-        const auto parent = current.parent_path();
-        if (parent == current) break;
-        current = parent;
-    }
-
-    return std::nullopt;
-}
-
-auto find_installed_rule(std::string_view program) noexcept -> std::optional<std::filesystem::path> {
-    const auto program_path = find_program(program);
-    if (!program_path) return std::nullopt;
-
-    auto error = std::error_code();
-    const auto absolute = std::filesystem::absolute(*program_path, error);
-    if (error) return std::nullopt;
-
-    const auto prefix = absolute.parent_path().parent_path();
-    const auto candidate = prefix / "share" / "carven" / carven_rule_relative_path;
-    error.clear();
-    if (std::filesystem::is_regular_file(candidate, error) && !error) return candidate;
-
-    const auto root = find_ancestor(absolute.parent_path(), carven_rule_relative_path);
-    if (!root) return std::nullopt;
-
-    return *root / carven_rule_relative_path;
-}
-
-auto user_cache_dir() noexcept -> std::filesystem::path {
-#if defined(_WIN32)
-    if (const auto local = std::getenv("LOCALAPPDATA")) {
-        return std::filesystem::path(local) / "carven";
-    }
-    if (const auto temp = std::getenv("TEMP")) {
-        return std::filesystem::path(temp) / "carven";
-    }
-    return std::filesystem::temp_directory_path() / "carven";
-#elif defined(__APPLE__)
-    if (const auto home = std::getenv("HOME")) {
-        return std::filesystem::path(home) / "Library" / "Caches" / "carven";
-    }
-    return std::filesystem::temp_directory_path() / "carven";
-#else
-    if (const auto xdg = std::getenv("XDG_CACHE_HOME")) {
-        return std::filesystem::path(xdg) / "carven";
-    }
-    if (const auto home = std::getenv("HOME")) {
-        return std::filesystem::path(home) / ".cache" / "carven";
-    }
-    return std::filesystem::temp_directory_path() / "carven";
-#endif
+    const auto current = std::filesystem::current_path(error);
+    if (error) return std::filesystem::path(".carven");
+    return current / ".carven";
 }
 
 export struct SingleFileConfig final {
     std::string absolute_source_path;
-    std::string carven_program;
     std::uint8_t standard;
     bool import_std;
     std::string root_dir = {};
@@ -177,35 +69,38 @@ export auto make_single_file_config(SingleFileConfig config) noexcept -> SingleF
     const auto target_name = sanitize_target_name(source_path.stem().generic_string());
     const auto hash = compute_hash(config.absolute_source_path);
     const auto id = std::format("{}-{:016x}", target_name, hash);
-    const auto root = user_cache_dir() / "scripts" / id;
+    const auto root = workspace_cache_dir() / "scripts" / id;
 
     config.root_dir = root.generic_string();
     config.target_name = target_name;
     return config;
 }
 
-export auto find_carven_rule(std::string_view carven_program) noexcept -> std::optional<std::string> {
-    if (const auto override_rule = std::getenv("CARVEN_RULE")) {
-        auto error = std::error_code();
-        const auto path = std::filesystem::path(override_rule);
-        if (std::filesystem::is_regular_file(path, error) && !error) return path.generic_string();
-    }
+export constexpr auto embedded_carven_rule() noexcept -> std::string_view {
+    static constexpr const char rule[] = {
+        #embed "xmake/rules/carven.lua"
+    };
 
-    if (const auto installed_rule = find_installed_rule(carven_program)) {
-        return installed_rule->generic_string();
-    }
-
-    if (const auto root = find_ancestor({}, carven_rule_relative_path)) {
-        return (*root / carven_rule_relative_path).generic_string();
-    }
-
-    return std::nullopt;
+    return rule;
 }
 
 export auto find_project_root(std::filesystem::path start) noexcept -> std::optional<std::string> {
-    const auto root = find_ancestor(std::move(start), "xmake.lua");
-    if (!root) return std::nullopt;
-    return root->generic_string();
+    auto error = std::error_code();
+    if (start.empty()) start = std::filesystem::current_path(error);
+    if (error) return std::nullopt;
+
+    if (!std::filesystem::is_directory(start, error)) {
+        if (error) return std::nullopt;
+        start = start.parent_path();
+    }
+
+    error.clear();
+    const auto root = std::filesystem::absolute(start, error);
+    if (error) return std::nullopt;
+
+    error.clear();
+    if (!std::filesystem::is_regular_file(root / "xmake.lua", error) || error) return std::nullopt;
+    return root.generic_string();
 }
 
 export auto xmake_build_args(std::string_view target = "") noexcept -> std::vector<std::string> {
@@ -282,9 +177,6 @@ export auto generate_xmake_single_file(const SingleFileConfig& config) noexcept 
         lua_literal(standard_text)
     );
 
-    if (!config.carven_program.empty()) {
-        content += std::format("    set_values(\"carven.program\", {})\n", lua_literal(config.carven_program));
-    }
     if (config.import_std) {
         content += "    set_values(\"carven.import_std\", true)\n";
     }
@@ -293,17 +185,15 @@ export auto generate_xmake_single_file(const SingleFileConfig& config) noexcept 
     return content;
 }
 
-export auto write_xmake_carven_rule(const std::filesystem::path& project_dir, std::string_view carven_program) noexcept -> bool {
-    const auto source_rule = find_carven_rule(carven_program);
-    if (!source_rule) return false;
-
+export auto write_xmake_carven_rule(const std::filesystem::path& project_dir) noexcept -> bool {
     const auto rule_dir = project_dir / "xmake" / "rules";
     auto error = std::error_code();
     std::filesystem::create_directories(rule_dir, error);
     if (error) return false;
 
-    std::filesystem::copy_file(*source_rule, rule_dir / "carven.lua", std::filesystem::copy_options::overwrite_existing, error);
-    return !error;
+    auto file = std::ofstream(rule_dir / "carven.lua", std::ios::binary | std::ios::trunc);
+    const auto rule = embedded_carven_rule();
+    return file.is_open() && file.write(rule.data(), rule.size()).good();
 }
 
 export auto write_xmake_single_file(const SingleFileConfig& config) noexcept -> bool {
@@ -313,7 +203,7 @@ export auto write_xmake_single_file(const SingleFileConfig& config) noexcept -> 
     std::filesystem::create_directories(root, error);
 
     if (error) return false;
-    if (!write_xmake_carven_rule(root, config.carven_program)) return false;
+    if (!write_xmake_carven_rule(root)) return false;
 
     auto file = std::ofstream(root / "xmake.lua", std::ios::binary | std::ios::trunc);
     if (!file.is_open()) return false;

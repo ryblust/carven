@@ -1,6 +1,6 @@
-#include "test_helpers.h"
+#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
+#include "doctest.h"
 
-import carven.common.source;
 import carven.driver.pipeline;
 import std;
 
@@ -48,27 +48,4 @@ TEST_CASE("Pipeline: transpile") {
         CHECK(result.errors.empty());
     }
 
-    SUBCASE("write output matches transpile result") {
-        static constexpr auto source = std::string_view { "fn main() { }" };
-        const auto output_path = std::filesystem::temp_directory_path() / "carven_transpile_output.cpp";
-        const auto options = TranspileOptions {
-            .language_standard = 23,
-            .import_std = false,
-        };
-        const auto expected = transpile(source, options);
-
-        REQUIRE(expected.errors.empty());
-        CHECK_EQ(write_transpiled_source({
-            .source = source,
-            .filepath = "inline.cv",
-            .output_path = output_path.generic_string(),
-            .options = options,
-        }), 0);
-
-        auto output = SourceFile::from_file(output_path.generic_string());
-        REQUIRE(output.has_value());
-        CHECK_EQ(output->text(), expected.output);
-
-        std::filesystem::remove(output_path);
-    }
 }

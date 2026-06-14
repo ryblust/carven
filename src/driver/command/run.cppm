@@ -9,7 +9,7 @@ inline auto source_file_exists(std::string_view path) noexcept -> bool {
     return std::filesystem::is_regular_file(std::filesystem::path(path), error) && !error;
 }
 
-export auto execute(const RunRequest& request, std::string_view carven_executable) noexcept -> int {
+export auto execute(const RunRequest& request) noexcept -> int {
     const auto options = TranspileOptions {
         .language_standard = request.language_standard,
         .import_std = request.import_std,
@@ -25,7 +25,6 @@ export auto execute(const RunRequest& request, std::string_view carven_executabl
             return run_single_file({
                 .source_file = mode.source_file,
                 .forwarded_args = mode.args,
-                .carven_executable = carven_executable,
                 .options = options,
             });
         } else {

@@ -24,30 +24,31 @@ xmake build
 # Run fast unit tests
 xmake run carven-unit-test
 
-# Run compiled smoke tests
-xmake run carven-e2e-test
+# Run black-box e2e tests
+python3 tests/e2e/run.py
+```
+
+The e2e runner writes generated projects and its staged install under
+`tests/e2e/.sandbox`. Human-reviewed transpile cases live under
+`tests/cases`: each `.cv` input is checked against the matching generated
+`.cpp` file by the e2e runner. To update an expected output, regenerate that
+case explicitly and review the diff:
+
+```shell
+carven transpile -o tests/cases/name.cpp tests/cases/name.cv
 ```
 
 ### Install
 
 ```shell
-# Install to $HOME/.local
-./scripts/install.sh
-
-# Or choose the install prefix explicitly
-./scripts/install.sh --prefix <path>
-```
-
-The install script may create `$HOME/.local/bin`, but it does not modify shell
-profiles, `PATH`, or other user environment files. If the selected
-`<prefix>/bin` is not on `PATH`, the script reports that and leaves the choice
-to you.
-
-The underlying install layout is owned by xmake:
-
-```shell
 xmake build carven
 xmake install -o "$HOME/.local" carven
+```
+
+Choose the install prefix explicitly with `-o`. On Unix-like platforms, xmake's
+default install prefix may be a system directory such as `/usr/local`.
+
+```shell
 xmake uninstall --installdir="$HOME/.local" carven
 ```
 
@@ -57,8 +58,8 @@ xmake uninstall --installdir="$HOME/.local" carven
 # Create a minimal xmake-backed project
 carven init hello
 cd hello
-xmake build
-xmake run app
+carven build
+carven run app
 
 # Run a single .cv file as a script-like entry point
 carven run <file.cv> -- <args...>
@@ -67,27 +68,25 @@ carven run <file.cv> -- <args...>
 carven transpile <file.cv>
 carven transpile -o out.cpp <file.cv>
 
-# Delegate project build/run to the nearest xmake.lua
+# Delegate project build/run to the current directory's xmake.lua
 carven build [target]
 carven run <target> -- <args...>
 ```
 
 Project builds are xmake projects. Carven's project-mode commands are thin
-delegations; users maintain `xmake.lua` as the build source of truth. Runtime
-arguments in project mode require an explicit target so xmake does not parse
-program arguments as xmake options.
+delegations from the current project directory; users maintain `xmake.lua` as
+the build source of truth. Runtime arguments in project mode require an explicit
+target so xmake does not parse program arguments as xmake options.
+Single-file build and run commands create their xmake-backed cache projects
+under the current directory's `.carven/scripts` directory.
 
 ### Clean Build State
 
-```shell
-rm -rf build .xmake
-xmake f --toolchain=llvm
-xmake build
-```
-
-Use the stronger `rm -rf build .xmake` reset after C++ module/BMI cache issues,
-strange module errors, or unexplained undefined symbols after exported module
-API changes.
+Use xmake's normal clean command for ordinary rebuilds. If C++ module or BMI
+state appears corrupted, such as strange module errors or unexplained undefined
+symbols after exported module API changes, remove the local `build` and
+`.xmake` directories with your platform's file-removal tool, then configure and
+build the project again.
 
 ## Documentation
 

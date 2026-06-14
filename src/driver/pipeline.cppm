@@ -30,21 +30,18 @@ export struct WriteTranspiledSourceConfig final {
 
 export struct SingleFileBuildConfig final {
     std::string_view source_file;
-    std::string_view carven_executable;
     TranspileOptions options;
 };
 
 export struct SingleFileRunConfig final {
     std::string_view source_file;
     std::span<const std::string_view> forwarded_args;
-    std::string_view carven_executable;
     TranspileOptions options;
 };
 
 struct SingleFileProjectConfig final {
     std::string_view source_file;
     std::string_view command_name;
-    std::string_view carven_executable;
     TranspileOptions options = {};
 };
 
@@ -72,16 +69,6 @@ auto absolute_path_text(std::string_view path) noexcept -> std::optional<std::st
     return absolute.generic_string();
 }
 
-auto command_program_path(std::string_view program) noexcept -> std::string {
-    const auto program_path = std::filesystem::path(program);
-    if (!program_path.has_parent_path()) {
-        return std::string(program);
-    }
-
-    if (const auto absolute = absolute_path_text(program)) return *absolute;
-    return std::string(program);
-}
-
 auto write_single_file_project(SingleFileProjectConfig project) noexcept -> std::optional<SingleFileConfig> {
     const auto absolute_source = absolute_path_text(project.source_file);
     if (!absolute_source) {
@@ -89,10 +76,8 @@ auto write_single_file_project(SingleFileProjectConfig project) noexcept -> std:
         return std::nullopt;
     }
 
-    const auto carven_program = command_program_path(project.carven_executable);
     const auto config = make_single_file_config({
         .absolute_source_path = *absolute_source,
-        .carven_program = carven_program,
         .standard = project.options.language_standard,
         .import_std = project.options.import_std,
     });
@@ -107,7 +92,7 @@ auto write_single_file_project(SingleFileProjectConfig project) noexcept -> std:
 auto run_project_command(std::string_view command_name, const std::vector<std::string>& args) noexcept -> int {
     const auto root = find_project_root(std::filesystem::current_path());
     if (!root) {
-        std::println("carven {}: error: cannot find xmake.lua in current directory or parents", command_name);
+        std::println("carven {}: error: cannot find xmake.lua in current directory", command_name);
         return 1;
     }
 
@@ -177,7 +162,6 @@ export auto build_single_file(SingleFileBuildConfig request) noexcept -> int {
     const auto config = write_single_file_project({
         .source_file = request.source_file,
         .command_name = "build",
-        .carven_executable = request.carven_executable,
         .options = request.options,
     });
     if (!config) return 1;
@@ -204,7 +188,6 @@ export auto run_single_file(SingleFileRunConfig request) noexcept -> int {
     const auto config = write_single_file_project({
         .source_file = request.source_file,
         .command_name = "run",
-        .carven_executable = request.carven_executable,
         .options = request.options,
     });
     if (!config) return 1;
@@ -228,7 +211,7 @@ export auto run_project(std::optional<std::string_view> target, std::span<const 
     return run_project_command("run", args);
 }
 
-export auto init_project(std::string_view project_path, std::uint8_t language_standard, std::string_view carven_executable) noexcept -> int {
+export auto init_project(std::string_view project_path, std::uint8_t language_standard) noexcept -> int {
     const auto project_dir = std::filesystem::path(project_path);
     auto error = std::error_code();
     if (std::filesystem::exists(project_dir, error) && !std::filesystem::is_empty(project_dir, error)) {
@@ -261,7 +244,7 @@ export auto init_project(std::string_view project_path, std::uint8_t language_st
         std::println("carven init: error: cannot write '{}/xmake.lua'", project_dir.generic_string());
         return 1;
     }
-    if (!write_xmake_carven_rule(project_dir, carven_executable)) {
+    if (!write_xmake_carven_rule(project_dir)) {
         std::println("carven init: error: cannot write '{}/xmake/rules/carven.lua'", project_dir.generic_string());
         return 1;
     }

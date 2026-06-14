@@ -31,7 +31,7 @@ Runtime edges are outside the constexpr core:
 - xmake invocation
 - terminal output
 - installation
-- platform cache management
+- workspace cache management
 
 These edges should be thin wrappers over the pure core.
 
@@ -79,7 +79,10 @@ Constexpr tests should complement runtime tests:
 
 - constexpr unit tests cover small tokenization, parsing, sema, and codegen
   examples
-- golden tests cover generated C++ text at runtime
+- black-box e2e tests compare generated C++ text against human-reviewed
+  `tests/cases` outputs
+- expected `tests/cases/*.cpp` outputs are updated explicitly with
+  `carven transpile -o` and reviewed as diffs
 - e2e tests compile and run generated programs
 
 Inline language tests can follow the same principle later: pure compile-time

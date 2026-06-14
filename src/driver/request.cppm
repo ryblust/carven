@@ -65,6 +65,5 @@ export struct CheckRequest final {
 export using CommandRequest = std::variant<InitRequest, RunRequest, BuildRequest, TranspileRequest, DumpRequest, CheckRequest>;
 
 export struct CommandInvocation final {
-    std::string_view carven_executable;
     CommandRequest request;
 };

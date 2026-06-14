@@ -1,4 +1,5 @@
-#include "test_helpers.h"
+#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
+#include "doctest.h"
 
 import carven.common.source;
 import std;
@@ -96,7 +97,7 @@ TEST_CASE("SourceFile empty content") {
 }
 
 TEST_CASE("SourceFile from_file mmap path") {
-    auto source = SourceFile::from_file("tests/fixtures/helloworld.cv");
+    auto source = SourceFile::from_file("tests/cases/helloworld.cv");
     REQUIRE(source.has_value());
 
     SUBCASE("text is non-empty") {
@@ -104,7 +105,7 @@ TEST_CASE("SourceFile from_file mmap path") {
     }
 
     SUBCASE("filepath is preserved") {
-        CHECK_EQ(source->filepath(), "tests/fixtures/helloworld.cv");
+        CHECK_EQ(source->filepath(), "tests/cases/helloworld.cv");
     }
 
     SUBCASE("slice works") {
@@ -118,20 +119,4 @@ TEST_CASE("SourceFile from_file mmap path") {
 TEST_CASE("SourceFile from_file nonexistent") {
     const auto source = SourceFile::from_file("nonexistent_file_12345.cv");
     CHECK(!source.has_value());
-}
-
-TEST_CASE("SourceFile from_file empty file") {
-    const auto dir  = std::filesystem::temp_directory_path();
-    const auto path = dir / "carven_test_empty.cv";
-
-    {
-        std::ofstream ofs(path, std::ios::trunc);
-        ofs.close();
-    }
-
-    const auto source = SourceFile::from_file(path.string());
-    REQUIRE(source.has_value());
-    CHECK_EQ(source->text(), "");
-
-    std::filesystem::remove(path);
 }

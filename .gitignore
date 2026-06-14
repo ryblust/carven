@@ -2,9 +2,14 @@
 .xmake/
 build/
 .carven
+tests/e2e/.sandbox/
 
 # MacOS Cache
 .DS_Store
+
+# Python cache
+tests/e2e/__pycache__/
+*.py[cod]
 
 .idea
 compile_commands.json

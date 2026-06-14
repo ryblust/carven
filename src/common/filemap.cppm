@@ -23,8 +23,7 @@ export auto map_file(std::string_view path) noexcept -> std::optional<std::pair<
     auto wide_path = std::wstring(wide_len, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), wide_path.data(), wide_len);
 
-    const auto handle = CreateFileW(wide_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                                     nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    const auto handle = CreateFileW(wide_path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) return std::nullopt;
 
     LARGE_INTEGER file_size;
@@ -50,12 +49,12 @@ export auto map_file(std::string_view path) noexcept -> std::optional<std::pair<
 
     return std::pair { data, size };
 #else
-    const auto fd = ::open(path.data(), O_RDONLY);
+    const auto fd = open(path.data(), O_RDONLY);
     if (fd < 0) return std::nullopt;
 
     struct stat st;
-    if (::fstat(fd, &st) < 0) {
-        ::close(fd);
+    if (fstat(fd, &st) < 0) {
+        close(fd);
         return std::nullopt;
     }
 
@@ -63,14 +62,14 @@ export auto map_file(std::string_view path) noexcept -> std::optional<std::pair<
     void* data = nullptr;
 
     if (size > 0) {
-        data = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        data = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
         if (data == MAP_FAILED) {
-            ::close(fd);
+            close(fd);
             return std::nullopt;
         }
     }
 
-    ::close(fd);
+    close(fd);
     return std::pair { data, size };
 #endif
 }
@@ -80,6 +79,6 @@ export auto unmap_file(void* data, std::size_t size) noexcept -> void {
     (void)size;
     if (data) UnmapViewOfFile(data);
 #else
-    if (data) ::munmap(data, size);
+    if (data) munmap(data, size);
 #endif
 }
