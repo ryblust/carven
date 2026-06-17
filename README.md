@@ -1,94 +1,91 @@
 # Carven
 
-A programming language layer that transpiles to standard C++.
+Carven is a small programming language layer that transpiles to readable,
+standard C++.
 
-Carven provides a smaller syntax and toolchain surface for C++ practice
-while keeping generated C++ readable and build-system integration explicit.
+It is meant for practicing and shaping C++ programs with less syntactic noise,
+while keeping the generated code inspectable and the build system explicit.
+Carven does not try to hide xmake; project builds remain ordinary xmake
+projects, and `xmake.lua` stays the source of truth.
 
 ## Quick Start
 
-### Build From Source
+Build Carven from source:
 
 ```shell
-# Configure
-xmake f --toolchain=clang-cl  # Windows
-xmake f --toolchain=llvm      # macOS
-
-# Build
-xmake build
-```
-
-### Test
-
-```shell
-# Run fast unit tests
-xmake run carven-unit-test
-
-# Run black-box e2e tests
-python3 tests/e2e/run.py
-```
-
-The e2e runner writes generated projects and its staged install under
-`tests/e2e/.sandbox`. Human-reviewed transpile cases live under
-`tests/cases`: each `.cv` input is checked against the matching generated
-`.cpp` file by the e2e runner. To update an expected output, regenerate that
-case explicitly and review the diff:
-
-```shell
-carven transpile -o tests/cases/name.cpp tests/cases/name.cv
-```
-
-### Install
-
-```shell
+xmake f --toolchain=llvm # macOS and Linux
+xmake f --toolchain=clang-cl # Windows
 xmake build carven
+```
+
+During local development, run the built CLI through xmake:
+
+```shell
+xmake run carven transpile tests/cases/helloworld.cv
+```
+
+Install:
+
+```shell
 xmake install -o "$HOME/.local" carven
 ```
 
 Choose the install prefix explicitly with `-o`. On Unix-like platforms, xmake's
 default install prefix may be a system directory such as `/usr/local`.
 
+Uninstall:
+
 ```shell
 xmake uninstall --installdir="$HOME/.local" carven
 ```
 
-### Use Carven
+Once installed, create and run a minimal project:
 
 ```shell
-# Create a minimal xmake-backed project
-carven init hello
-cd hello
+carven init helloworld
+cd helloworld
 carven build
-carven run app
-
-# Run a single .cv file as a script-like entry point
-carven run <file.cv> -- <args...>
-
-# Transpile only
-carven transpile <file.cv>
-carven transpile -o out.cpp <file.cv>
-
-# Delegate project build/run to the current directory's xmake.lua
-carven build [target]
-carven run <target> -- <args...>
+carven run helloworld
 ```
 
-Project builds are xmake projects. Carven's project-mode commands are thin
-delegations from the current project directory; users maintain `xmake.lua` as
-the build source of truth. Runtime arguments in project mode require an explicit
-target so xmake does not parse program arguments as xmake options.
-Single-file build and run commands create their xmake-backed cache projects
-under the current directory's `.carven/scripts` directory.
+## Testing
 
-### Clean Build State
+```shell
+python3 tests/test.py
+```
 
-Use xmake's normal clean command for ordinary rebuilds. If C++ module or BMI
-state appears corrupted, such as strange module errors or unexplained undefined
-symbols after exported module API changes, remove the local `build` and
-`.xmake` directories with your platform's file-removal tool, then configure and
-build the project again.
+## Project Workflow
 
-## Documentation
+Run a single `.cv` file without creating a project:
+
+```shell
+carven run path/to/file.cv arg1 arg2
+```
+
+Transpile only:
+
+```shell
+carven transpile path/to/file.cv
+carven transpile -o out.cpp path/to/file.cv
+```
+
+In project mode, `carven build` and `carven run` delegate to the current
+directory's `xmake.lua`. Runtime arguments require an explicit target:
+
+```shell
+carven build <target>
+carven run <target> arg1 arg2
+```
+
+Single-file run commands create xmake-backed cache projects under
+`.carven/scripts`.
+
+## Troubleshooting
+
+If C++ module or BMI state appears corrupted, remove the local
+`build` and `.xmake` directories, then configure and build again.
+
+## Learn More
 
 - [Language Grammar](docs/grammar.md)
 - [Design Philosophy](docs/design.md)

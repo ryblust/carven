@@ -67,6 +67,14 @@ TEST_CASE("Toolchain: xmake args") {
     }
 }
 
+TEST_CASE("Toolchain: generated project xmake uses project name target") {
+    const auto sources = std::vector<std::string> { "src/main.cv" };
+    const auto content = generate_xmake_project("hello", sources, 23);
+    CHECK(content.contains("set_project(\"hello\")"));
+    CHECK(content.contains("target(\"hello\")"));
+    CHECK(!content.contains("target(\"app\")"));
+}
+
 TEST_CASE("Toolchain: project root discovery") {
     SUBCASE("finds current xmake.lua") {
         const auto root = find_project_root(".");

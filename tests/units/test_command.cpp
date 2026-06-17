@@ -2,6 +2,7 @@
 #include "doctest.h"
 
 import carven.driver.command;
+import carven.driver.request;
 import std;
 
 static auto parse(std::string_view command, std::span<const char* const> args) noexcept -> std::expected<CommandInvocation, CommandError> {
@@ -23,7 +24,7 @@ TEST_CASE("Command parser: run") {
     }
 
     SUBCASE("single file with forwarded args") {
-        const auto args = std::array { "main.cv", "--", "one", "two" };
+        const auto args = std::array { "main.cv", "one", "two" };
         const auto invocation = parse("run", args);
         REQUIRE(invocation.has_value());
 
@@ -37,8 +38,23 @@ TEST_CASE("Command parser: run") {
         CHECK_EQ(mode->args[1], "two");
     }
 
+    SUBCASE("single file accepts optional separator before forwarded args") {
+        const auto args = std::array { "main.cv", "--", "--name", "Ada" };
+        const auto invocation = parse("run", args);
+        REQUIRE(invocation.has_value());
+
+        const auto request = std::get_if<RunRequest>(&invocation->request);
+        REQUIRE(request != nullptr);
+        const auto mode = std::get_if<SingleFileRun>(&request->mode);
+        REQUIRE(mode != nullptr);
+        CHECK_EQ(mode->source_file, "main.cv");
+        REQUIRE_EQ(mode->args.size(), 2u);
+        CHECK_EQ(mode->args[0], "--name");
+        CHECK_EQ(mode->args[1], "Ada");
+    }
+
     SUBCASE("project target with forwarded args") {
-        const auto args = std::array { "-std=c++20", "--import-std", "app", "--", "--name", "Ada" };
+        const auto args = std::array { "-std=c++20", "--import-std", "app", "--name", "Ada" };
         const auto invocation = parse("run", args);
         REQUIRE(invocation.has_value());
 
@@ -47,6 +63,22 @@ TEST_CASE("Command parser: run") {
         CHECK_EQ(request->language_standard, 20);
         CHECK(request->import_std);
 
+        const auto mode = std::get_if<ProjectRun>(&request->mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(mode->target.has_value());
+        CHECK_EQ(*mode->target, "app");
+        REQUIRE_EQ(mode->args.size(), 2u);
+        CHECK_EQ(mode->args[0], "--name");
+        CHECK_EQ(mode->args[1], "Ada");
+    }
+
+    SUBCASE("project target accepts optional separator before forwarded args") {
+        const auto args = std::array { "app", "--", "--name", "Ada" };
+        const auto invocation = parse("run", args);
+        REQUIRE(invocation.has_value());
+
+        const auto request = std::get_if<RunRequest>(&invocation->request);
+        REQUIRE(request != nullptr);
         const auto mode = std::get_if<ProjectRun>(&request->mode);
         REQUIRE(mode != nullptr);
         REQUIRE(mode->target.has_value());

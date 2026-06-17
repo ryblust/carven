@@ -1,43 +1,37 @@
 ---
 name: spec-review
-description: Final explicit spec-review pass for changed C++ code against cpp-design.md and cpp-format.md; use only when the user asks for spec-review or a spec compliance review.
+description: Final explicit spec compliance review for Carven C++ changes against .agents/specs/cpp-design.md and .agents/specs/cpp-format.md. Use only when the user explicitly asks for spec-review, spec compliance review, or a pre-commit spec pass; do not use for ordinary review.
 ---
 
-Use this only as a final compliance check when the user explicitly asks for
-`spec-review`, a spec-focused compliance review, or a pre-commit spec pass.
-Ordinary `review` requests are not spec-review requests.
+# Spec Review
 
-Review all changed C++ files against [`cpp-design.md`](../../specs/cpp-design.md) and [`cpp-format.md`](../../specs/cpp-format.md).
+Perform a final compliance pass after ordinary correctness and architecture review. Report only concrete spec deviations; do not edit files.
 
 ## Workflow
 
-1. `git diff --name-only` to list changed `.cppm`/`.cpp`/`.h` files.
-2. Scale agents by total diff lines:
+1. Use the user-provided scope, or inspect staged and unstaged changes by default.
+2. Read changed C++ files (`.cppm`, `.cpp`, `.h`, `.hpp`) and relevant diff hunks.
+3. Read `.agents/specs/cpp-design.md` and `.agents/specs/cpp-format.md` completely.
+4. Read `AGENTS.md` only when non-C++ changes encode repository contracts.
+5. Check changed C++ against both specs. Prefer exact rule conflicts over broad preferences.
+6. Merge duplicates, omit compliant items, and keep the report short.
+7. Do not flag anything without a concrete spec rule or a concrete spec feedback point behind it.
 
-| Diff lines | Agents |
-|-----------|--------|
-| < 500 | 2 (design + format) |
-| 500–1500 | 4 (2 design, 2 format, split files) |
-| > 1500 | 6+ (split by file, each covers both specs) |
+## Output
 
-3. Each agent reads their files and checks EVERY rule in their assigned spec. Report deviations only — never modify code.
-4. If non-C++ build or tooling files changed, also check the project contracts
-   they encode:
-   - xmake owns normal build, run, install, generated-file, and module/BMI work.
-   - `scripts/install.sh` must not edit shell profiles, mutate PATH, or own
-     upgrades/uninstalls.
-   - Unit tests must not run xmake subprocesses; compiled smoke tests belong in
-     `carven-e2e-test`.
-   - Golden files are updated only through `scripts/update-golden.sh`.
-5. Consolidate output into three sections:
+Lead with findings. Use repository-relative paths and one actionable location per finding. Use one format for both passing and failing reviews.
 
-```
-## Conflicts
-- [file:line] rule — `current` → `expected`
+```markdown
+## Spec Review
 
-## Style
-- [file:line] rule — `current` → `expected`
+Result: <no conflicts found | N finding(s)>
+Scope: <files, diff, or user-provided scope>
 
-## Spec gaps
-- pattern not covered by either spec
+| Kind | Location | Rule / Area | Finding | Action |
+| --- | --- | --- | --- | --- |
+| Conflict | `file:line` | <spec rule> | <what the change does> | <what the spec requires> |
+| Style | `file:line` | <spec rule> | <current form> | <required form> |
+| Spec Feedback | `pattern` | <missing, inconsistent, or awkward spec coverage> | <why the spec is hard to apply> | <clarify spec or adjust design> |
+
+Residual risk: <tests not run, generated output not reviewed, or scope limitation>
 ```

@@ -79,11 +79,13 @@ Constexpr tests should complement runtime tests:
 
 - constexpr unit tests cover small tokenization, parsing, sema, and codegen
   examples
-- black-box e2e tests compare generated C++ text against human-reviewed
-  `tests/cases` outputs
+- black-box e2e tests cover the installed CLI, xmake-backed workflows, cache
+  projects, generated program execution, and human-reviewed `tests/cases`
+  outputs
 - expected `tests/cases/*.cpp` outputs are updated explicitly with
   `carven transpile -o` and reviewed as diffs
-- e2e tests compile and run generated programs
+- e2e tests should avoid duplicating unit-level lexer, parser, command parser,
+  codegen, or dump-format assertions
 
 Inline language tests can follow the same principle later: pure compile-time
 examples first, runtime integration second.

@@ -143,6 +143,9 @@ public:
     }
 
 private:
+    constexpr SourceFile(std::string_view path, void* data, std::size_t size) noexcept
+        : fpath(path), is_mmaped(true), mmap_data(data), mmap_size(size) {}
+
     std::string_view fpath;
     bool is_mmaped;
     union {
@@ -152,10 +155,4 @@ private:
             std::size_t mmap_size;
         };
     };
-
-    constexpr SourceFile(std::string_view path, void* data, std::size_t size) noexcept
-        : fpath(path)
-        , is_mmaped(true)
-        , mmap_data(data)
-        , mmap_size(size) {}
 };

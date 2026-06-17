@@ -141,12 +141,13 @@ export auto generate_xmake_project(std::string_view project_name, std::span<cons
         "\n"
         "includes(\"xmake/rules/carven.lua\")\n"
         "\n"
-        "target(\"app\")\n"
+        "target({})\n"
         "    set_kind(\"binary\")\n"
         "    add_rules(\"carven\")\n"
         "    set_values(\"carven.standard\", {})\n",
         project_name,
         standard_text,
+        lua_literal(project_name),
         lua_literal(standard_text)
     );
 

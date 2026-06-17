@@ -1,6 +1,6 @@
 export module carven.driver.command;
 
-export import carven.driver.request;
+import carven.driver.request;
 import carven.driver.command.build;
 import carven.driver.command.check;
 import carven.driver.command.dump;
@@ -55,19 +55,21 @@ constexpr auto TRANSPILE_FLAGS = std::array<Flag, 3> {{
 }};
 
 constexpr auto COMMANDS = std::array<Command, 6> {{
-    { .name = "init",      .description = "Create a Carven xmake project",       .flags = INIT_FLAGS      },
-    { .name = "run",       .description = "Run a .cv file or xmake target",      .flags = RUN_FLAGS       },
-    { .name = "transpile", .description = "Transpile .cv files to C++",          .flags = TRANSPILE_FLAGS },
-    { .name = "dump",      .description = "Dump token stream and AST",           .flags = DUMP_FLAGS      },
-    { .name = "build",     .description = "Build a .cv file or xmake project",   .flags = BUILD_FLAGS     },
-    { .name = "check",     .description = "Parse and check without codegen",     .flags = {}              },
+    { .name = "init",      .description = "Create a Carven xmake project",     .flags = INIT_FLAGS      },
+    { .name = "run",       .description = "Run a .cv file or xmake target",    .flags = RUN_FLAGS       },
+    { .name = "transpile", .description = "Transpile .cv files to C++",        .flags = TRANSPILE_FLAGS },
+    { .name = "dump",      .description = "Dump token stream and AST",         .flags = DUMP_FLAGS      },
+    { .name = "build",     .description = "Build a .cv file or xmake project", .flags = BUILD_FLAGS     },
+    { .name = "check",     .description = "Parse and check without codegen",   .flags = {}              },
 }};
 
 auto command_error(std::string_view command, std::string message) noexcept -> std::unexpected<CommandError> {
-    return std::unexpected(CommandError {
-        .command = std::string(command),
-        .message = std::move(message),
-    });
+    return std::unexpected(
+        CommandError {
+            .command = std::string(command),
+            .message = std::move(message),
+        }
+    );
 }
 
 auto parse_standard(std::string_view command, std::string_view standard) noexcept -> std::expected<std::uint8_t, CommandError> {
@@ -91,7 +93,9 @@ auto parse_init(std::span<const char* const> args) noexcept -> std::expected<Ini
         const auto arg = std::string_view(args[i]);
         if (arg.starts_with("-std=")) {
             const auto standard = parse_standard("init", arg.substr(5));
-            if (!standard) return std::unexpected(standard.error());
+            if (!standard) {
+                return std::unexpected(standard.error());
+            }
             request.language_standard = *standard;
         } else if (arg.starts_with('-')) {
             return command_error("init", std::format("unknown flag '{}'", arg));
@@ -102,14 +106,16 @@ auto parse_init(std::span<const char* const> args) noexcept -> std::expected<Ini
         }
     }
 
-    if (!project_dir) return command_error("init", "no project path");
+    if (!project_dir) {
+        return command_error("init", "no project path");
+    }
     request.project_dir = *project_dir;
     return request;
 }
 
 auto parse_run(std::span<const char* const> args) noexcept -> std::expected<RunRequest, CommandError> {
     auto request = RunRequest{};
-    auto positional = std::vector<std::string_view>();
+    auto positional = std::optional<std::string_view>();
     auto forwarded = std::vector<std::string_view>();
     auto double_dash = false;
 
@@ -117,32 +123,47 @@ auto parse_run(std::span<const char* const> args) noexcept -> std::expected<RunR
         const auto arg = std::string_view(args[i]);
         if (double_dash) {
             forwarded.push_back(arg);
+        } else if (positional) {
+            if (arg != "--" || !forwarded.empty()) {
+                forwarded.push_back(arg);
+            }
         } else if (arg == "--") {
             double_dash = true;
         } else if (arg.starts_with("-std=")) {
             const auto standard = parse_standard("run", arg.substr(5));
-            if (!standard) return std::unexpected(standard.error());
+            if (!standard) {
+                return std::unexpected(standard.error());
+            }
             request.language_standard = *standard;
         } else if (arg == "--import-std") {
             request.import_std = true;
         } else if (arg.starts_with('-')) {
             return command_error("run", std::format("unknown flag '{}'", arg));
         } else {
-            positional.push_back(arg);
+            positional = arg;
         }
     }
 
-    if (positional.empty()) {
-        if (!forwarded.empty()) return command_error("run", "project runtime args require an explicit target");
-        request.mode = ProjectRun { .target = std::nullopt, .args = std::move(forwarded) };
-    } else if (positional.size() == 1) {
-        if (is_carven_source_path(positional[0])) {
-            request.mode = SingleFileRun { .source_file = positional[0], .args = std::move(forwarded) };
-        } else {
-            request.mode = ProjectRun { .target = positional[0], .args = std::move(forwarded) };
+    if (!positional) {
+        if (!forwarded.empty()) {
+            return command_error("run", "project runtime args require an explicit target");
         }
+        request.mode = ProjectRun {
+            .target = std::nullopt,
+            .args = std::move(forwarded)
+        };
     } else {
-        return too_many_args("run");
+        if (is_carven_source_path(*positional)) {
+            request.mode = SingleFileRun {
+                .source_file = *positional,
+                .args = std::move(forwarded)
+            };
+        } else {
+            request.mode = ProjectRun {
+                .target = *positional,
+                .args = std::move(forwarded)
+            };
+        }
     }
 
     return request;
@@ -156,7 +177,9 @@ auto parse_build(std::span<const char* const> args) noexcept -> std::expected<Bu
         const auto arg = std::string_view(args[i]);
         if (arg.starts_with("-std=")) {
             const auto standard = parse_standard("build", arg.substr(5));
-            if (!standard) return std::unexpected(standard.error());
+            if (!standard) {
+                return std::unexpected(standard.error());
+            }
             request.language_standard = *standard;
         } else if (arg == "--import-std") {
             request.import_std = true;
@@ -348,7 +371,7 @@ export auto render_command_error(const CommandError& error) noexcept -> int {
 }
 
 export auto dispatch(const CommandInvocation& invocation) noexcept -> int {
-    return std::visit([&](const auto& request) noexcept -> int {
-        return execute(request);
-    }, invocation.request);
+    return std::visit(
+        [&](const auto& request) noexcept -> int { return execute(request); }, invocation.request
+    );
 }

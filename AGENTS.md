@@ -1,139 +1,37 @@
-# AGENTS.md
+# Repository Guidelines
 
-Follow these repository rules.
+## Project Structure
 
-## Overview
+Carven transpiles `.cv` files to C++ with xmake. Main code lives in `src/`
+(`frontend`, `backend`, `driver`, `common`). Unit tests live in `tests/units`
+and reviewed transpilation cases live in `tests/cases`. Project docs and
+proposals live in `docs/`; build rules live in `xmake.lua` and `xmake/rules/`.
 
-Carven transpiles `.cv` files to standard C++. The transpiler is C++26 with
-modules (`.cppm`) and builds with xmake.
+## Build & Testing
 
-Grammar reference: [`docs/grammar.md`](docs/grammar.md).
+- `xmake f --toolchain=llvm`: configure a macOS/Linux LLVM build.
+- `xmake f --toolchain=clang-cl`: configure a Windows clang-cl build.
+- `xmake build`: build the default targets.
+- `python3 tests/test.py`: run unit and e2e tests.
+- `python3 tests/test.py --unit`: run unit tests.
+- `python3 tests/test.py --e2e`: run installed CLI and case-based e2e checks.
+- `python3 tests/test.py --list-e2e`: list e2e cases.
+- `python3 tests/test.py --case <name>`: run one e2e case.
+- `python3 tests/test.py --e2e --trace-commands`: print e2e subprocess timings.
 
-## Context Loading
+When compilation fails with an unexpected error, suspect a stale BMI cache — delete `build/` and rebuild first.
 
-- Start with `rg` and the smallest relevant source files.
-- Do not preload broad docs.
-- Do not read `.agents/specs/` for ordinary tasks.
-- Read `.agents/specs/` only for explicit `spec-review`, spec compliance
-  review, or pre-commit spec pass.
+## Context Boundaries
+
+- Do not preload broad docs for ordinary tasks.
+- Do not read `.agents/specs/` unless the task is an explicit `spec-review`,
+  spec compliance review, or pre-commit spec pass.
 - Do not read `docs/grammar.md` unless the task touches syntax, parsing,
   semantics, lowering, generated C++ output, or language feature support.
 - Treat ordinary `review` as code review, not `spec-review`.
 
-## Documentation Boundaries
+## Commits
 
-- `README.md` is the public, human-facing guide for installing and using
-  Carven.
-- `AGENTS.md` is only for agent operating rules: context loading, verification,
-  recovery, code constraints, and review behavior.
-- Do not duplicate user tutorials here. If a command is only useful to users,
-  document it in `README.md`; keep this file focused on commands agents need to
-  verify changes.
-
-## Agent Commands
-
-```shell
-xmake f --toolchain=clang-cl # Windows
-xmake f --toolchain=llvm # macOS
-
-xmake build
-
-xmake run carven-unit-test --no-colors
-
-python3 tests/e2e/run.py
-```
-
-## Recovery
-
-- Use cleanup only for likely C++ module/BMI/cache problems.
-- Do not use cleanup as the first step for ordinary build or test failures.
-- Symptoms: strange module errors, stale BMI/cache state, or unexplained
-  undefined symbols after exported module API changes.
-- Before destructive cleanup, state the reason.
-- Cleanup sequence: remove `build` and `.xmake`, reconfigure, rebuild.
-
-## Development Rules
-
-- Keep normal build, run, install, generated-file, and C++ module/BMI work
-  xmake-backed. Do not add direct compiler orchestration to driver paths.
-- Store spans in AST nodes. Do not store owned source strings in AST nodes.
-  Source text must outlive AST references.
-- Allocate AST nodes with `Arena::alloc<T>(args...)`. Do not use `new` for AST
-  nodes.
-- Keep parsing context-free. Do not use symbol table lookup in the parser.
-  Put semantic checks in `sema`; put lowering decisions in codegen.
-- Keep the core transpiler path constexpr-friendly where practical:
-  lexer/parser/sema/lowering/codegen/`transpile`.
-- Do not require constexpr support for runtime edges: filesystem, processes,
-  xmake invocation, terminal output, install, or cache management.
-- Keep constexpr core definitions reachable from module interfaces. Do not move
-  them into `.cpp` files or hidden partitions if `static_assert` use would
-  break.
-- Keep `carven run <file.cv>` cache projects under the current directory's
-  `.carven/scripts` directory.
-- Preserve project argument forwarding: `carven run <target> -- <args...>`
-  delegates to `xmake run <target> <args...>`.
-- Treat `import std;` as a temporary header-preamble fallback. Do not implement
-  true standard-library module support unless working on that proposal.
-- Use `std::optional` / `std::expected` for failures. Do not add exceptions.
-  Project functions must be `noexcept`.
-- Do not add wrapper install scripts that duplicate xmake install.
-
-## Review Behavior
-
-- Ordinary `review` = code review.
-- Report first: correctness bugs, regressions, architecture risks, missing
-  tests.
-- Do not flag large `.cppm` files or interface-heavy constexpr core code by
-  default; first identify a concrete bug, portability issue, compile-time
-  problem, or readability failure.
-- Do not suggest `.cpp` files, private module fragments, or internal partitions
-  for core constexpr code unless constexpr reachability is unnecessary.
-- Do not treat broad core `constexpr` use as decorative. It supports
-  `static_assert` tests and the pure transpiler pipeline.
-- For ordinary review, do not load `.agents/specs/`.
-- For ordinary review, do not run `spec-review`.
-- `spec-review` = final pre-commit compliance pass after correctness and
-  architecture checks.
-
-## Test Selection
-
-- Parser, sema, codegen, diagnostics, CLI logic: run
-  `xmake run carven-unit-test --no-colors`.
-- Driver, project mode, xmake integration, install layout, compiled programs, or
-  cache-project behavior: also run `python3 tests/e2e/run.py`.
-- Unit tests live in `tests/units` and must not run xmake subprocesses.
-- Human-reviewed `.cv` to `.cpp` cases live in `tests/cases` and are compared
-  by `tests/e2e/run.py`.
-- Compiled smoke coverage belongs in `tests/e2e/run.py`.
-- Do not recreate the old combined `carven-test` target.
-- Do not add an automatic golden/case update mode. If generated C++ case outputs
-  change, update them explicitly and review the diff.
-
-## Coding Style
-
-### Naming
-- Functions: `snake_case`
-- Types/Enums/Enum values: `PascalCase`
-- Fields: `snake_case`
-- Modules: `carven.<layer>.<name>`
-
-C++ specs:
-
-- [`cpp-design`](.agents/specs/cpp-design.md) — design philosophy and API patterns
-- [`cpp-format`](.agents/specs/cpp-format.md) — formatting rules
-
-When writing or modifying C++ code:
-
-- Follow existing local style.
-- Follow the specs where relevant.
-- Load full specs only under `Context Loading` rules.
-
-Feature proposals: [`docs/proposals/`](docs/proposals/). Delete a proposal only
-when the current task fully implements it and it is no longer needed.
-
-## Conventional Commits
-
-Format: `<type>(<scope>, ...): <description>`
-- Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, `test`
-- Scopes: match `src/` subdirectories or feature names
+Use Conventional Commits: `<type>(<scope>, ...): <description>`. Common types
+include `feat`, `fix`, `refactor`, `chore`, `docs`, `ci`, and `test`.
+Scopes should match `src/` subdirectories or feature names.

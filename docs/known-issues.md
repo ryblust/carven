@@ -1,5 +1,26 @@
 # Known Issues
 
+## Command help usage is too generic
+
+Status: accepted for now.
+
+`carven <command> --help` currently prints a generic usage form such as
+`carven run [options...]`. This omits command-specific operands and behavior,
+including that `carven run` accepts a `.cv` file or xmake target and forwards
+arguments after that operand to the program. The optional `--` separator before
+forwarded program arguments is also not documented in command help.
+
+Current impact is acceptable because the parser behavior is covered by unit
+tests and the README documents the common `carven run <target> <args...>` form.
+
+Revisit this when:
+
+- designing a fuller CLI help format
+- documenting command-specific operands in generated help
+- adding examples to command help
+- deciding how much forwarded-argument behavior belongs in CLI help versus
+  user documentation
+
 ## Arena does not destroy non-trivial AST nodes
 
 Status: accepted for now.
