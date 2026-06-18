@@ -1,6 +1,4 @@
-# C++ Design Philosophy
-
-All code belongs to one of three semantic categories.
+# cpp-design.md
 
 ## Semantic Model
 
@@ -90,10 +88,10 @@ Do not wrap `const char*` or `string_view` in `std::filesystem::path` for functi
 Avoid output parameters. Prefer monadic returns. Exception: `std::string& result` sink parameters for code generation and string composition are acceptable for performance.
 
 ```cpp
-// ❌
+// bad
 bool parse(X& out);
 
-// ✅
+// good
 auto parse() -> std::expected<X, Error>;
 ```
 
@@ -147,48 +145,3 @@ Loop increment: always `++i`. Never `i++` unless the post-increment value is req
 ## Output
 
 Prefer `std::print` / `std::println`. Avoid `std::cout` / `printf`.
-
-## Build Boundaries
-
-Do not hand-encode C++ compiler orchestration in Carven's normal driver paths.
-Carven owns language tooling: parse, semantic checks, lowering, codegen, and
-project scaffolding. Xmake owns build graphs, generated-file directories,
-compiler invocation, installation, and C++ module/BMI orchestration.
-
-Process helpers are acceptable for invoking xmake or user programs, but normal
-`carven run` / `carven build` behavior should remain xmake-backed.
-
-## Example
-
-```cpp
-struct EndpointConfig final {
-    std::string host;
-    int port;
-};
-
-enum class ParseError {
-    MissingDelimiter,
-    InvalidPortFormat
-};
-
-constexpr auto extract_port(std::string_view text) noexcept -> std::optional<int>;
-
-constexpr auto parse_endpoint(std::string_view config_line) noexcept -> std::expected<EndpointConfig, ParseError> {
-    const auto colon_pos = config_line.find(':');
-    if (colon_pos == std::string_view::npos) {
-        return std::unexpected(ParseError::MissingDelimiter);
-    }
-
-    const auto host_view = config_line.substr(0, colon_pos);
-    const auto port_view = config_line.substr(colon_pos + 1);
-
-    if (const auto port_opt = extract_port(port_view); port_opt.has_value()) {
-        return EndpointConfig {
-            .host = std::string(host_view),
-            .port = *port_opt,
-        };
-    }
-
-    return std::unexpected(ParseError::InvalidPortFormat);
-}
-```

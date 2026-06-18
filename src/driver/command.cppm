@@ -371,7 +371,5 @@ export auto render_command_error(const CommandError& error) noexcept -> int {
 }
 
 export auto dispatch(const CommandInvocation& invocation) noexcept -> int {
-    return std::visit(
-        [&](const auto& request) noexcept -> int { return execute(request); }, invocation.request
-    );
+    return std::visit([&](const auto& request) noexcept -> int { return execute(request); }, invocation.request);
 }

@@ -1,6 +1,4 @@
-# Formatting Spec
-
-Apply these rules when writing or modifying any C++ source (`.cppm`, `.cpp`, `.h`).
+# cpp-format.md
 
 ## Includes / Imports
 - Naming: `carven.<layer>.<name>`.
@@ -54,6 +52,7 @@ Apply these rules when writing or modifying any C++ source (`.cppm`, `.cpp`, `.h
 
 ## Constructor Init Lists
 - Short: same line as constructor. `: a(x), b(y) {}`
+- Condensed: constructor signature on its own line, then `: a(x), b(y) {}` on the next at constructor indent + 4.
 - Wrapped: comma-before, 8-space indent. Each member own line.
 
 ## Control Flow
