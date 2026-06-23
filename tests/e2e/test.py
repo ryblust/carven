@@ -179,6 +179,42 @@ def create_initialized_project(ctx: E2EContext, parent_name: str, project_name: 
     return parent / project_name
 
 
+def test_root_command(ctx: E2EContext) -> None:
+    help_result = ctx.run(["carven"])
+    require("Carven Language Toolchain" in help_result.stdout, "carven did not print root help")
+
+    long_help = ctx.run(["carven", "--help"])
+    require("Carven Language Toolchain" in long_help.stdout, "carven --help did not print root help")
+
+    short_help = ctx.run(["carven", "-h"])
+    require("Carven Language Toolchain" in short_help.stdout, "carven -h did not print root help")
+
+    version = ctx.run(["carven", "--version"])
+    require("carven 0.1.0" in version.stdout, "carven --version did not print version")
+
+    short_version = ctx.run(["carven", "-V"])
+    require("carven 0.1.0" in short_version.stdout, "carven -V did not print version")
+
+    unknown = ctx.run(["carven", "nope"], check=False)
+    require(unknown.returncode != 0, "unknown command unexpectedly succeeded")
+    require("unknown command 'nope'" in unknown.stdout, "unknown command did not report command name")
+
+    run_help = ctx.run(["carven", "run", "--help"])
+    require("USAGE:" in run_help.stdout and "carven run" in run_help.stdout, "carven run --help did not print run help")
+
+    missing_transpile_input = ctx.run(["carven", "transpile"], check=False)
+    require(missing_transpile_input.returncode != 0, "transpile without input unexpectedly succeeded")
+    require("carven transpile: error: no input file" in missing_transpile_input.stdout, "transpile missing input error changed")
+
+    missing_init_path = ctx.run(["carven", "init"], check=False)
+    require(missing_init_path.returncode != 0, "init without path unexpectedly succeeded")
+    require("carven init: error: no project path" in missing_init_path.stdout, "init missing path error changed")
+
+    run_forwarded_without_target = ctx.run(["carven", "run", "--", "--version"], check=False)
+    require(run_forwarded_without_target.returncode != 0, "run forwarded args without target unexpectedly succeeded")
+    require("explicit target" in run_forwarded_without_target.stdout, "run forwarded args error changed")
+
+
 def test_transpile(ctx: E2EContext) -> None:
     source = ctx.path("transpile", "main.cv")
     write_file(source, "import std;\n\nfn main() {\n    std::println(\"transpile ok\");\n}\n")
@@ -255,6 +291,24 @@ def test_single_file_run(ctx: E2EContext) -> None:
     result = ctx.run(["carven", "run", path_text(source)], cwd=project)
     require("single file ok\n" in result.stdout, "single-file run did not print expected output")
 
+    args_source = project / "single_args.cv"
+    write_file(
+        args_source,
+        """import std;
+
+fn main(args) {
+    std::println("single args");
+    std::println("{}", std::ranges::distance(args));
+    let first = *std::ranges::begin(args);
+    std::println("{} {}", first.first, first.second);
+}
+""",
+    )
+    args_result = ctx.run(["carven", "run", path_text(args_source), "--", "--name", "Ada"], cwd=project)
+    require("single args\n" in args_result.stdout, "single-file args target did not run")
+    require("2\n" in args_result.stdout, "single-file run did not receive all forwarded args")
+    require("1 --name\n" in args_result.stdout, "single-file run did not receive first forwarded arg")
+
     cache_root = project / ".carven"
     require(cache_root.exists(), f"single-file cache root was not created: {cache_root}")
 
@@ -303,6 +357,7 @@ fn main(args) {
 
 
 CASES: dict[str, Callable[[E2EContext], None]] = {
+    "root_command": test_root_command,
     "case_outputs": test_case_outputs,
     "transpile": test_transpile,
     "dump": test_dump,
@@ -318,7 +373,7 @@ DEFAULT_CASE_GROUPS = [
     ["xmake_project"],
     ["init_project_run"],
     ["single_file_run"],
-    ["case_outputs", "transpile", "dump", "project_mode_requires_current_xmake", "init_project_structure"],
+    ["root_command", "case_outputs", "transpile", "dump", "project_mode_requires_current_xmake", "init_project_structure"],
 ]
 
 

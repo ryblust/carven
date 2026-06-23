@@ -70,7 +70,7 @@ Remove the current header-fallback special case:
 
 - remove `ImportItem::is_std_module`
 - remove `has_std_module`
-- remove `import_std` from command request types and the user-facing
+- remove `import_std` from command types and the user-facing
   `--import-std` flag
 - remove `carven.import_std` from the xmake rule and generated xmake templates
 - change codegen so every import item emits `import <module>;`
@@ -90,7 +90,7 @@ Update existing tests to make the new contract explicit:
 
 - parser no longer marks `std` imports specially
 - codegen verifies `import std;` is emitted verbatim
-- pipeline `transpile("import std; ...")` no longer emits the header preamble
+- transpiler `transpile("import std; ...")` no longer emits the header preamble
 - generated `carven init` and single-file xmake projects contain module policies
 - golden files change from include preambles to real `import std;`
 - E2E keeps using xmake and compiles at least one target with real `import std;`

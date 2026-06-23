@@ -4,52 +4,21 @@ import carven.common.source;
 import carven.frontend.ast;
 import std;
 
-constexpr auto map_type(std::string_view carven_type) noexcept -> std::string_view {
-    if (carven_type == "i8")    return "std::int8_t";
-    if (carven_type == "i16")   return "std::int16_t";
-    if (carven_type == "i32")   return "std::int32_t";
-    if (carven_type == "i64")   return "std::int64_t";
-    if (carven_type == "u8")    return "std::uint8_t";
-    if (carven_type == "u16")   return "std::uint16_t";
-    if (carven_type == "u32")   return "std::uint32_t";
-    if (carven_type == "u64")   return "std::uint64_t";
-    if (carven_type == "bool")  return "bool";
-    if (carven_type == "f32")   return "float";
-    if (carven_type == "f64")   return "double";
-    if (carven_type == "char")  return "char";
-    if (carven_type == "usize") return "std::size_t";
-
-    return carven_type;
-}
-
-constexpr auto generate_include_preamble(std::uint8_t standard) noexcept -> const char* {
-    if (standard >= 26) return
-        #include "headers/std26.inc"
-    ;
-    if (standard >= 23) return
-        #include "headers/std23.inc"
-    ;
-    if (standard >= 20) return
-        #include "headers/std20.inc"
-    ;
-    if (standard >= 17) return
-        #include "headers/std17.inc"
-    ;
-    return
-        #include "headers/base.inc"
-    ;
-}
+export struct CodegenOptions final {
+    std::uint8_t language_standard = 23;
+    bool import_std = false;
+};
 
 class Codegen final {
 public:
-    constexpr Codegen(std::string_view source, std::uint8_t standard, bool default_include_std) noexcept
-        : source(source), standard(standard), default_include_std(default_include_std) {
+    constexpr Codegen(std::string_view source, CodegenOptions options) noexcept
+        : source(source), options(options) {
         result.reserve(source.size() * 2);
     }
 
     constexpr auto generate(std::span<const TopLevelItem> items) noexcept -> std::string {
-        if (default_include_std || needs_standard_preamble(items)) {
-            result += generate_include_preamble(standard);
+        if (options.import_std || has_std_module(items) || needs_standard_preamble(items)) {
+            result += generate_include_preamble(options.language_standard);
             result += '\n';
         }
 
@@ -69,9 +38,54 @@ public:
 private:
     std::string result;
     std::string_view source;
-    std::uint8_t standard;
-    bool default_include_std;
+    CodegenOptions options;
     std::uint32_t match_counter = 0;
+
+    constexpr auto map_type(std::string_view carven_type) const noexcept -> std::string_view {
+        if (carven_type == "i8")    return "std::int8_t";
+        if (carven_type == "i16")   return "std::int16_t";
+        if (carven_type == "i32")   return "std::int32_t";
+        if (carven_type == "i64")   return "std::int64_t";
+        if (carven_type == "u8")    return "std::uint8_t";
+        if (carven_type == "u16")   return "std::uint16_t";
+        if (carven_type == "u32")   return "std::uint32_t";
+        if (carven_type == "u64")   return "std::uint64_t";
+        if (carven_type == "bool")  return "bool";
+        if (carven_type == "f32")   return "float";
+        if (carven_type == "f64")   return "double";
+        if (carven_type == "char")  return "char";
+        if (carven_type == "usize") return "std::size_t";
+
+        return carven_type;
+    }
+
+    constexpr auto generate_include_preamble(std::uint8_t standard) const noexcept -> const char* {
+        if (standard >= 26) return
+            #include "headers/std26.inc"
+        ;
+        if (standard >= 23) return
+            #include "headers/std23.inc"
+        ;
+        if (standard >= 20) return
+            #include "headers/std20.inc"
+        ;
+        if (standard >= 17) return
+            #include "headers/std17.inc"
+        ;
+        return
+            #include "headers/base.inc"
+        ;
+    }
+
+    constexpr auto has_std_module(std::span<const TopLevelItem> items) const noexcept -> bool {
+        for (const auto& item : items) {
+            if (const auto import = std::get_if<ImportItem>(&item); import != nullptr && import->is_std_module) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     constexpr auto padding(std::uint32_t indent) const noexcept -> std::string {
         return std::string(indent, ' ');
@@ -625,6 +639,6 @@ private:
     }
 };
 
-export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, std::uint8_t standard, bool default_include_std) noexcept -> std::string {
-    return Codegen(source, standard, default_include_std).generate(items);
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, CodegenOptions options) noexcept -> std::string {
+    return Codegen(source, options).generate(items);
 }

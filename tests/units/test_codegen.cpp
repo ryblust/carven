@@ -10,7 +10,10 @@ import std;
 
 static auto gen(std::string_view source_text, bool import_std = false, std::uint8_t standard = 23) noexcept -> std::string {
     const auto result = parse(tokenize(source_text), source_text);
-    return generate(result.items, source_text, standard, import_std);
+    return generate(result.items, source_text, {
+        .language_standard = standard,
+        .import_std = import_std
+    });
 }
 
 TEST_CASE("Codegen: include preamble and imports") {

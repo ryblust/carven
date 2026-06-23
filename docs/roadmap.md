@@ -2,7 +2,7 @@
 
 Implemented features are documented in [grammar.md](grammar.md).
 
-## Proposals
+## Language Proposals
 
 | Feature | Status |
 |---------|--------|
@@ -11,9 +11,22 @@ Implemented features are documented in [grammar.md](grammar.md).
 | Inline tests | [proposed](proposals/inline-test.md) |
 | Inline C++ blocks | [proposed](proposals/inline-cpp.md) |
 | Match `is` patterns | [proposed](proposals/match-is-patterns.md) |
-| Carven runtime header | [proposed](proposals/runtime-header.md) |
 | Lowering strategy | [proposed](proposals/lowering.md) |
 | True `import std` | [proposed](proposals/true-import-std.md) |
+
+## Implementation and Tooling Proposals
+
+| Topic | Status |
+|-------|--------|
+| Diagnostics | [phase 1 implemented](proposals/diagnostics.md) |
+| Private module fragments | [proposed](proposals/private-module-fragments.md) |
+
+## Distribution and Build Proposals
+
+| Topic | Status |
+|-------|--------|
+| Carven runtime header | [proposed](proposals/runtime-header.md) |
+| Distribution | [proposed](proposals/distribution.md) |
 
 ## Planned
 

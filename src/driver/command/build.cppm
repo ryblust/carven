@@ -1,33 +1,53 @@
 export module carven.driver.command.build;
 
-import carven.driver.pipeline;
-import carven.driver.request;
+import carven.common.process;
+import carven.driver.xmake;
 import std;
 
-inline auto source_file_exists(std::string_view path) noexcept -> bool {
-    auto error = std::error_code();
-    return std::filesystem::is_regular_file(std::filesystem::path(path), error) && !error;
+export struct BuildCommand final {
+    static constexpr auto name = "build";
+    static constexpr auto description = "Build an xmake project or target";
+    static constexpr auto help_message =
+        R"(carven build - Build an xmake project or target
+
+USAGE:
+    carven build [target]
+
+No command-specific options.
+)";
+
+    std::optional<std::string_view> target;
+};
+
+auto build(std::optional<std::string_view> target) noexcept -> int {
+    const auto project_dir = local_xmake_project_dir();
+
+    if (!project_dir) {
+        std::println("carven build: error: cannot find xmake.lua in current directory");
+        return 1;
+    }
+
+    auto args = std::vector<std::string>();
+    args.reserve(target ? 5 : 4);
+    args.emplace_back("xmake");
+    args.emplace_back("build");
+    args.emplace_back("-F");
+    args.emplace_back("xmake.lua");
+
+    if (target) {
+        args.emplace_back(*target);
+    }
+
+    const auto exit_code = spawn(args, *project_dir);
+
+    if (exit_code < 0) {
+        std::println("carven build: error: cannot start xmake");
+        return 1;
+    }
+
+    return exit_code;
 }
 
-export auto execute(const BuildRequest& request) noexcept -> int {
-    const auto options = TranspileOptions {
-        .language_standard = request.language_standard,
-        .import_std = request.import_std,
-    };
-
-    return std::visit([&](const auto& mode) noexcept -> int {
-        using Mode = std::remove_cvref_t<decltype(mode)>;
-        if constexpr (std::same_as<Mode, SingleFileBuild>) {
-            if (!source_file_exists(mode.source_file)) {
-                std::println("carven build: error: cannot read '{}'", mode.source_file);
-                return 1;
-            }
-            return build_single_file({
-                .source_file = mode.source_file,
-                .options = options,
-            });
-        } else {
-            return build_project(mode.target);
-        }
-    }, request.mode);
+export auto execute(const BuildCommand& command) noexcept -> int {
+    return build(command.target);
 }

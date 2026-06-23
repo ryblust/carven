@@ -1,6 +1,6 @@
 export module carven.common.source;
 
-import carven.common.filemap;
+import carven.common.filesystem;
 import std;
 
 export template<typename ... Ts>
@@ -38,8 +38,8 @@ public:
     explicit constexpr LineOffsets(std::string_view content) noexcept {
         offsets.reserve(content.size() / 40 + 1);
         offsets.push_back(0);
-
         std::size_t pos = 0;
+
         while ((pos = content.find('\n', pos)) != std::string_view::npos) {
             offsets.push_back(static_cast<std::uint32_t>(pos + 1));
             ++pos;
@@ -60,8 +60,9 @@ private:
 };
 
 export constexpr auto slice(std::string_view text, Span span) noexcept -> std::string_view {
-    if (span.start > span.end || span.end > text.size()) return {};
-    return text.substr(span.start, span.end - span.start);
+    return (span.start > span.end || span.end > text.size())
+        ? std::string_view{}
+        : std::string_view(text.begin() + span.start, span.end - span.start);
 }
 
 export class SourceFile final {

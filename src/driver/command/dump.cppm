@@ -1,13 +1,31 @@
 export module carven.driver.command.dump;
 
 import carven.common.source;
-import carven.driver.report;
-import carven.driver.request;
+import carven.driver.diagnostics;
 import carven.frontend.token;
 import carven.frontend.lexer;
 import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
+
+export struct DumpCommand final {
+    static constexpr auto name = "dump";
+    static constexpr auto description = "Dump token stream and AST";
+    static constexpr auto help_message =
+        R"(carven dump - Dump token stream and AST
+
+USAGE:
+    carven dump [options...] <source-file>
+
+OPTIONS:
+    --only-tokens      Show only token stream
+    --only-ast         Show only AST
+)";
+
+    std::string_view source_file;
+    bool only_tokens = false;
+    bool only_ast = false;
+};
 
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Expr& expr, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
@@ -16,6 +34,7 @@ auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> 
 
 auto dump(const Type* type, std::string_view source) noexcept -> std::string {
     if (type == nullptr) return {};
+
     switch (type->kind) {
         case TypeKind::Name:
             return std::string(slice(source, static_cast<const NameType*>(type)->span));
@@ -24,6 +43,7 @@ auto dump(const Type* type, std::string_view source) noexcept -> std::string {
             return std::format("[{}; {}]", slice(source, arr->elem_type), slice(source, arr->size));
         }
     }
+
     return {};
 }
 
@@ -216,15 +236,20 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
     switch (stmt.kind) {
         case StmtKind::Block: {
             auto result = std::format("{}Block {{\n", padding);
+
             for (const auto body_stmt : static_cast<const BlockStmt*>(&stmt)->statements) {
                 result += dump(*body_stmt, source, indent + 2);
             }
+
             return std::format("{}{}}}\n", result, padding);
         }
+
         case StmtKind::ExprStmt: {
             return std::format("{}{};\n", padding, dump(*static_cast<const ExprStmt*>(&stmt)->expr, source));
         }
+
         case StmtKind::Empty: return padding + ";\n";
+
         case StmtKind::VarDecl: {
             const auto s = static_cast<const VarDecl*>(&stmt);
             auto result = std::format("{}{} {}{}",
@@ -233,22 +258,29 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                 slice(source, s->name),
                 s->type != nullptr ? std::format(": {}", dump(s->type, source)) : ""
             );
+
             if (s->init != nullptr) {
                 result += " = ";
                 result += dump(*s->init, source);
             }
+
             return result += ";\n";
         }
+
         case StmtKind::Return: {
             const auto s = static_cast<const ReturnStmt*>(&stmt);
+
             if (s->value != nullptr) {
                 return std::format("{}return {};\n", padding, dump(*s->value, source));
             }
+
             return padding + "return;\n";
         }
+
         case StmtKind::While: {
             const auto s = static_cast<const WhileStmt*>(&stmt);
             auto result = std::format("{}while ({})", padding, dump(*s->condition, source, indent));
+
             if (s->body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto body_stmt : static_cast<const BlockStmt*>(s->body)->statements) {
@@ -259,11 +291,14 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                 result += '\n';
                 result += dump(*s->body, source, indent + 2);
             }
+
             return result;
         }
+
         case StmtKind::For: {
             const auto s = static_cast<const ForStmt*>(&stmt);
             auto init_str = std::string();
+
             std::visit(Overloaded {
                 [&](VarDecl* d) noexcept {
                     if (d) {
@@ -282,9 +317,11 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                     if (es) init_str = dump(*es->expr, source);
                 }
             }, s->init);
+
             const auto condition = s->condition != nullptr ? dump(*s->condition, source) : std::string();
             const auto step = s->step != nullptr ? dump(*s->step, source) : std::string();
             auto result = std::format("{}for ({}; {}; {})", padding, init_str, condition, step);
+
             if (s->body->kind == StmtKind::Block) {
                 result += " {\n";
                 for (const auto body_stmt : static_cast<const BlockStmt*>(s->body)->statements) {
@@ -295,6 +332,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                 result += '\n';
                 result += dump(*s->body, source, indent + 2);
             }
+
             return result;
         }
     }
@@ -311,35 +349,43 @@ auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> 
     return result;
 }
 
-export auto execute(const DumpRequest& request) noexcept -> int {
-    auto src = SourceFile::from_file(request.source_file);
+auto dump(const DumpCommand& command) noexcept -> int {
+    const auto src = SourceFile::from_file(command.source_file);
     if (!src) {
-        std::println("carven dump: error: cannot read '{}'", request.source_file);
+        std::println("carven dump: error: cannot read '{}'", command.source_file);
         return 1;
     }
 
     const auto text = src->text();
     const auto tokens = tokenize(text);
 
-    if (!request.only_ast) {
+    if (!command.only_ast) {
         const auto line_offsets = LineOffsets(text);
+
         for (const auto token : tokens) {
-            const auto pos = line_offsets.location(token.span.start);
-            std::println("{:>4}:{:<2}    {:<20}  {}",
-                pos.line, pos.column, std::format("{}", token.kind), slice(text, token.span)
-            );
+            const auto [line, column] = line_offsets.location(token.span.start);
+            std::println("{:>4}:{:<2}    {:<20}  {}", line, column, std::format("{}", token.kind), slice(text, token.span));
         }
-        if (!request.only_tokens) std::println();
+
+        if (!command.only_tokens) {
+            std::println();
+        }
     }
 
-    if (!request.only_tokens) {
+    if (!command.only_tokens) {
         const auto parse_result = parse(tokens, text);
+
         if (!parse_result.errors.empty()) {
-            report_errors(parse_result.errors, text, request.source_file);
+            report_errors(parse_result.errors, text, command.source_file);
             return 1;
         }
+
         std::print("{}", dump(parse_result, text));
     }
 
     return 0;
+}
+
+export auto execute(const DumpCommand& command) noexcept -> int {
+    return dump(command);
 }

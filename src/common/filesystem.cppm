@@ -11,7 +11,7 @@ module;
     #include <unistd.h>
 #endif
 
-export module carven.common.filemap;
+export module carven.common.filesystem;
 
 import std;
 
@@ -81,4 +81,9 @@ export auto unmap_file(void* data, std::size_t size) noexcept -> void {
 #else
     if (data) munmap(data, size);
 #endif
+}
+
+export auto write_file(const std::filesystem::path& path, std::string_view content) noexcept -> bool {
+    auto file = std::ofstream(path, std::ios::binary | std::ios::trunc);
+    return file.is_open() && file.write(content.data(), content.size()).good();
 }

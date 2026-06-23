@@ -1,4 +1,4 @@
-export module carven.driver.report;
+export module carven.driver.diagnostics;
 
 import carven.common.source;
 import carven.frontend.parser;
