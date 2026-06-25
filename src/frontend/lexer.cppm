@@ -171,6 +171,7 @@ private:
     constexpr auto number_literal() noexcept -> Token {
         if (source[start_pos] == '0') {
             const auto second = current();
+
             if (second == 'x' || second == 'X') {
                 advance();
                 while (is_hex_digit(current())) {
@@ -178,6 +179,7 @@ private:
                 }
                 return token(TokenKind::NumberLiteral);
             }
+
             if (second == 'b' || second == 'B') {
                 advance();
                 while (is_binary_digit(current())) {
@@ -185,6 +187,7 @@ private:
                 }
                 return token(TokenKind::NumberLiteral);
             }
+
             if (second == 'o' || second == 'O') {
                 advance();
                 while (is_octal_digit(current())) {
@@ -245,13 +248,12 @@ private:
             ++chars;
         }
 
-        if (eof() || current() == '\n') {
-            return token(TokenKind::Error);
+        const auto closed = !eof() && current() == '\'';
+        if (closed) {
+            advance();
         }
 
-        advance();
-
-        if (chars == 0 || chars > 1 || !valid) {
+        if (!closed || chars == 0 || chars > 1 || !valid) {
             return token(TokenKind::Error);
         }
 
@@ -259,6 +261,8 @@ private:
     }
 
     constexpr auto string_literal() noexcept -> Token {
+        auto valid = true;
+
         while (!eof() && current() != '"' && current() != '\n') {
             if (current() == '\\') {
                 advance();
@@ -268,7 +272,7 @@ private:
                 }
 
                 if (!is_valid_escape(current())) {
-                    return token(TokenKind::Error);
+                    valid = false;
                 }
 
                 advance();
@@ -281,7 +285,7 @@ private:
             advance();
         }
 
-        return token(TokenKind::StringLiteral);
+        return token(valid ? TokenKind::StringLiteral : TokenKind::Error);
     }
 
     constexpr auto skip_meaningless() noexcept -> void {

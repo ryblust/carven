@@ -8,6 +8,8 @@ stay explicit, and project builds remain ordinary xmake projects.
 
 Build Carven from source:
 
+Carven requires the LLVM toolchain (macOS system clang is not supported; on Windows use clang-cl from Visual Studio). GCC and MSVC are not supported.
+
 ```shell
 xmake f --toolchain=llvm # macOS and Linux
 xmake f --toolchain=clang-cl[llvm] # Windows

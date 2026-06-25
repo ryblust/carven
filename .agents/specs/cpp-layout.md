@@ -22,6 +22,12 @@ can feel the logic move.
 ## Reading Rhythm
 - Use blank lines as semantic paragraph boundaries, not decoration.
 - Keep tightly coupled statements together.
+- Keep one state transition tight when its steps are mechanical parts of the
+  same action, such as consume prefix, scan characters, then return the token.
+- Put a blank line between alternative branches when each branch handles a
+  distinct spelling, mode, or result.
+- Put a blank line after a branch setup when the following block switches from
+  setup to repeated scanning, validation, recovery, or construction.
 - Avoid more than one consecutive blank line.
 
 ## Control Flow
@@ -44,10 +50,3 @@ can feel the logic move.
   can scan.
 - Prefer multi-line designated initializers for objects with named fields.
 - Keep obvious calls compact.
-
-## Parser Pilot
-- `src/frontend/parser.cppm` is the first style sample for this guide.
-- Parser functions should use layout to show the parser's local semantic
-  density.
-- Give multi-stage grammar and recovery paths room to breathe.
-- Keep short mechanical parser steps tight.

@@ -91,9 +91,14 @@ TEST_CASE("Lexer: char literals") {
         CHECK_EQ(tokenize("''")[0].kind, TokenKind::Error);       // empty
         CHECK_EQ(tokenize("'abc'")[0].kind, TokenKind::Error);    // multi-char
         CHECK_EQ(tokenize("'\\q'")[0].kind, TokenKind::Error);    // bad escape
-        const auto t = tokenize("'a\nb");                          // unterminated
+    }
+
+    SUBCASE("unterminated char stops at newline") {
+        const auto t = tokenize("'a\nb");
         CHECK_EQ(t.size(), 2u);
         CHECK_EQ(t[0].kind, TokenKind::Error);
+        CHECK_EQ(t[0].span.start, 0u);
+        CHECK_EQ(t[0].span.end, 2u);
         CHECK_EQ(t[1].kind, TokenKind::Identifier);
     }
 }
@@ -106,9 +111,12 @@ TEST_CASE("Lexer: string literals") {
         CHECK_EQ(tokenize("\"path\\\\to\\\\file\"")[0].kind, TokenKind::StringLiteral);
     }
     SUBCASE("unterminated string stops at newline") {
-        const auto tokens = tokenize("\"hello\nworld\"");
-        CHECK(tokens.size() >= 1);
+        const auto tokens = tokenize("\"hello\nworld");
+        CHECK_EQ(tokens.size(), 2u);
         CHECK_EQ(tokens[0].kind, TokenKind::StringLiteral);
+        CHECK_EQ(tokens[0].span.start, 0u);
+        CHECK_EQ(tokens[0].span.end, 6u);
+        CHECK_EQ(tokens[1].kind, TokenKind::Identifier);
     }
 }
 
@@ -278,7 +286,13 @@ TEST_CASE("Lexer: string escape sequences") {
     }
 
     SUBCASE("invalid escapes") {
-        CHECK_EQ(tokenize("\"\\x\"")[0].kind, TokenKind::Error);
+        const auto tokens = tokenize("\"\\x\" tail");
+        CHECK_EQ(tokens.size(), 2u);
+        CHECK_EQ(tokens[0].kind, TokenKind::Error);
+        CHECK_EQ(tokens[0].span.start, 0u);
+        CHECK_EQ(tokens[0].span.end, 4u);
+        CHECK_EQ(tokens[1].kind, TokenKind::Identifier);
+
         CHECK_EQ(tokenize("\"\\z\"")[0].kind, TokenKind::Error);
         CHECK_EQ(tokenize("\"\\g\"")[0].kind, TokenKind::Error);
     }
