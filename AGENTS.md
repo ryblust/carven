@@ -26,21 +26,17 @@ multiple e2e runner processes in parallel because they share
 
 When compilation fails with an unexpected error, suspect a stale BMI cache — delete `build/` and rebuild first.
 
-## Context Boundaries
+## Context Routing
 
 - Do not preload broad docs for ordinary tasks.
-- Do not read `.agents/specs/` unless the task is an explicit `spec-review`,
-  spec compliance review, or pre-commit spec pass.
-- Do not read `docs/grammar.md` unless the task touches syntax, parsing,
-  semantics, lowering, generated C++ output, or language feature support.
 - Treat ordinary `review` as code review, not `spec-review`.
-
-## Engineering References
-
+- Read relevant `.agents/specs/` only for explicit spec review, spec compliance,
+  pre-commit checks, C++ design, formatting, layout/readability, or
+  project-wide style work.
 - Read `docs/implementation.md` when changing module boundaries, public APIs,
   driver/core layering, runtime integration, or test strategy.
-- Read `docs/grammar.md` only when changing syntax, parsing, semantics,
-  lowering, generated C++ output, or language feature support.
+- Read `docs/grammar.md` when changing syntax, parsing, semantics, lowering,
+  generated C++ output, or language feature support.
 
 ## Commits
 

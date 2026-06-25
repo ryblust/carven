@@ -47,7 +47,9 @@ public:
     }
 
     constexpr auto location(std::uint32_t offset) const noexcept -> SourceLocation {
-        if (offsets.empty()) return { .line = 1, .column = 1 };
+        if (offsets.empty()) {
+            return { .line = 1, .column = 1 };
+        }
 
         const auto iter = std::ranges::upper_bound(offsets, offset);
         const auto index = static_cast<std::uint32_t>(iter - offsets.begin() - 1);
@@ -72,7 +74,10 @@ public:
 
     [[nodiscard]] static auto from_file(std::string_view fpath) noexcept -> std::optional<SourceFile> {
         const auto mapped = map_file(fpath);
-        if (!mapped) return std::nullopt;
+
+        if (!mapped) {
+            return std::nullopt;
+        }
 
         return SourceFile(fpath, mapped->first, mapped->second);
     }
@@ -95,7 +100,9 @@ public:
     }
 
     constexpr auto operator=(SourceFile&& other) noexcept -> SourceFile& {
-        if (this == &other) return *this;
+        if (this == &other) {
+            return *this;
+        }
 
         if !consteval {
             if (is_mmaped) {
@@ -137,7 +144,10 @@ public:
     constexpr auto filepath() const noexcept -> std::string_view { return fpath; }
 
     constexpr auto text() const noexcept -> std::string_view {
-        if consteval { return source; }
+        if consteval {
+            return source;
+        }
+
         return is_mmaped
             ? std::string_view(mmap_data ? static_cast<const char*>(mmap_data) : "", mmap_size)
             : source;

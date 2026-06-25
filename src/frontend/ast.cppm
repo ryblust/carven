@@ -10,11 +10,17 @@ export enum class UnaryOp : std::uint32_t {
 constexpr auto to_string(UnaryOp op) noexcept -> const char* {
     switch (op) {
         using enum UnaryOp;
-        case Neg:        return "-";   case BitNot:     return "~";
-        case LogicalNot: return "!";   case PreInc:     return "++";
-        case PreDec:     return "--";  case PostInc:    return "++";
-        case PostDec:    return "--";  case AddressOf:  return "&";
-        case Deref:      return "*";   default:         return "?";
+
+        case Neg:        return "-";
+        case BitNot:     return "~";
+        case LogicalNot: return "!";
+        case PreInc:     return "++";
+        case PreDec:     return "--";
+        case PostInc:    return "++";
+        case PostDec:    return "--";
+        case AddressOf:  return "&";
+        case Deref:      return "*";
+        default:         return "?";
     }
 }
 
@@ -33,11 +39,26 @@ export enum class BinOp : std::uint32_t {
 constexpr auto to_string(BinOp op) noexcept -> const char* {
     switch (op) {
         using enum BinOp;
-        case Add: return "+";  case Sub:    return "-";  case Mul:   return "*";  case Div:    return "/";
-        case Mod: return "%";  case BitAnd: return "&";  case BitOr: return "|";  case BitXor: return "^";
-        case Shl: return "<<"; case Shr:    return ">>"; case Eq:    return "=="; case Ne:     return "!=";
-        case Lt:  return "<";  case Le:     return "<="; case Gt:    return ">";  case Ge:     return ">=";
-        case LogicalAnd: return "&&"; case LogicalOr: return "||"; default: return "?";
+
+        case Add:        return "+";
+        case Sub:        return "-";
+        case Mul:        return "*";
+        case Div:        return "/";
+        case Mod:        return "%";
+        case BitAnd:     return "&";
+        case BitOr:      return "|";
+        case BitXor:     return "^";
+        case Shl:        return "<<";
+        case Shr:        return ">>";
+        case Eq:         return "==";
+        case Ne:         return "!=";
+        case Lt:         return "<";
+        case Le:         return "<=";
+        case Gt:         return ">";
+        case Ge:         return ">=";
+        case LogicalAnd: return "&&";
+        case LogicalOr:  return "||";
+        default:         return "?";
     }
 }
 

@@ -9,6 +9,12 @@ export struct CodegenOptions final {
     bool import_std = false;
 };
 
+export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, CodegenOptions options) noexcept -> std::string;
+
+module :private;
+
+namespace {
+
 class Codegen final {
 public:
     constexpr Codegen(std::string_view source, CodegenOptions options) noexcept
@@ -29,6 +35,7 @@ public:
                 [&](const StructItem&   it) noexcept { generate_struct(it);   },
                 [&](const FunctionItem& it) noexcept { generate_function(it); },
             }, item);
+
             result += "\n\n";
         }
 
@@ -114,7 +121,9 @@ private:
     }
 
     constexpr auto generate_type(const Type* type) noexcept -> void {
-        if (type == nullptr) return;
+        if (type == nullptr) {
+            return;
+        }
 
         switch (type->kind) {
             case TypeKind::Name:
@@ -125,9 +134,11 @@ private:
                 result += "std::array<";
                 result += map_type(slice(source, arr->elem_type));
                 result += ", ";
+
                 const auto size = slice(source, arr->size);
                 const auto first = size.find_first_not_of(" \t\n\r");
                 const auto last  = size.find_last_not_of(" \t\n\r");
+
                 result += (first != std::string_view::npos) ? size.substr(first, last - first + 1) : size;
                 result += '>';
                 break;
@@ -143,6 +154,7 @@ private:
             result += name;
             result += ";\n";
         }
+
         if (item.using_wildcard) {
             result += "using namespace ";
             result += name;
@@ -161,10 +173,12 @@ private:
     constexpr auto generate_enum(const EnumItem& item) noexcept -> void {
         result += "enum class ";
         result += slice(source, item.name);
+
         if (item.size != nullptr) {
             result += " : ";
             generate_type(item.size);
         }
+
         result += " {\n";
 
         for (const auto field : item.fields) {
@@ -230,14 +244,19 @@ private:
         result += '(';
 
         for (auto i = 0uz; i < item.params.size(); ++i) {
-            if (i > 0) result += ", ";
+            if (i > 0) {
+                result += ", ";
+            }
+
             const auto p = item.params[i];
+
             if (p.type == nullptr) {
                 result += "auto ";
             } else {
                 generate_type(p.type);
                 result += ' ';
             }
+
             result += slice(source, p.name);
         }
 
@@ -304,6 +323,7 @@ private:
             }
             case StmtKind::ExprStmt: {
                 const auto s = static_cast<const ExprStmt*>(&stmt);
+
                 if (is_control_expr(*s->expr)) {
                     generate_control_stmt(*s->expr, indent);
                 } else {
@@ -326,10 +346,12 @@ private:
                 const auto s = static_cast<const ReturnStmt*>(&stmt);
                 result += pad;
                 result += "return";
+
                 if (s->value != nullptr) {
                     result += ' ';
                     generate_expr(*s->value, indent);
                 }
+
                 result += ';';
                 return;
             }
@@ -339,6 +361,7 @@ private:
                 result += "while (";
                 generate_expr(*s->condition, indent);
                 result += ')';
+
                 if (s->body->kind == StmtKind::Block) {
                     result += " {\n";
                     generate_block_body(*static_cast<const BlockStmt*>(s->body), indent + 4);
@@ -354,19 +377,34 @@ private:
                 const auto s = static_cast<const ForStmt*>(&stmt);
                 result += pad;
                 result += "for (";
+
                 std::visit(Overloaded {
                     [&](VarDecl* d) noexcept {
-                        if (d != nullptr) generate_var_decl(*d);
+                        if (d != nullptr) {
+                            generate_var_decl(*d);
+                        }
                     },
                     [&](ExprStmt* es) noexcept {
-                        if (es != nullptr) generate_expr(*es->expr, 0);
+                        if (es != nullptr) {
+                            generate_expr(*es->expr, 0);
+                        }
                     }
                 }, s->init);
+
                 result += "; ";
-                if (s->condition != nullptr) generate_expr(*s->condition, 0);
+
+                if (s->condition != nullptr) {
+                    generate_expr(*s->condition, 0);
+                }
+
                 result += "; ";
-                if (s->step != nullptr) generate_expr(*s->step, 0);
+
+                if (s->step != nullptr) {
+                    generate_expr(*s->step, 0);
+                }
+
                 result += ')';
+
                 if (s->body->kind == StmtKind::Block) {
                     result += " {\n";
                     generate_block_body(*static_cast<const BlockStmt*>(s->body), indent + 4);
@@ -424,10 +462,15 @@ private:
                 const auto e = static_cast<const CallExpr*>(&expr);
                 generate_expr(*e->callee, indent);
                 result += '(';
+
                 for (auto i = 0uz; i < e->args.size(); ++i) {
-                    if (i > 0) result += ", ";
+                    if (i > 0) {
+                        result += ", ";
+                    }
+
                     generate_expr(*e->args[i], indent);
                 }
+
                 result += ')';
                 return;
             }
@@ -481,10 +524,15 @@ private:
             case ExprKind::Array: {
                 const auto e = static_cast<const ArrayExpr*>(&expr);
                 result += "std::array { ";
+
                 for (auto i = 0uz; i < e->elements.size(); ++i) {
-                    if (i > 0) result += ", ";
+                    if (i > 0) {
+                        result += ", ";
+                    }
+
                     generate_expr(*e->elements[i], indent);
                 }
+
                 result += " }";
                 return;
             }
@@ -530,7 +578,9 @@ private:
     }
 
     constexpr auto generate_value_branch(const BlockStmt& block, std::uint32_t indent) noexcept -> void {
-        if (block.statements.empty()) return;
+        if (block.statements.empty()) {
+            return;
+        }
 
         for (auto i = 0uz; i + 1 < block.statements.size(); ++i) {
             generate_stmt(*block.statements[i], indent);
@@ -556,8 +606,12 @@ private:
 
     constexpr auto generate_match_condition(const MatchArm& arm, std::string_view value_name, std::uint32_t indent) noexcept -> void {
         const auto is_type_arm = arm_is_type(arm);
+
         for (auto i = 0uz; i < arm.patterns.size(); ++i) {
-            if (i > 0) result += " || ";
+            if (i > 0) {
+                result += " || ";
+            }
+
             if (is_type_arm) {
                 result += "std::is_same_v<std::remove_cvref_t<decltype(";
                 result += value_name;
@@ -573,7 +627,9 @@ private:
     }
 
     constexpr auto generate_match_arm_prefix(const MatchArm& arm, std::string_view value_name, std::uint32_t indent, bool first) noexcept -> void {
-        if (!first) result += " else ";
+        if (!first) {
+            result += " else ";
+        }
 
         if (arm.is_wildcard) {
             result += "{\n";
@@ -639,6 +695,8 @@ private:
     }
 };
 
-export constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, CodegenOptions options) noexcept -> std::string {
+}
+
+constexpr auto generate(std::span<const TopLevelItem> items, std::string_view source, CodegenOptions options) noexcept -> std::string {
     return Codegen(source, options).generate(items);
 }

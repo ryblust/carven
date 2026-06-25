@@ -27,13 +27,21 @@ OPTIONS:
     bool only_ast = false;
 };
 
+export auto execute(const DumpCommand& command) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Expr& expr, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent = 0) noexcept -> std::string;
 auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> std::string;
 
 auto dump(const Type* type, std::string_view source) noexcept -> std::string {
-    if (type == nullptr) return {};
+    if (type == nullptr) {
+        return {};
+    }
 
     switch (type->kind) {
         case TypeKind::Name:
@@ -58,7 +66,10 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
                 result += " { ";
 
                 for (auto i = 0uz; i < it.using_decls.size(); ++i) {
-                    if (i > 0) result += ", ";
+                    if (i > 0) {
+                        result += ", ";
+                    }
+
                     result += slice(source, it.using_decls[i]);
                 }
 
@@ -75,7 +86,10 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
             );
 
             for (auto i = 0uz; i < it.fields.size(); ++i) {
-                if (i > 0) result += ", ";
+                if (i > 0) {
+                    result += ", ";
+                }
+
                 result += slice(source, it.fields[i]);
             }
 
@@ -99,7 +113,10 @@ auto dump(const TopLevelItem& item, std::string_view source, std::uint32_t inden
             auto result = std::format("{}fn {}(", padding, slice(source, it.name));
 
             for (auto i = 0uz; i < it.params.size(); ++i) {
-                if (i > 0) result += ", ";
+                if (i > 0) {
+                    result += ", ";
+                }
+
                 std::format_to(
                     std::back_inserter(result),
                     "{}: {}",
@@ -145,10 +162,12 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
         case ExprKind::Call: {
             const auto e = static_cast<const CallExpr*>(&expr);
             auto result = std::format("Call({}", dump(*e->callee, source));
+
             for (const auto arg : e->args) {
                 result += ' ';
                 result += dump(*arg, source);
             }
+
             return result += ')';
         }
         case ExprKind::Index: {
@@ -184,11 +203,14 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
             }
 
             std::format_to(std::back_inserter(result), "{}}}", padding);
+
             if (e->else_branch) {
                 result += " else {\n";
+
                 for (const auto stmt : e->else_branch->statements) {
                     result += dump(*stmt, source, indent + 2);
                 }
+
                 std::format_to(std::back_inserter(result), "{}}}", padding);
             }
 
@@ -197,10 +219,15 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
         case ExprKind::Array: {
             const auto e = static_cast<const ArrayExpr*>(&expr);
             auto result = std::string("[");
+
             for (auto i = 0uz; i < e->elements.size(); ++i) {
-                if (i > 0) result += ", ";
+                if (i > 0) {
+                    result += ", ";
+                }
+
                 result += dump(*e->elements[i], source);
             }
+
             result += ']';
             return result;
         }
@@ -208,22 +235,31 @@ auto dump(const Expr& expr, std::string_view source, std::uint32_t indent) noexc
             const auto e = static_cast<const MatchExpr*>(&expr);
             const auto padding = std::string(indent, ' ');
             auto result = std::format("match {} {{\n", dump(*e->value, source));
+
             for (const auto& arm : e->arms) {
                 result += padding + "  ";
+
                 if (arm.is_wildcard) {
                     result += "_ => {\n";
                 } else {
                     for (auto j = 0uz; j < arm.patterns.size(); ++j) {
-                        if (j > 0) result += " | ";
+                        if (j > 0) {
+                            result += " | ";
+                        }
+
                         result += dump(*arm.patterns[j], source);
                     }
+
                     result += " => {\n";
                 }
+
                 for (const auto stmt : arm.body->statements) {
                     result += dump(*stmt, source, indent + 4);
                 }
+
                 result += padding + "  }\n";
             }
+
             std::format_to(std::back_inserter(result), "{}}}", padding);
             return result;
         }
@@ -307,6 +343,7 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                             slice(source, d->name),
                             d->type != nullptr ? std::format(": {}", dump(d->type, source)) : ""
                         );
+
                         if (d->init != nullptr) {
                             init_str += " = ";
                             init_str += dump(*d->init, source);
@@ -314,7 +351,9 @@ auto dump(const Stmt& stmt, std::string_view source, std::uint32_t indent) noexc
                     }
                 },
                 [&](ExprStmt* es) noexcept {
-                    if (es) init_str = dump(*es->expr, source);
+                    if (es) {
+                        init_str = dump(*es->expr, source);
+                    }
                 }
             }, s->init);
 
@@ -351,6 +390,7 @@ auto dump(const ParseResult& parse_result, std::string_view source) noexcept -> 
 
 auto dump(const DumpCommand& command) noexcept -> int {
     const auto src = SourceFile::from_file(command.source_file);
+
     if (!src) {
         std::println("carven dump: error: cannot read '{}'", command.source_file);
         return 1;
@@ -386,6 +426,8 @@ auto dump(const DumpCommand& command) noexcept -> int {
     return 0;
 }
 
-export auto execute(const DumpCommand& command) noexcept -> int {
+}
+
+auto execute(const DumpCommand& command) noexcept -> int {
     return dump(command);
 }

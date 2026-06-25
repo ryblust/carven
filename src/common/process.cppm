@@ -14,20 +14,37 @@ export module carven.common.process;
 
 import std;
 
+export auto spawn(std::span<const std::string> args, std::string_view cwd) noexcept -> int;
+export auto spawn_capture(std::span<const std::string> args, std::string_view cwd) noexcept -> std::pair<int, std::optional<std::string>>;
+
+module :private;
+
 #if defined(_WIN32)
+namespace {
+
 auto build_windows_command(std::span<const std::string> args) noexcept -> std::string {
     auto command = std::string();
+
     for (auto i = 0uz; i < args.size(); ++i) {
-        if (i > 0) command += ' ';
+        if (i > 0) {
+            command += ' ';
+        }
+
         const auto needs_quotes = args[i].contains(' ') || args[i].contains('\t');
         command += needs_quotes ? std::format("\"{}\"", args[i]) : args[i];
     }
+
     return command;
+}
+
 }
 #endif
 
-export auto spawn(std::span<const std::string> args, std::string_view cwd) noexcept -> int {
-    if (args.empty()) return -1;
+auto spawn(std::span<const std::string> args, std::string_view cwd) noexcept -> int {
+    if (args.empty()) {
+        return -1;
+    }
+
     const auto cwd_text = std::string(cwd);
 
 #if defined(_WIN32)
@@ -55,24 +72,30 @@ export auto spawn(std::span<const std::string> args, std::string_view cwd) noexc
     for (const auto& arg : args) {
         argv.emplace_back(const_cast<char*>(arg.c_str()));
     }
+
     argv.emplace_back(nullptr);
 
     int exec_pipe[2];
-    if (pipe(exec_pipe) < 0) return -1;
+    if (pipe(exec_pipe) < 0) {
+        return -1;
+    }
 
     const auto pid = fork();
     if (pid < 0) {
-        close(exec_pipe[0]); close(exec_pipe[1]);
+        close(exec_pipe[0]);
+        close(exec_pipe[1]);
         return -1;
     }
 
     if (pid == 0) {
         close(exec_pipe[0]);
+
         if (chdir(cwd_text.c_str()) < 0) {
             write(exec_pipe[1], "x", 1);
             close(exec_pipe[1]);
             _exit(0);
         }
+
         execvp(argv[0], argv.data());
         write(exec_pipe[1], "x", 1);
         close(exec_pipe[1]);
@@ -82,27 +105,42 @@ export auto spawn(std::span<const std::string> args, std::string_view cwd) noexc
     close(exec_pipe[1]);
 
     char exec_failed;
+
     if (read(exec_pipe[0], &exec_failed, 1) > 0) {
         close(exec_pipe[0]);
         waitpid(pid, nullptr, 0);
         return -1;
     }
+
     close(exec_pipe[0]);
 
     auto status = 0;
+
     while (waitpid(pid, &status, 0) < 0) {
-        if (errno == EINTR) continue;
+        if (errno == EINTR) {
+            continue;
+        }
+
         return -1;
     }
 
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+
     return 1;
 #endif
 }
 
-export auto spawn_capture(std::span<const std::string> args, std::string_view cwd) noexcept -> std::pair<int, std::optional<std::string>> {
-    if (args.empty()) return { -1, std::nullopt };
+auto spawn_capture(std::span<const std::string> args, std::string_view cwd) noexcept -> std::pair<int, std::optional<std::string>> {
+    if (args.empty()) {
+        return { -1, std::nullopt };
+    }
+
     const auto cwd_text = std::string(cwd);
 
 #if defined(_WIN32)
@@ -114,9 +152,14 @@ export auto spawn_capture(std::span<const std::string> args, std::string_view cw
 
     auto stdout_read = HANDLE{};
     auto stdout_write = HANDLE{};
-    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) return { -1, std::nullopt };
+
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        return { -1, std::nullopt };
+    }
+
     if (!SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0)) {
-        CloseHandle(stdout_read); CloseHandle(stdout_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
         return { -1, std::nullopt };
     }
 
@@ -127,8 +170,10 @@ export auto spawn_capture(std::span<const std::string> args, std::string_view cw
     si.dwFlags |= STARTF_USESTDHANDLES;
 
     auto pi = PROCESS_INFORMATION{};
+
     if (!CreateProcessA(nullptr, command.data(), nullptr, nullptr, TRUE, 0, nullptr, cwd_text.c_str(), &si, &pi)) {
-        CloseHandle(stdout_read); CloseHandle(stdout_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
         return { -1, std::nullopt };
     }
 
@@ -151,8 +196,12 @@ export auto spawn_capture(std::span<const std::string> args, std::string_view cw
 
     auto output = std::string();
     output.reserve(raw.size());
+
     for (auto i = 0uz; i < raw.size(); ++i) {
-        if (raw[i] == '\r' && i + 1 < raw.size() && raw[i + 1] == '\n') continue;
+        if (raw[i] == '\r' && i + 1 < raw.size() && raw[i + 1] == '\n') {
+            continue;
+        }
+
         output += raw[i];
     }
 
@@ -160,26 +209,33 @@ export auto spawn_capture(std::span<const std::string> args, std::string_view cw
 #else
     auto argv = std::vector<char*>();
     argv.reserve(args.size() + 1);
+
     for (const auto& arg : args) {
         argv.emplace_back(const_cast<char*>(arg.c_str()));
     }
+
     argv.emplace_back(nullptr);
 
     int stdout_pipe[2];
-    if (pipe(stdout_pipe) < 0) return { -1, std::nullopt };
+    if (pipe(stdout_pipe) < 0) {
+        return { -1, std::nullopt };
+    }
 
     const auto pid = fork();
     if (pid < 0) {
-        close(stdout_pipe[0]); close(stdout_pipe[1]);
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
         return { -1, std::nullopt };
     }
 
     if (pid == 0) {
         close(stdout_pipe[0]);
+
         if (chdir(cwd_text.c_str()) < 0) {
             close(stdout_pipe[1]);
             _exit(126);
         }
+
         dup2(stdout_pipe[1], STDOUT_FILENO);
         dup2(stdout_pipe[1], STDERR_FILENO);
         close(stdout_pipe[1]);
@@ -192,19 +248,31 @@ export auto spawn_capture(std::span<const std::string> args, std::string_view cw
     auto output = std::string();
     char buf[4096];
     ssize_t bytes;
+
     while ((bytes = read(stdout_pipe[0], buf, sizeof(buf))) > 0) {
         output.append(buf, static_cast<std::size_t>(bytes));
     }
+
     close(stdout_pipe[0]);
 
     auto status = 0;
+
     while (waitpid(pid, &status, 0) < 0) {
-        if (errno == EINTR) continue;
+        if (errno == EINTR) {
+            continue;
+        }
+
         return { -1, std::nullopt };
     }
 
-    if (WIFEXITED(status)) return { WEXITSTATUS(status), std::move(output) };
-    if (WIFSIGNALED(status)) return { 128 + WTERMSIG(status), std::move(output) };
+    if (WIFEXITED(status)) {
+        return { WEXITSTATUS(status), std::move(output) };
+    }
+
+    if (WIFSIGNALED(status)) {
+        return { 128 + WTERMSIG(status), std::move(output) };
+    }
+
     return { 1, std::move(output) };
 #endif
 }

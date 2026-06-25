@@ -17,7 +17,11 @@ No command-specific options.
     std::string_view source_file;
 };
 
-export auto execute([[maybe_unused]] const CheckCommand& command) noexcept -> int {
+export auto execute(const CheckCommand& command) noexcept -> int;
+
+module :private;
+
+auto execute([[maybe_unused]] const CheckCommand& command) noexcept -> int {
     std::println("carven check: not yet implemented");
     return 1;
 }

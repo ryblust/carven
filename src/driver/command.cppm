@@ -8,6 +8,12 @@ import carven.driver.command.run;
 import carven.driver.command.transpile;
 import std;
 
+export auto carven_main(int argc, const char** argv) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto parse_standard(std::string_view standard) noexcept -> std::expected<std::uint8_t, std::string> {
     if      (standard == "c++14") return 14;
     else if (standard == "c++17") return 17;
@@ -268,6 +274,7 @@ auto render_command_help(std::string_view name) noexcept -> int {
         std::println("carven {}: error: unknown command", name);
         return 1;
     }
+
     return 0;
 }
 
@@ -294,17 +301,24 @@ auto dispatch(const Command& command) noexcept -> int {
     return std::visit([](const auto& parsed_command) static noexcept -> int { return execute(parsed_command); }, command);
 }
 
-auto run_carven_main(int argc, const char* const argv[]) noexcept -> int {
+auto run_carven_main(int argc, const char** argv) noexcept -> int {
     const auto args = argc <= 1
         ? std::span<const char* const>()
         : std::span<const char* const>(argv + 1, static_cast<std::size_t>(argc - 1));
 
-    if (args.empty()) return render_help();
+    if (args.empty()) {
+        return render_help();
+    }
 
     const auto name = std::string_view(args[0]);
 
-    if (name ==    "--help" || name == "-h")  return render_help();
-    if (name == "--version" || name == "-V")  return render_version();
+    if (name == "--help" || name == "-h") {
+        return render_help();
+    }
+
+    if (name == "--version" || name == "-V") {
+        return render_version();
+    }
 
     if (!is_command(name)) {
         std::println("carven: error: unknown command '{}'", name);
@@ -314,7 +328,10 @@ auto run_carven_main(int argc, const char* const argv[]) noexcept -> int {
 
     if (args.size() > 1) {
         const auto flag = std::string_view(args[1]);
-        if (flag == "--help" || flag == "-h") return render_command_help(name);
+
+        if (flag == "--help" || flag == "-h") {
+            return render_command_help(name);
+        }
     }
 
     const auto command = parse_command(name, args.subspan(1));
@@ -327,6 +344,8 @@ auto run_carven_main(int argc, const char* const argv[]) noexcept -> int {
     return dispatch(*command);
 }
 
-export auto carven_main(int argc, const char* const argv[]) noexcept -> int {
+}
+
+auto carven_main(int argc, const char** argv) noexcept -> int {
     return run_carven_main(argc, argv);
 }

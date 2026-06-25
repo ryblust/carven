@@ -29,6 +29,12 @@ OPTIONS:
     std::vector<std::string_view> source_files;
 };
 
+export auto execute(const TranspileCommand& command) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto transpile(const TranspileCommand& command) noexcept -> int {
     auto exit_code = 0;
 
@@ -87,6 +93,8 @@ auto transpile(const TranspileCommand& command) noexcept -> int {
     return exit_code;
 }
 
-export auto execute(const TranspileCommand& command) noexcept -> int {
+}
+
+auto execute(const TranspileCommand& command) noexcept -> int {
     return transpile(command);
 }

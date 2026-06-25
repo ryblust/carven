@@ -22,6 +22,12 @@ OPTIONS:
     std::string_view project_dir;
 };
 
+export auto execute(const InitCommand& command) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto init(std::string_view project_path, CodegenOptions options) noexcept -> int {
     const auto project_dir = std::filesystem::path(project_path);
     auto error = std::error_code();
@@ -79,6 +85,8 @@ auto init(std::string_view project_path, CodegenOptions options) noexcept -> int
     return 0;
 }
 
-export auto execute(const InitCommand& command) noexcept -> int {
+}
+
+auto execute(const InitCommand& command) noexcept -> int {
     return init(command.project_dir, command.options);
 }

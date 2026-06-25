@@ -5,6 +5,12 @@ import carven.frontend.ast;
 import carven.frontend.parser;
 import std;
 
+export constexpr auto analyze(std::span<const TopLevelItem> items, std::string_view source) noexcept -> std::vector<ParseError>;
+
+module :private;
+
+namespace {
+
 class Sema final {
 public:
     constexpr explicit Sema(std::string_view source) noexcept : source(source) {}
@@ -36,7 +42,9 @@ private:
     }
 
     constexpr auto check_type(const Type* type) noexcept -> void {
-        if (type == nullptr) return;
+        if (type == nullptr) {
+            return;
+        }
 
         switch (type->kind) {
             case TypeKind::Name:
@@ -120,6 +128,7 @@ private:
                 push_error("main parameter must be untyped", param.name);
             }
         }
+
         check_type(item.return_type);
         check_block(*item.body, true);
     }
@@ -147,7 +156,11 @@ private:
                 const auto s = static_cast<const VarDecl*>(&stmt);
                 check_ident(s->name);
                 check_type(s->type);
-                if (s->init != nullptr) check_expr(*s->init, true, allow_return);
+
+                if (s->init != nullptr) {
+                    check_expr(*s->init, true, allow_return);
+                }
+
                 return;
             }
             case StmtKind::Return: {
@@ -155,7 +168,11 @@ private:
                 if (!allow_return) {
                     push_error("return is not allowed inside an expression branch", s->keyword);
                 }
-                if (s->value != nullptr) check_expr(*s->value, true, allow_return);
+
+                if (s->value != nullptr) {
+                    check_expr(*s->value, true, allow_return);
+                }
+
                 return;
             }
             case StmtKind::While: {
@@ -168,14 +185,25 @@ private:
                 const auto s = static_cast<const ForStmt*>(&stmt);
                 std::visit(Overloaded {
                     [&](const VarDecl* d) noexcept {
-                        if (d != nullptr) check_stmt(*d, allow_return);
+                        if (d != nullptr) {
+                            check_stmt(*d, allow_return);
+                        }
                     },
                     [&](const ExprStmt* es) noexcept {
-                        if (es != nullptr) check_expr(*es->expr, true, allow_return);
+                        if (es != nullptr) {
+                            check_expr(*es->expr, true, allow_return);
+                        }
                     },
                 }, s->init);
-                if (s->condition != nullptr) check_expr(*s->condition, true, allow_return);
-                if (s->step != nullptr) check_expr(*s->step, true, allow_return);
+
+                if (s->condition != nullptr) {
+                    check_expr(*s->condition, true, allow_return);
+                }
+
+                if (s->step != nullptr) {
+                    check_expr(*s->step, true, allow_return);
+                }
+
                 check_stmt(*s->body, allow_return);
                 return;
             }
@@ -204,7 +232,11 @@ private:
             case ExprKind::Call: {
                 const auto e = static_cast<const CallExpr*>(&expr);
                 check_expr(*e->callee, true, allow_return);
-                for (const auto arg : e->args) check_expr(*arg, true, allow_return);
+
+                for (const auto arg : e->args) {
+                    check_expr(*arg, true, allow_return);
+                }
+
                 return;
             }
             case ExprKind::Index: {
@@ -244,7 +276,9 @@ private:
                 check_if(*static_cast<const IfExpr*>(&expr), value_position, allow_return);
                 return;
             case ExprKind::Array: {
-                for (const auto element : static_cast<const ArrayExpr*>(&expr)->elements) check_expr(*element, true, allow_return);
+                for (const auto element : static_cast<const ArrayExpr*>(&expr)->elements) {
+                    check_expr(*element, true, allow_return);
+                }
                 return;
             }
             case ExprKind::Match:
@@ -271,9 +305,11 @@ private:
         }
 
         const auto expr_stmt = static_cast<const ExprStmt*>(last);
+
         if (!expr_stmt->semicolon.empty()) {
             push_error(std::string(label) + " final expression must omit ';'", expr_stmt->semicolon);
         }
+
         check_expr(*expr_stmt->expr, true, false);
     }
 
@@ -284,14 +320,18 @@ private:
             if (expr.else_branch == nullptr) {
                 push_error("if expression requires an else branch", expr.keyword);
             }
+
             check_value_branch(*expr.then_branch, "if expression branch");
+
             if (expr.else_branch != nullptr) {
                 check_value_branch(*expr.else_branch, "if expression branch");
             }
+
             return;
         }
 
         check_block(*expr.then_branch, allow_return);
+
         if (expr.else_branch != nullptr) {
             check_block(*expr.else_branch, allow_return);
         }
@@ -306,12 +346,15 @@ private:
             if (has_wildcard) {
                 push_error("match wildcard arm must be last", arm.arrow);
             }
+
             if (arm.is_wildcard) {
                 has_wildcard = true;
             }
+
             for (const auto pattern : arm.patterns) {
                 check_expr(*pattern, true, allow_return);
             }
+
             if (value_position) {
                 check_value_branch(*arm.body, "match expression arm");
             } else {
@@ -325,6 +368,8 @@ private:
     }
 };
 
-export constexpr auto analyze(std::span<const TopLevelItem> items, std::string_view source) noexcept -> std::vector<ParseError> {
+}
+
+constexpr auto analyze(std::span<const TopLevelItem> items, std::string_view source) noexcept -> std::vector<ParseError> {
     return Sema(source).analyze(items);
 }

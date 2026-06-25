@@ -205,7 +205,9 @@ template<> struct std::range_formatter<Token> final {
     }
 
     auto format(const auto& tokens, auto&& context) const noexcept {
-        if (tokens.empty()) return context.out();
+        if (tokens.empty()) {
+            return context.out();
+        }
 
         for (auto i = 0uz; i < tokens.size() - 1; ++i) {
             std::format_to(context.out(), "{}\n", tokens[i]);

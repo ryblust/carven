@@ -3,6 +3,12 @@ export module carven.frontend.lexer;
 import carven.frontend.token;
 import std;
 
+export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token>;
+
+module :private;
+
+namespace {
+
 constexpr auto is_alpha(char c) noexcept -> bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
@@ -42,14 +48,22 @@ public:
     constexpr auto next() noexcept -> Token {
         using enum TokenKind;
         skip_meaningless();
-        if (eof()) return token(End);
+
+        if (eof()) {
+            return token(End);
+        }
 
         start_pos = current_pos;
         const auto c = current();
         advance();
 
-        if (is_ident(c)) return identifier_or_keyword();
-        if (is_digit(c)) return number_literal();
+        if (is_ident(c)) {
+            return identifier_or_keyword();
+        }
+
+        if (is_digit(c)) {
+            return number_literal();
+        }
 
         switch (c) {
             case '(': return token(LeftParen);
@@ -92,7 +106,9 @@ private:
     std::string_view source;
 
     constexpr auto advance() noexcept -> void {
-        if (!eof()) ++current_pos;
+        if (!eof()) {
+            ++current_pos;
+        }
     }
 
     constexpr auto eof() const noexcept -> bool {
@@ -107,6 +123,7 @@ private:
         if (eof() || (current() != expected)) {
             return false;
         }
+
         advance();
         return true;
     }
@@ -143,7 +160,9 @@ private:
         }
 
         for (const auto text = source.substr(start_pos, current_pos - start_pos); const auto [name, kind] : keywords) {
-            if (name == text) return token(kind);
+            if (name == text) {
+                return token(kind);
+            }
         }
 
         return token(TokenKind::Identifier);
@@ -189,7 +208,11 @@ private:
         if ((current() == 'e' || current() == 'E')
             && (is_digit(peek()) || ((peek() == '+' || peek() == '-') && is_digit(peek(2))))) {
             advance();
-            if (current() == '+' || current() == '-') advance();
+
+            if (current() == '+' || current() == '-') {
+                advance();
+            }
+
             while (is_digit(current())) {
                 advance();
             }
@@ -205,12 +228,20 @@ private:
         while (!eof() && current() != '\'' && current() != '\n') {
             if (current() == '\\') {
                 advance();
-                if (eof() || current() == '\n') break;
-                if (!is_valid_escape(current())) valid = false;
+
+                if (eof() || current() == '\n') {
+                    break;
+                }
+
+                if (!is_valid_escape(current())) {
+                    valid = false;
+                }
+
                 advance();
             } else {
                 advance();
             }
+
             ++chars;
         }
 
@@ -231,8 +262,15 @@ private:
         while (!eof() && current() != '"' && current() != '\n') {
             if (current() == '\\') {
                 advance();
-                if (eof() || current() == '\n') break;
-                if (!is_valid_escape(current())) return token(TokenKind::Error);
+
+                if (eof() || current() == '\n') {
+                    break;
+                }
+
+                if (!is_valid_escape(current())) {
+                    return token(TokenKind::Error);
+                }
+
                 advance();
             } else {
                 advance();
@@ -262,10 +300,13 @@ private:
                         while (!eof() && current() != '\n') {
                             advance();
                         }
+
                         continue;
                     }
+
                     return;
-                default: return;
+                default:
+                    return;
             }
         }
     }
@@ -275,7 +316,9 @@ private:
     }
 };
 
-export constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
+}
+
+constexpr auto tokenize(std::string_view source) noexcept -> std::vector<Token> {
     auto lexer = Lexer(source);
     auto tokens = std::vector<Token>();
     tokens.reserve(source.size() / 4);

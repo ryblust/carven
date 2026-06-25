@@ -25,6 +25,12 @@ OPTIONS:
     std::vector<std::string_view> args;
 };
 
+export auto execute(const RunCommand& command) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto run(const RunCommand& command) noexcept -> int {
     auto xmake_dir = std::string();
     auto xmake_target = std::string();
@@ -122,6 +128,8 @@ auto run(const RunCommand& command) noexcept -> int {
     return exit_code;
 }
 
-export auto execute(const RunCommand& command) noexcept -> int {
+}
+
+auto execute(const RunCommand& command) noexcept -> int {
     return run(command);
 }

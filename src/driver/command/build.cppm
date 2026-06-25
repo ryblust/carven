@@ -19,6 +19,12 @@ No command-specific options.
     std::optional<std::string_view> target;
 };
 
+export auto execute(const BuildCommand& command) noexcept -> int;
+
+module :private;
+
+namespace {
+
 auto build(std::optional<std::string_view> target) noexcept -> int {
     const auto project_dir = local_xmake_project_dir();
 
@@ -48,6 +54,8 @@ auto build(std::optional<std::string_view> target) noexcept -> int {
     return exit_code;
 }
 
-export auto execute(const BuildCommand& command) noexcept -> int {
+}
+
+auto execute(const BuildCommand& command) noexcept -> int {
     return build(command.target);
 }
