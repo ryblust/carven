@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,7 +45,8 @@ class E2EContext:
         return self.root.joinpath(*parts)
 
     def run(self, args: list[str], cwd: Path | None = None, *, check: bool = True) -> CommandResult:
-        return run_command(args, cwd or self.root, env=self.env, check=check, trace=self.trace_commands, sink=self.commands)
+        sink = self.commands if self.trace_commands else None
+        return run_command(args, cwd or self.root, env=self.env, check=check, trace=self.trace_commands, sink=sink)
 
 
 @dataclass(frozen=True)
@@ -117,23 +119,24 @@ def run_command(
         sink.append(result)
     if trace:
         status = "ok" if result.returncode == 0 else f"exit {result.returncode}"
-        print(f"e2e: command {status} ({duration:.2f}s): {' '.join(args)}", flush=True)
+        with OUTPUT_LOCK:
+            print(f"    [cmd {status:<6} {format_duration(duration):>7}] {format_command(args)}", flush=True)
     if check and result.returncode != 0:
         fail_command(result)
     return result
 
 
 def fail(message: str) -> None:
-    raise E2EFailure(f"e2e: {message}")
+    raise E2EFailure(message)
 
 
 def fail_command(result: CommandResult) -> None:
     lines = [
-        "e2e: command failed",
+        "command failed",
         f"  cwd: {result.cwd}",
-        f"  cmd: {' '.join(result.args)}",
+        f"  cmd: {format_command(result.args)}",
         f"  exit: {result.returncode}",
-        f"  duration: {result.duration:.2f}s",
+        f"  duration: {format_duration(result.duration)}",
     ]
     if result.stdout:
         lines.append("\n--- stdout ---")
@@ -390,6 +393,18 @@ def print_case_list() -> None:
         print(name)
 
 
+def validate_case_names(names: list[str]) -> bool:
+    unknown = [name for name in names if name not in CASES]
+    if not unknown:
+        return True
+
+    print("E2E Cases", file=sys.stderr)
+    print(f"  status: failed", file=sys.stderr)
+    print(f"  error:  unknown case{'s' if len(unknown) != 1 else ''}: {', '.join(unknown)}", file=sys.stderr)
+    print(f"  cases:  {', '.join(CASES)}", file=sys.stderr)
+    return False
+
+
 def case_root(name: str) -> Path:
     return CASES_ROOT / name
 
@@ -427,13 +442,17 @@ def run_case(name: str, env: dict[str, str], trace_commands: bool) -> CaseResult
     )
 
 
-def print_case_result(result: CaseResult) -> None:
-    status = "FAIL" if result.failure else "PASS"
-    stream = sys.stderr if result.failure else sys.stdout
-    print(f"e2e: {status} {result.name} ({result.duration:.2f}s)", file=stream, flush=True)
+def print_case_result(result: CaseResult, *, trace_commands: bool) -> None:
+    command_count = len(result.commands)
+    print_step_result(
+        result.name,
+        result.duration if trace_commands else None,
+        failed=result.failure is not None,
+        detail=f"{command_count} {'cmd' if command_count == 1 else 'cmds'}" if trace_commands else None,
+        workspace=case_root(result.name) if result.failure else None,
+    )
     if result.failure:
-        print(result.failure, file=stream)
-        print(f"e2e: workspace kept at {case_root(result.name)}", file=stream)
+        print_failure_detail(result.failure)
 
 
 def slowest_commands(results: list[CaseResult]) -> list[CommandResult]:
@@ -441,24 +460,106 @@ def slowest_commands(results: list[CaseResult]) -> list[CommandResult]:
     return sorted(commands, key=lambda command: command.duration, reverse=True)[:5]
 
 
-def print_summary(results: list[CaseResult], duration: float) -> None:
+def format_duration(seconds: float) -> str:
+    if seconds >= 100:
+        return f"{seconds:.1f}s"
+    return f"{seconds:.2f}s"
+
+
+def format_command(args: list[str]) -> str:
+    return " ".join(shlex.quote(display_command_arg(arg)) for arg in args)
+
+
+def display_command_arg(arg: str) -> str:
+    if not arg.startswith(str(REPO_ROOT)):
+        return arg
+
+    return Path(arg).relative_to(REPO_ROOT).as_posix()
+
+
+def display_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def case_name_width() -> int:
+    names = [*CASES, "setup.install_carven"]
+    return max(len(name) for name in names)
+
+
+def print_run_header(selected_cases: list[str], trace_commands: bool) -> None:
+    mode = "selected" if selected_cases else "default"
+    case_count = len(selected_cases) if selected_cases else len(CASES)
+    case_text = f"{case_count} {mode} case"
+    if case_count != 1:
+        case_text += "s"
+
+    print("E2E Cases")
+    print(f"  cases:     {case_text}")
+    if selected_cases:
+        print(f"  filter:    {', '.join(selected_cases)}")
+    print(f"  trace:     {'on' if trace_commands else 'off'}")
+    print(f"  workspace: {display_path(E2E_ROOT)}")
+    print()
+    print("Steps")
+
+
+def print_step_result(
+    name: str,
+    duration: float | None,
+    *,
+    failed: bool,
+    detail: str | None = None,
+    workspace: Path | None = None,
+) -> None:
+    status = "FAIL" if failed else "PASS"
+    name_text = f"{name:<{case_name_width()}}" if duration is not None or detail else name
+    duration_text = f"  {format_duration(duration):>7}" if duration is not None else ""
+    detail_text = f"  {detail}" if detail else ""
+    print(f"  [{status}] {name_text}{duration_text}{detail_text}", flush=True)
+    if workspace is not None:
+        print(f"         workspace: {display_path(workspace)}", flush=True)
+
+
+def print_failure_detail(message: str, *, stream: object = sys.stdout) -> None:
+    print("         error:", file=stream)
+    for line in message.rstrip().splitlines():
+        print(f"           {line}", file=stream)
+
+
+def print_summary(results: list[CaseResult], duration: float, *, setup_failed: bool = False, trace_commands: bool = False) -> None:
     passed = [result for result in results if result.failure is None]
     failed = [result for result in results if result.failure is not None]
-    print("=" * 79)
-    print(f"e2e test cases: {len(results):3} | {len(passed):3} passed | {len(failed)} failed")
-    print(f"e2e duration:   {duration:.2f}s")
-    print(f"e2e workspace:  {E2E_ROOT}")
+    status = "failed" if setup_failed or failed else "passed"
 
-    if results:
-        print("e2e slowest cases:")
+    print()
+    print("Summary")
+    print(f"  status:    {status}")
+    print(f"  cases:     {len(results)} total, {len(passed)} passed, {len(failed)} failed")
+    print(f"  setup:     {'failed' if setup_failed else 'passed'}")
+    print(f"  duration:  {format_duration(duration)}")
+    print(f"  workspace: {display_path(E2E_ROOT)}")
+
+    if failed:
+        print()
+        print("Failed Cases")
+        for result in failed:
+            print(f"  {result.name}  workspace: {display_path(case_root(result.name))}")
+
+    if trace_commands and results:
+        print()
+        print("Slowest Cases")
         for result in sorted(results, key=lambda item: item.duration, reverse=True)[:5]:
-            print(f"  {result.duration:6.2f}s  {result.name}")
+            print(f"  {format_duration(result.duration):>7}  {result.name}")
 
-    commands = slowest_commands(results)
+    commands = slowest_commands(results) if trace_commands else []
     if commands:
-        print("e2e slowest commands:")
+        print()
+        print("Slowest Commands")
         for command in commands:
-            print(f"  {command.duration:6.2f}s  {' '.join(command.args)}")
+            print(f"  {format_duration(command.duration):>7}  {format_command(command.args)}")
 
 
 def run_case_group(names: list[str], env: dict[str, str], trace_commands: bool) -> list[CaseResult]:
@@ -466,7 +567,7 @@ def run_case_group(names: list[str], env: dict[str, str], trace_commands: bool) 
     for name in names:
         result = run_case(name, env, trace_commands)
         with OUTPUT_LOCK:
-            print_case_result(result)
+            print_case_result(result, trace_commands=trace_commands)
         results.append(result)
     return results
 
@@ -491,29 +592,35 @@ def main() -> int:
         print_case_list()
         return 0
 
+    if args.case and not validate_case_names(args.case):
+        return 1
+
     start = time.perf_counter()
     reset_workspace()
+    print_run_header(args.case or [], args.trace_commands)
     setup_start = time.perf_counter()
     try:
         env = install_carven(args.trace_commands)
     except E2EFailure as failure:
         duration = time.perf_counter() - start
-        print(f"e2e: FAIL setup.install_carven ({time.perf_counter() - setup_start:.2f}s)", file=sys.stderr)
-        print(failure, file=sys.stderr)
-        print("=" * 79)
-        print(f"e2e test cases:   0 |   0 passed | 1 failed")
-        print(f"e2e duration:   {duration:.2f}s")
-        print(f"e2e workspace:  {E2E_ROOT}")
+        print_step_result(
+            "setup.install_carven",
+            time.perf_counter() - setup_start if args.trace_commands else None,
+            failed=True,
+            workspace=E2E_ROOT,
+        )
+        print_failure_detail(str(failure))
+        print_summary([], duration, setup_failed=True, trace_commands=args.trace_commands)
         return failure.returncode
 
-    print(f"e2e: PASS setup.install_carven ({time.perf_counter() - setup_start:.2f}s)")
+    print_step_result("setup.install_carven", time.perf_counter() - setup_start if args.trace_commands else None, failed=False)
     try:
         results = run_case_group(args.case, env, args.trace_commands) if args.case else run_default_cases(env, args.trace_commands)
     except E2EFailure as failure:
         print(failure, file=sys.stderr)
         return failure.returncode
 
-    print_summary(results, time.perf_counter() - start)
+    print_summary(results, time.perf_counter() - start, trace_commands=args.trace_commands)
 
     for result in results:
         if result.failure is not None:
