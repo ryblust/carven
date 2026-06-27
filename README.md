@@ -84,7 +84,8 @@ carven transpile path/to/file.cv
 carven transpile -o out.cpp path/to/file.cv
 ```
 
-Project commands delegate to the current directory's `xmake.lua`:
+Project commands delegate to the current directory's `xmake.lua` and remain
+available for compatibility:
 
 ```shell
 carven build

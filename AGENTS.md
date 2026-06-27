@@ -26,17 +26,12 @@ multiple e2e runner processes in parallel because they share
 
 When compilation fails with an unexpected error, suspect a stale BMI cache — delete `build/` and rebuild first.
 
-## Context Routing
+## Context Scope
 
-- Do not preload broad docs for ordinary tasks.
-- Treat ordinary `review` as code review, not `spec-review`.
-- Read relevant `.agents/specs/` only for explicit spec review, spec compliance,
-  pre-commit checks, C++ design, formatting, layout/readability, or
-  project-wide style work.
-- Read `docs/implementation.md` when changing module boundaries, public APIs,
-  driver/core layering, runtime integration, or test strategy.
-- Read `docs/grammar.md` when changing syntax, parsing, semantics, lowering,
-  generated C++ output, or language feature support.
+For ordinary code work, start with source and tests. Read `docs/` or `.agents/`
+only when the user names a file, asks for docs/spec compliance, or the task is
+directly about those materials. Treat ordinary `review` as code review, not
+`spec-review`.
 
 ## Commits
 

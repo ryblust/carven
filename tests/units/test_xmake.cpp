@@ -49,7 +49,8 @@ TEST_CASE("Driver xmake: writes embedded carven rule") {
         std::istreambuf_iterator<char>()
     );
     CHECK(content.contains("rule(\"carven\")"));
-    CHECK(content.contains("carven.build.cv"));
+    CHECK(content.contains("set_extensions(\".cv\")"));
+    CHECK(content.contains("on_buildcmd_file"));
 
     std::filesystem::remove_all(dir);
 }

@@ -35,7 +35,7 @@ constexpr auto embedded_carven_rule() noexcept -> std::string_view {
     return std::string_view(rule, sizeof(rule));
 }
 
-} // namespace
+}
 
 auto sanitize_xmake_target_name(std::string_view name) noexcept -> std::string {
     static constexpr auto is_identifier_char = [](char ch) static noexcept {

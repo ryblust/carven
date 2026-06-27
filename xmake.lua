@@ -1,7 +1,7 @@
 add_rules("mode.debug", "mode.release")
 set_defaultmode("debug")
 
-add_cxxflags("-fno-rtti", { tools = { "clang", "gcc" } })
+add_cxxflags("-fno-rtti", { tools = "clang" })
 add_cxxflags("/GR-", { tools = { "cl", "clang_cl" } })
 add_cxxflags("/D_HAS_EXCEPTIONS=0", "/D_CRT_SECURE_NO_WARNINGS", { tools = { "cl", "clang_cl" } })
 add_cxxflags("-Wno-c23-extensions", { tools = { "clang", "clang_cl" } })

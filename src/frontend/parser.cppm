@@ -221,12 +221,7 @@ private:
                 return nullptr;
             }
 
-            return alloc<ArrayType>(
-                inner->span,
-                semi->span,
-                Span { .start = size_start, .end = size_end },
-                rbracket->span
-            );
+            return alloc<ArrayType>(inner->span, semi->span, Span { .start = size_start, .end = size_end }, rbracket->span);
         }
 
         if (start->kind == TokenKind::Identifier) {
@@ -506,11 +501,7 @@ private:
 
         if (!check(TokenKind::SemiColon)) {
             const auto token = peek();
-            if (token != nullptr && (
-                token->kind == TokenKind::Let ||
-                token->kind == TokenKind::Var ||
-                token->kind == TokenKind::Const
-            )) {
+            if (token != nullptr && (token->kind == TokenKind::Let || token->kind == TokenKind::Var || token->kind == TokenKind::Const)) {
                 if (const auto decl = parse_var_decl_data()) {
                     for_init = decl;
                 }
@@ -551,17 +542,7 @@ private:
         }
 
         if (const auto body = parse_stmt_or_block()) {
-            return alloc<ForStmt>(
-                keyword->span,
-                lparen->span,
-                for_init,
-                init_semi_span,
-                cond_semi->span,
-                condition,
-                step,
-                rparen->span,
-                body
-            );
+            return alloc<ForStmt>(keyword->span, lparen->span, for_init, init_semi_span, cond_semi->span, condition, step, rparen->span, body);
         }
 
         return nullptr;
@@ -1000,13 +981,7 @@ private:
             else_branch = parsed_else;
         }
 
-        return alloc<IfExpr>(
-            keyword->span,
-            condition,
-            then_branch,
-            else_kw,
-            else_branch
-        );
+        return alloc<IfExpr>(keyword->span, condition, then_branch, else_kw, else_branch);
     }
 
     constexpr auto parse_import() noexcept -> void {
