@@ -1,25 +1,62 @@
+set_project("carven")
+set_version("0.1.0")
+
 add_rules("mode.debug", "mode.release")
 set_defaultmode("debug")
+set_policy("build.progress_style", "multirow")
 
-add_cxxflags("-fno-rtti", { tools = "clang" })
-add_cxxflags("/GR-", { tools = { "cl", "clang_cl" } })
-add_cxxflags("/D_HAS_EXCEPTIONS=0", "/D_CRT_SECURE_NO_WARNINGS", { tools = { "cl", "clang_cl" } })
-add_cxxflags("-Wno-c23-extensions", { tools = { "clang", "clang_cl" } })
+if is_plat("windows") then
+    set_toolchains("clang-cl[llvm]")
+else
+    set_toolchains("llvm")
+end
 
-set_languages("c++latest")
+add_cxxflags("-fno-rtti", {tools = "clang"})
+add_cxxflags("/GR-", {tools = {"cl", "clang_cl"}})
+add_cxxflags("/D_HAS_EXCEPTIONS=0", "/D_CRT_SECURE_NO_WARNINGS", {tools = {"cl", "clang_cl"}})
+set_languages("c++26")
 set_exceptions("no-cxx")
 set_warnings("allextra")
 set_rundir("$(projectdir)")
 
 target("carven-modules")
+    set_default(false)
     set_kind("moduleonly")
     add_files("src/**.cppm")
+    add_files("src/**.cpp|carven.cpp")
 
 target("carven")
+    if is_mode("release") then
+        set_policy("build.optimization.lto", true)
+    end
     add_deps("carven-modules")
     add_files("src/carven.cpp")
+    add_installfiles("crafts/(carven/runtime/runtime.hpp)", {prefixdir = "include"})
+    add_installfiles("crafts/(carven/runtime/callable.hpp)", {prefixdir = "include"})
+    add_installfiles("crafts/(carven/runtime/outcome.hpp)", {prefixdir = "include"})
+    add_installfiles("crafts/(carven/std/testing/testing.hpp)", {prefixdir = "include"})
 
-target("carven-unit-test")
-    set_default(false)
-    add_deps("carven-modules")
-    add_files("tests/units/test_*.cpp")
+option("build_tests", {default = true, description = "Build the test targets"})
+
+if has_config("build_tests") then
+    local carven_xmake_repo_dir = os.getenv("CARVEN_XMAKE_REPO_DIR")
+    local carven_repository = "carven-xmake-repo"
+    if carven_xmake_repo_dir and #carven_xmake_repo_dir > 0 then
+        carven_xmake_repo_dir = path.absolute(carven_xmake_repo_dir, os.projectdir())
+        carven_repository = "carven-xmake-local"
+        add_repositories(carven_repository .. " " .. carven_xmake_repo_dir)
+    else
+        add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
+    end
+
+    add_requires(carven_repository .. "@carven", {
+        alias = "carven",
+        system = false,
+        configs = {rules_only = true},
+    })
+
+    includes("tests/internal")
+    includes("tests/language")
+    includes("tests/interop")
+    includes("tests/cli")
+end

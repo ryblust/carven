@@ -1,0 +1,17 @@
+export struct Model {
+    value: i32,
+}
+
+export enum Choice {
+    Value(i32),
+    Empty,
+}
+
+export enum Code: u8 {
+    Ready = 1,
+    Done,
+}
+
+export struct Failure {
+    code: i32,
+}

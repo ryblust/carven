@@ -1,0 +1,5 @@
+import .api using *;
+
+test "Modules: wildcard imports expose exported symbols" {
+    check(wildcard_value() == 42);
+}

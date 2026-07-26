@@ -1,0 +1,36 @@
+enum Value {
+    Number(i32),
+    Pair(i32, i32),
+    Flag(bool),
+    Empty,
+}
+
+fn describe(value: Value) -> i32 {
+    return match value {
+        .Number(number) if number > 0 => number,
+        .Number(_) => 0,
+        .Pair(0 | 1, item) => item,
+        .Pair(_, _) => -2,
+        .Flag(true | false) => -3,
+        .Empty => -1,
+    };
+}
+
+fn qualified(value: Value) -> i32 {
+    return match value {
+        Value::Number(number) => number,
+        Value::Pair(_, right) => right,
+        Value::Flag(_) => 0,
+        Value::Empty => -1,
+    };
+}
+
+test "Enums: sum patterns support guards alternatives and qualification" {
+    check(describe(.Number(7)) == 7);
+    check(describe(.Number(-1)) == 0);
+    check(describe(.Pair(1, 9)) == 9);
+    check(describe(.Pair(2, 11)) == -2);
+    check(describe(.Flag(true)) == -3);
+    check(describe(.Empty) == -1);
+    check(qualified(.Number(13)) == 13);
+}

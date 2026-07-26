@@ -1,0 +1,62 @@
+enum Value {
+    Number(i32),
+    Pair(i32, i32),
+    Empty,
+}
+
+enum Status: u8 {
+    Ready = 4,
+    Done,
+}
+
+enum class {
+    template(i32),
+    namespace,
+}
+
+enum Collision {
+    Storage,
+    storage,
+    Number(i32),
+    NumberPayload,
+    is_number,
+    as_number,
+}
+
+fn keyword_value(value: class) -> i32 {
+    return match value {
+        .template(item) => item,
+        .namespace => 0,
+    };
+}
+
+fn collision_value(value: Collision) -> i32 {
+    return match value {
+        .Storage => 1,
+        .storage => 2,
+        .Number(number) => number,
+        .NumberPayload => 3,
+        .is_number => 4,
+        .as_number => 5,
+    };
+}
+
+test "Enums: sum values construct compare and expose constructors" {
+    let positive: Value = .Number(7);
+    let same: Value = .Number(7);
+    let different: Value = .Number(8);
+    let contextual: Value = .Pair(1, 9);
+    let factory = Value::Number;
+    let from_factory = factory(13);
+    let keyword_case: class = .template(17);
+
+    check(positive == same);
+    check(positive != different);
+    check(positive != contextual);
+    check(from_factory == Value::Number(13));
+    check(keyword_value(keyword_case) == 17);
+    check(collision_value(Collision::Number(23)) == 23);
+
+    const raw = Status::Done as i32;
+    check(raw == 5);
+}

@@ -1,0 +1,35 @@
+test "Loops: loops support clauses iteration and control transfer" {
+    var total: i32 = 0;
+    for var index: i32 = 0; index < 4; ++index {
+        total += index;
+    }
+
+    var odd_total: i32 = 0;
+    for var index: i32 = 0; index < 6; ++index {
+        if index % 2 == 0 {
+            continue;
+        }
+        odd_total += index;
+    }
+
+    let values: [i32; 3] = [1, 2, 3];
+    for value: i32 in values {
+        total += value;
+    }
+
+    let shadowed: [i32; 2] = [20, 22];
+    var shadowed_total: i32 = 0;
+    for shadowed in shadowed {
+        shadowed_total += shadowed;
+    }
+
+    var countdown: i32 = 2;
+    while countdown > 0 {
+        --countdown;
+    }
+
+    check(total == 12);
+    check(odd_total == 9);
+    check(shadowed_total == 42);
+    check(countdown == 0);
+}

@@ -1,0 +1,51 @@
+#[cpp] {
+    inline auto cv_test_mutation_index_calls = 0;
+    inline auto cv_test_mutation_order = 0;
+
+    auto cv_test_mutation_next_index() noexcept -> int {
+        ++cv_test_mutation_index_calls;
+        return 0;
+    }
+
+    auto cv_test_mutation_ordered_index() noexcept -> int {
+        cv_test_mutation_order = cv_test_mutation_order * 10 + 1;
+        return 0;
+    }
+
+    auto cv_test_mutation_ordered_value() noexcept -> int {
+        cv_test_mutation_order = cv_test_mutation_order * 10 + 2;
+        return 3;
+    }
+}
+
+fn ordered_writes(&first: i32, &second: i32) {
+    first = 1;
+    second = 2;
+}
+
+test "Mutation: compound mutation evaluates its target once" {
+    #[cpp] { cv_test_mutation_index_calls = 0; }
+    var values: [i32; 2] = [4, 9];
+    values[#[cpp] { cv_test_mutation_next_index() }] += 3;
+
+    let calls: i32 = #[cpp] { cv_test_mutation_index_calls };
+    check(calls == 1);
+    check(values[0] == 7);
+}
+
+test "Mutation: target evaluation precedes the assigned value" {
+    #[cpp] { cv_test_mutation_order = 0; }
+    var values: [i32; 2] = [4, 9];
+    values[#[cpp] { cv_test_mutation_ordered_index() }] +=
+        #[cpp] { cv_test_mutation_ordered_value() };
+
+    let order: i32 = #[cpp] { cv_test_mutation_order };
+    check(order == 12);
+    check(values[0] == 7);
+}
+
+test "Mutation: Write access is nonexclusive and follows execution order" {
+    var value = 0;
+    ordered_writes(&value, &value);
+    check(value == 2);
+}

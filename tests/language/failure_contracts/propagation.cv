@@ -1,0 +1,86 @@
+struct ReadError {
+    code: i32,
+}
+
+fn read(ok: bool) -> i32 throw ReadError {
+    if ok {
+        return 42;
+    }
+    throw ReadError { code: 7 };
+}
+
+private fn forwarded() -> i32 {
+    return read(true)?;
+}
+
+fn recovered() -> i32 {
+    return try {
+        read(false)?
+    } catch {
+        ReadError(error) => error.code,
+    };
+}
+
+fn forwarded_value() -> i32 {
+    return try {
+        forwarded()?
+    } catch {
+        ReadError(_) => 0,
+    };
+}
+
+fn outer_result() -> i32 {
+    try {
+        read(true)?;
+        return 23;
+    } catch {
+        ReadError(_) => {},
+    }
+    return 0;
+}
+
+fn loop_result() -> i32 {
+    var value = 0;
+    while value < 5 {
+        value += 1;
+        try {
+            read(true)?;
+            if value == 2 {
+                continue;
+            }
+            if value == 4 {
+                break;
+            }
+        } catch {
+            ReadError(_) => {},
+        }
+    }
+    return value;
+}
+
+fn nested_value_loop_result() -> i32 {
+    var value = 0;
+    return try {
+        read(true)?;
+        while value < 5 {
+            value += 1;
+            if value == 2 {
+                continue;
+            }
+            if value == 4 {
+                break;
+            }
+        }
+        value
+    } catch {
+        ReadError(_) => -1,
+    };
+}
+
+test "Failure contracts: failures propagate and recover" {
+    check(forwarded_value() == 42);
+    check(recovered() == 7);
+    check(outer_result() == 23);
+    check(loop_result() == 4);
+    check(nested_value_loop_result() == 4);
+}

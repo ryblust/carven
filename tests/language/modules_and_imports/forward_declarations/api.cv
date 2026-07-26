@@ -1,0 +1,10 @@
+import .types using { Model, Choice, Code, Failure, };
+
+export fn inspect(
+    model: Model,
+    _: Choice,
+    _: Code,
+    callback: fn(Model) -> Model,
+) -> Model throw Failure {
+    return callback(model);
+}

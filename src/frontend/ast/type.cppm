@@ -1,0 +1,58 @@
+module carven:frontend.ast.type;
+
+import :frontend.ast.ids;
+import :source.text;
+import std;
+
+enum class ASTAccessMode {
+    Read,
+    Write,
+    Take,
+};
+
+struct ASTAccessSyntax final {
+    ASTAccessMode mode;
+    std::optional<Span> marker;
+};
+
+struct ASTTypeNameComponent final {
+    Span name_span;
+};
+
+struct ASTNamedType final {
+    std::vector<ASTTypeNameComponent> components;
+};
+
+struct ASTArrayType final {
+    ASTTypeID element_type;
+    ASTExprID extent;
+};
+
+struct ASTFunctionTypeParameter final {
+    Span span;
+    ASTAccessSyntax access;
+    ASTTypeID type;
+};
+
+struct ASTThrowClause final {
+    Span span;
+    Span keyword_span;
+    std::vector<ASTTypeID> failures;
+    std::vector<Span> plus_spans;
+};
+
+struct ASTFunctionType final {
+    std::vector<ASTFunctionTypeParameter> parameters;
+    ASTTypeID result_type;
+    std::optional<ASTThrowClause> throw_clause;
+};
+
+struct ASTType final {
+    Span span;
+    std::variant<ASTNamedType, ASTArrayType, ASTFunctionType> value;
+};
+
+struct ASTConstructionType final {
+    Span span;
+    std::variant<ASTNamedType, ASTFunctionType> value;
+};

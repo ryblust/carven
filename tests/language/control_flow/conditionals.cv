@@ -1,0 +1,43 @@
+fn choose(flag: bool) -> i32 {
+    return if flag { 1 } else { 0 };
+}
+
+fn classify(value: i32) -> i32 {
+    if value == 0 {
+        return 5;
+    } else if value == 1 {
+        return 10;
+    } else if value == 2 {
+        return 15;
+    } else {
+        return 20;
+    }
+}
+
+fn choose_else_if(value: i32) -> i32 {
+    return if value == 0 {
+        5
+    } else if value == 1 {
+        10
+    } else {
+        20
+    };
+}
+
+test "Control flow: conditionals support statement and value forms" {
+    var selected: i32 = 0;
+    if choose(true) == 1 {
+        selected = 1;
+    } else {
+        selected = -1;
+    }
+
+    check(selected == 1);
+    check(classify(0) == 5);
+    check(classify(1) == 10);
+    check(classify(2) == 15);
+    check(classify(3) == 20);
+    check(choose_else_if(0) == 5);
+    check(choose_else_if(1) == 10);
+    check(choose_else_if(2) == 20);
+}

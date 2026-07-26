@@ -1,0 +1,28 @@
+#[cpp] {
+    struct CarvenLifetimeProbe final {
+        ~CarvenLifetimeProbe() {
+            cv_test_lifetime_probe_destroyed = true;
+        }
+
+        static inline bool cv_test_lifetime_probe_destroyed = false;
+    };
+}
+
+test "Bindings: anonymous runtime bindings live until their source scope ends" {
+    #[cpp] {
+        CarvenLifetimeProbe::cv_test_lifetime_probe_destroyed = false;
+    }
+    if true {
+        let _ = #[cpp] {
+            CarvenLifetimeProbe {}
+        };
+        let alive: bool = #[cpp] {
+            !CarvenLifetimeProbe::cv_test_lifetime_probe_destroyed
+        };
+        check(alive);
+    }
+    let destroyed: bool = #[cpp] {
+        CarvenLifetimeProbe::cv_test_lifetime_probe_destroyed
+    };
+    check(destroyed);
+}

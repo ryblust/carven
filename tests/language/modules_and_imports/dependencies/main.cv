@@ -1,0 +1,7 @@
+import .api using { build, identity, };
+
+test "Modules: public and implementation dependencies compose into a usable module" {
+    let built = build(41);
+    let copied = identity(built);
+    check(copied.value == 42);
+}

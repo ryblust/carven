@@ -1,0 +1,27 @@
+fn classify(value: i32) -> i32 {
+    return match value {
+        is i32 => 1,
+        _ => 0,
+    };
+}
+
+struct PatternModel {}
+
+enum PatternEnvelope {
+    First(i32, PatternModel),
+    Second(i32, PatternModel),
+}
+
+fn sibling_constraint_type(value: PatternEnvelope) -> i32 {
+    return match value {
+        .First(PatternModel, is PatternModel)
+        | .Second(PatternModel, is PatternModel) if PatternModel == 7 => PatternModel,
+        .First(_, _) | .Second(_, _) => 0,
+    };
+}
+
+test "Patterns: type patterns classify values" {
+    check(classify(7) == 1);
+    check(sibling_constraint_type(.First(7, PatternModel {})) == 7);
+    check(sibling_constraint_type(.Second(8, PatternModel {})) == 0);
+}

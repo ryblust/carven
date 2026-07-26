@@ -1,0 +1,10 @@
+import .types using { Model, Choice, Code, };
+
+test "Modules: interface forward declarations preserve nominal forms" {
+    let model = Model { value: 42 };
+    let choice: Choice = .Value(model.value);
+    let code = Code::Ready;
+
+    check(choice == Choice::Value(42));
+    check(code as u8 == 1);
+}

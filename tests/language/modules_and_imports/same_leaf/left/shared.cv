@@ -1,0 +1,7 @@
+export struct LeftValue {
+    value: i32,
+}
+
+export fn make_left() -> LeftValue {
+    return LeftValue { value: 19 };
+}

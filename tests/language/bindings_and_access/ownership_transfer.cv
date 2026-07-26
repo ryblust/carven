@@ -1,0 +1,40 @@
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+#[cpp] {
+    inline auto cv_test_take_order = 0;
+
+    auto cv_test_take_record(int marker) noexcept -> int {
+        cv_test_take_order = cv_test_take_order * 10 + marker;
+        return marker;
+    }
+}
+
+fn sum(&&pair: Pair) -> i32 {
+    return pair.left + pair.right;
+}
+
+fn combine(&&left: Pair, &&right: Pair) -> i32 {
+    return left.left + right.left;
+}
+
+test "Ownership: Take transfers ownership preserves order and permits var restoration" {
+    let first = Pair { left: 20, right: 22 };
+    check(sum(&&first) == 42);
+
+    var reusable = Pair { left: 1, right: 2 };
+    check(sum(&&reusable) == 3);
+    reusable = Pair { left: 19, right: 23 };
+    check(sum(&&reusable) == 42);
+
+    #[cpp] { cv_test_take_order = 0; }
+    let combined = combine(
+        &&Pair { left: #[cpp] { cv_test_take_record(1) }, right: 0 },
+        &&Pair { left: #[cpp] { cv_test_take_record(2) }, right: 0 },
+    );
+    let observed: i32 = #[cpp] { cv_test_take_order };
+    check(combined == 3);
+    check(observed == 12);
+}

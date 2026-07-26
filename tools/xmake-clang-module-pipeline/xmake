@@ -1,0 +1,104 @@
+#!/bin/sh
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+patch_file="$script_dir/xmake-3.1.1.patch"
+base_xmake=$(command -v xmake)
+source_program_dir=$($base_xmake lua -c 'print(os.programdir())')
+source_version=$($base_xmake lua -c 'io.write(tostring(xmake.version()))')
+cache_parent="${TMPDIR:-/tmp}/carven-xmake-clang-module-pipeline"
+
+if command -v shasum >/dev/null 2>&1; then
+    hash_sha256() {
+        shasum -a 256 "$@"
+    }
+elif command -v sha256sum >/dev/null 2>&1; then
+    hash_sha256() {
+        sha256sum "$@"
+    }
+else
+    printf '%s\n' "A SHA-256 utility (shasum or sha256sum) is required." >&2
+    exit 1
+fi
+
+source_key=$(
+    {
+        printf '%s\n' "$source_program_dir" "$source_version"
+        hash_sha256 \
+            "$source_program_dir/rules/c++/modules/clang/builder.lua" \
+            "$source_program_dir/rules/c++/modules/builder.lua" \
+            "$source_program_dir/rules/c++/modules/xmake.lua" \
+            "$patch_file"
+    } | hash_sha256 | awk '{print $1}'
+)
+overlay="$cache_parent/$source_key"
+lock_dir="$overlay.lock"
+staging=
+lock_owned=
+
+copy_program_dir() {
+    case $(uname -s) in
+        Darwin)
+            if cp -cR "$source_program_dir"/. "$staging"/ 2>/dev/null; then
+                return
+            fi
+            ;;
+        Linux)
+            if cp -R --reflink=auto "$source_program_dir"/. "$staging"/ 2>/dev/null; then
+                return
+            fi
+            ;;
+    esac
+    cp -R "$source_program_dir"/. "$staging"/
+}
+
+cleanup() {
+    if [ -n "$staging" ] && [ -d "$staging" ]; then
+        rm -rf -- "$staging"
+    fi
+    if [ -n "$lock_owned" ] && [ -d "$lock_dir" ]; then
+        rmdir -- "$lock_dir" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT HUP INT TERM
+
+if [ ! -f "$overlay/core/_xmake_main.lua" ]; then
+    mkdir -p "$cache_parent"
+    wait_count=0
+    while [ ! -f "$overlay/core/_xmake_main.lua" ]; do
+        if mkdir "$lock_dir" 2>/dev/null; then
+            lock_owned=1
+            break
+        fi
+        wait_count=$((wait_count + 1))
+        if [ "$wait_count" -ge 30 ]; then
+            printf '%s\n' "Timed out waiting for the Xmake overlay cache lock: $lock_dir" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+
+    if [ -n "$lock_owned" ] && [ ! -f "$overlay/core/_xmake_main.lua" ]; then
+        staging=$(mktemp -d "$cache_parent/.overlay.XXXXXX")
+        copy_program_dir
+        if ! patch -s -p1 -d "$staging" < "$patch_file"; then
+            printf '%s\n' "The module-pipeline patch does not match the installed Xmake program files." >&2
+            printf '%s\n' "Installed program directory: $source_program_dir" >&2
+            printf '%s\n' "Run the same command with xmake to use the stock pipeline." >&2
+            exit 1
+        fi
+        mv "$staging" "$overlay"
+        staging=
+    fi
+
+    if [ -n "$lock_owned" ]; then
+        rmdir -- "$lock_dir"
+        lock_owned=
+    fi
+fi
+
+XMAKE_PROGRAM_DIR="$overlay"
+export XMAKE_PROGRAM_DIR
+
+exec "$base_xmake" "$@"

@@ -1,0 +1,9 @@
+import .left using LeftWrap;
+
+export struct RightLeaf {
+    value: i32,
+}
+
+export struct RightWrap {
+    left: LeftWrap,
+}

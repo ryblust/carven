@@ -1,0 +1,42 @@
+module carven:semantic.hir.ids;
+
+import :source.provenance.ids;
+import :support.typed_id;
+
+struct SymbolIDTag final {};
+struct FunctionIDTag final {};
+struct StructIDTag final {};
+struct EnumIDTag final {};
+struct EnumCaseIDTag final {};
+struct HIRExprIDTag final {};
+struct HIRConstantIDTag final {};
+struct HIRStmtIDTag final {};
+struct HIRPatternIDTag final {};
+struct HIRBlockIDTag final {};
+struct HIRTypeIDTag final {};
+struct SemanticScopeIDTag final {};
+struct SemanticPlaceIDTag final {};
+struct FailureSetIDTag final {};
+struct CallableSignatureIDTag final {};
+struct CallableIDTag final {};
+struct BodyIDTag final {};
+struct TestIDTag final {};
+
+using SymbolID = TypedID<SymbolIDTag>;
+using FunctionID = TypedID<FunctionIDTag>;
+using StructID = TypedID<StructIDTag>;
+using EnumID = TypedID<EnumIDTag>;
+using EnumCaseID = TypedID<EnumCaseIDTag>;
+using HIRExprID = TypedID<HIRExprIDTag>;
+using HIRConstantID = TypedID<HIRConstantIDTag>;
+using HIRStmtID = TypedID<HIRStmtIDTag>;
+using HIRPatternID = TypedID<HIRPatternIDTag>;
+using HIRBlockID = TypedID<HIRBlockIDTag>;
+using HIRTypeID = TypedID<HIRTypeIDTag>;
+using SemanticScopeID = TypedID<SemanticScopeIDTag>;
+using SemanticPlaceID = TypedID<SemanticPlaceIDTag>;
+using FailureSetID = TypedID<FailureSetIDTag>;
+using CallableSignatureID = TypedID<CallableSignatureIDTag>;
+using CallableID = TypedID<CallableIDTag>;
+using BodyID = TypedID<BodyIDTag>;
+using TestID = TypedID<TestIDTag>;

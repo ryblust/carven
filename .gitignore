@@ -1,16 +1,5 @@
-# Xmake cache
+.vscode
 .xmake/
 build/
-.carven
-tests/e2e/.sandbox/
-
-# MacOS Cache
 .DS_Store
-
-# Python cache
 __pycache__/
-*.py[cod]
-
-.idea
-compile_commands.json
-.vscode

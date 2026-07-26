@@ -1,0 +1,10 @@
+import .model using { Model, make_model, };
+import .implementation using normalize;
+
+export fn identity(model: Model) -> Model {
+    return model;
+}
+
+export fn build(value: i32) -> Model {
+    return make_model(normalize(value));
+}

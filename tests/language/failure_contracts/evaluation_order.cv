@@ -1,0 +1,169 @@
+struct ReadError { code: i32 }
+
+#[cpp] {
+    inline auto cv_test_effect_trace = 0;
+
+    auto cv_test_record_effect(int marker) noexcept -> int {
+        cv_test_effect_trace = cv_test_effect_trace * 10 + marker;
+        return marker;
+    }
+}
+
+fn effect_value(marker: i32, fail: bool, value: i32) -> i32 throw ReadError {
+    let _ = #[cpp] { cv_test_record_effect }(marker);
+    if fail {
+        throw ReadError { code: marker };
+    }
+    return value;
+}
+
+fn effect_bool(marker: i32, fail: bool, value: bool) -> bool throw ReadError {
+    let encoded = if value { 1 } else { 0 };
+    return effect_value(marker, fail, encoded)? != 0;
+}
+
+fn effect_array(marker: i32, fail: bool) -> [i32; 2] throw ReadError {
+    let _ = effect_value(marker, fail, 0)?;
+    return [4, 9];
+}
+
+fn pair_values(left: i32, right: i32) -> i32 {
+    return left * 10 + right;
+}
+
+test "Failure contracts: effectful expressions preserve lexical placement" {
+    #[cpp] { cv_test_effect_trace = 0; }
+    let composite = try {
+        (effect_value(1, true, 10) + effect_value(2, false, 20))?
+    } catch {
+        ReadError(_) => -1,
+    };
+    let composite_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(composite == -1);
+    check(composite_trace == 1);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let arguments = try {
+        pair_values(effect_value(1, false, 3)?, effect_value(2, false, 4)?)
+    } catch {
+        ReadError(_) => -1,
+    };
+    let argument_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(arguments == 34);
+    check(argument_trace == 12);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let indexed = try {
+        let selected = effect_array(1, false)?[effect_value(2, false, 1)?];
+        selected
+    } catch {
+        ReadError(_) => -1,
+    };
+    let index_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(indexed == 9);
+    check(index_trace == 12);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let conjunction = try {
+        (effect_bool(1, false, false) && effect_bool(2, false, true))?
+    } catch {
+        ReadError(_) => true,
+    };
+    let conjunction_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(!conjunction);
+    check(conjunction_trace == 1);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let disjunction = try {
+        (effect_bool(1, false, true) || effect_bool(2, false, false))?
+    } catch {
+        ReadError(_) => false,
+    };
+    let disjunction_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(disjunction);
+    check(disjunction_trace == 1);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let selected_if = try {
+        let selected = (if false {
+            effect_value(1, false, 10)
+        } else {
+            effect_value(2, false, 20)
+        })?;
+        selected
+    } catch {
+        ReadError(_) => -1,
+    };
+    let if_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(selected_if == 20);
+    check(if_trace == 2);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let branch_local_if = try {
+        let selected = if false {
+            effect_value(1, false, 10)?
+        } else {
+            effect_value(2, false, 20)?
+        };
+        selected
+    } catch {
+        ReadError(_) => -1,
+    };
+    let branch_local_if_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(branch_local_if == 20);
+    check(branch_local_if_trace == 2);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let selected_match = try {
+        let selected = (match 1 {
+            0 => effect_value(1, false, 10),
+            _ => effect_value(2, false, 20),
+        })?;
+        selected
+    } catch {
+        ReadError(_) => -1,
+    };
+    let match_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(selected_match == 20);
+    check(match_trace == 2);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    let branch_local_match = try {
+        let selected = match 1 {
+            0 => effect_value(1, false, 10)?,
+            _ => effect_value(2, false, 20)?,
+        };
+        selected
+    } catch {
+        ReadError(_) => -1,
+    };
+    let branch_local_match_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(branch_local_match == 20);
+    check(branch_local_match_trace == 2);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    var while_index: i32 = 0;
+    try {
+        while effect_bool(1, false, while_index < 2)? {
+            ++while_index;
+        }
+    } catch {
+        ReadError(_) => {},
+    }
+    let while_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(while_index == 2);
+    check(while_trace == 111);
+
+    #[cpp] { cv_test_effect_trace = 0; }
+    var for_total: i32 = 0;
+    try {
+        for var index: i32 = 0; effect_bool(2, false, index < 2)?; ++index {
+            for_total += index + 1;
+        }
+    } catch {
+        ReadError(_) => {},
+    }
+    let for_trace: i32 = #[cpp] { cv_test_effect_trace };
+    check(for_total == 3);
+    check(for_trace == 222);
+}

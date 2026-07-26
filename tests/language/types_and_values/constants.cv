@@ -1,0 +1,52 @@
+test "Constants: typed constants preserve their values" {
+    const capacity: usize = 4usize;
+    const minimum_i8: i8 = -128;
+    const minimum_i64 = -9223372036854775808i64;
+    check(capacity == 4usize);
+    check(minimum_i8 + 1i8 == -127i8);
+    check(minimum_i64 + 1i64 == -9223372036854775807i64);
+}
+
+enum ConstantPayload {
+    Item(i32),
+}
+
+enum WideNumeric: u16 {
+    Positive = 256,
+}
+
+enum SignedNumeric: i16 {
+    Negative = -1,
+}
+
+test "Constants: payload constant equality compares normalized values" {
+    const equal = ConstantPayload::Item(1) == ConstantPayload::Item(1);
+    let values: [i32; equal as usize] = [7];
+    check(values[0] == 7);
+}
+
+test "Constants: integer-to-f32 constants use target precision" {
+    const exact: f32 = 16777216u32 as f32;
+    const rounded: f32 = 16777217u32 as f32;
+    const equal = exact == rounded;
+    let proof: [i32; equal as usize] = [7];
+    check(proof[0] == 7);
+
+    let runtime_value = 16777217u32;
+    check((runtime_value as f32) == exact);
+}
+
+test "Constants: enum-to-integer constants use target representation" {
+    const narrowed: u8 = WideNumeric::Positive as u8;
+    const wrapped: u8 = SignedNumeric::Negative as u8;
+    const widened: i32 = SignedNumeric::Negative as i32;
+    const valid = narrowed == 0u8 && wrapped == 255u8 && widened == -1;
+    let proof: [i32; valid as usize] = [7];
+    check(proof[0] == 7);
+
+    let runtime_positive = WideNumeric::Positive;
+    let runtime_negative = SignedNumeric::Negative;
+    check((runtime_positive as u8) == narrowed);
+    check((runtime_negative as u8) == wrapped);
+    check((runtime_negative as i32) == widened);
+}

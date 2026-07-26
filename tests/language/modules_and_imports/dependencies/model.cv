@@ -1,0 +1,7 @@
+export struct Model {
+    value: i32,
+}
+
+export fn make_model(value: i32) -> Model {
+    return Model { value: value };
+}

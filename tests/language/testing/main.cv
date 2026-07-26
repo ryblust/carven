@@ -1,0 +1,39 @@
+#[cpp] {
+    #include <cstdlib>
+    inline bool cv_test_entry_test_ran = false;
+
+    using CvTestEntryArgs = decltype(carven::runtime::entry_args(0, nullptr));
+
+    auto cv_test_run_entry(const CvTestEntryArgs& args) noexcept -> int {
+        auto iterator = args.begin();
+        if (iterator == args.end()) {
+            std::abort();
+        }
+        const auto first = *iterator;
+        if (first.first != 0 || first.second != "alpha") std::abort();
+        ++iterator;
+        if (iterator == args.end()) {
+            std::abort();
+        }
+        const auto second = *iterator;
+        if (second.first != 1 || second.second != "beta") std::abort();
+        ++iterator;
+        if (iterator != args.end()) {
+            std::abort();
+        }
+        const auto test_result = carven::testing::run();
+        if (test_result != 0 || !cv_test_entry_test_ran) {
+            std::abort();
+        }
+        std::exit(test_result);
+    }
+}
+
+test "Testing: custom entry runner executes inline tests" {
+    #[cpp] { cv_test_entry_test_ran = true; }
+    check(true);
+}
+
+fn main(args) {
+    let _ = #[cpp] { cv_test_run_entry }(args);
+}

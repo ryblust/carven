@@ -1,0 +1,6 @@
+import .worker using combined_value;
+
+test "Modules: relative and root imports compose" {
+    let value: i32 = combined_value();
+    check(value == 42);
+}

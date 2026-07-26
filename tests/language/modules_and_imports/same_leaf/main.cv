@@ -1,0 +1,8 @@
+import .left.shared using { LeftValue, make_left, };
+import .right.shared using { RightValue, make_right, };
+
+test "Modules: equal module leaves keep distinct qualified target names" {
+    let left: LeftValue = make_left();
+    let right: RightValue = make_right();
+    check(left.value + right.value == 42);
+}

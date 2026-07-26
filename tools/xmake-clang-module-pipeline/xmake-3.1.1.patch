@@ -1,0 +1,221 @@
+--- a/rules/c++/modules/clang/builder.lua
++++ b/rules/c++/modules/clang/builder.lua
+@@ -32,6 +32,11 @@
+ import(".mapper")
+ import(".builder", {inherit = true})
+ 
++function _use_clang_module_pipeline(target)
++    return target:policy("build.c++.modules.two_phases")
++        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
++end
++
+ function _get_bmifile(target, module)
+     local has_reduced_bmi = support.get_modulesreducedbmiflag(target)
+     local has_two_phases = target:policy("build.c++.modules.two_phases")
+@@ -65,6 +70,9 @@
+ 
+     local modules_reduced_bmi_flag = support.get_modulesreducedbmiflag(target)
+     local has_two_phases = target:policy("build.c++.modules.two_phases")
++    local use_clang_module_pipeline = _use_clang_module_pipeline(target)
++    local clang_version = support.get_clang_version(target)
++    local use_reduced_bmi = use_clang_module_pipeline and clang_version and semver.compare(clang_version, "23.0") >= 0
+     local flags
+     if opt.bmi then
+         local module_outputflag = support.get_moduleoutputflag(target)
+@@ -72,7 +80,7 @@
+         flags = {"-x", "c++-module"}
+ 
+         if not opt.objectfile then
+-            table.insert(flags, "--precompile")
++            table.insert(flags, use_reduced_bmi and "--precompile-reduced-bmi" or "--precompile")
+             if target:has_tool("cxx", "clang_cl") then
+                 table.join2(flags, "/clang:-o", "/clang:" .. module.bmifile)
+             end
+@@ -92,7 +100,7 @@
+         end
+     else
+         flags = {}
+-        if not has_two_phases or not module.bmifile then
++        if (use_clang_module_pipeline and support.has_module_extension(module.sourcefile)) or not has_two_phases or not module.bmifile then
+             flags = {"-x", "c++"}
+         end
+         local std = (module.name == "std" or module.name == "std.compat")
+@@ -171,7 +179,7 @@
+ 
+     opt = opt or {}
+     local sourcefile = module.sourcefile
+-    if not opt.bmi and opt.objectfile and module.bmifile then
++    if not _use_clang_module_pipeline(target) and not opt.bmi and opt.objectfile and module.bmifile then
+         sourcefile = module.bmifile
+     end
+     local outputfile = ((opt.bmi and not opt.objectfile) or opt.headerunit) and module.bmifile or module.objectfile
+--- a/rules/c++/modules/builder.lua
++++ b/rules/c++/modules/builder.lua
+@@ -37,5 +37,38 @@
+ function _builder(target)
+     return support.import_implementation_of(target, "builder")
+ end
+-
++
++function _use_clang_module_pipeline(target)
++    return target:policy("build.c++.modules.two_phases")
++        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
++end
++
++function _mark_prunable_leaf_modules(target, built_modules, opt)
++    opt = opt or {}
++    local imported_module_names = {}
++    for _, sourcefile in ipairs(built_modules) do
++        local module = mapper.get(target, sourcefile)
++        for dep_name, dep in pairs(module.deps or {}) do
++            if not dep.headerunit then
++                imported_module_names[dep_name] = true
++            end
++        end
++    end
++
++    for _, sourcefile in ipairs(built_modules) do
++        local module = mapper.get(target, sourcefile)
++        module._carven_prune_leaf_bmi = _use_clang_module_pipeline(target)
++            and module.name ~= nil
++            and not module.interface
++            and not module.headerunit
++            and not support.is_bmionly(target, sourcefile)
++            and not imported_module_names[module.name]
++        if module._carven_prune_leaf_bmi then
++            if opt.remove_bmifiles and not option.get("dry-run") and module.bmifile then
++                os.tryrm(module.bmifile)
++            end
++        end
++    end
++end
++
+ -- generate meta module informations for package / other buildsystems import
+@@ -191,10 +225,11 @@
+         local compflags = compinst:compflags({sourcefile = module.sourcefile, target = target})
+-
++
+-        local dependfile = target:dependfile(module.bmifile or module.objectfile)
++        local artifactfile = module._carven_prune_leaf_bmi and module.objectfile or (module.bmifile or module.objectfile)
++        local dependfile = target:dependfile(artifactfile)
+         local dependinfo = {}
+         dependinfo.files = {module.sourcefile}
+         dependinfo.values = {compinst:program(), compflags}
+         local objectfile_exists = (module.headerunit or support.is_bmionly(target, module.sourcefile)) and true or os.isfile(module.objectfile)
+-        dependinfo.lastmtime = (os.isfile(module.bmifile or module.objectfile) and objectfile_exists) and os.mtime(dependfile) or 0
++        dependinfo.lastmtime = (os.isfile(artifactfile) and objectfile_exists) and os.mtime(dependfile) or 0
+-
++
+         local fileconfig = target:fileconfig(module.sourcefile)
+@@ -248,7 +283,7 @@
+     local _built_modules = {}
+     for _, sourcefile in ipairs(built_modules) do
+         local module = mapper.get(target, sourcefile)
+-        if module.name then
++        if module.name and not module._carven_prune_leaf_bmi then
+             table.insert(_built_modules, sourcefile)
+         else
+             if not support.is_bmionly(target, sourcefile) then
+@@ -272,19 +307,26 @@
+             local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, moduletype)
+             table.insert(buildfilejobs, buildfilejob)
+             jobgraph:add(buildfilejob, function(_, _, jobopt)
+-                progress.set_target(jobopt.progress, target)
++                local moduleopt = table.clone(jobopt)
++                progress.set_target(moduleopt.progress, target)
+                 -- build bmi if named job
+-                jobopt.bmi = module.name
++                moduleopt.bmi = module.name
+                 -- build objectfile here if two phase compilation is not supported
+-                jobopt.objectfile = not has_two_phase_compilation_support and not bmionly
+-                builder.make_module_job(target, module, jobopt)
++                moduleopt.objectfile = not has_two_phase_compilation_support and not bmionly
++                builder.make_module_job(target, module, moduleopt)
+             end)
+             _merge_jobdeps(jobdeps, _get_jobdeps(target, module, jobgraph, buildfilejob))
+ 
+-            -- if two phase compilation supported set jobdeps for objectfile job
++            -- In the Clang module pipeline, the object is compiled
++            -- directly from the source and only needs imported BMIs. It does not
++            -- consume its own BMI, so both jobs may run concurrently.
+             if has_two_phase_compilation_support and not bmionly then
+                 local objbuildfilejob = _get_module_buildfilejob_for(target, sourcefile, "objectfile")
+-                _merge_jobdeps(jobdeps, {[objbuildfilejob] = {buildfilejob}})
++                if _use_clang_module_pipeline(target) then
++                    _merge_jobdeps(jobdeps, _get_jobdeps(target, module, jobgraph, objbuildfilejob))
++                else
++                    _merge_jobdeps(jobdeps, {[objbuildfilejob] = {buildfilejob}})
++                end
+             end
+         end
+     end)
+@@ -327,10 +369,11 @@
+                 local module = mapper.get(target, sourcefile)
+                 local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, "objectfile")
+                 jobgraph:add(buildfilejob, function(_, _, jobopt)
+-                    progress.set_target(jobopt.progress, target)
+-                    jobopt.bmi = false
+-                    jobopt.objectfile = true
+-                    builder.make_module_job(target, module, jobopt)
++                    local moduleopt = table.clone(jobopt)
++                    progress.set_target(moduleopt.progress, target)
++                    moduleopt.bmi = false
++                    moduleopt.objectfile = true
++                    builder.make_module_job(target, module, moduleopt)
+                 end)
+             end
+         end
+@@ -459,7 +502,7 @@
+     local _built_modules = {}
+     for _, sourcefile in ipairs(built_modules) do
+         local module = mapper.get(target, sourcefile)
+-        if module.name then
++        if module.name and not module._carven_prune_leaf_bmi then
+             table.insert(_built_modules, sourcefile)
+         end
+     end
+@@ -716,6 +759,9 @@
+         local modules = scanner.get_modules(target)
+         -- avoid building non referenced modules
+         local built_modules, built_headerunits, _ = scanner.sort_modules_by_dependencies(target, modules, {jobgraph = target:policy("build.jobgraph")})
++        if jobgraph.runcmds then
++            _mark_prunable_leaf_modules(target, built_modules)
++        end
+         local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
+         if jobgraph.add_orders then -- jobgraph
+             -- build headerunits
+@@ -787,3 +824,21 @@
+         profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
+     end
+ end
++
++-- Build object and BMI jobs in one rule stage so the outer rule graph
++-- does not insert a whole-group barrier between them. Object jobs are added
++-- first because the BMI pass attaches their imported-BMI dependency edges.
++function build_module_pipeline(target, jobgraph, sourcebatch, opt)
++    if target:data("cxx.has_modules") then
++        local modules = scanner.get_modules(target)
++        local built_modules = scanner.sort_modules_by_dependencies(target, modules, {jobgraph = target:policy("build.jobgraph")})
++        _mark_prunable_leaf_modules(target, built_modules, {remove_bmifiles = true})
++    end
++    build_objectfiles(target, jobgraph, sourcebatch, opt)
++    build_bmis(target, jobgraph, sourcebatch, opt)
++end
++
++-- Keep ownership of module interface source batches in this rule. Their object
++-- jobs have already been added by build_module_pipeline in the before stage.
++function skip_module_pipeline_objectfiles()
++end
+--- a/rules/c++/modules/xmake.lua
++++ b/rules/c++/modules/xmake.lua
+@@ -52,8 +52,8 @@
+     add_orders("c++.build.modules.scanner", "c++.build.modules.builder")
+ 
+     -- parallel build support to accelerate `xmake build` to build modules
+-    before_build_files("builder.build_bmis", {jobgraph = true, batch = true})
+-    on_build_files("builder.build_objectfiles", {jobgraph = true, batch = true})
++    before_build_files("builder.build_module_pipeline", {jobgraph = true, batch = true})
++    on_build_files("builder.skip_module_pipeline_objectfiles", {jobgraph = true, batch = true})
+ 
+     -- serial compilation only, usually used to support project generator
+     before_buildcmd_files("builder.build_bmis")

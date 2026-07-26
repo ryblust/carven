@@ -1,0 +1,211 @@
+#[cpp] {
+    #include <vector>
+
+    inline int cv_test_interop_trace = 0;
+
+    inline int cv_test_interop_record(int value) noexcept {
+        cv_test_interop_trace = cv_test_interop_trace * 10 + value;
+        return value;
+    }
+
+    struct CarvenInteropMember final {
+        auto cv_test_native_member(int, int) && noexcept -> int {
+            return cv_test_interop_trace;
+        }
+    };
+
+    inline auto cv_test_interop_member() noexcept -> CarvenInteropMember {
+        cv_test_interop_record(1);
+        return {};
+    }
+
+    struct CarvenInteropArgument final {
+        CarvenInteropArgument() = default;
+        CarvenInteropArgument(const CarvenInteropArgument&) = delete;
+        CarvenInteropArgument(CarvenInteropArgument&&) = default;
+    };
+
+    struct CarvenInteropOperations final {
+        auto operator()(CarvenInteropArgument, int) && noexcept -> int {
+            return cv_test_interop_trace;
+        }
+
+        auto operator+(CarvenInteropArgument) && noexcept -> int {
+            return cv_test_interop_trace;
+        }
+
+        auto operator[](CarvenInteropArgument) && noexcept -> int {
+            return cv_test_interop_trace;
+        }
+    };
+
+    inline auto cv_test_interop_operations(int digit) noexcept -> CarvenInteropOperations {
+        cv_test_interop_record(digit);
+        return {};
+    }
+
+    inline auto cv_test_interop_argument(int digit) noexcept -> CarvenInteropArgument {
+        cv_test_interop_record(digit);
+        return {};
+    }
+
+    struct CarvenInteropStatic final {
+        static auto cv_test_static_member(int, int) noexcept -> int {
+            return cv_test_interop_trace;
+        }
+    };
+
+    struct CarvenInteropExplicitBool final {
+        bool value;
+
+        explicit operator bool() const noexcept {
+            return value;
+        }
+
+        auto operator!() const noexcept -> bool = delete;
+    };
+
+    struct CarvenInteropComparable final {
+        bool value;
+
+        auto operator==(CarvenInteropComparable other) && noexcept
+            -> CarvenInteropExplicitBool {
+            return { value == other.value };
+        }
+    };
+
+    inline auto cv_test_interop_comparable(int digit, bool value) noexcept
+        -> CarvenInteropComparable {
+        cv_test_interop_record(digit);
+        return { value };
+    }
+
+    inline auto cv_test_interop_bool(int digit, bool value) noexcept
+        -> CarvenInteropExplicitBool {
+        cv_test_interop_record(digit);
+        return { value };
+    }
+
+}
+
+test "C++ interop: inline C++ expressions and statements remain usable" {
+    let count: usize = #[cpp] {
+        std::vector<int> { 1, 2, 3 }.size()
+    };
+
+    check(count == 3);
+
+    var statement_succeeded: bool = false;
+    if count == 3 {
+        #[cpp] {
+            static_cast<void>(0);
+        }
+        statement_succeeded = true;
+    }
+    check(statement_succeeded);
+
+    let selected_size: usize = #[cpp] {
+        true ? std::vector<int> { 1 } : std::vector<int> { 1, 2 }
+    }.size();
+    check(selected_size == 1usize);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let member_order: i32 = #[cpp] {
+        cv_test_interop_member()
+    }.cv_test_native_member(
+        #[cpp] { cv_test_interop_record(2) },
+        #[cpp] { cv_test_interop_record(3) },
+    );
+    check(member_order == 123);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let callable_order: i32 = #[cpp] {
+        cv_test_interop_operations(4)
+    }(
+        #[cpp] { CarvenInteropArgument {} },
+        #[cpp] { cv_test_interop_record(5) },
+    );
+    check(callable_order == 45);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let static_order: i32 = #[cpp] {
+        CarvenInteropStatic
+    }::cv_test_static_member(
+        #[cpp] { cv_test_interop_record(6) },
+        #[cpp] { cv_test_interop_record(7) },
+    );
+    check(static_order == 67);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let binary_order: i32 = #[cpp] {
+        cv_test_interop_operations(8)
+    } + #[cpp] {
+        cv_test_interop_argument(9)
+    };
+    check(binary_order == 89);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let index_order: i32 = #[cpp] {
+        cv_test_interop_operations(2)
+    }[#[cpp] {
+        cv_test_interop_argument(3)
+    }];
+    check(index_order == 23);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let logical_value: bool = #[cpp] {
+        cv_test_interop_bool(1, true)
+    } && #[cpp] {
+        cv_test_interop_bool(2, true)
+    };
+    check(logical_value);
+    let logical_order: i32 = #[cpp] {
+        cv_test_interop_trace
+    };
+    check(logical_order == 12);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let short_circuited: bool = #[cpp] {
+        cv_test_interop_bool(3, false)
+    } && #[cpp] {
+        cv_test_interop_bool(4, true)
+    };
+    check(!short_circuited);
+    let short_circuit_order: i32 = #[cpp] {
+        cv_test_interop_trace
+    };
+    check(short_circuit_order == 3);
+
+    let negated: bool = !#[cpp] {
+        cv_test_interop_bool(5, false)
+    };
+    check(negated);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    let comparison_value: bool = #[cpp] {
+        cv_test_interop_comparable(6, true)
+    } == #[cpp] {
+        cv_test_interop_comparable(7, true)
+    };
+    check(comparison_value);
+    let comparison_order: i32 = #[cpp] {
+        cv_test_interop_trace
+    };
+    check(comparison_order == 67);
+}

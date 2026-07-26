@@ -1,0 +1,8 @@
+export struct child {
+    value: i32,
+}
+
+test "Modules: a source entity keeps its name beside a child module" {
+    let value = child { value: 17 };
+    check(value.value == 17);
+}

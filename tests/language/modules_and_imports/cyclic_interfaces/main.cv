@@ -1,0 +1,9 @@
+import .left using LeftWrap;
+import .right using { RightLeaf, RightWrap, };
+
+test "Modules: cyclic module surfaces realize through an acyclic declaration bundle" {
+    let leaf = RightLeaf { value: 42 };
+    let left = LeftWrap { right: leaf };
+    let right = RightWrap { left: left };
+    check(right.left.right.value == 42);
+}

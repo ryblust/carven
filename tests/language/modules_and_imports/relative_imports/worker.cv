@@ -1,0 +1,6 @@
+import .local using local_value;
+import .root_value using root_value;
+
+export fn combined_value() -> i32 {
+    return local_value() + root_value();
+}

@@ -1,0 +1,33 @@
+fn classify(value: i32) -> i32 {
+    return match value {
+        -1 => 0,
+        0 | 1 => 1,
+        _ => {
+            let doubled = value * 2;
+            doubled
+        },
+    };
+}
+
+fn preserve_outer_binding(value: i32, carven_match_subject: i32) -> i32 {
+    return match value {
+        _ => carven_match_subject,
+    };
+}
+
+fn __identity(__value: i32) -> i32 {
+    return __value;
+}
+
+test "Pattern matching: matches support statement value and binding forms" {
+    var selected: i32 = 0;
+    match classify(0) {
+        1 => { selected = 1; },
+        _ => { selected = -1; },
+    }
+
+    check(selected == 1);
+    check(classify(3) == 6);
+    check(preserve_outer_binding(7, 42) == 42);
+    check(__identity(9) == 9);
+}

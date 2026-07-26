@@ -1,0 +1,3 @@
+export fn internal_value() -> i32 {
+    return 1;
+}

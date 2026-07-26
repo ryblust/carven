@@ -1,0 +1,37 @@
+test "Ranges: ranges preserve bounds expressions and iteration semantics" {
+    var ascending_total: i32 = 0;
+    for value: i32 in 1..4 {
+        ascending_total += value;
+    }
+
+    let begin: i32 = 1;
+    let end: i32 = 6;
+    var expression_total: i32 = 0;
+    for value in (begin + 1)..(end - 1) {
+        expression_total += value;
+    }
+
+    var empty_total: i32 = 0;
+    for value in begin..begin {
+        empty_total += value;
+    }
+    for value in end..begin {
+        empty_total += value;
+    }
+
+    var filtered_total: i32 = 0;
+    for value in begin..end {
+        if value == 2 {
+            continue;
+        }
+        if value == 5 {
+            break;
+        }
+        filtered_total += value;
+    }
+
+    check(ascending_total == 6);
+    check(expression_total == 9);
+    check(empty_total == 0);
+    check(filtered_total == 8);
+}

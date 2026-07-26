@@ -1,0 +1,3 @@
+export fn wildcard_value() -> i32 {
+    return 42;
+}

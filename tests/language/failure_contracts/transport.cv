@@ -1,0 +1,121 @@
+// ZFailure is intentionally declared before AFailure. The plan-level invariant
+// test owns representation ordering; this program checks that the resulting
+// representation interoperates across every transport form.
+struct ZFailure { code: i32 }
+struct AFailure { code: i32 }
+
+fn narrow(value: i32) -> i32 throw ZFailure {
+    if value < 0 {
+        throw ZFailure { code: -value };
+    }
+    return value;
+}
+
+fn exact_tail(value: i32) -> i32 throw ZFailure {
+    return narrow(value)?;
+}
+
+fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure {
+    return narrow(value)?;
+}
+
+fn selected_failure(select_a: bool) -> i32 throw ZFailure + AFailure {
+    if select_a {
+        throw AFailure { code: 41 };
+    }
+    throw ZFailure { code: 43 };
+}
+
+fn narrow_void(fail: bool) throw ZFailure {
+    if fail {
+        throw ZFailure { code: 47 };
+    }
+}
+
+fn widened_void(fail: bool) throw ZFailure + AFailure {
+    narrow_void(fail)?;
+}
+
+fn invoke_exact(callback: fn(i32) -> i32 throw ZFailure, value: i32) -> i32 throw ZFailure {
+    return callback(value)?;
+}
+
+fn invoke_wide(
+    callback: fn(i32) -> i32 throw ZFailure + AFailure,
+    value: i32,
+) -> i32 throw ZFailure + AFailure {
+    return callback(value)?;
+}
+
+fn recover_value(value: i32) -> i32 {
+    return try {
+        widened_tail(value)?
+    } catch {
+        ZFailure(error) => error.code,
+        AFailure(error) => error.code,
+    };
+}
+
+fn recover_selected(select_a: bool) -> i32 {
+    return try {
+        selected_failure(select_a)?
+    } catch {
+        ZFailure(error) => error.code,
+        AFailure(error) => error.code,
+    };
+}
+
+fn recover_void(fail: bool) -> i32 {
+    return try {
+        widened_void(fail)?;
+        53
+    } catch {
+        ZFailure(error) => error.code,
+        AFailure(error) => error.code,
+    };
+}
+
+test "Failure transport: raw carriers widen consistently across callable forms" {
+    let exact_result = try {
+        exact_tail(5)?
+    } catch {
+        ZFailure(_) => -1,
+    };
+    check(exact_result == 5);
+    check(recover_value(7) == 7);
+    check(recover_value(-11) == 11);
+    check(recover_selected(true) == 41);
+    check(recover_selected(false) == 43);
+    check(recover_void(false) == 53);
+    check(recover_void(true) == 47);
+
+    let exact_function: fn(i32) -> i32 throw ZFailure = narrow;
+    let wide_function: fn(i32) -> i32 throw ZFailure + AFailure = narrow;
+    let closure = [](value: i32) { return narrow(value)?; };
+    let exact_closure: fn(i32) -> i32 throw ZFailure = closure;
+    let wide_closure: fn(i32) -> i32 throw ZFailure + AFailure = closure;
+
+    let function_result = try {
+        invoke_exact(exact_function, 13)? + invoke_wide(wide_function, 17)?
+    } catch {
+        ZFailure(_) => -1,
+        AFailure(_) => -2,
+    };
+    check(function_result == 30);
+
+    let closure_result = try {
+        invoke_exact(exact_closure, 19)? + invoke_wide(wide_closure, 23)?
+    } catch {
+        ZFailure(_) => -1,
+        AFailure(_) => -2,
+    };
+    check(closure_result == 42);
+
+    let temporary_result = try {
+        invoke_wide([](value: i32) { return narrow(value)?; }, 29)?
+    } catch {
+        ZFailure(_) => -1,
+        AFailure(_) => -2,
+    };
+    check(temporary_result == 29);
+}

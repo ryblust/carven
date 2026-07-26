@@ -1,0 +1,41 @@
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+struct Empty {}
+
+fn first(values: [i32; 3]) -> i32 {
+    return values[0];
+}
+
+fn sum(point: Point) -> i32 {
+    return point.x + point.y;
+}
+
+test "Basics: representative primitives aggregates and arrays run end to end" {
+    let signed_value: i32 = 3;
+    let unsigned_value: u8 = 5;
+    let decimal: f64 = 2.5f64;
+    let flag: bool = true;
+
+    let row: [i32; 3] = [1, 2, 3];
+    let first_value: i32 = first(row);
+    let point = Point { x: 20, y: 22 };
+    let positional = Point { 19, 23 };
+    let empty = Empty {};
+    let empty_values: [i32; 0] = [];
+    let nested: [[u8; 2]; 2] = [[1, 2], [3, 4]];
+    let result = sum(point);
+
+    check(signed_value == 3);
+    check(unsigned_value == 5u8);
+    check(decimal == 2.5);
+    check(flag);
+    check(first_value == 1);
+    check(result == 42);
+    check(positional.x + positional.y == 42);
+    check(empty == Empty {});
+    check(empty_values == empty_values);
+    check(nested[1][0] == 3u8);
+}

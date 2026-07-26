@@ -1,0 +1,30 @@
+import .api using RemoteLateResult;
+
+test "Modules: declaration order does not leak into C++ completeness" {
+    let value = make_later(42);
+    check(value.value == 42);
+}
+
+fn classify_remote_late(input: RemoteLateResult) -> i32 {
+    return match input {
+        .Value(value) => value,
+        .Empty => 0,
+    };
+}
+
+test "Modules: imported enum contracts are available before consumer bodies" {
+    check(classify_remote_late(.Value(19)) == 19);
+    check(classify_remote_late(.Empty) == 0);
+}
+
+fn make_later(value: i32) -> Later {
+    return Later { value: value };
+}
+
+struct Wrapper {
+    later: Later,
+}
+
+struct Later {
+    value: i32,
+}

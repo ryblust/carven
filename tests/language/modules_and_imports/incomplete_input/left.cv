@@ -1,0 +1,9 @@
+import .right using Right;
+
+export struct Left {
+    value: i32,
+}
+
+export fn read_right(_: Right) -> i32 {
+    return 20;
+}

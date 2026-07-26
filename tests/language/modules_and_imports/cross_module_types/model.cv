@@ -1,0 +1,7 @@
+export struct OrderedModel {
+    value: i32,
+}
+
+export fn ordered_model(value: i32) -> OrderedModel {
+    return OrderedModel { value: value };
+}

@@ -1,0 +1,6 @@
+fn main() {
+    let invalid: str = #[cpp] {
+        std::string_view("\xc0\x80", 2)
+    };
+    let _ = invalid;
+}

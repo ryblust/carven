@@ -1,5 +1,7 @@
-import carven.driver.command;
+module carven:main;
 
-auto main(int argc, const char** argv) noexcept -> int {
+import :driver.cli;
+
+extern "C++" auto main(int argc, const char* const* argv) noexcept -> int {
     return carven_main(argc, argv);
 }

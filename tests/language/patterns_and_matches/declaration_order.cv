@@ -1,0 +1,40 @@
+fn classify_late_result(input: LateResult) -> str {
+    return match input {
+        .Ok(_) => "ok",
+        .Err => "err",
+    };
+}
+
+fn classify_late_code(input: LateCode) -> i32 {
+    return match input {
+        .Ready => 1,
+        .Done => 2,
+    };
+}
+
+test "Patterns: enum contracts close before earlier bodies are elaborated" {
+    let payload: LateInlineResult = .Value(42);
+    let extracted = match payload {
+        .Value(value) => value,
+        .Empty => 0,
+    };
+    check(extracted == 42);
+    check(classify_late_result(.Ok(7)) == "ok");
+    check(classify_late_result(.Err) == "err");
+    check(classify_late_code(.Done) == 2);
+}
+
+enum LateResult {
+    Ok(i32),
+    Err,
+}
+
+enum LateCode: u8 {
+    Ready = 3,
+    Done = 7,
+}
+
+enum LateInlineResult {
+    Value(i32),
+    Empty,
+}

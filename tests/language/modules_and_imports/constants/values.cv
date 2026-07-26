@@ -1,0 +1,24 @@
+private const offset: i32 = 2;
+const base: i32 = later + offset;
+const later: i32 = 20;
+export const published: i32 = base + 20;
+
+enum ConstantStatus: u8 {
+    Ready = 4,
+    Done,
+}
+
+enum ConstantValue {
+    Item(i32),
+    Empty,
+}
+
+const selected_status: ConstantStatus = ConstantStatus::Done;
+const selected_item: ConstantValue = ConstantValue::Item(later);
+const selected_empty: ConstantValue = ConstantValue::Empty;
+
+export fn constants_preserve_enum_identity() -> bool {
+    return selected_status as u8 == 5u8
+        && selected_item == ConstantValue::Item(20)
+        && selected_empty == ConstantValue::Empty;
+}

@@ -1,0 +1,3 @@
+test "Testing: passing fixture" {
+    check(true);
+}

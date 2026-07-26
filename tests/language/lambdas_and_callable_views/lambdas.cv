@@ -1,0 +1,36 @@
+fn increment(value: i32) -> i32 {
+    return value + 1;
+}
+
+fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 {
+    return callback(value);
+}
+
+fn apply(callback: fn(i32) -> i32, value: i32) -> i32 {
+    return callback(value);
+}
+
+test "Lambdas: lambdas capture values and adapt callable views" {
+    var source = 10;
+    let snapshot = [source](_: i32) {
+        return source;
+    };
+    source = 20;
+
+    let mutate = [&source](delta: i32) {
+        source += delta;
+        return source;
+    };
+    let snapshot_view: fn(i32) -> i32 = snapshot;
+
+    check(snapshot(0) == 10);
+    check(snapshot_view(0) == 10);
+    check(mutate(2) == 22);
+    check(invoke(increment, 4) == 5);
+    let callback = increment;
+    check(apply(callback, 4) == 5);
+    check(invoke([](value: i32) { return value * 2; }, 4) == 8);
+    check(invoke(snapshot, 0) == 10);
+    check(invoke([source](value: i32) { return value + source; }, 1) == 23);
+    check(source == 22);
+}

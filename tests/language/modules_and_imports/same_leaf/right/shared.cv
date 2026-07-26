@@ -1,0 +1,7 @@
+export struct RightValue {
+    value: i32,
+}
+
+export fn make_right() -> RightValue {
+    return RightValue { value: 23 };
+}
