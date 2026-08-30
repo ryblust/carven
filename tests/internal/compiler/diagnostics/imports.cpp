@@ -68,7 +68,7 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
         CompilationRequest {.inputs = inputs},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }
     );
 
@@ -112,7 +112,7 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
         CompilationRequest {.inputs = inputs},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }
     );
 

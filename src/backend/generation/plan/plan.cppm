@@ -47,7 +47,7 @@ class TargetGenerationPlan final {
 public:
     static auto build(
         const SemanticProgram& semantic,
-        const TargetDomainID& linkage_domain
+        const LinkageDomainID& linkage_domain
     ) noexcept -> TargetGenerationPlan;
 
     auto module_plan(ProgramModuleID module_id) const noexcept -> const TargetModuleGenerationPlan&;

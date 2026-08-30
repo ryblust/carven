@@ -59,19 +59,18 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeCheckedForeignStr: return "carven::runtime::checked_foreign_str";
         case TargetSymbol::RuntimeCheckedForeignChar:
             return "carven::runtime::checked_foreign_char";
-        case TargetSymbol::StdAbort:            return "std::abort";
-        case TargetSymbol::StdGet:              return "std::get";
-        case TargetSymbol::StdHoldsAlternative: return "std::holds_alternative";
-        case TargetSymbol::StdForward:          return "std::forward";
-        case TargetSymbol::StdMove:             return "std::move";
-        case TargetSymbol::StdStringView:       return "std::string_view";
-        case TargetSymbol::StdVariant:          return "std::variant";
-        case TargetSymbol::TestingRun:          return "carven::testing::run";
-        case TargetSymbol::TestingCheck:        return "carven::testing::check";
-        case TargetSymbol::TestingRequire:      return "carven::testing::require";
-        case TargetSymbol::TestingFail:         return "carven::testing::fail";
-        case TargetSymbol::TestingControl:      return "carven::testing::detail::TestControl";
-        case TargetSymbol::TestingRegistrar:    return "carven::testing::Registrar";
+        case TargetSymbol::StdAbort:             return "std::abort";
+        case TargetSymbol::StdGet:               return "std::get";
+        case TargetSymbol::StdHoldsAlternative:  return "std::holds_alternative";
+        case TargetSymbol::StdForward:           return "std::forward";
+        case TargetSymbol::StdMove:              return "std::move";
+        case TargetSymbol::StdNullopt:           return "std::nullopt";
+        case TargetSymbol::StdStringView:        return "std::string_view";
+        case TargetSymbol::StdVariant:           return "std::variant";
+        case TargetSymbol::TestingRun:           return "carven::testing::run";
+        case TargetSymbol::TestingReportFailure: return "carven::testing::detail::report_failure";
+        case TargetSymbol::TestingControl:       return "carven::testing::detail::TestControl";
+        case TargetSymbol::TestingRegistrar:     return "carven::testing::Registrar";
     }
     std::unreachable();
 }

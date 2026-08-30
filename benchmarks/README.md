@@ -29,7 +29,8 @@ coarse throughput signal and the 128-to-16 ratio as the breadth-scaling signal.
 
 The private-edit workload performs a warm Xmake build, changes only a private
 function body, rebuilds, and compares C++ object modification times. It measures
-invalidation fanout, not incremental-build duration.
+invalidation fanout, not incremental-build duration. The fixture holds one
+explicit linkage domain constant throughout the measurement.
 
 The pulse is observational: it does not run in CI, store baselines, or define an
 absolute pass/fail threshold. Compare nearby revisions on the same machine and

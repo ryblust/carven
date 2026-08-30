@@ -19,10 +19,7 @@ struct ModuleFixture final {
     std::string_view source;
 };
 
-auto compile_modules(
-    std::span<const ModuleFixture> modules,
-    std::optional<std::string_view> domain = "interfaces:test"
-) noexcept -> ArtifactSet {
+auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> ArtifactSet {
     auto sources = SourceManager();
     auto inputs = std::vector<CompilationInput>();
     inputs.reserve(modules.size());
@@ -34,15 +31,12 @@ auto compile_modules(
         REQUIRE(path.has_value());
         inputs.push_back({.source_id = *source, .module_path = *path});
     }
-    const auto linkage = domain.has_value()
-        ? LinkageIdentity(ExplicitLinkageForm {.domain = std::string(*domain)})
-        : LinkageIdentity(ContentAddressedLinkageForm {});
     auto result = compile(
         sources,
         CompilationRequest {.inputs = inputs},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = linkage,
+            .linkage_domain = LinkageDomain::explicit_value("test:interfaces").value(),
         }
     );
     if (!result.has_value()) {
@@ -91,7 +85,7 @@ auto component_include(const GeneratedArtifact& component) noexcept -> std::stri
 
 } // namespace
 
-TEST_CASE("Interface components: stable domain isolates source edits from target identity") {
+TEST_CASE("Interface components: stable domain keeps interface changes surface-local") {
     constexpr auto baseline = "private fn helper() -> i32 { return 1; }\n"
                               "export struct PublicItem { value: i32, }\n";
     constexpr auto private_edit = "// source line and comment changed\n"
@@ -106,11 +100,6 @@ TEST_CASE("Interface components: stable domain isolates source edits from target
         compile_modules(std::array {ModuleFixture {"stable", private_edit}});
     const auto stable_surface =
         compile_modules(std::array {ModuleFixture {"stable", surface_edit}});
-    const auto fallback =
-        compile_modules(std::array {ModuleFixture {"stable", baseline}}, std::nullopt);
-    const auto fallback_private =
-        compile_modules(std::array {ModuleFixture {"stable", private_edit}}, std::nullopt);
-
     const auto& stable_header = interface_for(stable, "stable");
     const auto& private_header = interface_for(stable_private, "stable");
     const auto& surface_header = interface_for(stable_surface, "stable");
@@ -120,11 +109,6 @@ TEST_CASE("Interface components: stable domain isolates source edits from target
     CHECK_EQ(stable_header.content, private_header.content);
     CHECK_NE(stable_header.content, surface_header.content);
     CHECK_FALSE(stable_header.content.contains("#line"));
-
-    const auto& fallback_header = interface_for(fallback, "stable");
-    const auto& fallback_private_header = interface_for(fallback_private, "stable");
-    CHECK_EQ(fallback_header.logical_path, fallback_private_header.logical_path);
-    CHECK_NE(fallback_header.content, fallback_private_header.content);
 }
 
 TEST_CASE("Interface components: a private implementation edit changes only its module unit") {

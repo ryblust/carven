@@ -129,9 +129,12 @@ Effect diagnostics query those summaries and perform focused HIR scans for
 their own declarations and occurrences. Control evaluation, fixed-point
 solving, evaluation-effect derivation, and fact publication are separate
 implementation slices behind the same `SolvedControl` boundary. Control solving
-may retain temporary failure vectors; publication interns every callable,
-expression, block, catch, and try set and does not expose those vectors as
-persistent facts.
+groups each catch arm's alternatives into one pattern-coverage query per
+protected failure. Pattern redundancy within an arm is diagnosed during
+elaboration; failure absence and coverage by preceding arms remain transient
+effect-diagnostic reasons. Publication interns every callable, expression,
+block, catch, and try set and retains only the reachable source alternative
+indices needed by lowering.
 
 ## Availability
 
@@ -175,7 +178,8 @@ derive places
 - place roots and projections with Read, Write, ReadWrite, and Take access;
 - `FailureSetID` references for callable contracts, expression pending,
   outward, and evaluation sets, block outward sets, catch acceptance, and try
-  unhandled sets, plus test exits;
+  unhandled sets, plus sorted reachable catch-alternative indices and test
+  exits;
 - canonical sorted `EvaluationEffect` place sets and control-boundary flags;
 - nominal storage-dependency order for complete C++ definitions;
 - source snapshots, module records, origins, spellings, and locations through

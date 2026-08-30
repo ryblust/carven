@@ -44,3 +44,8 @@ auto analyze_match(
     std::span<const HIRMatchArm> arms,
     Span match_span
 ) noexcept -> bool;
+
+auto analyze_catch_pattern(
+    ModuleAnalysis& module_analysis,
+    std::span<const HIRCatchPatternAlternative> alternatives
+) noexcept -> void;

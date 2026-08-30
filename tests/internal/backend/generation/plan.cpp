@@ -86,9 +86,9 @@ TEST_CASE("Target plan: every failure set has one stable nominal representation 
     const auto semantic = analyze_failure_profiles();
     const auto request = TargetGenerationRequest {
         .tests = TestEmissionMode::None,
-        .linkage = ExplicitLinkageForm {.domain = "failure-profile-test"},
+        .linkage_domain = *LinkageDomain::explicit_value("failure-profile-test"),
     };
-    const auto domain = derive_target_domain_id(semantic, request);
+    const auto domain = derive_linkage_domain_id(request);
     const auto plan = TargetGenerationPlan::build(semantic, domain);
 
     const auto cross_module = callable_failure_set(semantic, 0);

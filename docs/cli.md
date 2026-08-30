@@ -89,21 +89,28 @@ The two options are mutually exclusive and cannot be repeated. Test emission
 does not suppress a source `main`; the downstream build chooses which generated
 translation units form an application or test executable.
 
-## Target domain identity
+## Linkage domain
 
 `--linkage-domain <value>` (also `--linkage-domain=<value>`) supplies opaque
-caller identity for the deterministic private generated namespace. The empty
-string is a valid explicit identity. In explicit mode,
-the 128-bit target domain hashes a versioned generation-domain tag, test mode,
-and the caller value; source text, module membership, and source locations are
-not inputs. The same explicit value therefore remains stable across edits.
+caller identity for the deterministic private generated namespace. It must be
+nonempty and may be specified at most once.
 
-When the option is omitted, the compiler uses a content-addressed fallback over
-the tag, test mode, sorted canonical module paths, and their source snapshots.
-The domain does not alter Carven nominal identity or create a public C++ ABI.
-It may be specified at most once. Xmake defaults it to the normalized absolute
-project directory plus `target:fullname()`; callers that need reproducibility
-across checkouts must provide an explicit value.
+When the option is omitted, the driver derives a path domain from the
+lexically-normalized absolute artifact root. The artifact root is the output
+directory, the current working directory for the default output `.`, and the
+current working directory as a virtual root for `--stdout`. Explicit and path
+domains have distinct identities even when their text is equal.
+
+A logical generation target must reuse its domain across edits. Different
+targets whose generated objects may enter the same linked image must use
+different domains. Moving the output root changes the CLI default; callers that
+need identity across output layouts or checkouts must provide an explicit
+value. Xmake does so by default using the normalized absolute project directory
+plus `target:fullname()`.
+
+Source text, module membership, source order, and source locations are not
+linkage-domain inputs. The linkage domain does not alter Carven nominal
+identity or define a public C++ ABI.
 
 ## Diagnostics and status
 

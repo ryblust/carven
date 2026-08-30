@@ -22,7 +22,7 @@ auto print_help() noexcept -> int {
         "    --stdout                 Print all generated artifacts for inspection\n"
         "    --tests=default          Emit inline tests and the default runner\n"
         "    --tests=external         Emit inline tests without a runner\n"
-        "    --linkage-domain <value>   Isolate the private generated namespace\n"
+        "    --linkage-domain <value> Override the generated linkage domain\n"
         "\n"
         "DEVELOPER COMMANDS:\n"
         "    dump tokens              Dump the token stream to stdout\n"

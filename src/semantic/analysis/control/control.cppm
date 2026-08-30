@@ -21,6 +21,17 @@ struct ControlSummary final {
     constexpr auto operator==(const ControlSummary&) const noexcept -> bool = default;
 };
 
+enum class CatchAlternativeReachability {
+    Reachable,
+    FailureAbsent,
+    Covered,
+};
+
+struct CatchControlSummary final {
+    std::vector<HIRTypeID> accepted_failures;
+    std::vector<CatchAlternativeReachability> alternatives;
+};
+
 class SolvedControl final {
 public:
     SolvedControl(const SolvedControl&) = delete;
@@ -32,7 +43,7 @@ public:
     auto summary(HIRExprID id) const noexcept -> const ControlSummary&;
     auto summary(HIRStmtID id) const noexcept -> const ControlSummary&;
     auto summary(HIRBlockID id) const noexcept -> const ControlSummary&;
-    auto catch_failures(HIRExprID id, std::size_t arm) const noexcept -> std::span<const HIRTypeID>;
+    auto catch_summary(HIRExprID id, std::size_t arm) const noexcept -> const CatchControlSummary&;
     auto unhandled_failures(HIRExprID id) const noexcept -> std::span<const HIRTypeID>;
     auto evaluation_effect(HIRExprID id) const noexcept -> const EvaluationEffect&;
 
@@ -41,7 +52,7 @@ private:
         std::vector<ControlSummary> expressions,
         std::vector<ControlSummary> statements,
         std::vector<ControlSummary> blocks,
-        std::vector<std::vector<std::vector<HIRTypeID>>> catches,
+        std::vector<std::vector<CatchControlSummary>> catches,
         std::vector<std::vector<HIRTypeID>> unhandled,
         std::vector<EvaluationEffect> effects
     ) noexcept;
@@ -49,7 +60,7 @@ private:
     std::vector<ControlSummary> expression_summaries;
     std::vector<ControlSummary> statement_summaries;
     std::vector<ControlSummary> block_summaries;
-    std::vector<std::vector<std::vector<HIRTypeID>>> catch_summaries;
+    std::vector<std::vector<CatchControlSummary>> catch_summaries;
     std::vector<std::vector<HIRTypeID>> unhandled_summaries;
     std::vector<EvaluationEffect> expression_effects;
 

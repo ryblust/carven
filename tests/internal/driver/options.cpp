@@ -39,7 +39,8 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     CHECK_EQ(destination->root, std::filesystem::path("emit"));
     CHECK_EQ(output->test_mode, TestEmissionMode::ExternalRunner);
     REQUIRE(output->linkage_domain.has_value());
-    CHECK_EQ(*output->linkage_domain, "domain");
+    CHECK_EQ(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
+    CHECK_EQ(output->linkage_domain->value(), "domain");
 
     const auto stdout_args = std::to_array<const char*>({"--stdout", "--tests=default", "main.cv"});
     const auto stdout = parse_compile_command_options(stdout_args);
@@ -47,12 +48,6 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     REQUIRE(stdout.has_value());
     CHECK(std::holds_alternative<StandardOutputArtifactDestination>(stdout->destination));
     CHECK_EQ(stdout->test_mode, TestEmissionMode::DefaultRunner);
-
-    const auto empty_domain_args = std::to_array<const char*>({"--linkage-domain=", "main.cv"});
-    const auto empty_domain = parse_compile_command_options(empty_domain_args);
-    REQUIRE(empty_domain.has_value());
-    REQUIRE(empty_domain->linkage_domain.has_value());
-    CHECK(empty_domain->linkage_domain->empty());
 }
 
 TEST_CASE("Compile options: invalid combinations report structured failures") {
@@ -105,6 +100,12 @@ TEST_CASE("Compile options: invalid combinations report structured failures") {
             .kind = CompileOptionErrorKind::MissingLinkageDomain,
             .option = std::nullopt,
             .message = "missing value after '--linkage-domain'",
+        },
+        InvalidCase {
+            .args = {"--linkage-domain=", "main.cv"},
+            .kind = CompileOptionErrorKind::EmptyLinkageDomain,
+            .option = std::nullopt,
+            .message = "linkage domain is empty",
         },
         InvalidCase {
             .args = {"--linkage-domain=first", "--linkage-domain", "second", "main.cv"},

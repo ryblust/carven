@@ -1,13 +1,16 @@
 module carven:backend.generation.linkage.impl;
 
 import :backend.generation.linkage;
-import :source.provenance;
-import :support.visit;
 import std;
 
 namespace {
 
-constexpr auto target_domain_tag = std::string_view("carven-target-domain-v1");
+constexpr auto linkage_domain_tag = std::string_view("carven-linkage-domain-v2");
+constexpr auto explicit_domain_tag = std::string_view("explicit");
+constexpr auto artifact_root_domain_tag = std::string_view("artifact-root");
+constexpr auto no_tests_tag = std::string_view("tests:none");
+constexpr auto external_tests_tag = std::string_view("tests:external-runner");
+constexpr auto default_tests_tag = std::string_view("tests:default-runner");
 constexpr auto module_namespace_tag = std::string_view("carven-module-namespace-v1");
 
 class Sha256 final {
@@ -171,54 +174,31 @@ auto hex128(std::span<const std::uint8_t, 16> value) noexcept -> std::string {
 
 } // namespace
 
-TargetDomainID::TargetDomainID(std::array<std::uint8_t, 16> bytes) noexcept
+LinkageDomainID::LinkageDomainID(std::array<std::uint8_t, 16> bytes) noexcept
     : value(bytes) {}
 
-auto TargetDomainID::hex() const noexcept -> std::string {
+auto LinkageDomainID::hex() const noexcept -> std::string {
     return hex128(value);
 }
 
-auto TargetDomainID::namespace_identifier() const noexcept -> std::string {
+auto LinkageDomainID::namespace_identifier() const noexcept -> std::string {
     return std::format("d_{}", hex());
 }
 
-auto derive_target_domain_id(
-    const SemanticProgram& semantic,
-    const TargetGenerationRequest& request
-) noexcept -> TargetDomainID {
+auto derive_linkage_domain_id(const TargetGenerationRequest& request) noexcept -> LinkageDomainID {
     auto digest = Sha256();
-    digest.append_field(target_domain_tag);
-    digest.append_u64(static_cast<std::uint64_t>(request.tests));
-    std::visit(
-        Overloaded {
-            [&](const ContentAddressedLinkageForm&) noexcept {
-                digest.append_u64(0);
-                const auto provenance = semantic.provenance();
-                auto module_order = std::vector<ProgramModuleID>();
-                module_order.reserve(semantic.modules().size());
-                for (auto index = 0uz; index < semantic.modules().size(); ++index) {
-                    module_order.push_back(
-                        ProgramModuleID::from_index(static_cast<std::uint32_t>(index))
-                    );
-                }
-                std::ranges::sort(module_order, {}, [&](ProgramModuleID module_id) noexcept {
-                    return provenance.module_record(module_id).path.value();
-                });
-                digest.append_u64(module_order.size());
-                for (const auto module_id : module_order) {
-                    const auto& module_record = provenance.module_record(module_id);
-                    digest.append_field(module_record.path.value());
-                    digest.append_field(provenance.source_snapshot(module_record.source_id).text());
-                }
-            },
-            [&](const ExplicitLinkageForm& explicit_identity) noexcept {
-                digest.append_u64(1);
-                digest.append_field(explicit_identity.domain);
-            },
-        },
-        request.linkage
-    );
-    return TargetDomainID(identity128(std::move(digest)));
+    digest.append_field(linkage_domain_tag);
+    switch (request.tests) {
+        case TestEmissionMode::None:           digest.append_field(no_tests_tag); break;
+        case TestEmissionMode::ExternalRunner: digest.append_field(external_tests_tag); break;
+        case TestEmissionMode::DefaultRunner:  digest.append_field(default_tests_tag); break;
+    }
+    switch (request.linkage_domain.kind()) {
+        case LinkageDomainKind::Explicit:     digest.append_field(explicit_domain_tag); break;
+        case LinkageDomainKind::ArtifactRoot: digest.append_field(artifact_root_domain_tag); break;
+    }
+    digest.append_field(request.linkage_domain.value());
+    return LinkageDomainID(identity128(std::move(digest)));
 }
 
 ModuleNamespaceID::ModuleNamespaceID(std::array<std::uint8_t, 16> bytes) noexcept

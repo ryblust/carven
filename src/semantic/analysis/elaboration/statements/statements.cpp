@@ -685,10 +685,12 @@ auto build_statement(
         auto alternatives = std::vector<HIRCatchPatternAlternative>();
         for (auto index = 0uz; index < patterns.size(); ++index) {
             alternatives.push_back({
+                .origin = module_analysis.origin(source_arm.pattern.alternatives[index].span),
                 .type = alternative_types[index],
                 .inner = patterns[index],
             });
         }
+        analyze_catch_pattern(module_analysis, alternatives);
         auto guard = std::optional<HIRExprID>();
         if (source_arm.guard.has_value()) {
             guard = expression_expected_diagnosing(
@@ -743,6 +745,7 @@ auto build_statement(
             source_arm.body.value
         );
         arms.push_back({
+            .origin = module_analysis.origin(source_arm.span),
             .scope = arm_scope_id,
             .alternatives = std::move(alternatives),
             .guard = guard,

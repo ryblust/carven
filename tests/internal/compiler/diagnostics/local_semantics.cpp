@@ -330,7 +330,7 @@ TEST_CASE("Compiler diagnostics: local semantic failures preserve code and preci
             CompilationRequest {.inputs = std::span(&input, 1)},
             TargetGenerationRequest {
                 .tests = TestEmissionMode::None,
-                .linkage = ContentAddressedLinkageForm {},
+                .linkage_domain = LinkageDomain::explicit_value("test:local-semantics").value(),
             }
         );
 
@@ -362,7 +362,7 @@ TEST_CASE("Compiler diagnostics: successful compilation retains warning location
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:local-semantics").value(),
         }
     );
 

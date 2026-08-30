@@ -32,13 +32,6 @@ auto analyze_match(
     if (!coverage.has_value()) {
         invariant_violation("pattern coverage could not be computed after type analysis");
     }
-    for (const auto& duplicate : coverage->duplicate_alternatives) {
-        module_analysis.emit(
-            builder.provenance().origin(builder.pattern(arms[duplicate.arm].pattern).origin).span,
-            "or-pattern contains a repeated or subsumed alternative",
-            DiagnosticCode::MatchDuplicateAlternative
-        );
-    }
     for (auto index = 0uz; index < arms.size(); ++index) {
         if (!coverage->arm_usefulness[index]) {
             module_analysis.emit(
@@ -56,6 +49,72 @@ auto analyze_match(
         );
     }
     return coverage->exhaustive;
+}
+
+auto analyze_catch_pattern(
+    ModuleAnalysis& module_analysis,
+    std::span<const HIRCatchPatternAlternative> alternatives
+) noexcept -> void {
+    const auto& builder = module_analysis.builder();
+    const auto emit_redundant = [&](ProgramOriginID origin) noexcept {
+        module_analysis.emit(
+            builder.provenance().origin(origin).span,
+            "catch pattern contains a repeated or subsumed alternative",
+            DiagnosticCode::MatchDuplicateAlternative
+        );
+    };
+
+    const auto wildcard =
+        std::ranges::find_if(alternatives, [](const auto& alternative) static noexcept {
+            return !alternative.type.has_value();
+        });
+    if (wildcard != alternatives.end()) {
+        for (const auto& alternative : alternatives) {
+            if (&alternative != &*wildcard) {
+                emit_redundant(alternative.origin);
+            }
+        }
+        return;
+    }
+
+    auto analyzed = std::vector(alternatives.size(), false);
+    for (auto source_index = 0uz; source_index < alternatives.size(); ++source_index) {
+        if (analyzed[source_index]) {
+            continue;
+        }
+        const auto type = *alternatives[source_index].type;
+        auto source_indices = std::vector<std::size_t>();
+        auto patterns = std::vector<std::optional<HIRPatternID>>();
+        for (auto index = source_index; index < alternatives.size(); ++index) {
+            if (alternatives[index].type == type) {
+                analyzed[index] = true;
+                source_indices.push_back(index);
+                patterns.push_back(alternatives[index].inner);
+            }
+        }
+        if (source_indices.size() == 1) {
+            continue;
+        }
+        const auto query = PatternCoverageArm {
+            .alternatives = std::move(patterns),
+            .guarded = false,
+        };
+        const auto coverage = compute_pattern_coverage(
+            builder,
+            module_analysis.declarations(),
+            type,
+            std::span(&query, 1)
+        );
+        if (!coverage.has_value()) {
+            invariant_violation("catch pattern coverage could not be computed after type analysis");
+        }
+        for (const auto& redundant : coverage->redundant_alternatives) {
+            if (redundant.alternative >= source_indices.size()) {
+                invariant_violation("catch coverage alternative is out of range");
+            }
+            emit_redundant(alternatives[source_indices[redundant.alternative]].origin);
+        }
+    }
 }
 
 auto pattern_alternatives(
@@ -385,6 +444,37 @@ auto pattern_alternatives(
                     }
                     for (const auto& [name, binding] : canonical_bindings) {
                         local.emplace(name, binding);
+                    }
+                    auto query = PatternCoverageArm {
+                        .alternatives = {},
+                        .guarded = false,
+                    };
+                    query.alternatives.reserve(lowered.size());
+                    for (const auto alternative : lowered) {
+                        query.alternatives.push_back(alternative);
+                    }
+                    const auto coverage = compute_pattern_coverage(
+                        builder,
+                        module_analysis.declarations(),
+                        expected,
+                        std::span(&query, 1)
+                    );
+                    if (!coverage.has_value()) {
+                        invariant_violation(
+                            "or-pattern coverage could not be computed after type analysis"
+                        );
+                    }
+                    for (const auto& redundant : coverage->redundant_alternatives) {
+                        if (redundant.alternative >= lowered.size()) {
+                            invariant_violation("or-pattern coverage alternative is out of range");
+                        }
+                        module_analysis.emit(
+                            builder.provenance()
+                                .origin(builder.pattern(lowered[redundant.alternative]).origin)
+                                .span,
+                            "or-pattern contains a repeated or subsumed alternative",
+                            DiagnosticCode::MatchDuplicateAlternative
+                        );
                     }
                     return builder.append_pattern({
                         .origin = module_analysis.origin(source_pattern.span),

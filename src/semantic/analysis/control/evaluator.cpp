@@ -54,93 +54,78 @@ auto append_failures(
     destination.insert(destination.end(), source.begin(), source.end());
 }
 
-auto match_exhaustive(
+struct CatchFailureSolution final {
+    std::vector<bool> arm_usefulness;
+    std::vector<std::vector<CatchAlternativeReachability>> alternatives;
+    bool exhaustive;
+};
+
+auto solve_catch_failure(
     const SemanticConstruction& hir,
-    HIRTypeID subject,
-    std::span<const HIRMatchArm> arms
-) noexcept -> bool {
-    const auto coverage = compute_pattern_coverage(hir, subject, arms);
-    if (!coverage.has_value()) {
-        invariant_violation("validated pattern coverage could not be recomputed");
+    HIRTypeID failure,
+    std::span<const HIRCatchArm> arms
+) noexcept -> CatchFailureSolution {
+    auto solution = CatchFailureSolution {
+        .arm_usefulness = std::vector(arms.size(), false),
+        .alternatives = {},
+        .exhaustive = false,
+    };
+    solution.alternatives.reserve(arms.size());
+    for (const auto& arm : arms) {
+        solution.alternatives.emplace_back(
+            arm.alternatives.size(),
+            CatchAlternativeReachability::FailureAbsent
+        );
     }
-    return coverage->exhaustive;
-}
 
-auto catch_type_exhaustive(
-    const SemanticConstruction& hir,
-    HIRTypeID failure,
-    std::span<const HIRCatchArm> arms
-) noexcept -> bool;
-
-auto catch_arm_reachable(
-    const SemanticConstruction& hir,
-    HIRTypeID failure,
-    std::span<const HIRCatchArm> arms
-) noexcept -> bool {
-    auto patterns = std::vector<HIRMatchArm>();
-    auto owners = std::vector<std::size_t>();
+    auto queries = std::vector<PatternCoverageArm>();
+    auto query_arms = std::vector<std::size_t>();
+    auto query_alternatives = std::vector<std::vector<std::size_t>>();
     for (auto arm_index = 0uz; arm_index < arms.size(); ++arm_index) {
         const auto& arm = arms[arm_index];
-        for (const auto& alternative : arm.alternatives) {
+        auto patterns = std::vector<std::optional<HIRPatternID>>();
+        auto alternatives = std::vector<std::size_t>();
+        for (auto alternative_index = 0uz; alternative_index < arm.alternatives.size();
+             ++alternative_index) {
+            const auto& alternative = arm.alternatives[alternative_index];
             if (alternative.type.has_value() && *alternative.type != failure) {
                 continue;
             }
-            if (!alternative.inner.has_value()) {
-                if (arm_index + 1 == arms.size()) {
-                    return !catch_type_exhaustive(hir, failure, arms.first(arm_index));
-                }
-                if (!arm.guard.has_value()) {
-                    return false;
-                }
-                continue;
-            }
-            patterns.push_back({
-                .scope = arm.scope,
-                .pattern = *alternative.inner,
-                .guard = arm.guard,
-                .body = arm.body,
+            patterns.push_back(alternative.inner);
+            alternatives.push_back(alternative_index);
+        }
+        if (!patterns.empty()) {
+            queries.push_back({
+                .alternatives = std::move(patterns),
+                .guarded = arm.guard.has_value(),
             });
-            owners.push_back(arm_index);
+            query_arms.push_back(arm_index);
+            query_alternatives.push_back(std::move(alternatives));
         }
     }
-    const auto coverage = compute_pattern_coverage(hir, failure, patterns);
+    if (queries.empty()) {
+        return solution;
+    }
+    const auto coverage = compute_pattern_coverage(hir, failure, queries);
     if (!coverage.has_value()) {
         invariant_violation("validated catch coverage could not be recomputed");
     }
-    for (auto index = 0uz; index < coverage->arm_usefulness.size(); ++index) {
-        if (owners[index] + 1 == arms.size() && coverage->arm_usefulness[index]) {
-            return true;
+    for (auto query = 0uz; query < queries.size(); ++query) {
+        const auto arm_index = query_arms[query];
+        solution.arm_usefulness[arm_index] = coverage->arm_usefulness[query];
+        if (coverage->alternative_usefulness[query].size() != query_alternatives[query].size()) {
+            invariant_violation("catch coverage did not preserve source alternatives");
+        }
+        for (auto alternative = 0uz; alternative < query_alternatives[query].size();
+             ++alternative) {
+            solution.alternatives[arm_index][query_alternatives[query][alternative]] =
+                coverage->alternative_usefulness[query][alternative]
+                ? CatchAlternativeReachability::Reachable
+                : CatchAlternativeReachability::Covered;
         }
     }
-    return false;
-}
-
-auto catch_type_exhaustive(
-    const SemanticConstruction& hir,
-    HIRTypeID failure,
-    std::span<const HIRCatchArm> arms
-) noexcept -> bool {
-    auto patterns = std::vector<HIRMatchArm>();
-    for (const auto& arm : arms) {
-        for (const auto& alternative : arm.alternatives) {
-            if (alternative.type.has_value() && *alternative.type != failure) {
-                continue;
-            }
-            if (!alternative.inner.has_value()) {
-                if (!arm.guard.has_value()) {
-                    return true;
-                }
-                continue;
-            }
-            patterns.push_back({
-                .scope = arm.scope,
-                .pattern = *alternative.inner,
-                .guard = arm.guard,
-                .body = arm.body,
-            });
-        }
-    }
-    return match_exhaustive(hir, failure, patterns);
+    solution.exhaustive = coverage->exhaustive;
+    return solution;
 }
 
 class ControlEvaluator final {
@@ -277,41 +262,54 @@ private:
         return sequence(std::move(result), alternatives(paths));
     }
 
-    auto catch_types(
-        const HIRCatchArm& arm,
-        std::span<const HIRTypeID> protected_failures
-    ) const noexcept -> std::vector<HIRTypeID> {
-        auto result = std::vector<HIRTypeID>();
-        for (const auto& alternative : arm.alternatives) {
-            if (alternative.type.has_value()) {
-                if (std::ranges::contains(protected_failures, *alternative.type)) {
-                    result.push_back(*alternative.type);
-                }
-            } else {
-                append_failures(result, protected_failures);
-            }
-        }
-        return normalize_failure_members(hir, std::move(result));
-    }
-
     auto evaluate_try(HIRExprID id, const HIRTryExpr& attempt) noexcept -> ControlSummary {
         const auto protected_control = evaluate_block(attempt.body);
         auto normal = protected_control;
         normal.outward_failures.clear();
         auto paths = std::vector<ControlSummary> {std::move(normal)};
-        auto remaining = protected_control.outward_failures;
         auto outward = std::vector<HIRTypeID>();
         auto handler_pending = std::vector<HIRTypeID>();
-        auto accepted = std::vector<std::vector<HIRTypeID>>(attempt.arms.size());
+        auto catches = std::vector<CatchControlSummary>();
+        catches.reserve(attempt.arms.size());
+        for (const auto& arm : attempt.arms) {
+            catches.push_back({
+                .accepted_failures = {},
+                .alternatives = std::vector(
+                    arm.alternatives.size(),
+                    CatchAlternativeReachability::FailureAbsent
+                ),
+            });
+        }
+        auto unhandled = std::vector<HIRTypeID>();
+        for (const auto failure : protected_control.outward_failures) {
+            const auto solution = solve_catch_failure(hir, failure, attempt.arms);
+            for (auto arm_index = 0uz; arm_index < attempt.arms.size(); ++arm_index) {
+                const auto& arm = attempt.arms[arm_index];
+                for (auto alternative_index = 0uz; alternative_index < arm.alternatives.size();
+                     ++alternative_index) {
+                    const auto reachability = solution.alternatives[arm_index][alternative_index];
+                    if (reachability == CatchAlternativeReachability::Reachable) {
+                        catches[arm_index].alternatives[alternative_index] =
+                            CatchAlternativeReachability::Reachable;
+                    } else if (reachability == CatchAlternativeReachability::Covered
+                               && catches[arm_index].alternatives[alternative_index]
+                                   != CatchAlternativeReachability::Reachable) {
+                        catches[arm_index].alternatives[alternative_index] =
+                            CatchAlternativeReachability::Covered;
+                    }
+                }
+                if (solution.arm_usefulness[arm_index]) {
+                    catches[arm_index].accepted_failures.push_back(failure);
+                }
+            }
+            if (!solution.exhaustive) {
+                unhandled.push_back(failure);
+            }
+        }
 
         for (auto arm_index = 0uz; arm_index < attempt.arms.size(); ++arm_index) {
             const auto& arm = attempt.arms[arm_index];
-            auto matched = catch_types(arm, remaining);
-            const auto prefix = std::span(attempt.arms).first(arm_index + 1);
-            std::erase_if(matched, [&](HIRTypeID failure) noexcept {
-                return !catch_arm_reachable(hir, failure, prefix);
-            });
-            accepted[arm_index] = matched;
+            const auto& matched = catches[arm_index].accepted_failures;
             const auto previous_rethrow = rethrow_failures;
             rethrow_failures = matched;
             auto arm_control =
@@ -326,15 +324,12 @@ private:
             arm_control.pending_failures.clear();
             arm_control.outward_failures.clear();
             paths.push_back(std::move(arm_control));
-            std::erase_if(remaining, [&](HIRTypeID failure) noexcept {
-                return catch_type_exhaustive(hir, failure, prefix);
-            });
         }
         if (facts != nullptr) {
-            facts->catches[id.index()] = std::move(accepted);
-            facts->unhandled[id.index()] = remaining;
+            facts->catches[id.index()] = std::move(catches);
+            facts->unhandled[id.index()] = unhandled;
         }
-        append_failures(outward, remaining);
+        append_failures(outward, unhandled);
         auto result = alternatives(paths);
         result.pending_failures = protected_control.pending_failures;
         append_failures(result.pending_failures, handler_pending);
@@ -615,7 +610,7 @@ auto record_control(
         .expressions = std::vector<ControlSummary>(hir.expressions().size(), empty_control()),
         .statements = std::vector<ControlSummary>(hir.statements().size(), empty_control()),
         .blocks = std::vector<ControlSummary>(hir.blocks().size(), empty_control()),
-        .catches = std::vector<std::vector<std::vector<HIRTypeID>>>(hir.expressions().size()),
+        .catches = std::vector<std::vector<CatchControlSummary>>(hir.expressions().size()),
         .unhandled = std::vector<std::vector<HIRTypeID>>(hir.expressions().size()),
     };
     auto evaluator = ControlEvaluator(hir, failure_sets, nullptr, &recorded);

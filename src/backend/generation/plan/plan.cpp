@@ -37,7 +37,7 @@ auto interface_component_logical_path(std::span<const std::string> anchor_compon
 
 TargetPlanConstruction::TargetPlanConstruction(
     const SemanticProgram& semantic,
-    const TargetDomainID& linkage_domain
+    const LinkageDomainID& linkage_domain
 ) noexcept
     : semantic(semantic),
       linkage_domain(linkage_domain) {}
@@ -189,7 +189,7 @@ auto TargetGenerationPlan::interface_components() const noexcept
 
 auto TargetGenerationPlan::build(
     const SemanticProgram& semantic,
-    const TargetDomainID& linkage_domain
+    const LinkageDomainID& linkage_domain
 ) noexcept -> TargetGenerationPlan {
     return TargetPlanConstruction(semantic, linkage_domain).finish();
 }

@@ -402,12 +402,16 @@ public:
     public:
         constexpr Iterator(const char* current, const char* end) noexcept
             : current(current),
-              end_pointer(end) {}
-        constexpr auto operator*() const noexcept -> char32_t {
-            return detail::decode_utf8(current, end_pointer).scalar;
-        }
+              end_pointer(end),
+              decoded(
+                  current == end ? detail::DecodedUTF8 {.scalar = 0, .width = 0}
+                                 : detail::decode_utf8(current, end)
+              ) {}
+        constexpr auto operator*() const noexcept -> char32_t { return decoded.scalar; }
         constexpr auto operator++() noexcept -> Iterator& {
-            current += detail::decode_utf8(current, end_pointer).width;
+            current += decoded.width;
+            decoded = current == end_pointer ? detail::DecodedUTF8 {.scalar = 0, .width = 0}
+                                             : detail::decode_utf8(current, end_pointer);
             return *this;
         }
         constexpr auto operator!=(const Iterator& other) const noexcept -> bool {
@@ -417,6 +421,7 @@ public:
     private:
         const char* current;
         const char* end_pointer;
+        detail::DecodedUTF8 decoded;
     };
 
     constexpr explicit StrCharsView(std::string_view text) noexcept

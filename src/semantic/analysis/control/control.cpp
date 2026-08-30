@@ -10,7 +10,7 @@ SolvedControl::SolvedControl(
     std::vector<ControlSummary> expressions,
     std::vector<ControlSummary> statements,
     std::vector<ControlSummary> blocks,
-    std::vector<std::vector<std::vector<HIRTypeID>>> catches,
+    std::vector<std::vector<CatchControlSummary>> catches,
     std::vector<std::vector<HIRTypeID>> unhandled,
     std::vector<EvaluationEffect> effects
 ) noexcept
@@ -33,8 +33,8 @@ auto SolvedControl::summary(HIRBlockID id) const noexcept -> const ControlSummar
     return block_summaries[id.index()];
 }
 
-auto SolvedControl::catch_failures(HIRExprID id, std::size_t arm) const noexcept
-    -> std::span<const HIRTypeID> {
+auto SolvedControl::catch_summary(HIRExprID id, std::size_t arm) const noexcept
+    -> const CatchControlSummary& {
     return catch_summaries[id.index()][arm];
 }
 
@@ -88,10 +88,22 @@ auto commit_control_facts(SemanticConstruction& builder, SolvedControl&& control
         if (std::holds_alternative<HIRTryExpr>(builder.expression(id).value)) {
             auto arms = std::vector<HIRCatchFacts>();
             arms.reserve(control.catch_summaries[index].size());
-            for (auto& accepted : control.catch_summaries[index]) {
-                arms.push_back(
-                    {.accepted_failure_set = builder.intern_failure_set(std::move(accepted))}
-                );
+            for (auto& source_arm : control.catch_summaries[index]) {
+                auto reachable_alternative_indices = std::vector<std::uint32_t>();
+                for (auto alternative = 0uz; alternative < source_arm.alternatives.size();
+                     ++alternative) {
+                    if (source_arm.alternatives[alternative]
+                        == CatchAlternativeReachability::Reachable) {
+                        reachable_alternative_indices.push_back(
+                            static_cast<std::uint32_t>(alternative)
+                        );
+                    }
+                }
+                arms.push_back({
+                    .accepted_failure_set =
+                        builder.intern_failure_set(std::move(source_arm.accepted_failures)),
+                    .reachable_alternative_indices = std::move(reachable_alternative_indices),
+                });
             }
             attempt = HIRTryFacts {
                 .arms = std::move(arms),

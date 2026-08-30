@@ -29,7 +29,7 @@ class TargetPlanConstruction final {
 public:
     TargetPlanConstruction(
         const SemanticProgram& semantic,
-        const TargetDomainID& linkage_domain
+        const LinkageDomainID& linkage_domain
     ) noexcept;
 
     auto finish() && noexcept -> TargetGenerationPlan;
@@ -41,7 +41,7 @@ private:
     auto plan_references_and_interfaces() noexcept -> void;
 
     const SemanticProgram& semantic;
-    const TargetDomainID& linkage_domain;
+    const LinkageDomainID& linkage_domain;
     std::optional<TargetNamePlan> names;
     std::vector<std::uint8_t> read_parameter_by_value_flags;
     std::vector<TargetFailureSetProfile> failure_sets;

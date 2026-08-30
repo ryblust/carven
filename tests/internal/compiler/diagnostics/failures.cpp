@@ -52,11 +52,70 @@ TEST_CASE("Compiler diagnostics: failure copyability closes after nominal signat
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
         }
     );
 
     CHECK(result.has_value());
+}
+
+TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subject") {
+    struct WarningExpectation final {
+        std::string_view source;
+        std::string_view code;
+        std::string_view primary_text;
+    };
+    const auto cases = std::array {
+        WarningExpectation {
+            .source = "struct Alpha {} struct Beta {} "
+                      "private fn produce() -> i32 throw Alpha { throw Alpha {}; } "
+                      "fn recover() -> i32 { return try { produce()? } catch { "
+                      "Alpha(_) => 1, Alpha(_) | Beta(_) => 2, }; }",
+            .code = "CV-EFFECT-CATCH-ARM-UNREACHABLE",
+            .primary_text = "Alpha(_) | Beta(_) => 2",
+        },
+        WarningExpectation {
+            .source = "struct Alpha {} struct Beta {} "
+                      "private fn produce() -> i32 throw Alpha { throw Alpha {}; } "
+                      "fn recover() -> i32 { return try { produce()? } catch { "
+                      "Alpha(_) | Beta(_) => 1, }; }",
+            .code = "CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE",
+            .primary_text = "Beta(_)",
+        },
+    };
+
+    for (const auto& expectation : cases) {
+        auto sources = SourceManager();
+        const auto source_id =
+            *sources.append_virtual("catch-warning.cv", std::string(expectation.source));
+        const auto input = CompilationInput {
+            .source_id = source_id,
+            .module_path = *CanonicalModulePath::from_value("catch_warning"),
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.inputs = std::span(&input, 1)},
+            TargetGenerationRequest {
+                .tests = TestEmissionMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:catch-warnings").value(),
+            }
+        );
+
+        REQUIRE(result.has_value());
+        CHECK_EQ(
+            std::ranges::count_if(
+                result->diagnostics,
+                [&](const Diagnostic& diagnostic) noexcept {
+                    return diagnostic.finding.code == expectation.code;
+                }
+            ),
+            1
+        );
+        const auto* warning = find_diagnostic(result->diagnostics, expectation.code);
+        REQUIRE(warning != nullptr);
+        REQUIRE(warning->attachment.primary.has_value());
+        CHECK_EQ(sources.slice(warning->attachment.primary->span), expectation.primary_text);
+    }
 }
 
 TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic contracts") {
@@ -95,6 +154,22 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
                       ".Pair(item, item) => item, }; }",
             .code = "CV-NAME-DUPLICATE-LOCAL",
             .primary_text = {},
+        },
+        {
+            .name = "subsumed or-pattern alternative",
+            .source = "enum Value { A, B } "
+                      "fn invalid(value: Value) { match value { .A | _ => {}, } }",
+            .code = "CV-MATCH-DUPLICATE-ALTERNATIVE",
+            .primary_text = ".A",
+        },
+        {
+            .name = "duplicate catch alternative",
+            .source = "struct Failure {} "
+                      "fn fail() -> i32 throw Failure { throw Failure {}; } "
+                      "fn invalid() -> i32 { return try { fail()? } catch { "
+                      "Failure(_) | Failure(_) => 0, }; }",
+            .code = "CV-MATCH-DUPLICATE-ALTERNATIVE",
+            .primary_text = "Failure(_)",
         },
         {
             .name = "recursive value storage",
@@ -245,7 +320,7 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
             CompilationRequest {.inputs = std::span(&input, 1)},
             TargetGenerationRequest {
                 .tests = TestEmissionMode::None,
-                .linkage = ContentAddressedLinkageForm {},
+                .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
             }
         );
 
@@ -254,5 +329,8 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
         CHECK(!diagnostic->attachment.primary->span.span.empty());
+        if (!expectation.primary_text.empty()) {
+            CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);
+        }
     }
 }

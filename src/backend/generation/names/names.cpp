@@ -245,7 +245,7 @@ auto TargetNameAllocator::generated_namespace() noexcept -> TargetName {
     });
 }
 
-auto TargetNameAllocator::domain_namespace(const TargetDomainID& linkage_domain) noexcept
+auto TargetNameAllocator::domain_namespace(const LinkageDomainID& linkage_domain) noexcept
     -> TargetName {
     return TargetName::from_components({fixed(linkage_domain.namespace_identifier())});
 }

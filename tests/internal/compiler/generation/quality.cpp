@@ -207,7 +207,7 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:quality").value(),
         }
     );
     REQUIRE(result.has_value());
@@ -232,7 +232,7 @@ auto compile_opaque_raw_fixture() noexcept -> ArtifactSet {
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:quality").value(),
         }
     );
     REQUIRE(result.has_value());

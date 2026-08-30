@@ -64,6 +64,16 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         }
         return output_path(args[++index]);
     };
+    const auto linkage_domain = [](std::string_view value) static noexcept
+        -> std::expected<LinkageDomain, CompileOptionError> {
+        auto domain = LinkageDomain::explicit_value(std::string(value));
+        if (!domain.has_value()) {
+            return std::unexpected(
+                compile_option_error(CompileOptionErrorKind::EmptyLinkageDomain)
+            );
+        }
+        return std::move(*domain);
+    };
 
     for (auto index = 0uz; index < args.size(); ++index) {
         const auto arg = std::string_view(args[index]);
@@ -112,7 +122,11 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
                     compile_option_error(CompileOptionErrorKind::MissingLinkageDomain)
                 );
             }
-            request.linkage_domain = args[++index];
+            auto domain = linkage_domain(args[++index]);
+            if (!domain.has_value()) {
+                return std::unexpected(domain.error());
+            }
+            request.linkage_domain = std::move(*domain);
             has_linkage_domain_option = true;
         } else if (arg.starts_with("--linkage-domain=")) {
             if (has_linkage_domain_option) {
@@ -120,7 +134,11 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
                     compile_option_error(CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce)
                 );
             }
-            request.linkage_domain = arg.substr(std::string_view("--linkage-domain=").size());
+            auto domain = linkage_domain(arg.substr(std::string_view("--linkage-domain=").size()));
+            if (!domain.has_value()) {
+                return std::unexpected(domain.error());
+            }
+            request.linkage_domain = std::move(*domain);
             has_linkage_domain_option = true;
         } else if (arg.starts_with('-')) {
             return std::unexpected(
@@ -150,6 +168,7 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
             return "linkage domain was specified more than once";
         case CompileOptionErrorKind::MissingLinkageDomain:
             return "missing value after '--linkage-domain'";
+        case CompileOptionErrorKind::EmptyLinkageDomain: return "linkage domain is empty";
         case CompileOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);
         case CompileOptionErrorKind::NoSourceInput: return "no source input";

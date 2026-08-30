@@ -94,7 +94,7 @@ The following are not compatibility promises:
 - complete generated C++ text, whitespace, or declaration layout;
 - generated namespaces, private identifiers, temporaries, labels, or helper
   selection;
-- `TargetDomainID` and `ModuleNamespaceID` bytes and hash-input encoding;
+- `LinkageDomainID` and `ModuleNamespaceID` bytes and hash-input encoding;
 - the grouping of declarations inside a generated unit beyond the documented
   logical artifact paths;
 - private runtime helper types, methods, representation, or ABI;

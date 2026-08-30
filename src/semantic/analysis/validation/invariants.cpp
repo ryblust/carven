@@ -1407,10 +1407,12 @@ private:
     ) noexcept -> bool {
         if (!scope_known(arm.scope)
             || !scope_contains(owner_scope, arm.scope)
+            || arm.origin.index() >= program.provenance().origins().size()
             || !failure_set_known(facts.accepted_failure_set)) {
             return false;
         }
-        for (const auto failure : program.failure_set(facts.accepted_failure_set).members) {
+        const auto& accepted = program.failure_set(facts.accepted_failure_set).members;
+        for (const auto failure : accepted) {
             if (!std::ranges::contains(protected_failures, failure)) {
                 return fail(
                     SemanticProgramErrorKind::InvalidContract,
@@ -1418,8 +1420,10 @@ private:
                 );
             }
         }
-        for (const auto& alternative : arm.alternatives) {
-            if (alternative.type.has_value() && !type_known(*alternative.type)) {
+        for (auto index = 0uz; index < arm.alternatives.size(); ++index) {
+            const auto& alternative = arm.alternatives[index];
+            if (alternative.origin.index() >= program.provenance().origins().size()
+                || (alternative.type.has_value() && !type_known(*alternative.type))) {
                 return false;
             }
             if (alternative.inner.has_value()
@@ -1427,6 +1431,51 @@ private:
                     || !visit_pattern(*alternative.inner, arm.scope, *alternative.type))) {
                 return false;
             }
+        }
+        if (!std::ranges::is_sorted(facts.reachable_alternative_indices)
+            || std::ranges::adjacent_find(facts.reachable_alternative_indices)
+                != facts.reachable_alternative_indices.end()) {
+            return fail(
+                SemanticProgramErrorKind::InvalidContract,
+                "catch reachable alternatives are not sorted and unique"
+            );
+        }
+        for (const auto index : facts.reachable_alternative_indices) {
+            if (index >= arm.alternatives.size()) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "catch reachable alternative is out of range"
+                );
+            }
+            const auto& alternative = arm.alternatives[index];
+            if (alternative.type.has_value()
+                && !std::ranges::contains(accepted, *alternative.type)) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "catch reachable alternative does not accept its failure type"
+                );
+            }
+        }
+        for (const auto failure : accepted) {
+            const auto represented = std::ranges::any_of(
+                facts.reachable_alternative_indices,
+                [&](std::uint32_t index) noexcept {
+                    const auto& alternative = arm.alternatives[index];
+                    return !alternative.type.has_value() || *alternative.type == failure;
+                }
+            );
+            if (!represented) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "catch accepted failure has no reachable alternative"
+                );
+            }
+        }
+        if (accepted.empty() && !facts.reachable_alternative_indices.empty()) {
+            return fail(
+                SemanticProgramErrorKind::InvalidContract,
+                "empty catch arm acceptance has reachable alternatives"
+            );
         }
         return (!arm.guard.has_value() || visit_expression(*arm.guard, arm.scope))
             && visit_block(arm.body, arm.scope);

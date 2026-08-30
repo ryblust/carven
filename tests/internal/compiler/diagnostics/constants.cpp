@@ -53,7 +53,7 @@ auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modu
         CompilationRequest {.inputs = inputs},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:constants").value(),
         }
     );
 }

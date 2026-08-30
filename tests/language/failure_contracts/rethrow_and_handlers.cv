@@ -8,6 +8,10 @@ enum DecodeError {
     Invalid(i32),
 }
 
+enum PairError {
+    Pair(i32, i32),
+}
+
 #[cpp] {
     inline auto cv_test_catch_guard_calls = 0;
 
@@ -41,6 +45,10 @@ fn fail_decode(kind: i32) -> i32 throw DecodeError {
 
 fn fail_unreachable() -> i32 throw UnreachableError {
     throw UnreachableError {};
+}
+
+fn fail_pair() -> i32 throw PairError {
+    throw PairError::Pair(1, 1);
 }
 
 fn recover_decode(kind: i32) -> i32 {
@@ -144,6 +152,19 @@ fn guard_is_type_conditional() -> i32 {
     return result + calls * 100;
 }
 
+fn overlapping_alternatives_share_one_guard() -> i32 {
+    #[cpp] { cv_test_catch_guard_calls = 0; }
+    let result = try {
+        fail_pair()?
+    } catch {
+        PairError(.Pair(1, _)) | PairError(.Pair(_, 1))
+            if #[cpp] { cv_test_record_catch_guard() } => 7,
+        PairError(_) => 0,
+    };
+    let calls: i32 = #[cpp] { cv_test_catch_guard_calls };
+    return result + calls * 10;
+}
+
 fn handler_propagates_outward() -> i32 throw ParseError {
     return try {
         read()?
@@ -245,6 +266,7 @@ test "Failure contracts: preserve rethrow and handler semantics" {
     check(recover_wildcard_rethrow(true) == 31);
     check(recover_wildcard_rethrow(false) == 47);
     check(guard_is_type_conditional() == 47);
+    check(overlapping_alternatives_share_one_guard() == 17);
     check(recover_propagated_handler_failure() == 59);
     check(recover_transformed_handler_failure() == 61);
     check(recover_guard_failure() == 67);

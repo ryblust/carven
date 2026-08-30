@@ -125,7 +125,14 @@ namespace {
       "CV-EFFECT-CATCH-NON-EXHAUSTIVE",                                                            \
       Error,                                                                                       \
       "Catch does not cover every protected failure.")                                             \
-    X(EffectCatchUnreachable, "CV-EFFECT-CATCH-UNREACHABLE", Warning, "Unreachable catch arm.")    \
+    X(EffectCatchArmUnreachable,                                                                   \
+      "CV-EFFECT-CATCH-ARM-UNREACHABLE",                                                           \
+      Warning,                                                                                     \
+      "Unreachable catch arm.")                                                                    \
+    X(EffectCatchAlternativeUnreachable,                                                           \
+      "CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE",                                                   \
+      Warning,                                                                                     \
+      "Unreachable catch alternative.")                                                            \
     X(EffectRethrowContext,                                                                        \
       "CV-EFFECT-RETHROW-CONTEXT",                                                                 \
       Error,                                                                                       \

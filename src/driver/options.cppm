@@ -15,7 +15,7 @@ using ArtifactDestination =
 struct CompileCommandOptions final {
     ArtifactDestination destination;
     TestEmissionMode test_mode;
-    std::optional<std::string_view> linkage_domain;
+    std::optional<LinkageDomain> linkage_domain;
     std::vector<std::string_view> input_paths;
 };
 
@@ -26,6 +26,7 @@ enum class CompileOptionErrorKind {
     EmptyOutputPath,
     LinkageDomainSpecifiedMoreThanOnce,
     MissingLinkageDomain,
+    EmptyLinkageDomain,
     UnknownOption,
     NoSourceInput,
 };

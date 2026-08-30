@@ -221,11 +221,13 @@ struct HIRMatchExpr final {
 };
 
 struct HIRCatchPatternAlternative final {
+    ProgramOriginID origin;
     std::optional<HIRTypeID> type;
     std::optional<HIRPatternID> inner;
 };
 
 struct HIRCatchArm final {
+    ProgramOriginID origin;
     SemanticScopeID scope;
     std::vector<HIRCatchPatternAlternative> alternatives;
     std::optional<HIRExprID> guard;
@@ -272,6 +274,7 @@ struct HIRExpr final {
 
 struct HIRCatchFacts final {
     FailureSetID accepted_failure_set;
+    std::vector<std::uint32_t> reachable_alternative_indices;
 };
 
 struct HIRTryFacts final {

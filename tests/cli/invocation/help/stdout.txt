@@ -11,7 +11,7 @@ OPTIONS:
     --stdout                 Print all generated artifacts for inspection
     --tests=default          Emit inline tests and the default runner
     --tests=external         Emit inline tests without a runner
-    --linkage-domain <value>   Isolate the private generated namespace
+    --linkage-domain <value> Override the generated linkage domain
 
 DEVELOPER COMMANDS:
     dump tokens              Dump the token stream to stdout

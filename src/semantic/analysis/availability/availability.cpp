@@ -688,14 +688,14 @@ private:
         for (auto index = attempt.arms.size(); index > 0; --index) {
             const auto arm_index = index - 1;
             const auto& arm = attempt.arms[arm_index];
-            const auto accepted = control.catch_failures(id, arm_index);
+            const auto& accepted = control.catch_summary(id, arm_index).accepted_failures;
             auto handler_targets = targets;
             handler_targets.rethrows.assign(accepted.begin(), accepted.end());
             auto entry = lower_block(arm.body, normal, handler_targets);
             if (arm.guard.has_value()) {
                 auto fallback = std::vector<AvailabilityBlockID>();
                 for (auto later = arm_index + 1; later < attempt.arms.size(); ++later) {
-                    const auto later_failures = control.catch_failures(id, later);
+                    const auto& later_failures = control.catch_summary(id, later).accepted_failures;
                     const auto overlaps = std::ranges::any_of(accepted, [&](HIRTypeID failure) {
                         return std::ranges::contains(later_failures, failure);
                     });
@@ -728,7 +728,10 @@ private:
         for (const auto failure : control.summary(attempt.body).outward_failures) {
             auto successors = std::vector<AvailabilityBlockID>();
             for (auto arm = 0uz; arm < attempt.arms.size(); ++arm) {
-                if (std::ranges::contains(control.catch_failures(id, arm), failure)) {
+                if (std::ranges::contains(
+                        control.catch_summary(id, arm).accepted_failures,
+                        failure
+                    )) {
                     successors.push_back(handler_entries[arm]);
                 }
             }

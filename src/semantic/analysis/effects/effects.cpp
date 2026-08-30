@@ -239,27 +239,35 @@ auto diagnose_solved_effects(
                     DiagnosticCode::FlowValueBranchResult
                 );
             }
-            const auto can_match_protected_failure =
-                std::ranges::any_of(arm.alternatives, [&](const auto& alternative) noexcept {
-                    return !alternative.type.has_value()
-                        || std::ranges::contains(protected_failures, *alternative.type);
-                });
-            if (can_match_protected_failure && control.catch_failures(id, arm_index).empty()) {
-                emit(
-                    origin,
-                    "catch arm cannot match a remaining protected failure",
-                    DiagnosticCode::EffectCatchUnreachable
-                );
+            if (protected_failures.empty()) {
+                continue;
             }
-            for (const auto& alternative : arm.alternatives) {
-                if (alternative.type.has_value()
-                    && !std::ranges::contains(protected_failures, *alternative.type)) {
-                    emit(
-                        origin,
-                        "catch arm cannot match a remaining protected failure",
-                        DiagnosticCode::EffectCatchUnreachable
-                    );
+            const auto& catch_summary = control.catch_summary(id, arm_index);
+            const auto arm_reachable = std::ranges::contains(
+                catch_summary.alternatives,
+                CatchAlternativeReachability::Reachable
+            );
+            if (!arm_reachable) {
+                emit(
+                    arm.origin,
+                    "catch arm cannot match a remaining protected failure",
+                    DiagnosticCode::EffectCatchArmUnreachable
+                );
+                continue;
+            }
+            for (auto alternative_index = 0uz; alternative_index < arm.alternatives.size();
+                 ++alternative_index) {
+                const auto reachability = catch_summary.alternatives[alternative_index];
+                if (reachability == CatchAlternativeReachability::Reachable) {
+                    continue;
                 }
+                emit(
+                    arm.alternatives[alternative_index].origin,
+                    reachability == CatchAlternativeReachability::FailureAbsent
+                        ? "catch alternative names a failure not produced by the protected body"
+                        : "catch alternative is covered by earlier unguarded alternatives",
+                    DiagnosticCode::EffectCatchAlternativeUnreachable
+                );
             }
         }
         if (!control.unhandled_failures(id).empty()) {

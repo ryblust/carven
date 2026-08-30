@@ -69,6 +69,13 @@ auto handler_body(
     return lower_outcome_block(context, body, *result, *failure_set, control);
 }
 
+auto alternative_reachable(const HIRCatchFacts& facts, std::size_t alternative) noexcept -> bool {
+    return std::ranges::binary_search(
+        facts.reachable_alternative_indices,
+        static_cast<std::uint32_t>(alternative)
+    );
+}
+
 } // namespace
 
 auto lower_catch_handlers(
@@ -96,7 +103,12 @@ auto lower_catch_handlers(
                     .ordered_members.empty()) {
                 continue;
             }
-            for (const auto& alternative : arm.alternatives) {
+            for (auto alternative_index = 0uz; alternative_index < arm.alternatives.size();
+                 ++alternative_index) {
+                if (!alternative_reachable(facts[arm_index], alternative_index)) {
+                    continue;
+                }
+                const auto& alternative = arm.alternatives[alternative_index];
                 const auto failure = alternative.type.transform([&](HIRTypeID type) noexcept {
                     return lower_type(context, type);
                 });
@@ -174,7 +186,13 @@ auto lower_catch_handlers(
         if (context.failure_set(facts[arm_index].accepted_failure_set).ordered_members.empty()) {
             continue;
         }
-        for (const auto& alternative : arm.alternatives) {
+        auto arm_branches = std::vector<TargetIfBranch>();
+        for (auto alternative_index = 0uz; alternative_index < arm.alternatives.size();
+             ++alternative_index) {
+            if (!alternative_reachable(facts[arm_index], alternative_index)) {
+                continue;
+            }
+            const auto& alternative = arm.alternatives[alternative_index];
             const auto failure = alternative.type.transform([&](HIRTypeID type) noexcept {
                 return lower_type(context, type);
             });
@@ -262,16 +280,19 @@ auto lower_catch_handlers(
                         std::make_move_iterator(body.end())
                     );
                 }
-                statements.push_back(context.target().append_lowering_statement(
-                    TargetIfStmt {
-                        .branches = {TargetIfBranch {
-                            .condition = *condition,
-                            .body = std::move(selected),
-                        }},
-                        .else_body = std::nullopt,
-                    }
-                ));
+                arm_branches.push_back({
+                    .condition = *condition,
+                    .body = std::move(selected),
+                });
             }
+        }
+        if (!arm_branches.empty()) {
+            statements.push_back(context.target().append_lowering_statement(
+                TargetIfStmt {
+                    .branches = std::move(arm_branches),
+                    .else_body = std::nullopt,
+                }
+            ));
         }
     }
     return {

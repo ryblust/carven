@@ -105,16 +105,18 @@ included only by units that use it; default test mode also emits its entry unit.
 The stable logical artifact roles are listed in
 [compatibility.md](compatibility.md#generated-artifacts).
 
-## Target domain and names
+## Linkage domain and names
 
-A closed compilation has a private 128-bit `TargetDomainID`. Explicit-domain
-mode hashes the generation-domain tag, test mode, and caller key. The
-content-addressed fallback hashes the tag, test mode, sorted canonical module
-paths, and source snapshots. Module namespace identity depends on the canonical
-module path. Generated declarations live under `carven::generated`, followed by
-the domain and module namespaces. The readable root separates generated private
-symbols from runtime and user C++ integration names; the hashed layers provide
-the actual collision and linkage isolation.
+A closed compilation request already contains a resolved `LinkageDomain`.
+The driver resolves an explicit value or a normalized absolute artifact root.
+The backend derives a private 128-bit `LinkageDomainID` from a versioned
+protocol, test-emission mode, a fixed domain-kind tag, and the domain value.
+
+Module namespace identity depends on the canonical module path. Generated
+declarations live under `carven::generated`, followed by the linkage-domain and
+module namespaces. The readable root separates generated private symbols from
+runtime and user C++ integration names; the hashed layers provide collision and
+linkage isolation.
 
 Module entity names are allocated in three phases: published source entities,
 private source entities, then any remaining compiler-owned entities. This keeps
@@ -172,8 +174,12 @@ its HIR result, `FailureSetID`, and unit-local target type. Identity transfers
 forward the same carrier. A strict subset-to-superset transfer constructs the
 destination Outcome from an rvalue source through the runtime converting
 constructor. Result changes, narrowing, and incomparable sets are invariant
-violations. Failure contracts and catch selection are semantic facts; lowering
-only transports the chosen alternatives.
+violations. `HIRTryFacts` records each arm's accepted failure set and its sorted
+source indices for reachable alternatives. Lowering consumes those facts
+without recomputing coverage. Alternatives in one arm form one conditional
+chain; the selected alternative establishes bindings before the arm guard, and
+the guard runs once before either entering the body or continuing to the next
+arm.
 
 Runtime `Outcome` stores `SuccessState<Result>` and the failure values directly
 in one variant. Its class contract requires a nonempty unique failure pack and

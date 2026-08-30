@@ -29,7 +29,7 @@ TEST_CASE("Compiler integration: C++ target validity remains downstream-owned") 
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:target-validity").value(),
         }
     );
 

@@ -288,7 +288,7 @@ auto lower_condition_test(
     TargetCallableLowerer& context,
     const Operation& operation,
     ProgramOriginID origin,
-    TargetSymbol reporter,
+    std::string_view operation_name,
     bool exits_on_failure,
     const TargetControlDestinations& control
 ) noexcept -> TargetStmtValue {
@@ -306,9 +306,17 @@ auto lower_condition_test(
         }
     ));
     const auto message = lower_test_message(context, operation.message, control, statements);
-    auto arguments = std::vector<TargetExprID> {condition_value};
+    auto arguments = std::vector<TargetExprID>();
     auto metadata = test_origin_arguments(context, origin);
     arguments.insert(arguments.end(), metadata.begin(), metadata.end());
+    arguments.push_back(context.target().append_expression({
+        .value = TargetLiteralExpr {
+            .value = TargetStringLiteral {
+                .bytes = std::string(operation_name),
+                .kind = TargetStringLiteralKind::StringView,
+            },
+        },
+    }));
     arguments.push_back(context.target().append_expression({
         .value = TargetLiteralExpr {
             .value = TargetStringLiteral {
@@ -319,34 +327,38 @@ auto lower_condition_test(
             },
         },
     }));
-    if (message.has_value()) {
-        arguments.push_back(*message);
-    }
-    const auto report =
-        call_expression(context, name_expression(context, reporter), std::move(arguments));
-    statements.push_back(
-        context.target().append_lowering_statement(TargetExprStmt {.expression = report})
+    arguments.push_back(
+        message.has_value() ? *message : name_expression(context, TargetSymbol::StdNullopt)
     );
+    const auto report = call_expression(
+        context,
+        name_expression(context, TargetSymbol::TestingReportFailure),
+        std::move(arguments)
+    );
+    auto failure_body = std::vector<TargetStmtID> {
+        context.target().append_lowering_statement(TargetExprStmt {.expression = report}),
+    };
     if (exits_on_failure) {
-        const auto failed = context.target().append_expression({
-            .value = TargetPrefixExpr {
-                .op = TargetPrefixOperator::LogicalNot,
-                .operand_id = condition_value,
-            },
-        });
-        statements.push_back(context.target().append_lowering_statement(
-            TargetIfStmt {
-                .branches =
-                    {
-                        TargetIfBranch {
-                            .condition = failed,
-                            .body = {test_exit_statement(context, control)},
-                        },
-                    },
-                .else_body = std::nullopt,
-            }
-        ));
+        failure_body.push_back(test_exit_statement(context, control));
     }
+    const auto failed = context.target().append_expression({
+        .value = TargetPrefixExpr {
+            .op = TargetPrefixOperator::LogicalNot,
+            .operand_id = condition_value,
+        },
+    });
+    statements.push_back(context.target().append_lowering_statement(
+        TargetIfStmt {
+            .branches =
+                {
+                    TargetIfBranch {
+                        .condition = failed,
+                        .body = std::move(failure_body),
+                    },
+                },
+            .else_body = std::nullopt,
+        }
+    ));
     return TargetBlockStmt {.statements = std::move(statements), .scoped = true};
 }
 
@@ -358,14 +370,7 @@ auto lower_statement(
     ProgramOriginID origin,
     const TargetControlDestinations& control
 ) noexcept -> TargetStmtValue {
-    return lower_condition_test(
-        context,
-        statement,
-        origin,
-        TargetSymbol::TestingCheck,
-        false,
-        control
-    );
+    return lower_condition_test(context, statement, origin, "check", false, control);
 }
 
 auto lower_statement(
@@ -374,14 +379,7 @@ auto lower_statement(
     ProgramOriginID origin,
     const TargetControlDestinations& control
 ) noexcept -> TargetStmtValue {
-    return lower_condition_test(
-        context,
-        statement,
-        origin,
-        TargetSymbol::TestingRequire,
-        true,
-        control
-    );
+    return lower_condition_test(context, statement, origin, "require", true, control);
 }
 
 auto lower_statement(
@@ -392,13 +390,24 @@ auto lower_statement(
 ) noexcept -> TargetStmtValue {
     auto statements = std::vector<TargetStmtID>();
     const auto message = lower_test_message(context, statement.message, control, statements);
-    auto arguments = test_origin_arguments(context, origin);
-    if (message.has_value()) {
-        arguments.push_back(*message);
-    }
+    auto arguments = std::vector<TargetExprID>();
+    auto metadata = test_origin_arguments(context, origin);
+    arguments.insert(arguments.end(), metadata.begin(), metadata.end());
+    arguments.push_back(context.target().append_expression({
+        .value = TargetLiteralExpr {
+            .value = TargetStringLiteral {
+                .bytes = "fail",
+                .kind = TargetStringLiteralKind::StringView,
+            },
+        },
+    }));
+    arguments.push_back(name_expression(context, TargetSymbol::StdNullopt));
+    arguments.push_back(
+        message.has_value() ? *message : name_expression(context, TargetSymbol::StdNullopt)
+    );
     const auto report = call_expression(
         context,
-        name_expression(context, TargetSymbol::TestingFail),
+        name_expression(context, TargetSymbol::TestingReportFailure),
         std::move(arguments)
     );
     statements.push_back(

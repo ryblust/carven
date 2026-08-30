@@ -8,7 +8,7 @@ struct RecordedControl final {
     std::vector<ControlSummary> expressions;
     std::vector<ControlSummary> statements;
     std::vector<ControlSummary> blocks;
-    std::vector<std::vector<std::vector<HIRTypeID>>> catches;
+    std::vector<std::vector<CatchControlSummary>> catches;
     std::vector<std::vector<HIRTypeID>> unhandled;
 };
 

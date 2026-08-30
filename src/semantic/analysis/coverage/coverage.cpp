@@ -152,18 +152,21 @@ auto same_constructor(const CoveragePattern& left, const CoveragePattern& right)
 
 auto expand_head(const Matrix& source) noexcept -> Matrix {
     auto result = Matrix();
-    for (const auto& row : source) {
+    const auto append = [&](this const auto& self, Row row) noexcept -> void {
         if (!row.empty()) {
             if (const auto* alternatives = std::get_if<CoverageOr>(&row.front().value)) {
                 for (const auto& alternative : alternatives->alternatives) {
                     auto expanded = row;
                     expanded.front() = alternative;
-                    result.push_back(std::move(expanded));
+                    self(std::move(expanded));
                 }
-                continue;
+                return;
             }
         }
-        result.push_back(row);
+        result.push_back(std::move(row));
+    };
+    for (const auto& row : source) {
+        append(row);
     }
     return result;
 }
@@ -202,7 +205,7 @@ auto compute_pattern_coverage_impl(
     const SemanticConstruction& hir,
     const Declarations& declarations,
     HIRTypeID subject_type,
-    std::span<const HIRMatchArm> arms
+    std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
     const auto valid_type = [&](HIRTypeID id) noexcept {
         return id.index() < hir.types().size();
@@ -453,40 +456,80 @@ auto compute_pattern_coverage_impl(
 
     auto matrix = Matrix();
     auto arm_usefulness = std::vector<bool>();
-    auto duplicates = std::vector<CoverageDuplicateAlternative>();
+    auto alternative_usefulness = std::vector<std::vector<bool>>();
+    auto redundant_alternatives = std::vector<CoverageRedundantAlternative>();
     for (auto arm_index = 0uz; arm_index < arms.size(); ++arm_index) {
         const auto& arm = arms[arm_index];
-        auto lowered = lower(arm.pattern, subject_type);
-        if (!lowered.has_value()) {
-            return std::unexpected(std::move(lowered.error()));
+        if (arm.alternatives.empty()) {
+            return std::unexpected("coverage arm has no alternatives");
         }
-        auto candidate = Row {std::move(*lowered)};
+        auto lowered = std::vector<CoveragePattern>();
+        lowered.reserve(arm.alternatives.size());
+        for (const auto alternative : arm.alternatives) {
+            if (!alternative.has_value()) {
+                lowered.push_back({.value = CoverageAny {.type = subject_type}});
+                continue;
+            }
+            auto pattern = lower(*alternative, subject_type);
+            if (!pattern.has_value()) {
+                return std::unexpected(std::move(pattern.error()));
+            }
+            lowered.push_back(std::move(*pattern));
+        }
+        auto source_usefulness = std::vector<bool>();
+        source_usefulness.reserve(lowered.size());
+        for (const auto& alternative : lowered) {
+            auto alternative_useful = useful(matrix, Row {alternative});
+            if (!alternative_useful.has_value()) {
+                return std::unexpected(std::move(alternative_useful.error()));
+            }
+            source_usefulness.push_back(*alternative_useful);
+        }
+        alternative_usefulness.push_back(std::move(source_usefulness));
+
+        for (auto candidate = 0uz; candidate < lowered.size(); ++candidate) {
+            for (auto covering = 0uz; covering < lowered.size(); ++covering) {
+                if (candidate == covering) {
+                    continue;
+                }
+                auto candidate_useful =
+                    useful(Matrix {Row {lowered[covering]}}, Row {lowered[candidate]});
+                if (!candidate_useful.has_value()) {
+                    return std::unexpected(std::move(candidate_useful.error()));
+                }
+                if (*candidate_useful) {
+                    continue;
+                }
+                auto covering_useful =
+                    useful(Matrix {Row {lowered[candidate]}}, Row {lowered[covering]});
+                if (!covering_useful.has_value()) {
+                    return std::unexpected(std::move(covering_useful.error()));
+                }
+                const auto strictly_subsumed = *covering_useful;
+                const auto repeated_after_first = !strictly_subsumed && covering < candidate;
+                if (strictly_subsumed || repeated_after_first) {
+                    redundant_alternatives.push_back({
+                        .arm = arm_index,
+                        .alternative = candidate,
+                    });
+                    break;
+                }
+            }
+        }
+        auto candidate_pattern = lowered.size() == 1 ? std::move(lowered.front())
+                                                     : CoveragePattern {
+                                                           .value = CoverageOr {
+                                                               .type = subject_type,
+                                                               .alternatives = std::move(lowered),
+                                                           },
+                                                       };
+        auto candidate = Row {std::move(candidate_pattern)};
         auto arm_useful = useful(matrix, candidate);
         if (!arm_useful.has_value()) {
             return std::unexpected(std::move(arm_useful.error()));
         }
-        if (const auto* alternatives = std::get_if<CoverageOr>(&candidate.front().value)) {
-            auto alternatives_matrix = matrix;
-            *arm_useful = false;
-            for (auto index = 0uz; index < alternatives->alternatives.size(); ++index) {
-                auto alternative = Row {alternatives->alternatives[index]};
-                auto alternative_useful = useful(alternatives_matrix, alternative);
-                if (!alternative_useful.has_value()) {
-                    return std::unexpected(std::move(alternative_useful.error()));
-                }
-                if (*alternative_useful) {
-                    *arm_useful = true;
-                    alternatives_matrix.push_back(std::move(alternative));
-                } else {
-                    duplicates.push_back({
-                        .arm = arm_index,
-                        .alternative = index,
-                    });
-                }
-            }
-        }
         arm_usefulness.push_back(*arm_useful);
-        if (!arm.guard.has_value()) {
+        if (!arm.guarded) {
             matrix.push_back(std::move(candidate));
         }
     }
@@ -544,10 +587,37 @@ auto compute_pattern_coverage_impl(
     }
     return PatternCoverage {
         .arm_usefulness = std::move(arm_usefulness),
-        .duplicate_alternatives = std::move(duplicates),
+        .alternative_usefulness = std::move(alternative_usefulness),
+        .redundant_alternatives = std::move(redundant_alternatives),
         .exhaustive = !*missing,
         .missing_witness = std::move(witness),
     };
+}
+
+} // namespace
+
+namespace {
+
+auto coverage_arms(const SemanticConstruction& hir, std::span<const HIRMatchArm> arms) noexcept
+    -> std::vector<PatternCoverageArm> {
+    auto result = std::vector<PatternCoverageArm>();
+    result.reserve(arms.size());
+    for (const auto& arm : arms) {
+        auto alternatives = std::vector<std::optional<HIRPatternID>>();
+        if (const auto* pattern = std::get_if<HIROrPattern>(&hir.pattern(arm.pattern).value)) {
+            alternatives.reserve(pattern->alternatives.size());
+            for (const auto alternative : pattern->alternatives) {
+                alternatives.push_back(alternative);
+            }
+        } else {
+            alternatives.push_back(arm.pattern);
+        }
+        result.push_back({
+            .alternatives = std::move(alternatives),
+            .guarded = arm.guard.has_value(),
+        });
+    }
+    return result;
 }
 
 } // namespace
@@ -556,6 +626,20 @@ auto compute_pattern_coverage(
     const SemanticConstruction& hir,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
+) noexcept -> std::expected<PatternCoverage, std::string> {
+    const auto queries = coverage_arms(hir, arms);
+    return compute_pattern_coverage_impl(
+        hir,
+        PublishedCoverageDeclarations(hir),
+        subject_type,
+        queries
+    );
+}
+
+auto compute_pattern_coverage(
+    const SemanticConstruction& hir,
+    HIRTypeID subject_type,
+    std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
     return compute_pattern_coverage_impl(
         hir,
@@ -570,6 +654,21 @@ auto compute_pattern_coverage(
     const DeclarationSessionView& declarations,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
+) noexcept -> std::expected<PatternCoverage, std::string> {
+    const auto queries = coverage_arms(hir, arms);
+    return compute_pattern_coverage_impl(
+        hir,
+        SessionCoverageDeclarations(declarations),
+        subject_type,
+        queries
+    );
+}
+
+auto compute_pattern_coverage(
+    const SemanticConstruction& hir,
+    const DeclarationSessionView& declarations,
+    HIRTypeID subject_type,
+    std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
     return compute_pattern_coverage_impl(
         hir,

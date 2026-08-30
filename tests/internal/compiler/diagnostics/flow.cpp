@@ -56,7 +56,7 @@ TEST_CASE("Compiler diagnostics: value try is one control-transfer boundary") {
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
     );
 
@@ -95,7 +95,7 @@ TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reacha
         CompilationRequest {.inputs = std::span(&input, 1)},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
     );
 

@@ -14,7 +14,7 @@ auto generate_target(const SemanticProgram& semantic, TargetGenerationRequest re
     if (semantic.modules().empty()) {
         invariant_violation("target generation requires at least one semantic module");
     }
-    const auto linkage_domain = derive_target_domain_id(semantic, request);
+    const auto linkage_domain = derive_linkage_domain_id(request);
     const auto plan = TargetGenerationPlan::build(semantic, linkage_domain);
     auto artifacts = std::vector<GeneratedArtifact>();
     artifacts.reserve(semantic.modules().size() + plan.interface_components().size() + 1);

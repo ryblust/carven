@@ -60,7 +60,7 @@ public:
 
     static auto fixed(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto generated_namespace() noexcept -> TargetName;
-    static auto domain_namespace(const TargetDomainID& linkage_domain) noexcept -> TargetName;
+    static auto domain_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;
     static auto derived_type(const TargetIdentifier& source_name, std::string_view role) noexcept
         -> TargetIdentifier;
     static auto derived_value(std::string_view role, const TargetIdentifier& source_name) noexcept

@@ -11,6 +11,7 @@ import :driver.options;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -20,6 +21,40 @@ struct PreparedInput final {
     std::string_view input_path;
     CanonicalModulePath module_path;
 };
+
+auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
+    -> std::expected<LinkageDomain, std::string> {
+    if (options.linkage_domain.has_value()) {
+        return std::move(*options.linkage_domain);
+    }
+    const auto root = std::visit(
+        Overloaded {
+            [](const DirectoryArtifactDestination& destination) static noexcept {
+                return destination.root;
+            },
+            [](const StandardOutputArtifactDestination&) static noexcept {
+                return std::filesystem::path(".");
+            },
+        },
+        options.destination
+    );
+    auto error = std::error_code();
+    const auto absolute = std::filesystem::absolute(root, error);
+    if (error) {
+        return std::unexpected(
+            std::format(
+                "cannot resolve linkage domain from output root '{}': {}",
+                root.string(),
+                error.message()
+            )
+        );
+    }
+    auto domain = LinkageDomain::artifact_root(absolute);
+    if (!domain.has_value()) {
+        invariant_violation("absolute artifact root did not form a linkage domain");
+    }
+    return std::move(*domain);
+}
 
 auto print_artifacts(const ArtifactSet& artifacts) noexcept -> void {
     for (const auto& artifact : artifacts.artifacts()) {
@@ -34,9 +69,15 @@ auto print_artifacts(const ArtifactSet& artifacts) noexcept -> void {
 } // namespace
 
 auto run_compile_command(std::span<const char* const> args) noexcept -> int {
-    const auto request = parse_compile_command_options(args);
+    auto request = parse_compile_command_options(args);
     if (!request) {
         std::println(std::cerr, "carven: error: {}", format_compile_option_error(request.error()));
+        return 1;
+    }
+
+    auto linkage_domain = resolve_linkage_domain(*request);
+    if (!linkage_domain.has_value()) {
+        std::println(std::cerr, "carven: error: {}", linkage_domain.error());
         return 1;
     }
 
@@ -83,19 +124,12 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         return exit_code;
     }
 
-    const auto linkage = request->linkage_domain.has_value()
-        ? LinkageIdentity(
-              ExplicitLinkageForm {
-                  .domain = std::string(*request->linkage_domain),
-              }
-          )
-        : LinkageIdentity(ContentAddressedLinkageForm {});
     const auto result = compile(
         sources,
         CompilationRequest {.inputs = compiler_inputs},
         TargetGenerationRequest {
             .tests = request->test_mode,
-            .linkage = linkage,
+            .linkage_domain = std::move(*linkage_domain),
         }
     );
     if (!result) {

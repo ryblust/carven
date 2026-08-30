@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cinttypes>
+#include <cstdint>
 #include <cstdio>
 #include <optional>
 #include <string_view>
@@ -53,7 +55,7 @@ struct TestFailure final {
     std::string_view module_name;
     std::string_view case_name;
     const char* file;
-    int line;
+    std::uint32_t line;
     std::string_view operation;
     std::optional<std::string_view> condition;
     std::optional<std::string_view> message;
@@ -101,7 +103,7 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
     write(failure.module_name);
     write("::");
     write(failure.case_name);
-    std::fprintf(stderr, "\n%s:%d: ", failure.file, failure.line);
+    std::fprintf(stderr, "\n%s:%" PRIu32 ": ", failure.file, failure.line);
     write(failure.operation);
     write(" failed\n");
     if (failure.condition.has_value()) {
@@ -121,9 +123,9 @@ inline auto reporter() noexcept -> TestReporter& {
     return value;
 }
 
-inline auto report(
+inline auto report_failure(
     const char* file,
-    int line,
+    std::uint32_t line,
     std::string_view operation,
     std::optional<std::string_view> condition,
     std::optional<std::string_view> message
@@ -170,52 +172,6 @@ inline Registrar::Registrar(
 
 inline auto set_reporter(TestReporter reporter) noexcept -> void {
     detail::reporter() = reporter == nullptr ? &detail::default_reporter : reporter;
-}
-
-inline auto check(bool condition, const char* file, int line, std::string_view source) noexcept
-    -> void {
-    if (!condition) {
-        detail::report(file, line, "check", source, std::nullopt);
-    }
-}
-
-inline auto check(
-    bool condition,
-    const char* file,
-    int line,
-    std::string_view source,
-    std::string_view message
-) noexcept -> void {
-    if (!condition) {
-        detail::report(file, line, "check", source, message);
-    }
-}
-
-inline auto require(bool condition, const char* file, int line, std::string_view source) noexcept
-    -> void {
-    if (!condition) {
-        detail::report(file, line, "require", source, std::nullopt);
-    }
-}
-
-inline auto require(
-    bool condition,
-    const char* file,
-    int line,
-    std::string_view source,
-    std::string_view message
-) noexcept -> void {
-    if (!condition) {
-        detail::report(file, line, "require", source, message);
-    }
-}
-
-inline auto fail(const char* file, int line) noexcept -> void {
-    detail::report(file, line, "fail", std::nullopt, std::nullopt);
-}
-
-inline auto fail(const char* file, int line, std::string_view message) noexcept -> void {
-    detail::report(file, line, "fail", std::nullopt, message);
 }
 
 inline auto run() noexcept -> int {

@@ -58,7 +58,7 @@ TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source"
         CompilationRequest {.inputs = inputs},
         TargetGenerationRequest {
             .tests = TestEmissionMode::None,
-            .linkage = ContentAddressedLinkageForm {},
+            .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
         }
     );
 
@@ -103,7 +103,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
             CompilationRequest {.inputs = inputs},
             TargetGenerationRequest {
                 .tests = TestEmissionMode::None,
-                .linkage = ContentAddressedLinkageForm {},
+                .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );
 
@@ -135,7 +135,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
             CompilationRequest {.inputs = inputs},
             TargetGenerationRequest {
                 .tests = TestEmissionMode::None,
-                .linkage = ContentAddressedLinkageForm {},
+                .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );
 
@@ -171,7 +171,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
             CompilationRequest {.inputs = inputs},
             TargetGenerationRequest {
                 .tests = TestEmissionMode::None,
-                .linkage = ContentAddressedLinkageForm {},
+                .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );
 

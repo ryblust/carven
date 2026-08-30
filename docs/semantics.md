@@ -425,9 +425,11 @@ normally.
 failure type, wildcard, alternatives, payload patterns, and guards; they must
 cover the protected body's actual failure set. Failures produced by a guard or
 handler propagate to the enclosing failure target and are never caught again by
-the same `try`. Catch-arm order remains observable even though failure-set
-member order does not. A `try` around an infallible body is valid and produces
-no diagnostic.
+the same `try`. Alternatives in one arm form one or-pattern. The first matching
+alternative establishes its bindings, then the arm guard runs once. A false
+guard continues with the next arm. Catch-arm order remains observable even
+though failure-set member order does not. A `try` around an infallible body is
+valid and produces no diagnostic.
 
 `rethrow` is valid only within a catch handler and transfers the caught failure
 identity selected for that handler. Closure bodies are separate callable
@@ -579,10 +581,11 @@ alternative cannot bind one name twice. Guards run after pattern bindings are
 available. They affect arm selection but do not contribute exhaustiveness
 coverage.
 
-Repeated alternatives in the coverage matrix are errors. An arm already
-covered by preceding unguarded arms is unreachable. Missing-case diagnostics
-use a shortest deterministic witness. Literal identity uses normalized language
-equality, including treating `0.0` and `-0.0` as one floating pattern.
+Repeated alternatives and alternatives subsumed by another alternative in the
+same or-pattern are errors. An arm whose complete pattern is covered by
+preceding unguarded arms is unreachable. Missing-case diagnostics use a shortest
+deterministic witness. Literal identity uses normalized language equality,
+including treating `0.0` and `-0.0` as one floating pattern.
 
 ## Entry points and tests
 
@@ -645,6 +648,9 @@ The following table is the stable public diagnostic catalog:
 | --- | --- | --- |
 | `CV-CONST-CYCLE` | Error | Required constant facts form a dependency cycle |
 | `CV-CONST-EXPORTED-TYPE` | Error | An exported module constant omits its explicit type |
+| `CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE` | Warning | A catch alternative cannot match a remaining protected failure |
+| `CV-EFFECT-CATCH-ARM-UNREACHABLE` | Warning | A catch arm cannot match a remaining protected failure |
+| `CV-EFFECT-CATCH-NON-EXHAUSTIVE` | Error | A catch leaves a protected failure unhandled |
 | `CV-EFFECT-THROW-PUBLISHED` | Error | A published callable has failures without an explicit `throw` contract |
 | `CV-FLOW-MISSING-RETURN` | Error | A reachable path of a value-returning callable omits its result |
 | `CV-FLOW-TRANSFER-VALUE-BRANCH` | Error | `return`, `break`, or `continue` crosses a value-control boundary |
@@ -652,6 +658,7 @@ The following table is the stable public diagnostic catalog:
 | `CV-LINT-UNUSED-IMPORT` | Warning | An import selects no uniquely referenced binding |
 | `CV-LINT-UNUSED-LOCAL` | Warning | A named local binding is unused |
 | `CV-LINT-UNUSED-PARAMETER` | Warning | A named parameter is unused |
+| `CV-MATCH-DUPLICATE-ALTERNATIVE` | Error | An or-pattern contains a repeated or subsumed alternative |
 | `CV-TEST-ARGUMENT-COUNT` | Error | A contextual test operation has the wrong argument count |
 | `CV-TEST-CONDITION-TYPE` | Error | A `check` or `require` condition is not exactly `bool` |
 | `CV-TEST-MESSAGE-TYPE` | Error | A test message is not exactly `str` |

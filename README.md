@@ -92,6 +92,10 @@ build systems can invoke the compiler and consume its generated artifacts
 according to the [CLI](docs/cli.md) and
 [Compatibility](docs/compatibility.md) contracts.
 
+Custom integrations identify each logical generation target with a stable,
+nonempty `--linkage-domain`. The [CLI reference](docs/cli.md#linkage-domain)
+defines the default and uniqueness requirements.
+
 ## Documentation
 
 - **Learn the language:** [Language](docs/language.md),

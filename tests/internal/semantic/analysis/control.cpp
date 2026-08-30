@@ -76,7 +76,10 @@ constexpr auto payload_prelude = "struct Payload { value: i32 }\n"
 } // namespace
 
 TEST_CASE("Semantic control: try around an infallible body is silent") {
-    const auto diagnostics = analyze_errors("fn valid() { try {} catch {} }\n");
+    const auto diagnostics = analyze_errors(
+        "struct Failure {}\n"
+        "fn valid() { try {} catch { Failure(_) => {}, } }\n"
+    );
     CHECK(diagnostics.empty());
 }
 
