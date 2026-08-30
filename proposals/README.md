@@ -108,7 +108,7 @@ continuing project value.
 | Types and abstraction | [`struct`、`class` 形式与动态多态](classes.md) | Nominal data roles, class forms, receivers, and dynamic abstraction |
 | Operators | [运算符能力](operators.md) | Closed operator capability design |
 | Documentation tooling | [Documentation comments](doc-comments.md) | Documentation attachment and tooling input |
-| C++ interoperability | [C++ 消费者契约](cpp-consumer.md) | Opt-in C++-to-Carven consumer surface |
+| C++ interoperability | [C++ 互操作契约](cpp-interop.md) | C++ companion source and opt-in typed import/export surfaces |
 | Async | [异步编程](async.md) | Async operations, structured ownership, composition, cancellation, and realization |
 | Memory model | [内存模型与共享状态](memory-model.md) | Cross-thread visibility, data races, and shared-state guarantees |
 | Threading | [线程、同步与原子操作](threading.md) | Thread lifecycle, synchronization, atomics, and channels |

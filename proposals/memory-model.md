@@ -66,7 +66,7 @@ synchronization，或把责任留在显式 `#[cpp]` boundary。
 
 - `#[cpp]` 已有 obligation boundary；threading 与 synchronization 不自动成为例外，也不能
   静默改变 Foreign containment、typed adapter shape 或 C++ consumer contract；
-- [C++ consumer](cpp-consumer.md) 必须单独决定 adapter 是否保证 reentrancy、thread safety
+- [C++ interop](cpp-interop.md) 必须单独决定 adapter 是否保证 reentrancy、thread safety
   或 thread-compatible value shape；concrete V1 可以明确不提供这些保证；
 - owner、borrowed/shared/null、erased storage、allocator、dynamic dispatch table 与
   failure/control carrier 会约束跨线程有效性；shared lifetime 不等于 synchronized access；
@@ -207,5 +207,5 @@ generated C++ compile/link/run、interop boundary 与相应 resource/cost eviden
 - [Threading proposal](threading.md)
 - [Classes proposal](classes.md)
 - [Generics proposal](generics.md)
-- [C++ consumer proposal](cpp-consumer.md)
+- [C++ interop proposal](cpp-interop.md)
 - [Proposal roadmap](roadmap.md)

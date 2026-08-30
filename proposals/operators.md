@@ -63,7 +63,7 @@ short-circuit behavior 或 availability transition。
   checking、coherence 与 associated normalization；本文只拥有 existing token 到这些
   facts 的映射。
 - Grammar precedence 与本文正交：hook 只改变 resolved meaning，不改变 parse tree。
-- [C++ consumer contract](cpp-consumer.md) 独立决定 public adapter 是否暴露带 nominal
+- [C++ interop contract](cpp-interop.md) 独立决定 public adapter 是否暴露带 nominal
   operator behavior 的 type；operator capability 不自动扩大 consumer surface。
 - Concurrency 与本文正交：operator evidence 不提供 synchronization、data-race 或
   thread-safety guarantee。
@@ -348,7 +348,7 @@ operator registry 或 unused capability scaffolding。
 ## References
 
 - [泛型与静态约束](generics.md)
-- [C++ consumer contract](cpp-consumer.md)
+- [C++ interop contract](cpp-interop.md)
 - [Memory model](memory-model.md)
 - [Proposal roadmap](roadmap.md)
 - [Carven grammar](../docs/grammar.md)

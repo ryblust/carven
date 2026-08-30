@@ -965,5 +965,5 @@ be collected without turning a candidate into an implementation choice.
 - [Failure-model and runtime-materialization note](../notes/failure-models.md)
 - [Memory model proposal](memory-model.md)
 - [Threading proposal](threading.md)
-- [C++ consumer proposal](cpp-consumer.md)
+- [C++ interop proposal](cpp-interop.md)
 - [Proposal roadmap](roadmap.md)

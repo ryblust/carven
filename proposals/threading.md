@@ -164,5 +164,5 @@ interop、diagnostics、tests 与永久文档。
 - [Async proposal](async.md)
 - [Classes proposal](classes.md)
 - [Generics proposal](generics.md)
-- [C++ consumer proposal](cpp-consumer.md)
+- [C++ interop proposal](cpp-interop.md)
 - [Proposal roadmap](roadmap.md)

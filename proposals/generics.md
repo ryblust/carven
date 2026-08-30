@@ -626,5 +626,5 @@ Validation must cover:
 - [Carven philosophy](../docs/philosophy.md)
 - [Classes and dynamic polymorphism](classes.md)
 - [Operator capabilities](operators.md)
-- [C++ consumer contract](cpp-consumer.md)
+- [C++ interop contract](cpp-interop.md)
 - [Proposal roadmap](roadmap.md)
