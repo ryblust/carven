@@ -1,54 +1,20 @@
 module carven:semantic.analysis.elaboration.types.relations.impl;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.call_contract;
 import :semantic.analysis.elaboration.types.relations;
+import :semantic.analysis.session.read;
 import :semantic.hir;
 import :semantic.hir.type;
+import :support.visit;
 import std;
 
 namespace {
 
-auto valid_type(const SemanticConstruction& hir, HIRTypeID id) noexcept -> bool {
+auto valid_type(SemanticDraftView hir, HIRTypeID id) noexcept -> bool {
     return id.index() < hir.types().size();
 }
 
-struct CallableContractView final {
-    std::span<const HIRFunctionParameterType> parameters;
-    HIRTypeID result;
-    FailureSetID failure_set;
-};
-
-auto callable_contract(const SemanticConstruction& hir, const HIRTypeValue& type) noexcept
-    -> std::optional<CallableContractView> {
-    auto concrete = std::optional<CallableID>();
-    if (const auto* function = std::get_if<HIRFunctionTypeValue>(&type)) {
-        concrete = function->callable;
-    } else if (const auto* closure = std::get_if<HIRClosureTypeValue>(&type)) {
-        concrete = closure->callable;
-    }
-    if (concrete.has_value() && concrete->index() < hir.callables().size()) {
-        const auto& callable = hir.callable(*concrete);
-        return CallableContractView {
-            .parameters = callable.parameters,
-            .result = callable.result,
-            .failure_set = callable.failure_set,
-        };
-    }
-    const auto* function_ref = std::get_if<HIRFunctionRefTypeValue>(&type);
-    if (function_ref == nullptr
-        || function_ref->signature.index() >= hir.callable_signatures().size()) {
-        return std::nullopt;
-    }
-    const auto& signature = hir.callable_signature(function_ref->signature);
-    return CallableContractView {
-        .parameters = signature.parameters,
-        .result = signature.result,
-        .failure_set = signature.failure_set,
-    };
-}
-
-auto shapes_compatible(const SemanticConstruction& hir, HIRTypeID left, HIRTypeID right) noexcept
-    -> bool {
+auto shapes_compatible(SemanticDraftView hir, HIRTypeID left, HIRTypeID right) noexcept -> bool {
     if (left == right) {
         return true;
     }
@@ -99,31 +65,29 @@ auto shapes_compatible(const SemanticConstruction& hir, HIRTypeID left, HIRTypeI
         && left_closure->callable != right_closure->callable) {
         return false;
     }
-    const auto callable_shape = [&](CallableContractView left_callable,
-                                    CallableContractView right_callable) noexcept {
+    const auto callable_shape = [&](CallContractView left_callable,
+                                    CallContractView right_callable) noexcept {
         if (left_callable.parameters.size() != right_callable.parameters.size()
             || !shapes_compatible(hir, left_callable.result, right_callable.result)) {
             return false;
         }
-        for (auto index = 0uz; index < left_callable.parameters.size(); ++index) {
-            if (left_callable.parameters[index].access != right_callable.parameters[index].access
-                || !shapes_compatible(
-                    hir,
-                    left_callable.parameters[index].type,
-                    right_callable.parameters[index].type
-                )) {
-                return false;
+        return std::ranges::equal(
+            left_callable.parameters,
+            right_callable.parameters,
+            [&](const HIRFunctionParameterType& left_parameter,
+                const HIRFunctionParameterType& right_parameter) noexcept {
+                return left_parameter.access == right_parameter.access
+                    && shapes_compatible(hir, left_parameter.type, right_parameter.type);
             }
-        }
-        return true;
+        );
     };
     const auto left_callable =
         left_function != nullptr || left_ref != nullptr || left_closure != nullptr;
     const auto right_callable =
         right_function != nullptr || right_ref != nullptr || right_closure != nullptr;
     if (left_callable || right_callable) {
-        const auto left_contract = callable_contract(hir, left_value);
-        const auto right_contract = callable_contract(hir, right_value);
+        const auto left_contract = callable_contract(hir, left);
+        const auto right_contract = callable_contract(hir, right);
         return left_contract.has_value()
             && right_contract.has_value()
             && callable_shape(*left_contract, *right_contract);
@@ -141,9 +105,10 @@ auto failures_are_subset(
 }
 
 auto adoption_compatible(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID target,
-    HIRTypeID source
+    HIRTypeID source,
+    std::span<const std::vector<HIRTypeID>> callable_failures
 ) noexcept -> bool {
     if (target == source) {
         return true;
@@ -160,7 +125,8 @@ auto adoption_compatible(
         return adoption_compatible(
             hir,
             target_array->element_type_id,
-            source_array->element_type_id
+            source_array->element_type_id,
+            callable_failures
         );
     }
 
@@ -170,24 +136,53 @@ auto adoption_compatible(
     const auto* source_ref = std::get_if<HIRFunctionRefTypeValue>(&source_value);
     const auto* target_closure = std::get_if<HIRClosureTypeValue>(&target_value);
     const auto* source_closure = std::get_if<HIRClosureTypeValue>(&source_value);
-    const auto callable_adoption = [&](CallableContractView target_callable,
-                                       CallableContractView source_callable) noexcept {
-        if (target_callable.failure_set.index() >= hir.failure_sets().size()
-            || source_callable.failure_set.index() >= hir.failure_sets().size()) {
+    const auto callable_adoption = [&](CallContractView target_callable,
+                                       CallContractView source_callable) noexcept {
+        const auto failures = [&](
+                                  const CallContractView& callable
+                              ) noexcept -> std::optional<std::span<const HIRTypeID>> {
+            return std::visit(
+                Overloaded {
+                    [&](const ConcreteCallableFailure& source) noexcept
+                        -> std::optional<std::span<const HIRTypeID>> {
+                        if (source.callable.index() >= callable_failures.size()) {
+                            return std::nullopt;
+                        }
+                        return callable_failures[source.callable.index()];
+                    },
+                    [&](const FixedSignatureFailure& source) noexcept
+                        -> std::optional<std::span<const HIRTypeID>> {
+                        if (source.failure_set.index() >= hir.failure_sets().size()) {
+                            return std::nullopt;
+                        }
+                        return hir.failure_set(source.failure_set).members;
+                    },
+                    [](const ForeignCallableFailure&) static noexcept
+                        -> std::optional<std::span<const HIRTypeID>> { return std::nullopt; },
+                },
+                callable.failure_source
+            );
+        };
+        const auto target_failures = failures(target_callable);
+        const auto source_failures = failures(source_callable);
+        if (!target_failures.has_value() || !source_failures.has_value()) {
             return false;
         }
-        if (!failures_are_subset(
-                hir.failure_set(source_callable.failure_set).members,
-                hir.failure_set(target_callable.failure_set).members
-            )
-            || !adoption_compatible(hir, target_callable.result, source_callable.result)) {
+        if (!failures_are_subset(*source_failures, *target_failures)
+            || !adoption_compatible(
+                hir,
+                target_callable.result,
+                source_callable.result,
+                callable_failures
+            )) {
             return false;
         }
         for (auto index = 0uz; index < target_callable.parameters.size(); ++index) {
             if (!adoption_compatible(
                     hir,
                     source_callable.parameters[index].type,
-                    target_callable.parameters[index].type
+                    target_callable.parameters[index].type,
+                    callable_failures
                 )) {
                 return false;
             }
@@ -199,8 +194,8 @@ auto adoption_compatible(
     const auto source_callable =
         source_function != nullptr || source_ref != nullptr || source_closure != nullptr;
     if (target_callable || source_callable) {
-        const auto target_contract = callable_contract(hir, target_value);
-        const auto source_contract = callable_contract(hir, source_value);
+        const auto target_contract = callable_contract(hir, target);
+        const auto source_contract = callable_contract(hir, source);
         return target_contract.has_value()
             && source_contract.has_value()
             && callable_adoption(*target_contract, *source_contract);
@@ -235,8 +230,7 @@ auto builtin_type_supports_equality(HIRBuiltinType type) noexcept -> bool {
     std::unreachable();
 }
 
-auto type_compatible(const SemanticConstruction& hir, HIRTypeID left, HIRTypeID right) noexcept
-    -> bool {
+auto type_compatible(SemanticDraftView hir, HIRTypeID left, HIRTypeID right) noexcept -> bool {
     if (!valid_type(hir, left) || !valid_type(hir, right)) {
         return false;
     }
@@ -252,9 +246,10 @@ auto type_compatible(const SemanticConstruction& hir, HIRTypeID left, HIRTypeID 
 }
 
 auto callable_adoption_compatible(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID target,
-    HIRTypeID source
+    HIRTypeID source,
+    std::span<const std::vector<HIRTypeID>> callable_failures
 ) noexcept -> bool {
-    return adoption_compatible(hir, target, source);
+    return adoption_compatible(hir, target, source, callable_failures);
 }

@@ -1,6 +1,7 @@
 module carven:semantic.analysis.coverage;
 
-import :semantic.analysis.declaration_construction;
+import :semantic.analysis.decl;
+import :semantic.analysis.session.read;
 import :semantic.hir;
 import :semantic.hir.expr;
 import :semantic.hir.ids;
@@ -25,27 +26,27 @@ struct PatternCoverage final {
 };
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
-    const DeclarationSessionView& declarations,
+    SemanticDraftView hir,
+    const DeclarationContractView& declarations,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
-    const DeclarationSessionView& declarations,
+    SemanticDraftView hir,
+    const DeclarationContractView& declarations,
     HIRTypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;

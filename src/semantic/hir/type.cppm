@@ -70,18 +70,14 @@ struct HIRCallableSignature final {
     auto operator<=>(const HIRCallableSignature&) const noexcept = default;
 };
 
-enum class HIRFailureContractKind {
-    Inferred,
-    Declared,
-    UndeclaredPublished,
-};
-
 struct HIRCallable final {
     std::vector<HIRFunctionParameterType> parameters;
     HIRTypeID result;
-    FailureSetID failure_set;
-    HIRFailureContractKind failure_contract;
     BodyID body;
+};
+
+struct HIRCallableFlow final {
+    FailureSetID effective_failure_set;
 };
 
 struct HIRFunctionTypeValue final {

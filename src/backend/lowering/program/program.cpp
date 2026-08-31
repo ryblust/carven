@@ -25,8 +25,7 @@ auto TargetControlDestinations::test() noexcept -> TargetControlDestinations {
 auto TargetControlDestinations::iife() const noexcept -> TargetControlDestinations {
     auto result = *this;
     if (result.failure.has_value()) {
-        result.failure->destination = std::nullopt;
-        result.failure->transfer_label = std::nullopt;
+        result.failure->local_transfer.reset();
     }
     result.continue_destination.reset();
     return result;
@@ -61,90 +60,74 @@ auto TargetControlDestinations::with_continue_destination(
     return result;
 }
 
-TargetGenerationContext::TargetGenerationContext(
-    const SemanticProgram& semantic,
-    const TargetGenerationPlan& plan,
-    TestEmissionMode tests
-) noexcept
-    : semantic_program(semantic),
-      generation_plan(plan),
-      test_mode(tests) {}
+TargetUnitLoweringContext::TargetUnitLoweringContext(TargetArtifactView artifact) noexcept
+    : artifact_view(std::move(artifact)) {}
 
-auto TargetGenerationContext::semantic() const noexcept -> const SemanticProgram& {
-    return semantic_program;
+auto TargetUnitLoweringContext::source() const noexcept -> const TargetArtifactView& {
+    return artifact_view;
 }
 
-auto TargetGenerationContext::read_parameter_by_value(HIRTypeID type) const noexcept -> bool {
-    return generation_plan.read_parameter_by_value(type);
+auto TargetUnitLoweringContext::failure_profile(FailureSetID failure_set) const noexcept
+    -> const TargetFailureProfile& {
+    return artifact_view.failure_profile(failure_set);
 }
 
-auto TargetGenerationContext::failure_set(FailureSetID failure_set) const noexcept
-    -> const TargetFailureSetProfile& {
-    return generation_plan.failure_set(failure_set);
-}
-
-auto TargetGenerationContext::requires_mutable_value_binding(SemanticPlaceID place) const noexcept
+auto TargetUnitLoweringContext::requires_mutable_value_binding(SymbolID symbol) const noexcept
     -> bool {
-    return generation_plan.requires_mutable_value_binding(place);
+    return artifact_view.requires_mutable_value_binding(symbol);
 }
 
-auto TargetGenerationContext::payload_enum(EnumID enumeration) const noexcept
+auto TargetUnitLoweringContext::payload_enum(EnumID enumeration) const noexcept
     -> const TargetPayloadEnumNames& {
-    return generation_plan.payload_enum(enumeration);
+    return artifact_view.payload_enum(enumeration);
 }
 
-auto TargetGenerationContext::source_names(SemanticScopeID scope) const noexcept
+auto TargetUnitLoweringContext::source_names(SemanticScopeID scope) const noexcept
     -> const std::flat_set<std::string>& {
-    return generation_plan.source_names(scope);
+    return artifact_view.source_names(scope);
 }
 
-auto TargetGenerationContext::target() noexcept -> TargetUnitBuilder& {
+auto TargetUnitLoweringContext::target() noexcept -> TargetUnitBuilder& {
     return target_unit;
 }
 
-auto TargetGenerationContext::emits_tests() const noexcept -> bool {
-    return test_mode != TestEmissionMode::None;
-}
-
-auto TargetGenerationContext::emits_default_test_runner() const noexcept -> bool {
-    return test_mode == TestEmissionMode::DefaultRunner;
-}
-
-auto TargetGenerationContext::module_lowerer(ProgramModuleID module_id) noexcept
+auto TargetUnitLoweringContext::module_lowerer(ProgramModuleID module_id) noexcept
     -> TargetModuleLowerer {
-    if (module_id.index() >= semantic_program.modules().size()) {
+    if (module_id.index() >= artifact_view.module_count()) {
         invariant_violation("target lowering requested an unknown source module");
     }
     return TargetModuleLowerer(*this, module_id);
 }
 
-auto TargetGenerationContext::entity_identifier(SymbolID symbol) const noexcept
+auto TargetUnitLoweringContext::entity_identifier(SymbolID symbol) const noexcept
     -> const TargetIdentifier& {
-    return generation_plan.entity_identifier(symbol);
+    return artifact_view.entity_identifier(symbol);
 }
 
-auto TargetGenerationContext::entity_name(ProgramModuleID active, SymbolID symbol) const noexcept
+auto TargetUnitLoweringContext::entity_name(ProgramModuleID active, SymbolID symbol) const noexcept
     -> TargetName {
-    return generation_plan.entity_name(active, symbol);
+    return artifact_view.entity_name(active, symbol);
 }
 
-auto TargetGenerationContext::cached_type(ProgramModuleID module_id, HIRTypeID type) const noexcept
-    -> std::optional<TargetTypeID> {
-    if (module_id.index() >= semantic_program.modules().size()
-        || type.index() >= semantic_program.types().size()) {
+auto TargetUnitLoweringContext::cached_type(
+    ProgramModuleID module_id,
+    HIRTypeID type
+) const noexcept -> std::optional<TargetTypeID> {
+    if (module_id.index() >= artifact_view.module_count()
+        || type.index() >= artifact_view.type_count()) {
         invariant_violation("type cache lookup used an invalid HIR type identity");
     }
     const auto found = lowered_types.find({module_id.index(), type.index()});
     return found == lowered_types.end() ? std::nullopt : std::optional(found->second);
 }
 
-auto TargetGenerationContext::cache_type(
+auto TargetUnitLoweringContext::cache_type(
     ProgramModuleID module_id,
     HIRTypeID type,
     TargetTypeID lowered
 ) noexcept -> void {
-    if (module_id.index() >= semantic_program.modules().size()
-        || type.index() >= semantic_program.types().size()) {
+    if (module_id.index() >= artifact_view.module_count()
+        || type.index() >= artifact_view.type_count()) {
         invariant_violation("type cache insertion used an invalid HIR type identity");
     }
     const auto [position, inserted] =
@@ -154,37 +137,36 @@ auto TargetGenerationContext::cache_type(
     }
 }
 
-auto TargetGenerationContext::finish(TargetUnitRoot root) && noexcept -> TargetUnit {
+auto TargetUnitLoweringContext::finish(TargetUnitRoot root) && noexcept -> TargetUnit {
     return std::move(target_unit).finish(std::move(root));
 }
 
 TargetModuleLowerer::TargetModuleLowerer(
-    TargetGenerationContext& program,
+    TargetUnitLoweringContext& program,
     ProgramModuleID module_id
 ) noexcept
     : program_lowerer(std::addressof(program)),
       source_module_id(module_id) {
-    for (const auto& name : program.generation_plan.module_plan(module_id).reserved_identifiers) {
+    for (const auto& name : program.artifact_view.module(module_id).reserved_identifiers) {
         target_names.reserve(name);
     }
 }
 
-auto TargetModuleLowerer::semantic() const noexcept -> const SemanticProgram& {
-    return program_lowerer->semantic();
+auto TargetModuleLowerer::source() const noexcept -> const TargetArtifactView& {
+    return program_lowerer->source();
 }
 
 auto TargetModuleLowerer::read_parameter_by_value(HIRTypeID type) const noexcept -> bool {
-    return program_lowerer->read_parameter_by_value(type);
+    return source().type_recipe(type).read_parameter_by_value;
 }
 
-auto TargetModuleLowerer::failure_set(FailureSetID failure_set) const noexcept
-    -> const TargetFailureSetProfile& {
-    return program_lowerer->failure_set(failure_set);
+auto TargetModuleLowerer::failure_profile(FailureSetID failure_set) const noexcept
+    -> const TargetFailureProfile& {
+    return program_lowerer->failure_profile(failure_set);
 }
 
-auto TargetModuleLowerer::requires_mutable_value_binding(SemanticPlaceID place) const noexcept
-    -> bool {
-    return program_lowerer->requires_mutable_value_binding(place);
+auto TargetModuleLowerer::requires_mutable_value_binding(SymbolID symbol) const noexcept -> bool {
+    return program_lowerer->requires_mutable_value_binding(symbol);
 }
 
 auto TargetModuleLowerer::payload_enum(EnumID enumeration) const noexcept
@@ -202,10 +184,6 @@ auto TargetModuleLowerer::name_allocator() noexcept -> TargetNameAllocator& {
 
 auto TargetModuleLowerer::name_scope(SemanticScopeID scope) const noexcept -> TargetScopeID {
     return target_names.canonical_scope(TargetScopeID {.ordinal = scope.index()});
-}
-
-auto TargetModuleLowerer::emits_tests() const noexcept -> bool {
-    return program_lowerer->emits_tests();
 }
 
 auto TargetModuleLowerer::active_module_id() const noexcept -> ProgramModuleID {
@@ -238,7 +216,7 @@ auto TargetModuleLowerer::callable(
 }
 
 TargetCallableLowerer::TargetCallableLowerer(
-    TargetGenerationContext& program,
+    TargetUnitLoweringContext& program,
     ProgramModuleID module_id,
     SemanticScopeID scope,
     std::optional<SemanticScopeID> root_body_scope
@@ -307,10 +285,10 @@ TargetLexicalScope::~TargetLexicalScope() noexcept {
 
 auto target_source_origin(const TargetModuleLowerer& context, ProgramOriginID id) noexcept
     -> TargetSourceOrigin {
-    const auto& origin = context.semantic().provenance().origin(id);
-    const auto& source = context.semantic().provenance().source_snapshot(origin.source_id);
+    const auto& origin = context.source().provenance().origin(id);
+    const auto& source = context.source().provenance().source_snapshot(origin.source_id);
     return {
         .display_origin = std::string(source.display_origin()),
-        .line = context.semantic().provenance().location(id).line,
+        .line = context.source().provenance().location(id).line,
     };
 }

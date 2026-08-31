@@ -153,13 +153,13 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
             },
             [&](const TargetForStmt& value) noexcept {
                 const auto initializer = value.initializer.has_value()
-                    ? render_for_clause(*value.initializer)
+                    ? render_for_initializer(*value.initializer)
                     : text("");
                 const auto condition =
                     value.condition.has_value() ? render_expression(*value.condition) : text("");
                 auto steps = std::vector<LayoutNodeID>();
-                for (const auto step : value.steps) {
-                    steps.push_back(render_for_clause(step));
+                for (const auto& step : value.steps) {
+                    steps.push_back(render_for_step(step));
                 }
                 const auto header = concat(
                     {initializer,
@@ -228,7 +228,8 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
     return with_attribution(rendered, statement.attribution);
 }
 
-auto TargetRenderer::render_for_clause(TargetStmtID id) noexcept -> LayoutNodeID {
+auto TargetRenderer::render_for_initializer(const TargetForInitializer& initializer) noexcept
+    -> LayoutNodeID {
     return std::visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
@@ -277,8 +278,38 @@ auto TargetRenderer::render_for_clause(TargetStmtID id) noexcept -> LayoutNodeID
                      render_expression(value.target, TargetPrecedence::Prefix)}
                 );
             },
-            [&](const auto&) noexcept -> LayoutNodeID { std::unreachable(); },
         },
-        unit.statement(id).value
+        initializer.value
+    );
+}
+
+auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> LayoutNodeID {
+    return std::visit(
+        Overloaded {
+            [&](const TargetExprStmt& value) noexcept {
+                return render_expression(value.expression);
+            },
+            [&](const TargetDiscardStmt& value) noexcept {
+                return concat(
+                    {text("static_cast<void>("), render_expression(value.expression), text(")")}
+                );
+            },
+            [&](const TargetAssignmentStmt& value) noexcept {
+                return concat(
+                    {render_expression(value.target),
+                     text(" "),
+                     text(assignment_spelling(value.op)),
+                     text(" "),
+                     render_expression(value.value)}
+                );
+            },
+            [&](const TargetUpdateStmt& value) noexcept {
+                return concat(
+                    {text(value.op == TargetUpdateOperator::Increment ? "++" : "--"),
+                     render_expression(value.target, TargetPrecedence::Prefix)}
+                );
+            },
+        },
+        step.value
     );
 }

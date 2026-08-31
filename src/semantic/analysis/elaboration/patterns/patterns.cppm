@@ -3,6 +3,7 @@ module carven:semantic.analysis.elaboration.patterns;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.scopes;
+import :semantic.hir.expr;
 import std;
 
 auto constraint_type(
@@ -43,7 +44,7 @@ auto analyze_match(
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms,
     Span match_span
-) noexcept -> bool;
+) noexcept -> HIRMatchCoverageFacts;
 
 auto analyze_catch_pattern(
     ModuleAnalysis& module_analysis,

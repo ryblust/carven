@@ -4,10 +4,8 @@ import :diagnostics.builder;
 import :semantic.analysis.lint;
 import :source.text;
 
-auto diagnose_unused_bindings(
-    const SemanticConstruction& construction,
-    DiagnosticSink& diagnostics
-) noexcept -> void {
+auto diagnose_unused_bindings(SemanticDraftView construction, DiagnosticSink& diagnostics) noexcept
+    -> void {
     for (const auto& state : construction.symbol_states()) {
         if (!state.unused_candidate.has_value() || state.symbol.referenced) {
             continue;

@@ -1,6 +1,6 @@
 module carven:semantic.analysis.validation.invariants.impl;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
 import :semantic.analysis.failures;
 import :semantic.analysis.validation.invariants;
 import :semantic.hir.constant;
@@ -21,8 +21,15 @@ auto known(ID id, std::size_t size) noexcept -> bool {
     return id.index() < size;
 }
 
+auto match_coverage_aligned(
+    std::span<const HIRMatchArm> arms,
+    const HIRMatchCoverageFacts& coverage
+) noexcept -> bool {
+    return arms.size() == coverage.arm_states.size();
+}
+
 class StructureVerifier final {
-    const SemanticConstruction& program;
+    SemanticDraftView program;
     std::vector<std::uint8_t> function_claims;
     std::vector<std::uint8_t> test_claims;
     std::vector<std::uint8_t> callable_claims;
@@ -40,7 +47,7 @@ class StructureVerifier final {
     std::optional<SemanticProgramError> failure;
 
 public:
-    explicit StructureVerifier(const SemanticConstruction& source) noexcept
+    explicit StructureVerifier(SemanticDraftView source) noexcept
         : program(source),
           function_claims(program.functions().size()),
           test_claims(program.tests().size()),
@@ -422,6 +429,12 @@ private:
                     return !value.else_branch.has_value() || visit_block(*value.else_branch);
                 },
                 [&](const HIRMatchExpr& value) noexcept {
+                    if (!match_coverage_aligned(value.arms, value.coverage)) {
+                        return fail(
+                            SemanticProgramErrorKind::InvalidContract,
+                            "match coverage facts do not align with expression arms"
+                        );
+                    }
                     return visit_expression(value.subject)
                         && std::ranges::all_of(value.arms, [&](const auto& arm) {
                                return visit_match_arm(arm);
@@ -475,6 +488,12 @@ private:
                     return !value.else_branch.has_value() || visit_block(*value.else_branch);
                 },
                 [&](const HIRMatchStmt& value) noexcept {
+                    if (!match_coverage_aligned(value.arms, value.coverage)) {
+                        return fail(
+                            SemanticProgramErrorKind::InvalidContract,
+                            "match coverage facts do not align with statement arms"
+                        );
+                    }
                     return visit_expression(value.subject)
                         && std::ranges::all_of(value.arms, [&](const auto& arm) {
                                return visit_match_arm(arm);
@@ -572,8 +591,9 @@ private:
     }
 };
 
+template<typename Program>
 class SemanticVerifier final {
-    const SemanticConstruction& program;
+    Program program;
     std::vector<std::uint8_t> function_owners;
     std::vector<std::uint8_t> structure_owners;
     std::vector<std::uint8_t> enumeration_owners;
@@ -587,7 +607,7 @@ class SemanticVerifier final {
     std::optional<SemanticProgramError> failure;
 
 public:
-    explicit SemanticVerifier(const SemanticConstruction& source) noexcept
+    explicit SemanticVerifier(Program source) noexcept
         : program(source),
           function_owners(program.functions().size()),
           structure_owners(program.structures().size()),
@@ -601,8 +621,16 @@ public:
           block_states(program.blocks().size()) {}
 
     auto run() noexcept -> std::expected<void, SemanticProgramError> {
-        if (program.expression_facts().size() != program.expressions().size()
-            || program.block_facts().size() != program.blocks().size()) {
+        if (program.expression_controls().size() != program.expressions().size()
+            || program.evaluation_effects().size() != program.expressions().size()
+            || program.place_uses().size() != program.expressions().size()
+            || program.try_facts().size() != program.expressions().size()
+            || program.block_controls().size() != program.blocks().size()
+            || program.callable_flows().size() != program.callables().size()
+            || program.structure_capabilities().size() != program.structures().size()
+            || program.enumeration_capabilities().size() != program.enumerations().size()
+            || program.nominal_dependency_sets().size()
+                != program.structures().size() + program.enumerations().size()) {
             static_cast<void>(fail(
                 SemanticProgramErrorKind::InvalidContract,
                 "semantic flow facts are incomplete"
@@ -657,7 +685,7 @@ private:
 
     auto failure_members(std::span<const HIRTypeID> values) noexcept -> bool {
         const auto original = std::vector(values.begin(), values.end());
-        if (normalize_failure_members(program, original) != original) {
+        if (normalize_failure_members(original) != original) {
             return fail(
                 SemanticProgramErrorKind::InvalidContract,
                 "failure set storage is not normalized"
@@ -749,11 +777,11 @@ private:
     }
 
     template<typename Callable>
-    auto verify_callable(const Callable& callable) noexcept -> bool {
-        if (!type_known(callable.result) || !failure_set_known(callable.failure_set)) {
+    auto verify_callable_shape(const Callable& callable) noexcept -> bool {
+        if (!type_known(callable.result)) {
             return fail(
                 SemanticProgramErrorKind::InvalidContract,
-                "callable contract references an unknown result or failure set"
+                "callable contract references an unknown result type"
             );
         }
         for (const auto& parameter : callable.parameters) {
@@ -765,6 +793,15 @@ private:
             }
         }
         return true;
+    }
+
+    auto verify_callable_signature(const HIRCallableSignature& callable) noexcept -> bool {
+        return verify_callable_shape(callable)
+            && (failure_set_known(callable.failure_set)
+                || fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "callable signature references an unknown failure set"
+                ));
     }
 
     auto verify_constant(std::size_t index, const HIRConstantFact& fact) noexcept -> bool {
@@ -819,87 +856,146 @@ private:
         return true;
     }
 
-    auto verify_place_table() noexcept -> bool {
-        auto positions = std::flat_set<std::pair<SemanticScopeID, std::uint32_t>>();
-        auto symbols = std::flat_set<SymbolID>();
-        for (auto index = 0uz; index < program.places().size(); ++index) {
-            const auto id = SemanticPlaceID::from_index(static_cast<std::uint32_t>(index));
-            const auto& place = program.places()[index];
-            if (!type_known(place.type)
-                || !scope_known(place.scope)
-                || !positions.emplace(place.scope, place.declaration_order).second) {
-                return fail(
-                    SemanticProgramErrorKind::InvalidPlace,
-                    "program place has an invalid type, scope, or declaration order"
-                );
-            }
-            if (place.storage != SemanticPlaceStorage::Owner && place.capabilities.take) {
-                return fail(
-                    SemanticProgramErrorKind::InvalidPlace,
-                    "borrowed or compiler storage cannot support Take"
-                );
-            }
-            if (place.storage == SemanticPlaceStorage::Owner && !place.capabilities.take) {
-                return fail(
-                    SemanticProgramErrorKind::InvalidPlace,
-                    "owner storage must support whole-place Take"
-                );
-            }
-            if (place.storage == SemanticPlaceStorage::Compiler && place.capabilities.write) {
-                return fail(
-                    SemanticProgramErrorKind::InvalidPlace,
-                    "immutable compiler storage cannot support Write"
-                );
-            }
-            if (!place.symbol.has_value()) {
-                continue;
-            }
-            if (!symbol_known(*place.symbol)
-                || !symbols.insert(*place.symbol).second
-                || program.symbol(*place.symbol).place != id) {
-                return fail(
-                    SemanticProgramErrorKind::InvalidPlace,
-                    "program place and symbol identities are inconsistent"
-                );
-            }
-        }
-        return true;
-    }
-
     auto verify_symbol_table() noexcept -> bool {
+        if (program.bindings().size() != program.symbol_count()) {
+            return fail(
+                SemanticProgramErrorKind::InvalidContract,
+                "semantic binding facts are not aligned with symbols"
+            );
+        }
+        auto positions = std::flat_set<std::pair<SemanticScopeID, std::uint32_t>>();
         for (auto index = 0uz; index < program.symbol_count(); ++index) {
             const auto id = SymbolID::from_index(static_cast<std::uint32_t>(index));
             const auto& symbol = program.symbol(id);
             if ((symbol.type.has_value() && !type_known(*symbol.type))
                 || (symbol.module_id.has_value()
                     && !known(*symbol.module_id, program.modules().size()))
-                || (symbol.parent.has_value() && !symbol_known(*symbol.parent))
-                || (symbol.place.has_value() && !known(*symbol.place, program.places().size()))) {
+                || (symbol.parent.has_value() && !symbol_known(*symbol.parent))) {
                 return fail(
                     SemanticProgramErrorKind::InvalidReference,
                     "program symbol contains an invalid reference"
                 );
             }
-            if (symbol.place.has_value()) {
-                const auto& place = program.place(*symbol.place);
-                if (place.symbol != id || !symbol.type.has_value() || place.type != *symbol.type) {
+            const auto& binding = program.binding(id);
+            if (!binding.has_value()) {
+                continue;
+            }
+            if (!symbol.type.has_value()
+                || !scope_known(binding->scope)
+                || !positions.emplace(binding->scope, binding->declaration_order).second) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidPlace,
+                    "runtime binding has an invalid type, scope, or declaration order"
+                );
+            }
+            if (binding->storage != SemanticBindingStorage::Owner && binding->capabilities.take) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidPlace,
+                    "borrowed or compiler storage cannot support Take"
+                );
+            }
+            if (binding->storage == SemanticBindingStorage::Owner && !binding->capabilities.take) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidPlace,
+                    "owner storage must support whole-binding Take"
+                );
+            }
+            if (binding->storage == SemanticBindingStorage::Compiler
+                && binding->capabilities.write) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidPlace,
+                    "immutable compiler storage cannot support Write"
+                );
+            }
+        }
+        return true;
+    }
+
+    auto nominal_index(HIRNominalDeclRef declaration) const noexcept -> std::optional<std::size_t> {
+        return std::visit(
+            Overloaded {
+                [&](StructID id) noexcept -> std::optional<std::size_t> {
+                    return known(id, program.structures().size())
+                        ? std::optional<std::size_t>(id.index())
+                        : std::nullopt;
+                },
+                [&](EnumID id) noexcept -> std::optional<std::size_t> {
+                    return known(id, program.enumerations().size())
+                        ? std::optional<std::size_t>(program.structures().size() + id.index())
+                        : std::nullopt;
+                },
+            },
+            declaration
+        );
+    }
+
+    auto verify_nominal_containment() noexcept -> bool {
+        auto adjacency = std::vector<std::vector<std::size_t>>();
+        adjacency.reserve(program.nominal_dependency_sets().size());
+        for (const auto& dependencies : program.nominal_dependency_sets()) {
+            auto targets = std::vector<std::size_t>();
+            targets.reserve(dependencies.size());
+            for (const auto dependency : dependencies) {
+                const auto index = nominal_index(dependency);
+                if (!index.has_value()) {
                     return fail(
-                        SemanticProgramErrorKind::InvalidPlace,
-                        "program symbol and place disagree on identity or type"
+                        SemanticProgramErrorKind::InvalidReference,
+                        "nominal containment references an unknown declaration"
                     );
                 }
+                if (std::ranges::contains(targets, *index)) {
+                    return fail(
+                        SemanticProgramErrorKind::InvalidContract,
+                        "nominal containment contains a repeated direct dependency"
+                    );
+                }
+                targets.push_back(*index);
+            }
+            adjacency.push_back(std::move(targets));
+        }
+        auto states = std::vector<std::uint8_t>(adjacency.size());
+        const auto acyclic = [&](this const auto& self, std::size_t node) noexcept -> bool {
+            if (states[node] == 1) {
+                return false;
+            }
+            if (states[node] == 2) {
+                return true;
+            }
+            states[node] = 1;
+            for (const auto dependency : adjacency[node]) {
+                if (!self(dependency)) {
+                    return false;
+                }
+            }
+            states[node] = 2;
+            return true;
+        };
+        for (auto node = 0uz; node < adjacency.size(); ++node) {
+            if (!acyclic(node)) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "published nominal containment contains a by-value cycle"
+                );
             }
         }
         return true;
     }
 
     auto verify_canonical_tables() noexcept -> bool {
-        if (!verify_scope_table() || !verify_place_table() || !verify_symbol_table()) {
+        if (!verify_scope_table() || !verify_symbol_table() || !verify_nominal_containment()) {
             return false;
         }
-        for (const auto& type : program.types()) {
+        for (const auto [index, type] : std::views::enumerate(program.types())) {
             if (!verify_type_value(type.value)) {
                 return false;
+            }
+            for (const auto& previous : program.types().first(static_cast<std::size_t>(index))) {
+                if (previous.value == type.value) {
+                    return fail(
+                        SemanticProgramErrorKind::InvalidContract,
+                        "equivalent semantic types have multiple semantic identities"
+                    );
+                }
             }
         }
         for (auto index = 0uz; index < program.constants().size(); ++index) {
@@ -921,13 +1017,32 @@ private:
                 }
             }
         }
-        for (const auto& callable : program.callable_signatures()) {
-            if (!verify_callable(callable)) {
+        for (const auto [index, callable] : std::views::enumerate(program.callable_signatures())) {
+            if (!verify_callable_signature(callable)) {
                 return false;
             }
+            for (const auto& previous :
+                 program.callable_signatures().first(static_cast<std::size_t>(index))) {
+                if (previous == callable) {
+                    return fail(
+                        SemanticProgramErrorKind::InvalidContract,
+                        "equivalent callable signatures have multiple semantic identities"
+                    );
+                }
+            }
         }
-        for (const auto& callable : program.callables()) {
-            if (!verify_callable(callable)) {
+        for (const auto [index, callable] : std::views::enumerate(program.callables())) {
+            const auto id = CallableID::from_index(static_cast<std::uint32_t>(index));
+            if (!verify_callable_shape(callable)) {
+                return false;
+            }
+            if (!program.has_body(callable.body)) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "callable contract has no published body"
+                );
+            }
+            if (!failure_set_known(program.callable_flow(id).effective_failure_set)) {
                 return false;
             }
         }
@@ -981,25 +1096,29 @@ private:
             );
         }
         const auto& symbol = program.symbol(named->symbol);
-        if (symbol.type != type || !symbol.place.has_value()) {
+        const auto& binding = program.binding(named->symbol);
+        if (symbol.type != type || !binding.has_value()) {
             return fail(
                 SemanticProgramErrorKind::InvalidPlace,
-                "binding target symbol has no matching typed place"
+                "binding target symbol has no matching runtime binding facts"
             );
         }
-        const auto& place = program.place(*symbol.place);
-        return place.scope == scope
+        return binding->scope == scope
             || fail(
                    SemanticProgramErrorKind::InvalidScope,
-                   "binding place is owned by the wrong lexical scope"
+                   "binding is owned by the wrong lexical scope"
             );
     }
 
     auto projected_type(const SemanticPlaceUse& use) noexcept -> std::optional<HIRTypeID> {
-        if (!known(use.root, program.places().size())) {
+        if (!symbol_known(use.root) || !program.binding(use.root).has_value()) {
             return std::nullopt;
         }
-        auto current = program.place(use.root).type;
+        const auto root_type = program.symbol(use.root).type;
+        if (!root_type.has_value()) {
+            return std::nullopt;
+        }
+        auto current = *root_type;
         for (const auto& projection : use.projections) {
             const auto next = std::visit(
                 Overloaded {
@@ -1012,18 +1131,16 @@ private:
                             return std::nullopt;
                         }
                         const auto& structure = program.structure(field.owner);
-                        if (field.field_index >= structure.fields.size()
-                            || structure.fields[field.field_index].type != field.result_type) {
+                        if (field.field_index >= structure.fields.size()) {
                             return std::nullopt;
                         }
-                        return field.result_type;
+                        return structure.fields[field.field_index].type;
                     },
-                    [&](const SemanticIndexProjection& index) noexcept -> std::optional<HIRTypeID> {
+                    [&](const SemanticIndexProjection&) noexcept -> std::optional<HIRTypeID> {
                         const auto* array =
                             std::get_if<HIRArrayTypeValue>(&program.type(current).value);
-                        return array != nullptr && array->element_type_id == index.result_type
-                            ? std::optional(index.result_type)
-                            : std::nullopt;
+                        return array != nullptr ? std::optional(array->element_type_id)
+                                                : std::nullopt;
                     },
                 },
                 projection
@@ -1038,36 +1155,36 @@ private:
 
     auto verify_place_use(
         const HIRExpr& expression,
-        const HIRExpressionFacts& facts,
+        const std::optional<SemanticPlaceUse>& place_use,
         SemanticScopeID scope
     ) noexcept -> bool {
-        if (!facts.place_use.has_value()) {
+        if (!place_use.has_value()) {
             return true;
         }
-        const auto& use = *facts.place_use;
-        if (!known(use.root, program.places().size())) {
+        const auto& use = *place_use;
+        if (!symbol_known(use.root) || !program.binding(use.root).has_value()) {
             return fail(
                 SemanticProgramErrorKind::InvalidPlace,
-                "expression references an unknown root place"
+                "expression references an unknown runtime binding"
             );
         }
-        const auto& place = program.place(use.root);
-        if (!scope_contains(place.scope, scope)) {
+        const auto& binding = *program.binding(use.root);
+        if (!scope_contains(binding.scope, scope)) {
             return fail(
                 SemanticProgramErrorKind::InvalidScope,
-                "expression accesses a place outside its lexical scope"
+                "expression accesses a binding outside its lexical scope"
             );
         }
         const auto writes = use.access == SemanticPlaceAccess::Write
             || use.access == SemanticPlaceAccess::ReadWrite;
-        if (writes && !place.capabilities.write) {
+        if (writes && !binding.capabilities.write) {
             return fail(
                 SemanticProgramErrorKind::InvalidPlace,
-                "expression uses Write without place capability"
+                "expression uses Write without binding capability"
             );
         }
         if (use.access == SemanticPlaceAccess::Take
-            && (!place.capabilities.take || !use.projections.empty())) {
+            && (!binding.capabilities.take || !use.projections.empty())) {
             return fail(
                 SemanticProgramErrorKind::InvalidPlace,
                 "expression uses Take on a non-owner or projected place"
@@ -1081,51 +1198,38 @@ private:
             );
     }
 
-    auto verify_failure_summary(const HIRExpressionFacts& facts) noexcept -> bool {
-        if (!failure_set_known(facts.pending_failure_set)
-            || !failure_set_known(facts.outward_failure_set)
-            || !failure_set_known(facts.evaluation_failure_set)) {
-            return false;
-        }
-        auto evaluation = program.failure_set(facts.pending_failure_set).members;
-        const auto& outward = program.failure_set(facts.outward_failure_set).members;
-        evaluation.insert(evaluation.end(), outward.begin(), outward.end());
-        evaluation = normalize_failure_members(program, std::move(evaluation));
-        return evaluation == program.failure_set(facts.evaluation_failure_set).members
-            || fail(
-                   SemanticProgramErrorKind::InvalidContract,
-                   "expression evaluation failure set is not the union of pending and outward failures"
-            );
+    auto verify_failure_summary(const HIRExpressionControl& control) noexcept -> bool {
+        return failure_set_known(control.evaluation_failure_set);
     }
 
-    auto verify_effect_places(std::span<const SemanticPlaceID> places) noexcept -> bool {
-        auto previous = std::optional<SemanticPlaceID>();
-        for (const auto place : places) {
-            if (!known(place, program.places().size())) {
+    auto verify_effect_roots(std::span<const SymbolID> roots) noexcept -> bool {
+        auto previous = std::optional<SymbolID>();
+        for (const auto root : roots) {
+            if (!symbol_known(root) || !program.binding(root).has_value()) {
                 return fail(
                     SemanticProgramErrorKind::InvalidPlace,
-                    "evaluation effect references an unknown place"
+                    "evaluation effect references an unknown runtime binding"
                 );
             }
-            if (previous.has_value() && previous->index() >= place.index()) {
+            if (previous.has_value() && previous->index() >= root.index()) {
                 return fail(
                     SemanticProgramErrorKind::InvalidContract,
-                    "evaluation effect places are not unique and canonically ordered"
+                    "evaluation effect roots are not unique and canonically ordered"
                 );
             }
-            previous = place;
+            previous = root;
         }
         return true;
     }
 
     auto verify_evaluation_effect(const EvaluationEffect& effect) noexcept -> bool {
-        return verify_effect_places(effect.reads)
-            && verify_effect_places(effect.writes)
-            && verify_effect_places(effect.takes);
+        return verify_effect_roots(effect.reads)
+            && verify_effect_roots(effect.writes)
+            && verify_effect_roots(effect.takes);
     }
 
-    auto verify_failure_summary(const HIRBlockFacts& facts) noexcept -> bool {
-        return failure_set_known(facts.outward_failure_set);
+    auto verify_failure_summary(const HIRBlockControl& control) noexcept -> bool {
+        return failure_set_known(control.outward_failure_set);
     }
 
     auto visit_pattern(HIRPatternID id, SemanticScopeID scope, HIRTypeID expected) noexcept
@@ -1494,7 +1598,7 @@ private:
             return CallableContract {
                 .parameters = callable.parameters,
                 .result = callable.result,
-                .failure_set = callable.failure_set,
+                .failure_set = program.callable_flow(function->callable).effective_failure_set,
             };
         }
         if (const auto* reference = std::get_if<HIRFunctionRefTypeValue>(&value)) {
@@ -1510,7 +1614,7 @@ private:
             return CallableContract {
                 .parameters = callable.parameters,
                 .result = callable.result,
-                .failure_set = callable.failure_set,
+                .failure_set = program.callable_flow(closure->callable).effective_failure_set,
             };
         }
         return std::nullopt;
@@ -1518,7 +1622,7 @@ private:
 
     auto verify_call(
         const HIRExpr& expression,
-        const HIRExpressionFacts& facts,
+        const HIRExpressionControl& control,
         const HIRCallExpr& call,
         SemanticScopeID scope
     ) noexcept -> bool {
@@ -1534,24 +1638,28 @@ private:
                     "call expression does not match its resolved callable shape"
                 );
             }
-            for (auto index = 0uz; index < call.arguments.size(); ++index) {
-                const auto& argument = call.arguments[index];
-                if (argument.access != contract->parameters[index].access
-                    || !known(argument.expression, program.expressions().size())
-                    || program.expression(argument.expression).type
-                        != contract->parameters[index].type) {
-                    return fail(
-                        SemanticProgramErrorKind::InvalidContract,
-                        "call argument does not match its resolved parameter"
-                    );
+            const auto arguments_match = std::ranges::equal(
+                call.arguments,
+                contract->parameters,
+                [&](const HIRCallArgument& argument,
+                    const HIRFunctionParameterType& parameter) noexcept {
+                    return argument.access == parameter.access
+                        && known(argument.expression, program.expressions().size())
+                        && program.expression(argument.expression).type == parameter.type;
                 }
+            );
+            if (!arguments_match) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidContract,
+                    "call argument does not match its resolved parameter"
+                );
             }
-            const auto& pending = program.failure_set(facts.pending_failure_set).members;
+            const auto& evaluation = program.failure_set(control.evaluation_failure_set).members;
             for (const auto failure : program.failure_set(contract->failure_set).members) {
-                if (!std::ranges::contains(pending, failure)) {
+                if (!std::ranges::contains(evaluation, failure)) {
                     return fail(
                         SemanticProgramErrorKind::InvalidContract,
-                        "call failure contract is absent from its pending summary"
+                        "call failure contract is absent from its evaluation summary"
                     );
                 }
             }
@@ -1569,14 +1677,18 @@ private:
             return false;
         }
         const auto& expression = program.expression(id);
-        const auto& facts = program.expression_facts(id);
+        const auto& control = program.expression_control(id);
+        const auto& effect = program.evaluation_effect(id);
+        const auto& place_use = program.place_use(id);
+        const auto& try_facts = program.try_facts(id);
         if (!type_known(expression.type)
             || (expression.constant.has_value()
                 && (!known(*expression.constant, program.constants().size())
                     || program.constant(*expression.constant).type != expression.type))
-            || !verify_failure_summary(facts)
-            || !verify_evaluation_effect(facts.evaluation_effect)
-            || !verify_place_use(expression, facts, scope)) {
+            || !verify_failure_summary(control)
+            || !verify_evaluation_effect(effect)
+            || !verify_place_use(expression, place_use, scope)
+            || (std::holds_alternative<HIRTryExpr>(expression.value) != try_facts.has_value())) {
             return failure.has_value() ? false
                                        : fail(
                                              SemanticProgramErrorKind::InvalidType,
@@ -1658,7 +1770,7 @@ private:
                     return visit_expression(cast.operand_id, scope);
                 },
                 [&](const HIRCallExpr& call) noexcept {
-                    return verify_call(expression, facts, call, scope);
+                    return verify_call(expression, control, call, scope);
                 },
                 [&](const HIRClosureExpr& closure) noexcept {
                     if (!known(closure.callable, program.callables().size())) {
@@ -1673,16 +1785,15 @@ private:
                         return false;
                     }
                     for (const auto& capture : closure.captures) {
-                        const auto source_place = program.symbol(capture.source).place;
-                        const auto local_place = program.symbol(capture.local).place;
-                        if (!source_place.has_value()
-                            || !local_place.has_value()
-                            || !known(*source_place, program.places().size())
-                            || !known(*local_place, program.places().size())
-                            || program.place(*source_place).symbol != capture.source
-                            || program.place(*local_place).symbol != capture.local
-                            || !scope_contains(program.place(*source_place).scope, scope)
-                            || program.place(*local_place).scope != body.scope) {
+                        if (!symbol_known(capture.source) || !symbol_known(capture.local)) {
+                            return false;
+                        }
+                        const auto& source_binding = program.binding(capture.source);
+                        const auto& local_binding = program.binding(capture.local);
+                        if (!source_binding.has_value()
+                            || !local_binding.has_value()
+                            || !scope_contains(source_binding->scope, scope)
+                            || local_binding->scope != body.scope) {
                             return false;
                         }
                     }
@@ -1701,8 +1812,8 @@ private:
                 },
                 [&](const HIRTakeExpr& take) noexcept {
                     return visit_expression(take.operand_id, scope)
-                        && (!facts.place_use.has_value()
-                            || facts.place_use->access == SemanticPlaceAccess::Take);
+                        && (!place_use.has_value()
+                            || place_use->access == SemanticPlaceAccess::Take);
                 },
                 [&](const HIRTextIntrinsicExpr& intrinsic) noexcept {
                     return visit_expression(intrinsic.operand_id, scope);
@@ -1735,6 +1846,12 @@ private:
                         || visit_block(*conditional.else_branch, scope);
                 },
                 [&](const HIRMatchExpr& match) noexcept {
+                    if (!match_coverage_aligned(match.arms, match.coverage)) {
+                        return fail(
+                            SemanticProgramErrorKind::InvalidContract,
+                            "match coverage facts do not align with expression arms"
+                        );
+                    }
                     if (!visit_expression(match.subject, scope)) {
                         return false;
                     }
@@ -1750,19 +1867,18 @@ private:
                     if (!visit_block(attempt.body, scope)) {
                         return false;
                     }
-                    if (!facts.attempt.has_value()
-                        || facts.attempt->arms.size() != attempt.arms.size()) {
+                    if (!try_facts.has_value() || try_facts->arms.size() != attempt.arms.size()) {
                         return false;
                     }
                     const auto outward_failure_set =
-                        program.block_facts(attempt.body).outward_failure_set;
+                        program.block_control(attempt.body).outward_failure_set;
                     if (!failure_set_known(outward_failure_set)
-                        || !failure_set_known(facts.attempt->unhandled_failure_set)) {
+                        || !failure_set_known(try_facts->unhandled_failure_set)) {
                         return false;
                     }
                     const auto& failures = program.failure_set(outward_failure_set).members;
                     for (const auto failure :
-                         program.failure_set(facts.attempt->unhandled_failure_set).members) {
+                         program.failure_set(try_facts->unhandled_failure_set).members) {
                         if (!std::ranges::contains(failures, failure)) {
                             return fail(
                                 SemanticProgramErrorKind::InvalidContract,
@@ -1773,7 +1889,7 @@ private:
                     for (auto index = 0uz; index < attempt.arms.size(); ++index) {
                         if (!visit_catch_arm(
                                 attempt.arms[index],
-                                facts.attempt->arms[index],
+                                try_facts->arms[index],
                                 failures,
                                 scope
                             )) {
@@ -1855,6 +1971,12 @@ private:
                         || visit_block(*conditional.else_branch, scope);
                 },
                 [&](const HIRMatchStmt& match) noexcept {
+                    if (!match_coverage_aligned(match.arms, match.coverage)) {
+                        return fail(
+                            SemanticProgramErrorKind::InvalidContract,
+                            "match coverage facts do not align with statement arms"
+                        );
+                    }
                     if (!visit_expression(match.subject, scope)) {
                         return false;
                     }
@@ -1944,7 +2066,7 @@ private:
         const auto& block = program.block(id);
         if (!scope_known(block.scope)
             || !scope_contains(owner_scope, block.scope)
-            || !verify_failure_summary(program.block_facts(id))) {
+            || !verify_failure_summary(program.block_control(id))) {
             return fail(
                 SemanticProgramErrorKind::InvalidScope,
                 "program block enters an invalid lexical scope"
@@ -1990,12 +2112,17 @@ private:
 
 } // namespace
 
-auto verify_semantic_program(const SemanticConstruction& program) noexcept
+auto verify_semantic_program(SemanticProgramView program) noexcept
     -> std::expected<void, SemanticProgramError> {
     return SemanticVerifier(program).run();
 }
 
-auto verify_semantic_structure(const SemanticConstruction& program) noexcept
+auto verify_semantic_draft_for_testing(SemanticDraftView program) noexcept
+    -> std::expected<void, SemanticProgramError> {
+    return SemanticVerifier(program).run();
+}
+
+auto verify_semantic_structure(SemanticDraftView program) noexcept
     -> std::expected<void, SemanticProgramError> {
     return StructureVerifier(program).run();
 }

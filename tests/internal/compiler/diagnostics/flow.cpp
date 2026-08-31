@@ -106,3 +106,36 @@ TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reacha
     CHECK_EQ(sources.slice(unreachable->attachment.primary->span), "let unreachable = 2;");
     CHECK(find_diagnostic(result->diagnostics, "CV-TEST-CONDITION-TYPE") == nullptr);
 }
+
+TEST_CASE("Compiler diagnostics: covered match arms retain warning identity and span") {
+    auto sources = SourceManager();
+    const auto source = std::string(
+        "private fn classify(value: bool) {\n"
+        "    match value {\n"
+        "        false => {},\n"
+        "        true => {},\n"
+        "        _ => {},\n"
+        "    }\n"
+        "}\n"
+    );
+    const auto source_id = *sources.append_virtual("covered-match-arm.cv", source);
+    const auto input = CompilationInput {
+        .source_id = source_id,
+        .module_path = *CanonicalModulePath::from_value("covered_match_arm"),
+    };
+    const auto result = compile(
+        sources,
+        CompilationRequest {.inputs = std::span(&input, 1)},
+        TargetGenerationRequest {
+            .tests = TestEmissionMode::None,
+            .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
+        }
+    );
+
+    REQUIRE(result.has_value());
+    const auto* warning = find_diagnostic(result->diagnostics, "CV-FLOW-UNREACHABLE-MATCH-ARM");
+    REQUIRE(warning != nullptr);
+    CHECK_EQ(warning->finding.severity, DiagnosticSeverity::Warning);
+    REQUIRE(warning->attachment.primary.has_value());
+    CHECK_EQ(sources.slice(warning->attachment.primary->span), "_");
+}

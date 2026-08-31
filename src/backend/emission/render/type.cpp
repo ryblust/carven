@@ -5,17 +5,6 @@ import :backend.target.symbol;
 import :support.visit;
 import std;
 
-auto TargetRenderer::render_template_argument(TargetTemplateArgument value) noexcept
-    -> LayoutNodeID {
-    return std::visit(
-        Overloaded {
-            [&](TargetTypeID id) noexcept { return render_type(id); },
-            [&](TargetExprID id) noexcept { return render_expression(id); },
-        },
-        value
-    );
-}
-
 auto TargetRenderer::render_type(TargetTypeID id) noexcept -> LayoutNodeID {
     return render_type_layouts(id).wrapping;
 }
@@ -25,19 +14,18 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayo
     auto rendered = std::visit(
         Overloaded {
             [&](const TargetNamedType& named) noexcept -> SyntaxLayouts {
-                const auto segment = [&](
-                                         SyntaxLayouts segment_name,
-                                         std::span<const TargetTemplateArgument> arguments
-                                     ) noexcept -> SyntaxLayouts {
-                    if (arguments.empty()) {
+                const auto segment =
+                    [&](SyntaxLayouts segment_name,
+                        std::span<const TargetTypeID> type_argument_ids) noexcept -> SyntaxLayouts {
+                    if (type_argument_ids.empty()) {
                         return segment_name;
                     }
-                    auto values = std::vector<LayoutNodeID> {};
-                    values.reserve(arguments.size());
-                    for (const auto argument : arguments) {
-                        values.push_back(render_template_argument(argument));
+                    auto argument_layout_ids = std::vector<LayoutNodeID> {};
+                    argument_layout_ids.reserve(type_argument_ids.size());
+                    for (const auto argument_type_id : type_argument_ids) {
+                        argument_layout_ids.push_back(render_type(argument_type_id));
                     }
-                    const auto arguments_layout = delimited_list(values, "<", ">");
+                    const auto arguments_layout = delimited_list(argument_layout_ids, "<", ">");
                     return {
                         .inline_qualified =
                             concat({segment_name.inline_qualified, arguments_layout}),
@@ -46,32 +34,33 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayo
                 };
                 const auto base_name = render_name_layouts(named.name);
                 auto parts = std::vector<SyntaxLayouts> {
-                    segment(base_name, named.arguments),
+                    segment(base_name, named.type_argument_ids),
                 };
                 for (const auto& nested : named.nested) {
                     const auto name = render_identifier(nested.name);
-                    parts.push_back(
-                        segment({.inline_qualified = name, .wrapping = name}, nested.arguments)
-                    );
+                    parts.push_back(segment(
+                        {.inline_qualified = name, .wrapping = name},
+                        nested.type_argument_ids
+                    ));
                 }
                 return qualified_sequence(parts, false);
             },
             [&](const TargetIntrinsicType& intrinsic) noexcept -> SyntaxLayouts {
                 auto result = text(target_symbol_spelling(intrinsic.symbol));
-                if (!intrinsic.arguments.empty()) {
-                    auto arguments = std::vector<LayoutNodeID> {};
-                    arguments.reserve(intrinsic.arguments.size());
-                    for (const auto argument : intrinsic.arguments) {
-                        arguments.push_back(render_template_argument(argument));
+                if (!intrinsic.type_argument_ids.empty()) {
+                    auto argument_layout_ids = std::vector<LayoutNodeID> {};
+                    argument_layout_ids.reserve(intrinsic.type_argument_ids.size());
+                    for (const auto argument_type_id : intrinsic.type_argument_ids) {
+                        argument_layout_ids.push_back(render_type(argument_type_id));
                     }
-                    result = concat({result, delimited_list(arguments, "<", ">")});
+                    result = concat({result, delimited_list(argument_layout_ids, "<", ">")});
                 }
                 return {.inline_qualified = result, .wrapping = result};
             },
             [&](const TargetArrayType& array) noexcept -> SyntaxLayouts {
                 const auto arguments = std::array {
                     render_type(array.element_type_id),
-                    render_expression(array.extent)
+                    text(std::to_string(array.extent.magnitude))
                 };
                 const auto result =
                     concat({text("std::array"), delimited_list(arguments, "<", ">")});

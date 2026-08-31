@@ -76,7 +76,7 @@ struct HIRIfStmt final {
 struct HIRMatchStmt final {
     HIRExprID subject;
     std::vector<HIRMatchArm> arms;
-    bool exhaustive;
+    HIRMatchCoverageFacts coverage;
 };
 
 struct HIRWhileStmt final {
@@ -158,7 +158,7 @@ struct HIRBlock final {
     std::optional<HIRExprID> result;
 };
 
-struct HIRBlockFacts final {
+struct HIRBlockControl final {
     FailureSetID outward_failure_set;
     bool exits_test;
 };

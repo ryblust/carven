@@ -83,7 +83,10 @@ lifecycle state. Publication exposes one authoritative query surface.
 
 Acronyms remain intact: `AST`, `IR`, `CV`, `ID`, and `UTF8`. ID type names end
 in `ID`; one ID variable ends in `_id`, and an ID collection ends in `_ids`.
-Use the established abbreviations `decl`, `expr`, and `stmt`.
+Use the established domain tokens `decl`, `expr`, and `stmt` for source-tree
+directories, module-name segments, and file stems. Do not use plural long forms
+to distinguish an owner from its vocabulary; the surrounding path states the
+role.
 
 ## Declarations and values
 

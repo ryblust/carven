@@ -1,212 +1,226 @@
 # Compiler architecture
 
-This document describes the compiler stages, persistent representations, and
-validation boundaries. Generated artifact and C++ lowering details belong to
-[backend.md](backend.md).
+This document defines the implemented compiler pipeline, persistent
+representations, ownership boundaries, publication gates, and dependency
+direction. Observable language behavior and diagnostic identities belong to
+[semantics.md](semantics.md). Generated-C++ realization belongs to
+[backend.md](backend.md), and consumer/toolchain contracts belong to
+[compatibility.md](compatibility.md).
 
-Carven compiles one explicit, closed batch of `.cv` modules:
+Private helpers and module partitions may change. The lasting contract is that
+each fact has one producer, owner, lifetime, verifier, and publication path.
+
+## Pipeline
+
+Carven compiles one explicit closed batch:
 
 ```text
 CompilationRequest
+  -> parse and close inputs
   -> ParsedBatch
-  -> SemanticConstruction
-       -> structured HIR validation
-       -> SolvedControl
-       -> effect and availability diagnostics
-       -> committed control facts
+  -> ProgramAnalyzer
+       -> SemanticSession and SemanticDraft
+       -> catalog and stable entity reservation
+       -> declaration-contract resolution and freeze
+       -> body elaboration and structural verification
+       -> binding and place-use derivation
+       -> failure/control/evaluation analysis
+       -> effect diagnostics and flow-candidate freeze
+       -> availability, contract, and nominal analysis
+       -> exact-layout assembly and final verification
   -> SemanticProgram
-  -> TargetGenerationPlan
-  -> unit-local TargetUnit
+  -> TargetProgram::build(move(SemanticProgram), TargetGenerationRequest)
+  -> per-artifact TargetUnit
+  -> GeneratedArtifact
   -> ArtifactSet
 ```
 
-`ParsedBatch` and `SemanticProgram` are move-only owners with const queries.
-Their IDs are local to the owning representation. `SemanticConstruction`,
-analysis indexes, graphs, work queues, and verification state are transient.
+Parsing and semantic analysis return diagnostics without a partial
+`SemanticProgram` on error. A successful `SemanticProgram` is move-only and is
+consumed by target-program construction. The resulting `TargetProgram`
+owns that semantic program by value for the complete target-generation
+lifetime.
 
-## Stage API
+## Owners and lifetimes
 
-```cpp
-auto parse(const SourceManager&, std::span<const CompilationInput>) noexcept
-    -> std::expected<ParsedBatch, Diagnostics>;
+| Owner or role | Owns | Lifetime |
+| --- | --- | --- |
+| `ParsedBatch` | closed syntax trees, source snapshots, module identities, and initial provenance | parse publication through semantic handoff |
+| `ProgramAnalyzer` | syntax access, diagnostics, entry tracking, deferred callable constraints, and one semantic session | one semantic analysis |
+| `SemanticSession` | provenance construction, one `SemanticDraft`, and the outer semantic publication gate | one semantic analysis |
+| `SemanticDraft` | incomplete semantic slots, canonical builders and indexes, construction state, and compact fact candidates | construction through semantic seal |
+| declaration capabilities | stable entity reservations and required declaration slots | declaration discovery through declaration freeze |
+| recorded control workspace | rich failure, control, transfer, and diagnostic reasons | control analysis through flow freeze |
+| availability workspace | one body's place catalog, CFG, states, witnesses, and worklist | one body only |
+| `SemanticProgram` | exact verified structural, canonical, flow, binding, nominal, and provenance facts | semantic seal through target-program ownership |
 
-auto analyze(ParsedBatch) noexcept
-    -> std::expected<Diagnosed<SemanticProgram>, Diagnostics>;
+Target-program ownership, artifact lowering, target units, and artifact
+collection belong to [backend.md](backend.md).
 
-auto generate_target(const SemanticProgram&, TargetGenerationRequest) noexcept
-    -> ArtifactSet;
-```
+`SemanticDraftStorage` and `SemanticProgramStorage` are distinct private
+layouts. The draft layout may contain indexes, reservations, optional slots,
+and construction vectors. The published layout can represent only final values.
+Assembly moves final ID tables without remapping identities and leaves
+construction-only state behind.
 
-Imports resolve only within the supplied input batch. The catalog rejects
-duplicate canonical module paths and does not discover files.
+## Semantic stage gates
 
-## Parsing and declaration construction
+| Gate | Input | Required proof | Output |
+| --- | --- | --- | --- |
+| Input closure | request and source manager | normalized unique paths, unique canonical modules, valid snapshots, and closed imports | `ParsedBatch` |
+| Declaration-contract freeze | catalog and reserved identities | every required named declaration slot and nominal capability is complete | immutable declaration view for body elaboration |
+| Structural gate | completed declarations and bodies | valid IDs, scopes, bodies, ownership trees, type/form relations, bindings, and match-fact alignment | structurally verified `SemanticDraftView` |
+| Flow-candidate freeze | solved failures and recorded control/evaluation | diagnostics complete; callable, expression, block, try, and effect columns total and normalized | immutable compact flow facts |
+| Semantic seal | fully analyzed draft | exact published layout assembled; canonical tables, references, ownership, cycles, provenance, flow, binding, match, and nominal invariants verified | `SemanticProgram` |
 
-Parsing validates input identity, module paths, source snapshots, syntax-tree
-references, source spans, cross-tree references, and root node kinds. Token
-buffers remain parsing state and are not published.
+An internal freeze makes already-decided facts immutable for the next analysis;
+it does not publish another program. Only `SemanticSession::finish()`
+constructs `SemanticProgram`, after `verify_semantic_program` accepts the exact
+storage that will be returned.
 
-The catalog reserves `FunctionID`, `StructID`, `EnumID`, and `EnumCaseID`
-before resolving declaration types. A `DeclarationSessionView` permits
-recursive recipe solving while declarations are `Resolving`; successful
-contracts become `Closed`, failures become `Failed`, and consuming the closed
-set ends in `Finished`. Body elaboration reads closed contracts and does not
-restart declaration resolution.
+## Input closure and identity
 
-After bodies are built, unused-binding and unused-import diagnostics run while
-syntax and catalog data are available. Syntax, module-analysis contexts, and
-lint-only state are released before whole-program semantic solving.
+The parser consumes only paths supplied by the request. It validates source
+identity, canonical module paths, snapshots, source spans, cross-tree
+references, and root forms. File discovery outside the request belongs to the
+caller or build integration.
 
-## HIR ownership
+Identity allocation follows the owning domain:
 
-`SemanticConstruction` owns canonical types, constants, declaration tables,
-callables, interned failure sets, symbols, modules, expressions, statements,
-patterns, blocks, lexical scopes, places, and bodies. Each exact closed failure
-set has one `FailureSetID`; sorting by `HIRTypeID` is only the private
-normalization used to intern unions and is not a semantic member order. Each
-`HIRModule` contains only its ordered `items`.
+- source and module IDs enter semantic analysis through `ParsedBatch` and are
+  never reallocated;
+- origins and spellings share one append-only provenance domain across the
+  frontend-to-semantic handoff;
+- `SemanticEntityReservations` allocates stable symbol, function, structure,
+  enumeration, and case identities directly for their final semantic tables;
+- types, callable signatures, and failure sets are allocated only by their
+  canonical value builders;
+- availability and CFG identities are body-local and never enter
+  `SemanticProgram`.
 
-`BodyID` identifies a body. Each `HIRCallable` and `HIRTestDecl` holds one
-forward reference to its body. Function declarations refer to a callable;
-closure expressions refer to a callable and do not embed or traverse its body
-as part of the enclosing body.
+IDs are local to one compilation and identify values only in their owning
+program.
 
-After place derivation, structural validation starts from module items. It
-checks that functions, tests, callables, and bodies have one owner; that every
-body is complete; and that every expression, statement, pattern, and block
-occurs exactly once in an acyclic structured body. A nested closure claims its
-callable and schedules that callable's body for an independent traversal.
-Scope parents must be construction-ordered, body root scopes are unique, a
-closure root is a strict descendant of its enclosing scope, and each block,
-arm, and loop scope resolves to the current body's nearest root.
+## Declaration and body construction
 
-Callable failure policy is stored once on `HIRCallable`:
+The analysis catalog owns transient lookup and discovery data, not a second
+copy of declaration facts. `DeclarationResolver` fills stable required slots
+through `SemanticDeclarationCapabilities`; declaration freeze makes the
+resolved contracts available to body elaboration without another publication
+owner.
 
-```cpp
-enum class HIRFailureContractKind {
-    Inferred,
-    Declared,
-    UndeclaredPublished,
-};
-```
+Closure callables are created during body elaboration, so structural
+verification is the first gate that proves all named and closure callables,
+bodies, scopes, and occurrence trees complete. Module items own top-level source
+order, callables own their bodies, bodies and scopes own local occurrences, and
+enumerations own their ordered cases.
 
-Declared and undeclared-published contracts remain fixed. An inferred contract
-is solved from the callable body. An undeclared published callable that exposes
-a failure produces the published-throw diagnostic.
-
-## Control and failure solving
-
-`solve_control` traverses structured HIR directly. The initial traversal
-collects concrete callable call edges. Calls through callable signatures use
-the signature's fixed failure contract. Call expressions do not retain a
-derived target field; the solver derives a concrete callable, callable
-signature, foreign, or error view from the callee type when needed.
-
-Only inferred callables contribute outgoing dependency edges. A concrete edge
-`u -> v` means that `u` depends on `v`; declared contracts are leaves whose body
-dependencies do not enter failure inference. The solver also builds sorted
-reverse-caller edges, then moves the forward graph into the shared SCC routine.
-
-Within each component, a FIFO worklist starts with inferred members in
-`CallableID` order. Evaluating one member reads the latest contracts and merges
-its outward failures into a temporary normalized vector. Growth queues only
-inferred callers in the same component. The finite, monotone failure sets
-converge to the unique least fixed point without whole-program snapshots or
-unchanged callable reevaluation.
-
-After contracts stabilize, one recording traversal produces expression,
-statement, block, catch, and unhandled-failure summaries. A separate structured
-HIR traversal derives evaluation effects; it returns statement and block
-effects transiently and retains only expression effects in `SolvedControl`:
-
-```cpp
-auto solve_control(SemanticConstruction&) noexcept -> SolvedControl;
-auto commit_control_facts(SemanticConstruction&, SolvedControl&&) noexcept
-    -> void;
-```
-
-Effect diagnostics query those summaries and perform focused HIR scans for
-their own declarations and occurrences. Control evaluation, fixed-point
-solving, evaluation-effect derivation, and fact publication are separate
-implementation slices behind the same `SolvedControl` boundary. Control solving
-groups each catch arm's alternatives into one pattern-coverage query per
-protected failure. Pattern redundancy within an arm is diagnosed during
-elaboration; failure absence and coverage by preceding arms remain transient
-effect-diagnostic reasons. Publication interns every callable, expression,
-block, catch, and try set and retains only the reachable source alternative
-indices needed by lowering.
-
-## Availability
-
-Availability runs after final failure contracts are known. A transient catalog
-maps each place to its nearest body root and a dense body-local ID. Each body is
-lowered backward from explicit continuations into a compact CFG whose normal,
-transfer, call-failure, catch-guard, rethrow, and loop-backedge targets are
-already resolved. Maximal linear chains are merged before solving.
-
-The solver stores only block-entry states. Up to 64 local places use one inline
-word; larger bodies use a contiguous word vector. A sparse witness list records
-the structurally earliest Take site for each unavailable place. Joins OR the
-bits and select canonical witnesses, so they are commutative, associative,
-idempotent, and independent of successor order. A FIFO worklist reprocesses a
-block only when its entry bits or witness changes. Diagnostics are emitted
-after convergence, then the CFG, states, catalog views, and worklist are
-released before the next body. No availability fact is retained in HIR. This
-CFG is a disposable semantic-analysis projection; it does not prescribe
-generated control flow. The target policy is defined by
-[backend.md](backend.md#evaluation-and-control).
-
-The semantic-analysis tail is:
-
-```text
-derive places
-  -> validate structured HIR
-  -> solve control and failure contracts
-  -> diagnose effects
-  -> diagnose availability body by body
-  -> commit control facts
-  -> validate type and nominal-storage contracts
-  -> validate final facts and publish SemanticProgram
-```
+Reverse indexes are allowed only as disposable projections for a measured
+consumer. They are never a competing canonical owner.
 
 ## Published semantic facts
 
-`SemanticProgram` retains the facts required by diagnostics and lowering:
+`SemanticProgram` is the only published semantic representation. Its storage
+contains:
 
-- resolved declarations, names, visibility, calls, types, constants, and
-  pattern coverage;
-- place roots and projections with Read, Write, ReadWrite, and Take access;
-- `FailureSetID` references for callable contracts, expression pending,
-  outward, and evaluation sets, block outward sets, catch acceptance, and try
-  unhandled sets, plus sorted reachable catch-alternative indices and test
-  exits;
-- canonical sorted `EvaluationEffect` place sets and control-boundary flags;
-- nominal storage-dependency order for complete C++ definitions;
-- source snapshots, module records, origins, spellings, and locations through
-  `CompilationProvenance`.
+- provenance, source snapshots, modules, origins, spellings, and source
+  locations;
+- declarations, symbols, bodies, expressions, statements, patterns, blocks,
+  scopes, and constants;
+- canonical types, callable signatures, constant values, and failure sets;
+- symbol-keyed binding facts;
+- expression control facts and evaluation effects;
+- expression place uses rooted directly in `SymbolID` with structural field or
+  index projections;
+- block control, try/catch, and callable flow facts;
+- match-owned `HIRMatchCoverageFacts` aligned with source arms;
+- nominal equality capabilities and direct by-value containment dependencies.
 
-Final verification checks table bounds, declaration and module ownership,
-occurrence ownership, scopes, places and projections, callable shapes, failure
-sets, effect place ranges and canonical order, patterns, nominal storage order,
-visibility, and foreign boundaries. Each interned failure set is checked once
-for normalized unique nominal members and unique set identity. Every published
-failure reference is range-checked, and each expression's evaluation set must
-equal the union of its pending and outward sets. Publishing moves the verified
-tables into `SemanticProgram`.
+Place use does not create a second storage identity. The symbol is the root;
+the projection path describes only how one occurrence reaches a subobject.
+Types remain available from the canonical symbol/expression/type relations.
 
-## Shared graph ordering
+A callable's structural contract and effective flow are separate columns.
+`CallContractView` is a pure projection of the verified callee type; call
+expressions do not persist a competing resolved-target field. Concrete
+callables use effective failure facts, first-class signatures use their fixed
+contract, and foreign calls retain their explicit boundary classification.
 
-Callable failure inference, nominal storage-cycle diagnosis, and backend
-interface planning use the same SCC implementation. It consumes an owned
-adjacency vector, normalizes it in place, and uses an explicit DFS-frame stack.
-It validates edge ranges, sorts component members, returns components in
-dependency-first topological order, and uses the smallest node ID to order
-independent components.
+## Failure, control, effects, and availability
 
-## Stage boundaries
+Failure solving owns its dependency graph, SCC state, reverse callers, and
+worklist. Rich `RecordedControlAnalysis` retains diagnostic reasons while effect
+diagnostics run. The single consuming `freeze_flow_candidate` then publishes
+only compact immutable callable, expression, block, try, and evaluation facts
+and destroys the rich workspace.
 
-Persistent state is limited to facts required by a later stage. A stage may
-make several focused traversals of structured HIR when that keeps its inputs
-and outputs local. Parsing or analyzing opaque `#[cpp]` bytes, package
-resolution, C++ compilation, linking, installation, optimization, and platform
-selection remain outside semantic analysis.
+Evaluation effects contain sorted unique read, write, and take symbol sets plus
+the opaque reorder barrier. Whether an expression may terminate is a query over
+its control fact, not a duplicated effect flag.
+
+Availability starts only after compact flow and effect facts are immutable. It
+builds and solves a disposable CFG for one body at a time, emits diagnostics
+after convergence, and publishes no graph, state, witness, or availability ID.
+Its CFG is an analysis projection and does not prescribe generated C++ control
+shape.
+
+Pattern coverage has one producer. The same coverage result diagnoses repeated
+or covered alternatives and publishes arm-aligned `Reachable` or `Covered`
+states plus exhaustiveness. Semantic control and availability still analyze the
+source program; target construction and lowering consume the published arm
+states instead of re-deriving reachability from pattern syntax.
+
+## Nominal facts
+
+Semantic analysis owns language-level nominal capabilities and direct by-value
+containment. It verifies duplicate edges and cycles before publication. C++
+complete-definition requirements, declaration order, interface components, and
+artifact schedules are target facts and do not enter semantic storage.
+
+## Provenance and diagnostics
+
+The frontend establishes initial provenance, then the semantic session takes
+exclusive ownership of the same append-only origin and spelling domains.
+Existing identities never change. Diagnostics resolve stable source locations
+while provenance is live; on success the finished provenance moves into
+`SemanticProgram` for target attribution.
+
+Diagnostic identities, severities, and required source locations are governed
+by [semantics.md](semantics.md).
+
+## Verification
+
+Semantic verification is read-only proof, never a fallback producer. The
+structural and final gates cover at least:
+
+- ID bounds, table alignment, canonical uniqueness, and normalized ordering;
+- exactly one owner for modules, declarations, bodies, expressions, statements,
+  patterns, blocks, and scopes;
+- valid callable/body, parent/scope, binding, type, and occurrence relations;
+- acyclic expression, statement, body, scope, and nominal containment graphs;
+- total and aligned control, effect, place-use, try, block, callable-flow, and
+  match-coverage columns;
+- normalized failure sets and valid callable/call projections;
+- valid origins, spellings, source IDs, and module IDs.
+
+A verifier may recompute a relation to check an invariant. It does not publish
+the recomputed relation or repair invalid storage.
+
+## Dependency direction
+
+- frontend depends on source, diagnostics, and support vocabulary, not semantic
+  or backend modules;
+- semantic construction depends on frontend input, source/provenance,
+  diagnostics, shared support, and semantic vocabulary;
+- `SemanticProgram` and semantic vocabulary do not depend on target or backend
+  modules;
+- target-program construction consumes a move-only verified `SemanticProgram`;
+- the lowering entry receives the target program and an artifact identity;
+  artifact-local lowerers receive only the resulting focused view,
+  target-building vocabulary, and immutable semantic vocabulary exposed through
+  that view;
+- target units, rendering, and artifact collection do not depend on semantic
+  construction state.
+
+Build and test evidence belongs to [testing.md](testing.md); source conventions
+belong to [conventions.md](conventions.md).

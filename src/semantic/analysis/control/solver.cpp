@@ -36,17 +36,21 @@ auto union_failures(std::span<const HIRTypeID> left, std::span<const HIRTypeID> 
 
 } // namespace
 
-auto solve_failure_contracts(SemanticConstruction& builder) noexcept
+auto solve_failure_contracts(SemanticDraftView builder) noexcept
     -> std::vector<std::vector<HIRTypeID>> {
     auto failure_sets = std::vector<std::vector<HIRTypeID>>(builder.callables().size());
     for (auto index = 0uz; index < builder.callables().size(); ++index) {
-        failure_sets[index] = builder.failure_set(builder.callables()[index].failure_set).members;
+        const auto callable = CallableID::from_index(static_cast<std::uint32_t>(index));
+        failure_sets[index] =
+            builder.failure_set(builder.callable_failure_input(callable).declared_failure_set)
+                .members;
     }
 
     auto dependencies = std::vector<std::vector<std::uint32_t>>(builder.callables().size());
     for (auto index = 0uz; index < builder.callables().size(); ++index) {
         const auto callable = CallableID::from_index(static_cast<std::uint32_t>(index));
-        if (builder.callable(callable).failure_contract == HIRFailureContractKind::Inferred) {
+        if (builder.callable_failure_input(callable).policy
+            == SemanticFailureContractKind::Inferred) {
             static_cast<void>(
                 evaluate_callable_control(builder, failure_sets, callable, &dependencies)
             );
@@ -75,7 +79,8 @@ auto solve_failure_contracts(SemanticConstruction& builder) noexcept
         auto worklist = std::deque<std::uint32_t>();
         const auto enqueue = [&](std::uint32_t member) noexcept {
             const auto callable = CallableID::from_index(member);
-            if (builder.callable(callable).failure_contract == HIRFailureContractKind::Inferred
+            if (builder.callable_failure_input(callable).policy
+                    == SemanticFailureContractKind::Inferred
                 && queued[member] == 0) {
                 queued[member] = 1;
                 worklist.push_back(member);

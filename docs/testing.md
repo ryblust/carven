@@ -11,7 +11,10 @@ named-module scanning. An ordinary dependency on a compiler target in the same
 project cannot make the executable available early enough, so the repository
 workflow builds it in a separate invocation before running tests. The
 [Carven Xmake rule](https://github.com/ryblust/carven-xmake-repo) owns the
-detailed prepare-stage integration contract.
+detailed prepare-stage integration contract. This repository owns one
+integration conformance smoke that runs the installed rule against the locally
+built compiler; it does not become the owner of the rule's internal algorithm
+by hosting that cross-repository check.
 
 During implementation, run the relevant suite identified under
 [Suite responsibilities](#suite-responsibilities):
@@ -101,6 +104,32 @@ The `internal` suite follows the compiler build configuration and uses the
 vendored doctest header. It does not serve as generated-C++ consumer coverage.
 Consumer-mode coverage belongs only to the generated-program suites.
 
+## Architecture invariant coverage
+
+The `internal` suite owns focused evidence for the sealed compiler
+representations:
+
+- semantic program fixtures cover exact-layout publication, canonical values,
+  ID bounds, structural ownership, cycles, type/form relations, flow/effect
+  alignment, Symbol-rooted place projections, match coverage, and nominal
+  containment;
+- target-program fixtures cover total type/signature/failure domains, stable
+  profile order, carrier conversion laws, typed artifact dependencies, SCC
+  schedules, and dependency-first order;
+- target-unit fixtures cover reference bounds, deep occurrence cloning, unique
+  item/statement/expression ownership, cycles, attribution, type-owned array
+  extents, typed-for headers, all-arena reachability, artifact metadata, and
+  synthetic control;
+- prepared-statement fixtures cover move-only classify-once/publish-once
+  behavior for C-style `for` initializers and steps;
+- diagnostic, target-quality, interface, and language fixtures jointly cover
+  covered-arm warning identity, target-only dead-arm/dependency omission,
+  subject evaluation exactly once, and unchanged guard/materialization behavior.
+
+These checks protect private representation invariants without turning exact
+node counts, helper names, or complete generated C++ bytes into compatibility
+contracts.
+
 ## Target organization
 
 The root `xmake.lua` includes `tests/internal`, `tests/language`,
@@ -110,8 +139,9 @@ The root `xmake.lua` includes `tests/internal`, `tests/language`,
 Test directories do not mix files and subdirectories, with these exceptions:
 
 - `tests/<suite>/xmake.lua`: suite build metadata;
-- `tests/cli/harness.lua` and `tests/cli/rule.lua`: CLI process and
-  Xmake rule contract infrastructure kept beside the CLI suite entry point;
+- `tests/cli/harness.lua` and `tests/cli/rule.lua`: CLI process infrastructure
+  and the cross-repository Xmake conformance fixture kept beside the CLI suite
+  entry point;
 - `tests/cli/module_layout/project`: nested project layout fixture;
 - `tests/language/modules_and_imports/namespace_collision`: file-module and
   directory-namespace collision fixture;
@@ -178,9 +208,10 @@ private structure of generated C++. Every CLI process has a 30-second hard
 timeout; a timed-out child is killed and reaped, and a failed case retains its
 temporary directory.
 
-The Xmake rule contract smoke builds a disposable consumer project from the
-locally built compiler and packaged rule checkout. It protects generation
-before C++ compilation, content-stable promotion when artifact topology is
-unchanged, live replacement when topology changes, missing-output repair, and
-failure isolation. The fixture exercises the repository integration boundary;
-arbitrary foreign files in its target-private live root are outside its scope.
+The Xmake integration conformance smoke builds a disposable consumer project
+from the locally built compiler and installed rule. It checks generation before
+C++ compilation, content-stable promotion, live replacement on topology
+changes, missing-output repair, and failure isolation through observable build
+behavior. These checks exercise the installed rule's integration boundary
+without assigning its internal algorithm to this repository. Arbitrary foreign
+files in the target-private live root are outside the fixture's scope.

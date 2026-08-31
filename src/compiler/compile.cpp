@@ -24,7 +24,7 @@ auto compile(
         return std::unexpected(std::move(semantic.error()));
     }
 
-    auto artifacts = generate_target(semantic->value, std::move(generation));
+    auto artifacts = generate_target(std::move(semantic->value), std::move(generation));
 
     return Diagnosed<ArtifactSet> {
         .value = std::move(artifacts),

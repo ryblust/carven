@@ -1,6 +1,6 @@
 module carven:semantic.analysis.elaboration.scopes;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
 import :semantic.hir.ids;
 import std;
 
@@ -47,7 +47,7 @@ private:
 class ScopeStack final {
 public:
     ScopeStack() = default;
-    explicit ScopeStack(SemanticConstruction& builder) noexcept;
+    explicit ScopeStack(SemanticDraft& builder) noexcept;
 
     auto enter_scope() noexcept -> ScopeGuard;
     auto enter_lambda_boundary() noexcept -> LambdaBoundaryGuard;
@@ -65,7 +65,7 @@ private:
     };
 
     std::vector<Scope> scopes;
-    SemanticConstruction* semantic_builder = nullptr;
+    SemanticDraft* semantic_builder = nullptr;
 
     friend class ScopeGuard;
     friend class LambdaBoundaryGuard;

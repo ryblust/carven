@@ -1,16 +1,15 @@
 module carven:semantic.analysis.validation;
 
 import :semantic.analysis.analyzer;
+import :semantic.analysis.session.read;
 import :semantic.visibility;
 import std;
 
-auto diagnose_type_contracts(
-    const SemanticConstruction& builder,
-    DiagnosticSink& diagnostics
-) noexcept -> void;
+auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnostics) noexcept
+    -> void;
 
 auto diagnose_declaration_surface_type(
-    const SemanticConstruction& builder,
+    SemanticDraftView builder,
     DiagnosticSink& diagnostics,
     DeclarationVisibility visibility,
     ProgramModuleID defining_module,
@@ -20,7 +19,7 @@ auto diagnose_declaration_surface_type(
 ) noexcept -> void;
 
 auto diagnose_declaration_surface_constant(
-    const SemanticConstruction& builder,
+    SemanticDraftView builder,
     DiagnosticSink& diagnostics,
     DeclarationVisibility visibility,
     ProgramModuleID defining_module,

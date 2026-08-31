@@ -207,6 +207,15 @@ struct HIRIfExpr final {
     std::optional<HIRBlockID> else_branch;
 };
 
+enum class HIRMatchArmState {
+    Reachable,
+    Covered,
+};
+
+struct HIRMatchCoverageFacts final {
+    std::vector<HIRMatchArmState> arm_states;
+};
+
 struct HIRMatchArm final {
     SemanticScopeID scope;
     HIRPatternID pattern;
@@ -217,7 +226,7 @@ struct HIRMatchArm final {
 struct HIRMatchExpr final {
     HIRExprID subject;
     std::vector<HIRMatchArm> arms;
-    bool exhaustive;
+    HIRMatchCoverageFacts coverage;
 };
 
 struct HIRCatchPatternAlternative final {
@@ -282,12 +291,7 @@ struct HIRTryFacts final {
     FailureSetID unhandled_failure_set;
 };
 
-struct HIRExpressionFacts final {
-    FailureSetID pending_failure_set;
-    FailureSetID outward_failure_set;
+struct HIRExpressionControl final {
     FailureSetID evaluation_failure_set;
     bool exits_test;
-    std::optional<SemanticPlaceUse> place_use;
-    EvaluationEffect evaluation_effect;
-    std::optional<HIRTryFacts> attempt;
 };

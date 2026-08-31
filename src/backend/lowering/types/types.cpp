@@ -25,7 +25,7 @@ auto named_type(TargetModuleLowerer& context, TargetName name, bool constant) no
         .value =
             TargetNamedType {
                 .name = std::move(name),
-                .arguments = {},
+                .type_argument_ids = {},
                 .nested = {},
             },
         .const_qualified = constant,
@@ -35,7 +35,7 @@ auto named_type(TargetModuleLowerer& context, TargetName name, bool constant) no
 auto intrinsic_type(TargetModuleLowerer& context, TargetSymbol symbol, bool constant) noexcept
     -> TargetTypeID {
     return context.target().intern_type({
-        .value = TargetIntrinsicType {.symbol = symbol, .arguments = {}},
+        .value = TargetIntrinsicType {.symbol = symbol, .type_argument_ids = {}},
         .const_qualified = constant,
     });
 }
@@ -45,16 +45,16 @@ auto outcome_type(
     TargetTypeID result,
     std::span<const TargetTypeID> failures
 ) noexcept -> TargetTypeID {
-    auto arguments = std::vector<TargetTemplateArgument> {result};
-    arguments.reserve(1 + failures.size());
+    auto type_argument_ids = std::vector<TargetTypeID> {result};
+    type_argument_ids.reserve(1 + failures.size());
     for (const auto failure : failures) {
-        arguments.emplace_back(failure);
+        type_argument_ids.emplace_back(failure);
     }
     return context.target().intern_type({
         .value =
             TargetIntrinsicType {
                 .symbol = TargetSymbol::RuntimeOutcome,
-                .arguments = std::move(arguments),
+                .type_argument_ids = std::move(type_argument_ids),
             },
         .const_qualified = false,
     });
@@ -65,7 +65,7 @@ auto test_control_type(TargetModuleLowerer& context, TargetTypeID result) noexce
         .value =
             TargetIntrinsicType {
                 .symbol = TargetSymbol::TestingControl,
-                .arguments = {result},
+                .type_argument_ids = {result},
             },
         .const_qualified = false,
     });
@@ -109,12 +109,29 @@ auto parameter_type(
     std::unreachable();
 }
 
+auto materialize_parameter_type(
+    TargetModuleLowerer& context,
+    const TargetCallParameterRecipe& parameter
+) noexcept -> TargetTypeID {
+    const auto type = lower_type(context, parameter.type);
+    const auto* intrinsic = std::get_if<TargetIntrinsicType>(&context.target().type(type).value);
+    if (intrinsic != nullptr && intrinsic->symbol == TargetSymbol::Auto) {
+        return type;
+    }
+    switch (parameter.passing) {
+        case TargetParameterPassing::Value:            return type;
+        case TargetParameterPassing::ConstReference:   return reference_type(context, type, true);
+        case TargetParameterPassing::MutableReference: return reference_type(context, type);
+    }
+    std::unreachable();
+}
+
 auto failure_carrier_type(
     TargetModuleLowerer& context,
     HIRTypeID result,
     FailureSetID failure_set
 ) noexcept -> TargetTypeID {
-    const auto& members = context.failure_set(failure_set).ordered_members;
+    const auto& members = context.failure_profile(failure_set).ordered_members;
     if (members.empty()) {
         invariant_violation("failure carrier requires at least one failure type");
     }
@@ -130,10 +147,18 @@ auto make_failure_carrier(
     HIRTypeID result,
     FailureSetID failure_set
 ) noexcept -> FailureCarrierDescriptor {
+    return materialize_failure_carrier(
+        context,
+        context.source().carrier_shape(result, failure_set)
+    );
+}
+
+auto materialize_failure_carrier(TargetModuleLowerer& context, TargetCarrierShapeID shape) noexcept
+    -> FailureCarrierDescriptor {
+    const auto& recipe = context.source().carrier_shape(shape);
     return {
-        .result = result,
-        .failure_set = failure_set,
-        .type = failure_carrier_type(context, result, failure_set),
+        .shape = shape,
+        .type = failure_carrier_type(context, recipe.result, recipe.failure_profile),
     };
 }
 
@@ -141,51 +166,20 @@ auto classify_carrier_conversion(
     const TargetModuleLowerer& context,
     const FailureCarrierDescriptor& source,
     const FailureCarrierDescriptor& destination
-) noexcept -> CarrierConversion {
-    if (source.result != destination.result) {
-        invariant_violation("carrier conversion changes the result type");
-    }
-    if (source.failure_set == destination.failure_set) {
-        return CarrierConversion::Identity;
-    }
-    const auto& source_members = context.semantic().failure_set(source.failure_set).members;
-    const auto& destination_members =
-        context.semantic().failure_set(destination.failure_set).members;
-    if (std::ranges::all_of(source_members, [&](HIRTypeID failure) noexcept {
-            return std::ranges::contains(destination_members, failure);
-        })) {
-        return CarrierConversion::Widen;
-    }
-    invariant_violation("carrier conversion destination does not cover the source failures");
+) noexcept -> TargetCarrierConversion {
+    return context.source().classify_carrier_conversion(source.shape, destination.shape);
 }
 
 auto is_integer_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&context.semantic().type(id).value);
-    if (builtin == nullptr) {
-        return false;
-    }
-    switch (builtin->kind) {
-        case HIRBuiltinType::I8:
-        case HIRBuiltinType::I16:
-        case HIRBuiltinType::I32:
-        case HIRBuiltinType::I64:
-        case HIRBuiltinType::U8:
-        case HIRBuiltinType::U16:
-        case HIRBuiltinType::U32:
-        case HIRBuiltinType::U64:
-        case HIRBuiltinType::Isize:
-        case HIRBuiltinType::Usize: return true;
-        default:                    return false;
-    }
+    return context.source().type_recipe(id).integer;
 }
 
 auto is_void_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&context.semantic().type(id).value);
-    return builtin != nullptr && builtin->kind == HIRBuiltinType::Void;
+    return context.source().type_recipe(id).void_type;
 }
 
 auto is_foreign_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
-    return std::holds_alternative<HIRForeignTypeValue>(context.semantic().type(id).value);
+    return context.source().type_recipe(id).foreign;
 }
 
 auto lower_type(TargetModuleLowerer& context, HIRTypeID id) noexcept -> TargetTypeID {
@@ -194,129 +188,87 @@ auto lower_type(TargetModuleLowerer& context, HIRTypeID id) noexcept -> TargetTy
     }
     auto target = std::visit(
         Overloaded {
-            [&](const HIRBuiltinTypeValue& builtin) noexcept -> TargetType {
+            [](const TargetIntrinsicTypeRecipe& intrinsic) static noexcept -> TargetType {
                 return {
                     .value =
                         TargetIntrinsicType {
-                            .symbol = builtin_symbol(builtin.kind),
-                            .arguments = {},
+                            .symbol = intrinsic.symbol,
+                            .type_argument_ids = {},
                         },
                     .const_qualified = false,
                 };
             },
-            [&](const HIRStructTypeValue& nominal) noexcept -> TargetType {
+            [&](const TargetNamedTypeRecipe& nominal) noexcept -> TargetType {
                 return {
                     .value =
                         TargetNamedType {
-                            .name = context.entity_name(
-                                context.semantic().structure(nominal.structure).symbol
-                            ),
-                            .arguments = {},
+                            .name = context.entity_name(nominal.symbol),
+                            .type_argument_ids = {},
                             .nested = {},
                         },
                     .const_qualified = false,
                 };
             },
-            [&](const HIREnumTypeValue& nominal) noexcept -> TargetType {
-                return {
-                    .value =
-                        TargetNamedType {
-                            .name = context.entity_name(
-                                context.semantic().enumeration(nominal.enumeration).symbol
-                            ),
-                            .arguments = {},
-                            .nested = {},
-                        },
-                    .const_qualified = false,
-                };
-            },
-            [&](const HIRArrayTypeValue& array) noexcept -> TargetType {
-                const auto extent = context.target().append_expression({
-                    .value = TargetLiteralExpr {
-                        .value = TargetIntegerLiteral {
-                            .negative = false,
-                            .magnitude = array.extent,
-                            .suffix = TargetIntegerSuffix::None,
-                        },
-                    },
-                });
+            [&](const TargetArrayTypeRecipe& array) noexcept -> TargetType {
                 return {
                     .value =
                         TargetArrayType {
-                            .element_type_id = lower_type(context, array.element_type_id),
-                            .extent = extent,
+                            .element_type_id = lower_type(context, array.element),
+                            .extent = array.extent,
                         },
                     .const_qualified = false,
                 };
             },
-            [&](const HIRFunctionTypeValue&) noexcept -> TargetType {
-                return {
-                    .value =
-                        TargetIntrinsicType {
-                            .symbol = TargetSymbol::Auto,
-                            .arguments = {},
-                        },
-                    .const_qualified = false,
-                };
-            },
-            [&](const HIRFunctionRefTypeValue& function) noexcept -> TargetType {
-                const auto& signature = context.semantic().callable_signature(function.signature);
+            [&](const TargetFunctionReferenceTypeRecipe& function) noexcept -> TargetType {
+                const auto& signature = context.source().call_signature(function.signature);
                 auto parameters = std::vector<TargetTypeID>();
+                parameters.reserve(signature.parameters.size());
                 for (const auto& parameter : signature.parameters) {
-                    parameters.push_back(parameter_type(
-                        context,
-                        parameter.access,
-                        parameter.type,
-                        lower_type(context, parameter.type)
-                    ));
+                    parameters.push_back(materialize_parameter_type(context, parameter));
                 }
                 const auto result = lower_type(context, signature.result);
-                const auto& failures = context.failure_set(signature.failure_set).ordered_members;
                 return {
                     .value =
                         TargetFunctionType {
                             .parameters = std::move(parameters),
-                            .result = failures.empty() ? result
-                                                       : failure_carrier_type(
-                                                             context,
-                                                             signature.result,
-                                                             signature.failure_set
-                                                         ),
+                            .result = signature.carrier_shape.has_value()
+                                ? failure_carrier_type(
+                                      context,
+                                      signature.result,
+                                      signature.failure_profile
+                                  )
+                                : result,
                         },
                     .const_qualified = false,
                 };
             },
-            [&](const HIRClosureTypeValue&) noexcept -> TargetType {
+            [](const TargetCallableTypeRecipe&) static noexcept -> TargetType {
                 return {
                     .value =
                         TargetIntrinsicType {
                             .symbol = TargetSymbol::Auto,
-                            .arguments = {},
+                            .type_argument_ids = {},
                         },
                     .const_qualified = false,
                 };
             },
-            [&](const HIRForeignTypeValue&) noexcept -> TargetType {
+            [](const TargetDeducedTypeRecipe&) static noexcept -> TargetType {
                 return {
                     .value =
                         TargetIntrinsicType {
                             .symbol = TargetSymbol::Auto,
-                            .arguments = {},
+                            .type_argument_ids = {},
                         },
                     .const_qualified = false,
                 };
-            },
-            [&](const HIRErrorTypeValue&) noexcept -> TargetType {
-                invariant_violation("error type reached target lowering");
             },
         },
-        context.semantic().type(id).value
+        context.source().type_recipe(id).value
     );
     const auto lowered = context.target().intern_type(std::move(target));
     context.cache_type(id, lowered);
     return lowered;
 }
-
 auto lower_literal(
     const TargetModuleLowerer& context,
     const HIRLiteralValue& literal,
@@ -331,7 +283,7 @@ auto lower_literal(
     }
     if (const auto* string = std::get_if<HIRStrLiteralValue>(&literal)) {
         return TargetStringLiteral {
-            .bytes = std::string(context.semantic().provenance().spelling(string->bytes)),
+            .bytes = std::string(context.source().provenance().spelling(string->bytes)),
             .kind = TargetStringLiteralKind::StringView,
         };
     }
@@ -343,7 +295,7 @@ auto lower_literal(
     }
     const auto& numeric = std::get<HIRIntegerLiteralValue>(literal);
     auto suffix = TargetIntegerSuffix::None;
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&context.semantic().type(type).value);
+    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&context.source().type(type).value);
     if (builtin != nullptr) {
         if (builtin->kind == HIRBuiltinType::I64 || builtin->kind == HIRBuiltinType::Isize) {
             suffix = TargetIntegerSuffix::LongLong;

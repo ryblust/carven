@@ -10,14 +10,14 @@ ProgramAnalyzer::ProgramAnalyzer(ParsedBatch program) noexcept
 
 ProgramAnalyzer::ProgramAnalyzer(ParsedBatchParts parts) noexcept
     : syntax_by_module_id(std::move(parts.syntax_by_module)),
-      hir_builder(std::move(parts.provenance)) {}
+      semantic_session(std::move(parts.provenance)) {}
 
-auto ProgramAnalyzer::builder() noexcept -> SemanticConstruction& {
-    return hir_builder;
+auto ProgramAnalyzer::builder() noexcept -> SemanticDraft& {
+    return semantic_session.draft();
 }
 
-auto ProgramAnalyzer::builder() const noexcept -> const SemanticConstruction& {
-    return hir_builder;
+auto ProgramAnalyzer::builder() const noexcept -> SemanticDraftView {
+    return semantic_session.draft();
 }
 
 auto ProgramAnalyzer::syntax(ProgramModuleID module_id) const noexcept -> const SyntaxTree& {
@@ -81,10 +81,9 @@ auto EntryPointTracker::record(ProgramOriginID value) noexcept -> void {
 }
 
 auto ProgramAnalyzer::finish() && noexcept -> SemanticProgram {
-    return std::move(hir_builder).finish();
+    return std::move(semantic_session).finish();
 }
 
-auto diagnostic_span(const SemanticConstruction& builder, ProgramOriginID id) noexcept
-    -> SourceSpan {
+auto diagnostic_span(SemanticDraftView builder, ProgramOriginID id) noexcept -> SourceSpan {
     return builder.provenance().source_span(id);
 }

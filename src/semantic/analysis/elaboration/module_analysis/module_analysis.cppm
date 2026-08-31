@@ -7,9 +7,10 @@ import :frontend.ast.ids;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.analyzer;
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
+import :semantic.analysis.session.read;
 import :semantic.analysis.catalog;
-import :semantic.analysis.declaration_construction;
+import :semantic.analysis.decl;
 import :semantic.hir.ids;
 import :source.provenance;
 import :source.text;
@@ -34,8 +35,8 @@ public:
         ProgramModuleID module_id,
         const SyntaxTree& syntax_tree,
         AnalysisCatalogView catalog,
-        SemanticConstruction& builder,
-        DeclarationSessionView declarations,
+        SemanticDraft& builder,
+        DeclarationContractView declarations,
         CallableConstraints& constraints,
         EntryPointTracker& entry_points,
         DiagnosticSink& diagnostics
@@ -43,9 +44,9 @@ public:
 
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto append_symbol(SemanticSymbolSpec spec) noexcept -> SymbolID;
-    auto builder() noexcept -> SemanticConstruction&;
-    auto builder() const noexcept -> const SemanticConstruction&;
-    auto declarations() const noexcept -> const DeclarationSessionView&;
+    auto builder() noexcept -> SemanticDraft&;
+    auto builder() const noexcept -> SemanticDraftView;
+    auto declarations() const noexcept -> const DeclarationContractView&;
     auto callable_constraints() noexcept -> CallableConstraints&;
     auto entry_points() noexcept -> EntryPointTracker&;
     auto tests() noexcept -> ModuleTestRegistry&;
@@ -81,8 +82,8 @@ private:
     auto observe_error() noexcept -> void;
 
     AnalysisCatalogView catalog_view;
-    SemanticConstruction& hir_builder;
-    DeclarationSessionView declaration_session;
+    SemanticDraft& hir_builder;
+    DeclarationContractView declaration_contracts;
     CallableConstraints& deferred_callables;
     EntryPointTracker& entry_point_tracker;
     DiagnosticSink& diagnostic_sink;

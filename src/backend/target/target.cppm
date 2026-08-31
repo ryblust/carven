@@ -12,11 +12,9 @@ import std;
 
 class TargetUnit;
 class TargetUnitBuilder;
-class TargetUnitFinalizer;
 
 class TargetStorage final {
     friend class TargetUnitBuilder;
-    friend class TargetUnitFinalizer;
     friend class TargetUnit;
 
     TargetStorage() = default;
@@ -54,7 +52,6 @@ public:
 
 private:
     friend class TargetUnitBuilder;
-    friend class TargetUnitFinalizer;
 
     explicit TargetUnit(TargetStorage storage, TargetUnitRoot root) noexcept;
 

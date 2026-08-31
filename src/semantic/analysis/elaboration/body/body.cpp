@@ -3,7 +3,7 @@ module carven:semantic.analysis.elaboration.body.impl;
 import :diagnostics.code;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.module_analysis;
-import :semantic.analysis.elaboration.statements;
+import :semantic.analysis.elaboration.stmt;
 import :semantic.analysis.elaboration.types;
 import :semantic.hir.access;
 import :semantic.hir.symbol;

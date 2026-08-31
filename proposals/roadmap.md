@@ -9,27 +9,16 @@ not a commitment that every listed direction ships in that milestone.
 
 ## Current design frontier
 
-The compiler architecture and failure-effect realization are implemented and
-validated foundations. Active proposals advance according to their own
-semantic dependencies and readiness.
+Compiler architecture, target ownership, and failure-effect realization are
+implemented foundations. Active proposals advance according to their semantic
+dependencies and readiness.
 
 The next shared prerequisite in the type and interoperation track is the
-concrete scalar V1 owned by the [C++ interop](cpp-interop.md) proposal. It
+concrete scalar boundary owned by the [C++ interop](cpp-interop.md) proposal. It
 replaces expression/statement typed `#[cpp]` with top-level companion source
 plus explicit `import(cpp)`/`export(cpp)` contracts. Documentation comments are
 independent. Async, the memory model, and threading follow the dependency edges
 below.
-
-## Implemented foundations
-
-| Foundation | Stable result | Permanent authority |
-| --- | --- | --- |
-| Compiler stages | `CompilationRequest -> ParsedBatch -> SemanticProgram -> TargetGenerationPlan -> unit-local TargetUnit -> ArtifactSet` | [`docs/compiler.md`](../docs/compiler.md) and [`docs/backend.md`](../docs/backend.md) |
-| Failure contracts | Exact structured failure effects and one private flat Outcome transport | [`docs/semantics.md`](../docs/semantics.md#failure-contracts) and [`docs/backend.md`](../docs/backend.md) |
-
-The [typed-failure effects](typed-failure-effects.md) record preserves the
-feature rationale. The permanent documentation owns the implemented compiler
-architecture.
 
 ## Type system and abstraction track
 
@@ -71,8 +60,10 @@ surface, even when it adapts a private generated protocol. The
 [async](async.md) proposal owns suspension, cancellation, and completion;
 failure effects supply only their existing structured semantic facts.
 
-Interprocedural private-call specialization and richer failure-value ownership
-remain deferred in [typed-failure-effects.md](typed-failure-effects.md#deferred-work).
+Richer failure-value ownership is explored in
+[failure-value.md](failure-value.md).
+Interprocedural private-call specialization remains deferred until measurement
+shows a material cost that supported C++ optimization cannot remove.
 
 ## Concurrency track
 
@@ -95,8 +86,9 @@ those proposals introduce a concrete cross-thread value or use case.
 
 ## Interoperation track
 
-The [C++ interop](cpp-interop.md) proposal remains opt-in. Its concrete V1 owns
-top-level companion source, strict `import(cpp)`, and scalar `export(cpp)`.
+The [C++ interop](cpp-interop.md) proposal remains opt-in. Its concrete scalar
+scope covers top-level companion source, strict `import(cpp)`, and scalar
+`export(cpp)`.
 Future generic provider or consumer surfaces depend on both that boundary and
 the generic instance contract.
 
@@ -118,12 +110,3 @@ stable.
 
 Deferred work is inactive until its evidence exists; implementation convenience
 alone is not a reactivation condition.
-
-## Maintenance
-
-- Proposal documents own design rationale and unresolved choices.
-- Permanent documentation owns implemented behavior.
-- This roadmap owns only cross-proposal dependency order and reactivation
-  conditions.
-- Short-term implementation queues and progress reports belong in task or
-  issue tracking rather than this file.

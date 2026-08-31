@@ -1,7 +1,7 @@
 module carven:semantic.analysis.elaboration.module_analysis.impl;
 
 import :diagnostics.builder;
-import :semantic.analysis.elaboration.expressions;
+import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.types;
 import :support.invariant;
@@ -15,16 +15,16 @@ auto ModuleAnalysis::append_symbol(SemanticSymbolSpec spec) noexcept -> SymbolID
     return hir_builder.append_symbol(std::move(spec));
 }
 
-auto ModuleAnalysis::builder() noexcept -> SemanticConstruction& {
+auto ModuleAnalysis::builder() noexcept -> SemanticDraft& {
     return hir_builder;
 }
 
-auto ModuleAnalysis::builder() const noexcept -> const SemanticConstruction& {
+auto ModuleAnalysis::builder() const noexcept -> SemanticDraftView {
     return hir_builder;
 }
 
-auto ModuleAnalysis::declarations() const noexcept -> const DeclarationSessionView& {
-    return declaration_session;
+auto ModuleAnalysis::declarations() const noexcept -> const DeclarationContractView& {
+    return declaration_contracts;
 }
 
 auto ModuleAnalysis::callable_constraints() noexcept -> CallableConstraints& {
@@ -61,7 +61,7 @@ auto ModuleAnalysis::resolve_declaration(SymbolID symbol_id, Span origin) noexce
     if (!hir_builder.symbol(symbol_id).module_id.has_value()) {
         return true;
     }
-    const auto result = declaration_session.resolve(symbol_id, current_module_id, origin);
+    const auto result = declaration_contracts.resolve(symbol_id, current_module_id, origin);
     if (!result) {
         observe_error();
     }
@@ -157,15 +157,15 @@ ModuleAnalysis::ModuleAnalysis(
     ProgramModuleID module_id,
     const SyntaxTree& syntax_tree,
     AnalysisCatalogView catalog,
-    SemanticConstruction& builder,
-    DeclarationSessionView declarations,
+    SemanticDraft& builder,
+    DeclarationContractView declarations,
     CallableConstraints& constraints,
     EntryPointTracker& entry_points,
     DiagnosticSink& diagnostics
 ) noexcept
     : catalog_view(catalog),
       hir_builder(builder),
-      declaration_session(declarations),
+      declaration_contracts(declarations),
       deferred_callables(constraints),
       entry_point_tracker(entry_points),
       diagnostic_sink(diagnostics),

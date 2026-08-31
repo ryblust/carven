@@ -180,11 +180,12 @@ inside an opaque body. Lexical analysis determines the opaque boundary.
 
 At expression position, an opaque body in a context with an expected Carven
 type has that boundary type. Carven does not prove that the C++ expression
-produces it; target validation checks the C++ expression and conversion.
+produces it; downstream C++ compilation checks the expression and conversion.
 Without an expected type, the expression has `Foreign` type. A `Foreign` path
 may continue through calls with a Foreign callee, member and index operations,
 operators, conditions, and range sources. A surrounding typed construct may
-then supply a Carven result type; target validity still belongs to C++.
+then supply a Carven result type; C++ well-formedness still belongs to the
+downstream C++ compiler.
 
 An untyped `Foreign` value cannot be an array element, callable result, or
 lambda capture. It therefore cannot enter Carven-owned aggregate or callable
@@ -587,6 +588,11 @@ preceding unguarded arms is unreachable. Missing-case diagnostics use a shortest
 deterministic witness. Literal identity uses normalized language equality,
 including treating `0.0` and `-0.0` as one floating pattern.
 
+An unreachable match arm produces `CV-FLOW-UNREACHABLE-MATCH-ARM` at the arm's
+pattern span. This warning does not prevent target artifacts from being
+generated. The arm remains part of parsing and Carven semantic checking, but
+it does not participate in runtime arm selection.
+
 ## Entry points and tests
 
 At most one function named `main` may exist in a compilation. Its module path,
@@ -654,6 +660,7 @@ The following table is the stable public diagnostic catalog:
 | `CV-EFFECT-THROW-PUBLISHED` | Error | A published callable has failures without an explicit `throw` contract |
 | `CV-FLOW-MISSING-RETURN` | Error | A reachable path of a value-returning callable omits its result |
 | `CV-FLOW-TRANSFER-VALUE-BRANCH` | Error | `return`, `break`, or `continue` crosses a value-control boundary |
+| `CV-FLOW-UNREACHABLE-MATCH-ARM` | Warning | A match arm pattern is fully covered by preceding unguarded arms; the primary location is that pattern span |
 | `CV-LAMBDA-CAPTURE-UNUSED` | Warning | An explicit lambda capture is unused |
 | `CV-LINT-UNUSED-IMPORT` | Warning | An import selects no uniquely referenced binding |
 | `CV-LINT-UNUSED-LOCAL` | Warning | A named local binding is unused |

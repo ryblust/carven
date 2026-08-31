@@ -3,8 +3,8 @@ module carven:semantic.analysis.elaboration.types.build.impl;
 import :frontend.ast.decl;
 import :frontend.ast.type;
 import :semantic.analysis.elaboration.body;
-import :semantic.analysis.elaboration.declarations;
-import :semantic.analysis.elaboration.expressions;
+import :semantic.analysis.elaboration.decl;
+import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.scopes;
 import :semantic.analysis.elaboration.types;
@@ -78,7 +78,7 @@ auto normalized_failures(
         first_seen.emplace(failure, ast.type(source_failure).span);
         failures.push_back(failure);
     }
-    return normalize_failure_members(builder, std::move(failures));
+    return normalize_failure_members(std::move(failures));
 }
 
 auto array_extent(

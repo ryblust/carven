@@ -1,11 +1,11 @@
 module carven:backend.lowering.patterns.impl;
 
 import :backend.lowering.program;
-import :backend.lowering.expressions;
+import :backend.lowering.expr;
 import :backend.generation.names;
 import :backend.lowering.names;
 import :backend.lowering.patterns;
-import :backend.lowering.statements;
+import :backend.lowering.stmt;
 import :backend.lowering.types;
 import :backend.target;
 import :backend.target.expr;
@@ -16,6 +16,7 @@ import :semantic.hir.decl;
 import :semantic.hir.expr;
 import :semantic.hir.ids;
 import :semantic.hir.pattern;
+import :semantic.hir.stmt;
 import :semantic.hir.symbol;
 import :semantic.hir.type;
 import :support.invariant;
@@ -43,12 +44,31 @@ auto conjunction(
     });
 }
 
+auto pattern_has_unconditional_alternative(
+    TargetCallableLowerer& context,
+    HIRPatternID pattern_id
+) noexcept -> bool {
+    const auto& value = context.source().pattern(pattern_id).value;
+    if (std::holds_alternative<HIRWildcardPattern>(value)
+        || std::holds_alternative<HIRBindingPattern>(value)) {
+        return true;
+    }
+    const auto* alternatives = std::get_if<HIROrPattern>(&value);
+    return alternatives != nullptr
+        && std::ranges::any_of(
+               alternatives->alternatives,
+               [&](HIRPatternID alternative_id) noexcept {
+                   return pattern_has_unconditional_alternative(context, alternative_id);
+               }
+        );
+}
+
 } // namespace
 
 auto enumeration_for_case(const TargetCallableLowerer& context, EnumCaseID enum_case) noexcept
     -> std::pair<const HIREnumDecl*, std::size_t> {
-    const auto& case_contract = context.semantic().enum_case(enum_case);
-    const auto& enumeration = context.semantic().enumeration(case_contract.owner);
+    const auto& case_contract = context.source().enum_case(enum_case);
+    const auto& enumeration = context.source().enumeration(case_contract.owner);
     const auto member = std::ranges::find(enumeration.cases, enum_case);
     if (member == enumeration.cases.end()) {
         invariant_violation("enum case pattern is absent from its owning enum contract");
@@ -59,16 +79,20 @@ auto enumeration_for_case(const TargetCallableLowerer& context, EnumCaseID enum_
     };
 }
 
-auto pattern_requires_subject(TargetCallableLowerer& context, HIRPatternID id) noexcept -> bool {
-    const auto& value = context.semantic().pattern(id).value;
+auto pattern_requires_subject(TargetCallableLowerer& context, HIRPatternID pattern_id) noexcept
+    -> bool {
+    const auto& value = context.source().pattern(pattern_id).value;
     if (std::holds_alternative<HIRWildcardPattern>(value)) {
         return false;
     }
     const auto* alternatives = std::get_if<HIROrPattern>(&value);
     return alternatives == nullptr
-        || std::ranges::any_of(alternatives->alternatives, [&](const auto alternative) noexcept {
-               return pattern_requires_subject(context, alternative);
-           });
+        || std::ranges::any_of(
+               alternatives->alternatives,
+               [&](HIRPatternID alternative_id) noexcept {
+                   return pattern_requires_subject(context, alternative_id);
+               }
+        );
 }
 
 auto materialize_pattern_bindings(
@@ -94,62 +118,266 @@ namespace {
 struct StatementMatch final {};
 struct ValueMatch final {};
 struct OutcomeMatch final {
-    HIRTypeID result;
-    FailureSetID failure_set;
+    HIRTypeID result_type_id;
+    FailureSetID failure_set_id;
 };
 using MatchResult = std::variant<StatementMatch, ValueMatch, OutcomeMatch>;
 
+enum class MatchControlShape {
+    ExclusiveBranches,
+    GuardedReturning,
+    GuardedStatement,
+};
+
+enum class MatchSubjectStoragePolicy {
+    Discard,
+    Reusable,
+};
+
+enum class MatchFallbackPolicy {
+    None,
+    Abort,
+};
+
+class MatchLoweringPlan final {
+public:
+    static auto seal(
+        TargetCallableLowerer& context,
+        std::span<const HIRMatchArm> arms,
+        const HIRMatchCoverageFacts& coverage,
+        bool return_result
+    ) noexcept -> MatchLoweringPlan {
+        if (arms.size() != coverage.arm_states.size()) {
+            invariant_violation("match lowering coverage does not align with source arms");
+        }
+
+        auto reachable_arms = std::vector<std::reference_wrapper<const HIRMatchArm>>();
+        reachable_arms.reserve(arms.size());
+        for (auto index = 0uz; index < arms.size(); ++index) {
+            if (coverage.arm_states[index] == HIRMatchArmState::Reachable) {
+                reachable_arms.push_back(std::cref(arms[index]));
+            }
+        }
+
+        const auto source_requires_subject =
+            std::ranges::any_of(arms, [&](const HIRMatchArm& arm) noexcept {
+                return pattern_requires_subject(context, arm.pattern);
+            });
+        const auto subject_storage = !source_requires_subject ? MatchSubjectStoragePolicy::Discard
+                                                              : MatchSubjectStoragePolicy::Reusable;
+
+        const auto sequential_control =
+            std::ranges::any_of(reachable_arms, [](const auto& arm) static noexcept {
+                return arm.get().guard.has_value();
+            });
+        const auto control_shape = !sequential_control ? MatchControlShape::ExclusiveBranches
+            : return_result                            ? MatchControlShape::GuardedReturning
+                                                       : MatchControlShape::GuardedStatement;
+
+        const auto has_unconditional_arm =
+            std::ranges::any_of(reachable_arms, [&](const auto& arm) noexcept {
+                return !arm.get().guard.has_value()
+                    && pattern_has_unconditional_alternative(context, arm.get().pattern);
+            });
+        const auto fallback = return_result && !has_unconditional_arm ? MatchFallbackPolicy::Abort
+                                                                      : MatchFallbackPolicy::None;
+        return MatchLoweringPlan(
+            std::move(reachable_arms),
+            control_shape,
+            subject_storage,
+            fallback
+        );
+    }
+
+    MatchLoweringPlan(const MatchLoweringPlan&) = delete;
+    MatchLoweringPlan(MatchLoweringPlan&&) = default;
+    ~MatchLoweringPlan() = default;
+
+    auto operator=(const MatchLoweringPlan&) -> MatchLoweringPlan& = delete;
+    auto operator=(MatchLoweringPlan&&) -> MatchLoweringPlan& = delete;
+
+    auto reachable_arms() const noexcept
+        -> std::span<const std::reference_wrapper<const HIRMatchArm>> {
+        return reachable_arm_view;
+    }
+
+    auto control_shape() const noexcept -> MatchControlShape { return control; }
+
+    auto subject_storage() const noexcept -> MatchSubjectStoragePolicy { return storage; }
+
+    auto fallback_policy() const noexcept -> MatchFallbackPolicy { return fallback; }
+
+private:
+    MatchLoweringPlan(
+        std::vector<std::reference_wrapper<const HIRMatchArm>> reachable_arms,
+        MatchControlShape control_shape,
+        MatchSubjectStoragePolicy subject_storage,
+        MatchFallbackPolicy fallback_policy
+    ) noexcept
+        : reachable_arm_view(std::move(reachable_arms)),
+          control(control_shape),
+          storage(subject_storage),
+          fallback(fallback_policy) {}
+
+    std::vector<std::reference_wrapper<const HIRMatchArm>> reachable_arm_view;
+    MatchControlShape control;
+    MatchSubjectStoragePolicy storage;
+    MatchFallbackPolicy fallback;
+};
+
+class PatternSubjectOccurrences final {
+    struct DeferredNameSubject final {
+        HIRExprID expression_id;
+        const TargetControlDestinations* control;
+        std::optional<TargetExprID> prototype_id;
+    };
+
+    struct MaterializedNameSubject final {
+        TargetIdentifier name;
+    };
+
+    struct PrototypeSubject final {
+        TargetExprID prototype_id;
+        std::optional<TargetExprID> first_id;
+    };
+
+public:
+    PatternSubjectOccurrences(
+        TargetCallableLowerer& context,
+        HIRExprID expression_id,
+        const TargetControlDestinations& control
+    ) noexcept
+        : context(context),
+          source(
+              DeferredNameSubject {
+                  .expression_id = expression_id,
+                  .control = std::addressof(control),
+                  .prototype_id = std::nullopt,
+              }
+          ) {
+        if (!std::holds_alternative<HIRNameExpr>(
+                context.source().expression(expression_id).value
+            )) {
+            invariant_violation("deferred match subject is not a semantic name");
+        }
+    }
+
+    PatternSubjectOccurrences(TargetCallableLowerer& context, TargetIdentifier name) noexcept
+        : context(context),
+          source(MaterializedNameSubject {.name = std::move(name)}) {}
+
+    PatternSubjectOccurrences(TargetCallableLowerer& context, TargetExprID prototype_id) noexcept
+        : context(context),
+          source(
+              PrototypeSubject {
+                  .prototype_id = prototype_id,
+                  .first_id = prototype_id,
+              }
+          ) {}
+
+    PatternSubjectOccurrences(const PatternSubjectOccurrences&) = delete;
+    PatternSubjectOccurrences(PatternSubjectOccurrences&&) = default;
+    ~PatternSubjectOccurrences() = default;
+
+    auto operator=(const PatternSubjectOccurrences&) -> PatternSubjectOccurrences& = delete;
+    auto operator=(PatternSubjectOccurrences&&) -> PatternSubjectOccurrences& = delete;
+
+    auto next() noexcept -> TargetExprID {
+        if (auto* deferred = std::get_if<DeferredNameSubject>(&source)) {
+            if (!deferred->prototype_id.has_value()) {
+                const auto lowered =
+                    lower_expression(context, deferred->expression_id, *deferred->control);
+                if (!lowered.prelude.empty() || lowered.unconsumed_carrier.has_value()) {
+                    invariant_violation("semantic name lowering is not an occurrence recipe");
+                }
+                deferred->prototype_id = lowered.expression;
+                return lowered.expression;
+            }
+            return context.target().clone_expression_occurrence(*deferred->prototype_id);
+        }
+        if (const auto* materialized = std::get_if<MaterializedNameSubject>(&source)) {
+            return name_expression(context, TargetName {materialized->name});
+        }
+        auto& prototype = std::get<PrototypeSubject>(source);
+        if (prototype.first_id.has_value()) {
+            const auto occurrence_id = *prototype.first_id;
+            prototype.first_id.reset();
+            return occurrence_id;
+        }
+        return context.target().clone_expression_occurrence(prototype.prototype_id);
+    }
+
+private:
+    TargetCallableLowerer& context;
+    std::variant<DeferredNameSubject, MaterializedNameSubject, PrototypeSubject> source;
+};
+
+auto lower_pattern_with_subject_occurrences(
+    TargetCallableLowerer& context,
+    PatternSubjectOccurrences* subject,
+    HIRPatternID pattern_id
+) noexcept -> std::vector<LoweredPattern>;
+
 auto lower_match(
     TargetCallableLowerer& context,
-    HIRExprID subject,
+    HIRExprID subject_id,
     std::span<const HIRMatchArm> arms,
+    const HIRMatchCoverageFacts& coverage,
     const TargetControlDestinations& control,
     MatchResult result_kind
 ) noexcept -> std::vector<TargetStmtID> {
     const auto* outcome = std::get_if<OutcomeMatch>(&result_kind);
     const auto return_result = !std::holds_alternative<StatementMatch>(result_kind);
-    const auto subject_required = std::ranges::any_of(arms, [&](const auto& arm) noexcept {
-        return pattern_requires_subject(context, arm.pattern);
-    });
-    auto lowered_subject = lower_expression(context, subject, control);
-    const auto stable_source_name =
-        std::holds_alternative<HIRNameExpr>(context.semantic().expression(subject).value);
-    if (subject_required && !stable_source_name) {
-        lowered_subject = TargetEvaluationSequencer::materialize(
+    const auto plan = MatchLoweringPlan::seal(context, arms, coverage, return_result);
+
+    auto statement_ids = std::vector<TargetStmtID>();
+    auto subject_occurrences = std::optional<PatternSubjectOccurrences>();
+    if (plan.subject_storage() == MatchSubjectStoragePolicy::Discard) {
+        auto lowered_subject = lower_expression(context, subject_id, control);
+        statement_ids = std::move(lowered_subject.prelude);
+        statement_ids.push_back(context.target().append_lowering_statement(
+            TargetDiscardStmt {.expression = lowered_subject.expression}
+        ));
+    } else if (std::holds_alternative<HIRNameExpr>(context.source().expression(subject_id).value)) {
+        subject_occurrences.emplace(context, subject_id, control);
+    } else {
+        auto lowered_subject = lower_expression(context, subject_id, control);
+        auto materialized_subject = TargetEvaluationSequencer::materialize_read_name(
             context,
             std::move(lowered_subject),
-            TargetEvaluationSequencer::read_materialization(
-                context,
-                context.semantic().expression(subject).type
-            ),
+            context.source().expression(subject_id).type,
             TargetMaterializationReason::Lifetime
         );
-    }
-    const auto subject_value = lowered_subject.expression;
-    auto statements = std::move(lowered_subject.prelude);
-    if (!subject_required) {
-        statements.push_back(context.target().append_lowering_statement(
-            TargetDiscardStmt {.expression = subject_value}
-        ));
+        statement_ids = std::move(materialized_subject.prelude_ids);
+        subject_occurrences.emplace(context, materialized_subject.name);
     }
 
-    const auto needs_guard_fallback =
-        std::ranges::any_of(arms, [](const HIRMatchArm& arm) static noexcept {
-            return arm.guard.has_value();
-        });
-    if (!needs_guard_fallback) {
+    if (plan.control_shape() == MatchControlShape::ExclusiveBranches) {
         auto branches = std::vector<TargetIfBranch> {};
         auto else_body = std::optional<std::vector<TargetStmtID>> {};
-        for (const auto& arm : arms) {
+        for (const auto& arm_reference : plan.reachable_arms()) {
+            if (else_body.has_value()) {
+                invariant_violation("exclusive match plan has a reachable arm after its fallback");
+            }
+            const auto& arm = arm_reference.get();
             const auto lexical_scope = context.enter_scope(arm.scope);
-            for (auto alternative : lower_pattern(context, subject_value, arm.pattern)) {
+            for (auto alternative : lower_pattern_with_subject_occurrences(
+                     context,
+                     subject_occurrences ? std::addressof(*subject_occurrences) : nullptr,
+                     arm.pattern
+                 )) {
+                if (else_body.has_value()) {
+                    invariant_violation(
+                        "exclusive match plan has a reachable alternative after its fallback"
+                    );
+                }
                 auto selected_body = materialize_pattern_bindings(context, alternative.bindings);
                 auto arm_body = outcome != nullptr
                     ? lower_outcome_block(
                           context,
                           arm.body,
-                          outcome->result,
-                          outcome->failure_set,
+                          outcome->result_type_id,
+                          outcome->failure_set_id,
                           control
                       )
                     : lower_block(context, arm.body, control, return_result);
@@ -165,22 +393,18 @@ auto lower_match(
                     });
                 } else {
                     else_body = std::move(selected_body);
-                    break;
                 }
-            }
-            if (else_body.has_value()) {
-                break;
             }
         }
         if (branches.empty() && else_body.has_value()) {
-            statements.insert(
-                statements.end(),
+            statement_ids.insert(
+                statement_ids.end(),
                 std::make_move_iterator(else_body->begin()),
                 std::make_move_iterator(else_body->end())
             );
-            return statements;
+            return statement_ids;
         }
-        if (return_result && !else_body.has_value()) {
+        if (plan.fallback_policy() == MatchFallbackPolicy::Abort) {
             const auto abort_call =
                 call_expression(context, name_expression(context, TargetSymbol::StdAbort), {});
             else_body = std::vector<TargetStmtID> {
@@ -189,26 +413,30 @@ auto lower_match(
                 ),
             };
         }
-        statements.push_back(context.target().append_lowering_statement(
+        statement_ids.push_back(context.target().append_lowering_statement(
             TargetIfStmt {
                 .branches = std::move(branches),
                 .else_body = std::move(else_body),
             }
         ));
-        return statements;
+        return statement_ids;
     }
 
-    if (return_result) {
-        auto terminal = false;
-        for (const auto& arm : arms) {
+    if (plan.control_shape() == MatchControlShape::GuardedReturning) {
+        for (const auto& arm_reference : plan.reachable_arms()) {
+            const auto& arm = arm_reference.get();
             const auto lexical_scope = context.enter_scope(arm.scope);
-            for (auto alternative : lower_pattern(context, subject_value, arm.pattern)) {
+            for (auto alternative : lower_pattern_with_subject_occurrences(
+                     context,
+                     subject_occurrences ? std::addressof(*subject_occurrences) : nullptr,
+                     arm.pattern
+                 )) {
                 auto selected_body = materialize_pattern_bindings(context, alternative.bindings);
                 auto arm_body = outcome != nullptr ? lower_outcome_block(
                                                          context,
                                                          arm.body,
-                                                         outcome->result,
-                                                         outcome->failure_set,
+                                                         outcome->result_type_id,
+                                                         outcome->failure_set_id,
                                                          control
                                                      )
                                                    : lower_block(context, arm.body, control, true);
@@ -239,7 +467,7 @@ auto lower_match(
                     );
                 }
                 if (alternative.condition.has_value()) {
-                    statements.push_back(context.target().append_lowering_statement(
+                    statement_ids.push_back(context.target().append_lowering_statement(
                         TargetIfStmt {
                             .branches =
                                 {
@@ -252,42 +480,31 @@ auto lower_match(
                         }
                     ));
                 } else {
-                    statements.push_back(context.target().append_lowering_statement(
+                    statement_ids.push_back(context.target().append_lowering_statement(
                         TargetBlockStmt {
                             .statements = std::move(selected_body),
                             .scoped = true,
                         }
                     ));
-                    if (!arm.guard.has_value()) {
-                        terminal = true;
-                        break;
-                    }
                 }
             }
-            if (terminal) {
-                break;
-            }
         }
-        if (!terminal) {
+        if (plan.fallback_policy() == MatchFallbackPolicy::Abort) {
             const auto abort_call =
                 call_expression(context, name_expression(context, TargetSymbol::StdAbort), {});
-            statements.push_back(context.target().append_lowering_statement(
+            statement_ids.push_back(context.target().append_lowering_statement(
                 TargetExprStmt {.expression = abort_call}
             ));
         }
-        return statements;
+        return statement_ids;
     }
 
     const auto matched_name = context.fresh_name(TargetTemporaryNameKind::MatchDone);
-    const auto matched_value = name_expression(context, TargetName {matched_name});
     const auto bool_type = intrinsic_type(context, TargetSymbol::Bool);
     const auto false_value = context.target().append_expression({
         .value = TargetLiteralExpr {.value = false},
     });
-    const auto true_value = context.target().append_expression({
-        .value = TargetLiteralExpr {.value = true},
-    });
-    statements.push_back(context.target().append_lowering_statement(
+    statement_ids.push_back(context.target().append_lowering_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .name = matched_name,
@@ -296,13 +513,18 @@ auto lower_match(
             .maybe_unused = false,
         }
     ));
-    for (const auto& arm : arms) {
+    for (const auto& arm_reference : plan.reachable_arms()) {
+        const auto& arm = arm_reference.get();
         const auto lexical_scope = context.enter_scope(arm.scope);
-        for (auto alternative : lower_pattern(context, subject_value, arm.pattern)) {
+        for (auto alternative : lower_pattern_with_subject_occurrences(
+                 context,
+                 subject_occurrences ? std::addressof(*subject_occurrences) : nullptr,
+                 arm.pattern
+             )) {
             const auto unmatched = context.target().append_expression({
                 .value = TargetPrefixExpr {
                     .op = TargetPrefixOperator::LogicalNot,
-                    .operand_id = matched_value,
+                    .operand_id = name_expression(context, TargetName {matched_name}),
                 },
             });
             const auto selected = conjunction(context.target(), unmatched, alternative.condition);
@@ -311,16 +533,18 @@ auto lower_match(
                 ? lower_outcome_block(
                       context,
                       arm.body,
-                      outcome->result,
-                      outcome->failure_set,
+                      outcome->result_type_id,
+                      outcome->failure_set_id,
                       control
                   )
                 : lower_block(context, arm.body, control, return_result);
             const auto mark_matched = context.target().append_lowering_statement(
                 TargetAssignmentStmt {
-                    .target = matched_value,
+                    .target = name_expression(context, TargetName {matched_name}),
                     .op = TargetAssignmentOperator::Assign,
-                    .value = true_value,
+                    .value = context.target().append_expression({
+                        .value = TargetLiteralExpr {.value = true},
+                    }),
                 }
             );
             if (arm.guard.has_value()) {
@@ -351,7 +575,7 @@ auto lower_match(
                     std::make_move_iterator(arm_body.end())
                 );
             }
-            statements.push_back(context.target().append_lowering_statement(
+            statement_ids.push_back(context.target().append_lowering_statement(
                 TargetIfStmt {
                     .branches =
                         {
@@ -365,52 +589,89 @@ auto lower_match(
             ));
         }
     }
-    return statements;
+    return statement_ids;
 }
 
 } // namespace
 
 auto lower_statement_match(
     TargetCallableLowerer& context,
-    HIRExprID subject,
-    std::span<const HIRMatchArm> arms,
+    const HIRMatchStmt& match,
     const TargetControlDestinations& control
 ) noexcept -> std::vector<TargetStmtID> {
-    return lower_match(context, subject, arms, control, StatementMatch {});
+    return lower_match(
+        context,
+        match.subject,
+        match.arms,
+        match.coverage,
+        control,
+        StatementMatch {}
+    );
 }
 
 auto lower_value_match(
     TargetCallableLowerer& context,
-    HIRExprID subject,
-    std::span<const HIRMatchArm> arms,
+    const HIRMatchExpr& match,
     const TargetControlDestinations& control
 ) noexcept -> std::vector<TargetStmtID> {
-    return lower_match(context, subject, arms, control, ValueMatch {});
+    return lower_match(context, match.subject, match.arms, match.coverage, control, ValueMatch {});
 }
 
 auto lower_outcome_match(
     TargetCallableLowerer& context,
-    HIRExprID subject,
-    std::span<const HIRMatchArm> arms,
+    const HIRMatchExpr& match,
     const TargetControlDestinations& control,
-    HIRTypeID result,
-    FailureSetID failure_set
+    HIRTypeID result_type_id,
+    FailureSetID failure_set_id
 ) noexcept -> std::vector<TargetStmtID> {
     return lower_match(
         context,
-        subject,
-        arms,
+        match.subject,
+        match.arms,
+        match.coverage,
         control,
         OutcomeMatch {
-            .result = result,
-            .failure_set = failure_set,
+            .result_type_id = result_type_id,
+            .failure_set_id = failure_set_id,
         }
     );
 }
 
-auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatternID id) noexcept
-    -> std::vector<LoweredPattern> {
-    const auto& pattern = context.semantic().pattern(id);
+namespace {
+
+auto next_pattern_subject(PatternSubjectOccurrences* subject) noexcept -> TargetExprID {
+    if (subject == nullptr) {
+        invariant_violation("subject-dependent pattern has no target subject");
+    }
+    return subject->next();
+}
+
+auto clone_pattern_occurrences(TargetUnitBuilder& builder, const LoweredPattern& pattern) noexcept
+    -> LoweredPattern {
+    auto bindings = std::vector<LoweredPatternBinding>();
+    bindings.reserve(pattern.bindings.size());
+    for (const auto& binding : pattern.bindings) {
+        bindings.push_back({
+            .symbol = binding.symbol,
+            .name = binding.name,
+            .type = binding.type,
+            .initializer = builder.clone_expression_occurrence(binding.initializer),
+        });
+    }
+    return {
+        .condition = pattern.condition.transform([&](TargetExprID condition_id) noexcept {
+            return builder.clone_expression_occurrence(condition_id);
+        }),
+        .bindings = std::move(bindings),
+    };
+}
+
+auto lower_pattern_with_subject_occurrences(
+    TargetCallableLowerer& context,
+    PatternSubjectOccurrences* subject,
+    HIRPatternID pattern_id
+) noexcept -> std::vector<LoweredPattern> {
+    const auto& pattern = context.source().pattern(pattern_id);
     if (std::holds_alternative<HIRWildcardPattern>(pattern.value)) {
         return {LoweredPattern {
             .condition = std::nullopt,
@@ -426,7 +687,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
                         .symbol = binding->target.symbol,
                         .name = symbol_identifier(context, binding->target.symbol),
                         .type = lower_type(context, binding->type),
-                        .initializer = subject,
+                        .initializer = next_pattern_subject(subject),
                     },
                 },
             },
@@ -442,7 +703,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
             .condition = call_expression(
                 context,
                 name_expression(context, TargetSymbol::RuntimeIs),
-                {subject, value}
+                {next_pattern_subject(subject), value}
             ),
             .bindings = {},
         }};
@@ -450,7 +711,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
     if (const auto* alternatives = std::get_if<HIROrPattern>(&pattern.value)) {
         auto result = std::vector<LoweredPattern>();
         for (const auto alternative : alternatives->alternatives) {
-            auto lowered = lower_pattern(context, subject, alternative);
+            auto lowered = lower_pattern_with_subject_occurrences(context, subject, alternative);
             result.insert(
                 result.end(),
                 std::make_move_iterator(lowered.begin()),
@@ -464,8 +725,8 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
         const auto condition = context.target().append_expression({
             .value = TargetCallExpr {
                 .callee = name_expression(context, TargetSymbol::RuntimeIs),
-                .template_arguments = {lower_type(context, constraint->type)},
-                .arguments = {subject},
+                .template_argument_type_ids = {lower_type(context, constraint->type)},
+                .arguments = {next_pattern_subject(subject)},
             },
         });
         return {LoweredPattern {.condition = condition, .bindings = {}}};
@@ -473,7 +734,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
 
     const auto& case_pattern = std::get<HIRCasePattern>(pattern.value);
     const auto [enumeration, ordinal] = enumeration_for_case(context, case_pattern.enum_case);
-    const auto& case_contract = context.semantic().enum_case(case_pattern.enum_case);
+    const auto& case_contract = context.source().enum_case(case_pattern.enum_case);
     if (case_pattern.payload.size() != case_contract.payload_types.size()) {
         invariant_violation("enum case pattern is inconsistent with its declaration");
     }
@@ -484,7 +745,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
         ? context.target().append_expression({
               .value =
                   TargetBinaryExpr {
-                      .left = subject,
+                      .left = next_pattern_subject(subject),
                       .op = TargetBinaryOperator::Equal,
                       .right = name_expression(
                           context,
@@ -494,7 +755,7 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
           })
         : member_call_expression(
               context,
-              subject,
+              next_pattern_subject(subject),
               representation_names->cases[ordinal].holds_function
           );
     auto alternatives = std::vector<LoweredPattern> {
@@ -502,33 +763,72 @@ auto lower_pattern(TargetCallableLowerer& context, TargetExprID subject, HIRPatt
     };
     for (auto index = 0uz; index < case_pattern.payload.size(); ++index) {
         const auto child_pattern = case_pattern.payload[index];
-        auto payload = subject;
-        if (pattern_requires_subject(context, child_pattern)) {
-            const auto case_payload = member_call_expression(
-                context,
-                subject,
-                representation_names->cases[ordinal].payload_function
-            );
-            payload = context.target().append_expression({
-                .value = TargetMemberExpr {
-                    .operand_id = case_payload,
-                    .name = TargetNameAllocator::enum_payload_field(index),
-                },
-            });
+        if (!pattern_requires_subject(context, child_pattern)) {
+            continue;
         }
-        const auto children = lower_pattern(context, payload, child_pattern);
+        const auto case_payload = member_call_expression(
+            context,
+            next_pattern_subject(subject),
+            representation_names->cases[ordinal].payload_function
+        );
+        const auto payload = context.target().append_expression({
+            .value = TargetMemberExpr {
+                .operand_id = case_payload,
+                .name = TargetNameAllocator::enum_payload_field(index),
+            },
+        });
+        auto payload_occurrences = PatternSubjectOccurrences(context, payload);
+        auto children = lower_pattern_with_subject_occurrences(
+            context,
+            std::addressof(payload_occurrences),
+            child_pattern
+        );
         auto product = std::vector<LoweredPattern>();
-        for (const auto& base : alternatives) {
-            for (const auto& child : children) {
-                auto bindings = base.bindings;
-                bindings.insert(bindings.end(), child.bindings.begin(), child.bindings.end());
+        const auto base_count = alternatives.size();
+        const auto child_count = children.size();
+        product.reserve(base_count * child_count);
+        for (auto base_index = 0uz; base_index < base_count; ++base_index) {
+            for (auto child_index = 0uz; child_index < child_count; ++child_index) {
+                auto base = child_index + 1 == child_count
+                    ? std::move(alternatives[base_index])
+                    : clone_pattern_occurrences(context.target(), alternatives[base_index]);
+                auto child = base_index + 1 == base_count
+                    ? std::move(children[child_index])
+                    : clone_pattern_occurrences(context.target(), children[child_index]);
+                base.bindings.insert(
+                    base.bindings.end(),
+                    std::make_move_iterator(child.bindings.begin()),
+                    std::make_move_iterator(child.bindings.end())
+                );
                 product.push_back({
                     .condition = conjunction(context.target(), base.condition, child.condition),
-                    .bindings = std::move(bindings),
+                    .bindings = std::move(base.bindings),
                 });
             }
         }
         alternatives = std::move(product);
     }
     return alternatives;
+}
+
+} // namespace
+
+auto lower_pattern(
+    TargetCallableLowerer& context,
+    std::optional<TargetExprID> subject_occurrence_id,
+    HIRPatternID pattern_id
+) noexcept -> std::vector<LoweredPattern> {
+    const auto requires_subject = pattern_requires_subject(context, pattern_id);
+    if (requires_subject != subject_occurrence_id.has_value()) {
+        invariant_violation("target pattern subject availability does not match semantic facts");
+    }
+    auto occurrences = std::optional<PatternSubjectOccurrences>();
+    if (subject_occurrence_id.has_value()) {
+        occurrences.emplace(context, *subject_occurrence_id);
+    }
+    return lower_pattern_with_subject_occurrences(
+        context,
+        occurrences ? std::addressof(*occurrences) : nullptr,
+        pattern_id
+    );
 }

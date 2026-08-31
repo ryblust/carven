@@ -5,7 +5,8 @@ module;
 module carven:test.internal.semantic.program.structured;
 
 import :semantic.analysis.analyzer;
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
+import :semantic.analysis.control;
 import :semantic.analysis.validation.invariants;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
@@ -21,6 +22,15 @@ import :source.text;
 import std;
 
 namespace {
+
+auto empty_control_summary() noexcept -> ControlSummary {
+    return {
+        .falls_through = true,
+        .transfers = {},
+        .pending_failures = {},
+        .outward_failures = {},
+    };
+}
 
 auto fixture_path() noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value("fixture");
@@ -44,7 +54,8 @@ auto fixture_provenance() noexcept -> CompilationProvenance {
 class SemanticFixture final {
 public:
     SemanticFixture() noexcept
-        : builder(fixture_provenance()),
+        : session(fixture_provenance()),
+          builder(session.draft()),
           origin(builder.append_origin({
               .source_id = ProgramSourceID::from_index(0),
               .span = Span::from_bounds(0, 0),
@@ -75,17 +86,12 @@ public:
             .constant = std::nullopt,
             .value = std::move(value),
         });
-        const auto empty_failure_set = builder.intern_failure_set({});
-        const auto outward_failure_set = builder.intern_failure_set(std::move(outward_failures));
-        expression_facts.push_back({
-            .pending_failure_set = empty_failure_set,
-            .outward_failure_set = outward_failure_set,
-            .evaluation_failure_set = outward_failure_set,
-            .exits_test = false,
-            .place_use = std::nullopt,
-            .evaluation_effect = {},
-            .attempt = std::nullopt,
-        });
+        auto control = empty_control_summary();
+        control.outward_failures = std::move(outward_failures);
+        expression_summaries.push_back(std::move(control));
+        expression_effects.emplace_back();
+        catch_controls.emplace_back();
+        unhandled_failures.emplace_back();
         return id;
     }
 
@@ -107,10 +113,7 @@ public:
             .statements = std::move(statements),
             .result = result,
         });
-        block_facts.push_back({
-            .outward_failure_set = builder.intern_failure_set({}),
-            .exits_test = false,
-        });
+        block_summaries.push_back(empty_control_summary());
         return id;
     }
 
@@ -122,12 +125,12 @@ public:
         return test;
     }
 
-    auto local_place(
+    auto local_binding(
         HIRTypeID type,
         SemanticScopeID scope,
         bool write_eligible,
         std::uint32_t order = 0
-    ) noexcept -> SemanticPlaceID {
+    ) noexcept -> SymbolID {
         const auto symbol = builder.append_symbol({
             .name = builder.intern_string("value"),
             .module_id = std::nullopt,
@@ -137,8 +140,7 @@ public:
         builder.adopt_symbol_type(symbol, type);
         builder.bind_symbol(symbol, {.scope = scope, .declaration_order = order});
         builder.define_symbol_binding(symbol, SemanticBindingRole::Owner, write_eligible);
-        builder.derive_places();
-        return *builder.symbol(symbol).place;
+        return symbol;
     }
 
     auto top_symbol(std::string_view name, std::optional<SymbolID> parent = std::nullopt) noexcept
@@ -164,7 +166,6 @@ public:
             .name = builder.intern_string(name),
             .fields = {},
             .symbol = symbol,
-            .supports_equality = true,
         });
         builder.hir_module(module_id).items.push_back(structure);
         return type;
@@ -174,28 +175,77 @@ public:
         if (declarations_committed) {
             return;
         }
-        builder.publish_declaration_contracts(
-            std::move(functions),
-            std::move(structures),
-            std::move(enumerations),
-            std::move(enum_cases)
+        auto reservations = builder.entity_reservations();
+        auto declarations = builder.declaration_capabilities();
+        for (auto index = 0uz; index < functions.size(); ++index) {
+            const auto id = FunctionID::from_index(static_cast<std::uint32_t>(index));
+            REQUIRE_EQ(reservations.reserve_function(), id);
+            declarations.define(id, std::move(functions[index]));
+        }
+        for (auto index = 0uz; index < structures.size(); ++index) {
+            const auto id = StructID::from_index(static_cast<std::uint32_t>(index));
+            REQUIRE_EQ(reservations.reserve_struct(), id);
+            declarations.define(id, std::move(structures[index]));
+        }
+        for (auto index = 0uz; index < enumerations.size(); ++index) {
+            const auto id = EnumID::from_index(static_cast<std::uint32_t>(index));
+            REQUIRE_EQ(reservations.reserve_enum(), id);
+            declarations.define(id, std::move(enumerations[index]));
+        }
+        for (auto index = 0uz; index < enum_cases.size(); ++index) {
+            const auto id = EnumCaseID::from_index(static_cast<std::uint32_t>(index));
+            REQUIRE_EQ(reservations.reserve_enum_case(), id);
+            declarations.define(id, std::move(enum_cases[index]));
+            declarations.complete_enum_case(id, std::nullopt);
+        }
+        declarations.seal_declarations(
+            std::vector(structures.size(), HIRNominalCapabilities {.equality = true}),
+            std::vector(enumerations.size(), HIRNominalCapabilities {.equality = true})
         );
+        builder.publish_nominal_containment({
+            .direct_dependencies = std::vector<std::vector<HIRNominalDeclRef>>(
+                structures.size() + enumerations.size()
+            ),
+        });
         declarations_committed = true;
     }
 
     auto verify() noexcept -> std::expected<void, SemanticProgramError> {
-        return verify_semantic_program(builder);
+        return verify_semantic_draft_for_testing(builder);
     }
 
     auto verify_structure() noexcept -> std::expected<void, SemanticProgramError> {
         return verify_semantic_structure(builder);
     }
 
-    auto commit_control_facts() noexcept -> void {
-        builder.publish_control_facts(std::move(expression_facts), std::move(block_facts));
+    auto freeze_flow_candidate() noexcept -> void {
+        builder.derive_binding_facts();
+        builder.derive_place_uses();
+        auto callable_failures = std::vector<std::vector<HIRTypeID>>();
+        callable_failures.reserve(builder.callables().size());
+        for (auto index = 0uz; index < builder.callables().size(); ++index) {
+            const auto callable = CallableID::from_index(static_cast<std::uint32_t>(index));
+            callable_failures.push_back(
+                builder.failure_set(builder.callable_failure_input(callable).declared_failure_set)
+                    .members
+            );
+        }
+        auto analysis = RecordedControlAnalysis::for_testing(
+            std::move(expression_summaries),
+            std::vector<ControlSummary>(builder.statements().size(), empty_control_summary()),
+            std::move(block_summaries),
+            std::move(catch_controls),
+            std::move(unhandled_failures),
+            std::move(expression_effects),
+            std::move(callable_failures)
+        );
+        ::freeze_flow_candidate(builder, std::move(analysis));
     }
 
-    SemanticConstruction builder;
+    auto finish() && noexcept -> SemanticProgram { return std::move(session).finish(); }
+
+    SemanticSession session;
+    SemanticDraft& builder;
     ProgramOriginID origin;
     SemanticScopeID root_scope;
     HIRTypeID boolean;
@@ -204,14 +254,17 @@ public:
     std::vector<HIRFunctionDecl> functions;
     std::vector<HIRStructDecl> structures;
     std::vector<HIREnumDecl> enumerations;
-    std::vector<HIREnumCase> enum_cases;
-    std::vector<HIRExpressionFacts> expression_facts;
-    std::vector<HIRBlockFacts> block_facts;
+    std::vector<SemanticEnumCaseContract> enum_cases;
+    std::vector<ControlSummary> expression_summaries;
+    std::vector<ControlSummary> block_summaries;
+    std::vector<std::vector<CatchControlSummary>> catch_controls;
+    std::vector<std::vector<HIRTypeID>> unhandled_failures;
+    std::vector<EvaluationEffect> expression_effects;
     bool declarations_committed = false;
 };
 
 auto require_error(SemanticFixture& fixture, SemanticProgramErrorKind kind) noexcept -> void {
-    fixture.commit_control_facts();
+    fixture.freeze_flow_candidate();
     const auto result = fixture.verify();
     REQUIRE_FALSE(result.has_value());
     CHECK_EQ(result.error().kind, kind);
@@ -244,7 +297,8 @@ TEST_CASE("Semantic invariants: TestID and BodyID ownership is one-to-one") {
 TEST_CASE("Semantic structure: every completed body is claimed") {
     auto fixture = SemanticFixture();
     const auto callable =
-        fixture.builder.append_callable({}, fixture.integer, {}, HIRFailureContractKind::Inferred);
+        fixture.builder
+            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     const auto root = fixture.block(fixture.root_scope);
     fixture.builder.define_callable_body(callable, {}, fixture.root_scope, root);
     fixture.commit_declarations();
@@ -284,7 +338,8 @@ TEST_CASE("Semantic structure: closure root is a strict descendant of its enclos
     const auto sibling = fixture.builder.append_scope(std::nullopt);
     const auto closure_root = fixture.block(sibling);
     const auto callable =
-        fixture.builder.append_callable({}, fixture.integer, {}, HIRFailureContractKind::Inferred);
+        fixture.builder
+            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     fixture.builder.define_callable_body(callable, {}, sibling, closure_root);
     const auto closure = fixture.expression(
         HIRClosureExpr {
@@ -356,11 +411,11 @@ TEST_CASE("Semantic invariants: structured control cannot enter a sibling scope"
 
 TEST_CASE("Semantic invariants: place projections preserve resolved types") {
     auto fixture = SemanticFixture();
-    const auto place = fixture.local_place(fixture.boolean, fixture.root_scope, true);
+    const auto symbol = fixture.local_binding(fixture.boolean, fixture.root_scope, true);
     const auto expression = fixture.boolean_literal();
-    fixture.expression_facts[expression.index()].place_use = SemanticPlaceUse {
-        .root = place,
-        .projections = {SemanticIndexProjection {.result_type = fixture.boolean}},
+    fixture.builder.place_use_candidate(expression) = SemanticPlaceUse {
+        .root = symbol,
+        .projections = {SemanticIndexProjection {}},
         .access = SemanticPlaceAccess::Read,
     };
     const auto root = fixture.block(fixture.root_scope, {}, expression);
@@ -370,10 +425,12 @@ TEST_CASE("Semantic invariants: place projections preserve resolved types") {
 
 TEST_CASE("Semantic invariants: callable contracts only reference published types") {
     auto fixture = SemanticFixture();
-    static_cast<void>(
-        fixture.builder
-            .append_callable({}, HIRTypeID::from_index(99), {}, HIRFailureContractKind::Inferred)
-    );
+    static_cast<void>(fixture.builder.append_callable(
+        {},
+        HIRTypeID::from_index(99),
+        {},
+        SemanticFailureContractKind::Inferred
+    ));
     const auto root = fixture.block(fixture.root_scope);
     fixture.publish_test(root);
     require_error(fixture, SemanticProgramErrorKind::InvalidContract);
@@ -384,7 +441,8 @@ TEST_CASE("Semantic invariants: every closed function contract has one body") {
     const auto symbol = fixture.top_symbol("missing_body");
     const auto function = FunctionID::from_index(0);
     const auto callable =
-        fixture.builder.append_callable({}, fixture.integer, {}, HIRFailureContractKind::Inferred);
+        fixture.builder
+            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     fixture.builder.adopt_symbol_type(symbol, fixture.builder.intern_function_type(callable));
     fixture.functions.push_back({
         .origin = fixture.origin,
@@ -422,7 +480,6 @@ TEST_CASE("Semantic invariants: an enum case has exactly one enum owner") {
         .owner = first,
         .name = fixture.builder.intern_string("Value"),
         .payload_types = {},
-        .constant = std::nullopt,
         .symbol = case_symbol,
         .origin = fixture.origin,
     });
@@ -434,7 +491,6 @@ TEST_CASE("Semantic invariants: an enum case has exactly one enum owner") {
         .cases = {enum_case},
         .profile = HIREnumProfile::Numeric,
         .symbol = first_symbol,
-        .supports_equality = true,
     });
     fixture.enumerations.push_back({
         .origin = fixture.origin,
@@ -444,7 +500,6 @@ TEST_CASE("Semantic invariants: an enum case has exactly one enum owner") {
         .cases = {enum_case},
         .profile = HIREnumProfile::Numeric,
         .symbol = second_symbol,
-        .supports_equality = true,
     });
     fixture.builder.hir_module(fixture.module_id).items.push_back(first);
     fixture.builder.hir_module(fixture.module_id).items.push_back(second);
@@ -455,8 +510,7 @@ TEST_CASE("Semantic invariants: an enum case has exactly one enum owner") {
 TEST_CASE("Semantic invariants: pattern bindings agree with their subject type") {
     auto fixture = SemanticFixture();
     const auto arm_scope = fixture.builder.append_scope(fixture.root_scope);
-    const auto place = fixture.local_place(fixture.integer, arm_scope, false);
-    const auto symbol = *fixture.builder.place(place).symbol;
+    const auto symbol = fixture.local_binding(fixture.integer, arm_scope, false);
     const auto pattern = fixture.builder.append_pattern({
         .origin = fixture.origin,
         .value = HIRBindingPattern {
@@ -475,12 +529,42 @@ TEST_CASE("Semantic invariants: pattern bindings agree with their subject type")
                 .guard = std::nullopt,
                 .body = arm_body,
             }},
-            .exhaustive = true,
+            .coverage = {
+                .arm_states = {HIRMatchArmState::Reachable},
+            },
         },
     });
     const auto root = fixture.block(fixture.root_scope, {match});
     fixture.publish_test(root);
     require_error(fixture, SemanticProgramErrorKind::InvalidType);
+}
+
+TEST_CASE("Semantic invariants: match coverage facts align with source arms") {
+    auto fixture = SemanticFixture();
+    const auto arm_scope = fixture.builder.append_scope(fixture.root_scope);
+    const auto pattern = fixture.builder.append_pattern({
+        .origin = fixture.origin,
+        .value = HIRWildcardPattern {},
+    });
+    const auto arm_body = fixture.block(arm_scope);
+    const auto match = fixture.builder.append_statement({
+        .origin = fixture.origin,
+        .value = HIRMatchStmt {
+            .subject = fixture.boolean_literal(),
+            .arms = {{
+                .scope = arm_scope,
+                .pattern = pattern,
+                .guard = std::nullopt,
+                .body = arm_body,
+            }},
+            .coverage = {
+                .arm_states = {},
+            },
+        },
+    });
+    const auto root = fixture.block(fixture.root_scope, {match});
+    fixture.publish_test(root);
+    require_error(fixture, SemanticProgramErrorKind::InvalidContract);
 }
 
 TEST_CASE("Semantic invariants: failure sets contain only normalized nominal members") {
@@ -495,23 +579,33 @@ TEST_CASE("Semantic invariants: failure sets contain only normalized nominal mem
     require_error(fixture, SemanticProgramErrorKind::InvalidContract);
 }
 
-TEST_CASE("Semantic invariants: evaluation effects reference canonical place sets") {
-    SUBCASE("duplicate place") {
+TEST_CASE("Semantic invariants: evaluation effects reference canonical binding roots") {
+    SUBCASE("duplicate root") {
         auto fixture = SemanticFixture();
-        const auto place = fixture.local_place(fixture.boolean, fixture.root_scope, true);
+        const auto symbol = fixture.local_binding(fixture.boolean, fixture.root_scope, true);
         const auto expression = fixture.boolean_literal();
-        fixture.expression_facts[expression.index()].evaluation_effect.reads = {place, place};
+        fixture.expression_effects[expression.index()].reads = {symbol, symbol};
         const auto root = fixture.block(fixture.root_scope, {}, expression);
         fixture.publish_test(root);
         require_error(fixture, SemanticProgramErrorKind::InvalidContract);
     }
 
-    SUBCASE("unknown place") {
+    SUBCASE("unknown symbol") {
         auto fixture = SemanticFixture();
         const auto expression = fixture.boolean_literal();
-        fixture.expression_facts[expression.index()].evaluation_effect.takes = {
-            SemanticPlaceID::from_index(99),
+        fixture.expression_effects[expression.index()].takes = {
+            SymbolID::from_index(99),
         };
+        const auto root = fixture.block(fixture.root_scope, {}, expression);
+        fixture.publish_test(root);
+        require_error(fixture, SemanticProgramErrorKind::InvalidPlace);
+    }
+
+    SUBCASE("known non-binding symbol") {
+        auto fixture = SemanticFixture();
+        const auto symbol = fixture.top_symbol("not_runtime");
+        const auto expression = fixture.boolean_literal();
+        fixture.expression_effects[expression.index()].reads = {symbol};
         const auto root = fixture.block(fixture.root_scope, {}, expression);
         fixture.publish_test(root);
         require_error(fixture, SemanticProgramErrorKind::InvalidPlace);
@@ -524,8 +618,7 @@ TEST_CASE("Semantic invariants: try only publishes failures unhandled by its pro
     const auto unrelated_failure = fixture.nominal_type("UnrelatedFailure");
     const auto protected_scope = fixture.builder.append_scope(fixture.root_scope);
     const auto protected_body = fixture.block(protected_scope);
-    fixture.block_facts[protected_body.index()].outward_failure_set =
-        fixture.builder.intern_failure_set({protected_failure});
+    fixture.block_summaries[protected_body.index()].outward_failures = {protected_failure};
     const auto attempt = fixture.expression(
         HIRTryExpr {
             .body = protected_body,
@@ -534,11 +627,21 @@ TEST_CASE("Semantic invariants: try only publishes failures unhandled by its pro
         fixture.boolean,
         {unrelated_failure}
     );
-    fixture.expression_facts[attempt.index()].attempt = HIRTryFacts {
-        .arms = {},
-        .unhandled_failure_set = fixture.builder.intern_failure_set({unrelated_failure}),
-    };
+    fixture.unhandled_failures[attempt.index()] = {unrelated_failure};
     const auto root = fixture.block(fixture.root_scope, {}, attempt);
     fixture.publish_test(root);
     require_error(fixture, SemanticProgramErrorKind::InvalidContract);
+}
+
+TEST_CASE("Semantic publication seals an exact verified program") {
+    auto fixture = SemanticFixture();
+    const auto result = fixture.boolean_literal();
+    const auto root = fixture.block(fixture.root_scope, {}, result);
+    fixture.publish_test(root);
+    fixture.freeze_flow_candidate();
+
+    const auto program = std::move(fixture).finish();
+    REQUIRE_EQ(program.tests().size(), 1);
+    REQUIRE_EQ(program.expressions().size(), 1);
+    CHECK_EQ(program.view().expression(result).type, program.expression(result).type);
 }

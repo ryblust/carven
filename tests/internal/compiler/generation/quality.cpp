@@ -58,6 +58,12 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "    as_number,\n"
         "}\n"
         "\n"
+        "enum DeadChoice {\n"
+        "    First,\n"
+        "    Second,\n"
+        "    Third,\n"
+        "}\n"
+        "\n"
         "fn pair(left: i32, right: i32) -> i32 {\n"
         "    return left * 10 + right;\n"
         "}\n"
@@ -172,6 +178,26 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "    };\n"
         "}\n"
         "\n"
+        "fn covered_union_arm(value: DeadChoice) -> i32 {\n"
+        "    return match value {\n"
+        "        .First | .Second => 1,\n"
+        "        .First if #[cpp] { true /* cv_dead_union_guard */ } => {\n"
+        "                #[cpp] { static_cast<void>(0); /* cv_dead_union_body */ }\n"
+        "                2\n"
+        "            },\n"
+        "        .Third => 3,\n"
+        "    };\n"
+        "}\n"
+        "\n"
+        "fn covered_subject_consumer() {\n"
+        "    match #[cpp] { cv_quality_record(12) == 12 } {\n"
+        "        _ => {},\n"
+        "        cv_dead_pattern_binding if #[cpp] { false /* cv_dead_subject_guard */ } => {\n"
+        "                #[cpp] { static_cast<void>(0); /* cv_dead_subject_body */ }\n"
+        "            },\n"
+        "    }\n"
+        "}\n"
+        "\n"
         "fn count() -> i32 {\n"
         "    var total: i32 = 0;\n"
         "    for var index: i32 = 0; index < 3; ++index {\n"
@@ -239,6 +265,34 @@ auto compile_opaque_raw_fixture() noexcept -> ArtifactSet {
     return std::move(result->value);
 }
 
+auto compile_for_fast_fixture() noexcept -> ArtifactSet {
+    auto sources = SourceManager();
+    const auto source = sources.append_virtual(
+        "for-fast.cv",
+        "fn count() -> i32 {\n"
+        "    var total: i32 = 0;\n"
+        "    for var index: i32 = 0; index < 3; ++index {\n"
+        "        total += index;\n"
+        "    }\n"
+        "    return total;\n"
+        "}\n"
+    );
+    REQUIRE(source.has_value());
+    const auto path = CanonicalModulePath::from_value("for_fast");
+    REQUIRE(path.has_value());
+    const auto input = CompilationInput {.source_id = *source, .module_path = *path};
+    auto result = compile(
+        sources,
+        CompilationRequest {.inputs = std::span(&input, 1)},
+        TargetGenerationRequest {
+            .tests = TestEmissionMode::None,
+            .linkage_domain = LinkageDomain::explicit_value("test:for-fast").value(),
+        }
+    );
+    REQUIRE(result.has_value());
+    return std::move(result->value);
+}
+
 auto artifact_content(const ArtifactSet& artifacts, std::string_view path) noexcept
     -> std::string_view {
     const auto found =
@@ -250,6 +304,15 @@ auto artifact_content(const ArtifactSet& artifacts, std::string_view path) noexc
 auto quality_artifacts() noexcept -> const ArtifactSet& {
     static const auto artifacts = compile_quality_fixture();
     return artifacts;
+}
+
+auto occurrence_count(std::string_view text, std::string_view needle) noexcept -> std::size_t {
+    auto count = 0uz;
+    for (auto position = text.find(needle); position != std::string_view::npos;
+         position = text.find(needle, position + needle.size())) {
+        ++count;
+    }
+    return count;
 }
 
 } // namespace
@@ -271,10 +334,30 @@ TEST_CASE("Target quality: effect-aware lowering only materializes conflicting o
     CHECK(!implementation.contains("CARVEN_GENERATED_LINE"));
 }
 
+TEST_CASE("Target quality: direct C-style loop uses the typed for path") {
+    const auto artifacts = compile_for_fast_fixture();
+    const auto implementation = artifact_content(artifacts, "for_fast.cpp");
+
+    CHECK(implementation.contains("for ("));
+    CHECK_FALSE(implementation.contains("while (true)"));
+}
+
 TEST_CASE("Target quality: raw fragments preserve line-marker-shaped bytes") {
     const auto artifacts = compile_opaque_raw_fixture();
     const auto implementation = artifact_content(artifacts, "opaque.cpp");
 
     CHECK(implementation.contains("R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\""));
     CHECK(implementation.contains("R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\""));
+}
+
+TEST_CASE("Target quality: covered match arms do not enter the target program") {
+    const auto& artifacts = quality_artifacts();
+    const auto implementation = artifact_content(artifacts, "quality.cpp");
+
+    CHECK_FALSE(implementation.contains("cv_dead_union_guard"));
+    CHECK_FALSE(implementation.contains("cv_dead_union_body"));
+    CHECK_FALSE(implementation.contains("cv_dead_pattern_binding"));
+    CHECK_FALSE(implementation.contains("cv_dead_subject_guard"));
+    CHECK_FALSE(implementation.contains("cv_dead_subject_body"));
+    CHECK_EQ(occurrence_count(implementation, "cv_quality_record(12)"), 1);
 }

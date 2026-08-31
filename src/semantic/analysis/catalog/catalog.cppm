@@ -3,6 +3,7 @@ module carven:semantic.analysis.catalog;
 import :diagnostics.diagnostic;
 import :frontend.ast.ids;
 import :frontend.ast.tree;
+import :semantic.analysis.session;
 import :semantic.hir.ids;
 import :semantic.visibility;
 import :source.provenance;
@@ -118,10 +119,10 @@ private:
     CompilationProvenanceView compilation_provenance;
     std::vector<CatalogModule> modules;
     std::vector<CatalogSymbol> symbols;
-    IDTable<SymbolID, FunctionID> function_symbols;
-    IDTable<SymbolID, StructID> struct_symbols;
-    IDTable<SymbolID, EnumID> enum_symbols;
-    IDTable<SymbolID, EnumCaseID> enum_case_symbols;
+    std::vector<SymbolID> function_symbols;
+    std::vector<SymbolID> struct_symbols;
+    std::vector<SymbolID> enum_symbols;
+    std::vector<SymbolID> enum_case_symbols;
     std::vector<std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>>
         visible_candidates;
     mutable std::vector<CatalogImportBinding> import_bindings;
@@ -129,7 +130,8 @@ private:
     friend class AnalysisCatalogView;
     friend auto build_analysis_catalog(
         CompilationProvenanceView,
-        std::span<const SyntaxTree>
+        std::span<const SyntaxTree>,
+        SemanticEntityReservations
     ) noexcept -> std::expected<AnalysisCatalog, Diagnostics>;
 };
 
@@ -163,5 +165,6 @@ private:
 
 auto build_analysis_catalog(
     CompilationProvenanceView provenance,
-    std::span<const SyntaxTree> syntax_trees
+    std::span<const SyntaxTree> syntax_trees,
+    SemanticEntityReservations reservations
 ) noexcept -> std::expected<AnalysisCatalog, Diagnostics>;

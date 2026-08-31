@@ -7,7 +7,7 @@ import :frontend.ast.type;
 import :frontend.literal;
 import :semantic.analysis.coverage;
 import :semantic.analysis.elaboration.body;
-import :semantic.analysis.elaboration.expressions;
+import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.patterns;
 import :semantic.analysis.elaboration.scopes;
@@ -25,15 +25,22 @@ auto analyze_match(
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms,
     Span match_span
-) noexcept -> bool {
+) noexcept -> HIRMatchCoverageFacts {
     const auto& builder = module_analysis.builder();
-    auto coverage =
+    const auto coverage =
         compute_pattern_coverage(builder, module_analysis.declarations(), subject_type, arms);
     if (!coverage.has_value()) {
         invariant_violation("pattern coverage could not be computed after type analysis");
     }
+    if (coverage->arm_usefulness.size() != arms.size()) {
+        invariant_violation("pattern coverage does not align with match arms");
+    }
+    auto arm_states = std::vector<HIRMatchArmState>();
+    arm_states.reserve(arms.size());
     for (auto index = 0uz; index < arms.size(); ++index) {
-        if (!coverage->arm_usefulness[index]) {
+        const auto reachable = coverage->arm_usefulness[index];
+        arm_states.push_back(reachable ? HIRMatchArmState::Reachable : HIRMatchArmState::Covered);
+        if (!reachable) {
             module_analysis.emit(
                 builder.provenance().origin(builder.pattern(arms[index].pattern).origin).span,
                 "match arm is unreachable because previous unguarded arms cover it",
@@ -48,7 +55,7 @@ auto analyze_match(
             DiagnosticCode::MatchNonExhaustive
         );
     }
-    return coverage->exhaustive;
+    return {.arm_states = std::move(arm_states)};
 }
 
 auto analyze_catch_pattern(

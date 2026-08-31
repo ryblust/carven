@@ -110,8 +110,9 @@ auto constant_equal(const Reader& reader, HIRConstantID left, HIRConstantID righ
                         || left_value.payload.size() != right_value.payload.size()) {
                         return false;
                     }
-                    for (auto index = 0uz; index < left_value.payload.size(); ++index) {
-                        pending.emplace_back(left_value.payload[index], right_value.payload[index]);
+                    for (const auto& [left_child, right_child] :
+                         std::views::zip(left_value.payload, right_value.payload)) {
+                        pending.emplace_back(left_child, right_child);
                     }
                     return true;
                 } else {

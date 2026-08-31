@@ -1,5 +1,6 @@
 module carven:semantic.analysis.control.evaluator.impl;
 
+import :semantic.analysis.call_contract;
 import :semantic.analysis.control;
 import :semantic.analysis.control.internal;
 import :semantic.analysis.coverage;
@@ -13,18 +14,6 @@ import :support.visit;
 import std;
 
 namespace {
-
-struct ConcreteCall final {
-    CallableID callable;
-};
-
-struct SignatureCall final {
-    CallableSignatureID signature;
-};
-
-struct NonFailingCall final {};
-
-using ResolvedCallTarget = std::variant<ConcreteCall, SignatureCall, NonFailingCall>;
 
 auto empty_control() noexcept -> ControlSummary {
     return {
@@ -61,7 +50,7 @@ struct CatchFailureSolution final {
 };
 
 auto solve_catch_failure(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID failure,
     std::span<const HIRCatchArm> arms
 ) noexcept -> CatchFailureSolution {
@@ -131,10 +120,10 @@ auto solve_catch_failure(
 class ControlEvaluator final {
 public:
     ControlEvaluator(
-        const SemanticConstruction& hir,
+        SemanticDraftView hir,
         const std::vector<std::vector<HIRTypeID>>& failure_sets,
         std::vector<std::vector<std::uint32_t>>* dependencies,
-        RecordedControl* facts
+        RecordedControlSummaries* facts
     ) noexcept
         : hir(hir),
           failure_sets(failure_sets),
@@ -155,8 +144,8 @@ public:
 
 private:
     auto normalize(ControlSummary value) const noexcept -> ControlSummary {
-        value.pending_failures = normalize_failure_members(hir, std::move(value.pending_failures));
-        value.outward_failures = normalize_failure_members(hir, std::move(value.outward_failures));
+        value.pending_failures = normalize_failure_members(std::move(value.pending_failures));
+        value.outward_failures = normalize_failure_members(std::move(value.outward_failures));
         return value;
     }
 
@@ -189,44 +178,29 @@ private:
         return normalize(std::move(result));
     }
 
-    auto resolved_call_target(HIRExprID callee) const noexcept -> ResolvedCallTarget {
-        const auto& type = hir.type(hir.expression(callee).type).value;
-        if (const auto* function = std::get_if<HIRFunctionTypeValue>(&type)) {
-            return ConcreteCall {.callable = function->callable};
-        }
-        if (const auto* closure = std::get_if<HIRClosureTypeValue>(&type)) {
-            return ConcreteCall {.callable = closure->callable};
-        }
-        if (const auto* reference = std::get_if<HIRFunctionRefTypeValue>(&type)) {
-            return SignatureCall {.signature = reference->signature};
-        }
-        return NonFailingCall {};
-    }
-
-    auto call_failures(const ResolvedCallTarget& target) const noexcept
+    auto call_failures(const CallFailureSource& source) const noexcept
         -> std::span<const HIRTypeID> {
         return std::visit(
             Overloaded {
-                [&](const ConcreteCall& value) noexcept -> std::span<const HIRTypeID> {
+                [&](const ConcreteCallableFailure& value) noexcept -> std::span<const HIRTypeID> {
                     return failure_sets[value.callable.index()];
                 },
-                [&](const SignatureCall& value) noexcept -> std::span<const HIRTypeID> {
-                    return hir.failure_set(hir.callable_signature(value.signature).failure_set)
-                        .members;
+                [&](const FixedSignatureFailure& value) noexcept -> std::span<const HIRTypeID> {
+                    return hir.failure_set(value.failure_set).members;
                 },
-                [](const NonFailingCall&) static noexcept -> std::span<const HIRTypeID> {
+                [](const ForeignCallableFailure&) static noexcept -> std::span<const HIRTypeID> {
                     return {};
                 },
             },
-            target
+            source
         );
     }
 
-    auto record_dependency(const ResolvedCallTarget& target) noexcept -> void {
+    auto record_dependency(const CallFailureSource& source) noexcept -> void {
         if (dependencies == nullptr || !active_callable.has_value()) {
             return;
         }
-        const auto* concrete = std::get_if<ConcreteCall>(&target);
+        const auto* concrete = std::get_if<ConcreteCallableFailure>(&source);
         if (concrete == nullptr) {
             return;
         }
@@ -376,9 +350,12 @@ private:
                     for (const auto& argument : value.arguments) {
                         merge_child(evaluate_expression(argument.expression));
                     }
-                    const auto target = resolved_call_target(value.callee);
-                    record_dependency(target);
-                    append_failures(result.pending_failures, call_failures(target));
+                    const auto contract = call_contract(hir, id);
+                    record_dependency(contract.failure_source);
+                    append_failures(
+                        result.pending_failures,
+                        call_failures(contract.failure_source)
+                    );
                 },
                 [](const HIRClosureExpr&) static noexcept {},
                 [&](const HIRCallableViewExpr& value) noexcept {
@@ -583,10 +560,10 @@ private:
         return result;
     }
 
-    const SemanticConstruction& hir;
+    SemanticDraftView hir;
     const std::vector<std::vector<HIRTypeID>>& failure_sets;
     std::vector<std::vector<std::uint32_t>>* dependencies;
-    RecordedControl* facts;
+    RecordedControlSummaries* facts;
     std::optional<CallableID> active_callable;
     std::optional<std::vector<HIRTypeID>> rethrow_failures;
 };
@@ -594,7 +571,7 @@ private:
 } // namespace
 
 auto evaluate_callable_control(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     const std::vector<std::vector<HIRTypeID>>& failure_sets,
     CallableID callable,
     std::vector<std::vector<std::uint32_t>>* dependencies
@@ -603,10 +580,10 @@ auto evaluate_callable_control(
 }
 
 auto record_control(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     const std::vector<std::vector<HIRTypeID>>& failure_sets
-) noexcept -> RecordedControl {
-    auto recorded = RecordedControl {
+) noexcept -> RecordedControlSummaries {
+    auto recorded = RecordedControlSummaries {
         .expressions = std::vector<ControlSummary>(hir.expressions().size(), empty_control()),
         .statements = std::vector<ControlSummary>(hir.statements().size(), empty_control()),
         .blocks = std::vector<ControlSummary>(hir.blocks().size(), empty_control()),

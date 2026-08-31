@@ -41,7 +41,12 @@ private:
 };
 
 auto generated(std::string logical_path, std::string content) noexcept -> GeneratedArtifact {
-    return {.logical_path = std::move(logical_path), .content = std::move(content)};
+    return {
+        .logical_path = std::move(logical_path),
+        .role = GeneratedArtifactRole::ModuleImplementation,
+        .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
+        .content = std::move(content),
+    };
 }
 
 auto contents(const std::filesystem::path& path) noexcept -> std::string {

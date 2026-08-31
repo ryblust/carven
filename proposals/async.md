@@ -961,7 +961,7 @@ be collected without turning a candidate into an implementation choice.
 
 - [Carven philosophy](../docs/philosophy.md)
 - [Async learning note](../notes/async-programming.md)
-- [Typed-failure effects proposal](typed-failure-effects.md)
+- [Failure-contract semantics](../docs/semantics.md#failure-contracts)
 - [Failure-model and runtime-materialization note](../notes/failure-models.md)
 - [Memory model proposal](memory-model.md)
 - [Threading proposal](threading.md)

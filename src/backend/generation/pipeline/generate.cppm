@@ -5,5 +5,5 @@ import :compilation.request;
 import :semantic.hir;
 import std;
 
-auto generate_target(const SemanticProgram& semantic, TargetGenerationRequest request) noexcept
+auto generate_target(SemanticProgram semantic, TargetGenerationRequest request) noexcept
     -> ArtifactSet;

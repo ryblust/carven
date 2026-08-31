@@ -1,6 +1,6 @@
 module carven:semantic.analysis.elaboration.types.properties.impl;
 
-import :semantic.analysis.elaboration.expressions;
+import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.types;
 import :semantic.analysis.elaboration.types.relations;
@@ -11,7 +11,7 @@ import :support.visit;
 import std;
 
 auto is_opaque_or_error(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     const auto& value = builder.type(id).value;
     return std::holds_alternative<HIRForeignTypeValue>(value)
         || std::holds_alternative<HIRErrorTypeValue>(value);
@@ -57,7 +57,7 @@ auto supports_equality(const ModuleAnalysis& module_analysis, HIRTypeID id) noex
 }
 
 auto is_numeric(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&builder.type(id).value);
     if (builtin == nullptr) {
         return false;
@@ -66,7 +66,7 @@ auto is_numeric(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept ->
 }
 
 auto is_integer(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&builder.type(id).value);
     if (builtin == nullptr) {
         return false;
@@ -85,13 +85,13 @@ auto integer_constant_fits(
 }
 
 auto is_bool(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&builder.type(id).value);
     return builtin != nullptr && builtin->kind == HIRBuiltinType::Bool;
 }
 
 auto is_void(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&builder.type(id).value);
     return builtin != nullptr && builtin->kind == HIRBuiltinType::Void;
 }

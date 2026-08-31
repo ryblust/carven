@@ -1,6 +1,7 @@
 module carven:semantic.analysis.control;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
+import :semantic.analysis.session.read;
 import :semantic.hir;
 import :semantic.hir.place;
 import std;
@@ -32,13 +33,23 @@ struct CatchControlSummary final {
     std::vector<CatchAlternativeReachability> alternatives;
 };
 
-class SolvedControl final {
+class RecordedControlAnalysis final {
 public:
-    SolvedControl(const SolvedControl&) = delete;
-    SolvedControl(SolvedControl&&) = default;
-    auto operator=(const SolvedControl&) -> SolvedControl& = delete;
-    auto operator=(SolvedControl&&) -> SolvedControl& = default;
-    ~SolvedControl() = default;
+    RecordedControlAnalysis(const RecordedControlAnalysis&) = delete;
+    RecordedControlAnalysis(RecordedControlAnalysis&&) = default;
+    auto operator=(const RecordedControlAnalysis&) -> RecordedControlAnalysis& = delete;
+    auto operator=(RecordedControlAnalysis&&) -> RecordedControlAnalysis& = default;
+    ~RecordedControlAnalysis() = default;
+
+    static auto for_testing(
+        std::vector<ControlSummary> expressions,
+        std::vector<ControlSummary> statements,
+        std::vector<ControlSummary> blocks,
+        std::vector<std::vector<CatchControlSummary>> catches,
+        std::vector<std::vector<HIRTypeID>> unhandled,
+        std::vector<EvaluationEffect> effects,
+        std::vector<std::vector<HIRTypeID>> callable_failures
+    ) noexcept -> RecordedControlAnalysis;
 
     auto summary(HIRExprID id) const noexcept -> const ControlSummary&;
     auto summary(HIRStmtID id) const noexcept -> const ControlSummary&;
@@ -46,15 +57,18 @@ public:
     auto catch_summary(HIRExprID id, std::size_t arm) const noexcept -> const CatchControlSummary&;
     auto unhandled_failures(HIRExprID id) const noexcept -> std::span<const HIRTypeID>;
     auto evaluation_effect(HIRExprID id) const noexcept -> const EvaluationEffect&;
+    auto effective_failures(CallableID id) const noexcept -> std::span<const HIRTypeID>;
+    auto callable_failure_sets() const noexcept -> std::span<const std::vector<HIRTypeID>>;
 
 private:
-    SolvedControl(
+    RecordedControlAnalysis(
         std::vector<ControlSummary> expressions,
         std::vector<ControlSummary> statements,
         std::vector<ControlSummary> blocks,
         std::vector<std::vector<CatchControlSummary>> catches,
         std::vector<std::vector<HIRTypeID>> unhandled,
-        std::vector<EvaluationEffect> effects
+        std::vector<EvaluationEffect> effects,
+        std::vector<std::vector<HIRTypeID>> callable_failures
     ) noexcept;
 
     std::vector<ControlSummary> expression_summaries;
@@ -63,10 +77,12 @@ private:
     std::vector<std::vector<CatchControlSummary>> catch_summaries;
     std::vector<std::vector<HIRTypeID>> unhandled_summaries;
     std::vector<EvaluationEffect> expression_effects;
+    std::vector<std::vector<HIRTypeID>> effective_callable_failures;
 
-    friend auto solve_control(SemanticConstruction&) noexcept -> SolvedControl;
-    friend auto commit_control_facts(SemanticConstruction&, SolvedControl&&) noexcept -> void;
+    friend auto analyze_control(SemanticDraftView) noexcept -> RecordedControlAnalysis;
+    friend auto freeze_flow_candidate(SemanticDraft&, RecordedControlAnalysis&&) noexcept -> void;
 };
 
-auto solve_control(SemanticConstruction& builder) noexcept -> SolvedControl;
-auto commit_control_facts(SemanticConstruction& builder, SolvedControl&& control) noexcept -> void;
+auto analyze_control(SemanticDraftView builder) noexcept -> RecordedControlAnalysis;
+auto freeze_flow_candidate(SemanticDraft& builder, RecordedControlAnalysis&& control) noexcept
+    -> void;

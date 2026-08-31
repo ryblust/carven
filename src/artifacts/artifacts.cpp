@@ -66,12 +66,17 @@ auto check_artifact_logical_path(std::string_view path) noexcept
 
 } // namespace
 
+auto validate_artifact_logical_path(std::string_view path) noexcept
+    -> std::expected<void, std::string> {
+    return check_artifact_logical_path(path);
+}
+
 ArtifactSet::ArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept
     : artifacts_(std::move(artifacts)) {
     std::ranges::sort(artifacts_, {}, &GeneratedArtifact::logical_path);
     auto logical_paths = std::flat_set<std::string_view> {};
     for (const auto& artifact : artifacts_) {
-        if (!check_artifact_logical_path(artifact.logical_path)) {
+        if (!validate_artifact_logical_path(artifact.logical_path)) {
             invariant_violation("artifact has an invalid logical path");
         }
         if (logical_paths.contains(artifact.logical_path)) {

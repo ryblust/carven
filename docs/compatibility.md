@@ -13,7 +13,10 @@ stated below.
 
 Building the compiler requires Xmake and an LLVM/Clang toolchain capable of
 compiling C++26. The compiler implementation is built as C++26 with C++
-exceptions disabled.
+exceptions disabled. The validated host baseline is LLVM/Clang and libc++
+23.1.0. Another host toolchain must implement the C++26 language and
+standard-library features used by `src/` and `tests/internal/`; Carven does not
+carry compiler-host feature branches for older implementations.
 
 ## Generated-C++ consumers
 
@@ -22,6 +25,26 @@ branches. C++20 and C++23 are supported generated-C++ consumer modes. Routine
 verification executes the complete language corpus in C++20, compiles that
 corpus in C++23, and executes the focused C++ boundary corpus in both modes.
 The downstream build selects its consumer mode; Carven generation is unchanged.
+
+Host and consumer standards are separate axes. C++26 library or language
+features used to implement the Carven compiler must not leak into generated
+source or crafts unless the generated-C++ baseline is changed by a separate
+compatibility decision.
+
+## Compiler and toolchain boundary
+
+Carven emits C++20 artifacts and does not invoke a downstream C++ compiler. For
+ordinary valid Carven source, those artifacts must compile in every supported
+consumer mode; failure to do so is a Carven compatibility defect.
+
+The downstream toolchain performs C++ compilation and linking and determines
+platform ABI, object layout, and machine code. Code inside an explicit `#[cpp]`
+boundary is checked by that toolchain under the responsibility defined by
+[semantics.md](semantics.md#cpp-boundary).
+
+Toolchain diagnostics remain toolchain diagnostics. Generated source
+attribution may identify a `.cv` location but does not change diagnostic
+ownership.
 
 ## Native numeric model
 
@@ -97,8 +120,9 @@ The following are not compatibility promises:
 - `LinkageDomainID` and `ModuleNamespaceID` bytes and hash-input encoding;
 - the grouping of declarations inside a generated unit beyond the documented
   logical artifact paths;
-- private runtime helper types, methods, representation, or ABI;
-- compiler representation IDs, internal module partitions, or stage-local
+- private runtime helper types, methods, representation, or platform ABI;
+- `SemanticProgram`, `TargetProgram`, and `TargetUnit` private layouts,
+  compiler representation IDs, internal module partitions, or stage-local
   construction state;
 - diagnostic prose, notes, formatting, colors, or incidental ordering.
 

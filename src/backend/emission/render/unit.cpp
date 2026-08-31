@@ -1,7 +1,6 @@
 module carven:backend.emission.render.unit.impl;
 
 import :backend.emission.render;
-import :support.visit;
 import std;
 
 auto TargetRenderer::render_items(std::span<const TargetItemID> items) noexcept
@@ -32,50 +31,21 @@ auto TargetRenderer::render_sections(const TargetUnitSections& sections) noexcep
     return stack(rendered, 1);
 }
 
-auto TargetRenderer::render_unit(const TargetUnitRoot& value) && noexcept -> LayoutDocument {
-    auto sections = std::visit(
-        Overloaded {
-            [&](const TargetInterfaceComponentUnit& header) noexcept {
-                auto result = std::vector<LayoutNodeID> {
-                    directive(text("#pragma once")),
-                    directive(text("#include <carven/runtime/runtime.hpp>")),
-                };
-                for (const auto& header_path : header.prerequisite_header_paths) {
-                    result.push_back(directive(text(std::format("#include <{}>", header_path))));
-                }
-                if (const auto body = render_sections(header.sections)) {
-                    result.push_back(*body);
-                }
-                return result;
-            },
-            [&](const TargetModuleImplementationUnit& implementation) noexcept {
-                auto includes = std::vector<LayoutNodeID> {
-                    directive(text("#include <carven/runtime/runtime.hpp>")),
-                };
-                for (const auto& header_path : implementation.interface_header_paths) {
-                    includes.push_back(directive(text(std::format("#include <{}>", header_path))));
-                }
-                if (implementation.testing_support) {
-                    includes.push_back(
-                        directive(text("#include <carven/std/testing/testing.hpp>"))
-                    );
-                }
-                auto result = std::vector<LayoutNodeID> {stack(includes)};
-                if (const auto body = render_sections(implementation.sections)) {
-                    result.push_back(*body);
-                }
-                return result;
-            },
-            [&](const TargetTestEntryUnit& test_entry) noexcept {
-                return std::vector<LayoutNodeID> {
-                    directive(text("#include <carven/std/testing/testing.hpp>")),
-                    stack(render_items(test_entry.items), 1),
-                };
-            },
-        },
-        value
-    );
-
-    const auto root = stack(sections, 1);
-    return std::move(builder).finish(root);
+auto TargetRenderer::render_unit() && noexcept -> LayoutDocument {
+    const auto& root = unit.root();
+    auto rendered = std::vector<LayoutNodeID>();
+    rendered.reserve(root.directive_groups.size() + 1uz);
+    for (const auto& group : root.directive_groups) {
+        auto directives = std::vector<LayoutNodeID>();
+        directives.reserve(group.directives.size());
+        for (const auto& value : group.directives) {
+            directives.push_back(directive(text(value.bytes)));
+        }
+        rendered.push_back(stack(directives));
+    }
+    if (const auto sections = render_sections(root.sections)) {
+        rendered.push_back(*sections);
+    }
+    const auto document = stack(rendered, 1);
+    return std::move(builder).finish(document);
 }

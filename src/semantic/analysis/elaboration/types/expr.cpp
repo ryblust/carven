@@ -6,7 +6,7 @@ import :frontend.ast.literal;
 import :frontend.ast.region;
 import :frontend.literal;
 import :semantic.analysis.elaboration.body;
-import :semantic.analysis.elaboration.expressions;
+import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.scopes;
 import :semantic.analysis.elaboration.types;

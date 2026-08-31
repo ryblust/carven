@@ -4,7 +4,8 @@ import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :diagnostics.sink;
 import :frontend.program;
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
+import :semantic.analysis.session.read;
 import :semantic.analysis.catalog;
 import :semantic.hir;
 import :semantic.hir.decl;
@@ -45,8 +46,8 @@ class ProgramAnalyzer final {
 public:
     explicit ProgramAnalyzer(ParsedBatch program) noexcept;
 
-    auto builder() noexcept -> SemanticConstruction&;
-    auto builder() const noexcept -> const SemanticConstruction&;
+    auto builder() noexcept -> SemanticDraft&;
+    auto builder() const noexcept -> SemanticDraftView;
     auto syntax(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
     auto module_count() const noexcept -> std::size_t;
@@ -65,11 +66,10 @@ private:
     explicit ProgramAnalyzer(ParsedBatchParts parts) noexcept;
 
     IDTable<SyntaxTree, ProgramModuleID> syntax_by_module_id;
-    SemanticConstruction hir_builder;
+    SemanticSession semantic_session;
     CallableConstraints deferred_callables;
     EntryPointTracker entry_point_tracker;
     DiagnosticSink diagnostic_sink;
 };
 
-auto diagnostic_span(const SemanticConstruction& builder, ProgramOriginID id) noexcept
-    -> SourceSpan;
+auto diagnostic_span(SemanticDraftView builder, ProgramOriginID id) noexcept -> SourceSpan;

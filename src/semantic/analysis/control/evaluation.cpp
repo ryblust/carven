@@ -1,6 +1,5 @@
 module carven:semantic.analysis.control.evaluation.impl;
 
-import :semantic.analysis.control;
 import :semantic.analysis.control.internal;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
@@ -11,32 +10,25 @@ import std;
 
 namespace {
 
-auto merge_places(
-    std::vector<SemanticPlaceID>& destination,
-    std::span<const SemanticPlaceID> source
-) noexcept -> void {
-    auto merged = std::vector<SemanticPlaceID>();
+auto merge_roots(std::vector<SymbolID>& destination, std::span<const SymbolID> source) noexcept
+    -> void {
+    auto merged = std::vector<SymbolID>();
     merged.reserve(destination.size() + source.size());
     std::ranges::set_union(destination, source, std::back_inserter(merged));
     destination = std::move(merged);
 }
 
 auto merge_effect(EvaluationEffect& destination, const EvaluationEffect& source) noexcept -> void {
-    merge_places(destination.reads, source.reads);
-    merge_places(destination.writes, source.writes);
-    merge_places(destination.takes, source.takes);
+    merge_roots(destination.reads, source.reads);
+    merge_roots(destination.writes, source.writes);
+    merge_roots(destination.takes, source.takes);
     destination.opaque_boundary |= source.opaque_boundary;
-    destination.may_terminate |= source.may_terminate;
 }
 
 class EvaluationEffectEvaluator final {
 public:
-    EvaluationEffectEvaluator(
-        const SemanticConstruction& hir,
-        const RecordedControl& control
-    ) noexcept
+    explicit EvaluationEffectEvaluator(SemanticDraftView hir) noexcept
         : hir(hir),
-          control(control),
           effects(hir.expressions().size()) {}
 
     auto evaluate_callable(CallableID callable) noexcept -> void {
@@ -51,20 +43,20 @@ public:
 
 private:
     auto add_place_effect(HIRExprID id, EvaluationEffect& effect) const noexcept -> void {
-        const auto& use = hir.place_use(id);
+        const auto& use = hir.place_use_candidate(id);
         if (!use.has_value()) {
             return;
         }
-        auto* places = &effect.reads;
+        auto* roots = &effect.reads;
         switch (use->access) {
-            case SemanticPlaceAccess::Read:      places = &effect.reads; break;
+            case SemanticPlaceAccess::Read:      roots = &effect.reads; break;
             case SemanticPlaceAccess::Write:
-            case SemanticPlaceAccess::ReadWrite: places = &effect.writes; break;
-            case SemanticPlaceAccess::Take:      places = &effect.takes; break;
+            case SemanticPlaceAccess::ReadWrite: roots = &effect.writes; break;
+            case SemanticPlaceAccess::Take:      roots = &effect.takes; break;
         }
-        const auto position = std::ranges::lower_bound(*places, use->root);
-        if (position == places->end() || *position != use->root) {
-            places->insert(position, use->root);
+        const auto position = std::ranges::lower_bound(*roots, use->root);
+        if (position == roots->end() || *position != use->root) {
+            roots->insert(position, use->root);
         }
     }
 
@@ -160,10 +152,6 @@ private:
             || std::holds_alternative<HIRMatchExpr>(expression)
             || std::holds_alternative<HIRTryExpr>(expression)
             || std::holds_alternative<HIRCppExpr>(expression);
-        const auto& summary = control.expressions[id.index()];
-        result.may_terminate |= !summary.pending_failures.empty()
-            || !summary.outward_failures.empty()
-            || summary.transfers.exits_test;
         effects[id.index()] = result;
         return result;
     }
@@ -262,10 +250,6 @@ private:
             },
             hir.statement(id).value
         );
-        const auto& summary = control.statements[id.index()];
-        result.may_terminate |= !summary.pending_failures.empty()
-            || !summary.outward_failures.empty()
-            || summary.transfers.exits_test;
         return result;
     }
 
@@ -281,18 +265,14 @@ private:
         return result;
     }
 
-    const SemanticConstruction& hir;
-    const RecordedControl& control;
+    SemanticDraftView hir;
     std::vector<EvaluationEffect> effects;
 };
 
 } // namespace
 
-auto derive_evaluation_effects(
-    const SemanticConstruction& hir,
-    const RecordedControl& control
-) noexcept -> std::vector<EvaluationEffect> {
-    auto evaluator = EvaluationEffectEvaluator(hir, control);
+auto derive_evaluation_effects(SemanticDraftView hir) noexcept -> std::vector<EvaluationEffect> {
+    auto evaluator = EvaluationEffectEvaluator(hir);
     for (auto index = 0uz; index < hir.callables().size(); ++index) {
         evaluator.evaluate_callable(CallableID::from_index(static_cast<std::uint32_t>(index)));
     }

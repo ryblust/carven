@@ -182,8 +182,8 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
             },
             [&](const TargetCallExpr& call) noexcept {
                 auto templates = std::vector<LayoutNodeID> {};
-                for (const auto argument : call.template_arguments) {
-                    templates.push_back(render_template_argument(argument));
+                for (const auto argument : call.template_argument_type_ids) {
+                    templates.push_back(render_type(argument));
                 }
                 auto arguments = std::vector<LayoutNodeID> {};
                 for (const auto argument : call.arguments) {
@@ -355,7 +355,6 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                         parameters.push_back(render_type(parameter.type));
                     } else {
                         parameters.push_back(concat({
-                            text(parameter.maybe_unused ? "[[maybe_unused]] " : ""),
                             render_type(parameter.type),
                             text(" "),
                             render_identifier(*parameter.name),

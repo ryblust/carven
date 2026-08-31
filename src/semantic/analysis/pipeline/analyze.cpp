@@ -3,13 +3,13 @@ module carven:semantic.analyze.impl;
 import :semantic.analysis.availability;
 import :semantic.analysis.catalog;
 import :semantic.analysis.control;
-import :semantic.analysis.declaration_construction;
+import :semantic.analysis.decl;
 import :semantic.analysis.effects;
-import :semantic.analysis.elaboration.declarations;
+import :semantic.analysis.elaboration.decl;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.lint;
-import :semantic.analysis.pipeline.declarations;
-import :semantic.analysis.storage_order;
+import :semantic.analysis.pipeline.decl;
+import :semantic.analysis.nominal.containment;
 import :semantic.analysis.validation;
 import :semantic.analysis.validation.invariants;
 import :semantic.analyze;
@@ -20,15 +20,19 @@ auto analyze(ParsedBatch syntax) noexcept
     -> std::expected<Diagnosed<SemanticProgram>, Diagnostics> {
     auto analyzer = ProgramAnalyzer(std::move(syntax));
     {
-        auto catalog_result =
-            build_analysis_catalog(analyzer.builder().provenance(), analyzer.syntax_trees());
+        auto catalog_result = build_analysis_catalog(
+            analyzer.builder().provenance(),
+            analyzer.syntax_trees(),
+            analyzer.builder().entity_reservations()
+        );
         if (!catalog_result.has_value()) {
             return std::unexpected(std::move(catalog_result.error()));
         }
         const auto catalog_owner = std::move(*catalog_result);
         const auto catalog = catalog_owner.view();
         collect_declarations(catalog, analyzer);
-        auto declarations = DeclarationConstruction(catalog, analyzer.builder());
+        auto declarations =
+            DeclarationResolver(catalog, analyzer.builder().declaration_capabilities());
 
         auto modules = std::vector<ModuleAnalysis>();
         modules.reserve(analyzer.module_count());
@@ -47,13 +51,13 @@ auto analyze(ParsedBatch syntax) noexcept
             );
         }
         const auto declaration_proofs = analyzer.builder().begin_expression_proof();
-        auto resolved_declarations = std::move(declarations).resolve_all(modules);
+        declarations.resolve_all(modules);
         if (analyzer.has_errors()) {
             return std::unexpected(analyzer.take_diagnostics());
         }
         analyzer.builder().finish_expression_proof(declaration_proofs);
         modules.clear();
-        const auto resolved_view = resolved_declarations.view();
+        const auto resolved_view = declarations.view();
         for (auto index = 0uz; index < analyzer.module_count(); ++index) {
             const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
             modules.emplace_back(
@@ -82,7 +86,6 @@ auto analyze(ParsedBatch syntax) noexcept
             }
         }
         modules.clear();
-        std::move(resolved_declarations).finish();
         for (const auto& declaration : catalog.symbols()) {
             if (!std::holds_alternative<CatalogConstantForm>(declaration.form)) {
                 continue;
@@ -108,13 +111,14 @@ auto analyze(ParsedBatch syntax) noexcept
         diagnose_unused_imports(catalog, analyzer.builder().provenance(), analyzer.diagnostics());
     }
     analyzer.release_syntax();
-    analyzer.builder().derive_places();
+    analyzer.builder().derive_binding_facts();
+    analyzer.builder().derive_place_uses();
     if (const auto verified = verify_semantic_structure(analyzer.builder());
         !verified.has_value()) {
         invariant_violation(verified.error().message);
     }
     {
-        auto control = solve_control(analyzer.builder());
+        auto control = analyze_control(analyzer.builder());
         diagnose_effects(
             analyzer.builder(),
             analyzer.callable_constraints(),
@@ -124,14 +128,14 @@ auto analyze(ParsedBatch syntax) noexcept
         if (analyzer.has_errors()) {
             return std::unexpected(analyzer.take_diagnostics());
         }
-        diagnose_availability(analyzer.builder(), analyzer.diagnostics(), control);
+        freeze_flow_candidate(analyzer.builder(), std::move(control));
+        diagnose_availability(analyzer.builder(), analyzer.diagnostics());
         if (analyzer.has_errors()) {
             return std::unexpected(analyzer.take_diagnostics());
         }
-        commit_control_facts(analyzer.builder(), std::move(control));
     }
     diagnose_type_contracts(analyzer.builder(), analyzer.diagnostics());
-    diagnose_nominal_storage(analyzer.builder(), analyzer.diagnostics());
+    analyze_nominal_containment(analyzer.builder(), analyzer.diagnostics());
     if (analyzer.has_errors()) {
         return std::unexpected(analyzer.take_diagnostics());
     }

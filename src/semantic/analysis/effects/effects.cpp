@@ -6,6 +6,7 @@ import :semantic.analysis.analyzer;
 import :semantic.analysis.control;
 import :semantic.analysis.effects;
 import :semantic.analysis.elaboration.types.relations;
+import :semantic.analysis.session.read;
 import :semantic.hir;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
@@ -18,11 +19,11 @@ import std;
 
 namespace {
 
-auto diagnose_solved_effects(
-    const SemanticConstruction& builder,
+auto diagnose_recorded_effects(
+    SemanticDraftView builder,
     const CallableConstraints& callable_constraints,
     DiagnosticSink& diagnostics,
-    const SolvedControl& control
+    const RecordedControlAnalysis& control
 ) noexcept -> void {
     const auto emit =
         [&](ProgramOriginID origin, std::string message, DiagnosticCode code) noexcept {
@@ -35,9 +36,7 @@ auto diagnose_solved_effects(
         return builtin != nullptr && builtin->kind == HIRBuiltinType::Void;
     };
     const auto callable_failures = [&](CallableID callable) noexcept {
-        return std::span<const HIRTypeID>(
-            builder.failure_set(builder.callable(callable).failure_set).members
-        );
+        return control.effective_failures(callable);
     };
     for (const auto& constraint : callable_constraints.values()) {
         const auto target_type = std::visit(
@@ -50,7 +49,8 @@ auto diagnose_solved_effects(
         if (callable_adoption_compatible(
                 builder,
                 target_type,
-                builder.expression(constraint.source).type
+                builder.expression(constraint.source).type,
+                control.callable_failure_sets()
             )) {
             continue;
         }
@@ -69,8 +69,9 @@ auto diagnose_solved_effects(
             return !std::ranges::contains(contract, failure);
         });
         if (outside != actual.end()) {
-            const auto missing_declaration = builder.callable(function.callable).failure_contract
-                == HIRFailureContractKind::UndeclaredPublished;
+            const auto missing_declaration =
+                builder.callable_failure_input(function.callable).policy
+                == SemanticFailureContractKind::UndeclaredPublished;
             emit(
                 function.origin,
                 missing_declaration
@@ -331,10 +332,10 @@ auto diagnose_solved_effects(
 } // namespace
 
 auto diagnose_effects(
-    const SemanticConstruction& builder,
+    SemanticDraftView builder,
     const CallableConstraints& callable_constraints,
     DiagnosticSink& diagnostics,
-    const SolvedControl& control
+    const RecordedControlAnalysis& control
 ) noexcept -> void {
-    diagnose_solved_effects(builder, callable_constraints, diagnostics, control);
+    diagnose_recorded_effects(builder, callable_constraints, diagnostics, control);
 }

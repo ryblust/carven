@@ -55,7 +55,6 @@ struct HIRStructDecl final {
     ProgramSpellingID name;
     std::vector<HIRStructField> fields;
     SymbolID symbol;
-    bool supports_equality;
 };
 
 enum class HIREnumProfile {
@@ -80,7 +79,10 @@ struct HIREnumDecl final {
     std::vector<EnumCaseID> cases;
     HIREnumProfile profile;
     SymbolID symbol;
-    bool supports_equality;
+};
+
+struct HIRNominalCapabilities final {
+    bool equality;
 };
 
 struct HIRTestDecl final {

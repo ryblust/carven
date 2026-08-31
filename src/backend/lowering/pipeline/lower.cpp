@@ -1,10 +1,11 @@
 module carven:backend.lower.impl;
 
+import :artifacts;
 import :backend.lower;
-import :backend.generation.plan;
+import :backend.generation.program;
 import :backend.lowering.program;
-import :backend.lowering.declarations;
-import :backend.lowering.expressions;
+import :backend.lowering.decl;
+import :backend.lowering.expr;
 import :backend.generation.names;
 import :backend.lowering.names;
 import :backend.lowering.types;
@@ -22,12 +23,6 @@ import :support.visit;
 import std;
 
 namespace {
-
-auto contains_tests(std::span<const HIRModuleItem> items) noexcept -> bool {
-    return std::ranges::any_of(items, [](const HIRModuleItem& item) static noexcept {
-        return std::holds_alternative<TestID>(item);
-    });
-}
 
 auto append_namespace(
     TargetUnitBuilder& target,
@@ -51,8 +46,7 @@ auto append_namespace(
 }
 
 auto wrap_linkage_namespaces(
-    TargetGenerationContext& context,
-    const TargetGenerationPlan& plan,
+    TargetUnitLoweringContext& context,
     std::vector<TargetItemID> items
 ) noexcept -> std::vector<TargetItemID> {
     if (items.empty()) {
@@ -60,13 +54,13 @@ auto wrap_linkage_namespaces(
     }
     const auto domain = append_namespace(
         context.target(),
-        plan.domain_namespace(),
+        context.source().domain_namespace(),
         std::move(items),
         TargetVerticalSeparation::Line
     );
     const auto generated = append_namespace(
         context.target(),
-        plan.generated_namespace(),
+        context.source().generated_namespace(),
         std::vector<TargetItemID> {domain},
         TargetVerticalSeparation::Line
     );
@@ -78,13 +72,13 @@ auto lower_forward_declaration(TargetModuleLowerer& context, HIRNominalDeclRef d
     auto value = std::visit(
         Overloaded {
             [&](StructID structure_id) noexcept -> TargetDecl {
-                const auto& structure = context.semantic().structure(structure_id);
+                const auto& structure = context.source().structure(structure_id);
                 return TargetStructForwardDecl {
                     .name = context.entity_identifier(structure.symbol),
                 };
             },
             [&](EnumID enumeration_id) noexcept -> TargetDecl {
-                const auto& enumeration = context.semantic().enumeration(enumeration_id);
+                const auto& enumeration = context.source().enumeration(enumeration_id);
                 if (enumeration.profile == HIREnumProfile::Payload) {
                     return TargetClassForwardDecl {
                         .name = context.entity_identifier(enumeration.symbol),
@@ -114,37 +108,36 @@ auto lower_forward_declaration(TargetModuleLowerer& context, HIRNominalDeclRef d
 }
 
 auto lower_interface(
-    TargetGenerationContext& context,
-    const TargetGenerationPlan& plan,
-    const TargetInterfaceComponentPlan& component
-) noexcept -> TargetInterfaceComponentUnit {
+    TargetUnitLoweringContext& context,
+    const TargetInterfaceSchedule& schedule
+) noexcept -> TargetUnitSections {
     auto header_items = std::vector<TargetItemID>();
-    auto append_module_namespace = [&](ProgramModuleID module_id,
-                                       std::vector<TargetItemID> declarations) noexcept {
+    const auto append_module_namespace = [&](ProgramModuleID module_id,
+                                             std::vector<TargetItemID> declarations) noexcept {
         auto module_lowerer = context.module_lowerer(module_id);
         header_items.push_back(append_namespace(
             module_lowerer.target(),
-            plan.module_plan(module_id).module_namespace_name,
+            context.source().module(module_id).module_namespace_name,
             std::move(declarations),
             TargetVerticalSeparation::BlankLine
         ));
     };
+
     auto active_module = std::optional<ProgramModuleID>();
     auto declarations = std::vector<TargetItemID>();
-    for (const auto& declaration_plan : component.forward_declarations) {
-        if (active_module.has_value() && *active_module != declaration_plan.module_id) {
+    for (const auto& planned : schedule.forward_declarations) {
+        if (active_module.has_value() && *active_module != planned.module_id) {
             append_module_namespace(*active_module, std::move(declarations));
             declarations.clear();
         }
-        active_module = declaration_plan.module_id;
-        auto module_lowerer = context.module_lowerer(declaration_plan.module_id);
-        declarations.push_back(
-            lower_forward_declaration(module_lowerer, declaration_plan.declaration)
-        );
+        active_module = planned.module_id;
+        auto module_lowerer = context.module_lowerer(planned.module_id);
+        declarations.push_back(lower_forward_declaration(module_lowerer, planned.declaration));
     }
     if (active_module.has_value()) {
         append_module_namespace(*active_module, std::move(declarations));
     }
+
     const auto append_declarations = [&](ProgramModuleID module_id,
                                          const std::vector<HIRDeclarationRef>& planned) noexcept {
         auto module_lowerer = context.module_lowerer(module_id);
@@ -180,105 +173,60 @@ auto lower_interface(
         }
         append_module_namespace(module_id, std::move(items));
     };
+
     active_module.reset();
     auto planned_declarations = std::vector<HIRDeclarationRef>();
-    for (const auto& declaration_plan : component.declarations) {
-        if (active_module.has_value() && *active_module != declaration_plan.module_id) {
+    for (const auto& planned : schedule.declarations) {
+        if (active_module.has_value() && *active_module != planned.module_id) {
             append_declarations(*active_module, planned_declarations);
             planned_declarations.clear();
         }
-        active_module = declaration_plan.module_id;
-        planned_declarations.push_back(declaration_plan.declaration);
+        active_module = planned.module_id;
+        planned_declarations.push_back(planned.declaration);
     }
     if (active_module.has_value()) {
         append_declarations(*active_module, planned_declarations);
     }
-    return TargetInterfaceComponentUnit {
-        .logical_path = component.logical_path,
-        .prerequisite_header_paths = component.prerequisite_header_paths,
-        .sections = {
-            .preamble = {},
-            .body = wrap_linkage_namespaces(context, plan, std::move(header_items)),
-            .epilogue = {},
-        },
+    return {
+        .preamble = {},
+        .body = wrap_linkage_namespaces(context, std::move(header_items)),
+        .epilogue = {},
     };
 }
 
-auto lower_module(
-    TargetGenerationContext& context,
-    ProgramModuleID module_id,
-    const TargetGenerationPlan& generation_plan
-) noexcept -> TargetModuleImplementationUnit {
-    const auto& hir_module = context.semantic().modules()[module_id.index()];
+auto lower_module(TargetUnitLoweringContext& context, const TargetModuleSchedule& schedule) noexcept
+    -> TargetUnitSections {
+    const auto module_id = schedule.module_id;
+    const auto& module_names = context.source().module(module_id);
     auto module_lowerer = context.module_lowerer(module_id);
-    const auto& module_plan = generation_plan.module_plan(module_id);
     auto root_items = std::vector<TargetItemID>();
-    auto declaration_schedule = lower_declaration_schedule(
-        module_lowerer,
-        hir_module.items,
-        module_plan.surface_declarations,
-        module_plan.implementation_nominal_order
-    );
+    auto declaration_schedule = lower_declaration_schedule(module_lowerer, schedule);
     auto implementation_declarations = std::move(declaration_schedule.implementation);
     const auto entry_point = declaration_schedule.entry_point;
     auto preamble = std::move(declaration_schedule.cpp_preamble);
     if (!implementation_declarations.empty()) {
         root_items.push_back(append_namespace(
             module_lowerer.target(),
-            module_plan.module_namespace_name,
+            module_names.module_namespace_name,
             std::move(implementation_declarations),
             TargetVerticalSeparation::BlankLine
         ));
     }
     auto epilogue = std::vector<TargetItemID>();
     if (entry_point.has_value()) {
-        const auto& function = context.semantic().function(*entry_point);
+        const auto& function = context.source().function(*entry_point);
         epilogue.push_back(
-            lower_entry_wrapper(module_lowerer, function, module_plan.qualified_namespace_name)
+            lower_entry_wrapper(module_lowerer, function, module_names.qualified_namespace_name)
         );
     }
-    return TargetModuleImplementationUnit {
-        .logical_path = module_plan.implementation_logical_path,
-        .interface_header_paths = module_plan.interface_header_paths,
-        .testing_support = context.emits_tests() && contains_tests(hir_module.items),
-        .sections = {
-            .preamble = std::move(preamble),
-            .body = wrap_linkage_namespaces(context, generation_plan, std::move(root_items)),
-            .epilogue = std::move(epilogue),
-        },
+    return {
+        .preamble = std::move(preamble),
+        .body = wrap_linkage_namespaces(context, std::move(root_items)),
+        .epilogue = std::move(epilogue),
     };
 }
 
-} // namespace
-
-auto lower_interface_component_unit(
-    const SemanticProgram& semantic,
-    TestEmissionMode test_mode,
-    const TargetGenerationPlan& plan,
-    const TargetInterfaceComponentPlan& component
-) noexcept -> TargetUnit {
-    auto context = TargetGenerationContext(semantic, plan, test_mode);
-    auto root = lower_interface(context, plan, component);
-    return std::move(context).finish(std::move(root));
-}
-
-auto lower_module_implementation_unit(
-    const SemanticProgram& semantic,
-    TestEmissionMode test_mode,
-    const TargetGenerationPlan& plan,
-    ProgramModuleID module_id
-) noexcept -> TargetUnit {
-    auto context = TargetGenerationContext(semantic, plan, test_mode);
-    auto root = lower_module(context, module_id, plan);
-    return std::move(context).finish(std::move(root));
-}
-
-auto lower_test_entry_unit(
-    const SemanticProgram& semantic,
-    TestEmissionMode test_mode,
-    const TargetGenerationPlan& plan
-) noexcept -> TargetUnit {
-    auto context = TargetGenerationContext(semantic, plan, test_mode);
+auto lower_test_entry(TargetUnitLoweringContext& context) noexcept -> TargetUnitSections {
     auto entry_lowerer = context.module_lowerer(ProgramModuleID::from_index(0));
     const auto call = call_expression(
         entry_lowerer,
@@ -288,10 +236,48 @@ auto lower_test_entry_unit(
     const auto returned =
         entry_lowerer.target().append_lowering_statement(TargetReturnStmt {.expression = call});
     const auto entry = lower_process_entry(entry_lowerer, false, {returned});
-    return std::move(context).finish(
-        TargetTestEntryUnit {
-            .logical_path = "carven-test-main.cpp",
-            .items = {entry},
-        }
+    return {
+        .preamble = {},
+        .body = {entry},
+        .epilogue = {},
+    };
+}
+
+} // namespace
+
+auto lower_target_unit(const TargetProgram& program, TargetArtifactID artifact_id) noexcept
+    -> TargetUnit {
+    auto context = TargetUnitLoweringContext(program.focused_artifact(artifact_id));
+    const auto& artifact = context.source().artifact();
+    auto sections = std::visit(
+        Overloaded {
+            [&](const TargetInterfaceSchedule& schedule) noexcept {
+                if (artifact.role != GeneratedArtifactRole::Interface) {
+                    invariant_violation("interface schedule has a non-interface artifact role");
+                }
+                return lower_interface(context, schedule);
+            },
+            [&](const TargetModuleSchedule& schedule) noexcept {
+                if (artifact.role != GeneratedArtifactRole::ModuleImplementation) {
+                    invariant_violation("module schedule has a non-module artifact role");
+                }
+                return lower_module(context, schedule);
+            },
+            [&](const TargetTestEntrySchedule&) noexcept {
+                if (artifact.role != GeneratedArtifactRole::TestEntry) {
+                    invariant_violation("test schedule has a non-test artifact role");
+                }
+                return lower_test_entry(context);
+            },
+        },
+        artifact.schedule
     );
+    auto directive_groups = context.source().materialize_directive_groups();
+    return std::move(context).finish({
+        .logical_path = artifact.logical_path,
+        .role = artifact.role,
+        .source_mapping = artifact.source_mapping,
+        .directive_groups = std::move(directive_groups),
+        .sections = std::move(sections),
+    });
 }

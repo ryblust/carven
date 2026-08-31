@@ -16,9 +16,9 @@ import std;
 
 class TargetRenderer final {
 public:
-    TargetRenderer(const TargetUnit& unit, std::string_view artifact_path) noexcept;
+    explicit TargetRenderer(const TargetUnit& unit) noexcept;
 
-    auto render_unit(const TargetUnitRoot& value) && noexcept -> LayoutDocument;
+    auto render_unit() && noexcept -> LayoutDocument;
 
 private:
     static constexpr auto indent_width = 4uz;
@@ -79,13 +79,13 @@ private:
 
     auto render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayouts;
     auto render_type(TargetTypeID id) noexcept -> LayoutNodeID;
-    auto render_template_argument(TargetTemplateArgument value) noexcept -> LayoutNodeID;
     auto render_expression(
         TargetExprID id,
         TargetPrecedence parent = TargetPrecedence::Lowest
     ) noexcept -> LayoutNodeID;
     auto render_statement(TargetStmtID id) noexcept -> LayoutNodeID;
-    auto render_for_clause(TargetStmtID id) noexcept -> LayoutNodeID;
+    auto render_for_initializer(const TargetForInitializer& value) noexcept -> LayoutNodeID;
+    auto render_for_step(const TargetForStep& value) noexcept -> LayoutNodeID;
     auto render_item(TargetItemID id) noexcept -> LayoutNodeID;
     auto render_items(std::span<const TargetItemID> items) noexcept -> std::vector<LayoutNodeID>;
     auto render_sections(const TargetUnitSections& sections) noexcept

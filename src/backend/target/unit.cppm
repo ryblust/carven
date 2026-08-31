@@ -1,8 +1,16 @@
 module carven:backend.target.unit;
 
+import :artifacts;
 import :backend.target.ids;
-import :backend.target.name;
 import std;
+
+struct TargetDirective final {
+    std::string bytes;
+};
+
+struct TargetDirectiveGroup final {
+    std::vector<TargetDirective> directives;
+};
 
 struct TargetUnitSections final {
     std::vector<TargetItemID> preamble;
@@ -10,23 +18,10 @@ struct TargetUnitSections final {
     std::vector<TargetItemID> epilogue;
 };
 
-struct TargetInterfaceComponentUnit final {
+struct TargetUnitRoot final {
     std::string logical_path;
-    std::vector<std::string> prerequisite_header_paths;
+    GeneratedArtifactRole role;
+    ArtifactSourceMappingPolicy source_mapping;
+    std::vector<TargetDirectiveGroup> directive_groups;
     TargetUnitSections sections;
 };
-
-struct TargetModuleImplementationUnit final {
-    std::string logical_path;
-    std::vector<std::string> interface_header_paths;
-    bool testing_support;
-    TargetUnitSections sections;
-};
-
-struct TargetTestEntryUnit final {
-    std::string logical_path;
-    std::vector<TargetItemID> items;
-};
-
-using TargetUnitRoot =
-    std::variant<TargetInterfaceComponentUnit, TargetModuleImplementationUnit, TargetTestEntryUnit>;

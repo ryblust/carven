@@ -7,7 +7,6 @@ import std;
 struct TargetParameter final {
     std::optional<TargetIdentifier> name;
     TargetTypeID type;
-    bool maybe_unused;
 };
 
 struct TargetFunctionDecl final {
@@ -17,7 +16,6 @@ struct TargetFunctionDecl final {
     std::vector<TargetStmtID> body;
     bool declaration_only;
     bool inline_specifier;
-    bool constexpr_specifier;
 };
 
 struct TargetStructField final {
@@ -49,7 +47,6 @@ struct TargetConstructorDecl final {
     std::vector<TargetMemberInitializer> initializers;
     bool constexpr_specifier;
     bool explicit_specifier;
-    bool defaulted;
 };
 
 enum class TargetOperatorName {
@@ -70,7 +67,6 @@ struct TargetMemberFunctionDecl final {
     bool declaration_only;
     bool defaulted;
     bool result_reference;
-    bool decltype_auto_result;
     bool const_qualified;
 };
 

@@ -1,75 +1,40 @@
 # Carven
 
-Carven is an experimental source language that turns program intent into
-compiler-checked semantic contracts, then translates `.cv` modules into
-ordinary C++. The downstream C++ toolchain remains responsible for compiling,
-optimizing, and linking the generated program.
+Carven is a high-level C++ platform built around a clear division of
+responsibility: Carven defines program meaning through a consistent language
+surface; C++ supplies native realization and a mature ecosystem.
 
 ## Why Carven?
 
-### Failures are part of the contract
+### Intent over mechanism
 
-Recoverable failures are visible in callable contracts. Non-private functions
-declare the closed set of failures they may produce, while private functions
-and lambdas can infer that set from the operations they compose. Every pending
-failure must be handled or explicitly propagated.
+C++ offers a rich set of mechanisms for precise control over representation and
+behavior, setting the platform's capability ceiling. Carven uses those
+mechanisms as realization choices rather than source obligations: source states
+the operation, guarantee, or cost that matters, while the compiler selects the
+C++ form that preserves the contract.
 
-```carven
-struct ReadFailure {
-    code: i32,
-}
+### Built-in C++ facilities
 
-struct ParseFailure {
-    offset: i32,
-}
+Carven lifts mature C++ facilities into coherent language-level contracts. They
+become built-in Carven capabilities while remaining native C++ underneath,
+carrying forward the ecosystem's implementations and expertise.
 
-fn read(available: bool) -> i32 throw ReadFailure {
-    if !available {
-        throw ReadFailure { code: 404 };
-    }
-    return 42;
-}
+### Seamless C++ interoperability
 
-fn parse(source: i32, valid: bool) -> i32 throw ParseFailure {
-    if !valid {
-        throw ParseFailure { offset: source };
-    }
-    return source;
-}
+C++ is both Carven's native realization layer and its bridge to the wider
+ecosystem. Libraries enter through ordinary Carven declarations, while Carven
+functions present explicit interfaces to C++ callers. Native tools and build
+systems remain part of the same workflow.
 
-private fn load(available: bool, valid: bool) -> i32 {
-    return parse(read(available)?, valid)?;
-}
-
-fn load_config(
-    available: bool,
-    valid: bool,
-) -> i32 throw ReadFailure + ParseFailure {
-    return load(available, valid)?;
-}
-
-fn main() {
-    let _ = try {
-        load_config(true, false)?
-    } catch {
-        ReadFailure(error) => error.code,
-        ParseFailure(error) => error.offset,
-    };
-}
-```
-
-Here, `read` and `parse` expose their individual contracts. The private `load`
-function composes them without repeating either failure type; the compiler
-infers the combined set. `load_config` declares that set, and `main` handles
-both failure types. See [Language](docs/language.md) for the supported language
-surface and
-[Semantics](docs/semantics.md#failure-contracts) for the precise contract.
+Carven is under active development. See the
+[roadmap](proposals/roadmap.md) for current and future design work.
 
 ## Build and inspect
 
 Building Carven requires [Xmake](https://xmake.io/) and an LLVM/Clang toolchain
-with C++26 support. Save the example above as `main.cv`, then build the compiler
-and inspect its generated C++:
+with C++26 support. Given a `main.cv` module, build the compiler and inspect its
+generated C++:
 
 ```shell
 ./xmakew build

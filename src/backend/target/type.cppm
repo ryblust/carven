@@ -7,10 +7,10 @@ import std;
 
 struct TargetNamedType final {
     TargetName name;
-    std::vector<TargetTemplateArgument> arguments;
+    std::vector<TargetTypeID> type_argument_ids;
     struct Segment final {
         TargetIdentifier name;
-        std::vector<TargetTemplateArgument> arguments;
+        std::vector<TargetTypeID> type_argument_ids;
         auto operator==(const Segment&) const noexcept -> bool = default;
     };
     std::vector<Segment> nested;
@@ -19,13 +19,18 @@ struct TargetNamedType final {
 
 struct TargetIntrinsicType final {
     TargetSymbol symbol;
-    std::vector<TargetTemplateArgument> arguments;
+    std::vector<TargetTypeID> type_argument_ids;
     auto operator==(const TargetIntrinsicType&) const noexcept -> bool = default;
+};
+
+struct TargetArrayExtent final {
+    std::uint64_t magnitude;
+    auto operator==(const TargetArrayExtent&) const noexcept -> bool = default;
 };
 
 struct TargetArrayType final {
     TargetTypeID element_type_id;
-    TargetExprID extent;
+    TargetArrayExtent extent;
     auto operator==(const TargetArrayType&) const noexcept -> bool = default;
 };
 

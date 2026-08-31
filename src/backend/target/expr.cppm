@@ -113,7 +113,7 @@ struct TargetBinaryExpr final {
 
 struct TargetCallExpr final {
     TargetExprID callee;
-    std::vector<TargetTemplateArgument> template_arguments;
+    std::vector<TargetTypeID> template_argument_type_ids;
     std::vector<TargetExprID> arguments;
 };
 
@@ -189,7 +189,6 @@ struct TargetClosureCapture final {
 struct TargetClosureParameter final {
     std::optional<TargetIdentifier> name;
     TargetTypeID type;
-    bool maybe_unused;
 };
 
 struct TargetClosureExpr final {

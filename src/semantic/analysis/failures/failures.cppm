@@ -4,7 +4,4 @@ import :semantic.hir;
 import :semantic.hir.ids;
 import std;
 
-auto normalize_failure_members(
-    const SemanticConstruction& hir,
-    std::vector<HIRTypeID> failures
-) noexcept -> std::vector<HIRTypeID>;
+auto normalize_failure_members(std::vector<HIRTypeID> failures) noexcept -> std::vector<HIRTypeID>;

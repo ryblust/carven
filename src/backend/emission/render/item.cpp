@@ -25,11 +25,10 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
 }
 
 auto TargetRenderer::render_parameter(const TargetParameter& value) noexcept -> LayoutNodeID {
-    const auto prefix = text(value.maybe_unused ? "[[maybe_unused]] " : "");
     if (!value.name.has_value()) {
-        return concat({prefix, render_type(value.type)});
+        return render_type(value.type);
     }
-    return concat({prefix, render_type(value.type), text(" "), render_identifier(*value.name)});
+    return concat({render_type(value.type), text(" "), render_identifier(*value.name)});
 }
 
 auto TargetRenderer::render_trailing_return(SyntaxLayouts result, bool const_qualified) noexcept
@@ -138,37 +137,34 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
                      delimited_list(parameters, "(", ")"),
                      text(" noexcept")}
                 );
-                if (constructor.defaulted) {
-                    rendered = concat({rendered, text(" = default;")});
-                } else {
-                    auto initializers = std::vector<LayoutNodeID> {};
-                    for (const auto& initializer : constructor.initializers) {
-                        initializers.push_back(concat(
-                            {render_identifier(initializer.name),
-                             delimited_list(
-                                 std::array {render_expression(initializer.value)},
-                                 "(",
-                                 ")"
-                             )}
-                        ));
-                    }
-                    if (!initializers.empty()) {
-                        const auto flat = builder.flatten(builder.join(initializers, text(", ")));
-                        const auto broken =
-                            builder.join(initializers, concat({text(","), builder.line()}));
-                        rendered = choice(
-                            {concat({rendered, text(" : "), flat}),
-                             concat(
-                                 {rendered,
-                                  builder.indent(
-                                      indent_width,
-                                      concat({builder.line(), text(": "), broken})
-                                  )}
-                             )}
-                        );
-                    }
-                    rendered = concat({rendered, text(" "), braced_block({})});
+                auto initializer_layout_ids = std::vector<LayoutNodeID> {};
+                for (const auto& initializer : constructor.initializers) {
+                    initializer_layout_ids.push_back(concat(
+                        {render_identifier(initializer.name),
+                         delimited_list(
+                             std::array {render_expression(initializer.value)},
+                             "(",
+                             ")"
+                         )}
+                    ));
                 }
+                if (!initializer_layout_ids.empty()) {
+                    const auto flat =
+                        builder.flatten(builder.join(initializer_layout_ids, text(", ")));
+                    const auto broken =
+                        builder.join(initializer_layout_ids, concat({text(","), builder.line()}));
+                    rendered = choice(
+                        {concat({rendered, text(" : "), flat}),
+                         concat(
+                             {rendered,
+                              builder.indent(
+                                  indent_width,
+                                  concat({builder.line(), text(": "), broken})
+                              )}
+                         )}
+                    );
+                }
+                rendered = concat({rendered, text(" "), braced_block({})});
                 if (!constructor.template_type_parameters.empty()) {
                     auto templates = std::vector<LayoutNodeID> {};
                     for (const auto& name : constructor.template_type_parameters) {
@@ -195,17 +191,10 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
                     prefix += "constexpr ";
                 }
                 const auto function_name = render_member_function_name(function.name);
-                const auto decltype_auto = text("decltype(auto)");
-                auto result = SyntaxLayouts {
-                    .inline_qualified = decltype_auto,
-                    .wrapping = decltype_auto,
-                };
-                if (!function.decltype_auto_result) {
-                    const auto reference = text(function.result_reference ? "&" : "");
-                    result = render_type_layouts(function.result);
-                    result.inline_qualified = concat({result.inline_qualified, reference});
-                    result.wrapping = concat({result.wrapping, reference});
-                }
+                const auto reference = text(function.result_reference ? "&" : "");
+                auto result = render_type_layouts(function.result);
+                result.inline_qualified = concat({result.inline_qualified, reference});
+                result.wrapping = concat({result.wrapping, reference});
                 const auto signature = render_function_declarator(
                     prefix,
                     {.inline_qualified = function_name, .wrapping = function_name},
@@ -233,9 +222,6 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                 auto prefix = std::string {};
                 if (function.inline_specifier) {
                     prefix += "inline ";
-                }
-                if (function.constexpr_specifier) {
-                    prefix += "constexpr ";
                 }
                 const auto signature = render_function_declarator(
                     prefix,

@@ -136,10 +136,11 @@ TEST_CASE("Interface components: a private implementation edit changes only its 
 
     REQUIRE_EQ(before.artifacts().size(), after.artifacts().size());
     auto changed = std::vector<std::string_view>();
-    for (auto index = 0uz; index < before.artifacts().size(); ++index) {
-        REQUIRE_EQ(before.artifacts()[index].logical_path, after.artifacts()[index].logical_path);
-        if (before.artifacts()[index].content != after.artifacts()[index].content) {
-            changed.push_back(before.artifacts()[index].logical_path);
+    for (const auto& [before_artifact, after_artifact] :
+         std::views::zip(before.artifacts(), after.artifacts())) {
+        REQUIRE_EQ(before_artifact.logical_path, after_artifact.logical_path);
+        if (before_artifact.content != after_artifact.content) {
+            changed.push_back(before_artifact.logical_path);
         }
     }
     CHECK_EQ(changed, std::vector<std::string_view> {"provider.cpp"});
@@ -196,6 +197,28 @@ TEST_CASE("Interface components: implementation-only references do not merge sur
     const auto& unused_cpp = artifact(unused, "consumer.cpp");
     CHECK_FALSE(unused_cpp.content.contains(component_include(unused_provider)));
     CHECK(unused_cpp.content.contains(component_include(unused_consumer)));
+}
+
+TEST_CASE("Interface components: covered match arms do not create dependencies") {
+    constexpr auto provider = "export fn answer() -> i32 { return 42; }\n";
+    constexpr auto consumer = "import provider using answer;\n"
+                              "export fn observed(value: bool) -> i32 {\n"
+                              "    return match value {\n"
+                              "        false | true => 0,\n"
+                              "        _ => answer(),\n"
+                              "    };\n"
+                              "}\n";
+    const auto artifacts = compile_modules(
+        std::array {
+            ModuleFixture {"provider", provider},
+            ModuleFixture {"consumer", consumer},
+        }
+    );
+
+    const auto& provider_header = interface_for(artifacts, "provider");
+    const auto& consumer_cpp = artifact(artifacts, "consumer.cpp");
+    CHECK_FALSE(consumer_cpp.content.contains(component_include(provider_header)));
+    CHECK_FALSE(consumer_cpp.content.contains("answer("));
 }
 
 TEST_CASE("Interface components: body-only dependency cycles stay separate") {

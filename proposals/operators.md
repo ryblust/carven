@@ -20,7 +20,7 @@ assignment 都没有被接受。
 | --- | --- | --- |
 | Identity and visibility | Exploration | `OPEN-02` 是下一讨论 |
 | Capability carrier | Exploration | 只有 leading candidate；`OPEN-01` 仍未裁定 |
-| V1 operators and signatures | Exploration | `OPEN-03` 至 `OPEN-05` |
+| Initial operator set and signatures | Exploration | `OPEN-03` 至 `OPEN-05` |
 | Compound assignment | Exploration | `OPEN-06` |
 | Additional operator families | Deferred | `DEFER-01` 至 `DEFER-05` |
 
@@ -133,7 +133,7 @@ parsed operator
 其中没有 member/non-member/ADL fallback、implicit-conversion candidate set、
 specialization、priority 或 declaration-order tie-break。
 
-### Candidate V1 surface
+### Candidate operator surface
 
 **Maturity:** Exploration; owned by `OPEN-03` through `OPEN-06`.
 
@@ -141,7 +141,7 @@ specialization、priority 或 declaration-order tie-break。
 Unary result、heterogeneous right operand 与 heterogeneous output 属于 signature
 问题，不是既定假设。
 
-当前方向让以下 forms 留在 V1 之外：
+当前方向让以下 forms 留在初始范围之外：
 
 - `==`/`!=`，因为 equality 同时服务 runtime、aggregate、pattern 与 constant facts；
 - `&&`/`||`，因为 operation hook 会改变 operand evaluation；
@@ -252,10 +252,10 @@ evaluation order 与 failure/access behavior。它不需要生成 C++ overloaded
   local solving 保持有限。
 - **Options:** Associated `Rhs`/`Output`；capability arguments 加 associated output；
   或另一种能满足 accepted generic rules 的 shape。
-- **Closure condition:** 为每个 V1 token 固定 unary/binary signature，并证明 generic 与
+- **Closure condition:** 为每个首批 token 固定 unary/binary signature，并证明 generic 与
   concrete call 的唯一 normalization。
 
-### OPEN-05 — Is user-defined equality excluded from V1?
+### OPEN-05 — Is user-defined equality excluded from the initial operator scope?
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`, `OPEN-02`
@@ -265,8 +265,8 @@ evaluation order 与 failure/access behavior。它不需要生成 C++ overloaded
   reasoning 使用，一个 hook 会改变多个 contracts。
 - **Constraints:** 若加入，必须定义哪些 consumers 共用 evidence、implementation 是否可
   non-constant，以及保证哪些 equivalence properties。
-- **Options:** A — V1 排除 `==`/`!=`；B — 仅在独立完成 unified equality contract 后加入。
-- **Closure condition:** 记录 V1 exclusion，或提供完整 cross-consumer equality design。
+- **Options:** A — 初始范围排除 `==`/`!=`；B — 仅在独立完成 unified equality contract 后加入。
+- **Closure condition:** 记录初始范围的 exclusion，或提供完整 cross-consumer equality design。
 
 ### OPEN-06 — How does compound assignment relate to binary capabilities?
 
@@ -279,7 +279,7 @@ evaluation order 与 failure/access behavior。它不需要生成 C++ overloaded
 - **Constraints:** Operands 各求值一次；不会错误恢复 unavailable owner；result 满足
   left-place contract。
 - **Options:** A — Output 可完整赋回 left type 时由 binary capability 派生；B — 独立
-  closed assignment capability；C — V1 拒绝 user-defined compound assignment。
+  closed assignment capability；C — 初始范围拒绝 user-defined compound assignment。
 - **Closure condition:** 通过真实 mutable-place examples 检查 access、Take、failure 与
   evaluation，并选择规则。
 
@@ -324,7 +324,7 @@ evaluation order 与 failure/access behavior。它不需要生成 C++ overloaded
 
 ## Implementation
 
-在 selected V1 slice 的 `OPEN-01` 至 `OPEN-06` 全部关闭、generic associated-type
+在 selected operator slice 的 `OPEN-01` 至 `OPEN-06` 全部关闭、generic associated-type
 normalization 存在前，implementation 不可执行。随后交付 closed capability identities、
 evidence validation、semantic IR 中的 operator-to-operation resolution、source
 diagnostics，以及 resolved operation lowering。

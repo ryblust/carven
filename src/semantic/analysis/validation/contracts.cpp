@@ -44,10 +44,8 @@ struct NominalDeclarationSurface final {
     ProgramOriginID origin;
 };
 
-auto nominal_declaration_surface(
-    const SemanticConstruction& builder,
-    HIRNominalDeclRef nominal
-) noexcept -> std::optional<NominalDeclarationSurface> {
+auto nominal_declaration_surface(SemanticDraftView builder, HIRNominalDeclRef nominal) noexcept
+    -> std::optional<NominalDeclarationSurface> {
     return std::visit(
         Overloaded {
             [&](StructID id) noexcept -> std::optional<NominalDeclarationSurface> {
@@ -84,7 +82,7 @@ auto nominal_declaration_surface(
 class DeclarationSurfaceValidator final {
 public:
     DeclarationSurfaceValidator(
-        const SemanticConstruction& builder,
+        SemanticDraftView builder,
         DiagnosticSink& diagnostics,
         DeclarationVisibility visibility,
         ProgramModuleID defining_module,
@@ -114,13 +112,20 @@ public:
                     validate_type(array.element_type_id);
                 },
                 [&](const HIRFunctionTypeValue& function) noexcept {
-                    validate_callable(builder.callable(function.callable));
+                    validate_callable(
+                        builder.callable(function.callable),
+                        builder.callable_flow(function.callable).effective_failure_set
+                    );
                 },
                 [&](const HIRFunctionRefTypeValue& function) noexcept {
-                    validate_callable(builder.callable_signature(function.signature));
+                    const auto& signature = builder.callable_signature(function.signature);
+                    validate_callable(signature, signature.failure_set);
                 },
                 [&](const HIRClosureTypeValue& closure) noexcept {
-                    validate_callable(builder.callable(closure.callable));
+                    validate_callable(
+                        builder.callable(closure.callable),
+                        builder.callable_flow(closure.callable).effective_failure_set
+                    );
                 },
                 [](const HIRBuiltinTypeValue&) static noexcept {},
                 [](const HIRForeignTypeValue&) static noexcept {},
@@ -159,12 +164,12 @@ public:
 
 private:
     template<typename Callable>
-    auto validate_callable(const Callable& value) noexcept -> void {
+    auto validate_callable(const Callable& value, FailureSetID failure_set) noexcept -> void {
         for (const auto& parameter : value.parameters) {
             validate_type(parameter.type);
         }
         validate_type(value.result);
-        for (const auto failure : builder.failure_set(value.failure_set).members) {
+        for (const auto failure : builder.failure_set(failure_set).members) {
             validate_type(failure);
         }
     }
@@ -197,7 +202,7 @@ private:
         diagnostics.emit(diagnostic.build());
     }
 
-    const SemanticConstruction& builder;
+    SemanticDraftView builder;
     DiagnosticSink& diagnostics;
     DeclarationAudience audience;
     ProgramOriginID surface_origin;
@@ -207,8 +212,7 @@ private:
     std::flat_set<HIRNominalDeclRef> reported_nominals;
 };
 
-auto declaration_module(const SemanticConstruction& builder, SymbolID symbol) noexcept
-    -> ProgramModuleID {
+auto declaration_module(SemanticDraftView builder, SymbolID symbol) noexcept -> ProgramModuleID {
     const auto module_id = builder.symbol(symbol).module_id;
     if (!module_id.has_value()) {
         invariant_violation("top-level declaration symbol has no defining module");
@@ -219,7 +223,7 @@ auto declaration_module(const SemanticConstruction& builder, SymbolID symbol) no
 } // namespace
 
 auto diagnose_declaration_surface_type(
-    const SemanticConstruction& builder,
+    SemanticDraftView builder,
     DiagnosticSink& diagnostics,
     DeclarationVisibility visibility,
     ProgramModuleID defining_module,
@@ -239,7 +243,7 @@ auto diagnose_declaration_surface_type(
 }
 
 auto diagnose_declaration_surface_constant(
-    const SemanticConstruction& builder,
+    SemanticDraftView builder,
     DiagnosticSink& diagnostics,
     DeclarationVisibility visibility,
     ProgramModuleID defining_module,
@@ -258,10 +262,8 @@ auto diagnose_declaration_surface_constant(
     validator.validate_constant(constant);
 }
 
-auto diagnose_type_contracts(
-    const SemanticConstruction& builder,
-    DiagnosticSink& diagnostics
-) noexcept -> void {
+auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnostics) noexcept
+    -> void {
     const auto contains_callable_view = [&](this const auto& self,
                                             HIRTypeID type_id) noexcept -> bool {
         const auto& value = builder.type(type_id).value;
@@ -375,7 +377,8 @@ auto diagnose_type_contracts(
             "function result"
         );
         for (const auto failure :
-             builder.failure_set(builder.callable(function.callable).failure_set).members) {
+             builder.failure_set(builder.callable_flow(function.callable).effective_failure_set)
+                 .members) {
             diagnose_declaration_surface_type(
                 builder,
                 diagnostics,

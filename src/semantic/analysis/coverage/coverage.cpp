@@ -1,6 +1,6 @@
 module carven:semantic.analysis.coverage.impl;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
 import :semantic.analysis.coverage;
 import :semantic.hir;
 import :semantic.hir.decl;
@@ -24,7 +24,7 @@ struct CoverageEnumCaseView final {
 
 class PublishedCoverageDeclarations final {
 public:
-    explicit PublishedCoverageDeclarations(const SemanticConstruction& source) noexcept
+    explicit PublishedCoverageDeclarations(SemanticDraftView source) noexcept
         : hir(source) {}
 
     auto enum_count() const noexcept -> std::size_t { return hir.enumerations().size(); }
@@ -44,12 +44,12 @@ public:
     }
 
 private:
-    const SemanticConstruction& hir;
+    SemanticDraftView hir;
 };
 
 class SessionCoverageDeclarations final {
 public:
-    explicit SessionCoverageDeclarations(const DeclarationSessionView& source) noexcept
+    explicit SessionCoverageDeclarations(const DeclarationContractView& source) noexcept
         : session(source) {}
 
     auto enum_count() const noexcept -> std::size_t { return session.enum_count(); }
@@ -69,7 +69,7 @@ public:
     }
 
 private:
-    const DeclarationSessionView& session;
+    const DeclarationContractView& session;
 };
 
 struct CoverageInteger final {
@@ -202,7 +202,7 @@ auto defaults(const Matrix& source) noexcept -> Matrix {
 }
 template<typename Declarations>
 auto compute_pattern_coverage_impl(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     const Declarations& declarations,
     HIRTypeID subject_type,
     std::span<const PatternCoverageArm> arms
@@ -305,8 +305,9 @@ auto compute_pattern_coverage_impl(
                         return std::unexpected("case coverage payload does not match its member");
                     }
                     auto payload = std::vector<CoveragePattern>();
-                    for (auto index = 0uz; index < value.payload.size(); ++index) {
-                        auto lowered = self(value.payload[index], member.payload_types[index]);
+                    for (const auto& [child, payload_type] :
+                         std::views::zip(value.payload, member.payload_types)) {
+                        auto lowered = self(child, payload_type);
                         if (!lowered.has_value()) {
                             return std::unexpected(std::move(lowered.error()));
                         }
@@ -598,7 +599,7 @@ auto compute_pattern_coverage_impl(
 
 namespace {
 
-auto coverage_arms(const SemanticConstruction& hir, std::span<const HIRMatchArm> arms) noexcept
+auto coverage_arms(SemanticDraftView hir, std::span<const HIRMatchArm> arms) noexcept
     -> std::vector<PatternCoverageArm> {
     auto result = std::vector<PatternCoverageArm>();
     result.reserve(arms.size());
@@ -623,7 +624,7 @@ auto coverage_arms(const SemanticConstruction& hir, std::span<const HIRMatchArm>
 } // namespace
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
@@ -637,7 +638,7 @@ auto compute_pattern_coverage(
 }
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
@@ -650,8 +651,8 @@ auto compute_pattern_coverage(
 }
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
-    const DeclarationSessionView& declarations,
+    SemanticDraftView hir,
+    const DeclarationContractView& declarations,
     HIRTypeID subject_type,
     std::span<const HIRMatchArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
@@ -665,8 +666,8 @@ auto compute_pattern_coverage(
 }
 
 auto compute_pattern_coverage(
-    const SemanticConstruction& hir,
-    const DeclarationSessionView& declarations,
+    SemanticDraftView hir,
+    const DeclarationContractView& declarations,
     HIRTypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {

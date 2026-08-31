@@ -1,8 +1,7 @@
 module carven:backend.lowering.program;
 
 import :backend.target.builder;
-import :backend.generation.linkage;
-import :backend.generation.plan;
+import :backend.generation.program;
 import :backend.generation.names;
 import :backend.lowering.names;
 import :backend.target.ids;
@@ -12,24 +11,26 @@ import :backend.target.origin;
 import :backend.target.unit;
 import :semantic.hir;
 import :semantic.hir.ids;
-import :compilation.request;
 import std;
 
 struct FailureCarrierDescriptor final {
-    HIRTypeID result;
-    FailureSetID failure_set;
+    TargetCarrierShapeID shape;
     TargetTypeID type;
+};
+
+struct LocalFailureTransfer final {
+    TargetIdentifier destination_name;
+    TargetIdentifier transfer_label;
 };
 
 struct FailureContinuation final {
     FailureCarrierDescriptor carrier;
-    std::optional<TargetExprID> destination;
-    std::optional<TargetIdentifier> transfer_label;
+    std::optional<LocalFailureTransfer> local_transfer;
 };
 
 struct CaughtFailureContext final {
     FailureCarrierDescriptor carrier;
-    TargetExprID expression;
+    TargetIdentifier carrier_name;
     std::optional<TargetTypeID> selected_failure_type;
 };
 
@@ -65,25 +66,17 @@ struct TargetControlDestinations final {
 class TargetModuleLowerer;
 class TargetCallableLowerer;
 class TargetLexicalScope;
-class TargetCallableLowerer;
 
-class TargetGenerationContext final {
+class TargetUnitLoweringContext final {
 public:
-    TargetGenerationContext(
-        const SemanticProgram& semantic,
-        const TargetGenerationPlan& plan,
-        TestEmissionMode test_mode
-    ) noexcept;
+    explicit TargetUnitLoweringContext(TargetArtifactView artifact) noexcept;
 
-    auto semantic() const noexcept -> const SemanticProgram&;
-    auto read_parameter_by_value(HIRTypeID type) const noexcept -> bool;
-    auto failure_set(FailureSetID failure_set) const noexcept -> const TargetFailureSetProfile&;
-    auto requires_mutable_value_binding(SemanticPlaceID place) const noexcept -> bool;
+    auto source() const noexcept -> const TargetArtifactView&;
+    auto failure_profile(FailureSetID failure_set) const noexcept -> const TargetFailureProfile&;
+    auto requires_mutable_value_binding(SymbolID symbol) const noexcept -> bool;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto source_names(SemanticScopeID scope) const noexcept -> const std::flat_set<std::string>&;
     auto target() noexcept -> TargetUnitBuilder&;
-    auto emits_tests() const noexcept -> bool;
-    auto emits_default_test_runner() const noexcept -> bool;
     auto module_lowerer(ProgramModuleID module_id) noexcept -> TargetModuleLowerer;
     auto entity_identifier(SymbolID symbol) const noexcept -> const TargetIdentifier&;
     auto entity_name(ProgramModuleID active, SymbolID symbol) const noexcept -> TargetName;
@@ -94,9 +87,7 @@ public:
     auto finish(TargetUnitRoot root) && noexcept -> TargetUnit;
 
 private:
-    const SemanticProgram& semantic_program;
-    const TargetGenerationPlan& generation_plan;
-    TestEmissionMode test_mode;
+    TargetArtifactView artifact_view;
     TargetUnitBuilder target_unit;
     std::flat_map<std::pair<std::uint32_t, std::uint32_t>, TargetTypeID> lowered_types;
 
@@ -112,15 +103,14 @@ public:
     auto operator=(const TargetModuleLowerer&) -> TargetModuleLowerer& = delete;
     auto operator=(TargetModuleLowerer&&) -> TargetModuleLowerer& = default;
 
-    auto semantic() const noexcept -> const SemanticProgram&;
+    auto source() const noexcept -> const TargetArtifactView&;
     auto read_parameter_by_value(HIRTypeID type) const noexcept -> bool;
-    auto failure_set(FailureSetID failure_set) const noexcept -> const TargetFailureSetProfile&;
-    auto requires_mutable_value_binding(SemanticPlaceID place) const noexcept -> bool;
+    auto failure_profile(FailureSetID failure_set) const noexcept -> const TargetFailureProfile&;
+    auto requires_mutable_value_binding(SymbolID symbol) const noexcept -> bool;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto target() noexcept -> TargetUnitBuilder&;
     auto name_allocator() noexcept -> TargetNameAllocator&;
     auto name_scope(SemanticScopeID scope) const noexcept -> TargetScopeID;
-    auto emits_tests() const noexcept -> bool;
     auto active_module_id() const noexcept -> ProgramModuleID;
     auto entity_identifier(SymbolID symbol) const noexcept -> const TargetIdentifier&;
     auto entity_name(SymbolID symbol) const noexcept -> TargetName;
@@ -133,14 +123,14 @@ public:
     ) noexcept -> TargetCallableLowerer;
 
 protected:
-    TargetModuleLowerer(TargetGenerationContext& program, ProgramModuleID module_id) noexcept;
+    TargetModuleLowerer(TargetUnitLoweringContext& program, ProgramModuleID module_id) noexcept;
 
 private:
-    TargetGenerationContext* program_lowerer;
+    TargetUnitLoweringContext* program_lowerer;
     ProgramModuleID source_module_id;
     TargetNameAllocator target_names;
 
-    friend class TargetGenerationContext;
+    friend class TargetUnitLoweringContext;
     friend class TargetCallableLowerer;
 };
 
@@ -160,7 +150,7 @@ public:
 
 private:
     TargetCallableLowerer(
-        TargetGenerationContext& program,
+        TargetUnitLoweringContext& program,
         ProgramModuleID module_id,
         SemanticScopeID scope,
         std::optional<SemanticScopeID> root_body_scope

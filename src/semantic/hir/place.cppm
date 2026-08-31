@@ -7,22 +7,20 @@ struct SemanticScope final {
     std::optional<SemanticScopeID> parent;
 };
 
-enum class SemanticPlaceStorage {
+enum class SemanticBindingStorage {
     Owner,
     Borrow,
     Compiler,
 };
 
-struct SemanticPlaceCapabilities final {
+struct SemanticBindingCapabilities final {
     bool write;
     bool take;
 };
 
-struct SemanticPlace final {
-    std::optional<SymbolID> symbol;
-    HIRTypeID type;
-    SemanticPlaceStorage storage;
-    SemanticPlaceCapabilities capabilities;
+struct SemanticBindingFacts final {
+    SemanticBindingStorage storage;
+    SemanticBindingCapabilities capabilities;
     SemanticScopeID scope;
     std::uint32_t declaration_order;
 };
@@ -37,25 +35,21 @@ enum class SemanticPlaceAccess {
 struct SemanticFieldProjection final {
     StructID owner;
     std::uint32_t field_index;
-    HIRTypeID result_type;
 };
 
-struct SemanticIndexProjection final {
-    HIRTypeID result_type;
-};
+struct SemanticIndexProjection final {};
 
 using SemanticPlaceProjection = std::variant<SemanticFieldProjection, SemanticIndexProjection>;
 
 struct SemanticPlaceUse final {
-    SemanticPlaceID root;
+    SymbolID root;
     std::vector<SemanticPlaceProjection> projections;
     SemanticPlaceAccess access;
 };
 
 struct EvaluationEffect final {
-    std::vector<SemanticPlaceID> reads;
-    std::vector<SemanticPlaceID> writes;
-    std::vector<SemanticPlaceID> takes;
+    std::vector<SymbolID> reads;
+    std::vector<SymbolID> writes;
+    std::vector<SymbolID> takes;
     bool opaque_boundary;
-    bool may_terminate;
 };

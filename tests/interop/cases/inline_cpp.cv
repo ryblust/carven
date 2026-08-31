@@ -86,6 +86,19 @@
         return { value };
     }
 
+    struct CarvenInteropMatchProbe final {
+        CarvenInteropMatchProbe() noexcept {
+            cv_test_interop_record(1);
+        }
+
+        CarvenInteropMatchProbe(const CarvenInteropMatchProbe&) = delete;
+        CarvenInteropMatchProbe(CarvenInteropMatchProbe&&) = delete;
+
+        ~CarvenInteropMatchProbe() {
+            cv_test_interop_record(3);
+        }
+    };
+
 }
 
 test "C++ interop: inline C++ expressions and statements remain usable" {
@@ -208,4 +221,16 @@ test "C++ interop: inline C++ expressions and statements remain usable" {
         cv_test_interop_trace
     };
     check(comparison_order == 67);
+
+    #[cpp] {
+        cv_test_interop_trace = 0;
+    }
+    match #[cpp] { CarvenInteropMatchProbe {} } {
+        _ => { #[cpp] { cv_test_interop_record(2); } },
+        cv_dead_match_probe => {},
+    }
+    let match_lifetime_order: i32 = #[cpp] {
+        cv_test_interop_trace
+    };
+    check(match_lifetime_order == 123);
 }

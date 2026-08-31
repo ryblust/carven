@@ -284,19 +284,19 @@ auto AnalysisCatalogView::symbol(SymbolID id) const noexcept -> const CatalogSym
 }
 
 auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> SymbolID {
-    return catalog->function_symbols.get(id);
+    return catalog->function_symbols[id.index()];
 }
 
 auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> SymbolID {
-    return catalog->struct_symbols.get(id);
+    return catalog->struct_symbols[id.index()];
 }
 
 auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> SymbolID {
-    return catalog->enum_symbols.get(id);
+    return catalog->enum_symbols[id.index()];
 }
 
 auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> SymbolID {
-    return catalog->enum_case_symbols.get(id);
+    return catalog->enum_case_symbols[id.index()];
 }
 
 auto AnalysisCatalogView::function_count() const noexcept -> std::size_t {
@@ -335,7 +335,8 @@ auto AnalysisCatalogView::mark_import_used(ImportBindingID binding) const noexce
 
 auto build_analysis_catalog(
     CompilationProvenanceView provenance,
-    std::span<const SyntaxTree> syntax_trees
+    std::span<const SyntaxTree> syntax_trees,
+    SemanticEntityReservations reservations
 ) noexcept -> std::expected<AnalysisCatalog, Diagnostics> {
     auto result = AnalysisCatalog(provenance);
     auto diagnostics = Diagnostics();
@@ -391,26 +392,40 @@ auto build_analysis_catalog(
                 continue;
             }
             names.emplace(name, *name_span);
-            if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
-                resource_limit_exceeded("catalog symbols exhausted their 32-bit identity space");
+            const auto symbol_id = reservations.reserve_symbol();
+            if (symbol_id.index() != result.symbols.size()) {
+                invariant_violation("semantic symbol reservation is not append-aligned");
             }
-            const auto symbol_id =
-                SymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
             auto form = std::visit(
                 Overloaded {
                     [&](const ASTFunctionDecl&) noexcept -> CatalogSymbolForm {
+                        const auto function = reservations.reserve_function();
+                        if (function.index() != result.function_symbols.size()) {
+                            invariant_violation("semantic function reservation is not aligned");
+                        }
+                        result.function_symbols.push_back(symbol_id);
                         return CatalogFunctionForm {
-                            .function = result.function_symbols.add(symbol_id),
+                            .function = function,
                         };
                     },
                     [&](const ASTStructDecl&) noexcept -> CatalogSymbolForm {
+                        const auto structure = reservations.reserve_struct();
+                        if (structure.index() != result.struct_symbols.size()) {
+                            invariant_violation("semantic struct reservation is not aligned");
+                        }
+                        result.struct_symbols.push_back(symbol_id);
                         return CatalogStructForm {
-                            .structure = result.struct_symbols.add(symbol_id),
+                            .structure = structure,
                         };
                     },
                     [&](const ASTEnumDecl&) noexcept -> CatalogSymbolForm {
+                        const auto enumeration = reservations.reserve_enum();
+                        if (enumeration.index() != result.enum_symbols.size()) {
+                            invariant_violation("semantic enum reservation is not aligned");
+                        }
+                        result.enum_symbols.push_back(symbol_id);
                         return CatalogEnumForm {
-                            .enumeration = result.enum_symbols.add(symbol_id),
+                            .enumeration = enumeration,
                             .cases = {},
                         };
                     },
@@ -472,17 +487,18 @@ auto build_analysis_catalog(
                 continue;
             }
             for (auto case_index = 0uz; case_index < enumeration->cases.size(); ++case_index) {
-                if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
-                    resource_limit_exceeded(
-                        "catalog symbols exhausted their 32-bit identity space"
-                    );
-                }
                 const auto& enum_case = enumeration->cases[case_index];
-                const auto case_symbol =
-                    SymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
+                const auto case_symbol = reservations.reserve_symbol();
+                if (case_symbol.index() != result.symbols.size()) {
+                    invariant_violation("semantic enum-case symbol reservation is not aligned");
+                }
                 const auto& owner_form =
                     std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form);
-                const auto case_id = result.enum_case_symbols.add(case_symbol);
+                const auto case_id = reservations.reserve_enum_case();
+                if (case_id.index() != result.enum_case_symbols.size()) {
+                    invariant_violation("semantic enum-case reservation is not aligned");
+                }
+                result.enum_case_symbols.push_back(case_symbol);
                 result.symbols.push_back({
                     .symbol_id = case_symbol,
                     .module_id = module_id,

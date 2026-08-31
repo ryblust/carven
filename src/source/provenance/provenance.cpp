@@ -132,9 +132,9 @@ CompilationProvenanceAppender::CompilationProvenanceAppender(
     CompilationProvenance&& provenance
 ) noexcept
     : storage(std::move(provenance.storage)) {
-    for (auto index = 0uz; index < storage.spellings.size(); ++index) {
+    for (const auto& [index, spelling] : std::views::enumerate(storage.spellings.values())) {
         const auto spelling_id = ProgramSpellingID::from_index(static_cast<std::uint32_t>(index));
-        spelling_ids_by_value.emplace(storage.spellings.get(spelling_id), spelling_id);
+        spelling_ids_by_value.emplace(spelling, spelling_id);
     }
 }
 

@@ -1,5 +1,6 @@
 module carven:semantic.analysis.constant.evaluate;
 
+import :semantic.analysis.session.read;
 import :semantic.hir;
 import :semantic.hir.constant;
 import :semantic.hir.expr;
@@ -75,13 +76,13 @@ struct HIRConstantEvaluation final {
 auto operator_result_builtin(HIROperatorResult profile) noexcept -> std::optional<HIRBuiltinType>;
 
 auto unary_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRUnaryExpr::Operator op,
     HIRTypeID operand
 ) noexcept -> HIRUnaryOperatorProfile;
 
 auto binary_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRBinaryExpr::Operator op,
     HIRTypeID left,
     HIRTypeID right,
@@ -89,27 +90,27 @@ auto binary_operator_profile(
 ) noexcept -> HIRBinaryOperatorProfile;
 
 auto cast_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID source,
     HIRTypeID target,
     bool source_is_numeric_enum
 ) noexcept -> HIRCastOperatorProfile;
 
 auto text_intrinsic_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTextIntrinsic intrinsic,
     HIRTypeID operand
 ) noexcept -> HIRTextIntrinsicProfile;
 
 auto evaluate_unary_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRUnaryExpr::Operator op,
     HIRExprID operand,
     HIRTypeID result
 ) noexcept -> std::expected<HIRConstantEvaluation, HIRConstantEvaluationFailure>;
 
 auto evaluate_binary_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRBinaryExpr::Operator op,
     HIRExprID left,
     HIRExprID right,
@@ -118,7 +119,7 @@ auto evaluate_binary_constant(
 ) noexcept -> std::expected<HIRConstantEvaluation, HIRConstantEvaluationFailure>;
 
 auto evaluate_cast_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRCastKind kind,
     HIRExprID operand,
     HIRTypeID result,
@@ -126,7 +127,7 @@ auto evaluate_cast_constant(
 ) noexcept -> std::expected<HIRConstantEvaluation, HIRConstantEvaluationFailure>;
 
 auto evaluate_text_intrinsic_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTextIntrinsic intrinsic,
     HIRExprID operand,
     HIRTypeID result

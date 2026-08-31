@@ -8,6 +8,5 @@ struct HIRSymbol final {
     std::optional<ProgramModuleID> module_id;
     std::optional<HIRTypeID> type;
     std::optional<SymbolID> parent;
-    std::optional<SemanticPlaceID> place;
     bool referenced;
 };

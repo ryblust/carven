@@ -1,10 +1,34 @@
 module carven:backend.target.verify;
 
-import :backend.target;
+import :backend.target.expr;
+import :backend.target.item;
+import :backend.target.stmt;
+import :backend.target.type;
+import :backend.target.unit;
 import std;
 
-struct TargetUnitError final {
+enum class TargetUnitViolationKind {
+    InvalidReference,
+    InvalidOwnership,
+    InvalidCycle,
+    InvalidAttribution,
+    InvalidStructure,
+    InvalidControl,
+    OrphanNode,
+};
+
+struct TargetUnitViolation final {
+    TargetUnitViolationKind kind;
     std::string message;
 };
 
-auto verify_target_unit(const TargetUnit& unit) noexcept -> std::expected<void, TargetUnitError>;
+struct TargetUnitValidationView final {
+    std::span<const TargetType> types;
+    std::span<const TargetExpr> expressions;
+    std::span<const TargetStmt> statements;
+    std::span<const TargetItem> items;
+    const TargetUnitRoot& root;
+};
+
+auto validate_target_unit(TargetUnitValidationView unit) noexcept
+    -> std::expected<void, TargetUnitViolation>;

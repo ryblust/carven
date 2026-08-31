@@ -4,7 +4,7 @@ import :semantic.analysis.elaboration.scopes;
 import :support.invariant;
 import std;
 
-ScopeStack::ScopeStack(SemanticConstruction& builder) noexcept
+ScopeStack::ScopeStack(SemanticDraft& builder) noexcept
     : semantic_builder(std::addressof(builder)) {}
 
 auto ScopeStack::enter_scope() noexcept -> ScopeGuard {

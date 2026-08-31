@@ -12,15 +12,15 @@ import :support.invariant;
 import std;
 
 auto symbol_identifier(TargetModuleLowerer& context, SymbolID symbol) noexcept -> TargetIdentifier {
-    const auto& value = context.semantic().symbol(symbol);
-    const auto source_name = context.semantic().provenance().spelling(value.name);
+    const auto& value = context.source().symbol(symbol);
+    const auto source_name = context.source().provenance().spelling(value.name);
     const auto enclosing = value.parent.has_value()
-        ? context.semantic().provenance().spelling(context.semantic().symbol(*value.parent).name)
+        ? context.source().provenance().spelling(context.source().symbol(*value.parent).name)
         : std::string_view();
     if (!value.module_id.has_value()) {
-        const auto scope = value.place.has_value()
-            ? context.name_scope(context.semantic().place(*value.place).scope)
-            : TargetScopeID {.ordinal = 0u};
+        const auto& binding = context.source().binding(symbol);
+        const auto scope = binding.has_value() ? context.name_scope(binding->scope)
+                                               : TargetScopeID {.ordinal = 0u};
         return context.name_allocator().local_symbol(source_name, symbol.index(), scope, enclosing);
     }
     return context.entity_identifier(symbol);
@@ -31,18 +31,17 @@ auto binding_identifier(
     SymbolID symbol,
     const EvaluationEffect& initializer_effect
 ) noexcept -> TargetIdentifier {
-    const auto& value = context.semantic().symbol(symbol);
+    const auto& value = context.source().symbol(symbol);
     if (value.module_id.has_value()) {
         return symbol_identifier(context, symbol);
     }
     auto avoided = std::vector<TargetIdentifier> {};
-    const auto collect_uses = [&](std::span<const SemanticPlaceID> places) noexcept {
-        for (const auto place : places) {
-            const auto used_symbol = context.semantic().place(place).symbol;
-            if (!used_symbol.has_value() || *used_symbol == symbol) {
+    const auto collect_uses = [&](std::span<const SymbolID> symbols) noexcept {
+        for (const auto used_symbol : symbols) {
+            if (used_symbol == symbol) {
                 continue;
             }
-            const auto identifier = symbol_identifier(context, *used_symbol);
+            const auto identifier = symbol_identifier(context, used_symbol);
             if (!std::ranges::contains(
                     avoided,
                     identifier.spelling(),
@@ -55,19 +54,19 @@ auto binding_identifier(
     collect_uses(initializer_effect.reads);
     collect_uses(initializer_effect.writes);
     collect_uses(initializer_effect.takes);
-    const auto source_name = context.semantic().provenance().spelling(value.name);
+    const auto source_name = context.source().provenance().spelling(value.name);
     const auto enclosing = value.parent.has_value()
-        ? context.semantic().provenance().spelling(context.semantic().symbol(*value.parent).name)
+        ? context.source().provenance().spelling(context.source().symbol(*value.parent).name)
         : std::string_view();
-    const auto scope = value.place.has_value()
-        ? context.name_scope(context.semantic().place(*value.place).scope)
-        : TargetScopeID {.ordinal = 0u};
+    const auto& binding = context.source().binding(symbol);
+    const auto scope =
+        binding.has_value() ? context.name_scope(binding->scope) : TargetScopeID {.ordinal = 0u};
     return context.name_allocator()
         .local_symbol(source_name, symbol.index(), scope, enclosing, avoided);
 }
 
 auto symbol_is_used(const TargetModuleLowerer& context, SymbolID symbol) noexcept -> bool {
-    return context.semantic().symbol(symbol).referenced;
+    return context.source().symbol(symbol).referenced;
 }
 
 auto symbol_reference_name(TargetModuleLowerer& context, SymbolID symbol) noexcept -> TargetName {
@@ -75,7 +74,7 @@ auto symbol_reference_name(TargetModuleLowerer& context, SymbolID symbol) noexce
 }
 
 auto symbol_name(TargetModuleLowerer& context, SymbolID symbol) noexcept -> TargetName {
-    const auto& value = context.semantic().symbol(symbol);
+    const auto& value = context.source().symbol(symbol);
     if (value.module_id.has_value()) {
         return context.entity_name(symbol);
     }
@@ -90,24 +89,24 @@ auto member_name(TargetModuleLowerer& context, const HIRMemberExpr& member) noex
     -> TargetMemberName {
     if (const auto* unresolved = std::get_if<HIRUnresolvedMemberTarget>(&member.target)) {
         return TargetRawIdentifier {
-            .spelling = std::string(context.semantic().provenance().spelling(unresolved->name)),
+            .spelling = std::string(context.source().provenance().spelling(unresolved->name)),
         };
     }
     const auto* enumeration = std::get_if<HIREnumCaseTarget>(&member.target);
     if (const auto* field = std::get_if<HIRStructFieldTarget>(&member.target)) {
-        const auto& structure = context.semantic().structure(field->owner);
+        const auto& structure = context.source().structure(field->owner);
         if (field->index >= structure.fields.size()) {
             invariant_violation("resolved structure field index is invalid");
         }
         return context.name_allocator().source(
-            context.semantic().provenance().spelling(structure.fields[field->index].name),
-            context.semantic().provenance().spelling(structure.name)
+            context.source().provenance().spelling(structure.fields[field->index].name),
+            context.source().provenance().spelling(structure.name)
         );
     }
     if (enumeration != nullptr) {
         return symbol_identifier(
             context,
-            context.semantic().enum_case(enumeration->enum_case).symbol
+            context.source().enum_case(enumeration->enum_case).symbol
         );
     }
     std::unreachable();

@@ -16,11 +16,8 @@ complete maintained explanation.
 | [semantics.md](semantics.md) | Public contract | Observable behavior, failure contracts, semantic validity, stable diagnostic identities, and the `#[cpp]` boundary |
 | [cli.md](cli.md) | Public contract | Command invocation, source-path derivation, output selection, test emission, and inspection commands |
 | [compatibility.md](compatibility.md) | Public contract | Compiler-host requirements, generated-C++ consumer support, data-model limits, and stability boundaries |
-| [compiler.md](compiler.md) | Maintainer contract | Compiler stages, persistent representations, publication, and representation invariants |
-| [backend.md](backend.md) | Maintainer contract | Semantic-to-C++ realization, target units, requirements, verification, and emission |
+| [compiler.md](compiler.md) | Maintainer contract | Implemented compiler stages, semantic publication gates, persistent facts, owners, and dependency direction |
+| [backend.md](backend.md) | Maintainer contract | Implemented `TargetProgram` ownership, semantic-to-C++20 lowering, target-unit verification, and emission |
 | [testing.md](testing.md) | Repository policy | Validation workflow, test-suite responsibilities, execution boundaries, coverage, and target organization |
 | [conventions.md](conventions.md) | Repository policy | C++ source conventions, borrowing, lifecycle terminology, errors, modules, naming, and formatting |
 | [philosophy.md](philosophy.md) | Design criteria | Criteria for evaluating language and compiler design proposals |
-
-Proposals record designs in progress. Validated, stable behavior is incorporated
-into the appropriate permanent document.

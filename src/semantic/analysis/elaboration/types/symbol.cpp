@@ -16,7 +16,7 @@ auto resolve_qualified_value(
     const ScopeStack& scopes,
     const ASTQualifiedName& qualified
 ) noexcept -> LookupResult<SymbolID> {
-    auto& builder = module_analysis.builder();
+    const auto& builder = module_analysis.builder();
     if (qualified.components.size() == 1) {
         const auto symbol = symbol_for(
             module_analysis,
@@ -150,7 +150,7 @@ auto resolve_structure_contract(
 
 auto nominal_symbol(const ModuleAnalysis& module_analysis, HIRTypeID type_id) noexcept
     -> std::optional<SymbolID> {
-    auto& builder = module_analysis.builder();
+    const auto builder = module_analysis.builder();
     if (const auto* structure = std::get_if<HIRStructTypeValue>(&builder.type(type_id).value)) {
         return module_analysis.catalog().struct_symbol(structure->structure);
     }

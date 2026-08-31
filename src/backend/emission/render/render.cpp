@@ -1,14 +1,16 @@
 module carven:backend.emission.render.impl;
 
+import :artifacts;
 import :backend.emission.render.string;
 import :backend.emission.render;
 import :backend.target.symbol;
 import std;
 
-TargetRenderer::TargetRenderer(const TargetUnit& unit, std::string_view artifact_path) noexcept
+TargetRenderer::TargetRenderer(const TargetUnit& unit) noexcept
     : unit(unit),
-      generated_origin(artifact_path),
-      stable_interface(std::holds_alternative<TargetInterfaceComponentUnit>(unit.root())) {}
+      generated_origin(unit.root().logical_path),
+      stable_interface(unit.root().source_mapping == ArtifactSourceMappingPolicy::StableInterface) {
+}
 
 auto TargetRenderer::text(std::string_view value) noexcept -> LayoutNodeID {
     return builder.text(value);

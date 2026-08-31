@@ -103,10 +103,28 @@ struct TargetWhileStmt final {
     std::vector<TargetStmtID> body;
 };
 
+using TargetForInitializerValue = std::variant<
+    TargetExprStmt,
+    TargetDiscardStmt,
+    TargetVariableStmt,
+    TargetAssignmentStmt,
+    TargetUpdateStmt>;
+
+struct TargetForInitializer final {
+    TargetForInitializerValue value;
+};
+
+using TargetForStepValue =
+    std::variant<TargetExprStmt, TargetDiscardStmt, TargetAssignmentStmt, TargetUpdateStmt>;
+
+struct TargetForStep final {
+    TargetForStepValue value;
+};
+
 struct TargetForStmt final {
-    std::optional<TargetStmtID> initializer;
+    std::optional<TargetForInitializer> initializer;
     std::optional<TargetExprID> condition;
-    std::vector<TargetStmtID> steps;
+    std::vector<TargetForStep> steps;
     std::vector<TargetStmtID> body;
 };
 

@@ -12,6 +12,8 @@ import :semantic.analyze;
 import :semantic.hir;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
+import :semantic.hir.place;
+import :semantic.hir.stmt;
 import :source.manager;
 import :source.module_path;
 import std;
@@ -107,7 +109,88 @@ TEST_CASE("Semantic structure: nested lambda owns a distinct body") {
     CHECK_NE(program.body(outer_body).root, program.body(nested_body).root);
 }
 
-TEST_CASE("Semantic control: callable failure contracts have one explicit policy") {
+TEST_CASE("Semantic place use: one symbol root owns a structural projection path") {
+    const auto program = analyze_program(
+        "struct Payload { values: [i32; 2] }\n"
+        "private fn inspect(payload: Payload) {\n"
+        "    let observed = payload.values[0];\n"
+        "}\n"
+    );
+
+    auto projected = std::optional<HIRExprID>();
+    for (auto index = 0uz; index < program.expressions().size(); ++index) {
+        const auto id = HIRExprID::from_index(static_cast<std::uint32_t>(index));
+        if (std::holds_alternative<HIRIndexExpr>(program.expression(id).value)) {
+            projected = id;
+        }
+    }
+    REQUIRE(projected.has_value());
+    const auto* indexed = std::get_if<HIRIndexExpr>(&program.expression(*projected).value);
+    REQUIRE(indexed != nullptr);
+    const auto* member = std::get_if<HIRMemberExpr>(&program.expression(indexed->operand_id).value);
+    REQUIRE(member != nullptr);
+    const auto* name = std::get_if<HIRNameExpr>(&program.expression(member->operand_id).value);
+    REQUIRE(name != nullptr);
+    const auto& use = program.place_use(*projected);
+    REQUIRE(use.has_value());
+    CHECK_EQ(use->root, name->symbol);
+    REQUIRE_EQ(use->projections.size(), 2);
+    CHECK(std::holds_alternative<SemanticFieldProjection>(use->projections[0]));
+    CHECK(std::holds_alternative<SemanticIndexProjection>(use->projections[1]));
+
+    const auto& binding = program.binding(use->root);
+    REQUIRE(binding.has_value());
+    CHECK_EQ(binding->storage, SemanticBindingStorage::Borrow);
+    CHECK_FALSE(binding->capabilities.write);
+    CHECK_FALSE(binding->capabilities.take);
+    const auto& effect = program.evaluation_effect(*projected);
+    CHECK_EQ(effect.reads, std::vector {use->root});
+    CHECK(effect.writes.empty());
+    CHECK(effect.takes.empty());
+}
+
+TEST_CASE("Semantic coverage: match facts retain arm-aligned usefulness") {
+    const auto program = analyze_program(
+        "private fn classify(value: bool) {\n"
+        "    match value {\n"
+        "        false => {},\n"
+        "        true => {},\n"
+        "        _ => {},\n"
+        "    }\n"
+        "    match value {\n"
+        "        _ if value => {},\n"
+        "        false => {},\n"
+        "        true => {},\n"
+        "    }\n"
+        "}\n"
+    );
+
+    auto matches = std::vector<const HIRMatchStmt*>();
+    for (const auto& statement : program.statements()) {
+        if (const auto* match = std::get_if<HIRMatchStmt>(&statement.value)) {
+            matches.push_back(match);
+        }
+    }
+    REQUIRE_EQ(matches.size(), 2);
+    CHECK_EQ(
+        matches[0]->coverage.arm_states,
+        std::vector {
+            HIRMatchArmState::Reachable,
+            HIRMatchArmState::Reachable,
+            HIRMatchArmState::Covered,
+        }
+    );
+    CHECK_EQ(
+        matches[1]->coverage.arm_states,
+        std::vector {
+            HIRMatchArmState::Reachable,
+            HIRMatchArmState::Reachable,
+            HIRMatchArmState::Reachable,
+        }
+    );
+}
+
+TEST_CASE("Semantic control: callable structure and effective flow occupy distinct columns") {
     const auto program = analyze_program(
         "private fn inferred() {}\n"
         "fn published() {}\n"
@@ -115,17 +198,19 @@ TEST_CASE("Semantic control: callable failure contracts have one explicit policy
         "fn declared() throw Failure {}\n"
     );
     REQUIRE_EQ(program.functions().size(), 3);
-    CHECK_EQ(
-        program.callable(program.function(FunctionID::from_index(0)).callable).failure_contract,
-        HIRFailureContractKind::Inferred
+    REQUIRE_EQ(program.callable_flows().size(), program.callables().size());
+    const auto inferred = program.function(FunctionID::from_index(0)).callable;
+    const auto published = program.function(FunctionID::from_index(1)).callable;
+    const auto declared = program.function(FunctionID::from_index(2)).callable;
+    CHECK(
+        program.failure_set(program.callable_flow(inferred).effective_failure_set).members.empty()
+    );
+    CHECK(
+        program.failure_set(program.callable_flow(published).effective_failure_set).members.empty()
     );
     CHECK_EQ(
-        program.callable(program.function(FunctionID::from_index(1)).callable).failure_contract,
-        HIRFailureContractKind::UndeclaredPublished
-    );
-    CHECK_EQ(
-        program.callable(program.function(FunctionID::from_index(2)).callable).failure_contract,
-        HIRFailureContractKind::Declared
+        program.failure_set(program.callable_flow(declared).effective_failure_set).members.size(),
+        1
     );
 }
 
@@ -141,23 +226,19 @@ TEST_CASE("Semantic failures: set identity is order-independent and all publishe
     );
     const auto first = program.function(FunctionID::from_index(0)).callable;
     const auto second = program.function(FunctionID::from_index(1)).callable;
-    CHECK_EQ(program.callable(first).failure_set, program.callable(second).failure_set);
+    CHECK_EQ(
+        program.callable_flow(first).effective_failure_set,
+        program.callable_flow(second).effective_failure_set
+    );
 
     for (auto index = 0uz; index < program.expressions().size(); ++index) {
         const auto id = HIRExprID::from_index(static_cast<std::uint32_t>(index));
-        const auto& facts = program.expression_facts(id);
-        CHECK_LT(facts.pending_failure_set.index(), program.failure_sets().size());
-        CHECK_LT(facts.outward_failure_set.index(), program.failure_sets().size());
-        CHECK_LT(facts.evaluation_failure_set.index(), program.failure_sets().size());
-        auto evaluation = program.failure_set(facts.pending_failure_set).members;
-        const auto& outward = program.failure_set(facts.outward_failure_set).members;
-        evaluation.insert(evaluation.end(), outward.begin(), outward.end());
-        std::ranges::sort(evaluation, {}, &HIRTypeID::index);
-        evaluation.erase(std::ranges::unique(evaluation).begin(), evaluation.end());
-        CHECK_EQ(evaluation, program.failure_set(facts.evaluation_failure_set).members);
-        if (facts.attempt.has_value()) {
-            CHECK_LT(facts.attempt->unhandled_failure_set.index(), program.failure_sets().size());
-            for (const auto& arm : facts.attempt->arms) {
+        const auto& control = program.expression_control(id);
+        CHECK_LT(control.evaluation_failure_set.index(), program.failure_sets().size());
+        const auto& attempt = program.try_facts(id);
+        if (attempt.has_value()) {
+            CHECK_LT(attempt->unhandled_failure_set.index(), program.failure_sets().size());
+            for (const auto& arm : attempt->arms) {
                 CHECK_LT(arm.accepted_failure_set.index(), program.failure_sets().size());
             }
         }
@@ -165,7 +246,7 @@ TEST_CASE("Semantic failures: set identity is order-independent and all publishe
     for (auto index = 0uz; index < program.blocks().size(); ++index) {
         const auto id = HIRBlockID::from_index(static_cast<std::uint32_t>(index));
         CHECK_LT(
-            program.block_facts(id).outward_failure_set.index(),
+            program.block_control(id).outward_failure_set.index(),
             program.failure_sets().size()
         );
     }
@@ -190,7 +271,11 @@ TEST_CASE("Semantic control: direct and mutually recursive inference reach one f
     for (auto index = 0uz; index < 3; ++index) {
         const auto callable =
             program.function(FunctionID::from_index(static_cast<std::uint32_t>(index))).callable;
-        CHECK_EQ(program.failure_set(program.callable(callable).failure_set).members.size(), 1);
+        CHECK_EQ(
+            program.failure_set(program.callable_flow(callable).effective_failure_set)
+                .members.size(),
+            1
+        );
     }
     auto recursive_handler_failure_set = std::optional<FailureSetID>();
     for (auto index = 0uz; index < program.expressions().size(); ++index) {
@@ -198,7 +283,7 @@ TEST_CASE("Semantic control: direct and mutually recursive inference reach one f
         if (!std::holds_alternative<HIRTryExpr>(program.expression(expression).value)) {
             continue;
         }
-        const auto& attempt = program.expression_facts(expression).attempt;
+        const auto& attempt = program.try_facts(expression);
         if (attempt.has_value() && !attempt->arms.empty()) {
             recursive_handler_failure_set = attempt->arms.front().accepted_failure_set;
         }
@@ -221,8 +306,10 @@ TEST_CASE("Semantic control: fixed contracts are dependency boundaries") {
     REQUIRE_EQ(program.functions().size(), 3);
     const auto fixed = program.function(FunctionID::from_index(1)).callable;
     const auto caller = program.function(FunctionID::from_index(2)).callable;
-    const auto fixed_failures = program.failure_set(program.callable(fixed).failure_set).members;
-    const auto caller_failures = program.failure_set(program.callable(caller).failure_set).members;
+    const auto fixed_failures =
+        program.failure_set(program.callable_flow(fixed).effective_failure_set).members;
+    const auto caller_failures =
+        program.failure_set(program.callable_flow(caller).effective_failure_set).members;
     REQUIRE_EQ(fixed_failures.size(), 1);
     CHECK_EQ(caller_failures, fixed_failures);
 }

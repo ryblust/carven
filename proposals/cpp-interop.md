@@ -15,15 +15,15 @@ interop contract：
 - top-level `#[cpp]` 是当前 `.cv` 模块附带的 opaque C++ companion source；
 - `import <...>` 与 `import "..."` 声明 companion 的 structured header dependency。
 
-V1 只允许 concrete、infallible、Read/by-value scalar functions。C++ overload、template、
+当前接受范围只允许 concrete、infallible、Read/by-value scalar functions。C++ overload、template、
 namespace、conversion、exception handling 与 vendor-specific complexity 留在 adapter header/source
 或 `#[cpp]`；它们不参与 Carven lookup、inference、generic solving 或 declaration identity。
 
 | Slice | Maturity | Current frontier |
 | --- | --- | --- |
 | Form syntax and companion model | Accepted | `CPP-01` through `CPP-05` |
-| `import(cpp)` scalar V1 | Accepted | `CPP-06` through `CPP-13` |
-| `export(cpp)` scalar V1 | Accepted | `CPP-14` through `CPP-18` |
+| `import(cpp)` scalar boundary | Accepted | `CPP-06` through `CPP-13` |
+| `export(cpp)` scalar boundary | Accepted | `CPP-14` through `CPP-18` |
 | Generated placement and build boundary | Accepted | `CPP-19` through `CPP-21` |
 | Adapter declaration visibility and owning bridge | Accepted | `CPP-24`, `CPP-27` |
 | Bodyless semantic integration | Accepted | `CPP-28` |
@@ -87,7 +87,7 @@ still using the C++ backend and toolchain directly.
 - A complete C++ header/AST importer or direct arbitrary overload/template binding.
 - Stable ABI, cross-compiler binary compatibility, shared-library visibility, or binary-only distribution.
 - Pointer, reference, owner, borrow, nullable, string-view, callback, async, or thread contracts.
-- Struct, enum, class, array, callable, generic, or failure carriers in V1.
+- Struct, enum, class, array, callable, generic, or failure carriers in the accepted scalar scope.
 - Automatic C++ exception translation.
 - Rename, namespace selection, alternate signatures, façade bodies, or module-wide interop switches.
 - A general attribute system or user-defined declaration forms.
@@ -145,7 +145,7 @@ specializations, overloads, exception handling, lifetime, undefined behavior, an
 effects. Names actually reserved for compiler-generated integration remain unavailable; Carven does not
 otherwise enforce C++ style or portability rules such as banning `_name` or `name__part`.
 
-V1 removes expression- and statement-position `#[cpp]` together with the `Foreign` path. Code inside a
+This proposal removes expression- and statement-position `#[cpp]` together with the `Foreign` path. Code inside a
 Carven function reaches C++ only through a declared `import(cpp)` adapter.
 
 ### Structured header dependencies
@@ -218,7 +218,7 @@ ordinary Carven body is created to smuggle the declaration through body-oriented
 
 #### Adapter name and declaration
 
-The V1 adapter entry is the unique function found by the qualified C++ lookup expression `::name`, with
+The adapter entry is the unique function found by the qualified C++ lookup expression `::name`, with
 the exact same spelling as the Carven function. This includes a declaration introduced into global
 lookup by a directly nested unnamed namespace; it does not claim that such a declaration is itself a
 member of the global namespace. The spelling must be accepted as a function identifier by every
@@ -278,8 +278,8 @@ A linked object without any visible declaration is not a special supported mode.
 normal header or writes a declaration in the companion, just as ordinary C++ requires.
 
 Vendor APIs in namespaces, overload sets, templates, or incompatible signatures require a distinct,
-unambiguous wrapper function visible in the owning translation unit. V1 provides no direct namespace or
-rename mapping.
+unambiguous wrapper function visible in the owning translation unit. The selected boundary provides no
+direct namespace or rename mapping.
 
 After validation, every Carven call crosses the materialized owning bridge and never names the raw
 adapter. `private`, bare, and `export` affect that bridge's Carven audience and physical linkage, not the
@@ -292,7 +292,7 @@ remains a downstream build/link responsibility.
 
 An `import(cpp)` declaration has its ordinary canonical Carven identity: owning module plus declaration
 name. Its owning module owns one logical bridge: the raw binding, exact carrier contract, validation,
-conversion, and visibility boundary. V1 materializes that bridge exactly once in the owner module.
+conversion, and visibility boundary. The design materializes that bridge exactly once in the owner module.
 
 Every `private`, bare, or `export` import therefore has one physical owning bridge. A private bridge has
 internal placement and may be inlined by the target optimizer.
@@ -349,7 +349,7 @@ C++ aliases are accepted when they denote the same C++ type; equal width alone i
 `bool` deliberately remains `bool` because `cpp` denotes a same-toolchain C++ source contract. A future
 C ABI form may choose a different boolean carrier.
 
-V1 functions must be concrete, non-generic, fixed-arity, and infallible. Every parameter is unmarked
+Adapter functions must be concrete, non-generic, fixed-arity, and infallible. Every parameter is unmarked
 Read access and crosses by value. Write (`&`), Take (`&&`), failure sets, methods, arrays, nominal types,
 callables, `str`, and Carven default/variadic boundary syntax are rejected. A fixed-arity C++ provider
 may carry default arguments because they are not part of its function type; the generated bridge always
@@ -368,7 +368,7 @@ Every imported adapter declaration is `noexcept`, but `noexcept` is not Carven s
 definition must explicitly match it. Carven does not generate `catch (...)` or infer an error protocol.
 Throwing through the `noexcept` adapter terminates according to C++ rules.
 
-An adapter that calls throwing vendor code must catch and explicitly encode the outcome within the V1
+An adapter that calls throwing vendor code must catch and explicitly encode the outcome within the
 scalar signature. Formal typed-failure and C++ exception mapping is deferred.
 
 ### `export(cpp)` audience and source closure
@@ -388,13 +388,14 @@ There is no C++-visible but Carven-hidden state. `export(cpp)` selects the same 
 does not create a second Carven façade declaration.
 
 An ordinary `export import(cpp) fn` is allowed: it exposes a C++-implemented function throughout the
-Carven compilation. `export(cpp) import(cpp)` is rejected as an explicit V1 scope limit. Such a
+Carven compilation. `export(cpp) import(cpp)` is rejected as an explicit scope limit. Such a
 composition could expose a private-linkage or C-linkage provider through a stable namespaced façade, so
 it is not semantically impossible; an explicit ordinary Carven wrapper selected with `export(cpp)` is
-the supported V1 spelling.
+the supported spelling.
 
-V1 accepts only top-level functions satisfying the same scalar closure. Structs, enums, classes,
-constants, methods, generics, Write/Take parameters, and nonempty failure sets are rejected.
+The accepted scalar scope includes only top-level functions satisfying the same closure. Structs,
+enums, classes, constants, methods, generics, Write/Take parameters, and nonempty failure sets are
+rejected.
 
 ### C++ consumer surface
 
@@ -485,7 +486,7 @@ bridge follows the declaration's `private`/bare/`export` audience and existing C
 
 ### Artifact and downstream build contract
 
-**Maturity:** Accepted for V1.
+**Maturity:** Accepted for the scalar boundary.
 
 The compiler continues to emit source artifacts, not native libraries. `export(cpp)` adds the stable
 public header; its implementation remains in the owning module `.cpp`. The downstream build:
@@ -493,9 +494,10 @@ public header; its implementation remains in the owning module `.cpp`. The downs
 - compiles the generated module `.cpp` together with a C++ consumer, or
 - links its object files/static library into the consumer.
 
-V1 does not emit or promise shared-library import/export macros, symbol-visibility annotations, a stable
-ABI, or cross-compiler compatibility. Imported headers do not imply linked libraries. Xmake/project
-configuration owns packages, objects, static archives, link flags, and search paths.
+The current design does not emit or promise shared-library import/export macros,
+symbol-visibility annotations, a stable ABI, or cross-compiler compatibility. Imported headers do not
+imply linked libraries. Xmake/project configuration owns packages, objects, static archives, link flags,
+and search paths.
 
 Two independently produced libraries that intentionally choose the same canonical module path and C++
 surface own the resulting collision; Carven does not add an artifact-root hash to the public API.
@@ -533,24 +535,24 @@ discovered blockers were resolved by `CPP-26` through `CPP-28` before implementa
 | `CPP-01` | Core forms use `head(form)`: `class(interface)`, `import(cpp)`, `export(cpp)`. | [Head-owned forms](#head-owned-forms) | The construct owns its mutually selected semantic form; it is not metadata. |
 | `CPP-02` | `@` is not used for core forms. | [Head-owned forms](#head-owned-forms) | ABI, audience, declaration kind, and body authority are not orthogonal annotations. |
 | `CPP-03` | `#[cpp]` is top-level module companion source; multiple blocks form one ordered logical source. | [C++ companion source](#c-companion-source) | Arbitrary C++ stays in one explicit lexical boundary. |
-| `CPP-04` | Expression/statement `#[cpp]` and `Foreign` are removed by V1. | [C++ companion source](#c-companion-source) | C++ must not bypass the typed adapter contract from inside ordinary Carven evaluation. |
+| `CPP-04` | Expression/statement `#[cpp]` and `Foreign` are removed by this proposal. | [C++ companion source](#c-companion-source) | C++ must not bypass the typed adapter contract from inside ordinary Carven evaluation. |
 | `CPP-05` | Header dependencies use `import <...>` and `import "..."`; they import no Carven facts and link no library. | [Structured header dependencies](#structured-header-dependencies) | Header visibility and build/link ownership remain distinct. |
 | `CPP-06` | `import(cpp)` declares a Carven function implemented by one strict C++ adapter. | [`import(cpp)` is a Carven declaration with a C++ implementation](#importcpp-is-a-carven-declaration-with-a-c-implementation) | Call sites remain ordinary Carven; C++ complexity stays at the provider boundary. |
 | `CPP-07` | `import(cpp)` uses normal Carven `private`/bare/`export` visibility. | [`import(cpp)` is a Carven declaration with a C++ implementation](#importcpp-is-a-carven-declaration-with-a-c-implementation) | Implementation origin and Carven audience are independent axes. |
-| `CPP-08` | The adapter is the same-spelled unique function found by qualified lookup `::name`; keywords and known generated-context collisions (`main`, `std`, `carven`) are rejected without broader underscore-policy linting. | [Adapter name and declaration](#adapter-name-and-declaration) | V1 avoids rename/namespace machinery, rejects functional impossibilities, permits unnamed-namespace lookup where C++ does, and does not over-police author-owned C++ usage. |
+| `CPP-08` | The adapter is the same-spelled unique function found by qualified lookup `::name`; keywords and known generated-context collisions (`main`, `std`, `carven`) are rejected without broader underscore-policy linting. | [Adapter name and declaration](#adapter-name-and-declaration) | The scalar boundary avoids rename/namespace machinery, rejects functional impossibilities, permits unnamed-namespace lookup where C++ does, and does not over-police author-owned C++ usage. |
 | `CPP-09` | Superseded by `CPP-24`: Carven does not synthesize the adapter's C++ declaration. | [Adapter name and declaration](#adapter-name-and-declaration) | The visible user declaration plus owning bridge covers normal C++ integration without inventing a prototype. |
 | `CPP-10` | The adapter must be a unique, addressable, exact `noexcept` function, checked through an evaluated untargeted address deduction. | [Adapter name and declaration](#adapter-name-and-declaration) | Target-typed selection could hide overloads; an unevaluated-only check would not reject immediate functions. |
-| `CPP-11` | V1 uses a closed scalar `CppCarrier` table. | [Scalar carrier closure](#scalar-carrier-closure) | A finite representability gate is complete and reviewable. |
-| `CPP-12` | V1 parameters are Read/by-value and functions are concrete and infallible. | [Scalar carrier closure](#scalar-carrier-closure) | Ownership, mutation, generic, and failure protocols remain out of the minimal boundary. |
+| `CPP-11` | The boundary uses a closed scalar `CppCarrier` table. | [Scalar carrier closure](#scalar-carrier-closure) | A finite representability gate is complete and reviewable. |
+| `CPP-12` | Parameters are Read/by-value and functions are concrete and infallible. | [Scalar carrier closure](#scalar-carrier-closure) | Ownership, mutation, generic, and failure protocols remain out of the minimal boundary. |
 | `CPP-13` | `char` uses checked `char32_t`; invalid inbound values terminate. | [Scalar carrier closure](#scalar-carrier-closure) | C++ representation alone does not prove the Carven Unicode scalar invariant. |
 | `CPP-14` | `export(cpp)` includes ordinary complete-compilation export and adds the C++ audience. | [`export(cpp)` audience and source closure](#exportcpp-audience-and-source-closure) | Audience grows monotonically and needs no multi-form syntax. |
-| `CPP-15` | `export import(cpp)` is allowed; `export(cpp) import(cpp)` is rejected in V1. | [`export(cpp)` audience and source closure](#exportcpp-audience-and-source-closure) | Ordinary Carven reuse is useful; direct re-export is a deliberately deferred composition rather than a functional impossibility. |
-| `CPP-16` | V1 `export(cpp)` accepts only scalar top-level functions. | [`export(cpp)` audience and source closure](#exportcpp-audience-and-source-closure) | Import and export share one minimal representability closure. |
+| `CPP-15` | `export import(cpp)` is allowed; `export(cpp) import(cpp)` is rejected in the accepted scope. | [`export(cpp)` audience and source closure](#exportcpp-audience-and-source-closure) | Ordinary Carven reuse is useful; direct re-export is a deliberately deferred composition rather than a functional impossibility. |
+| `CPP-16` | The accepted `export(cpp)` boundary includes only scalar top-level functions. | [`export(cpp)` audience and source closure](#exportcpp-audience-and-source-closure) | Import and export share one minimal representability closure. |
 | `CPP-17` | Public headers use `carven/api/<module>.hpp` and `carven::api::<module>`. | [C++ consumer surface](#c-consumer-surface) | Canonical module identity creates a stable façade without exposing private hashes. |
 | `CPP-18` | Outward adapters are generated `noexcept` functions with directional `char` validation. | [C++ consumer surface](#c-consumer-surface) | C++ consumers receive one exact source contract without exception translation. |
 | `CPP-19` | Private generated functions and nominal types, plus compiler-owned runtime helpers/materializations, live in a nested anonymous namespace; source constants remain storage-free facts. | [Generated placement and linkage](#generated-placement-and-linkage) | Runtime entities receive genuine internal linkage without inventing storage for compile-time constants or wrapping opaque C++. |
 | `CPP-20` | Raw companion scope and provider linkage remain author-owned; generated owning bridges follow Carven visibility and linkage. | [Generated placement and linkage](#generated-placement-and-linkage) | Carven must not change arbitrary C++ namespace/linkage semantics, while cross-module callers must stay behind the Carven interface. |
-| `CPP-21` | V1 promises generated source plus direct object/static linkage, not shared-library or stable ABI support. | [Artifact and downstream build contract](#artifact-and-downstream-build-contract) | The current compiler/build ownership is preserved and the first slice remains finite. |
+| `CPP-21` | The selected scope promises generated source plus direct object/static linkage, not shared-library or stable ABI support. | [Artifact and downstream build contract](#artifact-and-downstream-build-contract) | The current compiler/build ownership is preserved and the first slice remains finite. |
 | `CPP-22` | Superseded by `CPP-25`: the prior compilation-global provider-name table is withdrawn. | [Adapter identity and owning bridge](#adapter-identity-and-owning-bridge) | Without a generated external declaration, equal raw spellings in separate owner translation units neither prove nor require one C++ entity. |
 | `CPP-23` | Superseded by `CPP-24`: no compiler-generated adapter declaration is ordered ahead of user headers. | [Adapter name and declaration](#adapter-name-and-declaration) | The header or companion is now the declaration authority. |
 | `CPP-24` | User headers/companion first make the adapter visible; Carven validates an evaluated exact address and models one logical owning bridge without generating a C++ adapter declaration. | [Adapter name and declaration](#adapter-name-and-declaration) | Ordinary C++ header/source visibility remains valid without inventing or potentially conflicting with a user-owned prototype. |
@@ -565,14 +567,14 @@ discovered blockers were resolved by `CPP-26` through `CPP-28` before implementa
 
 - **Reason deferred:** `import(c)`/`export(c)` need calling convention, stable symbol, boolean, layout,
   and cross-toolchain rules distinct from the same-toolchain C++ contract.
-- **Depends on:** Implemented C++ scalar V1 and a concrete C ABI consumer/provider.
+- **Depends on:** Implemented C++ scalar boundary and a concrete C ABI consumer/provider.
 - **Reactivation condition:** A supported binary or non-C++ integration requires a C ABI.
 
 ### DEFER-CPP-02 — Transparent structs, numeric enums, and arrays
 
 - **Reason deferred:** Aggregate carrier construction, layout independence, recursive validation, and
   generated pack/unpack glue require a separately closed value slice.
-- **Depends on:** Implemented scalar V1.
+- **Depends on:** Implemented scalar boundary.
 - **Reactivation condition:** A concrete adapter needs a value richer than separate scalar parameters.
 
 ### DEFER-CPP-03 — Text, pointers, handles, ownership, and lifetime
@@ -587,21 +589,21 @@ discovered blockers were resolved by `CPP-26` through `CPP-28` before implementa
 
 - **Reason deferred:** Write needs mutation/aliasing rules and Take needs an enforceable post-call
   availability/ownership transition; C++ references alone do not prove either contract.
-- **Depends on:** Implemented scalar V1 and the relevant carrier ownership design.
+- **Depends on:** Implemented scalar boundary and the relevant carrier ownership design.
 - **Reactivation condition:** A concrete adapter requires mutation or ownership transfer.
 
 ### DEFER-CPP-05 — Failure and exception mapping
 
 - **Reason deferred:** The private Carven Outcome lowering is not a public carrier and exceptions are not
   an implicit translation protocol.
-- **Depends on:** Implemented scalar V1 and a chosen public failure representation.
+- **Depends on:** Implemented scalar boundary and a chosen public failure representation.
 - **Reactivation condition:** A consumer/provider needs recoverable typed failure across the boundary.
 
 ### DEFER-CPP-06 — Generics and C++ templates
 
 - **Reason deferred:** Boundary symbols must be concrete; open Carven generics and C++ deduction cannot
   participate in each other's solvers.
-- **Depends on:** Implemented scalar V1 and the generics instance contract.
+- **Depends on:** Implemented scalar boundary and the generics instance contract.
 - **Reactivation condition:** A concrete closed generic instance or template adapter is required.
 
 ### DEFER-CPP-07 — Callbacks, async, and threading
@@ -623,8 +625,8 @@ discovered blockers were resolved by `CPP-26` through `CPP-28` before implementa
 ### DEFER-CPP-09 — Shared libraries, stable ABI, and façade customization
 
 - **Reason deferred:** Visibility attributes, import/export macros, ABI versioning, symbol evolution,
-  renames, and alternate signatures exceed the source-level static/object V1.
-- **Depends on:** Implemented scalar V1 and a concrete distribution contract.
+  renames, and alternate signatures exceed the source-level static/object boundary.
+- **Depends on:** Implemented scalar boundary and a concrete distribution contract.
 - **Reactivation condition:** A supported shared/binary distribution or public façade cannot use the
   direct generated surface.
 
@@ -670,7 +672,7 @@ only header/body/redeclaration/definition/link truth that Carven cannot know wit
 
 ## Validation
 
-The V1 evidence must include:
+Evidence for the accepted scalar boundary must include:
 
 - grammar acceptance and rejection for every form and visibility composition;
 - explicit `CarvenBody | CppImport` semantic implementation variants, with no synthetic body facts or

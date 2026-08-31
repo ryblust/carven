@@ -1,6 +1,6 @@
 module carven:semantic.analysis.constant.evaluate.impl;
 
-import :semantic.analysis.builder;
+import :semantic.analysis.session;
 import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.elaboration.types.relations;
 import :semantic.hir;
@@ -14,20 +14,19 @@ import std;
 
 namespace {
 
-auto valid_type(const SemanticConstruction& hir, HIRTypeID type) noexcept -> bool {
+auto valid_type(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     return type.index() < hir.types().size();
 }
 
-auto valid_expression(const SemanticConstruction& hir, HIRExprID expression) noexcept -> bool {
+auto valid_expression(SemanticDraftView hir, HIRExprID expression) noexcept -> bool {
     return expression.index() < hir.expressions().size();
 }
 
-auto valid_constant(const SemanticConstruction& hir, HIRConstantID constant) noexcept -> bool {
+auto valid_constant(SemanticDraftView hir, HIRConstantID constant) noexcept -> bool {
     return constant.index() < hir.constants().size();
 }
 
-auto builtin_type(const SemanticConstruction& hir, HIRTypeID type) noexcept
-    -> std::optional<HIRBuiltinType> {
+auto builtin_type(SemanticDraftView hir, HIRTypeID type) noexcept -> std::optional<HIRBuiltinType> {
     if (!valid_type(hir, type)) {
         return std::nullopt;
     }
@@ -35,11 +34,11 @@ auto builtin_type(const SemanticConstruction& hir, HIRTypeID type) noexcept
     return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
 }
 
-auto is_error(const SemanticConstruction& hir, HIRTypeID type) noexcept -> bool {
+auto is_error(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     return valid_type(hir, type) && std::holds_alternative<HIRErrorTypeValue>(hir.type(type).value);
 }
 
-auto is_foreign(const SemanticConstruction& hir, HIRTypeID type) noexcept -> bool {
+auto is_foreign(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     return valid_type(hir, type)
         && std::holds_alternative<HIRForeignTypeValue>(hir.type(type).value);
 }
@@ -102,7 +101,7 @@ auto checked_multiply(std::uint64_t left, std::uint64_t right) noexcept
     return left * right;
 }
 
-auto expression_constant(const SemanticConstruction& hir, HIRExprID expression) noexcept
+auto expression_constant(SemanticDraftView hir, HIRExprID expression) noexcept
     -> std::expected<HIRConstantID, HIRConstantEvaluationFailure> {
     if (!valid_expression(hir, expression)) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
@@ -311,7 +310,7 @@ auto operator_result_builtin(HIROperatorResult profile) noexcept -> std::optiona
 }
 
 auto hir_operator_result_matches(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIROperatorResult profile,
     HIRTypeID operand,
     HIRTypeID result
@@ -325,7 +324,7 @@ auto hir_operator_result_matches(
 }
 
 auto unary_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRUnaryExpr::Operator op,
     HIRTypeID operand
 ) noexcept -> HIRUnaryOperatorProfile {
@@ -365,7 +364,7 @@ auto unary_operator_profile(
 }
 
 auto binary_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRBinaryExpr::Operator op,
     HIRTypeID left,
     HIRTypeID right,
@@ -452,7 +451,7 @@ auto binary_operator_profile(
 }
 
 auto cast_operator_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTypeID source,
     HIRTypeID target,
     bool source_is_numeric_enum
@@ -499,7 +498,7 @@ auto cast_operator_profile(
 }
 
 auto text_intrinsic_profile(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTextIntrinsic intrinsic,
     HIRTypeID operand
 ) noexcept -> HIRTextIntrinsicProfile {
@@ -524,7 +523,7 @@ auto text_intrinsic_profile(
     };
 }
 
-auto hir_type_supports_equality(const SemanticConstruction& hir, HIRTypeID type) noexcept -> bool {
+auto hir_type_supports_equality(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     if (!valid_type(hir, type)) {
         return false;
     }
@@ -550,18 +549,18 @@ auto hir_type_supports_equality(const SemanticConstruction& hir, HIRTypeID type)
         }
         if (const auto* structure = std::get_if<HIRStructTypeValue>(&value)) {
             return structure->structure.index() < hir.structures().size()
-                && hir.structure(structure->structure).supports_equality;
+                && hir.nominal_capabilities(HIRNominalDeclRef {structure->structure}).equality;
         }
         if (const auto* enumeration = std::get_if<HIREnumTypeValue>(&value)) {
             return enumeration->enumeration.index() < hir.enumerations().size()
-                && hir.enumeration(enumeration->enumeration).supports_equality;
+                && hir.nominal_capabilities(HIRNominalDeclRef {enumeration->enumeration}).equality;
         }
         return false;
     };
     return check(type);
 }
 
-auto hir_type_is_numeric_enum(const SemanticConstruction& hir, HIRTypeID type) noexcept -> bool {
+auto hir_type_is_numeric_enum(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     if (!valid_type(hir, type)) {
         return false;
     }
@@ -573,7 +572,7 @@ auto hir_type_is_numeric_enum(const SemanticConstruction& hir, HIRTypeID type) n
 }
 
 auto evaluate_unary_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRUnaryExpr::Operator op,
     HIRExprID operand,
     HIRTypeID result
@@ -644,7 +643,7 @@ auto evaluate_unary_constant(
 }
 
 auto evaluate_binary_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRBinaryExpr::Operator op,
     HIRExprID left,
     HIRExprID right,
@@ -713,7 +712,7 @@ auto evaluate_binary_constant(
 }
 
 auto evaluate_cast_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRCastKind kind,
     HIRExprID operand,
     HIRTypeID result,
@@ -786,7 +785,7 @@ auto evaluate_cast_constant(
 }
 
 auto evaluate_text_intrinsic_constant(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     HIRTextIntrinsic intrinsic,
     HIRExprID operand,
     HIRTypeID result

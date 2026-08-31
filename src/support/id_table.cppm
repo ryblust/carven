@@ -33,33 +33,30 @@ public:
         return ID::from_index(static_cast<std::uint32_t>(storage.size() - 1));
     }
 
-    auto get(ID id) noexcept -> Value& {
-        if (!contains(id)) {
+    auto get(this auto&& self, ID value_id) noexcept -> decltype(auto)
+        requires std::is_lvalue_reference_v<decltype(self)>
+    {
+        if (!self.contains(value_id)) {
             invariant_violation("ID table lookup used an invalid identity");
         }
-        return storage[id.index()];
-    }
-    auto get(ID id) const noexcept -> const Value& {
-        if (!contains(id)) {
-            invariant_violation("ID table lookup used an invalid identity");
-        }
-        return storage[id.index()];
+        return (self.storage[value_id.index()]);
     }
 
     auto contains(ID id) const noexcept -> bool {
         return static_cast<std::size_t>(id.index()) < storage.size();
     }
 
-    auto try_get(ID id) noexcept -> Value* {
-        return contains(id) ? std::addressof(storage[id.index()]) : nullptr;
+    auto try_get(this auto&& self, ID value_id) noexcept -> auto*
+        requires std::is_lvalue_reference_v<decltype(self)>
+    {
+        return self.contains(value_id) ? std::addressof(self.storage[value_id.index()]) : nullptr;
     }
 
-    auto try_get(ID id) const noexcept -> const Value* {
-        return contains(id) ? std::addressof(storage[id.index()]) : nullptr;
+    auto values(this auto&& self) noexcept -> auto
+        requires std::is_lvalue_reference_v<decltype(self)>
+    {
+        return std::span {self.storage};
     }
-
-    auto values() noexcept -> std::span<Value> { return storage; }
-    auto values() const noexcept -> std::span<const Value> { return storage; }
     auto size() const noexcept -> std::size_t { return storage.size(); }
     auto empty() const noexcept -> bool { return storage.empty(); }
 

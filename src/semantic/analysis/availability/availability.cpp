@@ -4,8 +4,9 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.analyzer;
 import :semantic.analysis.availability;
-import :semantic.analysis.builder;
-import :semantic.analysis.control;
+import :semantic.analysis.call_contract;
+import :semantic.analysis.session;
+import :semantic.analysis.session.read;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
 import :semantic.hir.pattern;
@@ -53,8 +54,8 @@ struct AvailabilityPlaceRef final {
 
 class AvailabilityPlaceCatalog final {
 public:
-    explicit AvailabilityPlaceCatalog(const SemanticConstruction& hir) noexcept
-        : place_refs(hir.places().size()),
+    explicit AvailabilityPlaceCatalog(SemanticDraftView hir) noexcept
+        : place_refs(hir.symbol_count()),
           body_places(hir.bodies().size()) {
         auto roots = std::vector<std::optional<BodyID>>(hir.scopes().size());
         for (auto index = 0uz; index < hir.bodies().size(); ++index) {
@@ -80,11 +81,15 @@ public:
             }
         }
 
-        for (auto index = 0uz; index < hir.places().size(); ++index) {
-            const auto place = SemanticPlaceID::from_index(static_cast<std::uint32_t>(index));
-            const auto scope = hir.place(place).scope;
+        for (auto index = 0uz; index < hir.symbol_count(); ++index) {
+            const auto symbol = SymbolID::from_index(static_cast<std::uint32_t>(index));
+            const auto& binding = hir.binding(symbol);
+            if (!binding.has_value()) {
+                continue;
+            }
+            const auto scope = binding->scope;
             if (scope.index() >= scope_bodies.size()) {
-                invariant_violation("validated semantic place has an unknown scope");
+                invariant_violation("validated semantic binding has an unknown scope");
             }
             const auto body = scope_bodies[scope.index()];
             if (!body.has_value()) {
@@ -94,21 +99,21 @@ public:
             const auto local = AvailabilityPlaceID {
                 .value = static_cast<std::uint32_t>(places.size()),
             };
-            places.push_back(place);
+            places.push_back(symbol);
             place_refs[index] = AvailabilityPlaceRef {.body = *body, .local = local};
         }
     }
 
-    auto local(BodyID body, SemanticPlaceID place) const noexcept -> AvailabilityPlaceID {
-        if (place.index() >= place_refs.size()
-            || !place_refs[place.index()].has_value()
-            || place_refs[place.index()]->body != body) {
+    auto local(BodyID body, SymbolID symbol) const noexcept -> AvailabilityPlaceID {
+        if (symbol.index() >= place_refs.size()
+            || !place_refs[symbol.index()].has_value()
+            || place_refs[symbol.index()]->body != body) {
             invariant_violation("availability references a place owned by another body");
         }
-        return place_refs[place.index()]->local;
+        return place_refs[symbol.index()]->local;
     }
 
-    auto global(BodyID body, AvailabilityPlaceID place) const noexcept -> SemanticPlaceID {
+    auto global(BodyID body, AvailabilityPlaceID place) const noexcept -> SymbolID {
         const auto& places = body_places[body.index()];
         if (place.value >= places.size()) {
             invariant_violation("availability references an unknown body-local place");
@@ -122,7 +127,7 @@ public:
 
 private:
     std::vector<std::optional<AvailabilityPlaceRef>> place_refs;
-    std::vector<std::vector<SemanticPlaceID>> body_places;
+    std::vector<std::vector<SymbolID>> body_places;
 };
 
 struct AvailabilityUse final {
@@ -344,13 +349,11 @@ struct AvailabilityTargets final {
 class BodyAvailabilityGraphBuilder final {
 public:
     BodyAvailabilityGraphBuilder(
-        const SemanticConstruction& hir,
-        const SolvedControl& control,
+        SemanticDraftView hir,
         const AvailabilityPlaceCatalog& catalog,
         BodyID body
     ) noexcept
         : hir(hir),
-          control(control),
           catalog(catalog),
           body(body) {}
 
@@ -370,19 +373,18 @@ public:
     }
 
 private:
-    auto local(SemanticPlaceID place) const noexcept -> AvailabilityPlaceID {
-        return catalog.local(body, place);
+    auto local(SymbolID symbol) const noexcept -> AvailabilityPlaceID {
+        return catalog.local(body, symbol);
     }
 
     auto required_place(SymbolID symbol) const noexcept -> AvailabilityPlaceID {
-        const auto place = hir.symbol(symbol).place;
-        if (!place.has_value()) {
-            invariant_violation("runtime binding has no published semantic place");
+        if (!hir.binding(symbol).has_value()) {
+            invariant_violation("runtime binding has no published semantic facts");
         }
-        return local(*place);
+        return local(symbol);
     }
 
-    auto whole_place(HIRExprID expression) const noexcept -> std::optional<SemanticPlaceID> {
+    auto whole_place(HIRExprID expression) const noexcept -> std::optional<SymbolID> {
         const auto& use = hir.place_use(expression);
         return use.has_value() && use->projections.empty() ? std::optional(use->root)
                                                            : std::nullopt;
@@ -445,24 +447,27 @@ private:
         return branch(std::move(successors));
     }
 
-    auto call_failures(HIRExprID callee) const noexcept -> std::span<const HIRTypeID> {
-        const auto& type = hir.type(hir.expression(callee).type).value;
-        if (const auto* function = std::get_if<HIRFunctionTypeValue>(&type)) {
-            return hir.failure_set(hir.callable(function->callable).failure_set).members;
-        }
-        if (const auto* closure = std::get_if<HIRClosureTypeValue>(&type)) {
-            return hir.failure_set(hir.callable(closure->callable).failure_set).members;
-        }
-        if (const auto* reference = std::get_if<HIRFunctionRefTypeValue>(&type)) {
-            return hir.failure_set(hir.callable_signature(reference->signature).failure_set)
-                .members;
-        }
-        return {};
+    auto call_failures(HIRExprID call) const noexcept -> std::span<const HIRTypeID> {
+        return std::visit(
+            Overloaded {
+                [&](const ConcreteCallableFailure& source) noexcept -> std::span<const HIRTypeID> {
+                    return hir.failure_set(hir.callable_flow(source.callable).effective_failure_set)
+                        .members;
+                },
+                [&](const FixedSignatureFailure& source) noexcept -> std::span<const HIRTypeID> {
+                    return hir.failure_set(source.failure_set).members;
+                },
+                [](const ForeignCallableFailure&) static noexcept -> std::span<const HIRTypeID> {
+                    return {};
+                },
+            },
+            call_contract(hir, call).failure_source
+        );
     }
 
     auto add_locals(
         std::vector<AvailabilityPlaceID>& destination,
-        std::span<const SemanticPlaceID> places
+        std::span<const SymbolID> places
     ) const noexcept -> void {
         for (const auto place : places) {
             destination.push_back(local(place));
@@ -488,7 +493,7 @@ private:
             .takes = {},
         };
         const auto add_effect = [&](HIRExprID expression) noexcept {
-            const auto& effect = control.evaluation_effect(expression);
+            const auto& effect = hir.evaluation_effect(expression);
             add_locals(result.reads, effect.reads);
             add_locals(result.reads, effect.writes);
             add_locals(result.takes, effect.takes);
@@ -515,12 +520,12 @@ private:
     auto assignment_checks(const HIRAssignmentStmt& assignment) const noexcept
         -> std::array<AvailabilityOperationCheck, 2> {
         auto target_uses = std::vector<AvailabilityPlaceID>();
-        const auto& target_effect = control.evaluation_effect(assignment.target);
+        const auto& target_effect = hir.evaluation_effect(assignment.target);
         add_locals(target_uses, target_effect.reads);
         add_locals(target_uses, target_effect.writes);
         auto source_uses = std::vector<AvailabilityPlaceID>();
         auto source_takes = std::vector<AvailabilityPlaceID>();
-        const auto& source_effect = control.evaluation_effect(assignment.value);
+        const auto& source_effect = hir.evaluation_effect(assignment.value);
         add_locals(source_uses, source_effect.reads);
         add_locals(source_uses, source_effect.writes);
         add_locals(source_takes, source_effect.takes);
@@ -569,7 +574,8 @@ private:
                 next
             );
         }
-        if (hir.place(use->root).storage != SemanticPlaceStorage::Owner) {
+        const auto& binding = hir.binding(use->root);
+        if (!binding.has_value() || binding->storage != SemanticBindingStorage::Owner) {
             return prepend(
                 AvailabilityInvalidTake {
                     .origin = origin,
@@ -684,18 +690,26 @@ private:
         AvailabilityBlockID normal,
         const AvailabilityTargets& targets
     ) noexcept -> AvailabilityBlockID {
+        const auto& facts = hir.try_facts(id);
+        if (!facts.has_value() || facts->arms.size() != attempt.arms.size()) {
+            invariant_violation("availability requires aligned frozen try facts");
+        }
+        const auto accepted_failures = [&](std::size_t arm) noexcept -> std::span<const HIRTypeID> {
+            return hir.failure_set(facts->arms[arm].accepted_failure_set).members;
+        };
+        const auto& unhandled = hir.failure_set(facts->unhandled_failure_set).members;
         auto handler_entries = std::vector<AvailabilityBlockID>(attempt.arms.size(), normal);
         for (auto index = attempt.arms.size(); index > 0; --index) {
             const auto arm_index = index - 1;
             const auto& arm = attempt.arms[arm_index];
-            const auto& accepted = control.catch_summary(id, arm_index).accepted_failures;
+            const auto accepted = accepted_failures(arm_index);
             auto handler_targets = targets;
             handler_targets.rethrows.assign(accepted.begin(), accepted.end());
             auto entry = lower_block(arm.body, normal, handler_targets);
             if (arm.guard.has_value()) {
                 auto fallback = std::vector<AvailabilityBlockID>();
                 for (auto later = arm_index + 1; later < attempt.arms.size(); ++later) {
-                    const auto& later_failures = control.catch_summary(id, later).accepted_failures;
+                    const auto later_failures = accepted_failures(later);
                     const auto overlaps = std::ranges::any_of(accepted, [&](HIRTypeID failure) {
                         return std::ranges::contains(later_failures, failure);
                     });
@@ -704,7 +718,7 @@ private:
                     }
                 }
                 for (const auto failure : accepted) {
-                    if (std::ranges::contains(control.unhandled_failures(id), failure)) {
+                    if (std::ranges::contains(unhandled, failure)) {
                         fallback.push_back(failure_target(failure, targets));
                     }
                 }
@@ -725,17 +739,16 @@ private:
         }
 
         auto protected_targets = targets;
-        for (const auto failure : control.summary(attempt.body).outward_failures) {
+        const auto& protected_failures =
+            hir.failure_set(hir.block_control(attempt.body).outward_failure_set).members;
+        for (const auto failure : protected_failures) {
             auto successors = std::vector<AvailabilityBlockID>();
             for (auto arm = 0uz; arm < attempt.arms.size(); ++arm) {
-                if (std::ranges::contains(
-                        control.catch_summary(id, arm).accepted_failures,
-                        failure
-                    )) {
+                if (std::ranges::contains(accepted_failures(arm), failure)) {
                     successors.push_back(handler_entries[arm]);
                 }
             }
-            if (std::ranges::contains(control.unhandled_failures(id), failure)) {
+            if (std::ranges::contains(unhandled, failure)) {
                 successors.push_back(failure_target(failure, targets));
             }
             if (successors.empty()) {
@@ -795,7 +808,7 @@ private:
                     return lower_expression(value.operand_id, after_access, targets);
                 },
                 [&](const HIRCallExpr& value) noexcept {
-                    auto entry = failure_branch(call_failures(value.callee), after_access, targets);
+                    auto entry = failure_branch(call_failures(id), after_access, targets);
                     for (auto argument = value.arguments.rbegin();
                          argument != value.arguments.rend();
                          ++argument) {
@@ -1062,8 +1075,7 @@ private:
         return entry;
     }
 
-    const SemanticConstruction& hir;
-    const SolvedControl& control;
+    SemanticDraftView hir;
     const AvailabilityPlaceCatalog& catalog;
     BodyID body;
     MutableAvailabilityGraph graph;
@@ -1096,16 +1108,19 @@ public:
     }
 
     auto join(const UnavailableBits& source) noexcept -> bool {
+        if (many.size() != source.many.size()) {
+            invariant_violation("availability bitsets have incompatible storage widths");
+        }
         auto changed = false;
         if (many.empty()) {
             const auto previous = one;
             one |= source.one;
             return one != previous;
         }
-        for (auto index = 0uz; index < many.size(); ++index) {
-            const auto previous = many[index];
-            many[index] |= source.many[index];
-            changed |= many[index] != previous;
+        for (auto&& [destination, incoming] : std::views::zip(many, source.many)) {
+            const auto previous = destination;
+            destination |= incoming;
+            changed |= destination != previous;
         }
         return changed;
     }
@@ -1218,7 +1233,7 @@ private:
 class BodyAvailabilitySolver final {
 public:
     BodyAvailabilitySolver(
-        const SemanticConstruction& hir,
+        SemanticDraftView hir,
         DiagnosticSink& diagnostics,
         const AvailabilityPlaceCatalog& catalog,
         BodyID body,
@@ -1316,8 +1331,12 @@ private:
                     }
                 },
                 [&](const AvailabilityRestore& value) noexcept {
-                    const auto place = catalog.global(body, value.place);
-                    if (!value.requires_write || hir.place(place).capabilities.write) {
+                    const auto symbol = catalog.global(body, value.place);
+                    const auto& binding = hir.binding(symbol);
+                    if (!binding.has_value()) {
+                        invariant_violation("availability restore references a non-binding symbol");
+                    }
+                    if (!value.requires_write || binding->capabilities.write) {
                         state.restore(value.place);
                     }
                 },
@@ -1413,7 +1432,7 @@ private:
         }
     }
 
-    const SemanticConstruction& hir;
+    SemanticDraftView hir;
     DiagnosticSink& diagnostics;
     const AvailabilityPlaceCatalog& catalog;
     BodyID body;
@@ -1427,30 +1446,26 @@ private:
 };
 
 auto diagnose_body(
-    const SemanticConstruction& hir,
+    SemanticDraftView hir,
     DiagnosticSink& diagnostics,
-    const SolvedControl& control,
     const AvailabilityPlaceCatalog& catalog,
     BodyID body
 ) noexcept -> void {
-    const auto graph = BodyAvailabilityGraphBuilder(hir, control, catalog, body).build();
+    const auto graph = BodyAvailabilityGraphBuilder(hir, catalog, body).build();
     BodyAvailabilitySolver(hir, diagnostics, catalog, body, graph).run();
 }
 
 } // namespace
 
-auto diagnose_availability(
-    const SemanticConstruction& builder,
-    DiagnosticSink& diagnostics,
-    const SolvedControl& control
-) noexcept -> void {
+auto diagnose_availability(SemanticDraftView builder, DiagnosticSink& diagnostics) noexcept
+    -> void {
     const auto catalog = AvailabilityPlaceCatalog(builder);
     for (auto index = 0uz; index < builder.callables().size(); ++index) {
         const auto callable = CallableID::from_index(static_cast<std::uint32_t>(index));
-        diagnose_body(builder, diagnostics, control, catalog, builder.callable(callable).body);
+        diagnose_body(builder, diagnostics, catalog, builder.callable(callable).body);
     }
     for (auto index = 0uz; index < builder.tests().size(); ++index) {
         const auto test = TestID::from_index(static_cast<std::uint32_t>(index));
-        diagnose_body(builder, diagnostics, control, catalog, builder.test(test).body);
+        diagnose_body(builder, diagnostics, catalog, builder.test(test).body);
     }
 }

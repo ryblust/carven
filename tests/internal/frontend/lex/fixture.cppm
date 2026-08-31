@@ -48,9 +48,9 @@ auto check_token_sequence(std::string_view text, std::span<const TokenCase> expe
     REQUIRE(result.diagnostics.empty());
     const auto tokens = result.value.tokens();
     REQUIRE_EQ(tokens.size(), expected.size());
-    for (auto index = 0uz; index < expected.size(); ++index) {
-        CHECK_EQ(tokens[index].kind, expected[index].kind);
-        CHECK_EQ(slice(text, tokens[index].span), expected[index].spelling);
+    for (const auto& [token, expected_token] : std::views::zip(tokens, expected)) {
+        CHECK_EQ(token.kind, expected_token.kind);
+        CHECK_EQ(slice(text, token.span), expected_token.spelling);
     }
 }
 
