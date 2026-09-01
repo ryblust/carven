@@ -6,11 +6,6 @@ import :backend.generation.names;
 import :semantic.hir;
 import std;
 
-enum class TargetTypeCompleteness {
-    Declaration,
-    CompleteDefinition,
-};
-
 struct TargetNameAllocation final {
     std::vector<TargetModuleNames> modules;
     TargetName generated_namespace;
@@ -35,7 +30,7 @@ private:
     auto allocate_names() noexcept -> void;
     auto derive_representations() noexcept -> void;
     auto derive_value_binding_requirements() noexcept -> void;
-    auto build_artifact_graph() noexcept -> void;
+    auto build_artifacts() noexcept -> void;
     auto verify() const noexcept -> void;
     auto intern_carrier_shape(HIRTypeID result, FailureSetID failure_profile) noexcept
         -> TargetCarrierShapeID;

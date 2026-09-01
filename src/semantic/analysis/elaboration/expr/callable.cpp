@@ -4,6 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.operations;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
@@ -61,12 +62,9 @@ auto build_expression(
             }
             const auto intrinsic =
                 name == "is_empty" ? HIRTextIntrinsic::IsEmpty : HIRTextIntrinsic::Len;
-            const auto profile = text_intrinsic_profile(
-                builder,
-                intrinsic,
-                expression_type(module_analysis, operand)
-            );
-            const auto result_type = builtin(module_analysis, member->name_span, profile.result);
+            const auto check =
+                check_text_intrinsic(builder, intrinsic, expression_type(module_analysis, operand));
+            const auto result_type = builtin(module_analysis, member->name_span, check.result);
             auto constant = std::optional<HIRConstant>();
             if (recognized) {
                 auto evaluation =

@@ -100,7 +100,7 @@ auto lower_statement(
         .value =
             TargetGotoStmt {
                 .label = local_transfer.transfer_label,
-                .kind = TargetSyntheticControlKind::StatementTryFailureForward,
+                .role = TargetJumpRole::FailureTransfer,
             },
         .attribution = {
             .kind = TargetAttributionKind::SourceExpansion,
@@ -166,7 +166,7 @@ auto lower_statement(
                     .value =
                         TargetGotoStmt {
                             .label = local_transfer.transfer_label,
-                            .kind = TargetSyntheticControlKind::StatementTryFailureForward,
+                            .role = TargetJumpRole::FailureTransfer,
                         },
                     .attribution =
                         {
@@ -197,7 +197,7 @@ auto lower_statement(
         control.continue_destination->used.get() = true;
         return TargetGotoStmt {
             .label = control.continue_destination->label,
-            .kind = TargetSyntheticControlKind::NormalizedForContinue,
+            .role = TargetJumpRole::ForLoopContinue,
         };
     }
     return TargetContinueStmt {};

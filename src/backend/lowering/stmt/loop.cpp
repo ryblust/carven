@@ -150,7 +150,7 @@ auto lower_statement(
         loop_body.push_back(context.target().append_lowering_statement(
             TargetLabelStmt {
                 .label = *continue_label,
-                .kind = TargetSyntheticControlKind::NormalizedForContinue,
+                .role = TargetJumpRole::ForLoopContinue,
             }
         ));
     }

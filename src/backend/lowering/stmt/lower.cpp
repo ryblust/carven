@@ -4,7 +4,7 @@ import :backend.lowering.program;
 import :backend.lowering.expr;
 import :backend.generation.names;
 import :backend.lowering.names;
-import :backend.lowering.patterns;
+import :backend.lowering.match;
 import :backend.lowering.stmt;
 import :backend.lowering.types;
 import :backend.target.expr;
@@ -401,7 +401,7 @@ auto lower_void_try(
     const auto transfer_target = context.target().append_lowering_statement(
         TargetLabelStmt {
             .label = transfer_label,
-            .kind = TargetSyntheticControlKind::StatementTryFailureForward,
+            .role = TargetJumpRole::FailureTransfer,
         }
     );
     const auto protected_region = context.target().append_lowering_statement(

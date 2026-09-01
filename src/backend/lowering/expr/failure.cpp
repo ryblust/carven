@@ -204,7 +204,7 @@ auto failure_transfer_statements(
             .value =
                 TargetGotoStmt {
                     .label = local_transfer.transfer_label,
-                    .kind = TargetSyntheticControlKind::StatementTryFailureForward,
+                    .role = TargetJumpRole::FailureTransfer,
                 },
             .attribution = {
                 .kind = TargetAttributionKind::SourceExpansion,

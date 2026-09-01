@@ -53,7 +53,7 @@ auto TargetProgramBuilder::finish() && noexcept -> TargetProgram {
     allocate_names();
     derive_representations();
     derive_value_binding_requirements();
-    build_artifact_graph();
+    build_artifacts();
     if (!name_allocation.has_value()) {
         invariant_violation("target program names were not completed");
     }

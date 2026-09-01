@@ -1,15 +1,12 @@
 module carven:semantic.analysis.constant.evaluate.impl;
 
-import :semantic.analysis.session;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.elaboration.types.relations;
+import :semantic.analysis.operations;
+import :semantic.analysis.session;
 import :semantic.hir;
 import :semantic.hir.constant;
-import :semantic.hir.decl;
 import :semantic.hir.expr;
-import :semantic.hir.symbol;
 import :semantic.hir.type;
-import :support.visit;
 import std;
 
 namespace {
@@ -17,7 +14,6 @@ namespace {
 auto valid_type(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     return type.index() < hir.types().size();
 }
-
 auto valid_expression(SemanticDraftView hir, HIRExprID expression) noexcept -> bool {
     return expression.index() < hir.expressions().size();
 }
@@ -33,16 +29,6 @@ auto builtin_type(SemanticDraftView hir, HIRTypeID type) noexcept -> std::option
     const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&hir.type(type).value);
     return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
 }
-
-auto is_error(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
-    return valid_type(hir, type) && std::holds_alternative<HIRErrorTypeValue>(hir.type(type).value);
-}
-
-auto is_foreign(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
-    return valid_type(hir, type)
-        && std::holds_alternative<HIRForeignTypeValue>(hir.type(type).value);
-}
-
 auto checked_add(std::int64_t left, std::int64_t right) noexcept -> std::optional<std::int64_t> {
     constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
     constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
@@ -298,278 +284,21 @@ auto evaluate_unsigned_binary(
     }
     std::unreachable();
 }
-
-} // namespace
-
-auto operator_result_builtin(HIROperatorResult profile) noexcept -> std::optional<HIRBuiltinType> {
-    switch (profile) {
-        case HIROperatorResult::Operand: return std::nullopt;
-        case HIROperatorResult::Boolean: return HIRBuiltinType::Bool;
-    }
-    std::unreachable();
-}
-
 auto hir_operator_result_matches(
     SemanticDraftView hir,
-    HIROperatorResult profile,
+    OperatorResult result_kind,
     HIRTypeID operand,
     HIRTypeID result
 ) noexcept -> bool {
     if (!valid_type(hir, operand) || !valid_type(hir, result)) {
         return false;
     }
-    const auto expected_builtin = operator_result_builtin(profile);
+    const auto expected_builtin = operator_result_builtin(result_kind);
     return expected_builtin.has_value() ? builtin_type(hir, result) == *expected_builtin
                                         : operand == result;
 }
 
-auto unary_operator_profile(
-    SemanticDraftView hir,
-    HIRUnaryExpr::Operator op,
-    HIRTypeID operand
-) noexcept -> HIRUnaryOperatorProfile {
-    const auto result = op == HIRUnaryExpr::Operator::LogicalNot ? HIROperatorResult::Boolean
-                                                                 : HIROperatorResult::Operand;
-    if (!valid_type(hir, operand) || is_error(hir, operand)) {
-        return {.capability = HIRUnaryCapability::Error, .result = result};
-    }
-    if (is_foreign(hir, operand)) {
-        return {.capability = HIRUnaryCapability::Foreign, .result = result};
-    }
-    const auto builtin = builtin_type(hir, operand);
-    switch (op) {
-        case HIRUnaryExpr::Operator::LogicalNot:
-            return {
-                .capability = builtin == HIRBuiltinType::Bool
-                    ? HIRUnaryCapability::Supported
-                    : HIRUnaryCapability::BooleanOperandRequired,
-                .result = result,
-            };
-        case HIRUnaryExpr::Operator::Negate:
-            return {
-                .capability = builtin.has_value() && builtin_is_numeric(*builtin)
-                    ? HIRUnaryCapability::Supported
-                    : HIRUnaryCapability::NumericOperandRequired,
-                .result = result,
-            };
-        case HIRUnaryExpr::Operator::BitwiseNot:
-            return {
-                .capability = builtin.has_value() && builtin_is_integer(*builtin)
-                    ? HIRUnaryCapability::Supported
-                    : HIRUnaryCapability::IntegerOperandRequired,
-                .result = result,
-            };
-    }
-    std::unreachable();
-}
-
-auto binary_operator_profile(
-    SemanticDraftView hir,
-    HIRBinaryExpr::Operator op,
-    HIRTypeID left,
-    HIRTypeID right,
-    bool equality_capable
-) noexcept -> HIRBinaryOperatorProfile {
-    const auto compatible = type_compatible(hir, left, right);
-    const auto boolean_result = op == HIRBinaryExpr::Operator::LogicalOr
-        || op == HIRBinaryExpr::Operator::LogicalAnd
-        || op == HIRBinaryExpr::Operator::Equal
-        || op == HIRBinaryExpr::Operator::NotEqual
-        || op == HIRBinaryExpr::Operator::Less
-        || op == HIRBinaryExpr::Operator::LessEqual
-        || op == HIRBinaryExpr::Operator::Greater
-        || op == HIRBinaryExpr::Operator::GreaterEqual;
-    const auto result = boolean_result ? HIROperatorResult::Boolean : HIROperatorResult::Operand;
-    const auto equality =
-        op == HIRBinaryExpr::Operator::Equal || op == HIRBinaryExpr::Operator::NotEqual;
-    if (!valid_type(hir, left)
-        || !valid_type(hir, right)
-        || is_error(hir, left)
-        || is_error(hir, right)) {
-        return {
-            .compatible = compatible,
-            .equality_supported = !equality || equality_capable,
-            .capability = HIRBinaryCapability::Error,
-            .result = result,
-        };
-    }
-    if (is_foreign(hir, left) || is_foreign(hir, right)) {
-        return {
-            .compatible = compatible,
-            .equality_supported = !equality || equality_capable,
-            .capability = HIRBinaryCapability::Foreign,
-            .result = result,
-        };
-    }
-    const auto left_builtin = builtin_type(hir, left);
-    const auto right_builtin = builtin_type(hir, right);
-    auto capability = HIRBinaryCapability::Supported;
-    switch (op) {
-        case HIRBinaryExpr::Operator::LogicalOr:
-        case HIRBinaryExpr::Operator::LogicalAnd:
-            if (left_builtin != HIRBuiltinType::Bool || right_builtin != HIRBuiltinType::Bool) {
-                capability = HIRBinaryCapability::BooleanOperandsRequired;
-            }
-            break;
-        case HIRBinaryExpr::Operator::Add:
-        case HIRBinaryExpr::Operator::Subtract:
-        case HIRBinaryExpr::Operator::Multiply:
-        case HIRBinaryExpr::Operator::Divide:
-        case HIRBinaryExpr::Operator::Less:
-        case HIRBinaryExpr::Operator::LessEqual:
-        case HIRBinaryExpr::Operator::Greater:
-        case HIRBinaryExpr::Operator::GreaterEqual:
-            if (!left_builtin.has_value()
-                || !right_builtin.has_value()
-                || !builtin_is_numeric(*left_builtin)
-                || !builtin_is_numeric(*right_builtin)) {
-                capability = HIRBinaryCapability::NumericOperandsRequired;
-            }
-            break;
-        case HIRBinaryExpr::Operator::BitwiseOr:
-        case HIRBinaryExpr::Operator::BitwiseXor:
-        case HIRBinaryExpr::Operator::BitwiseAnd:
-        case HIRBinaryExpr::Operator::LeftShift:
-        case HIRBinaryExpr::Operator::RightShift:
-        case HIRBinaryExpr::Operator::Remainder:
-            if (!left_builtin.has_value()
-                || !right_builtin.has_value()
-                || !builtin_is_integer(*left_builtin)
-                || !builtin_is_integer(*right_builtin)) {
-                capability = HIRBinaryCapability::IntegerOperandsRequired;
-            }
-            break;
-        case HIRBinaryExpr::Operator::Equal:
-        case HIRBinaryExpr::Operator::NotEqual: break;
-    }
-    return {
-        .compatible = compatible,
-        .equality_supported = !equality || equality_capable,
-        .capability = capability,
-        .result = result,
-    };
-}
-
-auto cast_operator_profile(
-    SemanticDraftView hir,
-    HIRTypeID source,
-    HIRTypeID target,
-    bool source_is_numeric_enum
-) noexcept -> HIRCastOperatorProfile {
-    if (!valid_type(hir, source)
-        || !valid_type(hir, target)
-        || is_error(hir, source)
-        || is_error(hir, target)) {
-        return {.capability = HIRCastCapability::Error, .kind = std::nullopt};
-    }
-    if (is_foreign(hir, source) || is_foreign(hir, target)) {
-        return {.capability = HIRCastCapability::Invalid, .kind = std::nullopt};
-    }
-    if (source == target) {
-        return {
-            .capability = HIRCastCapability::Supported,
-            .kind = HIRCastKind::Identity,
-        };
-    }
-    const auto source_builtin = builtin_type(hir, source);
-    const auto target_builtin = builtin_type(hir, target);
-    const auto source_integer = source_builtin.has_value() && builtin_is_integer(*source_builtin);
-    const auto target_integer = target_builtin.has_value() && builtin_is_integer(*target_builtin);
-    auto kind = std::optional<HIRCastKind>();
-    if (source_integer && target_integer) {
-        kind = HIRCastKind::IntegerToInteger;
-    } else if (source_integer && target_builtin == HIRBuiltinType::Bool) {
-        kind = HIRCastKind::IntegerToBool;
-    } else if (source_builtin == HIRBuiltinType::Bool && target_integer) {
-        kind = HIRCastKind::BoolToInteger;
-    } else if (source_integer
-               && (target_builtin == HIRBuiltinType::F32
-                   || target_builtin == HIRBuiltinType::F64)) {
-        kind = HIRCastKind::IntegerToFloating;
-    } else if (source_builtin == HIRBuiltinType::F32 && target_builtin == HIRBuiltinType::F64) {
-        kind = HIRCastKind::FloatingWiden;
-    } else if (source_is_numeric_enum && target_integer) {
-        kind = HIRCastKind::EnumToInteger;
-    }
-    return {
-        .capability = kind.has_value() ? HIRCastCapability::Supported : HIRCastCapability::Invalid,
-        .kind = kind,
-    };
-}
-
-auto text_intrinsic_profile(
-    SemanticDraftView hir,
-    HIRTextIntrinsic intrinsic,
-    HIRTypeID operand
-) noexcept -> HIRTextIntrinsicProfile {
-    auto result = HIRBuiltinType::Usize;
-    auto constant_bearing = true;
-    switch (intrinsic) {
-        case HIRTextIntrinsic::Len:     result = HIRBuiltinType::Usize; break;
-        case HIRTextIntrinsic::IsEmpty: result = HIRBuiltinType::Bool; break;
-        case HIRTextIntrinsic::Bytes:
-            result = HIRBuiltinType::StrBytesView;
-            constant_bearing = false;
-            break;
-        case HIRTextIntrinsic::Chars:
-            result = HIRBuiltinType::StrCharsView;
-            constant_bearing = false;
-            break;
-    }
-    return {
-        .supported = builtin_type(hir, operand) == HIRBuiltinType::Str,
-        .constant_bearing = constant_bearing,
-        .result = result,
-    };
-}
-
-auto hir_type_supports_equality(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
-    if (!valid_type(hir, type)) {
-        return false;
-    }
-    if (std::holds_alternative<HIRForeignTypeValue>(hir.type(type).value)) {
-        return true;
-    }
-    const auto check = [&](this const auto& self, HIRTypeID candidate) noexcept -> bool {
-        if (!valid_type(hir, candidate)) {
-            return false;
-        }
-        const auto& value = hir.type(candidate).value;
-        if (std::holds_alternative<HIRErrorTypeValue>(value)) {
-            return true;
-        }
-        if (std::holds_alternative<HIRForeignTypeValue>(value)) {
-            return false;
-        }
-        if (const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&value)) {
-            return builtin_type_supports_equality(builtin->kind);
-        }
-        if (const auto* array = std::get_if<HIRArrayTypeValue>(&value)) {
-            return self(array->element_type_id);
-        }
-        if (const auto* structure = std::get_if<HIRStructTypeValue>(&value)) {
-            return structure->structure.index() < hir.structures().size()
-                && hir.nominal_capabilities(HIRNominalDeclRef {structure->structure}).equality;
-        }
-        if (const auto* enumeration = std::get_if<HIREnumTypeValue>(&value)) {
-            return enumeration->enumeration.index() < hir.enumerations().size()
-                && hir.nominal_capabilities(HIRNominalDeclRef {enumeration->enumeration}).equality;
-        }
-        return false;
-    };
-    return check(type);
-}
-
-auto hir_type_is_numeric_enum(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
-    if (!valid_type(hir, type)) {
-        return false;
-    }
-    const auto* nominal = std::get_if<HIREnumTypeValue>(&hir.type(type).value);
-    if (nominal == nullptr || nominal->enumeration.index() >= hir.enumerations().size()) {
-        return false;
-    }
-    return hir.enumeration(nominal->enumeration).profile == HIREnumProfile::Numeric;
-}
+} // namespace
 
 auto evaluate_unary_constant(
     SemanticDraftView hir,
@@ -581,14 +310,14 @@ auto evaluate_unary_constant(
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto& operand_expression = hir.expression(operand);
-    const auto profile = unary_operator_profile(hir, op, operand_expression.type);
-    if (!hir_operator_result_matches(hir, profile.result, operand_expression.type, result)) {
+    const auto check = check_unary_operator(hir, op, operand_expression.type);
+    if (!hir_operator_result_matches(hir, check.result, operand_expression.type, result)) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
-    if (profile.capability == HIRUnaryCapability::Foreign) {
+    if (check.status == UnaryOperatorStatus::Foreign) {
         return std::unexpected(HIRConstantEvaluationFailure::UnsupportedOperation);
     }
-    if (profile.capability != HIRUnaryCapability::Supported) {
+    if (check.status != UnaryOperatorStatus::Supported) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto constant = expression_constant(hir, operand);
@@ -648,6 +377,7 @@ auto evaluate_binary_constant(
     HIRExprID left,
     HIRExprID right,
     HIRTypeID result,
+    bool operands_compatible,
     bool equality_capable
 ) noexcept -> std::expected<HIRConstantEvaluation, HIRConstantEvaluationFailure> {
     if (!valid_expression(hir, left) || !valid_expression(hir, right)) {
@@ -655,22 +385,22 @@ auto evaluate_binary_constant(
     }
     const auto& left_expression = hir.expression(left);
     const auto& right_expression = hir.expression(right);
-    const auto profile = binary_operator_profile(
+    const auto check = check_binary_operator(
         hir,
         op,
         left_expression.type,
         right_expression.type,
         equality_capable
     );
-    if (!profile.compatible
-        || !profile.equality_supported
-        || !hir_operator_result_matches(hir, profile.result, left_expression.type, result)) {
+    if (!operands_compatible
+        || !check.equality_supported
+        || !hir_operator_result_matches(hir, check.result, left_expression.type, result)) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
-    if (profile.capability == HIRBinaryCapability::Foreign) {
+    if (check.status == BinaryOperatorStatus::Foreign) {
         return std::unexpected(HIRConstantEvaluationFailure::UnsupportedOperation);
     }
-    if (profile.capability != HIRBinaryCapability::Supported) {
+    if (check.status != BinaryOperatorStatus::Supported) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto left_constant = expression_constant(hir, left);
@@ -722,9 +452,8 @@ auto evaluate_cast_constant(
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto& operand_expression = hir.expression(operand);
-    const auto profile =
-        cast_operator_profile(hir, operand_expression.type, result, source_is_numeric_enum);
-    if (profile.capability != HIRCastCapability::Supported || profile.kind != kind) {
+    const auto check = check_cast(hir, operand_expression.type, result, source_is_numeric_enum);
+    if (check.status != CastStatus::Supported || check.kind != kind) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto constant = expression_constant(hir, operand);
@@ -794,11 +523,11 @@ auto evaluate_text_intrinsic_constant(
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
     const auto& operand_expression = hir.expression(operand);
-    const auto profile = text_intrinsic_profile(hir, intrinsic, operand_expression.type);
-    if (!profile.supported || builtin_type(hir, result) != profile.result) {
+    const auto check = check_text_intrinsic(hir, intrinsic, operand_expression.type);
+    if (!check.supported || builtin_type(hir, result) != check.result) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
-    if (!profile.constant_bearing) {
+    if (!check.constant_bearing) {
         return std::unexpected(HIRConstantEvaluationFailure::UnsupportedOperation);
     }
     const auto constant = expression_constant(hir, operand);

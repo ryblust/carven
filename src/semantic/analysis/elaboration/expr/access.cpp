@@ -1,7 +1,7 @@
 module carven:semantic.analysis.elaboration.expr.access.impl;
 
 import :frontend.ast.expr;
-import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.operations;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
@@ -116,7 +116,7 @@ auto member_expression(
             if (name == "bytes" || name == "chars") {
                 const auto intrinsic =
                     name == "bytes" ? HIRTextIntrinsic::Bytes : HIRTextIntrinsic::Chars;
-                const auto profile = text_intrinsic_profile(
+                const auto check = check_text_intrinsic(
                     builder,
                     intrinsic,
                     expression_type(module_analysis, operand)
@@ -125,7 +125,7 @@ auto member_expression(
                     module_analysis,
                     {
                         .origin = expression_origin,
-                        .type = builtin(module_analysis, member.name_span, profile.result),
+                        .type = builtin(module_analysis, member.name_span, check.result),
                         .constant = std::nullopt,
                         .value = HIRTextIntrinsicExpr {
                             .operand_id = operand,

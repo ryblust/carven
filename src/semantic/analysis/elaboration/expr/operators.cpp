@@ -5,6 +5,7 @@ import :frontend.ast.expr;
 import :frontend.ast.literal;
 import :frontend.literal;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.operations;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
@@ -63,34 +64,34 @@ auto build_expression(
     }
     const auto& builder = module_analysis.builder();
     const auto operand_type = expression_type(module_analysis, operand);
-    const auto profile = unary_operator_profile(builder, op, operand_type);
-    switch (profile.capability) {
-        case HIRUnaryCapability::BooleanOperandRequired:
+    const auto check = check_unary_operator(builder, op, operand_type);
+    switch (check.status) {
+        case UnaryOperatorStatus::BooleanOperandRequired:
             module_analysis.emit(
                 prefix.operator_span,
                 "logical negation requires a bool operand",
                 DiagnosticCode::TypePrefixBool
             );
             break;
-        case HIRUnaryCapability::NumericOperandRequired:
+        case UnaryOperatorStatus::NumericOperandRequired:
             module_analysis.emit(
                 prefix.operator_span,
                 "arithmetic negation requires a numeric operand",
                 DiagnosticCode::TypePrefixNumeric
             );
             break;
-        case HIRUnaryCapability::IntegerOperandRequired:
+        case UnaryOperatorStatus::IntegerOperandRequired:
             module_analysis.emit(
                 prefix.operator_span,
                 "bitwise negation requires an integer operand",
                 DiagnosticCode::TypePrefixInteger
             );
             break;
-        case HIRUnaryCapability::Supported:
-        case HIRUnaryCapability::Foreign:
-        case HIRUnaryCapability::Error:     break;
+        case UnaryOperatorStatus::Supported:
+        case UnaryOperatorStatus::Foreign:
+        case UnaryOperatorStatus::Error:     break;
     }
-    const auto result_builtin = operator_result_builtin(profile.result);
+    const auto result_builtin = operator_result_builtin(check.result);
     const auto result_type = result_builtin.has_value()
         ? builtin(module_analysis, prefix.operator_span, *result_builtin)
         : operand_type;
@@ -170,11 +171,10 @@ auto build_expression(
             && module_analysis.declarations().enumeration(enumeration_resolution.value()).profile
                 == HIREnumProfile::Numeric;
     }
-    const auto profile =
-        cast_operator_profile(builder, source_type, target_type, source_is_numeric_enum);
-    const auto valid = profile.capability == HIRCastCapability::Supported;
-    const auto kind = profile.kind.value_or(HIRCastKind::Identity);
-    if (profile.capability == HIRCastCapability::Invalid) {
+    const auto check = check_cast(builder, source_type, target_type, source_is_numeric_enum);
+    const auto valid = check.status == CastStatus::Supported;
+    const auto kind = check.kind.value_or(HIRCastKind::Identity);
+    if (check.status == CastStatus::Invalid) {
         module_analysis
             .emit(cast.operator_span, "invalid 'as' conversion", DiagnosticCode::TypeCast);
     }

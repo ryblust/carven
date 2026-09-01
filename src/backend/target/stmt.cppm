@@ -73,19 +73,19 @@ struct TargetBreakStmt final {};
 
 struct TargetContinueStmt final {};
 
-enum class TargetSyntheticControlKind {
-    StatementTryFailureForward,
-    NormalizedForContinue,
+enum class TargetJumpRole {
+    FailureTransfer,
+    ForLoopContinue,
 };
 
 struct TargetGotoStmt final {
     TargetIdentifier label;
-    TargetSyntheticControlKind kind;
+    TargetJumpRole role;
 };
 
 struct TargetLabelStmt final {
     TargetIdentifier label;
-    TargetSyntheticControlKind kind;
+    TargetJumpRole role;
 };
 
 struct TargetIfBranch final {

@@ -38,22 +38,9 @@ auto materialize_pattern_bindings(
     std::span<const LoweredPatternBinding> bindings
 ) noexcept -> std::vector<TargetStmtID>;
 
-auto lower_statement_match(
-    TargetCallableLowerer& context,
-    const HIRMatchStmt& match,
-    const TargetControlDestinations& control
-) noexcept -> std::vector<TargetStmtID>;
 
-auto lower_value_match(
-    TargetCallableLowerer& context,
-    const HIRMatchExpr& match,
-    const TargetControlDestinations& control
-) noexcept -> std::vector<TargetStmtID>;
-
-auto lower_outcome_match(
-    TargetCallableLowerer& context,
-    const HIRMatchExpr& match,
-    const TargetControlDestinations& control,
-    HIRTypeID result_type_id,
-    FailureSetID failure_set_id
-) noexcept -> std::vector<TargetStmtID>;
+auto combine_pattern_conditions(
+    TargetUnitBuilder& builder,
+    std::optional<TargetExprID> left,
+    std::optional<TargetExprID> right
+) noexcept -> std::optional<TargetExprID>;

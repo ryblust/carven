@@ -550,13 +550,13 @@ TEST_CASE("Target unit validation: hidden function bodies and conflicting forms 
     }
 }
 
-TEST_CASE("Target unit validation: synthetic control checks remain active") {
+TEST_CASE("Target unit validation: target jump checks remain active") {
     auto fixture = TargetUnitFixture();
     const auto result_type = fixture.append_intrinsic_type();
     const auto jump = fixture.append_statement(
         TargetGotoStmt {
             .label = identifier("missing"),
-            .kind = TargetSyntheticControlKind::StatementTryFailureForward,
+            .role = TargetJumpRole::FailureTransfer,
         },
         synthetic_attribution()
     );

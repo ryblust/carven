@@ -4,6 +4,7 @@ import :frontend.ast.expr;
 import :frontend.ast.literal;
 import :frontend.literal;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.operations;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
@@ -115,19 +116,19 @@ auto build_expression(
     const auto& builder = module_analysis.builder();
     const auto left_type = expression_type(module_analysis, left);
     const auto right_type = expression_type(module_analysis, right);
+    const auto operands_compatible = compatible(module_analysis, left_type, right_type);
     const auto equality_capable = !equality
         || is_opaque_or_error(module_analysis, left_type)
         || supports_equality(module_analysis, left_type);
-    const auto profile =
-        binary_operator_profile(builder, op, left_type, right_type, equality_capable);
-    if (!profile.compatible) {
+    const auto check = check_binary_operator(builder, op, left_type, right_type, equality_capable);
+    if (!operands_compatible) {
         module_analysis.emit(
             binary.operator_span,
             "binary operands have incompatible types",
             DiagnosticCode::TypeBinary
         );
     }
-    if (!profile.equality_supported) {
+    if (!check.equality_supported) {
         module_analysis.emit(
             binary.operator_span,
             "operand type does not support structural equality",
@@ -138,15 +139,15 @@ auto build_expression(
         || op == HIRBinaryExpr::Operator::LessEqual
         || op == HIRBinaryExpr::Operator::Greater
         || op == HIRBinaryExpr::Operator::GreaterEqual;
-    switch (profile.capability) {
-        case HIRBinaryCapability::BooleanOperandsRequired:
+    switch (check.status) {
+        case BinaryOperatorStatus::BooleanOperandsRequired:
             module_analysis.emit(
                 binary.operator_span,
                 "logical operands must have type bool",
                 DiagnosticCode::TypeLogicalBool
             );
             break;
-        case HIRBinaryCapability::NumericOperandsRequired:
+        case BinaryOperatorStatus::NumericOperandsRequired:
             module_analysis.emit(
                 binary.operator_span,
                 ordered ? "ordered comparison requires numeric operands"
@@ -154,24 +155,31 @@ auto build_expression(
                 ordered ? DiagnosticCode::TypeBinaryOrdered : DiagnosticCode::TypeBinaryNumeric
             );
             break;
-        case HIRBinaryCapability::IntegerOperandsRequired:
+        case BinaryOperatorStatus::IntegerOperandsRequired:
             module_analysis.emit(
                 binary.operator_span,
                 "integer operator requires integer operands",
                 DiagnosticCode::TypeBinaryInteger
             );
             break;
-        case HIRBinaryCapability::Supported:
-        case HIRBinaryCapability::Foreign:
-        case HIRBinaryCapability::Error:     break;
+        case BinaryOperatorStatus::Supported:
+        case BinaryOperatorStatus::Foreign:
+        case BinaryOperatorStatus::Error:     break;
     }
-    const auto result_builtin = operator_result_builtin(profile.result);
+    const auto result_builtin = operator_result_builtin(check.result);
     const auto result_type = result_builtin.has_value()
         ? builtin(module_analysis, binary.operator_span, *result_builtin)
         : left_type;
     auto constant = std::optional<HIRConstant>();
-    auto evaluation =
-        evaluate_binary_constant(builder, op, left, right, result_type, equality_capable);
+    auto evaluation = evaluate_binary_constant(
+        builder,
+        op,
+        left,
+        right,
+        result_type,
+        operands_compatible,
+        equality_capable
+    );
     if (evaluation.has_value()) {
         constant = std::move(evaluation->value);
     } else {

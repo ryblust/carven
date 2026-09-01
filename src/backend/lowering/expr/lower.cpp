@@ -4,7 +4,7 @@ import :backend.lowering.program;
 import :backend.lowering.expr;
 import :backend.generation.names;
 import :backend.lowering.names;
-import :backend.lowering.patterns;
+import :backend.lowering.match;
 import :backend.lowering.stmt;
 import :backend.lowering.types;
 import :backend.target.expr;

@@ -203,7 +203,7 @@ exactly once by the structured fallback. No wrapper statement is allocated for
 syntax owned by the header.
 
 If a condition or step needs preludes, lowering uses a structured `while`
-normalization and a narrow `NormalizedForContinue` label when required.
+normalization and a narrow `ForLoopContinue` jump role when required.
 `TargetForStmt` owns typed initializer and step values plus occurrence-owned
 condition and body references.
 
@@ -244,7 +244,7 @@ returning the unit. The validator checks at least:
   synthetic attribution;
 - artifact role, source-mapping policy, directives, and root shape agree;
 - typed `for` headers contain only their admitted forms;
-- labels, jumps, loops, initialization barriers, and synthetic control agree;
+- lowered jump roles agree with labels, loops, and initialization barriers;
 - no arena node is orphaned.
 
 The pure validation function is an owner-local test seam, not a recoverable

@@ -119,7 +119,7 @@ representations:
 - target-unit fixtures cover reference bounds, deep occurrence cloning, unique
   item/statement/expression ownership, cycles, attribution, type-owned array
   extents, typed-for headers, all-arena reachability, artifact metadata, and
-  synthetic control;
+  lowered jump roles;
 - prepared-statement fixtures cover move-only classify-once/publish-once
   behavior for C-style `for` initializers and steps;
 - diagnostic, target-quality, interface, and language fixtures jointly cover
