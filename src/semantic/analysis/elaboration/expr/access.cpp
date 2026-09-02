@@ -30,8 +30,6 @@ auto build_expression(
     auto result_type = std::optional<HIRTypeID>();
     if (const auto* array = std::get_if<HIRArrayTypeValue>(&operand_type)) {
         result_type = array->element_type_id;
-    } else if (std::holds_alternative<HIRForeignTypeValue>(operand_type)) {
-        result_type = expression_type(module_analysis, operand);
     } else if (!std::holds_alternative<HIRErrorTypeValue>(operand_type)) {
         module_analysis.emit(
             value.span,
@@ -40,7 +38,7 @@ auto build_expression(
         );
     }
     if (!is_integer(module_analysis, expression_type(module_analysis, index_value))
-        && !is_opaque_or_error(module_analysis, expression_type(module_analysis, index_value))) {
+        && !is_error_type(module_analysis, expression_type(module_analysis, index_value))) {
         module_analysis.emit(
             ast.expression(index.index).span,
             "array index must have an integer type",
@@ -175,9 +173,7 @@ auto member_expression(
                 );
             }
         } else if (signature_resolution.error() == LookupError::Missing) {
-            if (std::holds_alternative<HIRForeignTypeValue>(operand_type)) {
-                result_type = expression_type(module_analysis, operand);
-            } else if (!std::holds_alternative<HIRErrorTypeValue>(operand_type)) {
+            if (!std::holds_alternative<HIRErrorTypeValue>(operand_type)) {
                 module_analysis.emit(
                     member.name_span,
                     "member cannot be resolved for this type",
@@ -203,9 +199,7 @@ auto member_expression(
                 .enum_case = member_signature.id,
             };
         } else if (member_resolution.error() == LookupError::Missing) {
-            if (std::holds_alternative<HIRForeignTypeValue>(operand_type)) {
-                result_type = expression_type(module_analysis, operand);
-            } else if (!std::holds_alternative<HIRErrorTypeValue>(operand_type)) {
+            if (!std::holds_alternative<HIRErrorTypeValue>(operand_type)) {
                 module_analysis.emit(
                     member.name_span,
                     "member cannot be resolved for this type",

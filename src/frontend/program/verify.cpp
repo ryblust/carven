@@ -4,7 +4,7 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -17,10 +17,10 @@ import std;
 
 namespace {
 
-auto verification_error(ParsedBatchErrorKind kind, std::string message) noexcept
-    -> std::unexpected<ParsedBatchError> {
+auto verification_error(SyntaxProgramErrorKind kind, std::string message) noexcept
+    -> std::unexpected<SyntaxProgramError> {
     return std::unexpected(
-        ParsedBatchError {
+        SyntaxProgramError {
             .kind = kind,
             .message = std::move(message),
         }
@@ -38,9 +38,9 @@ public:
           source_size(source_size_value),
           module_path(module_path_value) {}
 
-    auto verify() noexcept -> std::expected<void, ParsedBatchError> {
+    auto verify() noexcept -> std::expected<void, SyntaxProgramError> {
         verify_module();
-        verify_imports();
+        verify_module_imports();
         verify_items();
         verify_types();
         verify_patterns();
@@ -57,8 +57,8 @@ public:
 private:
     auto check_span(Span span, std::string_view entity) noexcept -> void {
         if (!error.has_value() && span.end() > source_size) {
-            error = ParsedBatchError {
-                .kind = ParsedBatchErrorKind::SpanOutOfBounds,
+            error = SyntaxProgramError {
+                .kind = SyntaxProgramErrorKind::SpanOutOfBounds,
                 .message = std::format(
                     "{} in syntax tree for module '{}' extends beyond its source snapshot",
                     entity,
@@ -71,8 +71,8 @@ private:
     template<typename ID>
     auto check_id(ID id, std::size_t bound, std::string_view entity) noexcept -> void {
         if (!error.has_value() && id.index() >= bound) {
-            error = ParsedBatchError {
-                .kind = ParsedBatchErrorKind::ChildIDOutOfBounds,
+            error = SyntaxProgramError {
+                .kind = SyntaxProgramErrorKind::ChildIDOutOfBounds,
                 .message = std::format(
                     "{} in syntax tree for module '{}' references child @{} outside a table of size {}",
                     entity,
@@ -310,16 +310,24 @@ private:
     auto verify_module() noexcept -> void {
         const auto& ast_module = syntax.ast_module();
         check_span(ast_module.span, "syntax root");
-        for (const auto import_id : ast_module.imports) {
-            check_id(import_id, syntax.imports().size(), "module import");
+        for (const auto import_id : ast_module.module_imports) {
+            check_id(import_id, syntax.module_imports().size(), "module import");
+        }
+        for (const auto& header : ast_module.cpp_header_imports) {
+            check_span(header.span, "C++ header import");
+            check_span(header.name_span, "C++ header name");
+        }
+        for (const auto& fragment : ast_module.cpp_source_fragments) {
+            check_span(fragment.form_span, "C++ source fragment form");
+            check_span(fragment.payload_span, "C++ source fragment payload");
         }
         for (const auto item_id : ast_module.items) {
             check_id(item_id, syntax.items().size(), "module item");
         }
     }
 
-    auto verify_imports() noexcept -> void {
-        for (const auto& declaration : syntax.imports()) {
+    auto verify_module_imports() noexcept -> void {
+        for (const auto& declaration : syntax.module_imports()) {
             check_span(declaration.span, "import declaration");
             verify_module_reference(declaration.module_reference);
             check_span(declaration.selection.span, "import selection");
@@ -370,6 +378,9 @@ private:
                         }
                     },
                     [&](const ASTFunctionDecl& value) noexcept {
+                        if (value.cpp_export.has_value()) {
+                            check_span(value.cpp_export->span, "export(cpp) form");
+                        }
                         check_span(value.name_span, "function name");
                         for (const auto& parameter : value.parameters) {
                             verify_parameter(parameter);
@@ -380,7 +391,17 @@ private:
                         if (value.throw_clause.has_value()) {
                             verify_throw_clause(*value.throw_clause);
                         }
-                        block(value.body, "function body");
+                        std::visit(
+                            Overloaded {
+                                [&](const ASTFunctionBody& implementation) noexcept {
+                                    block(implementation.body, "function body");
+                                },
+                                [&](const ASTCppImportForm& implementation) noexcept {
+                                    check_span(implementation.span, "import(cpp) form");
+                                },
+                            },
+                            value.implementation
+                        );
                     },
                     [&](const ASTConstantDecl& value) noexcept {
                         check_span(value.name_span, "constant name");
@@ -393,9 +414,6 @@ private:
                         check_span(value.keyword_span, "test keyword");
                         check_span(value.name_span, "test name");
                         block(value.body, "test body");
-                    },
-                    [&](const CppRegion& value) noexcept {
-                        check_span(value.body_span, "C++ region");
                     },
                 },
                 item.value
@@ -602,9 +620,6 @@ private:
                     [&](const ASTIfForm& value) noexcept { verify_if(value); },
                     [&](const ASTMatchForm& value) noexcept { verify_match(value); },
                     [&](const ASTTryForm& value) noexcept { verify_try(value); },
-                    [&](const CppRegion& value) noexcept {
-                        check_span(value.body_span, "C++ region");
-                    },
                 },
                 expression_value.value
             );
@@ -736,9 +751,6 @@ private:
                     [&](const ASTIfForm& value) noexcept { verify_if(value); },
                     [&](const ASTMatchForm& value) noexcept { verify_match(value); },
                     [&](const ASTTryForm& value) noexcept { verify_try(value); },
-                    [&](const CppRegion& value) noexcept {
-                        check_span(value.body_span, "C++ region");
-                    },
                 },
                 statement_value.value
             );
@@ -769,15 +781,16 @@ private:
     ASTView syntax;
     std::size_t source_size;
     std::string_view module_path;
-    std::optional<ParsedBatchError> error;
+    std::optional<SyntaxProgramError> error;
 };
 
-auto verify_program(const ParsedBatch& program) noexcept -> std::expected<void, ParsedBatchError> {
+auto verify_program(const SyntaxProgram& program) noexcept
+    -> std::expected<void, SyntaxProgramError> {
     const auto provenance = program.provenance();
     const auto provenance_verification = verify_compilation_provenance(provenance);
     if (!provenance_verification.has_value()) {
         return verification_error(
-            ParsedBatchErrorKind::InvalidProvenance,
+            SyntaxProgramErrorKind::InvalidProvenance,
             std::format(
                 "syntax program provenance is invalid: {}",
                 provenance_verification.error().message
@@ -788,7 +801,7 @@ auto verify_program(const ParsedBatch& program) noexcept -> std::expected<void, 
     const auto module_count = provenance.module_records().size();
     if (program.syntax_trees().size() != module_count) {
         return verification_error(
-            ParsedBatchErrorKind::SyntaxTreeCountMismatch,
+            SyntaxProgramErrorKind::SyntaxTreeCountMismatch,
             std::format(
                 "syntax program contains {} modules but {} syntax trees",
                 module_count,
@@ -804,7 +817,7 @@ auto verify_program(const ParsedBatch& program) noexcept -> std::expected<void, 
         const auto& source = provenance.source_snapshot(module_record.source_id);
         if (syntax.source_id() != source.manager_source_id()) {
             return verification_error(
-                ParsedBatchErrorKind::SyntaxSourceMismatch,
+                SyntaxProgramErrorKind::SyntaxSourceMismatch,
                 std::format(
                     "syntax tree for module '{}' has source identity {}, expected {}",
                     module_record.path.value(),
@@ -815,7 +828,7 @@ auto verify_program(const ParsedBatch& program) noexcept -> std::expected<void, 
         }
         if (syntax.ast_module().span.end() > source.size()) {
             return verification_error(
-                ParsedBatchErrorKind::RootSpanOutOfBounds,
+                SyntaxProgramErrorKind::RootSpanOutOfBounds,
                 std::format(
                     "syntax root for module '{}' extends beyond its source snapshot",
                     module_record.path.value()
@@ -833,7 +846,7 @@ auto verify_program(const ParsedBatch& program) noexcept -> std::expected<void, 
 
 } // namespace
 
-auto verify_syntax_program(const ParsedBatch& program) noexcept
-    -> std::expected<void, ParsedBatchError> {
+auto verify_syntax_program(const SyntaxProgram& program) noexcept
+    -> std::expected<void, SyntaxProgramError> {
     return verify_program(program);
 }

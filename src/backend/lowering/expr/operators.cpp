@@ -56,16 +56,6 @@ constexpr auto integer_intrinsic(HIRBinaryExpr::Operator op) noexcept
     }
 }
 
-constexpr auto is_comparison(HIRBinaryExpr::Operator op) noexcept -> bool {
-    using enum HIRBinaryExpr::Operator;
-    return op == Equal
-        || op == NotEqual
-        || op == Less
-        || op == LessEqual
-        || op == Greater
-        || op == GreaterEqual;
-}
-
 } // namespace
 
 auto lower_expression(
@@ -104,11 +94,6 @@ auto lower_expression(
 ) noexcept -> LoweredExpression {
     const auto& source = context.source().expression(id);
     auto operand = lower_expression(context, expression.operand_id, control);
-    const auto operand_foreign =
-        is_foreign_type(context, context.source().expression(expression.operand_id).type);
-    if (expression.op == HIRUnaryExpr::Operator::LogicalNot && operand_foreign) {
-        operand.expression = cpp_bool_cast(context, operand.expression);
-    }
     if (expression.op == HIRUnaryExpr::Operator::Negate
         && is_integer_type(context, context.source().expression(expression.operand_id).type)) {
         return {
@@ -148,9 +133,6 @@ auto lower_expression(
         || expression.op == HIRBinaryExpr::Operator::LogicalAnd) {
         const auto result_name = context.fresh_name(TargetTemporaryNameKind::Logic);
         auto left = lower_expression(context, expression.left, control);
-        if (is_foreign_type(context, context.source().expression(expression.left).type)) {
-            left.expression = cpp_bool_cast(context, left.expression);
-        }
         auto prelude = std::move(left.prelude);
         prelude.push_back(context.target().append_lowering_statement(
             TargetVariableStmt {
@@ -162,9 +144,6 @@ auto lower_expression(
             }
         ));
         auto right = lower_expression(context, expression.right, control);
-        if (is_foreign_type(context, context.source().expression(expression.right).type)) {
-            right.expression = cpp_bool_cast(context, right.expression);
-        }
         right.prelude.push_back(context.target().append_lowering_statement(
             TargetAssignmentStmt {
                 .target = name_expression(context, TargetName {result_name}),
@@ -230,10 +209,6 @@ auto lower_expression(
             })
         };
     }
-    const auto left_foreign =
-        is_foreign_type(context, context.source().expression(expression.left).type);
-    const auto right_foreign =
-        is_foreign_type(context, context.source().expression(expression.right).type);
     if (lowered_left.prelude.empty()
         && lowered_right.prelude.empty()
         && TargetEvaluationSequencer::expressions_commute(
@@ -263,19 +238,15 @@ auto lower_expression(
                 },
             });
         }
-        if ((left_foreign || right_foreign) && is_comparison(expression.op)) {
-            result = cpp_bool_cast(context, *result);
-        }
         return {.prelude = {}, .expression = *result};
     }
     auto left = TargetEvaluationSequencer::materialize(
         context,
         std::move(lowered_left),
-        left_foreign ? MaterializationKind::Preserve
-                     : TargetEvaluationSequencer::read_materialization(
-                           context,
-                           context.source().expression(expression.left).type
-                       ),
+        TargetEvaluationSequencer::read_materialization(
+            context,
+            context.source().expression(expression.left).type
+        ),
         TargetMaterializationReason::EvaluationOrder
     );
     auto prelude = std::move(left.prelude);
@@ -305,9 +276,6 @@ auto lower_expression(
                 .right = lowered_right.expression
             },
         });
-    }
-    if ((left_foreign || right_foreign) && is_comparison(expression.op)) {
-        result = cpp_bool_cast(context, *result);
     }
     return {.prelude = std::move(prelude), .expression = *result};
 }

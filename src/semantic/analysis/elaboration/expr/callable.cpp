@@ -203,17 +203,6 @@ auto build_expression(
                 );
             }
         }
-    } else if (std::holds_alternative<HIRForeignTypeValue>(callee_type)) {
-        result_type = callee_result_type;
-        for (auto index = 0uz; index < arguments.size(); ++index) {
-            if (arguments[index].access != HIRAccessMode::Read) {
-                module_analysis.emit(
-                    ast.expression(call.arguments[index].expression).span,
-                    "Foreign calls accept only direct Read arguments",
-                    DiagnosticCode::AccessForeign
-                );
-            }
-        }
     } else if (!std::holds_alternative<HIRErrorTypeValue>(callee_type)) {
         module_analysis.emit(
             value.span,
@@ -455,7 +444,7 @@ auto build_expression(
     const auto contract_failures = lambda.throw_clause.has_value()
         ? normalized_failures(module_analysis, scopes, control, *lambda.throw_clause)
         : std::vector<HIRTypeID>();
-    const auto callable = builder.append_callable(
+    const auto callable = builder.append_body_callable(
         parameter_types,
         result,
         contract_failures,

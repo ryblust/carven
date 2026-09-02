@@ -3,7 +3,9 @@ module carven:backend.generation.program.artifacts.impl;
 import :artifacts;
 import :backend.generation.program.construction;
 import :backend.generation.program.references;
+import :backend.generation.request;
 import :semantic.hir.decl;
+import :semantic.hir.interop;
 import :semantic.hir.symbol;
 import :semantic.visibility;
 import :support.graph;
@@ -65,6 +67,19 @@ auto include_directive(std::string_view logical_path) noexcept -> TargetDirectiv
     return {.bytes = std::format("#include <{}>", logical_path)};
 }
 
+auto cpp_header_directive(
+    CompilationProvenanceView provenance,
+    const HIRCppHeaderDependency& dependency
+) noexcept -> TargetDirective {
+    const auto name = provenance.spelling(dependency.name);
+    switch (dependency.delimiter) {
+        case HIRCppHeaderDelimiter::AngleBrackets:
+            return {.bytes = std::format("#include <{}>", name)};
+        case HIRCppHeaderDelimiter::Quotes: return {.bytes = std::format("#include \"{}\"", name)};
+    }
+    std::unreachable();
+}
+
 } // namespace
 auto TargetProgramBuilder::build_artifacts() noexcept -> void {
     if (!name_allocation.has_value()) {
@@ -80,9 +95,9 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         module_schedules.push_back({
             .module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index)),
             .implementation_nominal_order = {},
-            .cpp_preamble_items = {},
             .private_function_declarations = {},
             .function_definitions = {},
+            .cpp_export_facades = {},
             .entry_point = std::nullopt,
             .emitted_tests = {},
         });
@@ -98,13 +113,7 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
     }
     for (auto index = 0uz; index < semantic.modules().size(); ++index) {
         const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
-        for (const auto& [item_index, item] :
-             std::views::enumerate(semantic.hir_module(module_id).items)) {
-            if (std::holds_alternative<HIRCppRegion>(item)) {
-                module_schedules[index].cpp_preamble_items.push_back(
-                    static_cast<std::uint32_t>(item_index)
-                );
-            }
+        for (const auto& item : semantic.hir_module(module_id).items) {
             const auto* function = std::get_if<FunctionID>(&item);
             if (function != nullptr
                 && semantic.function(*function).visibility != DeclarationVisibility::Module) {
@@ -118,8 +127,11 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
                 if (semantic.function(*function).entry_point.has_value()) {
                     module_schedules[index].entry_point = *function;
                 }
+                if (semantic.function(*function).cpp_export_form_origin.has_value()) {
+                    module_schedules[index].cpp_export_facades.push_back(*function);
+                }
             }
-            if (request.tests != TestEmissionMode::None) {
+            if (request.test_mode != TestGenerationMode::None) {
                 if (const auto* test = std::get_if<TestID>(&item)) {
                     module_schedules[index].emitted_tests.push_back(*test);
                 }
@@ -206,7 +218,11 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         nominal_ordinal.emplace(ordered_nominals[index], index);
     }
 
-    artifacts.reserve(component_members.size() + module_schedules.size() + 1uz);
+    const auto cpp_api_count =
+        std::ranges::count_if(module_schedules, [](const TargetModuleSchedule& schedule) noexcept {
+            return !schedule.cpp_export_facades.empty();
+        });
+    artifacts.reserve(component_members.size() + cpp_api_count + module_schedules.size() + 1uz);
     for (auto component_index = 0uz; component_index < component_members.size();
          ++component_index) {
         const auto& members = component_members[component_index];
@@ -353,6 +369,30 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         });
     }
 
+    for (const auto& schedule : module_schedules) {
+        if (schedule.cpp_export_facades.empty()) {
+            continue;
+        }
+        auto directive_groups = std::vector<TargetArtifactDirectiveGroup> {
+            {.directives = {TargetDirective {.bytes = "#pragma once"}}},
+            {.directives = {
+                 include_directive("cstddef"),
+                 include_directive("cstdint"),
+             }},
+        };
+        const auto& path = semantic.provenance().module_record(schedule.module_id).path;
+        artifacts.push_back({
+            .logical_path = cpp_api_header_logical_path(path.components()),
+            .role = GeneratedArtifactRole::CppAPIHeader,
+            .source_mapping = ArtifactSourceMappingPolicy::StableInterface,
+            .directive_groups = std::move(directive_groups),
+            .schedule = TargetCppAPIHeaderSchedule {
+                .module_id = schedule.module_id,
+                .cpp_export_declarations = schedule.cpp_export_facades,
+            },
+        });
+    }
+
     for (auto index = 0uz; index < module_schedules.size(); ++index) {
         const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
         auto used_components = std::flat_set<std::size_t>();
@@ -367,7 +407,11 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         auto directives = std::vector<TargetArtifactDirective> {
             include_directive("carven/runtime/runtime.hpp"),
         };
-        directives.reserve(directives.size() + used_components.size() + 1uz);
+        const auto& hir_module = semantic.hir_module(module_id);
+        directives.reserve(
+            directives.size() + used_components.size() + hir_module.cpp_header_dependencies.size()
+            + 1uz
+        );
         for (const auto component : used_components) {
             const auto dependency =
                 TargetArtifactID::from_index(static_cast<std::uint32_t>(component));
@@ -375,6 +419,9 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         }
         if (!module_schedules[index].emitted_tests.empty()) {
             directives.push_back(include_directive("carven/std/testing/testing.hpp"));
+        }
+        for (const auto& dependency : hir_module.cpp_header_dependencies) {
+            directives.push_back(cpp_header_directive(semantic.provenance(), dependency));
         }
         const auto& path = semantic.provenance().module_record(module_id).path;
         artifacts.push_back({
@@ -386,7 +433,7 @@ auto TargetProgramBuilder::build_artifacts() noexcept -> void {
         });
     }
 
-    if (request.tests == TestEmissionMode::DefaultRunner) {
+    if (request.test_mode == TestGenerationMode::DefaultRunner) {
         artifacts.push_back({
             .logical_path = "carven-test-main.cpp",
             .role = GeneratedArtifactRole::TestEntry,

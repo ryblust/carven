@@ -67,7 +67,6 @@ auto reads_by_value(const SemanticProgram& semantic, const HIRType& type) noexce
             [](const HIRFunctionTypeValue&) static noexcept { return false; },
             [](const HIRFunctionRefTypeValue&) static noexcept { return false; },
             [](const HIRClosureTypeValue&) static noexcept { return false; },
-            [](const HIRForeignTypeValue&) static noexcept { return false; },
             [](const HIRErrorTypeValue&) static noexcept { return false; },
         },
         type.value
@@ -202,7 +201,7 @@ auto TargetProgramBuilder::derive_representations() noexcept -> void {
     const auto append_signature = [&](std::span<const HIRFunctionParameterType> parameters,
                                       HIRTypeID result,
                                       FailureSetID failure_set) noexcept {
-        auto target_parameters = std::vector<TargetCallParameterRecipe>();
+        auto target_parameters = std::vector<TargetCallParameter>();
         target_parameters.reserve(parameters.size());
         for (const auto& parameter : parameters) {
             target_parameters.push_back({
@@ -216,15 +215,15 @@ auto TargetProgramBuilder::derive_representations() noexcept -> void {
             : std::optional {intern_carrier_shape(result, failure_set)};
         const auto existing = std::ranges::find_if(
             call_signatures,
-            [&](const TargetCallSignatureRecipe& signature) noexcept {
+            [&](const TargetCallSignature& signature) noexcept {
                 return signature.result == result
                     && signature.failure_profile == failure_set
                     && signature.carrier_shape == carrier
                     && std::ranges::equal(
                            signature.parameters,
                            target_parameters,
-                           [](const TargetCallParameterRecipe& left,
-                              const TargetCallParameterRecipe& right) static noexcept {
+                           [](const TargetCallParameter& left,
+                              const TargetCallParameter& right) static noexcept {
                                return left.type == right.type && left.passing == right.passing;
                            }
                     );
@@ -301,9 +300,6 @@ auto TargetProgramBuilder::derive_representations() noexcept -> void {
                         .signature = callable_signatures[value.callable.index()],
                     };
                 },
-                [](const HIRForeignTypeValue&) static noexcept -> TargetTypeRecipeValue {
-                    return TargetDeducedTypeRecipe {};
-                },
                 [](const HIRErrorTypeValue&) static noexcept -> TargetTypeRecipeValue {
                     invariant_violation("error type reached target program construction");
                 },
@@ -316,7 +312,6 @@ auto TargetProgramBuilder::derive_representations() noexcept -> void {
             .read_parameter_by_value = read_parameter_by_value[index],
             .integer = builtin != nullptr && is_integer(builtin->kind),
             .void_type = builtin != nullptr && builtin->kind == HIRBuiltinType::Void,
-            .foreign = std::holds_alternative<HIRForeignTypeValue>(type.value),
         });
     }
 

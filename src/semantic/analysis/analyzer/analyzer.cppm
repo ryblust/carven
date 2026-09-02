@@ -44,7 +44,7 @@ private:
 
 class ProgramAnalyzer final {
 public:
-    explicit ProgramAnalyzer(ParsedBatch program) noexcept;
+    explicit ProgramAnalyzer(SyntaxProgram program) noexcept;
 
     auto builder() noexcept -> SemanticDraft&;
     auto builder() const noexcept -> SemanticDraftView;
@@ -63,7 +63,7 @@ public:
     auto finish() && noexcept -> SemanticProgram;
 
 private:
-    explicit ProgramAnalyzer(ParsedBatchParts parts) noexcept;
+    explicit ProgramAnalyzer(SyntaxProgramParts parts) noexcept;
 
     IDTable<SyntaxTree, ProgramModuleID> syntax_by_module_id;
     SemanticSession semantic_session;

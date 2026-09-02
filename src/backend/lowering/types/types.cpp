@@ -111,7 +111,7 @@ auto parameter_type(
 
 auto materialize_parameter_type(
     TargetModuleLowerer& context,
-    const TargetCallParameterRecipe& parameter
+    const TargetCallParameter& parameter
 ) noexcept -> TargetTypeID {
     const auto type = lower_type(context, parameter.type);
     const auto* intrinsic = std::get_if<TargetIntrinsicType>(&context.target().type(type).value);
@@ -170,16 +170,18 @@ auto classify_carrier_conversion(
     return context.source().classify_carrier_conversion(source.shape, destination.shape);
 }
 
+auto is_char_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
+    const auto* intrinsic =
+        std::get_if<TargetIntrinsicTypeRecipe>(&context.source().type_recipe(id).value);
+    return intrinsic != nullptr && intrinsic->symbol == TargetSymbol::Char;
+}
+
 auto is_integer_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
     return context.source().type_recipe(id).integer;
 }
 
 auto is_void_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
     return context.source().type_recipe(id).void_type;
-}
-
-auto is_foreign_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool {
-    return context.source().type_recipe(id).foreign;
 }
 
 auto lower_type(TargetModuleLowerer& context, HIRTypeID id) noexcept -> TargetTypeID {
@@ -252,16 +254,6 @@ auto lower_type(TargetModuleLowerer& context, HIRTypeID id) noexcept -> TargetTy
                     .const_qualified = false,
                 };
             },
-            [](const TargetDeducedTypeRecipe&) static noexcept -> TargetType {
-                return {
-                    .value =
-                        TargetIntrinsicType {
-                            .symbol = TargetSymbol::Auto,
-                            .type_argument_ids = {},
-                        },
-                    .const_qualified = false,
-                };
-            },
         },
         context.source().type_recipe(id).value
     );
@@ -312,30 +304,4 @@ auto lower_literal(
         .magnitude = numeric.magnitude,
         .suffix = suffix,
     };
-}
-
-auto builtin_symbol(HIRBuiltinType type) noexcept -> TargetSymbol {
-    using enum HIRBuiltinType;
-    switch (type) {
-        case Bool:         return TargetSymbol::Bool;
-        case Char:         return TargetSymbol::Char;
-        case Void:         return TargetSymbol::Void;
-        case I8:           return TargetSymbol::StdInt8;
-        case I16:          return TargetSymbol::StdInt16;
-        case I32:          return TargetSymbol::StdInt32;
-        case I64:          return TargetSymbol::StdInt64;
-        case U8:           return TargetSymbol::StdUInt8;
-        case U16:          return TargetSymbol::StdUInt16;
-        case U32:          return TargetSymbol::StdUInt32;
-        case U64:          return TargetSymbol::StdUInt64;
-        case Isize:        return TargetSymbol::StdPtrdiff;
-        case Usize:        return TargetSymbol::StdSize;
-        case F32:          return TargetSymbol::Float;
-        case F64:          return TargetSymbol::Double;
-        case Str:          return TargetSymbol::StdStringView;
-        case StrBytesView: return TargetSymbol::RuntimeStrBytesView;
-        case StrCharsView: return TargetSymbol::RuntimeStrCharsView;
-        case EntryArgs:    return TargetSymbol::Auto;
-    }
-    std::unreachable();
 }

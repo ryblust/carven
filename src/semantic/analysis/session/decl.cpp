@@ -274,8 +274,11 @@ auto SemanticDraft::define_callable_body(
     if (!storage.callables.contains(callable)) {
         invariant_violation("callable body definition references an unknown callable");
     }
-    const auto body_id = storage.callables.get(callable).body;
-    auto& slot = body_slots[body_id.index()];
+    const auto body_id = callable_body_id(storage.callables.get(callable));
+    if (!body_id.has_value()) {
+        invariant_violation("import(cpp) callable cannot own a Carven body");
+    }
+    auto& slot = body_slots[body_id->index()];
     if (slot.has_value()) {
         invariant_violation("semantic body was defined more than once");
     }

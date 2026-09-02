@@ -61,8 +61,7 @@ auto materialization_binding(MaterializationKind materialization) noexcept
         case MaterializationKind::ReadValue:      return TargetVariableBinding::ConstValue;
         case MaterializationKind::ReadReference:  return TargetVariableBinding::ConstReference;
         case MaterializationKind::WriteReference: return TargetVariableBinding::MutableReference;
-        case MaterializationKind::Take:
-        case MaterializationKind::Preserve:       return TargetVariableBinding::RvalueReference;
+        case MaterializationKind::Take:           return TargetVariableBinding::RvalueReference;
         case MaterializationKind::Snapshot:       return TargetVariableBinding::MutableValue;
     }
     std::unreachable();
@@ -162,16 +161,6 @@ auto TargetEvaluationSequencer::stable_place_source(
     return false;
 }
 
-auto cpp_bool_cast(TargetCallableLowerer& context, TargetExprID expression) noexcept
-    -> TargetExprID {
-    return context.target().append_expression({
-        .value = TargetStaticCastExpr {
-            .type = intrinsic_type(context, TargetSymbol::Bool),
-            .operand_id = expression,
-        },
-    });
-}
-
 auto TargetEvaluationSequencer::materialize(
     TargetCallableLowerer& context,
     LoweredExpression expression,
@@ -181,11 +170,6 @@ auto TargetEvaluationSequencer::materialize(
     auto named =
         materialize_expression_name(context, std::move(expression), materialization, reason);
     const auto result_id = [&]() noexcept -> TargetExprID {
-        if (materialization == MaterializationKind::Preserve) {
-            return context.target().append_expression({
-                .value = TargetForwardExpr {.name = named.name},
-            });
-        }
         if (materialization == MaterializationKind::Take
             || materialization == MaterializationKind::Snapshot) {
             return call_expression(

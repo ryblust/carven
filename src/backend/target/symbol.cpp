@@ -56,10 +56,10 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeIntegerIncrement:  return "carven::runtime::integer_increment";
         case TargetSymbol::RuntimeIntegerDecrement:  return "carven::runtime::integer_decrement";
         case TargetSymbol::RuntimeCheckedArrayIndex: return "carven::runtime::checked_array_index";
-        case TargetSymbol::RuntimeCheckedForeignStr: return "carven::runtime::checked_foreign_str";
-        case TargetSymbol::RuntimeCheckedForeignChar:
-            return "carven::runtime::checked_foreign_char";
+        case TargetSymbol::RuntimeCheckedUnicodeScalar:
+            return "carven::runtime::checked_unicode_scalar";
         case TargetSymbol::StdAbort:             return "std::abort";
+        case TargetSymbol::StdAddressof:         return "std::addressof";
         case TargetSymbol::StdGet:               return "std::get";
         case TargetSymbol::StdHoldsAlternative:  return "std::holds_alternative";
         case TargetSymbol::StdForward:           return "std::forward";

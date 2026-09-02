@@ -1,7 +1,6 @@
 module carven:backend.emission.render.stmt.impl;
 
 import :backend.emission.render;
-import :backend.target.raw;
 import :support.visit;
 import std;
 
@@ -221,7 +220,6 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
                      render_statement_block(value.body)}
                 );
             },
-            [&](const TargetRawFragment& value) noexcept { return render_raw_fragment(value); },
         },
         statement.value
     );

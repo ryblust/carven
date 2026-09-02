@@ -186,7 +186,6 @@ auto lower_statement(
                     {.prelude = {},
                      .expression = name_expression(context, TargetSymbol::RuntimeIntegerRange)},
                     arguments,
-                    false,
                     control
                 );
             },

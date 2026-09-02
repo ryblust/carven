@@ -6,7 +6,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -15,12 +15,12 @@ import :source.text;
 import :support.visit;
 import std;
 
-auto ASTDumper::render_import(
-    ASTImportID declaration_id,
+auto ASTDumper::render_module_import(
+    ASTModuleImportID declaration_id,
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
-    const auto& declaration = ast.import_declaration(declaration_id);
+    const auto& declaration = ast.module_import(declaration_id);
     append_line(
         prefix,
         is_last,
@@ -49,25 +49,23 @@ auto ASTDumper::render_import(
     );
     const auto reference_prefix = child_prefix(nested_prefix, false);
     std::visit(
-        Overloaded {
-            [&](const auto& value) noexcept {
-                if constexpr (requires { value.name_span; }) {
-                    render_span_field(reference_prefix, false, "craft", value.name_span);
-                    render_span_field(reference_prefix, false, "separator", value.separator_span);
+        [&](const auto& value) noexcept {
+            if constexpr (requires { value.name_span; }) {
+                render_span_field(reference_prefix, false, "craft", value.name_span);
+                render_span_field(reference_prefix, false, "separator", value.separator_span);
+            }
+            if constexpr (requires { value.prefix_span; }) {
+                render_span_field(reference_prefix, false, "prefix", value.prefix_span);
+            }
+            render_list(
+                reference_prefix,
+                true,
+                "components",
+                value.components,
+                [&](Span component, std::string_view item_prefix, bool item_last) noexcept {
+                    render_span_field(item_prefix, item_last, "component", component);
                 }
-                if constexpr (requires { value.prefix_span; }) {
-                    render_span_field(reference_prefix, false, "prefix", value.prefix_span);
-                }
-                render_list(
-                    reference_prefix,
-                    true,
-                    "components",
-                    value.components,
-                    [&](Span component, std::string_view item_prefix, bool item_last) noexcept {
-                        render_span_field(item_prefix, item_last, "component", component);
-                    }
-                );
-            },
+            );
         },
         reference.value
     );
@@ -121,6 +119,26 @@ auto ASTDumper::render_import(
         },
         declaration.selection.value
     );
+}
+
+auto ASTDumper::render_cpp_header_import(
+    const ASTCppHeaderImport& header,
+    std::string_view prefix,
+    bool is_last
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format("ImportDeclaration {}", format_dump_span(header.span))
+    );
+    const auto nested_prefix = child_prefix(prefix, is_last);
+    append_line(
+        nested_prefix,
+        true,
+        header.delimiter == ASTCppHeaderDelimiter::AngleBrackets ? "cpp_header Angle"
+                                                                 : "cpp_header Quote"
+    );
+    render_span_field(child_prefix(nested_prefix, true), true, "name", header.name_span);
 }
 
 auto ASTDumper::render_top_level_item(
@@ -246,10 +264,18 @@ auto ASTDumper::render_top_level_item(
                 append_line(
                     prefix,
                     is_last,
-                    std::format("FunctionDefinition {}", format_dump_span(item.span))
+                    std::format("FunctionDeclaration {}", format_dump_span(item.span))
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(definition.visibility, nested_prefix);
+                if (definition.cpp_export.has_value()) {
+                    render_span_field(
+                        nested_prefix,
+                        false,
+                        "cpp_export",
+                        definition.cpp_export->span
+                    );
+                }
                 render_span_field(nested_prefix, false, "name", definition.name_span);
                 render_list(
                     nested_prefix,
@@ -294,7 +320,27 @@ auto ASTDumper::render_top_level_item(
                     render_type(*definition.result_type, nested_prefix, false, "result ");
                 }
                 render_throw_clause(definition.throw_clause, nested_prefix, false);
-                render_ordinary_block(definition.body, nested_prefix, true, "body ");
+                std::visit(
+                    Overloaded {
+                        [&](const ASTFunctionBody& implementation) noexcept {
+                            render_ordinary_block(
+                                implementation.body,
+                                nested_prefix,
+                                true,
+                                "body "
+                            );
+                        },
+                        [&](const ASTCppImportForm& implementation) noexcept {
+                            render_span_field(
+                                nested_prefix,
+                                true,
+                                "cpp_import",
+                                implementation.span
+                            );
+                        },
+                    },
+                    definition.implementation
+                );
             },
             [&](const ASTConstantDecl& declaration) noexcept {
                 append_line(
@@ -323,7 +369,6 @@ auto ASTDumper::render_top_level_item(
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
                 render_ordinary_block(declaration.body, nested_prefix, true, "body ");
             },
-            [&](const CppRegion& region) noexcept { render_cpp_region(region, prefix, is_last); },
         },
         item.value
     );

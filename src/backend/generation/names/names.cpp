@@ -123,19 +123,21 @@ auto claim_spelling(
 
 auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
     switch (kind) {
-        case TargetTemporaryNameKind::Discard:          return "discard";
-        case TargetTemporaryNameKind::Operand:          return "operand";
-        case TargetTemporaryNameKind::MatchDone:        return "match_done";
-        case TargetTemporaryNameKind::Test:             return "test_case";
-        case TargetTemporaryNameKind::Owner:            return "owner";
-        case TargetTemporaryNameKind::Try:              return "try_value";
-        case TargetTemporaryNameKind::CatchDone:        return "catch_done";
-        case TargetTemporaryNameKind::Logic:            return "logic_value";
-        case TargetTemporaryNameKind::Outcome:          return "outcome";
-        case TargetTemporaryNameKind::Region:           return "region";
-        case TargetTemporaryNameKind::Continue:         return "continue_target";
-        case TargetTemporaryNameKind::TestValue:        return "test_value";
-        case TargetTemporaryNameKind::TestRegistration: return "test_registration";
+        case TargetTemporaryNameKind::Discard:              return "discard";
+        case TargetTemporaryNameKind::Operand:              return "operand";
+        case TargetTemporaryNameKind::MatchDone:            return "match_done";
+        case TargetTemporaryNameKind::Test:                 return "test_case";
+        case TargetTemporaryNameKind::Owner:                return "owner";
+        case TargetTemporaryNameKind::Try:                  return "try_value";
+        case TargetTemporaryNameKind::CatchDone:            return "catch_done";
+        case TargetTemporaryNameKind::Logic:                return "logic_value";
+        case TargetTemporaryNameKind::Outcome:              return "outcome";
+        case TargetTemporaryNameKind::Region:               return "region";
+        case TargetTemporaryNameKind::Continue:             return "continue_target";
+        case TargetTemporaryNameKind::TestValue:            return "test_value";
+        case TargetTemporaryNameKind::TestRegistration:     return "test_registration";
+        case TargetTemporaryNameKind::CppBoundaryParameter: return "cpp_boundary_parameter";
+        case TargetTemporaryNameKind::CppProviderPointer:   return "cpp_provider_pointer";
     }
     std::unreachable();
 }

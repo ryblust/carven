@@ -122,10 +122,6 @@ struct HIRTestFailStmt final {
     std::optional<HIRExprID> message;
 };
 
-struct HIRCppStmt final {
-    ProgramSpellingID bytes;
-};
-
 using HIRStmtValue = std::variant<
     HIRReturnStmt,
     HIRBreakStmt,
@@ -143,8 +139,7 @@ using HIRStmtValue = std::variant<
     HIRRangeForStmt,
     HIRTestCheckStmt,
     HIRTestRequireStmt,
-    HIRTestFailStmt,
-    HIRCppStmt>;
+    HIRTestFailStmt>;
 
 struct HIRStmt final {
     ProgramOriginID origin;

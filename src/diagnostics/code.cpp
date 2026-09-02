@@ -13,7 +13,6 @@ namespace {
       Error,                                                                                       \
       "Take conflicts with a mutating capture.")                                                   \
     X(AccessExpression, "CV-ACCESS-EXPRESSION", Error, "Invalid access expression.")               \
-    X(AccessForeign, "CV-ACCESS-FOREIGN", Error, "Access marker on a Foreign call.")               \
     X(AccessOperationConflict,                                                                     \
       "CV-ACCESS-OPERATION-CONFLICT",                                                              \
       Error,                                                                                       \
@@ -31,6 +30,13 @@ namespace {
       "Text range bindings only support Read access.")                                             \
     X(Catalog, "CV-CATALOG", Error, "Semantic catalog failure.")                                   \
     X(CompilationInput, "CV-COMPILATION-INPUT", Error, "Invalid closed-compilation input.")        \
+    X(CppBoundary, "CV-CPP-BOUNDARY", Error, "Invalid C++ boundary declaration.")                  \
+    X(CppBoundaryType, "CV-CPP-CARRIER", Error, "Unsupported C++ boundary type.")                  \
+    X(CppIdentifier, "CV-CPP-IDENTIFIER", Error, "Invalid C++ boundary identifier.")               \
+    X(CppAPIPathCollision,                                                                         \
+      "CV-CPP-API-PATH-COLLISION",                                                                 \
+      Error,                                                                                       \
+      "C++ API function conflicts with a namespace path.")                                         \
     X(ConstArrayExtent, "CV-CONST-ARRAY-EXTENT", Error, "Invalid constant array extent.")          \
     X(ConstCycle, "CV-CONST-CYCLE", Error, "Constant elaboration cycle.")                          \
     X(ConstDivideByZero, "CV-CONST-DIVIDE-BY-ZERO", Error, "Constant division by zero.")           \
@@ -191,10 +197,6 @@ namespace {
       "CV-TYPE-EQUALITY-UNSUPPORTED",                                                              \
       Error,                                                                                       \
       "Type does not support equality.")                                                           \
-    X(TypeForeignEscape,                                                                           \
-      "CV-TYPE-FOREIGN-ESCAPE",                                                                    \
-      Error,                                                                                       \
-      "Opaque C++ value escapes its local operation boundary.")                                    \
     X(TypeRecursiveStorage,                                                                        \
       "CV-TYPE-RECURSIVE-STORAGE",                                                                 \
       Error,                                                                                       \

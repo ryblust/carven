@@ -5,16 +5,16 @@ module;
 module carven:test.internal.compiler.generation.linkage;
 
 import :backend.generation.linkage;
-import :compilation.request;
+import :backend.generation.request;
 import std;
 
 namespace {
 
-auto domain_id(LinkageDomain domain, TestEmissionMode tests = TestEmissionMode::None) noexcept
+auto domain_id(LinkageDomain domain, TestGenerationMode tests = TestGenerationMode::None) noexcept
     -> LinkageDomainID {
     return derive_linkage_domain_id(
         TargetGenerationRequest {
-            .tests = tests,
+            .test_mode = tests,
             .linkage_domain = std::move(domain),
         }
     );
@@ -50,7 +50,7 @@ TEST_CASE("Linkage domain: identity follows resolved domain and emission mode") 
     const auto artifact_root = domain_id(LinkageDomain::artifact_root("/carven/root").value());
     const auto tests = domain_id(
         LinkageDomain::explicit_value("target:left").value(),
-        TestEmissionMode::DefaultRunner
+        TestGenerationMode::DefaultRunner
     );
 
     CHECK_EQ(left, left_again);

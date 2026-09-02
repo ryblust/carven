@@ -345,8 +345,8 @@ TEST_CASE("Target unit validation: statement occurrences have one owner") {
     auto fixture = TargetUnitFixture();
     const auto result_type = fixture.append_intrinsic_type();
     const auto statement = fixture.append_statement(
-        TargetRawFragment {.bytes = "return 0;"},
-        source_attribution(TargetAttributionKind::RawSource)
+        TargetExprStmt {.expression = fixture.append_boolean()},
+        source_attribution()
     );
     fixture.publish({fixture.append_function(result_type, {statement, statement})});
 
@@ -521,8 +521,8 @@ TEST_CASE("Target unit validation: hidden function bodies and conflicting forms 
         auto body = std::vector<TargetStmtID>();
         if (malformed.has_body) {
             body.push_back(fixture.append_statement(
-                TargetRawFragment {.bytes = "return true;"},
-                source_attribution(TargetAttributionKind::RawSource)
+                TargetReturnStmt {.expression = fixture.append_boolean()},
+                source_attribution()
             ));
         }
         const auto structure = fixture.append_item(

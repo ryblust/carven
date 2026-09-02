@@ -58,7 +58,7 @@ auto member_expression(
     }
     return context.target().append_expression({
         .value = TargetScopeMemberExpr {
-            .operand = operand,
+            .operand_id = operand,
             .name = std::move(name),
         },
     });
@@ -158,19 +158,16 @@ auto lower_expression(
     const HIRIndexExpr& expression,
     const TargetControlDestinations& control
 ) noexcept -> LoweredExpression {
-    const auto operand_foreign =
-        is_foreign_type(context, context.source().expression(expression.operand_id).type);
     auto operand = lower_expression(context, expression.operand_id, control);
     auto index = lower_expression(context, expression.index, control);
     if (requires_operand_sequencing(context, expression.operand_id, expression.index, index)) {
         operand = TargetEvaluationSequencer::materialize(
             context,
             std::move(operand),
-            operand_foreign ? MaterializationKind::Preserve
-                            : TargetEvaluationSequencer::read_materialization(
-                                  context,
-                                  context.source().expression(expression.operand_id).type
-                              ),
+            TargetEvaluationSequencer::read_materialization(
+                context,
+                context.source().expression(expression.operand_id).type
+            ),
             TargetMaterializationReason::EvaluationOrder
         );
     }
@@ -180,21 +177,11 @@ auto lower_expression(
         std::make_move_iterator(index.prelude.begin()),
         std::make_move_iterator(index.prelude.end())
     );
-    const auto selected =
-        std::holds_alternative<HIRArrayTypeValue>(
-            context.source().type(context.source().expression(expression.operand_id).type).value
-        )
-        ? call_expression(
-              context,
-              name_expression(context, TargetSymbol::RuntimeCheckedArrayIndex),
-              {operand.expression, index.expression}
-          )
-        : context.target().append_expression({
-              .value = TargetIndexExpr {
-                  .operand_id = operand.expression,
-                  .index = index.expression,
-              },
-          });
+    const auto selected = call_expression(
+        context,
+        name_expression(context, TargetSymbol::RuntimeCheckedArrayIndex),
+        {operand.expression, index.expression}
+    );
     return {.prelude = std::move(prelude), .expression = selected};
 }
 
@@ -206,24 +193,6 @@ auto lower_expression(
 ) noexcept -> LoweredExpression {
     if (const auto constant = context.source().expression(id).constant) {
         return {.prelude = {}, .expression = lower_constant_value(context, *constant)};
-    }
-    if (uses_scope_access(expression)) {
-        const auto& operand = context.source().expression(expression.operand_id);
-        if (const auto* raw = std::get_if<HIRCppExpr>(&operand.value)) {
-            return {
-                .prelude = {},
-                .expression = context.target().append_expression({
-                    .value = TargetScopeMemberExpr {
-                        .operand =
-                            TargetRawFragment {
-                                .bytes =
-                                    std::string(context.source().provenance().spelling(raw->bytes)),
-                            },
-                        .name = member_name(context, expression),
-                    },
-                }),
-            };
-        }
     }
     auto operand = lower_expression(context, expression.operand_id, control);
     operand.expression = member_expression(context, operand.expression, expression);

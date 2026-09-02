@@ -4,6 +4,7 @@ import :artifacts;
 import :backend.generation.linkage;
 import :backend.generation.program;
 import :backend.generation.program.construction;
+import :backend.generation.request;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -36,6 +37,11 @@ auto module_implementation_logical_path(std::span<const std::string> canonical_c
 auto interface_component_logical_path(std::span<const std::string> anchor_components) noexcept
     -> std::string {
     return logical_path("carven/generated", anchor_components, ".hpp");
+}
+
+auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
+    -> std::string {
+    return logical_path("carven/api", canonical_components, ".hpp");
 }
 
 TargetProgramBuilder::TargetProgramBuilder(
@@ -138,7 +144,6 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
                 [&](const TargetCallableTypeRecipe& value) noexcept {
                     return value.signature.index() < call_signatures.size();
                 },
-                [](const TargetDeducedTypeRecipe&) static noexcept { return true; },
             },
             type.value
         );
@@ -218,6 +223,9 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
                 [](const TargetInterfaceSchedule&) static noexcept {
                     return GeneratedArtifactRole::Interface;
                 },
+                [](const TargetCppAPIHeaderSchedule&) static noexcept {
+                    return GeneratedArtifactRole::CppAPIHeader;
+                },
                 [](const TargetModuleSchedule&) static noexcept {
                     return GeneratedArtifactRole::ModuleImplementation;
                 },
@@ -263,28 +271,44 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
                     if (schedule.module_id.index() >= semantic.modules().size()) {
                         return false;
                     }
-                    const auto& items = semantic.hir_module(schedule.module_id).items;
                     const auto valid_function = [&](FunctionID function) noexcept {
                         return function.index() < semantic.functions().size();
                     };
                     return std::ranges::all_of(schedule.implementation_nominal_order, valid_nominal)
                         && std::ranges::all_of(
-                               schedule.cpp_preamble_items,
-                               [&](std::uint32_t item) noexcept {
-                                   return item < items.size()
-                                       && std::holds_alternative<HIRCppRegion>(items[item]);
-                               }
-                        )
-                        && std::ranges::all_of(
                                schedule.private_function_declarations,
                                valid_function
                         )
                         && std::ranges::all_of(schedule.function_definitions, valid_function)
+                        && std::ranges::all_of(
+                               schedule.cpp_export_facades,
+                               [&](FunctionID function) noexcept {
+                                   return valid_function(function)
+                                       && semantic.function(function)
+                                              .cpp_export_form_origin.has_value();
+                               }
+                        )
                         && (!schedule.entry_point.has_value()
                             || valid_function(*schedule.entry_point))
                         && std::ranges::all_of(schedule.emitted_tests, [&](TestID test) noexcept {
                                return test.index() < semantic.tests().size();
                            });
+                },
+                [&](const TargetCppAPIHeaderSchedule& schedule) noexcept {
+                    return schedule.module_id.index() < semantic.modules().size()
+                        && !schedule.cpp_export_declarations.empty()
+                        && std::ranges::all_of(
+                               schedule.cpp_export_declarations,
+                               [&](FunctionID function) noexcept {
+                                   if (function.index() >= semantic.functions().size()) {
+                                       return false;
+                                   }
+                                   const auto& declaration = semantic.function(function);
+                                   return declaration.cpp_export_form_origin.has_value()
+                                       && semantic.symbol(declaration.symbol).module_id
+                                       == schedule.module_id;
+                               }
+                        );
                 },
                 [](const TargetTestEntrySchedule&) static noexcept { return true; },
             },
@@ -294,7 +318,9 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
             invariant_violation("target artifact contains an invalid declaration schedule");
         }
         const auto stable = artifact.source_mapping == ArtifactSourceMappingPolicy::StableInterface;
-        if (stable != (artifact.role == GeneratedArtifactRole::Interface)) {
+        const auto is_header = artifact.role == GeneratedArtifactRole::Interface
+            || artifact.role == GeneratedArtifactRole::CppAPIHeader;
+        if (stable != is_header) {
             invariant_violation("target artifact role disagrees with source mapping policy");
         }
         if (has_pragma_once != stable) {
@@ -314,11 +340,11 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
             || signature.failure_profile.index() >= failure_profiles.size()
             || std::ranges::any_of(
                 signature.parameters,
-                [&](const TargetCallParameterRecipe& parameter) noexcept {
+                [&](const TargetCallParameter& parameter) noexcept {
                     return parameter.type.index() >= types.size();
                 }
             )) {
-            invariant_violation("target call signature references an unknown recipe");
+            invariant_violation("target call signature references an unknown type recipe");
         }
         if (signature.carrier_shape.has_value()
             && signature.carrier_shape->index() >= carrier_shapes.size()) {
@@ -335,7 +361,7 @@ auto TargetProgramBuilder::verify() const noexcept -> void {
     if (std::ranges::any_of(callable_signatures, [&](TargetCallSignatureID signature) noexcept {
             return signature.index() >= call_signatures.size();
         })) {
-        invariant_violation("target callable mapping references an unknown signature recipe");
+        invariant_violation("target callable mapping references an unknown call signature");
     }
     for (auto index = 0uz; index < carrier_shapes.size(); ++index) {
         const auto& shape = carrier_shapes[index];
@@ -358,7 +384,7 @@ TargetProgram::TargetProgram(
     std::vector<TargetArtifactSpec> artifacts,
     std::vector<TargetTypeRecipe> types,
     std::vector<TargetFailureProfile> failure_profiles,
-    std::vector<TargetCallSignatureRecipe> call_signatures,
+    std::vector<TargetCallSignature> call_signatures,
     std::vector<TargetCallSignatureID> callable_signatures,
     std::vector<TargetCarrierShape> carrier_shapes,
     std::flat_map<std::pair<std::uint32_t, std::uint32_t>, TargetCarrierShapeID> carrier_index,
@@ -549,7 +575,7 @@ auto TargetArtifactView::failure_profile(FailureSetID id) const noexcept
 }
 
 auto TargetArtifactView::callable_signature(CallableID id) const noexcept
-    -> const TargetCallSignatureRecipe& {
+    -> const TargetCallSignature& {
     if (id.index() >= target_program->target_callable_signatures.size()) {
         invariant_violation("target artifact view references an unknown callable signature");
     }
@@ -558,7 +584,7 @@ auto TargetArtifactView::callable_signature(CallableID id) const noexcept
 }
 
 auto TargetArtifactView::call_signature(TargetCallSignatureID id) const noexcept
-    -> const TargetCallSignatureRecipe& {
+    -> const TargetCallSignature& {
     if (id.index() >= target_program->target_call_signatures.size()) {
         invariant_violation("target artifact view references an unknown target call signature");
     }

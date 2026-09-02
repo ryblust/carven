@@ -1,22 +1,12 @@
-#[cpp] {
-    inline auto cv_test_mutation_index_calls = 0;
-    inline auto cv_test_mutation_order = 0;
+import "bindings_and_access/mutation_evaluation.hpp";
 
-    auto cv_test_mutation_next_index() noexcept -> int {
-        ++cv_test_mutation_index_calls;
-        return 0;
-    }
-
-    auto cv_test_mutation_ordered_index() noexcept -> int {
-        cv_test_mutation_order = cv_test_mutation_order * 10 + 1;
-        return 0;
-    }
-
-    auto cv_test_mutation_ordered_value() noexcept -> int {
-        cv_test_mutation_order = cv_test_mutation_order * 10 + 2;
-        return 3;
-    }
-}
+private import(cpp) fn cv_test_mutation_reset_index_calls();
+private import(cpp) fn cv_test_mutation_index_call_count() -> i32;
+private import(cpp) fn cv_test_mutation_next_index() -> i32;
+private import(cpp) fn cv_test_mutation_reset_order();
+private import(cpp) fn cv_test_mutation_order_value() -> i32;
+private import(cpp) fn cv_test_mutation_ordered_index() -> i32;
+private import(cpp) fn cv_test_mutation_ordered_value() -> i32;
 
 fn ordered_writes(&first: i32, &second: i32) {
     first = 1;
@@ -24,22 +14,21 @@ fn ordered_writes(&first: i32, &second: i32) {
 }
 
 test "Mutation: compound mutation evaluates its target once" {
-    #[cpp] { cv_test_mutation_index_calls = 0; }
+    cv_test_mutation_reset_index_calls();
     var values: [i32; 2] = [4, 9];
-    values[#[cpp] { cv_test_mutation_next_index() }] += 3;
+    values[cv_test_mutation_next_index()] += 3;
 
-    let calls: i32 = #[cpp] { cv_test_mutation_index_calls };
+    let calls = cv_test_mutation_index_call_count();
     check(calls == 1);
     check(values[0] == 7);
 }
 
 test "Mutation: target evaluation precedes the assigned value" {
-    #[cpp] { cv_test_mutation_order = 0; }
+    cv_test_mutation_reset_order();
     var values: [i32; 2] = [4, 9];
-    values[#[cpp] { cv_test_mutation_ordered_index() }] +=
-        #[cpp] { cv_test_mutation_ordered_value() };
+    values[cv_test_mutation_ordered_index()] += cv_test_mutation_ordered_value();
 
-    let order: i32 = #[cpp] { cv_test_mutation_order };
+    let order = cv_test_mutation_order_value();
     check(order == 12);
     check(values[0] == 7);
 }

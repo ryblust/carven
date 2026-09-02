@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.generation.quality;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :source.manager;
@@ -18,13 +19,9 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
     auto sources = SourceManager();
     const auto source = sources.append_virtual(
         "quality.cv",
-        "#[cpp] {\n"
-        "    inline auto cv_quality_trace = 0;\n"
-        "    auto cv_quality_record(int marker) noexcept -> int {\n"
-        "        cv_quality_trace = cv_quality_trace * 10 + marker;\n"
-        "        return marker;\n"
-        "    }\n"
-        "}\n"
+        "import \"quality_provider.hpp\";\n"
+        "\n"
+        "private import(cpp) fn cv_quality_record(marker: i32) -> i32;\n"
         "\n"
         "private struct Hidden {\n"
         "    value: i32,\n"
@@ -73,11 +70,11 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "}\n"
         "\n"
         "fn ordered_callee() -> i32 {\n"
-        "    return (if #[cpp] { cv_quality_record(6) > 0 } {\n"
+        "    return (if cv_quality_record(6) > 0 {\n"
         "        identity\n"
         "    } else {\n"
         "        identity\n"
-        "    })(#[cpp] { cv_quality_record(7) });\n"
+        "    })(cv_quality_record(7));\n"
         "}\n"
         "\n"
         "fn pure(first: i32, second: i32) -> i32 {\n"
@@ -90,20 +87,20 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "\n"
         "fn reordered_effects() -> PairData {\n"
         "    return PairData {\n"
-        "        right: #[cpp] { cv_quality_record(4) },\n"
-        "        left: #[cpp] { cv_quality_record(5) },\n"
+        "        right: cv_quality_record(4),\n"
+        "        left: cv_quality_record(5),\n"
         "    };\n"
         "}\n"
         "\n"
         "fn ordered() -> i32 {\n"
         "    return pair(\n"
-        "        #[cpp] { cv_quality_record(1) },\n"
-        "        #[cpp] { cv_quality_record(2) },\n"
+        "        cv_quality_record(1),\n"
+        "        cv_quality_record(2),\n"
         "    );\n"
         "}\n"
         "\n"
         "fn source_first(operand: i32) -> i32 {\n"
-        "    return pair(#[cpp] { cv_quality_record(3) }, operand);\n"
+        "    return pair(cv_quality_record(3), operand);\n"
         "}\n"
         "\n"
         "fn reserved_name(__value: i32) -> i32 {\n"
@@ -159,8 +156,7 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "}\n"
         "\n"
         "fn ordered_mutation(&values: [i32; 2]) {\n"
-        "    values[#[cpp] { cv_quality_record(8) }] +=\n"
-        "        #[cpp] { cv_quality_record(9) };\n"
+        "    values[cv_quality_record(8)] += cv_quality_record(9);\n"
         "}\n"
         "\n"
         "fn classify(value: Result) -> i32 {\n"
@@ -181,19 +177,19 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "fn covered_union_arm(value: DeadChoice) -> i32 {\n"
         "    return match value {\n"
         "        .First | .Second => 1,\n"
-        "        .First if #[cpp] { true /* cv_dead_union_guard */ } => {\n"
-        "                #[cpp] { static_cast<void>(0); /* cv_dead_union_body */ }\n"
-        "                2\n"
+        "        .First if true => {\n"
+        "                let cv_dead_union_body = 2;\n"
+        "                cv_dead_union_body\n"
         "            },\n"
         "        .Third => 3,\n"
         "    };\n"
         "}\n"
         "\n"
         "fn covered_subject_consumer() {\n"
-        "    match #[cpp] { cv_quality_record(12) == 12 } {\n"
+        "    match cv_quality_record(12) == 12 {\n"
         "        _ => {},\n"
-        "        cv_dead_pattern_binding if #[cpp] { false /* cv_dead_subject_guard */ } => {\n"
-        "                #[cpp] { static_cast<void>(0); /* cv_dead_subject_body */ }\n"
+        "        cv_dead_pattern_binding if false => {\n"
+        "                let cv_dead_subject_body = 0;\n"
         "            },\n"
         "    }\n"
         "}\n"
@@ -211,8 +207,8 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
         "        let operand: i32 = 0;\n"
         "    }\n"
         "    return pair(\n"
-        "        #[cpp] { cv_quality_record(10) },\n"
-        "        #[cpp] { cv_quality_record(11) },\n"
+        "        cv_quality_record(10),\n"
+        "        cv_quality_record(11),\n"
         "    );\n"
         "}\n"
         "\n"
@@ -227,12 +223,12 @@ auto compile_quality_fixture() noexcept -> ArtifactSet {
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("quality");
     REQUIRE(path.has_value());
-    const auto input = CompilationInput {.source_id = *source, .module_path = *path};
+    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:quality").value(),
         }
     );
@@ -244,20 +240,24 @@ auto compile_opaque_raw_fixture() noexcept -> ArtifactSet {
     auto sources = SourceManager();
     const auto source = sources.append_virtual(
         "opaque.cv",
-        "#[cpp] {\n"
+        "#[cpp] ---\n"
         "inline constexpr auto cv_raw_source = R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\";\n"
+        "---\n"
+        "\n"
+        "\n"
+        "#[cpp] -----\n"
         "inline constexpr auto cv_raw_generated = R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\";\n"
-        "}\n"
+        "-----\n"
     );
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("opaque");
     REQUIRE(path.has_value());
-    const auto input = CompilationInput {.source_id = *source, .module_path = *path};
+    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:quality").value(),
         }
     );
@@ -280,12 +280,12 @@ auto compile_for_fast_fixture() noexcept -> ArtifactSet {
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("for_fast");
     REQUIRE(path.has_value());
-    const auto input = CompilationInput {.source_id = *source, .module_path = *path};
+    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:for-fast").value(),
         }
     );
@@ -329,9 +329,21 @@ TEST_CASE("Target quality: effect-aware lowering only materializes conflicting o
         previous = position;
     }
     CHECK(!implementation.contains("goto "));
-    CHECK(implementation.contains("#line 1 \"quality.cv\""));
+    CHECK(implementation.contains("\"quality.cv\""));
     CHECK(!implementation.contains("CARVEN_SOURCE_LINE"));
     CHECK(!implementation.contains("CARVEN_GENERATED_LINE"));
+    CHECK(implementation.contains("#include <carven/runtime/runtime.hpp>"));
+    CHECK(implementation.contains("#include \"quality_provider.hpp\""));
+    const auto provider = implementation.find("std::addressof(::cv_quality_record)");
+    REQUIRE_NE(provider, std::string_view::npos);
+    const auto provider_line_start = implementation.rfind('\n', provider);
+    const auto provider_line_end = implementation.find('\n', provider);
+    const auto provider_line_offset =
+        provider_line_start == std::string_view::npos ? 0 : provider_line_start + 1;
+    const auto provider_line =
+        implementation.substr(provider_line_offset, provider_line_end - provider_line_offset);
+    CHECK(provider_line.contains("const auto"));
+    CHECK_FALSE(implementation.contains("convertible_to"));
 }
 
 TEST_CASE("Target quality: direct C-style loop uses the typed for path") {
@@ -348,16 +360,16 @@ TEST_CASE("Target quality: raw fragments preserve line-marker-shaped bytes") {
 
     CHECK(implementation.contains("R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\""));
     CHECK(implementation.contains("R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\""));
+    CHECK(implementation.find("cv_raw_source") < implementation.find("cv_raw_generated"));
+    CHECK_GE(occurrence_count(implementation, "\"opaque.cv\""), 2u);
 }
 
 TEST_CASE("Target quality: covered match arms do not enter the target program") {
     const auto& artifacts = quality_artifacts();
     const auto implementation = artifact_content(artifacts, "quality.cpp");
 
-    CHECK_FALSE(implementation.contains("cv_dead_union_guard"));
     CHECK_FALSE(implementation.contains("cv_dead_union_body"));
     CHECK_FALSE(implementation.contains("cv_dead_pattern_binding"));
-    CHECK_FALSE(implementation.contains("cv_dead_subject_guard"));
     CHECK_FALSE(implementation.contains("cv_dead_subject_body"));
     CHECK_EQ(occurrence_count(implementation, "cv_quality_record(12)"), 1);
 }

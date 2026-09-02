@@ -102,8 +102,6 @@ auto infer_return_type(
         );
         result = error_type(module_analysis, fallback_span);
     }
-    const auto foreign_result =
-        std::holds_alternative<HIRForeignTypeValue>(builder.type(result).value);
     for (const auto& observation : inference.observations()) {
         const auto span = builder.provenance().origin(observation.origin).span;
         if (is_void(module_analysis, result) && observation.type.has_value()) {
@@ -112,9 +110,7 @@ auto infer_return_type(
                 "a void function cannot return a value",
                 DiagnosticCode::TypeReturnValue
             );
-        } else if (!is_void(module_analysis, result)
-                   && !foreign_result
-                   && !observation.type.has_value()) {
+        } else if (!is_void(module_analysis, result) && !observation.type.has_value()) {
             module_analysis.emit(
                 span,
                 "a value-returning function must return a value",
@@ -155,7 +151,7 @@ auto build_statement(
         const auto condition =
             build_expression(module_analysis, scopes, control, source_branch.condition);
         if (!is_bool(module_analysis, expression_type(module_analysis, condition))
-            && !is_opaque_or_error(module_analysis, expression_type(module_analysis, condition))) {
+            && !is_error_type(module_analysis, expression_type(module_analysis, condition))) {
             module_analysis.emit(
                 ast.expression(source_branch.condition).span,
                 "if condition must have type bool",

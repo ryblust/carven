@@ -8,7 +8,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.tree;
 import :frontend.ast.type;
@@ -61,14 +61,25 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         return std::unexpected(std::move(diagnostics));
     }
 
-    auto imports = std::vector<ASTImportID> {};
+    auto module_imports = std::vector<ASTModuleImportID> {};
+    auto cpp_header_imports = std::vector<ASTCppHeaderImport> {};
+    auto cpp_source_fragments = std::vector<ASTCppSourceFragment> {};
     auto items = std::vector<ASTItemID> {};
 
-    while (!failed && check(TokenKind::Import)) {
-        imports.push_back(parse_import());
+    while (!failed && check(TokenKind::Import) && !check_next(TokenKind::LeftParen)) {
+        if (check_next(TokenKind::CppAngleHeaderName)
+            || check_next(TokenKind::CppQuoteHeaderName)) {
+            cpp_header_imports.push_back(parse_cpp_header_import());
+        } else {
+            module_imports.push_back(parse_module_import());
+        }
     }
 
     while (!failed && !at_end()) {
+        if (check(TokenKind::CppSourceFragment)) {
+            cpp_source_fragments.push_back(make_cpp_source_fragment(consume().span));
+            continue;
+        }
         furthest_speculative_failure.reset();
         const auto diagnostic_count = diagnostics.size();
         const auto checkpoint = builder.checkpoint();
@@ -106,7 +117,9 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
 
     auto ast_module = ASTModule {
         .span = Span::from_bounds(0, static_cast<std::uint32_t>(source.size())),
-        .imports = std::move(imports),
+        .module_imports = std::move(module_imports),
+        .cpp_header_imports = std::move(cpp_header_imports),
+        .cpp_source_fragments = std::move(cpp_source_fragments),
         .items = std::move(items),
     };
     return SyntaxTree(std::move(builder).finish(), std::move(ast_module), source_id);
@@ -130,7 +143,8 @@ auto Parser::synchronize_top_level_item() noexcept -> void {
             || kind == TokenKind::Fn
             || kind == TokenKind::Const
             || kind == TokenKind::Test
-            || kind == TokenKind::CppRegion;
+            || kind == TokenKind::Import
+            || kind == TokenKind::CppSourceFragment;
     };
     while (!at_end()) {
         if (brace_depth == 0 && starts_item(current().kind)) {
@@ -375,15 +389,27 @@ auto Parser::join(Span first, Span last) noexcept -> Span {
     return Span::from_bounds(first.start(), last.end());
 }
 
-auto Parser::cpp_region(Span full_span) const noexcept -> CppRegion {
-    auto opening = full_span.start() + 6;
-    while (opening < full_span.end() && source[opening] != '{') {
-        ++opening;
+auto Parser::make_cpp_source_fragment(Span full_span) const noexcept -> ASTCppSourceFragment {
+    auto payload_start = full_span.start();
+    while (payload_start < full_span.end()
+           && source[payload_start] != '\n'
+           && source[payload_start] != '\r') {
+        ++payload_start;
+    }
+    if (payload_start < full_span.end() && source[payload_start] == '\r') {
+        ++payload_start;
+    }
+    if (payload_start < full_span.end() && source[payload_start] == '\n') {
+        ++payload_start;
+    }
+    auto payload_end = full_span.end();
+    while (payload_end > payload_start
+           && source[payload_end - 1] != '\n'
+           && source[payload_end - 1] != '\r') {
+        --payload_end;
     }
     return {
-        .body_span = Span::from_bounds(
-            std::min(opening + 1, full_span.end()),
-            full_span.end() == 0 ? 0 : full_span.end() - 1
-        ),
+        .form_span = full_span,
+        .payload_span = Span::from_bounds(payload_start, payload_end),
     };
 }

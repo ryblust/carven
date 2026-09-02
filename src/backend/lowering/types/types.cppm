@@ -37,7 +37,7 @@ auto parameter_type(
 
 auto materialize_parameter_type(
     TargetModuleLowerer& context,
-    const TargetCallParameterRecipe& parameter
+    const TargetCallParameter& parameter
 ) noexcept -> TargetTypeID;
 
 auto reference_type(
@@ -70,7 +70,6 @@ auto lower_literal(
     HIRTypeID type
 ) noexcept -> TargetLiteralValue;
 
-auto builtin_symbol(HIRBuiltinType type) noexcept -> TargetSymbol;
+auto is_char_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool;
 auto is_integer_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool;
 auto is_void_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool;
-auto is_foreign_type(const TargetModuleLowerer& context, HIRTypeID id) noexcept -> bool;

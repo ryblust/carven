@@ -118,7 +118,7 @@ auto build_expression(
     const auto right_type = expression_type(module_analysis, right);
     const auto operands_compatible = compatible(module_analysis, left_type, right_type);
     const auto equality_capable = !equality
-        || is_opaque_or_error(module_analysis, left_type)
+        || is_error_type(module_analysis, left_type)
         || supports_equality(module_analysis, left_type);
     const auto check = check_binary_operator(builder, op, left_type, right_type, equality_capable);
     if (!operands_compatible) {
@@ -163,7 +163,6 @@ auto build_expression(
             );
             break;
         case BinaryOperatorStatus::Supported:
-        case BinaryOperatorStatus::Foreign:
         case BinaryOperatorStatus::Error:     break;
     }
     const auto result_builtin = operator_result_builtin(check.result);

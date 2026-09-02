@@ -435,34 +435,71 @@ auto SemanticVerifier<Program>::visit_function(FunctionID id, ProgramModuleID ow
         );
     }
     const auto& callable = input.program().callable(function.callable);
-    if (!input.program().has_body(callable.body)) {
-        return fail(
-            SemanticProgramErrorKind::InvalidContract,
-            "closed function contract has no completed body"
-        );
-    }
-    const auto& body = input.program().body(callable.body);
     if (!symbol_known(function.symbol)
         || input.program().symbol(function.symbol).module_id != owner
         || !input.program().symbol(function.symbol).type.has_value()
         || !type_known(function.result)
-        || callable.result != function.result
-        || !scope_known(body.scope)
-        || input.program().scope(body.scope).parent.has_value()) {
+        || function.parameter_origins.size() != callable.parameters.size()
+        || callable.result != function.result) {
         return fail(
             SemanticProgramErrorKind::InvalidContract,
-            "function declaration has an inconsistent symbol, body, or contract"
+            "function declaration has an inconsistent symbol or contract"
         );
     }
     const auto& symbol_type = input.program().type(*input.program().symbol(function.symbol).type);
     const auto* function_type = std::get_if<HIRFunctionTypeValue>(&symbol_type.value);
-    return (function_type != nullptr
-            && function_type->callable == function.callable
-            && verify_body(callable.body, function.callable, body.scope))
-        || fail(
-               SemanticProgramErrorKind::InvalidContract,
-               "function symbol type does not identify its program body"
+    if (function_type == nullptr || function_type->callable != function.callable) {
+        return fail(
+            SemanticProgramErrorKind::InvalidContract,
+            "function symbol type does not identify its callable contract"
         );
+    }
+    if (function.cpp_export_form_origin.has_value()) {
+        if (!semantic_id_known(
+                *function.cpp_export_form_origin,
+                input.program().provenance().origins().size()
+            )) {
+            return fail(
+                SemanticProgramErrorKind::InvalidReference,
+                "export(cpp) form references an unknown origin"
+            );
+        }
+        if (input.program().provenance().origin(*function.cpp_export_form_origin).source_id
+            != input.program().provenance().module_record(owner).source_id) {
+            return fail(
+                SemanticProgramErrorKind::InvalidOwnership,
+                "export(cpp) origin does not belong to its function module"
+            );
+        }
+        if (std::holds_alternative<HIRCppImportImplementation>(callable.implementation)) {
+            return fail(
+                SemanticProgramErrorKind::InvalidContract,
+                "export(cpp) function has an import(cpp) implementation"
+            );
+        }
+    }
+    return std::visit(
+        Overloaded {
+            [&](const HIRBodyImplementation& implementation) noexcept {
+                if (!input.program().has_body(implementation.body)) {
+                    return false;
+                }
+                const auto& body = input.program().body(implementation.body);
+                return scope_known(body.scope)
+                    && !input.program().scope(body.scope).parent.has_value()
+                    && verify_body(implementation.body, function.callable, body.scope);
+            },
+            [&](const HIRCppImportImplementation& implementation) noexcept {
+                return semantic_id_known(
+                           implementation.form_origin,
+                           input.program().provenance().origins().size()
+                       )
+                    && input.program().provenance().origin(implementation.form_origin).source_id
+                    == input.program().provenance().module_record(owner).source_id;
+            },
+        },
+        callable.implementation
+    );
 }
 
 template<typename Program>
@@ -510,6 +547,32 @@ auto SemanticVerifier<Program>::visit_modules() noexcept -> bool {
     for (auto index = 0uz; index < input.program().modules().size(); ++index) {
         const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
         const auto& hir_module = input.program().modules()[index];
+        const auto module_source = input.program().provenance().module_record(module_id).source_id;
+        for (const auto& dependency : hir_module.cpp_header_dependencies) {
+            if (!semantic_id_known(
+                    dependency.name,
+                    input.program().provenance().spellings().size()
+                )) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidReference,
+                    "C++ header dependency references an unknown spelling"
+                );
+            }
+        }
+        for (const auto origin : hir_module.cpp_source_payload_origins) {
+            if (!semantic_id_known(origin, input.program().provenance().origins().size())) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidReference,
+                    "C++ source fragment references an unknown origin"
+                );
+            }
+            if (input.program().provenance().origin(origin).source_id != module_source) {
+                return fail(
+                    SemanticProgramErrorKind::InvalidOwnership,
+                    "C++ source fragment origin does not belong to its module"
+                );
+            }
+        }
         for (const auto& item : hir_module.items) {
             const auto valid = std::visit(
                 Overloaded {
@@ -533,7 +596,6 @@ auto SemanticVerifier<Program>::visit_modules() noexcept -> bool {
                             && !input.program().scope(scope).parent.has_value()
                             && verify_body(test.body, std::nullopt, scope);
                     },
-                    [](const HIRCppRegion&) static noexcept { return true; },
                 },
                 item
             );
@@ -661,10 +723,11 @@ auto SemanticVerifier<Program>::visit_expression(HIRExprID id, SemanticScopeID s
                     return false;
                 }
                 const auto& callable = input.program().callable(closure.callable);
-                if (!input.program().has_body(callable.body)) {
+                const auto body_id = callable_body_id(callable);
+                if (!body_id.has_value() || !input.program().has_body(*body_id)) {
                     return false;
                 }
-                const auto& body = input.program().body(callable.body);
+                const auto& body = input.program().body(*body_id);
                 if (!scope_contains(scope, body.scope) || callable.result != closure.result) {
                     return false;
                 }
@@ -686,7 +749,7 @@ auto SemanticVerifier<Program>::visit_expression(HIRExprID id, SemanticScopeID s
                 return closure_type != nullptr
                     && closure_type->callable == closure.callable
                     && closure_type->capturing == !closure.captures.empty()
-                    && verify_body(callable.body, closure.callable, scope);
+                    && verify_body(*body_id, closure.callable, scope);
             },
             [&](const HIRCallableViewExpr& view) noexcept {
                 return visit_expression(view.source, scope);
@@ -709,8 +772,7 @@ auto SemanticVerifier<Program>::visit_expression(HIRExprID id, SemanticScopeID s
                     input.program().type(input.program().expression(index.operand_id).type).value;
                 const auto* array = std::get_if<HIRArrayTypeValue>(&operand_type);
                 const auto valid_result =
-                    (array != nullptr && array->element_type_id == expression.type)
-                    || std::holds_alternative<HIRForeignTypeValue>(operand_type);
+                    array != nullptr && array->element_type_id == expression.type;
                 return valid_result
                     && visit_expression(index.operand_id, scope)
                     && visit_expression(index.index, scope);
@@ -775,7 +837,6 @@ auto SemanticVerifier<Program>::visit_expression(HIRExprID id, SemanticScopeID s
                 }
                 return true;
             },
-            [](const HIRCppExpr&) static noexcept { return true; },
         },
         expression.value
     );

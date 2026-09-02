@@ -31,8 +31,8 @@ auto ASTBuilder::append_item(ASTItem value) noexcept -> ASTItemID {
     return storage.item_table.add(std::move(value));
 }
 
-auto ASTBuilder::append_import(ASTImportDecl value) noexcept -> ASTImportID {
-    return storage.import_table.add(std::move(value));
+auto ASTBuilder::append_module_import(ASTModuleImport value) noexcept -> ASTModuleImportID {
+    return storage.module_import_table.add(std::move(value));
 }
 
 auto ASTBuilder::expression(ASTExprID id) const noexcept -> const ASTExpr& {
@@ -64,7 +64,7 @@ auto ASTBuilder::checkpoint() const noexcept -> Checkpoint {
         .blocks = storage.block_table.checkpoint(),
         .branch_blocks = storage.branch_block_table.checkpoint(),
         .items = storage.item_table.checkpoint(),
-        .imports = storage.import_table.checkpoint(),
+        .module_imports = storage.module_import_table.checkpoint(),
     };
 }
 
@@ -76,7 +76,7 @@ auto ASTBuilder::rewind(Checkpoint checkpoint) noexcept -> void {
     storage.block_table.rewind(checkpoint.blocks);
     storage.branch_block_table.rewind(checkpoint.branch_blocks);
     storage.item_table.rewind(checkpoint.items);
-    storage.import_table.rewind(checkpoint.imports);
+    storage.module_import_table.rewind(checkpoint.module_imports);
 }
 
 auto ASTBuilder::finish() && noexcept -> ASTStorage {

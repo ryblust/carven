@@ -6,7 +6,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :frontend.lex.token;

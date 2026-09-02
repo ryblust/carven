@@ -10,7 +10,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -21,7 +20,7 @@ import std;
 
 namespace {
 auto body_of(const SyntaxTree& tree) noexcept -> const ASTBlock& {
-    return tree.view().block(function(tree).body);
+    return function_body(tree);
 }
 
 auto statement_at(const SyntaxTree& tree, std::size_t index) noexcept -> const ASTStmt& {
@@ -164,9 +163,8 @@ TEST_CASE("Parser: c_style for alternatives preserve absence and action kind") {
     CHECK(is<ASTExprID>(header_at(2).steps[0]));
 }
 
-TEST_CASE("Parser: control transfer and statement C++ use dedicated alternatives") {
-    const auto result =
-        parse_valid("fn transfer() { return value; break; continue; #[cpp] { native(); } }");
+TEST_CASE("Parser: control transfer uses dedicated alternatives") {
+    const auto result = parse_valid("fn transfer() { return value; break; continue; }");
     const auto& returned = get<ASTControlTransfer>(statement_at(result, 0));
     CHECK_EQ(returned.kind, ASTControlTransferKind::Return);
     CHECK(returned.value.has_value());
@@ -174,7 +172,7 @@ TEST_CASE("Parser: control transfer and statement C++ use dedicated alternatives
     CHECK_EQ(broken.kind, ASTControlTransferKind::Break);
     CHECK(!broken.value.has_value());
     CHECK(is<ASTControlTransfer>(statement_at(result, 2)));
-    CHECK(is<CppRegion>(statement_at(result, 3)));
+    check_invalid("fn invalid() { #[cpp] ---\nnative();\n---\n}");
 }
 
 TEST_CASE("Parser: inline-test operations are contextual statements and lambdas clear context") {
@@ -222,7 +220,8 @@ TEST_CASE("Parser: inline-test operations are contextual statements and lambdas 
     );
 
     const auto& production = get<ASTFunctionDecl>(item(result, 1));
-    const auto& production_statement = ast.statement(ast.block(production.body).statements.front());
+    const auto& production_body = ast.block(get<ASTFunctionBody>(production.implementation).body);
+    const auto& production_statement = ast.statement(production_body.statements.front());
     CHECK(is<ASTExprStatement>(production_statement));
 
     check_invalid("test \"block\" { { check(true); } }");

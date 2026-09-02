@@ -96,30 +96,74 @@ TEST_CASE("Lexer: strings and characters accept only shared simple escapes") {
     }
 }
 
-TEST_CASE("Lexer: inline C++ is one balanced opaque token") {
+TEST_CASE("Lexer: C++ source fragments are line-fenced opaque tokens") {
     static constexpr auto valid = std::to_array<std::string_view>({
-        "#[cpp] {}",
-        "#[cpp]\n{ if (ready) { call(); } }",
-        R"CV(#[cpp] { auto text = "}"; auto quote = '\''; })CV",
-        "#[cpp] { // }\n call(); }",
-        "#[cpp] { /* } */ call(); }",
-        R"CV(#[cpp] { auto raw = R"tag({})tag"; })CV",
-        R"CV(#[cpp] { auto malformed = R"way_too_long_delimiter({}); })CV",
-        R"CV(#[cpp] { auto malformed = R"missing_delimiter {}; })CV",
+        "#[cpp] ---\n---",
+        "#[cpp] ---\n{ if (ready) { call(); } }\n---",
+        R"CV(#[cpp] ---
+auto text = "}";
+auto raw = R"tag({ // not Carven })tag";
+---)CV",
+        "#[cpp] ---\n// }\n/* { */\n#if 0\n}\n#endif\n---",
+        "#[cpp] -----\n---\n-----",
+        "#[cpp]\t---\r\nauto value = 1;\r\n\t---\t",
     });
     for (const auto& spelling : valid) {
-        check_token(spelling, TokenKind::CppRegion);
+        check_token(spelling, TokenKind::CppSourceFragment);
     }
 
     static constexpr auto invalid = std::to_array<std::string_view>({
-        "#[ cpp] {}",
-        "#[cpp ] {}",
+        "#[ cpp] ---\n---",
+        "#[cpp ] ---\n---",
         "#[cpp]",
-        "#[cpp] { nested();",
+        "#[cpp] --\n--",
+        "#[cpp] --- trailing\n---",
+        "#[cpp] ---\nnative();",
+        "#[cpp] ----\nnative();\n---",
     });
     for (const auto& spelling : invalid) {
         check_lexical_error(spelling);
     }
+
+    static constexpr auto early_close = std::string_view(
+        "#[cpp] ---\n"
+        "before();\n"
+        "---\n"
+        "after();\n"
+    );
+    const auto source = SourceView {
+        .source_id = SourceID::from_index(0),
+        .text = early_close,
+        .origin = "early-close.cv",
+    };
+    const auto lexed = lex(source);
+    REQUIRE(lexed.diagnostics.empty());
+    REQUIRE(!lexed.value.tokens().empty());
+    CHECK_EQ(lexed.value.tokens().front().kind, TokenKind::CppSourceFragment);
+    CHECK_EQ(slice(early_close, lexed.value.tokens().front().span), "#[cpp] ---\nbefore();\n---");
+}
+
+TEST_CASE("Lexer: C++ header names retain their dedicated spelling") {
+    static constexpr auto text =
+        std::string_view("import <vendor/api.hpp>; import \"native/provider.hpp\";");
+    const auto source = SourceView {
+        .source_id = SourceID::from_index(0),
+        .text = text,
+        .origin = "header-token-test.cv",
+    };
+    const auto lexed = lex(source);
+    REQUIRE(lexed.diagnostics.empty());
+    const auto tokens = lexed.value.tokens();
+    REQUIRE_EQ(tokens.size(), 6u);
+    CHECK_EQ(tokens[1].kind, TokenKind::CppAngleHeaderName);
+    CHECK_EQ(slice(text, tokens[1].span), "<vendor/api.hpp>");
+    CHECK_EQ(tokens[4].kind, TokenKind::CppQuoteHeaderName);
+    CHECK_EQ(slice(text, tokens[4].span), "\"native/provider.hpp\"");
+
+    check_lexical_error("import <>;");
+    check_lexical_error("import \"\";");
+    check_lexical_error("import <unterminated;");
+    check_lexical_error("import \"unterminated;");
 }
 
 TEST_CASE("Lexer: numeric scanner exposes typed values and error facts") {

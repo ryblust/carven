@@ -1,12 +1,12 @@
 module carven:frontend.dump.ast;
 
+import :frontend.ast.interop;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -197,13 +197,6 @@ private:
         bool is_last,
         std::string_view field
     ) noexcept -> void;
-    auto render_expression(
-        const CppRegion& value,
-        ASTExprID expression,
-        std::string_view prefix,
-        bool is_last,
-        std::string_view field
-    ) noexcept -> void;
     auto render_statement(ASTStmtID statement, std::string_view prefix, bool is_last) noexcept
         -> void;
     auto render_literal(
@@ -219,8 +212,8 @@ private:
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
-    auto render_cpp_region(
-        const CppRegion& region,
+    auto render_cpp_source_fragment(
+        const ASTCppSourceFragment& fragment,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
@@ -289,8 +282,16 @@ private:
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
-    auto render_import(ASTImportID declaration, std::string_view prefix, bool is_last) noexcept
-        -> void;
+    auto render_module_import(
+        ASTModuleImportID declaration,
+        std::string_view prefix,
+        bool is_last
+    ) noexcept -> void;
+    auto render_cpp_header_import(
+        const ASTCppHeaderImport& header,
+        std::string_view prefix,
+        bool is_last
+    ) noexcept -> void;
     auto render_top_level_item(ASTItemID item, std::string_view prefix, bool is_last) noexcept
         -> void;
     auto render_pattern(ASTPatternID pattern, std::string_view prefix, bool is_last) noexcept

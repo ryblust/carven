@@ -1,6 +1,7 @@
 module carven:backend.generation.linkage.impl;
 
 import :backend.generation.linkage;
+import :backend.generation.request;
 import std;
 
 namespace {
@@ -188,10 +189,10 @@ auto LinkageDomainID::namespace_identifier() const noexcept -> std::string {
 auto derive_linkage_domain_id(const TargetGenerationRequest& request) noexcept -> LinkageDomainID {
     auto digest = Sha256();
     digest.append_field(linkage_domain_tag);
-    switch (request.tests) {
-        case TestEmissionMode::None:           digest.append_field(no_tests_tag); break;
-        case TestEmissionMode::ExternalRunner: digest.append_field(external_tests_tag); break;
-        case TestEmissionMode::DefaultRunner:  digest.append_field(default_tests_tag); break;
+    switch (request.test_mode) {
+        case TestGenerationMode::None:           digest.append_field(no_tests_tag); break;
+        case TestGenerationMode::ExternalRunner: digest.append_field(external_tests_tag); break;
+        case TestGenerationMode::DefaultRunner:  digest.append_field(default_tests_tag); break;
     }
     switch (request.linkage_domain.kind()) {
         case LinkageDomainKind::Explicit:     digest.append_field(explicit_domain_tag); break;

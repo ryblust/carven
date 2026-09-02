@@ -12,7 +12,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -27,11 +26,12 @@ import std;
 
 TEST_CASE("Parser: empty input owns an empty typed module root") {
     const auto result = parse_valid("");
-    const auto& hir_module = root(result);
-    CHECK_EQ(hir_module.span.start(), 0u);
-    CHECK_EQ(hir_module.span.end(), 0u);
-    CHECK(hir_module.imports.empty());
-    CHECK(hir_module.items.empty());
+    const auto& module = root(result);
+    CHECK_EQ(module.span.start(), 0u);
+    CHECK_EQ(module.span.end(), 0u);
+    CHECK(module.module_imports.empty());
+    CHECK(module.cpp_header_imports.empty());
+    CHECK(module.items.empty());
 }
 
 TEST_CASE("Parser: token source identity crosses the API boundary") {
@@ -153,7 +153,7 @@ TEST_CASE("Parser: moving SyntaxTree preserves its module and owned IDs") {
     );
     auto parsed = parse_source(text);
     REQUIRE(parsed.has_value());
-    const auto import_id = root(*parsed).imports.front();
+    const auto import_id = root(*parsed).module_imports.front();
     const auto item_id = root(*parsed).items.front();
 
     auto moved = std::move(parsed);
@@ -164,7 +164,7 @@ TEST_CASE("Parser: moving SyntaxTree preserves its module and owned IDs") {
         slice(
             text,
             std::get<ASTParentRelativeModuleReference>(
-                ast.import_declaration(import_id).module_reference.value
+                ast.module_import(import_id).module_reference.value
             )
                 .components.front()
         ),

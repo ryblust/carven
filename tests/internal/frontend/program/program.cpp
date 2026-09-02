@@ -22,8 +22,8 @@ auto path(std::string_view value) noexcept -> CanonicalModulePath {
 
 } // namespace
 
-static_assert(!std::copy_constructible<ParsedBatch>);
-static_assert(std::movable<ParsedBatch>);
+static_assert(!std::copy_constructible<SyntaxProgram>);
+static_assert(std::movable<SyntaxProgram>);
 
 TEST_CASE("Syntax program: a published multi-module owner preserves source correlation") {
     auto sources = SourceManager();
@@ -33,16 +33,16 @@ TEST_CASE("Syntax program: a published multi-module owner preserves source corre
     REQUIRE(model_source.has_value());
 
     const auto inputs = std::array {
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = *main_source,
             .module_path = path("app.main"),
         },
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = *model_source,
             .module_path = path("app.model"),
         },
     };
-    auto parsed = parse(sources, inputs);
+    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
     REQUIRE(parsed.has_value());
     const auto& program = *parsed;
     REQUIRE(verify_syntax_program(program).has_value());

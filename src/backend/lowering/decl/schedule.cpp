@@ -29,15 +29,18 @@ auto lower_nominals(
     return result;
 }
 
-auto append_cpp(TargetModuleLowerer& context, const HIRCppRegion& region) noexcept -> TargetItemID {
+auto append_cpp_source_fragment(
+    TargetModuleLowerer& context,
+    ProgramOriginID payload_origin
+) noexcept -> TargetItemID {
     return context.target().append_item({
         .value =
             TargetRawFragment {
-                .bytes = std::string(context.source().provenance().spelling(region.bytes)),
+                .bytes = std::string(context.source().provenance().slice(payload_origin)),
             },
         .attribution = {
             .kind = TargetAttributionKind::RawSource,
-            .origin = target_source_origin(context, region.origin),
+            .origin = target_source_origin(context, payload_origin),
             .reason = std::nullopt,
         },
     });
@@ -62,39 +65,35 @@ auto lower_declaration_schedule(
     const TargetModuleSchedule& schedule
 ) noexcept -> LoweredDeclarationSchedule {
     auto result = LoweredDeclarationSchedule {
-        .cpp_preamble = {},
-        .implementation = lower_nominals(context, schedule.implementation_nominal_order),
+        .cpp_source_fragments = {},
+        .private_implementation = lower_nominals(context, schedule.implementation_nominal_order),
+        .module_implementation = {},
         .entry_point = schedule.entry_point,
     };
-    const auto& module_items = context.source().hir_module(schedule.module_id).items;
-    result.cpp_preamble.reserve(schedule.cpp_preamble_items.size());
-    for (const auto item_index : schedule.cpp_preamble_items) {
-        if (item_index >= module_items.size()) {
-            invariant_violation("target module schedule references an unknown source item");
-        }
-        const auto* cpp = std::get_if<HIRCppRegion>(&module_items[item_index]);
-        if (cpp == nullptr) {
-            invariant_violation("target module preamble schedule references a non-C++ item");
-        }
-        result.cpp_preamble.push_back(append_cpp(context, *cpp));
+    const auto& module = context.source().hir_module(schedule.module_id);
+    result.cpp_source_fragments.reserve(module.cpp_source_payload_origins.size());
+    for (const auto payload_origin : module.cpp_source_payload_origins) {
+        result.cpp_source_fragments.push_back(append_cpp_source_fragment(context, payload_origin));
     }
     for (const auto function : schedule.private_function_declarations) {
-        result.implementation.push_back(
+        result.private_implementation.push_back(
             lower_declaration(context, HIRDeclarationRef {function}, true)
         );
     }
     auto tests = std::vector<TargetItemID>();
     for (const auto function : schedule.function_definitions) {
-        result.implementation.push_back(
-            lower_declaration(context, HIRDeclarationRef {function}, false)
-        );
+        auto& destination =
+            context.source().function(function).visibility == DeclarationVisibility::Module
+            ? result.private_implementation
+            : result.module_implementation;
+        destination.push_back(lower_declaration(context, HIRDeclarationRef {function}, false));
     }
     tests.reserve(schedule.emitted_tests.size());
     for (const auto test : schedule.emitted_tests) {
         tests.push_back(append_test(context, test));
     }
     if (!tests.empty()) {
-        result.implementation.push_back(context.target().append_item({
+        result.module_implementation.push_back(context.target().append_item({
             .value =
                 TargetNamespace {
                     .name = std::nullopt,

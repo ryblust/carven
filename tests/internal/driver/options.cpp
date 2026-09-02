@@ -4,7 +4,7 @@ module;
 
 module carven:test.internal.driver.options;
 
-import :compilation.request;
+import :backend.generation.request;
 import :driver.options;
 import std;
 
@@ -16,7 +16,7 @@ TEST_CASE("Compile options: defaults preserve source inputs") {
     const auto* destination = std::get_if<DirectoryArtifactDestination>(&result->destination);
     REQUIRE(destination != nullptr);
     CHECK_EQ(destination->root, std::filesystem::path("."));
-    CHECK_EQ(result->test_mode, TestEmissionMode::None);
+    CHECK_EQ(result->test_mode, TestGenerationMode::None);
     CHECK_FALSE(result->linkage_domain.has_value());
     REQUIRE_EQ(result->input_paths.size(), 2uz);
     CHECK_EQ(result->input_paths[0], "main.cv");
@@ -37,7 +37,7 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     const auto* destination = std::get_if<DirectoryArtifactDestination>(&output->destination);
     REQUIRE(destination != nullptr);
     CHECK_EQ(destination->root, std::filesystem::path("emit"));
-    CHECK_EQ(output->test_mode, TestEmissionMode::ExternalRunner);
+    CHECK_EQ(output->test_mode, TestGenerationMode::ExternalRunner);
     REQUIRE(output->linkage_domain.has_value());
     CHECK_EQ(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
     CHECK_EQ(output->linkage_domain->value(), "domain");
@@ -47,7 +47,7 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
 
     REQUIRE(stdout.has_value());
     CHECK(std::holds_alternative<StandardOutputArtifactDestination>(stdout->destination));
-    CHECK_EQ(stdout->test_mode, TestEmissionMode::DefaultRunner);
+    CHECK_EQ(stdout->test_mode, TestGenerationMode::DefaultRunner);
 }
 
 TEST_CASE("Compile options: invalid combinations report structured failures") {

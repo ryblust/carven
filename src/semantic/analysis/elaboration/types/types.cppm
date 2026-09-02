@@ -80,8 +80,6 @@ auto require_value_type(
     ValueTypeRole role
 ) noexcept -> HIRTypeID;
 
-auto foreign_type(ModuleAnalysis& module_analysis, Span span) noexcept -> HIRTypeID;
-
 auto build_type(
     ModuleAnalysis& module_analysis,
     ScopeStack& scopes,
@@ -159,7 +157,7 @@ auto is_integer(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept ->
 
 auto is_numeric(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool;
 
-auto is_opaque_or_error(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool;
+auto is_error_type(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool;
 
 auto supports_equality(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool;
 

@@ -133,7 +133,9 @@ public:
     auto evaluate_callable(CallableID callable) noexcept -> ControlSummary {
         const auto previous = active_callable;
         active_callable = callable;
-        const auto result = evaluate_block(hir.body(hir.callable(callable).body).root);
+        const auto body = callable_body_id(hir.callable(callable));
+        const auto result =
+            body.has_value() ? evaluate_block(hir.body(*body).root) : empty_control();
         active_callable = previous;
         return result;
     }
@@ -187,9 +189,6 @@ private:
                 },
                 [&](const FixedSignatureFailure& value) noexcept -> std::span<const HIRTypeID> {
                     return hir.failure_set(value.failure_set).members;
-                },
-                [](const ForeignCallableFailure&) static noexcept -> std::span<const HIRTypeID> {
-                    return {};
                 },
             },
             source
@@ -386,7 +385,6 @@ private:
                     result = evaluate_match(value.subject, value.arms);
                 },
                 [&](const HIRTryExpr& value) noexcept { result = evaluate_try(id, value); },
-                [](const HIRCppExpr&) static noexcept {},
             },
             hir.expression(id).value
         );
@@ -534,7 +532,6 @@ private:
                     control.transfers.exits_test = true;
                     return control;
                 },
-                [](const HIRCppStmt&) static noexcept { return empty_control(); },
             },
             hir.statement(id).value
         );

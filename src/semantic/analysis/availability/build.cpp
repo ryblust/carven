@@ -132,9 +132,6 @@ auto BodyAvailabilityGraphBuilder::call_failures(HIRExprID call) const noexcept
             [&](const FixedSignatureFailure& source) noexcept -> std::span<const HIRTypeID> {
                 return hir.failure_set(source.failure_set).members;
             },
-            [](const ForeignCallableFailure&) static noexcept -> std::span<const HIRTypeID> {
-                return {};
-            },
         },
         call_contract(hir, call).failure_source
     );

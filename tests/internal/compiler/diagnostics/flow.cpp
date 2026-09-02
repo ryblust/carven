@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.diagnostics.flow;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :diagnostics.diagnostic;
@@ -46,16 +47,16 @@ TEST_CASE("Compiler diagnostics: value try is one control-transfer boundary") {
         "}\n"
     );
     const auto source_id = *sources.append_virtual("value-try-transfer.cv", source);
-    const auto input = CompilationInput {
+    const auto input = CompilationModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("value_try_transfer"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
     );
@@ -86,15 +87,15 @@ TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reacha
         "}\n"
     );
     const auto source_id = *sources.append_virtual("test-flow.cv", source);
-    const auto input = CompilationInput {
+    const auto input = CompilationModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("test_flow"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
     );
@@ -119,15 +120,15 @@ TEST_CASE("Compiler diagnostics: covered match arms retain warning identity and 
         "}\n"
     );
     const auto source_id = *sources.append_virtual("covered-match-arm.cv", source);
-    const auto input = CompilationInput {
+    const auto input = CompilationModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("covered_match_arm"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
     );

@@ -3,7 +3,7 @@
 This document defines the observable semantics of supported Carven
 programs. It owns name resolution, types, values, evaluation, control flow,
 semantic validity, the explicitly named stable diagnostic identities, and the
-`#[cpp]` boundary contract. It does not define lexical or syntactic validity,
+C++ interoperation contract. It does not define lexical or syntactic validity,
 compiler representations, host filesystem policy, or generated C++ forms.
 
 ## Contents
@@ -12,7 +12,7 @@ compiler representations, host filesystem policy, or generated C++ forms.
 - [Declarations and names](#declarations-and-names)
 - [Module constants](#module-constants)
 - [Types and compatibility](#types-and-compatibility)
-- [`#[cpp]` boundary](#cpp-boundary)
+- [C++ interoperation](#c-interoperation)
 - [Bindings, access, and mutation](#bindings-access-and-mutation)
 - [Functions and calls](#functions-and-calls)
 - [Structures and arrays](#structures-and-arrays)
@@ -44,8 +44,8 @@ non-leading `crafts` component is ordinary. The `crafts.<name>` prefix gives
 modules a craft-qualified domain and affects name resolution only; it does not
 create another compilation boundary.
 
-Imports form a prefix at the start of a module and use one of three structured
-references:
+Imports form a prefix at the start of a module. Module imports use one of three
+structured references:
 
 - `model.user` starts at the importing module's domain root;
 - `.value` starts in the importing module's logical module directory;
@@ -75,10 +75,14 @@ name. Import declarations have no runtime side effects. A declaration is used
 when one of its selected bindings uniquely resolves an actual reference; an
 otherwise unused declaration produces one `CV-LINT-UNUSED-IMPORT` warning.
 
+The same prefix may contain C++ header dependencies. Their behavior is defined
+under [C++ interoperation](#c-interoperation); they are not module references
+and do not participate in Carven lookup.
+
 ## Declarations and names
 
-Modules may declare functions, structures, enums, constants, tests, and inline
-C++ regions. Function, structure, enum, and constant names share one module
+Modules may declare functions, structures, enums, constants, tests, and C++
+source fragments. Function, structure, enum, and constant names share one module
 namespace. Duplicate module declarations are invalid; function overloading is
 not supported.
 
@@ -159,51 +163,90 @@ extent. Function-view types include parameter access, parameter types, success
 result, and failure set.
 
 Ordinary compatibility requires the same canonical type. The defined
-exceptions are contextual numeric literals, compatible callable-to-view
-adoption, and explicit `#[cpp]` boundary uses. There are no general implicit
-numeric promotions, structural conversions, or truthiness conversions.
+exceptions are contextual numeric literals and compatible callable-to-view
+adoption. There are no general implicit numeric promotions, structural
+conversions, truthiness conversions, or opaque dynamically typed values.
 
-`void` is the absence of a value. `Foreign` is an internal, unspellable type
-used only for an untyped C++ expression path; it is not a source type and
-does not make ordinary Carven declarations dynamically typed. A local may infer
-`Foreign` only to carry that opaque path to a later `#[cpp]` operation or typed
-use.
+`void` is the absence of a value.
 
-## `#[cpp]` boundary
+## C++ interoperation
 
-The contents of a `#[cpp]` body form an opaque C++ boundary. Names, types,
-overloads, templates, lifetime, constant evaluation, and ABI inside that body
-follow C++ rules. Carven does not parse the body, resolve Carven names inside
-it, or infer imports from its contents. C++ code must provide the
-declarations and includes it uses. Names beginning with `carven_` are reserved
-inside an opaque body. Lexical analysis determines the opaque boundary.
+The grammar defines four C++ forms. `import <...>` and `import "..."` are C++
+header imports, top-level `#[cpp]` contributes an implementation source
+fragment, `import(cpp)` declares a C++-implemented Carven function, and
+`export(cpp)` publishes a Carven function to C++ consumers. A source fragment
+has no public API placement.
 
-At expression position, an opaque body in a context with an expected Carven
-type has that boundary type. Carven does not prove that the C++ expression
-produces it; downstream C++ compilation checks the expression and conversion.
-Without an expected type, the expression has `Foreign` type. A `Foreign` path
-may continue through calls with a Foreign callee, member and index operations,
-operators, conditions, and range sources. A surrounding typed construct may
-then supply a Carven result type; C++ well-formedness still belongs to the
-downstream C++ compiler.
+Header imports create no Carven names, resolve no files, expose no external C++
+symbols to semantic analysis, and link no library. Header search is the
+downstream preprocessor's responsibility.
 
-An untyped `Foreign` value cannot be an array element, callable result, or
-lambda capture. It therefore cannot enter Carven-owned aggregate or callable
-storage without crossing a typed use site. Ordinary Carven source cannot use a
-matching C++ spelling to obtain the same escape.
+Each top-level `#[cpp]` payload remains an independent, byte-opaque C++ source
+fragment. Carven does not parse or type-check it, interpolate Carven values, or
+bind same-spelled Carven names. C++ owns macros, overloads, templates, linkage,
+exceptions, lifetime, ODR, and undefined behavior inside each fragment.
+Generated placement and preservation requirements belong to
+[compatibility.md](compatibility.md#c-interoperation-artifacts).
 
-A `#[cpp]` body used as a value or callee must itself denote a C++ expression; an
-ADL-only function name is not a boundary value. A body used to the left of
-`::` may instead denote a C++ scope. Validity remains the boundary author's
-responsibility.
+An `import(cpp)` declaration is private or bare and has no Carven body:
 
-Opaque bytes have no Carven interpolation or name binding. A C++ identifier in
-the body is not a reference to a same-spelled Carven declaration or local, even
-when an incidental generated spelling resolves. Generated identifiers are not
-an interoperability contract. Carven control analysis models a standalone
-opaque statement as completing normally. C++ control transfer, exceptions,
-mutation, invalid lifetimes, or undefined behavior escaping that model are the
-boundary author's responsibility and can invalidate the surrounding contract.
+```carven
+private import(cpp) fn native_value(value: i32) -> i32;
+```
+
+Calling it invokes a global C++ function with the same unqualified name. Carven
+does not generate the provider declaration or parse, import, or compare its C++
+signature.
+
+Provider conformance, definition, and link satisfaction are author/toolchain
+responsibilities. Same-spelled imports in different modules remain distinct
+Carven capabilities even when C++ linkage makes their providers identical.
+Names beginning with `_` or `__` receive no additional Carven restriction;
+whether such a spelling is reserved in its downstream C++ context is the
+author/toolchain's responsibility. `main`, `std`, and `carven` are not valid
+provider names.
+
+An `export(cpp)` declaration is an ordinary, complete-compilation-visible
+Carven function with a Carven body. It is also declared in the generated C++
+API for its module:
+
+```carven
+export(cpp) fn value() -> i32 {
+    return 42;
+}
+```
+
+An `import(cpp)` declaration cannot be exported directly in any syntactic
+combination; re-export is not a language feature. A wider capability requires
+an explicit ordinary Carven wrapper. Both boundary directions accept only
+concrete, fixed-arity, infallible top-level functions. Every parameter uses
+unmarked Read access and crosses by value. Write/Take access and nonempty
+failure sets are unsupported.
+
+The closed boundary type mapping is:
+
+| Carven type | C++ type |
+| --- | --- |
+| `bool` | `bool` |
+| `i8/i16/i32/i64` | `std::int8_t/std::int16_t/std::int32_t/std::int64_t` |
+| `u8/u16/u32/u64` | `std::uint8_t/std::uint16_t/std::uint32_t/std::uint64_t` |
+| `isize/usize` | `std::ptrdiff_t/std::size_t` |
+| `f32/f64` | `float/double` |
+| `char` | `char32_t` |
+| `void` | `void`, result only |
+
+`str`, arrays, structures, enums, callables, process arguments, and iteration
+views are unsupported. An inbound `char32_t` is validated before it becomes a
+Carven `char`; violation terminates with
+`carven runtime contract error: invalid Unicode scalar at C++ boundary`.
+Generated import bridges and export façades are `noexcept`. Carven does not
+catch a provider exception or map it to a Carven failure; an exception escaping
+an import bridge terminates under ordinary C++ rules.
+
+Module components and public function names must be supported C++ identifiers.
+A function/namespace prefix collision anywhere in the compilation's public API
+tree is invalid. Public header paths, namespaces, declarations, and stability
+belong to [compatibility.md](compatibility.md#c-interoperation-artifacts).
 
 ## Bindings, access, and mutation
 
@@ -240,8 +283,7 @@ A call repeats every declared parameter access exactly: `read(value)`,
 access permits but does not require mutation. It is non-owning and nonexclusive:
 the same mutable owner may be passed to multiple `Write` parameters in one call.
 Arguments are evaluated left to right, and mutations take effect in the
-function body's execution order. Foreign calls accept only direct `Read`
-arguments.
+function body's execution order.
 
 Runtime `let`, `var`, ordinary pattern bindings, and `Take` parameters are
 owners. A `Take` parameter is an immutable owner and may itself be taken.
@@ -278,8 +320,8 @@ Constant facts include scalar and string literals, numeric enum cases,
 resolved local and module constants, grouping, supported casts, supported pure
 unary and binary operations, constant `str.len()` and `str.is_empty()`, and
 payload-case construction whose payloads are all constant. General calls,
-ordinary aggregate construction, control-flow expressions, and `#[cpp]` are not
-Carven constant expressions. Local and module constant declarations are
+ordinary aggregate construction, and control-flow expressions are not Carven
+constant expressions. Local and module constant declarations are
 compile-time-only; their later uses denote the selected normalized value without
 creating a runtime binding or lambda capture.
 
@@ -293,7 +335,7 @@ right.
 
 A `return` without a value is valid only for `void`; a value return is required
 for every other ordinary result type and must be compatible with it. Every
-reachable path of a non-`void`, non-`Foreign` function or lambda must return a
+reachable path of a non-`void` function or lambda must return a
 value. Violation is identified by `CV-FLOW-MISSING-RETURN`; the explanatory
 message is not part of the language contract.
 
@@ -369,9 +411,8 @@ scope.
 
 ## Control flow and loops
 
-Conditions and guards require `bool`. A `Foreign` condition is the explicit
-`#[cpp]` exception and is validated by C++. Value-form `if` requires an `else`
-and all result branches must be compatible. Statement-form conditionals do not
+Conditions and guards require `bool`. Value-form `if` requires an `else` and
+all result branches must be compatible. Statement-form conditionals do not
 produce a value.
 
 `while` evaluates its condition before each iteration. A C-style `for`
@@ -386,11 +427,10 @@ sequence from begin through end-exclusive; begin greater than or equal to end
 produces no iterations. Integer-range bindings cannot use Write access.
 
 Arrays support Read and, for a mutable source, Write range bindings. `str.bytes`
-and `str.chars` support Read bindings only. A `Foreign` range source delegates
-iteration validity to C++. A range binding is scoped to the loop and cannot be
-taken. Its name is not visible in its declared type or range source; it is
-published only after those inputs complete and is then visible throughout the
-loop body.
+and `str.chars` support Read bindings only. A range binding is scoped to the
+loop and cannot be taken. Its name is not visible in its declared type or range
+source; it is published only after those inputs complete and is then visible
+throughout the loop body.
 
 `break` and `continue` are valid only inside a loop. `return` targets the
 current function or lambda. A value-form `if`, `match`, or `try` is a control
@@ -460,8 +500,7 @@ or integer-to-floating conversion.
 
 It rejects narrowing `f64` to `f32`, floating-point to integer or `bool`,
 `bool` to floating-point, integer to enum, conversions between `char` and a
-numeric type, non-identity `str` conversions, and every conversion involving
-`Foreign`.
+numeric type, and non-identity `str` conversions.
 
 A constant integer cast to an `N`-bit integer reduces the mathematical value
 modulo `2^N`. An unsigned target is that residue; a signed target interprets the
@@ -495,8 +534,7 @@ available for `bool`, `char`, integers, floating-point values, `str`, arrays
 whose elements support equality, structures whose fields all support equality,
 numeric enums, and payload enums whose payloads all support equality. Callable
 types, process-entry arguments, and `str.bytes` / `str.chars` iteration views do
-not support equality. With a `Foreign` operand, C++ owns operator validity and
-the result crosses a `bool` boundary.
+not support equality.
 
 Payload enum values with different cases compare unequal. Values of the same
 case compare payloads in position order with short-circuiting. Floating-point
@@ -538,13 +576,9 @@ numeric conversion.
 
 `str` is an immutable, copyable, value-passed UTF-8 view. It has no owning
 storage, `&str` type, or source lifetime syntax. Its ordinary safe backing is
-static literal storage and copies of such views. A typed `#[cpp]` boundary may
-produce `str` or `char`. Carven does not prove the bytes, scalar, or backing
-lifetime at compile time. Runtime validation rejects invalid UTF-8 with
-`carven runtime contract error: invalid UTF-8 from typed #[cpp]` and an invalid
-scalar with `carven runtime contract error: invalid Unicode scalar from typed
-#[cpp]`; each message is written to standard error before termination. Backing
-lifetime remains the boundary author's responsibility.
+static literal storage and copies of such views. C++ boundary support and
+Unicode validation are defined under
+[C++ interoperation](#c-interoperation).
 
 Decoded string and character literal values are not Unicode-normalized.
 
@@ -573,9 +607,8 @@ supported. Payload arity must be exact. A bare identifier creates an immutable
 owning binding and never pins a constant. The selected payload is copied once
 after its case matches and before the guard runs.
 
-`is T` constrains the subject to `T`. An ordinary subject must already have a
-compatible canonical type, so the constraint covers that type. On a `Foreign`
-subject, the corresponding C++ type test is delegated to C++.
+`is T` constrains the subject to `T`. The subject must already have a compatible
+canonical type, so the constraint covers that type.
 
 Or-pattern alternatives must bind the same names with the same types; an
 alternative cannot bind one name twice. Guards run after pattern bindings are
@@ -602,6 +635,10 @@ arguments; ordinary function parameter rules apply elsewhere. `main` must
 handle every failure. Normal completion produces process status zero; a
 declared Carven result, if present, is not a process exit status.
 
+The command-line parameter is an opaque entry-only value. Its C++
+runtime representation is not a Carven sequence contract and does not make the
+parameter indexable or iterable.
+
 A test is a module-local named body with no parameters or result. Test names
 must be unique within their module and cannot be `main`. Tests participate in
 parsing and semantic analysis regardless of whether the compiler is asked to
@@ -620,8 +657,8 @@ fail(message);
 ```
 
 The `condition` must have the exact Carven type `bool`; the optional `message`
-must have the exact Carven type `str`. `Foreign` is not an exception. Invalid
-counts use `CV-TEST-ARGUMENT-COUNT`, invalid conditions use
+must have the exact Carven type `str`. Invalid counts use
+`CV-TEST-ARGUMENT-COUNT`, invalid conditions use
 `CV-TEST-CONDITION-TYPE`, and invalid messages use `CV-TEST-MESSAGE-TYPE`.
 
 The contextual form is available throughout a test body and its structurally
@@ -654,6 +691,10 @@ The following table is the stable public diagnostic catalog:
 | --- | --- | --- |
 | `CV-CONST-CYCLE` | Error | Required constant facts form a dependency cycle |
 | `CV-CONST-EXPORTED-TYPE` | Error | An exported module constant omits its explicit type |
+| `CV-CPP-BOUNDARY` | Error | An `import(cpp)` or `export(cpp)` function violates the supported declaration shape |
+| `CV-CPP-CARRIER` | Error | A C++ boundary parameter or result has no supported scalar boundary type |
+| `CV-CPP-IDENTIFIER` | Error | A C++ API path or global provider name cannot be represented by generated C++ |
+| `CV-CPP-API-PATH-COLLISION` | Error | A function and namespace require the same prefix in the public C++ API tree |
 | `CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE` | Warning | A catch alternative cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-ARM-UNREACHABLE` | Warning | A catch arm cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-NON-EXHAUSTIVE` | Error | A catch leaves a protected failure unhandled |

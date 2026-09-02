@@ -1,3 +1,0 @@
-fn linkage_domain_value() -> i32 {
-    return 42;
-}

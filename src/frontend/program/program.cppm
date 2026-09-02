@@ -5,42 +5,42 @@ import :source.provenance;
 import :support.id_table;
 import std;
 
-class ParsedBatchConstruction;
+class SyntaxProgramBuilder;
 
-struct ParsedBatchParts final {
-    ParsedBatchParts(
+struct SyntaxProgramParts final {
+    SyntaxProgramParts(
         CompilationProvenance provenance,
         IDTable<SyntaxTree, ProgramModuleID> syntax_trees
     ) noexcept;
-    ParsedBatchParts(const ParsedBatchParts&) = delete;
-    ParsedBatchParts(ParsedBatchParts&&) = default;
-    ~ParsedBatchParts() = default;
+    SyntaxProgramParts(const SyntaxProgramParts&) = delete;
+    SyntaxProgramParts(SyntaxProgramParts&&) = default;
+    ~SyntaxProgramParts() = default;
 
-    auto operator=(const ParsedBatchParts&) -> ParsedBatchParts& = delete;
-    auto operator=(ParsedBatchParts&&) -> ParsedBatchParts& = default;
+    auto operator=(const SyntaxProgramParts&) -> SyntaxProgramParts& = delete;
+    auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = default;
 
     CompilationProvenance provenance;
     IDTable<SyntaxTree, ProgramModuleID> syntax_by_module;
 };
 
-class ParsedBatch final {
+class SyntaxProgram final {
 public:
-    ParsedBatch(const ParsedBatch&) = delete;
-    ParsedBatch(ParsedBatch&&) = default;
-    ~ParsedBatch() = default;
+    SyntaxProgram(const SyntaxProgram&) = delete;
+    SyntaxProgram(SyntaxProgram&&) = default;
+    ~SyntaxProgram() = default;
 
-    auto operator=(const ParsedBatch&) -> ParsedBatch& = delete;
-    auto operator=(ParsedBatch&&) -> ParsedBatch& = default;
+    auto operator=(const SyntaxProgram&) -> SyntaxProgram& = delete;
+    auto operator=(SyntaxProgram&&) -> SyntaxProgram& = default;
 
     auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
     auto provenance() const noexcept -> CompilationProvenanceView;
-    auto decompose() && noexcept -> ParsedBatchParts;
+    auto decompose() && noexcept -> SyntaxProgramParts;
 
 private:
-    explicit ParsedBatch(ParsedBatchParts storage) noexcept;
+    explicit SyntaxProgram(SyntaxProgramParts storage) noexcept;
 
-    ParsedBatchParts storage;
+    SyntaxProgramParts storage;
 
-    friend class ParsedBatchConstruction;
+    friend class SyntaxProgramBuilder;
 };

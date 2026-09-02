@@ -1,3 +1,5 @@
+import "types_and_values/equality.hpp";
+
 struct Point {
     x: i32,
     y: i32,
@@ -20,17 +22,12 @@ enum Value {
     Empty,
 }
 
-#[cpp] {
-    inline auto cv_test_equality_trace = 0;
-
-    auto cv_test_equality_record(int value) noexcept -> int {
-        cv_test_equality_trace = cv_test_equality_trace * 10 + value;
-        return value;
-    }
-}
+private import(cpp) fn cv_test_equality_reset_trace();
+private import(cpp) fn cv_test_equality_record(value: i32) -> i32;
+private import(cpp) fn cv_test_equality_trace_value() -> i32;
 
 fn traced_value(value: i32) -> Value {
-    let _ = #[cpp] { cv_test_equality_record }(value);
+    let _ = cv_test_equality_record(value);
     return .Number(value);
 }
 
@@ -65,8 +62,8 @@ test "Equality: structural equality compares values recursively" {
 }
 
 test "Equality: equality evaluates operands left to right once" {
-    #[cpp] { cv_test_equality_trace = 0; }
+    cv_test_equality_reset_trace();
     check(traced_value(1) != traced_value(2));
-    let trace: i32 = #[cpp] { cv_test_equality_trace };
+    let trace = cv_test_equality_trace_value();
     check(trace == 12);
 }

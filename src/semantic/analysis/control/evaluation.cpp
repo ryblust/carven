@@ -32,7 +32,9 @@ public:
           effects(hir.expressions().size()) {}
 
     auto evaluate_callable(CallableID callable) noexcept -> void {
-        evaluate_block(hir.body(hir.callable(callable).body).root);
+        if (const auto body = callable_body_id(hir.callable(callable))) {
+            evaluate_block(hir.body(*body).root);
+        }
     }
 
     auto evaluate_test(TestID test) noexcept -> void {
@@ -140,7 +142,6 @@ private:
                         merge_block(arm.body);
                     }
                 },
-                [](const HIRCppExpr&) static noexcept {},
             },
             hir.expression(id).value
         );
@@ -150,8 +151,7 @@ private:
             || std::holds_alternative<HIRClosureExpr>(expression)
             || std::holds_alternative<HIRIfExpr>(expression)
             || std::holds_alternative<HIRMatchExpr>(expression)
-            || std::holds_alternative<HIRTryExpr>(expression)
-            || std::holds_alternative<HIRCppExpr>(expression);
+            || std::holds_alternative<HIRTryExpr>(expression);
         effects[id.index()] = result;
         return result;
     }
@@ -246,7 +246,6 @@ private:
                         merge_expression(*value.message);
                     }
                 },
-                [&](const HIRCppStmt&) noexcept { result.opaque_boundary = true; },
             },
             hir.statement(id).value
         );

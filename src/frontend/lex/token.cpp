@@ -105,7 +105,9 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case NumberLiteral:      return "NumberLiteral";
         case CharLiteral:        return "CharLiteral";
         case StringLiteral:      return "StringLiteral";
-        case CppRegion:          return "CppRegion";
+        case CppAngleHeaderName: return "CppAngleHeaderName";
+        case CppQuoteHeaderName: return "CppQuoteHeaderName";
+        case CppSourceFragment:  return "CppSourceFragment";
         case As:                 return "As";
         case Break:              return "Break";
         case Catch:              return "Catch";

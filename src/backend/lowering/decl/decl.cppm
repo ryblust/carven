@@ -10,26 +10,31 @@ import :semantic.hir.decl;
 import std;
 
 struct LoweredDeclarationSchedule final {
-    std::vector<TargetItemID> cpp_preamble;
-    std::vector<TargetItemID> implementation;
+    std::vector<TargetItemID> cpp_source_fragments;
+    std::vector<TargetItemID> private_implementation;
+    std::vector<TargetItemID> module_implementation;
     std::optional<FunctionID> entry_point;
 };
 
 auto process_entry_arguments(TargetModuleLowerer& context) noexcept -> std::vector<TargetExprID>;
+
 auto lower_process_entry(
     TargetModuleLowerer& context,
     bool accepts_arguments,
     std::vector<TargetStmtID> body
 ) noexcept -> TargetItemID;
+
 auto lower_declaration(
     TargetModuleLowerer& context,
     HIRDeclarationRef declaration,
     bool declaration_only
 ) noexcept -> TargetItemID;
+
 auto lower_declaration_schedule(
     TargetModuleLowerer& context,
     const TargetModuleSchedule& schedule
 ) noexcept -> LoweredDeclarationSchedule;
+
 auto lower_entry_wrapper(
     TargetModuleLowerer& context,
     const HIRFunctionDecl& function,
@@ -41,8 +46,17 @@ auto lower_function_declaration(
     FunctionID function,
     bool declaration_only
 ) noexcept -> TargetItemValue;
+
+auto lower_cpp_export_header_declaration(TargetModuleLowerer& context, FunctionID function) noexcept
+    -> TargetItemID;
+
+auto lower_cpp_export_facade(TargetModuleLowerer& context, FunctionID function) noexcept
+    -> TargetItemID;
+
 auto lower_structure_declaration(TargetModuleLowerer& context, StructID structure) noexcept
     -> TargetItemValue;
+
 auto lower_enumeration_declaration(TargetModuleLowerer& context, EnumID enumeration) noexcept
     -> TargetItemValue;
+
 auto lower_test_declaration(TargetModuleLowerer& context, TestID test) noexcept -> TargetItemValue;

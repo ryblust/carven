@@ -319,12 +319,6 @@ auto build_type(
     );
 }
 
-auto foreign_type(ModuleAnalysis& module_analysis, Span span) noexcept -> HIRTypeID {
-    auto& builder = module_analysis.builder();
-    static_cast<void>(span);
-    return builder.intern_type({.value = HIRForeignTypeValue {}});
-}
-
 auto error_type(ModuleAnalysis& module_analysis, Span span) noexcept -> HIRTypeID {
     auto& builder = module_analysis.builder();
     static_cast<void>(span);

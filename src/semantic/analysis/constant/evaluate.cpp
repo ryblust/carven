@@ -314,9 +314,6 @@ auto evaluate_unary_constant(
     if (!hir_operator_result_matches(hir, check.result, operand_expression.type, result)) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
-    if (check.status == UnaryOperatorStatus::Foreign) {
-        return std::unexpected(HIRConstantEvaluationFailure::UnsupportedOperation);
-    }
     if (check.status != UnaryOperatorStatus::Supported) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
     }
@@ -396,9 +393,6 @@ auto evaluate_binary_constant(
         || !check.equality_supported
         || !hir_operator_result_matches(hir, check.result, left_expression.type, result)) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);
-    }
-    if (check.status == BinaryOperatorStatus::Foreign) {
-        return std::unexpected(HIRConstantEvaluationFailure::UnsupportedOperation);
     }
     if (check.status != BinaryOperatorStatus::Supported) {
         return std::unexpected(HIRConstantEvaluationFailure::InvalidOperation);

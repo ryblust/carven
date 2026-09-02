@@ -1,11 +1,8 @@
-#[cpp] {
-    inline auto cv_test_call_evaluation_order = 0;
+import "functions_and_calls/call_evaluation.hpp";
 
-    auto cv_test_call_record(int marker) noexcept -> int {
-        cv_test_call_evaluation_order = cv_test_call_evaluation_order * 10 + marker;
-        return marker;
-    }
-}
+private import(cpp) fn cv_test_call_reset_order();
+private import(cpp) fn cv_test_call_record(marker: i32) -> i32;
+private import(cpp) fn cv_test_call_order() -> i32;
 
 fn pair(left: i32, right: i32) -> i32 {
     return left * 10 + right;
@@ -17,15 +14,19 @@ struct RecordedPair {
 }
 
 fn recorded_one() -> i32 {
-    return #[cpp] { cv_test_call_record(1) };
+    return cv_test_call_record(1);
 }
 
 fn recorded_two() -> i32 {
-    return #[cpp] { cv_test_call_record(2) };
+    return cv_test_call_record(2);
 }
 
 fn source_first(operand: i32) -> i32 {
-    return pair(#[cpp] { cv_test_call_record(3) }, operand);
+    return pair(cv_test_call_record(3), operand);
+}
+
+fn identity(value: i32) -> i32 {
+    return value;
 }
 
 fn reserved_identifier(__value: i32) -> i32 {
@@ -33,41 +34,43 @@ fn reserved_identifier(__value: i32) -> i32 {
 }
 
 test "Evaluation: call arguments evaluate from left to right" {
-    #[cpp] { cv_test_call_evaluation_order = 0; }
+    cv_test_call_reset_order();
     let ordered = pair(
-        #[cpp] { cv_test_call_record(1) },
-        #[cpp] { cv_test_call_record(2) },
+        cv_test_call_record(1),
+        cv_test_call_record(2),
     );
-    let observed: i32 = #[cpp] { cv_test_call_evaluation_order };
+    let observed = cv_test_call_order();
 
     check(ordered == 12);
     check(observed == 12);
 
-    #[cpp] { cv_test_call_evaluation_order = 0; }
-    let invoked = #[cpp] {
-        (cv_test_call_record(1), +[](int value) noexcept -> int { return value; })
-    }(recorded_two() + 0);
-    let callback_order: i32 = #[cpp] { cv_test_call_evaluation_order };
+    cv_test_call_reset_order();
+    let invoked = (if cv_test_call_record(1) > 0 {
+        identity
+    } else {
+        identity
+    })(recorded_two() + 0);
+    let callback_order = cv_test_call_order();
     check(invoked == 2);
     check(callback_order == 12);
 
-    #[cpp] { cv_test_call_evaluation_order = 0; }
+    cv_test_call_reset_order();
     let aggregated = [recorded_one(), recorded_two() + 0];
-    let aggregate_order: i32 = #[cpp] { cv_test_call_evaluation_order };
+    let aggregate_order = cv_test_call_order();
     check(aggregated[0] == 1);
     check(aggregated[1] == 2);
     check(aggregate_order == 12);
 
-    #[cpp] { cv_test_call_evaluation_order = 0; }
+    cv_test_call_reset_order();
     let constructed = RecordedPair { recorded_one(), recorded_two() + 0 };
-    let construction_order: i32 = #[cpp] { cv_test_call_evaluation_order };
+    let construction_order = cv_test_call_order();
     check(constructed.first == 1);
     check(constructed.second == 2);
     check(construction_order == 12);
 
-    #[cpp] { cv_test_call_evaluation_order = 0; }
+    cv_test_call_reset_order();
     check(source_first(4) == 34);
-    let source_first_order: i32 = #[cpp] { cv_test_call_evaluation_order };
+    let source_first_order = cv_test_call_order();
     check(source_first_order == 3);
     check(reserved_identifier(5) == 5);
 }

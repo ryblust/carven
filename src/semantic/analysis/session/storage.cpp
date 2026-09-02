@@ -62,7 +62,7 @@ auto SemanticDraft::intern_callable_signature(
     });
 }
 
-auto SemanticDraft::append_callable(
+auto SemanticDraft::append_body_callable(
     std::vector<HIRFunctionParameterType> parameters,
     HIRTypeID result,
     std::vector<HIRTypeID> failures,
@@ -77,7 +77,7 @@ auto SemanticDraft::append_callable(
     const auto callable = storage.callables.add({
         .parameters = std::move(parameters),
         .result = result,
-        .body = body_id,
+        .implementation = HIRBodyImplementation {.body = body_id},
     });
     if (callable.index() != callable_failure_input_storage.size()) {
         invariant_violation("callable failure inputs are not aligned with callables");
@@ -85,6 +85,26 @@ auto SemanticDraft::append_callable(
     callable_failure_input_storage.push_back({
         .declared_failure_set = declared_failure_set,
         .policy = failure_contract,
+    });
+    return callable;
+}
+
+auto SemanticDraft::append_cpp_import_callable(
+    std::vector<HIRFunctionParameterType> parameters,
+    HIRTypeID result,
+    ProgramOriginID form_origin
+) noexcept -> CallableID {
+    const auto callable = storage.callables.add({
+        .parameters = std::move(parameters),
+        .result = result,
+        .implementation = HIRCppImportImplementation {.form_origin = form_origin},
+    });
+    if (callable.index() != callable_failure_input_storage.size()) {
+        invariant_violation("callable failure inputs are not aligned with callables");
+    }
+    callable_failure_input_storage.push_back({
+        .declared_failure_set = intern_failure_set({}),
+        .policy = SemanticFailureContractKind::Declared,
     });
     return callable;
 }

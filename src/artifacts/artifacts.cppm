@@ -4,6 +4,7 @@ import std;
 
 enum class GeneratedArtifactRole {
     Interface,
+    CppAPIHeader,
     ModuleImplementation,
     TestEntry,
 };

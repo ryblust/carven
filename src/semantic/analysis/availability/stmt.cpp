@@ -192,7 +192,6 @@ auto BodyAvailabilityGraphBuilder::lower_statement(
                     ? lower_expression(*value.message, targets.test_exit, targets)
                     : targets.test_exit;
             },
-            [&](const HIRCppStmt&) noexcept { return normal; },
         },
         hir.statement(id).value
     );

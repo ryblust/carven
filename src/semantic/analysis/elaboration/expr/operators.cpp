@@ -88,7 +88,6 @@ auto build_expression(
             );
             break;
         case UnaryOperatorStatus::Supported:
-        case UnaryOperatorStatus::Foreign:
         case UnaryOperatorStatus::Error:     break;
     }
     const auto result_builtin = operator_result_builtin(check.result);
@@ -158,8 +157,8 @@ auto build_expression(
     const auto source_type = expression_type(module_analysis, operand);
     const auto target_type = build_type(module_analysis, scopes, control, cast.target_type);
     auto source_is_numeric_enum = false;
-    if (!is_opaque_or_error(module_analysis, source_type)
-        && !is_opaque_or_error(module_analysis, target_type)
+    if (!is_error_type(module_analysis, source_type)
+        && !is_error_type(module_analysis, target_type)
         && source_type != target_type) {
         const auto enumeration_resolution =
             resolve_enum_contract(module_analysis, source_type, cast.operator_span);

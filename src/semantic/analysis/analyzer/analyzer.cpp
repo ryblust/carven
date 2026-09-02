@@ -5,10 +5,10 @@ import :semantic.hir.place;
 import :support.invariant;
 import std;
 
-ProgramAnalyzer::ProgramAnalyzer(ParsedBatch program) noexcept
+ProgramAnalyzer::ProgramAnalyzer(SyntaxProgram program) noexcept
     : ProgramAnalyzer(std::move(program).decompose()) {}
 
-ProgramAnalyzer::ProgramAnalyzer(ParsedBatchParts parts) noexcept
+ProgramAnalyzer::ProgramAnalyzer(SyntaxProgramParts parts) noexcept
     : syntax_by_module_id(std::move(parts.syntax_by_module)),
       semantic_session(std::move(parts.provenance)) {}
 

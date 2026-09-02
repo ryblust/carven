@@ -3,7 +3,6 @@ module carven:semantic.analysis.catalog.impl;
 import :diagnostics.builder;
 import :frontend.ast.decl;
 import :frontend.ast.ids;
-import :frontend.ast.region;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.catalog;
@@ -30,7 +29,6 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
                 return value.name_span;
             },
             [](const ASTTestDecl&) static noexcept -> std::optional<Span> { return std::nullopt; },
-            [](const CppRegion&) static noexcept -> std::optional<Span> { return std::nullopt; },
         },
         item.value
     );
@@ -70,7 +68,6 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
                 return semantic_visibility(value.visibility);
             },
             [](const ASTTestDecl&) static noexcept { return DeclarationVisibility::Module; },
-            [](const CppRegion&) static noexcept { return DeclarationVisibility::Module; },
         },
         item.value
     );
@@ -368,11 +365,6 @@ auto build_analysis_catalog(
                         .item_id = item_id,
                         .form = CatalogTestForm {},
                     });
-                } else if (std::holds_alternative<CppRegion>(item.value)) {
-                    catalog_module.items.push_back({
-                        .item_id = item_id,
-                        .form = CatalogCppForm {},
-                    });
                 }
                 continue;
             }
@@ -547,9 +539,9 @@ auto build_analysis_catalog(
         auto explicit_names = std::flat_map<std::string, ExplicitSelection, std::less<>>();
         auto wildcard_targets = std::flat_map<ProgramModuleID, ImportBindingID>();
 
-        for (const auto import_id : ast_module.imports) {
-            const auto& import_declaration = ast.import_declaration(import_id);
-            const auto& reference = import_declaration.module_reference;
+        for (const auto import_id : ast_module.module_imports) {
+            const auto& module_import = ast.module_import(import_id);
+            const auto& reference = module_import.module_reference;
             const auto resolved = resolve_path(source, source_module.path, reference);
             if (!resolved.has_value()) {
                 diagnostics.push_back(import_error(
@@ -597,7 +589,7 @@ auto build_analysis_catalog(
                         selection_kind = CatalogImportSelectionKind::Wildcard;
                     }
                 },
-                import_declaration.selection.value
+                module_import.selection.value
             );
 
             if (result.import_bindings.size() == std::numeric_limits<std::uint32_t>::max()) {
@@ -611,9 +603,9 @@ auto build_analysis_catalog(
                 .importer = module_id,
                 .declaration_id = import_id,
                 .target = *target_id,
-                .declaration_span = import_declaration.span,
+                .declaration_span = module_import.span,
                 .reference_span = reference.span,
-                .selection_span = import_declaration.selection.span,
+                .selection_span = module_import.selection.span,
                 .selection_kind = selection_kind,
                 .selected_symbols = {},
                 .used = false,
@@ -720,7 +712,7 @@ auto build_analysis_catalog(
                 const auto& first = result.import_bindings[prior->second.index()];
                 diagnostics.push_back(duplicate_selection_error(
                     source_snapshot.manager_source_id(),
-                    import_declaration.selection.span,
+                    module_import.selection.span,
                     first.selection_span,
                     std::format(
                         "module '{}' is imported by wildcard more than once",
@@ -743,7 +735,7 @@ auto build_analysis_catalog(
                 result.import_bindings[binding_id.index()].selected_symbols.push_back({
                     .symbol_id = symbol_id,
                     .name = symbol.name,
-                    .origin = import_declaration.selection.span,
+                    .origin = module_import.selection.span,
                 });
                 if (contains_local_declaration(candidates, local_module, symbol.name)
                     || has_explicit_candidate(result, candidates, symbol.name)) {

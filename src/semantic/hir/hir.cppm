@@ -4,6 +4,7 @@ import :semantic.hir.constant;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
 import :semantic.hir.ids;
+import :semantic.hir.interop;
 import :semantic.hir.pattern;
 import :semantic.hir.place;
 import :semantic.hir.stmt;
@@ -14,6 +15,8 @@ import :support.id_table;
 import std;
 
 struct HIRModule final {
+    std::vector<HIRCppHeaderDependency> cpp_header_dependencies;
+    std::vector<ProgramOriginID> cpp_source_payload_origins;
     std::vector<HIRModuleItem> items;
 };
 

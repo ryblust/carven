@@ -6,7 +6,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -16,6 +16,7 @@ import :frontend.dump.text;
 import :frontend.lex.token;
 import :source.manager;
 import :source.text;
+import :support.visit;
 import std;
 
 ASTDumper::ASTDumper(
@@ -60,13 +61,53 @@ auto ASTDumper::render() noexcept -> std::string {
         format_dump_span(ast_module.span),
         quote_dump_text(source_origin)
     );
+    using Import = std::variant<ASTModuleImportID, const ASTCppHeaderImport*>;
+    auto imports = std::vector<Import>();
+    imports.reserve(ast_module.module_imports.size() + ast_module.cpp_header_imports.size());
+    for (const auto module_import : ast_module.module_imports) {
+        imports.emplace_back(module_import);
+    }
+    for (const auto& header : ast_module.cpp_header_imports) {
+        imports.emplace_back(std::addressof(header));
+    }
+    const auto import_span = [&](const Import& value) noexcept {
+        return std::visit(
+            Overloaded {
+                [&](ASTModuleImportID id) noexcept { return ast.module_import(id).span; },
+                [](const ASTCppHeaderImport* header) static noexcept { return header->span; },
+            },
+            value
+        );
+    };
+    std::ranges::sort(imports, {}, [&](const Import& value) noexcept {
+        return import_span(value).start();
+    });
     render_list(
         {},
         false,
         "imports",
-        ast_module.imports,
-        [&](ASTImportID declaration, std::string_view prefix, bool is_last) noexcept {
-            render_import(declaration, prefix, is_last);
+        imports,
+        [&](const Import& value, std::string_view prefix, bool is_last) noexcept {
+            std::visit(
+                Overloaded {
+                    [&](ASTModuleImportID declaration) noexcept {
+                        render_module_import(declaration, prefix, is_last);
+                    },
+                    [&](const ASTCppHeaderImport* header) noexcept {
+                        render_cpp_header_import(*header, prefix, is_last);
+                    },
+                },
+                value
+            );
+        }
+    );
+    render_list(
+        {},
+        false,
+        "cpp_source_fragments",
+        ast_module.cpp_source_fragments,
+        [&](const ASTCppSourceFragment& fragment, std::string_view prefix, bool is_last) noexcept {
+            render_cpp_source_fragment(fragment, prefix, is_last);
         }
     );
     render_list(

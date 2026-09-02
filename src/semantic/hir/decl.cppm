@@ -37,10 +37,12 @@ struct HIRFunctionDecl final {
     DeclarationVisibility visibility;
     ProgramSpellingID name;
     CallableID callable;
+    std::vector<ProgramOriginID> parameter_origins;
     HIRTypeID result;
     ProgramOriginID result_origin;
     SymbolID symbol;
     std::optional<HIREntryPointKind> entry_point;
+    std::optional<ProgramOriginID> cpp_export_form_origin;
 };
 
 struct HIRStructField final {
@@ -91,11 +93,6 @@ struct HIRTestDecl final {
     BodyID body;
 };
 
-struct HIRCppRegion final {
-    ProgramOriginID origin;
-    ProgramSpellingID bytes;
-};
-
 using HIRDeclarationRef = std::variant<FunctionID, StructID, EnumID>;
 using HIRNominalDeclRef = std::variant<StructID, EnumID>;
-using HIRModuleItem = std::variant<FunctionID, StructID, EnumID, TestID, HIRCppRegion>;
+using HIRModuleItem = std::variant<FunctionID, StructID, EnumID, TestID>;

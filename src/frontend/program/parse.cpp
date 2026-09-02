@@ -13,17 +13,17 @@ import :support.id_table;
 import :support.invariant;
 import std;
 
-class ParsedBatchConstruction final {
+class SyntaxProgramBuilder final {
 public:
-    explicit ParsedBatchConstruction(CompilationProvenance provenance_value) noexcept
+    explicit SyntaxProgramBuilder(CompilationProvenance provenance_value) noexcept
         : provenance(std::move(provenance_value)) {}
 
-    ParsedBatchConstruction(const ParsedBatchConstruction&) = delete;
-    ParsedBatchConstruction(ParsedBatchConstruction&&) = default;
-    ~ParsedBatchConstruction() = default;
+    SyntaxProgramBuilder(const SyntaxProgramBuilder&) = delete;
+    SyntaxProgramBuilder(SyntaxProgramBuilder&&) = default;
+    ~SyntaxProgramBuilder() = default;
 
-    auto operator=(const ParsedBatchConstruction&) -> ParsedBatchConstruction& = delete;
-    auto operator=(ParsedBatchConstruction&&) -> ParsedBatchConstruction& = default;
+    auto operator=(const SyntaxProgramBuilder&) -> SyntaxProgramBuilder& = delete;
+    auto operator=(SyntaxProgramBuilder&&) -> SyntaxProgramBuilder& = default;
 
     auto define_module_syntax(ProgramModuleID module_id, SyntaxTree syntax_tree) noexcept -> void {
         const auto defined_module_id = syntax_by_module.add(std::move(syntax_tree));
@@ -32,9 +32,9 @@ public:
         }
     }
 
-    auto finish() && noexcept -> ParsedBatch {
+    auto finish() && noexcept -> SyntaxProgram {
         auto program =
-            ParsedBatch(ParsedBatchParts(std::move(provenance), std::move(syntax_by_module)));
+            SyntaxProgram(SyntaxProgramParts(std::move(provenance), std::move(syntax_by_module)));
         const auto verification = verify_syntax_program(program);
         if (!verification.has_value()) {
             invariant_violation(verification.error().message);
@@ -55,7 +55,7 @@ auto compilation_input_error(std::string message) noexcept -> Diagnostic {
 
 auto validate_inputs(
     const SourceManager& sources,
-    std::span<const CompilationInput> inputs
+    std::span<const CompilationModuleInput> inputs
 ) noexcept -> Diagnostics {
     auto diagnostics = Diagnostics();
     if (inputs.empty()) {
@@ -100,14 +100,15 @@ auto validate_inputs(
 
 } // namespace
 
-auto parse(const SourceManager& sources, std::span<const CompilationInput> inputs) noexcept
-    -> std::expected<ParsedBatch, Diagnostics> {
+auto parse_program(const SourceManager& sources, CompilationRequest request) noexcept
+    -> std::expected<SyntaxProgram, Diagnostics> {
+    const auto inputs = request.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
     if (!input_diagnostics.empty()) {
         return std::unexpected(std::move(input_diagnostics));
     }
 
-    auto ordered_inputs = std::vector<const CompilationInput*>();
+    auto ordered_inputs = std::vector<const CompilationModuleInput*>();
     ordered_inputs.reserve(inputs.size());
     for (const auto& input : inputs) {
         ordered_inputs.push_back(std::addressof(input));
@@ -115,7 +116,7 @@ auto parse(const SourceManager& sources, std::span<const CompilationInput> input
     std::ranges::sort(
         ordered_inputs,
         {},
-        [](const CompilationInput* input) static noexcept -> const CanonicalModulePath& {
+        [](const CompilationModuleInput* input) static noexcept -> const CanonicalModulePath& {
             return input->module_path;
         }
     );
@@ -158,7 +159,7 @@ auto parse(const SourceManager& sources, std::span<const CompilationInput> input
         return std::unexpected(diagnostics.take());
     }
 
-    auto construction = ParsedBatchConstruction(std::move(provenance_construction).finish());
+    auto construction = SyntaxProgramBuilder(std::move(provenance_construction).finish());
     for (auto index = 0uz; index < syntax_trees.size(); ++index) {
         construction.define_module_syntax(
             program_module_ids[index],

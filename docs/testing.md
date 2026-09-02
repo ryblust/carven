@@ -5,22 +5,20 @@ ownership and coverage without redefining the public behavior under test.
 
 ## Validation workflow
 
-The `language` and `interop` suites use the locally built `carven`
-executable. Their Carven rule generates C++ during Xmake's prepare phase, before
-named-module scanning. An ordinary dependency on a compiler target in the same
-project cannot make the executable available early enough, so the repository
-workflow builds it in a separate invocation before running tests. The
-[Carven Xmake rule](https://github.com/ryblust/carven-xmake-repo) owns the
-detailed prepare-stage integration contract. This repository owns one
-integration conformance smoke that runs the installed rule against the locally
-built compiler; it does not become the owner of the rule's internal algorithm
-by hosting that cross-repository check.
-
-During implementation, run the relevant suite identified under
+During implementation, build before running the relevant suite identified under
 [Suite responsibilities](#suite-responsibilities):
 
 ```shell
 ./xmakew build
+./xmakew test -g <suite>
+```
+
+The build selects the [Carven Xmake rule](https://github.com/ryblust/carven-xmake-repo)
+from its default repository. For local rule development, select a
+`carven-xmake-repo` checkout during the build:
+
+```shell
+CARVEN_XMAKE_REPO_DIR=/path/to/carven-xmake-repo ./xmakew build
 ./xmakew test -g <suite>
 ```
 
@@ -54,7 +52,7 @@ test.
 | --- | --- | --- |
 | `internal` | C++ tests linked with `carven-modules` | Compiler representations, algorithms, artifact planning, sink invariants, in-process compilation, and structured diagnostics |
 | `language` | Valid `.cv` sources compiled to C++ and executed | Observable Carven language behavior and the generated testing adapter |
-| `interop` | `.cv` sources using explicit `#[cpp]` boundaries, compiled and executed | C++ boundary behavior and generated-code consumption across supported consumer modes |
+| `interop` | `.cv` sources compiled with provider or consumer C++; C++20 behavioral targets execute and C++23 compatibility targets compile and link | C++ header imports, source fragments, `import(cpp)` bridges, `export(cpp)` façades, and generated public-API consumption |
 | `cli` | The `carven` process, Xmake, and temporary filesystems | Arguments, status, standard streams, output selection, direct filesystem behavior, and Xmake generation policy |
 
 Use the following placement rules:
@@ -63,8 +61,9 @@ Use the following placement rules:
   inspects a structured compiler result belongs to `internal`.
 - A test whose observation requires command invocation, an exit status,
   standard streams, or filesystem effects belongs to `cli`.
-- A generated-program test whose subject is an explicit `#[cpp]` boundary
-  belongs to `interop`.
+- A generated-program test whose subject is a C++ header import, source
+  fragment, `import(cpp)` provider, `export(cpp)` consumer, or boundary runtime
+  contract belongs to `interop`.
 - Other generated-program tests of valid Carven behavior belong to `language`.
 
 Stable diagnostic identities are part of the observable language contract,
@@ -88,17 +87,30 @@ functions and calls, bindings and access, control flow, patterns and matches,
 failure contracts, lambdas and callable views, modules and imports, and testing
 integration.
 
-The `interop` suite executes its focused typed and raw `#[cpp]` boundary corpus
-in both consumer modes. Explicit C++ boundaries are sensitive to the selected
-mode and therefore retain execution coverage across the matrix. Custom-entry,
-reporting, invalid-runtime-contract, and linkage-domain fixtures run once in
-the C++20 baseline because they own integration contracts rather than a
-consumer-mode dimension.
+The `interop/scalar_boundary` and `interop/provider_forms` targets execute in
+C++20. The scalar consumer includes the generated
+`carven/api/<module>.hpp`, checks its self-containment and public boundary
+signatures, links the generated façades, and invokes them. Provider forms
+cover both C++ header import spellings, source fragments, linked source,
+callable adoption, import bridges, bare cross-module calls, and explicit
+wrappers. The combined `carven-test-interop-cxx23-compatibility` target compiles
+and links the scalar and provider-form sources in C++23 without executing them.
+The two Unicode ingress contracts execute once in C++20 because import-result
+and export-argument validation are distinct runtime entry points.
 
 Generated tests use Carven's allocation-free intrusive registry. Registration
 is deterministic by module and case name; the default runner executes the full
-registry, while custom-entry and reporting fixtures exercise their distinct
+registry, while entry-point and reporting fixtures exercise their distinct
 integration contracts. Generated translation units do not include doctest.
+The entry-point fixture keeps external test emission, defines the Carven
+`main(args)` shorthand, and invokes or observes the registry only through
+scalar `import(cpp)` helpers; command-line argument contents remain opaque.
+
+Language fixtures that need C++ observation helpers declare them through a
+same-stem C++ provider header and call them through `import(cpp)`. C++ source
+fragments remain in the interop corpus and focused frontend/backend tests where
+their opaque bytes, delimiter behavior, placement, or attribution are the
+subject.
 
 The `internal` suite follows the compiler build configuration and uses the
 vendored doctest header. It does not serve as generated-C++ consumer coverage.
@@ -109,13 +121,15 @@ Consumer-mode coverage belongs only to the generated-program suites.
 The `internal` suite owns focused evidence for the sealed compiler
 representations:
 
-- semantic program fixtures cover exact-layout publication, canonical values,
-  ID bounds, structural ownership, cycles, type/form relations, flow/effect
-  alignment, Symbol-rooted place projections, match coverage, and nominal
+- semantic program fixtures cover canonical values, ID bounds, structural
+  ownership, cycles, type/form relations, flow/effect alignment, explicit
+  callable implementation origins, C++ header spelling validity, source/export
+  origin ownership, `import(cpp)` implementation and `export(cpp)` origin
+  exclusion, Symbol-rooted place projections, match coverage, and nominal
   containment;
 - target-program fixtures cover total type/signature/failure domains, stable
-  profile order, carrier conversion laws, typed artifact dependencies, SCC
-  schedules, and dependency-first order;
+  profile order, failure-carrier conversion laws, typed artifact dependencies,
+  SCC schedules, and dependency-first order;
 - target-unit fixtures cover reference bounds, deep occurrence cloning, unique
   item/statement/expression ownership, cycles, attribution, type-owned array
   extents, typed-for headers, all-arena reachability, artifact metadata, and
@@ -124,7 +138,7 @@ representations:
   behavior for C-style `for` initializers and steps;
 - diagnostic, target-quality, interface, and language fixtures jointly cover
   covered-arm warning identity, target-only dead-arm/dependency omission,
-  subject evaluation exactly once, and unchanged guard/materialization behavior.
+  subject evaluation exactly once, and guard/materialization behavior.
 
 These checks protect private representation invariants without turning exact
 node counts, helper names, or complete generated C++ bytes into compatibility
@@ -139,8 +153,7 @@ The root `xmake.lua` includes `tests/internal`, `tests/language`,
 Test directories do not mix files and subdirectories, with these exceptions:
 
 - `tests/<suite>/xmake.lua`: suite build metadata;
-- `tests/cli/harness.lua` and `tests/cli/rule.lua`: CLI process infrastructure
-  and the cross-repository Xmake conformance fixture kept beside the CLI suite
+- `tests/cli/harness.lua`: CLI process infrastructure kept beside the suite
   entry point;
 - `tests/cli/module_layout/project`: nested project layout fixture;
 - `tests/language/modules_and_imports/namespace_collision`: file-module and
@@ -149,10 +162,10 @@ Test directories do not mix files and subdirectories, with these exceptions:
   with equal module leaves fixture.
 
 Internal tests share `tests/internal/harness/main.cpp`, and owner-specific
-helpers live beside the tests that use them. CLI Xmake scripts live beside the
-suite entry point as `tests/cli/harness.lua` and `tests/cli/rule.lua`.
-Language and interop consumer targets use the local `carven` executable through
-the package rule.
+helpers live beside the tests that use them. The CLI process harness lives
+beside the suite entry point as `tests/cli/harness.lua`.
+Language and C++ interoperation targets use the local `carven` executable and
+runtime headers.
 
 Keep target definitions direct and mechanical. Add a matrix dimension only
 when it represents a distinct supported boundary. Each consumer-mode target
@@ -168,10 +181,10 @@ private implementation shapes are not compatibility snapshots.
 Generated-program correctness is normally established by compiling and
 executing the output.
 
-Object sizes, timings, and resource usage are not behavioral regression
-assertions. Performance coverage requires a separately designed benchmark with
-an explicit workload and measurement contract; do not approximate it with a
-private representation-size assertion.
+Object sizes, timings, and resource usage are not behavioral assertions.
+Performance coverage requires a separately designed benchmark with an explicit
+workload and measurement contract; do not approximate it with a private
+representation-size assertion.
 
 The manual build-workflow pulse lives in `benchmarks/build_pulse.py`. It reports
 the median for a fresh 128-module batch, the median-time ratio between 128 and
@@ -189,9 +202,9 @@ maintained in `benchmarks/README.md`.
 Do not add a test whose signal is already supplied by another case. Matrix
 dimensions require an independently supported boundary. Refactors of context
 types, implementation slices, node counts, or private names do not receive
-regression tests.
+dedicated tests.
 
-A test assertion can provide local regression detection without defining a
+A test assertion provides evidence for the current contract without defining a
 public compatibility promise. Source paths and locations are asserted when they
 are part of a documented diagnostic or test-reporting contract.
 
@@ -208,10 +221,6 @@ private structure of generated C++. Every CLI process has a 30-second hard
 timeout; a timed-out child is killed and reaped, and a failed case retains its
 temporary directory.
 
-The Xmake integration conformance smoke builds a disposable consumer project
-from the locally built compiler and installed rule. It checks generation before
-C++ compilation, content-stable promotion, live replacement on topology
-changes, missing-output repair, and failure isolation through observable build
-behavior. These checks exercise the installed rule's integration boundary
-without assigning its internal algorithm to this repository. Arbitrary foreign
-files in the target-private live root are outside the fixture's scope.
+`carven-test-xmake-default-domain-isolation` links and runs a binary composed
+from two default-domain object targets compiled from the same canonical source.
+Successful execution validates isolation between their generated symbols.

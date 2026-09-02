@@ -10,7 +10,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -23,7 +22,7 @@ import std;
 namespace {
 
 auto body_of(const SyntaxTree& tree) noexcept -> const ASTBlock& {
-    return tree.view().block(function(tree).body);
+    return function_body(tree);
 }
 
 auto expression_statement(const SyntaxTree& tree, std::size_t index) noexcept -> const ASTExpr& {
@@ -66,7 +65,6 @@ TEST_CASE("Parser: primary and postfix alternatives remain structural") {
         " let empty = []; let grouped = (value); let defaulted = Box {};"
         " let positional = Pair { 1, 2, }; let fields = Point { x: 1, y: 2, };"
         " factory(1, 2,)[index].field::member;"
-        " let native = #[cpp] { return compute(); };"
         " let callback = fn(i32) -> bool { predicate };"
         "}"
     );
@@ -91,8 +89,9 @@ TEST_CASE("Parser: primary and postfix alternatives remain structural") {
     const auto& call = get<ASTCallExpr>(ast.expression(index.operand_id));
     CHECK_EQ(call.arguments.size(), 2u);
 
-    CHECK_EQ(slice(text, get<CppRegion>(initializer(result, 6)).body_span), " return compute(); ");
-    CHECK(is<ASTFunctionType>(get<ASTConstructionExpr>(initializer(result, 7)).type));
+    CHECK(is<ASTFunctionType>(get<ASTConstructionExpr>(initializer(result, 6)).type));
+
+    check_invalid("fn invalid() { let native = #[cpp] ---\nreturn compute();\n---\n; }");
 }
 
 TEST_CASE("Parser: precedence is represented by typed expression edges") {

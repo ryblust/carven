@@ -217,6 +217,14 @@ local case_specs = {
     },
 }
 
+local crafts_dir = path.join(os.projectdir(), "crafts")
+local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
+
+local function use_local_carven(target)
+    import("core.project.project")
+    target:values_set("carven.program", project.target("carven"):targetfile())
+end
+
 local case_names = {}
 for case_name in pairs(case_specs) do
     table.insert(case_names, case_name)
@@ -241,17 +249,30 @@ target("carven-test-cli")
         return harness(target, opt, case_specs[case_name])
     end)
 
-target("carven-test-xmake-rule")
+target("carven-test-xmake-default-domain-a")
     set_default(false)
-    set_kind("phony")
-    add_deps("carven", {inherit = false})
-    add_packages("carven")
-    add_tests("xmake-rule", {group = "cli"})
+    set_kind("object")
+    add_rules("@carven/carven")
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++20")
+    add_files(path.join(xmake_rule_dir, "domain.cv"))
+    after_load(use_local_carven)
 
-    on_test(function (target)
-        local contract = import("rule", {
-            rootdir = path.join(os.projectdir(), "tests", "cli"),
-            anonymous = true,
-        })
-        return contract(target)
-    end)
+target("carven-test-xmake-default-domain-b")
+    set_default(false)
+    set_kind("object")
+    add_rules("@carven/carven")
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++20")
+    add_files(path.join(xmake_rule_dir, "domain.cv"))
+    after_load(use_local_carven)
+
+target("carven-test-xmake-default-domain-isolation")
+    set_default(false)
+    set_languages("c++20")
+    add_deps(
+        "carven-test-xmake-default-domain-a",
+        "carven-test-xmake-default-domain-b"
+    )
+    add_files(path.join(xmake_rule_dir, "main.cpp"))
+    add_tests("default-domain-isolation", {group = "cli"})

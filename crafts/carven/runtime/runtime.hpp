@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string_view>
@@ -137,7 +138,7 @@ constexpr auto decode_utf8(const char* current, const char* end) noexcept -> Dec
     if (decoded.has_value()) {
         return *decoded;
     }
-    unicode_contract_error("invalid UTF-8 from typed #[cpp]");
+    unicode_contract_error("invalid UTF-8 in Carven str");
 }
 
 template<std::size_t Extent, Integer Index>
@@ -445,18 +446,9 @@ constexpr auto str_chars(std::string_view text) noexcept -> StrCharsView {
     return StrCharsView(text);
 }
 
-constexpr auto checked_foreign_str(std::string_view text) noexcept -> std::string_view {
-    const auto* current = text.data();
-    const auto* end = current + text.size();
-    while (current != end) {
-        current += detail::decode_utf8(current, end).width;
-    }
-    return text;
-}
-
-constexpr auto checked_foreign_char(char32_t value) noexcept -> char32_t {
+constexpr auto checked_unicode_scalar(char32_t value) noexcept -> char32_t {
     if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
-        detail::unicode_contract_error("invalid Unicode scalar from typed #[cpp]");
+        detail::unicode_contract_error("invalid Unicode scalar at C++ boundary");
     }
     return value;
 }

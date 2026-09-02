@@ -1,8 +1,8 @@
 module carven:frontend.ast.decl;
 
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
-import :frontend.ast.region;
 import :frontend.ast.type;
 import :source.text;
 import std;
@@ -59,7 +59,7 @@ struct ASTModuleReference final {
     ASTModuleReferenceValue value;
 };
 
-struct ASTImportDecl final {
+struct ASTModuleImport final {
     Span span;
     ASTModuleReference module_reference;
     ASTImportSelection selection;
@@ -113,13 +113,20 @@ struct ASTFunctionParameter final {
     std::optional<ASTTypeID> type;
 };
 
+struct ASTFunctionBody final {
+    ASTBlockID body;
+};
+
+using ASTFunctionImplementation = std::variant<ASTFunctionBody, ASTCppImportForm>;
+
 struct ASTFunctionDecl final {
     ASTDeclarationVisibility visibility;
+    std::optional<ASTCppExportForm> cpp_export;
     Span name_span;
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;
     std::optional<ASTThrowClause> throw_clause;
-    ASTBlockID body;
+    ASTFunctionImplementation implementation;
 };
 
 struct ASTConstantDecl final {
@@ -138,18 +145,5 @@ struct ASTTestDecl final {
 
 struct ASTItem final {
     Span span;
-    std::variant<
-        ASTEnumDecl,
-        ASTStructDecl,
-        ASTFunctionDecl,
-        ASTConstantDecl,
-        ASTTestDecl,
-        CppRegion>
-        value;
-};
-
-struct ASTModule final {
-    Span span;
-    std::vector<ASTImportID> imports;
-    std::vector<ASTItemID> items;
+    std::variant<ASTEnumDecl, ASTStructDecl, ASTFunctionDecl, ASTConstantDecl, ASTTestDecl> value;
 };

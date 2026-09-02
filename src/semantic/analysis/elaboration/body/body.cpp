@@ -132,7 +132,12 @@ auto BodyElaborator::elaborate_function(
     return {
         .parameters = std::move(parameters),
         .scope = function_scope_id,
-        .root = build_block(module_analysis, scopes, function.body, root_body_control(result)),
+        .root = build_block(
+            module_analysis,
+            scopes,
+            std::get<ASTFunctionBody>(function.implementation).body,
+            root_body_control(result)
+        ),
     };
 }
 

@@ -212,15 +212,6 @@ auto build_expression(
     ProgramOriginID expression_origin
 ) noexcept -> HIRExprID;
 
-auto build_expression(
-    ModuleAnalysis& module_analysis,
-    ScopeStack& scopes,
-    BodyControl control,
-    const CppRegion& value,
-    ASTExprID id,
-    ProgramOriginID expression_origin
-) noexcept -> HIRExprID;
-
 auto append_expression(ModuleAnalysis& module_analysis, BuiltExpression expression) noexcept
     -> HIRExprID;
 

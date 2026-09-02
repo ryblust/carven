@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.diagnostics.imports;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :diagnostics.diagnostic;
@@ -38,26 +39,26 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
     const auto used_provider = *sources.append_virtual(
         "used-provider.cv",
         "export fn selected() -> i32 { return 1; }\n"
-        "export fn selected_companion() -> i32 { return 3; }\n"
+        "export fn selected_peer() -> i32 { return 3; }\n"
     );
     const auto unused_provider =
         *sources.append_virtual("unused-provider.cv", "export fn spare() -> i32 { return 2; }\n");
     const auto app = *sources.append_virtual(
         "app.cv",
-        "import used_provider using { selected, selected_companion, };\n"
+        "import used_provider using { selected, selected_peer, };\n"
         "import unused_provider using spare;\n"
         "fn read() -> i32 { return selected(); }\n"
     );
     const auto inputs = std::array {
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = used_provider,
             .module_path = *CanonicalModulePath::from_value("used_provider"),
         },
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = unused_provider,
             .module_path = *CanonicalModulePath::from_value("unused_provider"),
         },
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = app,
             .module_path = *CanonicalModulePath::from_value("app"),
         },
@@ -65,9 +66,9 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = inputs},
+        CompilationRequest {.modules = inputs},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }
     );
@@ -96,22 +97,25 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
         "const selected = value;\n"
     );
     const auto inputs = std::array {
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = first,
             .module_path = *CanonicalModulePath::from_value("first")
         },
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = second,
             .module_path = *CanonicalModulePath::from_value("second")
         },
-        CompilationInput {.source_id = app, .module_path = *CanonicalModulePath::from_value("app")},
+        CompilationModuleInput {
+            .source_id = app,
+            .module_path = *CanonicalModulePath::from_value("app")
+        },
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = inputs},
+        CompilationRequest {.modules = inputs},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }
     );

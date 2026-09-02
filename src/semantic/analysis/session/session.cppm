@@ -195,11 +195,16 @@ public:
         HIRTypeID result,
         std::vector<HIRTypeID> failures
     ) noexcept -> CallableSignatureID;
-    auto append_callable(
+    auto append_body_callable(
         std::vector<HIRFunctionParameterType> parameters,
         HIRTypeID result,
         std::vector<HIRTypeID> failures,
         SemanticFailureContractKind failure_contract
+    ) noexcept -> CallableID;
+    auto append_cpp_import_callable(
+        std::vector<HIRFunctionParameterType> parameters,
+        HIRTypeID result,
+        ProgramOriginID form_origin
     ) noexcept -> CallableID;
     auto intern_function_ref_type(
         std::vector<HIRFunctionParameterType> parameters,

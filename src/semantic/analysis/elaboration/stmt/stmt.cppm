@@ -105,14 +105,6 @@ auto build_statement(
 auto build_statement(
     ModuleAnalysis& module_analysis,
     ScopeStack& scopes,
-    const CppRegion& statement,
-    Span span,
-    BodyControl control
-) noexcept -> HIRStmtID;
-
-auto build_statement(
-    ModuleAnalysis& module_analysis,
-    ScopeStack& scopes,
     const ASTWhileStmt& statement,
     Span span,
     BodyControl control

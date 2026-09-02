@@ -22,9 +22,9 @@ follow those two decisions.
 ### Current behavior
 
 The grammar defines `//` line comments as discarded lexical material. Block
-comments are recognized only inside opaque C++ regions. The lexer does not
-distinguish documentation from ordinary comments, and later compiler stages
-cannot associate comment content with a declaration. Carven also has no
+comment spellings are opaque bytes only inside C++ source fragments. The lexer
+does not distinguish documentation from ordinary comments, and later compiler
+stages cannot associate comment content with a declaration. Carven also has no
 documentation artifact or generator.
 
 ### Problem

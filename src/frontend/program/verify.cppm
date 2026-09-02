@@ -3,7 +3,7 @@ module carven:frontend.program.verify;
 import :frontend.program;
 import std;
 
-enum class ParsedBatchErrorKind {
+enum class SyntaxProgramErrorKind {
     InvalidProvenance,
     SyntaxTreeCountMismatch,
     SyntaxSourceMismatch,
@@ -12,10 +12,10 @@ enum class ParsedBatchErrorKind {
     SpanOutOfBounds,
 };
 
-struct ParsedBatchError final {
-    ParsedBatchErrorKind kind;
+struct SyntaxProgramError final {
+    SyntaxProgramErrorKind kind;
     std::string message;
 };
 
-auto verify_syntax_program(const ParsedBatch& program) noexcept
-    -> std::expected<void, ParsedBatchError>;
+auto verify_syntax_program(const SyntaxProgram& program) noexcept
+    -> std::expected<void, SyntaxProgramError>;

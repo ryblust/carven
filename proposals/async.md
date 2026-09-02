@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Implementation:** Not started
-- **Scope:** Async user semantics, compiler facts, lowering, and backend/interop research
+- **Scope:** Async user semantics, compiler facts, lowering, and backend/C++ interoperation research
 - **Depends on:** None for the same-thread core; [memory model](memory-model.md) and
   [threading](threading.md) for cross-thread execution
 
@@ -10,8 +10,8 @@
 
 本文是 Carven async 领域的临时设计 authority。它统一记录用户侧语义、compiler-owned facts、
 尚待关闭的问题，以及 lowering/backend research。它不描述当前实现，也不承诺 grammar、SemanticProgram、
-coroutine lowering、runtime、scheduler 或 `#[cpp]` adapter 已经存在；当前行为仍以代码、测试与
-`docs/` 永久文档为准。
+coroutine lowering、runtime、scheduler 或 async-specific C++ boundary 已经存在；当前行为仍以代码、
+测试与 `docs/` 永久文档为准。
 
 | Slice | Maturity | Current frontier |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ coroutine lowering、runtime、scheduler 或 `#[cpp]` adapter 已经存在；当
 | Compiler admission | Draft | 等待 `OPEN-01` 与 `OPEN-02` |
 | Future async capabilities | Deferred | `DEFER-01` 至 `DEFER-07` |
 | Backend evidence collection | Non-normative research | 可并行继续；不能选择 source semantics 或 provider |
-| Lowering、provider 与 public `#[cpp]` adapter | Deferred selection | `DEFER-08` |
+| Lowering、provider、import bridge 与 export façade | Deferred selection | `DEFER-08` |
 
 Same-thread async 是当前 proposal 的独立基础切片。Operation、frame、capture 或 completion 一旦允许
 迁移到另一 thread，才依赖独立的 memory-model 与 threading contracts。
@@ -39,7 +39,7 @@ thread-pool submission 或 physical parallelism。Thread 可以在没有 async �
 只运行于一个 logical thread 或 event loop。Cross-thread executor、blocking operation in async context
 与 awaitable channel 是显式集成点，不能把一个领域的 mechanism 自动提升为另一个领域的 semantics。
 
-Backend/interop 是单向下游 consumer。C++ coroutine、sender、runtime task 或 provider 必须承载本文
+Backend/C++ interoperation 是单向下游 consumer。C++ coroutine、sender、runtime task 或 provider 必须承载本文
 冻结的 Carven facts，不能因为其支持 exception、detach、thread migration 或 shared task 就自动开放
 相应 source capability。网络、文件、timer、DNS 与 TLS 属于后续 I/O/provider 产品面；真实用例出现
 前不进入 async core，也不预留 source syntax。
@@ -70,7 +70,7 @@ Backend/interop 是单向下游 consumer。C++ coroutine、sender、runtime task
 - 让用户侧结构保持现代、简洁且符合 structured ownership，同时允许 compiler 根据已知 intent
   专门化生成代码；
 - 在实现前关闭 execution context、suspension lifetime 与 compiler admission facts；
-- 为未来 C++ coroutine、`std::execution` 与 provider adapter 保留受 source contract 约束的空间。
+- 为未来 C++ coroutine、`std::execution` 与 provider bridge 保留受 source contract 约束的空间。
 
 ### Non-goals
 
@@ -97,7 +97,7 @@ Backend/interop 是单向下游 consumer。C++ coroutine、sender、runtime task
 Carven source semantics 由 compiler/SemanticProgram 拥有，不由某个 C++ async library、coroutine promise、
 sender concept、runtime task type 或 template substitution 反向定义。
 
-`std::execution`、stdexec、async_simple、libcoro、ASIO 等可以是思想来源、adapter 或 lowering
+`std::execution`、stdexec、async_simple、libcoro、ASIO 等可以是思想来源、integration bridge 或 lowering
 mechanism，但不是 ordinary Carven source vocabulary，也不是 source validity 的第二条路径。
 
 #### METHOD-02 — No abstraction tax applies after intent analysis
@@ -111,7 +111,7 @@ Carven intent and facts
     -> specialized C++ state machine
     -> flattened frame/storage
     -> backend-native cancellation/deadline
-    -> std::execution adapter
+    -> std::execution bridge
     -> or another observationally equivalent form
 ```
 
@@ -371,7 +371,7 @@ cancellation request/query/checkpoint 使用 compiler-known operations。
 
 **Deferred.**
 
-UI button、server shutdown、deadline、test orchestration、supervisor 与 `#[cpp]` stop-token bridge
+UI button、server shutdown、deadline、test orchestration、supervisor 与 C++ stop-token bridge
 可能需要未来的 source/context capability。第一阶段由 structured owner 与 runtime 内部持有 source，
 不开放任意 Task handle、custom cancellation handler 或 shield。
 
@@ -500,7 +500,7 @@ else            -> argument-ordered value tuple
 ```
 
 因此 genuine typed failure 不会因为 cancellation 早到几微秒而被掩盖。Cancellation-induced backend
-结果应由对应 operation/adapter 正确映射为 `cancelled`，而不是伪装成 typed failure。
+结果应由对应 operation/bridge 正确映射为 `cancelled`，而不是伪装成 typed failure。
 
 Multiple failures 之间 first committed failure wins；business error priority 必须通过顺序/嵌套表达，
 不由 `when_all` 猜测。
@@ -673,12 +673,12 @@ behavior 不得重新决定 source validity。
 
 **Maturity:** No lowering has been selected.
 
-Lowering 可以选择 C++ coroutine、显式 state machine、specialized frame、sender adapter 或其他
+Lowering 可以选择 C++ coroutine、显式 state machine、specialized frame、sender bridge 或其他
 observationally equivalent mechanism。只要 source contract、compiler facts、diagnostics 与成本边界
 不变，compiler 可以展平 ownership tree、消除 runtime group/task wrapper、避免 allocation/type
 erasure，或使用 backend-native cancellation/deadline。Inactive candidate research 记录在
 `DEFER-08`。Frame 或 operation storage 只保留 runtime execution 跨 suspension、completion 或
-interop boundary 后仍需携带的状态；compiler-generated coroutine、IIFE 或 library wrapper 不自行
+C++ interoperation boundary 后仍需携带的状态；compiler-generated coroutine、IIFE 或 library wrapper 不自行
 建立新的 source obligation。
 
 ## Decision record
@@ -817,7 +817,7 @@ This includes shared tasks, multi-consumer futures, and repeated `await`.
 - **Reason deferred:** Phase one obtains cancellation authority from structured ownership and does not need an
   arbitrary user-created control plane.
 - **Depends on:** `CANCEL-01` through `CANCEL-06`
-- **Reactivation condition:** UI shutdown, service control, tests, deadlines, or interop require a source-level
+- **Reactivation condition:** UI shutdown, service control, tests, deadlines, or C++ interoperation require a source-level
   cancellation source and can specify propagation, handlers, shielding, and lifetime.
 
 This includes user cancellation sources/tokens, custom cancellation handlers, and shields. `CANCEL-06`
@@ -855,10 +855,10 @@ This direction includes cross-thread resume, physical parallel execution, Send/S
 scheduler/executor source APIs, source-visible scheduler hops, thread affinity, priority, fairness, and
 cross-thread completion carriers.
 
-### DEFER-08 — Provider/lowering selection and public `#[cpp]` async interop
+### DEFER-08 — Provider/lowering selection and explicit async C++ interoperation
 
-- **Reason deferred:** Provider/lowering selection and source-facing adapter implementation require closed
-  source semantics, execution context, suspension lifetime, and feature-admission facts.
+- **Reason deferred:** Provider/lowering selection and async `import(cpp)`/`export(cpp)` implementation require
+  closed source semantics, execution context, suspension lifetime, and feature-admission facts.
 - **Depends on:** `OPEN-01` and `OPEN-02`; [memory model](memory-model.md) and [threading](threading.md) for
   cross-thread candidates
 - **Reactivation condition:** The source contract and compiler facts form an actionable vertical slice; a
@@ -868,29 +868,29 @@ Non-normative evidence collection may continue in parallel through standards/lib
 benchmarks, and private prototypes. That work does not select C++ coroutine, `std::execution`, stdexec,
 async_simple, libcoro, ASIO, Yalanting, or another runtime, and cannot modify operation, completion, failure,
 cancellation, lifetime, or context semantics. Provider/lowering selection, public C++ async ABI, third-party
-task/sender leakage, and source-facing adapter implementation remain deferred by this entry.
+task/sender leakage, and import-bridge/export-façade implementation remain deferred by this entry.
 
 #### Research scope and boundaries
 
-- Carven operation/completion and C++ coroutine/awaitable adapters in both directions;
-- Carven operation and C++26 `std::execution` sender adapters in both directions;
+- Carven operation/completion and C++ coroutine/awaitable bridges in both directions;
+- Carven operation and C++26 `std::execution` sender bridges in both directions;
 - platform I/O, event loops, thread pools, and third-party runtime providers;
 - exception, cancellation, scheduler, allocator, generated representation, public consumer surface, ABI, and
   downstream build conversion;
-- C++ exceptions cannot cross a no-exception Carven frame; an exception-enabled adapter catches and maps them
+- C++ exceptions cannot cross a no-exception Carven frame; an exception-enabled bridge catches and maps them
   to declared typed failure;
 - third-party task, sender, scheduler, socket, and allocator types do not enter phase-one public generated ABI;
 - downstream builds explicitly select, pin, and link a provider; the compiler does not become a second package
   manager;
-- ordinary generated C++ remains inspectable and debuggable behind a Carven-owned adapter contract.
+- ordinary generated C++ remains inspectable and debuggable behind a Carven-owned bridge contract.
 
 #### Candidate roles
 
 | Candidate | Possible role | Not its role |
 | --- | --- | --- |
 | Carven-owned operation | Default no-exception operation, typed completion, symmetric transfer | Platform I/O or full production scheduler |
-| C++26 `std::execution` / stdexec | Completion/scheduler/scope adapter and long-term standards bridge | Source vocabulary or current default public ABI |
-| async_simple | Implementation reference or explicit adapter for cold task, symmetric transfer, and executor propagation | Carven typed-failure/cancellation semantics |
+| C++26 `std::execution` / stdexec | Completion/scheduler/scope bridge and long-term standards bridge | Source vocabulary or current default public ABI |
+| async_simple | Implementation reference or explicit bridge for cold task, symmetric transfer, and executor propagation | Carven typed-failure/cancellation semantics |
 | libcoro | Experimental I/O/network provider and end-to-end prototype | Language operation contract or stable ABI |
 | ASIO/Yalanting | Opt-in event-loop, network, or RPC provider | Async language semantics |
 
@@ -900,14 +900,14 @@ task/sender leakage, and source-facing adapter implementation remain deferred by
 - How does a C++ exception set map statically to nominal failure?
 - How does Carven cancellation map bidirectionally to `std::stop_token` or a library token?
 - How are scheduler affinity, thread migration, and callback lifetime verified?
-- May an adapter allocate or erase types, and how is cost visible in the source/build contract?
+- May a bridge allocate or erase types, and how is cost visible in the source/build contract?
 - Is the C++ consumer API a blocking bridge, callback, awaitable, sender, or separate layered surfaces?
 - Does ABI stop at a C adapter or include a C++ contract within one compiler/toolchain domain?
 - Who owns provider shutdown, outstanding work, process lifetime, and the test harness?
 
-#### Adapter evidence
+#### Bridge evidence
 
-Every adapter is an independent product slice and must validate:
+Every bridge is an independent product slice and must validate:
 
 - lossless value, typed-failure, and cancellation mapping;
 - exactly-once completion and operand evaluation;
@@ -927,8 +927,9 @@ private and do not activate implementation or select a provider.
 Implementation is not yet actionable. `OPEN-01` and `OPEN-02` block a coherent grammar/SemanticProgram/control/lifetime
 slice; `DEFER-08` keeps provider/lowering selection deferred until that slice exists.
 
-Once unblocked, each relevant decision ID must map through grammar, ParsedBatch, SemanticProgram, verification, unit-local TargetUnit lowering,
-lowering/runtime, interop boundaries, diagnostics, tests, and permanent-document handoff. Scope-closing control
+Once unblocked, each relevant decision ID must map through grammar, SyntaxProgram, SemanticProgram,
+verification, TargetUnit lowering, runtime, C++ interoperation boundaries, diagnostics, tests, and
+permanent-document handoff. Scope-closing control
 edges and the parent-completion publication barrier must be explicit compiler facts rather than destructor or
 library accidents. Cross-thread work remains separately blocked by the memory-model and threading proposals.
 
@@ -954,7 +955,7 @@ Feature admission must cover:
 
 Tests assert Carven observable semantics and representation invariants. They do not fix private generated
 spelling, a runtime class, heap-allocation count, or a third-party type. Cost claims require benchmarks and
-artifact inspection in addition to semantic tests. Adapter-specific evidence remains under `DEFER-08` and may
+artifact inspection in addition to semantic tests. Bridge-specific evidence remains under `DEFER-08` and may
 be collected without turning a candidate into an implementation choice.
 
 ## References
@@ -965,5 +966,5 @@ be collected without turning a candidate into an implementation choice.
 - [Failure-model and runtime-materialization note](../notes/failure-models.md)
 - [Memory model proposal](memory-model.md)
 - [Threading proposal](threading.md)
-- [C++ interop proposal](cpp-interop.md)
+- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)
 - [Proposal roadmap](roadmap.md)

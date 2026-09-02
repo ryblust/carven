@@ -3,7 +3,6 @@ module carven:backend.target.stmt;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
-import :backend.target.raw;
 import std;
 
 struct TargetExprStmt final {
@@ -158,8 +157,7 @@ using TargetStmtValue = std::variant<
     TargetIfStmt,
     TargetWhileStmt,
     TargetForStmt,
-    TargetRangeForStmt,
-    TargetRawFragment>;
+    TargetRangeForStmt>;
 
 struct TargetStmt final {
     TargetStmtValue value;

@@ -11,6 +11,7 @@ import :support.id_table;
 import std;
 
 class ASTBuilder;
+struct ASTModule;
 class SyntaxTree;
 
 class ASTStorage final {
@@ -29,7 +30,7 @@ private:
     using BlockTable = IDTable<ASTBlock, ASTBlockID>;
     using BranchBlockTable = IDTable<ASTBranchBlock, ASTBranchBlockID>;
     using ItemTable = IDTable<ASTItem, ASTItemID>;
-    using ImportTable = IDTable<ASTImportDecl, ASTImportID>;
+    using ModuleImportTable = IDTable<ASTModuleImport, ASTModuleImportID>;
 
     ASTStorage() = default;
 
@@ -40,7 +41,7 @@ private:
     BlockTable block_table;
     BranchBlockTable branch_block_table;
     ItemTable item_table;
-    ImportTable import_table;
+    ModuleImportTable module_import_table;
 
     friend class ASTBuilder;
     friend class ASTView;
@@ -56,7 +57,7 @@ public:
     auto block(ASTBlockID id) const noexcept -> const ASTBlock&;
     auto branch_block(ASTBranchBlockID id) const noexcept -> const ASTBranchBlock&;
     auto item(ASTItemID id) const noexcept -> const ASTItem&;
-    auto import_declaration(ASTImportID id) const noexcept -> const ASTImportDecl&;
+    auto module_import(ASTModuleImportID id) const noexcept -> const ASTModuleImport&;
     auto ast_module() const noexcept -> const ASTModule&;
     auto expressions() const noexcept -> std::span<const ASTExpr>;
     auto types() const noexcept -> std::span<const ASTType>;
@@ -65,7 +66,7 @@ public:
     auto blocks() const noexcept -> std::span<const ASTBlock>;
     auto branch_blocks() const noexcept -> std::span<const ASTBranchBlock>;
     auto items() const noexcept -> std::span<const ASTItem>;
-    auto imports() const noexcept -> std::span<const ASTImportDecl>;
+    auto module_imports() const noexcept -> std::span<const ASTModuleImport>;
     auto source_id() const noexcept -> SourceID;
 
 private:

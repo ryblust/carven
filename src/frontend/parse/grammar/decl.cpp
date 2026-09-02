@@ -6,7 +6,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :frontend.lex.token;
@@ -103,7 +103,20 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     };
 }
 
-auto Parser::parse_import() noexcept -> ASTImportID {
+auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
+    const auto start = expect(TokenKind::Import, "expected 'import'").span;
+    const auto header = consume();
+    const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after C++ header import");
+    return {
+        .span = join(start, semicolon.span),
+        .delimiter = header.kind == TokenKind::CppAngleHeaderName
+            ? ASTCppHeaderDelimiter::AngleBrackets
+            : ASTCppHeaderDelimiter::Quotes,
+        .name_span = Span::from_bounds(header.span.start() + 1, header.span.end() - 1),
+    };
+}
+
+auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     auto module_reference = parse_module_reference();
     expect(TokenKind::Using, "expected 'using' in import declaration");
@@ -150,22 +163,60 @@ auto Parser::parse_import() noexcept -> ASTImportID {
     }();
 
     const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after import declaration");
-    return builder.append_import({
+    return builder.append_module_import({
         .span = join(start, semicolon.span),
         .module_reference = std::move(module_reference),
         .selection = std::move(selection),
     });
 }
 
+auto Parser::parse_cpp_declaration_form(Token keyword) noexcept -> Span {
+    expect(TokenKind::LeftParen, "expected '(' after declaration form");
+    const auto name = expect(TokenKind::Identifier, "expected declaration form name");
+    if (!failed && slice(source, name.span) != "cpp") {
+        fail("unsupported declaration form; expected 'cpp'", name.span);
+    }
+    const auto right = expect(TokenKind::RightParen, "expected ')' after declaration form");
+    return join(keyword.span, right.span);
+}
+
 auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     const auto start = current().span;
+    const auto discard_through_semicolon = [&]() noexcept {
+        while (!at_end()) {
+            if (consume().kind == TokenKind::Semicolon) {
+                return;
+            }
+        }
+    };
     auto visibility = ASTDeclarationVisibility {ASTBareDeclarationVisibility {}};
+    auto cpp_export = std::optional<ASTCppExportForm> {};
+    auto cpp_import = std::optional<Span> {};
     if (const auto keyword = match(TokenKind::Private)) {
         visibility = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
     } else if (const auto keyword = match(TokenKind::Export)) {
         visibility = ASTExportDeclarationVisibility {.keyword_span = keyword->span};
+        if (check(TokenKind::LeftParen)) {
+            cpp_export = ASTCppExportForm {.span = parse_cpp_declaration_form(*keyword)};
+        }
+    }
+    if (const auto keyword = match(TokenKind::Import)) {
+        if (std::holds_alternative<ASTExportDeclarationVisibility>(visibility)) {
+            fail("an import(cpp) declaration cannot be exported directly", keyword->span);
+            discard_through_semicolon();
+            return std::nullopt;
+        }
+        cpp_import = parse_cpp_declaration_form(*keyword);
     }
     const auto is_bare = std::holds_alternative<ASTBareDeclarationVisibility>(visibility);
+
+    if ((cpp_export.has_value() || cpp_import.has_value()) && !check(TokenKind::Fn)) {
+        fail_here("import(cpp) and export(cpp) forms must introduce a function");
+        if (cpp_import.has_value() && check(TokenKind::Export)) {
+            discard_through_semicolon();
+        }
+        return std::nullopt;
+    }
 
     if (check(TokenKind::Enum)) {
         auto parsed = parse_enum(std::move(visibility));
@@ -190,7 +241,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Fn)) {
-        auto parsed = parse_function(std::move(visibility));
+        auto parsed = parse_function(std::move(visibility), cpp_export, cpp_import);
         if (!parsed) {
             return std::nullopt;
         }
@@ -222,16 +273,8 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
             .value = std::move(declaration),
         });
     }
-    if (is_bare && check(TokenKind::CppRegion)) {
-        const auto token = consume();
-        return builder.append_item({
-            .span = token.span,
-            .value = cpp_region(token.span),
-        });
-    }
-
     fail_here(
-        is_bare ? "expected top-level declaration, test, or inline C++ region"
+        is_bare ? "expected top-level declaration or test"
                 : "expected enum, struct, function, or const after visibility modifier"
     );
     return std::nullopt;
@@ -382,8 +425,11 @@ auto Parser::parse_struct(ASTDeclarationVisibility visibility) noexcept
     };
 }
 
-auto Parser::parse_function(ASTDeclarationVisibility visibility) noexcept
-    -> std::optional<std::pair<Span, ASTFunctionDecl>> {
+auto Parser::parse_function(
+    ASTDeclarationVisibility visibility,
+    std::optional<ASTCppExportForm> cpp_export,
+    std::optional<Span> cpp_import
+) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>> {
     expect(TokenKind::Fn, "expected 'fn'");
     const auto name = expect(TokenKind::Identifier, "expected function name");
     expect(TokenKind::LeftParen, "expected '(' after function name");
@@ -432,21 +478,32 @@ auto Parser::parse_function(ASTDeclarationVisibility visibility) noexcept
     if (check(TokenKind::Throw)) {
         throw_clause = parse_throw_clause();
     }
-    const auto body = parse_ordinary_block();
-    if (!body) {
-        return std::nullopt;
+    auto implementation = std::optional<ASTFunctionImplementation> {};
+    auto end = std::optional<Span> {};
+    if (cpp_import.has_value()) {
+        const auto semicolon =
+            expect(TokenKind::Semicolon, "expected ';' after import(cpp) declaration");
+        implementation = ASTCppImportForm {.span = *cpp_import};
+        end = semicolon.span;
+    } else {
+        const auto body = parse_ordinary_block();
+        if (!body) {
+            return std::nullopt;
+        }
+        implementation = ASTFunctionBody {.body = *body};
+        end = builder.block(*body).span;
     }
-    const auto end = builder.block(*body).span;
     return {
         std::pair {
-            end,
+            *end,
             ASTFunctionDecl {
                 .visibility = std::move(visibility),
+                .cpp_export = cpp_export,
                 .name_span = name.span,
                 .parameters = std::move(parameters),
                 .result_type = result_type,
                 .throw_clause = std::move(throw_clause),
-                .body = *body,
+                .implementation = std::move(*implementation),
             },
         },
     };

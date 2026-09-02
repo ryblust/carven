@@ -13,7 +13,6 @@ enum class OperatorResult {
 
 enum class UnaryOperatorStatus {
     Supported,
-    Foreign,
     Error,
     BooleanOperandRequired,
     NumericOperandRequired,
@@ -27,7 +26,6 @@ struct UnaryOperatorCheck final {
 
 enum class BinaryOperatorStatus {
     Supported,
-    Foreign,
     Error,
     BooleanOperandsRequired,
     NumericOperandsRequired,

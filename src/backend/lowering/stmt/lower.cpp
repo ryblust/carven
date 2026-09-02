@@ -246,9 +246,7 @@ auto prepare_target_statement(
         TargetStmt {
             .value = std::move(value),
             .attribution = {
-                .kind = std::holds_alternative<HIRCppStmt>(source.value)
-                    ? TargetAttributionKind::RawSource
-                    : TargetAttributionKind::SourceOwned,
+                .kind = TargetAttributionKind::SourceOwned,
                 .origin = target_source_origin(context, source.origin),
                 .reason = std::nullopt,
             },
@@ -287,10 +285,8 @@ auto lower_statement_value(
     return std::visit(
         [&](const auto& value) noexcept -> TargetStmtValue {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, HIRCppStmt>) {
-                return lower_statement(context, value);
-            } else if constexpr (std::same_as<Value, HIRTestCheckStmt>
-                                 || std::same_as<Value, HIRTestRequireStmt>) {
+            if constexpr (std::same_as<Value, HIRTestCheckStmt>
+                          || std::same_as<Value, HIRTestRequireStmt>) {
                 return lower_statement(
                     context,
                     value,
@@ -648,11 +644,4 @@ auto lower_statement(
     );
     statements.push_back(test_exit_statement(context, control));
     return TargetBlockStmt {.statements = std::move(statements), .scoped = true};
-}
-
-auto lower_statement(const TargetCallableLowerer& context, const HIRCppStmt& statement) noexcept
-    -> TargetStmtValue {
-    return TargetRawFragment {
-        .bytes = std::string(context.source().provenance().spelling(statement.bytes)),
-    };
 }

@@ -19,7 +19,7 @@ public:
         ASTStorage::BlockTable::Checkpoint blocks;
         ASTStorage::BranchBlockTable::Checkpoint branch_blocks;
         ASTStorage::ItemTable::Checkpoint items;
-        ASTStorage::ImportTable::Checkpoint imports;
+        ASTStorage::ModuleImportTable::Checkpoint module_imports;
     };
 
     auto append_expression(ASTExpr value) noexcept -> ASTExprID;
@@ -29,7 +29,7 @@ public:
     auto append_block(ASTBlock value) noexcept -> ASTBlockID;
     auto append_branch_block(ASTBranchBlock value) noexcept -> ASTBranchBlockID;
     auto append_item(ASTItem value) noexcept -> ASTItemID;
-    auto append_import(ASTImportDecl value) noexcept -> ASTImportID;
+    auto append_module_import(ASTModuleImport value) noexcept -> ASTModuleImportID;
     auto expression(ASTExprID id) const noexcept -> const ASTExpr&;
     auto type(ASTTypeID id) const noexcept -> const ASTType&;
     auto pattern(ASTPatternID id) const noexcept -> const ASTPattern&;

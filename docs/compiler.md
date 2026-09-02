@@ -16,20 +16,23 @@ Carven compiles one explicit closed batch:
 
 ```text
 CompilationRequest
-  -> parse and close inputs
-  -> ParsedBatch
+  -> parse_program and close inputs
+  -> SyntaxProgram
   -> ProgramAnalyzer
        -> SemanticSession and SemanticDraft
        -> catalog and stable entity reservation
        -> declaration-contract resolution and freeze
-       -> body elaboration and structural verification
+       -> body elaboration
+       -> C++ boundary and public-surface validation
        -> binding and place-use derivation
+       -> structural verification
        -> failure/control/evaluation analysis
        -> effect diagnostics and flow-candidate freeze
        -> availability, contract, and nominal analysis
        -> exact-layout assembly and final verification
   -> SemanticProgram
-  -> TargetProgram::build(move(SemanticProgram), TargetGenerationRequest)
+  -> generate_artifacts(move(SemanticProgram), move(TargetGenerationRequest))
+       -> TargetProgram::build
   -> per-artifact TargetUnit
   -> GeneratedArtifact
   -> ArtifactSet
@@ -45,7 +48,7 @@ lifetime.
 
 | Owner or role | Owns | Lifetime |
 | --- | --- | --- |
-| `ParsedBatch` | closed syntax trees, source snapshots, module identities, and initial provenance | parse publication through semantic handoff |
+| `SyntaxProgram` | closed syntax trees, source snapshots, module identities, and initial provenance | parse publication through semantic handoff |
 | `ProgramAnalyzer` | syntax access, diagnostics, entry tracking, deferred callable constraints, and one semantic session | one semantic analysis |
 | `SemanticSession` | provenance construction, one `SemanticDraft`, and the outer semantic publication gate | one semantic analysis |
 | `SemanticDraft` | incomplete semantic slots, canonical builders and indexes, construction state, and compact fact candidates | construction through semantic seal |
@@ -67,9 +70,9 @@ construction-only state behind.
 
 | Gate | Input | Required proof | Output |
 | --- | --- | --- | --- |
-| Input closure | request and source manager | normalized unique paths, unique canonical modules, valid snapshots, and closed imports | `ParsedBatch` |
+| Input closure | request and source manager | normalized unique paths, unique canonical modules, valid snapshots, and closed imports | `SyntaxProgram` |
 | Declaration-contract freeze | catalog and reserved identities | every required named declaration slot and nominal capability is complete | immutable declaration view for body elaboration |
-| Structural gate | completed declarations and bodies | valid IDs, scopes, bodies, ownership trees, type/form relations, bindings, and match-fact alignment | structurally verified `SemanticDraftView` |
+| Structural gate | completed declarations and callable implementations | valid IDs, scopes, bodies, `import(cpp)` implementations, ownership trees, type/form relations, bindings, and match-fact alignment | structurally verified `SemanticDraftView` |
 | Flow-candidate freeze | solved failures and recorded control/evaluation | diagnostics complete; callable, expression, block, try, and effect columns total and normalized | immutable compact flow facts |
 | Semantic seal | fully analyzed draft | exact published layout assembled; canonical tables, references, ownership, cycles, provenance, flow, binding, match, and nominal invariants verified | `SemanticProgram` |
 
@@ -87,7 +90,7 @@ caller or build integration.
 
 Identity allocation follows the owning domain:
 
-- source and module IDs enter semantic analysis through `ParsedBatch` and are
+- source and module IDs enter semantic analysis through `SyntaxProgram` and are
   never reallocated;
 - origins and spellings share one append-only provenance domain across the
   frontend-to-semantic handoff;
@@ -111,9 +114,16 @@ owner.
 
 Closure callables are created during body elaboration, so structural
 verification is the first gate that proves all named and closure callables,
-bodies, scopes, and occurrence trees complete. Module items own top-level source
-order, callables own their bodies, bodies and scopes own local occurrences, and
-enumerations own their ordered cases.
+implementations, bodies, scopes, and occurrence trees complete. A callable owns
+one explicit implementation origin: either `HIRBodyImplementation` with a
+`BodyID` or `HIRCppImportImplementation` with the declaration's
+`ProgramOriginID`. An `import(cpp)` implementation has no independent semantic
+identity or table. Its function symbol identifies the owning module, and its
+function declaration name supplies the provider spelling. Body-only passes
+query the body implementation and never invent a body for the C++
+implementation. Module items own top-level declaration order, modules directly
+own ordered C++ header dependencies and source-fragment payload origins, bodies
+and scopes own local occurrences, and enumerations own their ordered cases.
 
 Reverse indexes are allowed only as disposable projections for a measured
 consumer. They are never a competing canonical owner.
@@ -125,6 +135,10 @@ contains:
 
 - provenance, source snapshots, modules, origins, spellings, and source
   locations;
+- module-owned ordered `HIRCppHeaderDependency` facts and
+  `cpp_source_payload_origins`;
+- callable-owned `HIRCppImportImplementation` facts with source-form origins;
+- function-owned optional `cpp_export_form_origin` facts;
 - declarations, symbols, bodies, expressions, statements, patterns, blocks,
   scopes, and constants;
 - canonical types, callable signatures, constant values, and failure sets;
@@ -140,11 +154,17 @@ Place use does not create a second storage identity. The symbol is the root;
 the projection path describes only how one occurrence reaches a subobject.
 Types remain available from the canonical symbol/expression/type relations.
 
+C++ boundary validation uses local predicates over canonical `HIRTypeValue`
+facts. Parameters accept the supported scalar set; results accept that same set
+plus `void`. HIR publishes the canonical types rather than a separate boundary
+type classification.
+
 A callable's structural contract and effective flow are separate columns.
 `CallContractView` is a pure projection of the verified callee type; call
 expressions do not persist a competing resolved-target field. Concrete
 callables use effective failure facts, first-class signatures use their fixed
-contract, and foreign calls retain their explicit boundary classification.
+contract, and `import(cpp)` functions remain ordinary concrete callables whose
+explicit implementation origin records the source form.
 
 ## Failure, control, effects, and availability
 
@@ -159,9 +179,11 @@ the opaque reorder barrier. Whether an expression may terminate is a query over
 its control fact, not a duplicated effect flag.
 
 Availability starts only after compact flow and effect facts are immutable. It
-builds and solves a disposable CFG for one body at a time, emits diagnostics
-after convergence, and publishes no graph, state, witness, or availability ID.
-Its CFG is an analysis projection and does not prescribe generated C++ control
+builds and solves a disposable CFG for one Carven body at a time, emits
+diagnostics after convergence, and publishes no graph, state, witness, or
+availability ID. An `import(cpp)` function has no body and therefore never
+enters this pass.
+The CFG is an analysis projection and does not prescribe generated C++ control
 shape.
 
 Pattern coverage has one producer. The same coverage result diagnoses repeated
@@ -196,12 +218,16 @@ structural and final gates cover at least:
 - ID bounds, table alignment, canonical uniqueness, and normalized ordering;
 - exactly one owner for modules, declarations, bodies, expressions, statements,
   patterns, blocks, and scopes;
-- valid callable/body, parent/scope, binding, type, and occurrence relations;
+- valid callable/implementation, `import(cpp)` implementation, body,
+  parent/scope, binding, type, and occurrence relations;
 - acyclic expression, statement, body, scope, and nominal containment graphs;
 - total and aligned control, effect, place-use, try, block, callable-flow, and
   match-coverage columns;
 - normalized failure sets and valid callable/call projections;
-- valid origins, spellings, source IDs, and module IDs.
+- valid origins, spellings, source IDs, and module IDs, including C++ header
+  spelling IDs, module-owned source-fragment payload origins, function-owned
+  `cpp_export_form_origin` facts, and exclusion of an `import(cpp)` implementation
+  on an `export(cpp)` function.
 
 A verifier may recompute a relation to check an invariant. It does not publish
 the recomputed relation or repair invalid storage.

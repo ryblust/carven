@@ -2,7 +2,6 @@ module carven:backend.emission.render.expr.impl;
 
 import :backend.emission.render;
 import :backend.emission.render.string;
-import :backend.target.raw;
 import :backend.target.symbol;
 import :support.visit;
 import std;
@@ -32,6 +31,7 @@ auto precedence(TargetBinaryOperator op) noexcept -> TargetPrecedence {
 
 auto prefix_spelling(TargetPrefixOperator op) noexcept -> std::string_view {
     switch (op) {
+        case TargetPrefixOperator::AddressOf:  return "&";
         case TargetPrefixOperator::LogicalNot: return "!";
         case TargetPrefixOperator::Negate:     return "-";
         case TargetPrefixOperator::BitwiseNot: return "~";
@@ -265,17 +265,8 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                 );
             },
             [&](const TargetScopeMemberExpr& member) noexcept {
-                const auto operand = std::visit(
-                    Overloaded {
-                        [&](TargetExprID value) noexcept {
-                            return render_expression(value, TargetPrecedence::Postfix);
-                        },
-                        [&](const TargetRawFragment& value) noexcept {
-                            return render_raw_fragment(value);
-                        },
-                    },
-                    member.operand
-                );
+                const auto operand =
+                    render_expression(member.operand_id, TargetPrecedence::Postfix);
                 const auto name = std::visit(
                     Overloaded {
                         [&](const TargetIdentifier& value) noexcept {
@@ -324,9 +315,6 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                      text(">"),
                      delimited_list(operand, "(", ")")}
                 );
-            },
-            [&](const TargetRawFragment& value) noexcept {
-                return concat({text("("), render_raw_fragment(value), text(")")});
             },
             [&](const TargetLambdaExpr& lambda) noexcept {
                 return concat(

@@ -62,7 +62,11 @@ auto diagnose_recorded_effects(
     for (auto index = 0uz; index < builder.functions().size(); ++index) {
         const auto id = FunctionID::from_index(static_cast<std::uint32_t>(index));
         const auto& function = builder.function(id);
-        const auto& body = builder.body(builder.callable(function.callable).body);
+        const auto body_id = callable_body_id(builder.callable(function.callable));
+        if (!body_id.has_value()) {
+            continue;
+        }
+        const auto& body = builder.body(*body_id);
         const auto& actual = control.summary(body.root).outward_failures;
         const auto contract = callable_failures(function.callable);
         const auto outside = std::ranges::find_if(actual, [&](HIRTypeID failure) noexcept {
@@ -290,7 +294,7 @@ auto diagnose_recorded_effects(
             continue;
         }
         const auto& callable = builder.callable(closure->callable);
-        const auto& closure_body = builder.body(callable.body);
+        const auto& closure_body = builder.body(*callable_body_id(callable));
         const auto& actual = control.summary(closure_body.root).outward_failures;
         const auto contract = callable_failures(closure->callable);
         if (std::ranges::any_of(actual, [&](HIRTypeID failure) noexcept {
@@ -302,9 +306,7 @@ auto diagnose_recorded_effects(
                 DiagnosticCode::EffectSignatureBound
             );
         }
-        if (!is_void(closure->result)
-            && !std::holds_alternative<HIRForeignTypeValue>(builder.type(closure->result).value)
-            && control.summary(closure_body.root).falls_through) {
+        if (!is_void(closure->result) && control.summary(closure_body.root).falls_through) {
             emit(
                 expression.origin,
                 "not all paths return a value",
@@ -315,10 +317,12 @@ auto diagnose_recorded_effects(
     for (auto index = 0uz; index < builder.functions().size(); ++index) {
         const auto id = FunctionID::from_index(static_cast<std::uint32_t>(index));
         const auto& function = builder.function(id);
-        const auto& body = builder.body(builder.callable(function.callable).body);
-        if (is_void(function.result)
-            || std::holds_alternative<HIRForeignTypeValue>(builder.type(function.result).value)
-            || !control.summary(body.root).falls_through) {
+        const auto body_id = callable_body_id(builder.callable(function.callable));
+        if (!body_id.has_value()) {
+            continue;
+        }
+        const auto& body = builder.body(*body_id);
+        if (is_void(function.result) || !control.summary(body.root).falls_through) {
             continue;
         }
         emit(

@@ -10,7 +10,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -27,7 +26,7 @@ TEST_CASE("Parser: ordinary and branch blocks preserve different result rules") 
         "}\n"
     );
     const auto ast = result.view();
-    const auto& body = ast.block(function(result).body);
+    const auto& body = function_body(result);
     REQUIRE_EQ(body.statements.size(), 2u);
 
     const auto& statement_if = get<ASTIfForm>(ast.statement(body.statements[0]));
@@ -54,7 +53,7 @@ TEST_CASE("Parser: patterns and match arm bodies are independent typed families"
         "}\n"
     );
     const auto ast = result.view();
-    const auto& body = ast.block(function(result).body);
+    const auto& body = function_body(result);
     const auto& match = get<ASTMatchForm>(ast.statement(body.statements[0]));
     REQUIRE_EQ(match.arms.size(), 4u);
 
@@ -97,7 +96,7 @@ TEST_CASE("Parser: enum case patterns recursively own positional patterns") {
     );
     const auto result = parse_valid(text);
     const auto ast = result.view();
-    const auto& body = ast.block(function(result).body);
+    const auto& body = function_body(result);
     const auto& match = get<ASTMatchForm>(ast.statement(body.statements[0]));
     REQUIRE_EQ(match.arms.size(), 3u);
 

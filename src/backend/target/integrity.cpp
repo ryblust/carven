@@ -256,8 +256,7 @@ private:
                     return visit_expression(value.operand_id);
                 },
                 [&](const TargetScopeMemberExpr& value) noexcept {
-                    const auto* operand_id = std::get_if<TargetExprID>(&value.operand);
-                    return operand_id == nullptr || visit_expression(*operand_id);
+                    return visit_expression(value.operand_id);
                 },
                 [&](const TargetStaticMemberExpr& value) noexcept {
                     return visit_type(value.owner);
@@ -266,7 +265,6 @@ private:
                 [&](const TargetStaticCastExpr& value) noexcept {
                     return visit_type(value.type) && visit_expression(value.operand_id);
                 },
-                [](const TargetRawFragment&) static noexcept { return true; },
                 [&](const TargetLambdaExpr& value) noexcept {
                     return visit_statements(value.body);
                 },
@@ -421,7 +419,6 @@ private:
                         && visit_expression(value.iterable)
                         && visit_statements(value.body);
                 },
-                [](const TargetRawFragment&) static noexcept { return true; },
             },
             statement
         );
@@ -598,7 +595,8 @@ private:
         if (unit.root.logical_path.empty()) {
             return fail(TargetUnitViolationKind::InvalidStructure, "target unit path is empty");
         }
-        const auto stable_interface = unit.root.role == GeneratedArtifactRole::Interface;
+        const auto stable_interface = unit.root.role == GeneratedArtifactRole::Interface
+            || unit.root.role == GeneratedArtifactRole::CppAPIHeader;
         if (stable_interface
             != (unit.root.source_mapping == ArtifactSourceMappingPolicy::StableInterface)) {
             return fail(

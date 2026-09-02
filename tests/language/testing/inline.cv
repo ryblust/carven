@@ -1,3 +1,5 @@
+import "testing/inline.hpp";
+
 fn private_answer() -> i32 {
     return 42;
 }
@@ -6,27 +8,18 @@ fn check(value: bool) -> bool {
     return value;
 }
 
-#[cpp] {
-    inline int cv_test_inline_operation_trace = 0;
-
-    inline auto cv_test_inline_condition(int digit, bool value) noexcept -> bool {
-        cv_test_inline_operation_trace = cv_test_inline_operation_trace * 10 + digit;
-        return value;
-    }
-
-    inline auto cv_test_inline_message(int digit, std::string_view value) noexcept
-        -> std::string_view {
-        cv_test_inline_operation_trace = cv_test_inline_operation_trace * 10 + digit;
-        return value;
-    }
-}
+private import(cpp) fn cv_test_inline_reset_trace();
+private import(cpp) fn cv_test_inline_condition(digit: i32, value: bool) -> bool;
+private import(cpp) fn cv_test_inline_mark(digit: i32);
+private import(cpp) fn cv_test_inline_trace() -> i32;
 
 fn traced_condition(digit: i32, value: bool) -> bool {
-    return #[cpp] { cv_test_inline_condition }(digit, value);
+    return cv_test_inline_condition(digit, value);
 }
 
 fn traced_message(digit: i32, value: str) -> str {
-    return #[cpp] { cv_test_inline_message }(digit, value);
+    cv_test_inline_mark(digit);
+    return value;
 }
 
 test "Testing: inline tests access module-private declarations" {
@@ -35,10 +28,10 @@ test "Testing: inline tests access module-private declarations" {
 }
 
 test "Testing: inline-test operands are eager, ordered, and evaluated once" {
-    #[cpp] { cv_test_inline_operation_trace = 0; }
+    cv_test_inline_reset_trace();
     check(traced_condition(1, true), traced_message(2, "check message"));
     require(traced_condition(3, true), traced_message(4, "require message"));
-    check(#[cpp] { cv_test_inline_operation_trace } == 1234);
+    check(cv_test_inline_trace() == 1234);
 }
 
 test "Testing: inline-test context reaches control blocks but not lambdas" {

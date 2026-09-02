@@ -1,27 +1,7 @@
-#[cpp] {
-    #include <cstdint>
+import "testing/reporting.hpp";
 
-    inline std::uint32_t cv_test_inline_reporting_flags = 0;
-
-    inline auto cv_test_reporting_mark(int bit) noexcept -> void {
-        cv_test_inline_reporting_flags |= std::uint32_t { 1 } << bit;
-    }
-
-    inline auto cv_test_reporting_condition(int bit, bool value) noexcept -> bool {
-        cv_test_reporting_mark(bit);
-        return value;
-    }
-
-    inline auto cv_test_reporting_message(int bit, std::string_view value) noexcept
-        -> std::string_view {
-        cv_test_reporting_mark(bit);
-        return value;
-    }
-
-    extern "C" auto cv_test_reporting_observed_flags() noexcept -> std::uint32_t {
-        return cv_test_inline_reporting_flags;
-    }
-}
+private import(cpp) fn cv_test_reporting_mark(bit: i32);
+private import(cpp) fn cv_test_reporting_condition(bit: i32, value: bool) -> bool;
 
 struct ReportingError {}
 
@@ -30,11 +10,12 @@ fn reporting_value() -> i32 throw ReportingError {
 }
 
 fn traced_reporting_condition(bit: i32, value: bool) -> bool {
-    return #[cpp] { cv_test_reporting_condition }(bit, value);
+    return cv_test_reporting_condition(bit, value);
 }
 
 fn traced_reporting_message(bit: i32, value: str) -> str {
-    return #[cpp] { cv_test_reporting_message }(bit, value);
+    cv_test_reporting_mark(bit);
+    return value;
 }
 
 test "Testing: check failure reports and continues" {
@@ -46,31 +27,31 @@ test "Testing: check failure reports and continues" {
         ),
         traced_reporting_message(1, "check message"),
     );
-    #[cpp] { cv_test_reporting_mark(2); }
+    cv_test_reporting_mark(2);
 }
 
 test "Testing: require failure reports and exits" {
     require(traced_reporting_condition(3, false), traced_reporting_message(4, "require message"));
-    #[cpp] { cv_test_reporting_mark(5); }
+    cv_test_reporting_mark(5);
 }
 
 test "Testing: fail reports and exits" {
     fail(traced_reporting_message(6, "fail message"));
-    #[cpp] { cv_test_reporting_mark(7); }
+    cv_test_reporting_mark(7);
 }
 
 test "Testing: require exits across a loop" {
     while true {
         require(traced_reporting_condition(8, false));
     }
-    #[cpp] { cv_test_reporting_mark(9); }
+    cv_test_reporting_mark(9);
 }
 
 test "Testing: require exits across statement if" {
     if true {
         require(traced_reporting_condition(10, false));
     }
-    #[cpp] { cv_test_reporting_mark(11); }
+    cv_test_reporting_mark(11);
 }
 
 test "Testing: require exits across value if" {
@@ -80,7 +61,7 @@ test "Testing: require exits across value if" {
     } else {
         2
     };
-    #[cpp] { cv_test_reporting_mark(13); }
+    cv_test_reporting_mark(13);
 }
 
 test "Testing: require exits across statement match" {
@@ -88,7 +69,7 @@ test "Testing: require exits across statement match" {
         1 => { require(traced_reporting_condition(14, false)); },
         _ => {},
     }
-    #[cpp] { cv_test_reporting_mark(15); }
+    cv_test_reporting_mark(15);
 }
 
 test "Testing: fail exits across value match" {
@@ -99,7 +80,7 @@ test "Testing: fail exits across value match" {
         },
         _ => 2,
     };
-    #[cpp] { cv_test_reporting_mark(16); }
+    cv_test_reporting_mark(16);
 }
 
 test "Testing: require exits across statement try" {
@@ -109,7 +90,7 @@ test "Testing: require exits across statement try" {
     } catch {
         ReportingError(_) => {},
     }
-    #[cpp] { cv_test_reporting_mark(18); }
+    cv_test_reporting_mark(18);
 }
 
 test "Testing: require exits across value try and failure transfer" {
@@ -119,5 +100,5 @@ test "Testing: require exits across value try and failure transfer" {
     } catch {
         ReportingError(_) => 0,
     };
-    #[cpp] { cv_test_reporting_mark(20); }
+    cv_test_reporting_mark(20);
 }

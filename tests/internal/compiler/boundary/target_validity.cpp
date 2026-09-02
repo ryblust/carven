@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.boundary.target_validity;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :diagnostics.diagnostic;
@@ -17,18 +18,21 @@ TEST_CASE("Compiler integration: C++ target validity remains downstream-owned") 
     auto sources = SourceManager();
     const auto source_id = *sources.append_virtual(
         "native.cv",
-        "fn value() { let member = #[cpp] { object }.virtual; }\n"
+        "#[cpp] ---\n"
+        "auto invalid = object.virtual;\n"
+        "---\n"
+        "fn value() {}\n"
     );
-    const auto input = CompilationInput {
+    const auto input = CompilationModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("native"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:target-validity").value(),
         }
     );
@@ -39,4 +43,6 @@ TEST_CASE("Compiler integration: C++ target validity remains downstream-owned") 
         }
     }
     REQUIRE(result.has_value());
+    REQUIRE_EQ(result->value.artifacts().size(), 2u);
+    CHECK(result->value.artifacts()[1].content.contains("auto invalid = object.virtual;"));
 }

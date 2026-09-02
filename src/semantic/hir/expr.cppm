@@ -248,10 +248,6 @@ struct HIRTryExpr final {
     std::vector<HIRCatchArm> arms;
 };
 
-struct HIRCppExpr final {
-    ProgramSpellingID bytes;
-};
-
 using HIRExprValue = std::variant<
     HIRLiteralExpr,
     HIRNameExpr,
@@ -271,8 +267,7 @@ using HIRExprValue = std::variant<
     HIRMemberExpr,
     HIRIfExpr,
     HIRMatchExpr,
-    HIRTryExpr,
-    HIRCppExpr>;
+    HIRTryExpr>;
 
 struct HIRExpr final {
     ProgramOriginID origin;

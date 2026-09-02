@@ -231,7 +231,6 @@ auto BodyAvailabilityGraphBuilder::lower_expression(
             [&](const HIRTryExpr& value) noexcept {
                 return lower_try(id, value, after_access, targets);
             },
-            [&](const HIRCppExpr&) noexcept { return after_access; },
         },
         hir.expression(id).value
     );

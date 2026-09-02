@@ -1,16 +1,13 @@
+import "failure_contracts/evaluation_order.hpp";
+
 struct ReadError { code: i32 }
 
-#[cpp] {
-    inline auto cv_test_effect_trace = 0;
-
-    auto cv_test_record_effect(int marker) noexcept -> int {
-        cv_test_effect_trace = cv_test_effect_trace * 10 + marker;
-        return marker;
-    }
-}
+private import(cpp) fn cv_test_reset_effect_trace();
+private import(cpp) fn cv_test_record_effect(marker: i32) -> i32;
+private import(cpp) fn cv_test_effect_trace_value() -> i32;
 
 fn effect_value(marker: i32, fail: bool, value: i32) -> i32 throw ReadError {
-    let _ = #[cpp] { cv_test_record_effect }(marker);
+    let _ = cv_test_record_effect(marker);
     if fail {
         throw ReadError { code: marker };
     }
@@ -32,58 +29,58 @@ fn pair_values(left: i32, right: i32) -> i32 {
 }
 
 test "Failure contracts: effectful expressions preserve lexical placement" {
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let composite = try {
         (effect_value(1, true, 10) + effect_value(2, false, 20))?
     } catch {
         ReadError(_) => -1,
     };
-    let composite_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let composite_trace = cv_test_effect_trace_value();
     check(composite == -1);
     check(composite_trace == 1);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let arguments = try {
         pair_values(effect_value(1, false, 3)?, effect_value(2, false, 4)?)
     } catch {
         ReadError(_) => -1,
     };
-    let argument_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let argument_trace = cv_test_effect_trace_value();
     check(arguments == 34);
     check(argument_trace == 12);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let indexed = try {
         let selected = effect_array(1, false)?[effect_value(2, false, 1)?];
         selected
     } catch {
         ReadError(_) => -1,
     };
-    let index_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let index_trace = cv_test_effect_trace_value();
     check(indexed == 9);
     check(index_trace == 12);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let conjunction = try {
         (effect_bool(1, false, false) && effect_bool(2, false, true))?
     } catch {
         ReadError(_) => true,
     };
-    let conjunction_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let conjunction_trace = cv_test_effect_trace_value();
     check(!conjunction);
     check(conjunction_trace == 1);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let disjunction = try {
         (effect_bool(1, false, true) || effect_bool(2, false, false))?
     } catch {
         ReadError(_) => false,
     };
-    let disjunction_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let disjunction_trace = cv_test_effect_trace_value();
     check(disjunction);
     check(disjunction_trace == 1);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let selected_if = try {
         let selected = (if false {
             effect_value(1, false, 10)
@@ -94,11 +91,11 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => -1,
     };
-    let if_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let if_trace = cv_test_effect_trace_value();
     check(selected_if == 20);
     check(if_trace == 2);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let branch_local_if = try {
         let selected = if false {
             effect_value(1, false, 10)?
@@ -109,11 +106,11 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => -1,
     };
-    let branch_local_if_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let branch_local_if_trace = cv_test_effect_trace_value();
     check(branch_local_if == 20);
     check(branch_local_if_trace == 2);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let selected_match = try {
         let selected = (match 1 {
             0 => effect_value(1, false, 10),
@@ -123,11 +120,11 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => -1,
     };
-    let match_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let match_trace = cv_test_effect_trace_value();
     check(selected_match == 20);
     check(match_trace == 2);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     let branch_local_match = try {
         let selected = match 1 {
             0 => effect_value(1, false, 10)?,
@@ -137,11 +134,11 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => -1,
     };
-    let branch_local_match_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let branch_local_match_trace = cv_test_effect_trace_value();
     check(branch_local_match == 20);
     check(branch_local_match_trace == 2);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     var while_index: i32 = 0;
     try {
         while effect_bool(1, false, while_index < 2)? {
@@ -150,11 +147,11 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => {},
     }
-    let while_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let while_trace = cv_test_effect_trace_value();
     check(while_index == 2);
     check(while_trace == 111);
 
-    #[cpp] { cv_test_effect_trace = 0; }
+    cv_test_reset_effect_trace();
     var for_total: i32 = 0;
     try {
         for var index: i32 = 0; effect_bool(2, false, index < 2)?; ++index {
@@ -163,7 +160,7 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
     } catch {
         ReadError(_) => {},
     }
-    let for_trace: i32 = #[cpp] { cv_test_effect_trace };
+    let for_trace = cv_test_effect_trace_value();
     check(for_total == 3);
     check(for_trace == 222);
 }

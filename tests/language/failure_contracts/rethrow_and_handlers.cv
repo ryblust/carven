@@ -1,3 +1,5 @@
+import "failure_contracts/rethrow_and_handlers.hpp";
+
 struct ReadError { code: i32 }
 struct ParseError { code: i32 }
 struct UnreachableError {}
@@ -12,14 +14,9 @@ enum PairError {
     Pair(i32, i32),
 }
 
-#[cpp] {
-    inline auto cv_test_catch_guard_calls = 0;
-
-    auto cv_test_record_catch_guard() noexcept -> bool {
-        cv_test_catch_guard_calls += 1;
-        return true;
-    }
-}
+private import(cpp) fn cv_test_reset_catch_guard_calls();
+private import(cpp) fn cv_test_record_catch_guard() -> bool;
+private import(cpp) fn cv_test_catch_guard_call_count() -> i32;
 
 fn read() -> i32 throw ReadError {
     throw ReadError { code: 7 };
@@ -140,28 +137,28 @@ fn recover_wildcard_rethrow(read_failure: bool) -> i32 {
 }
 
 fn guard_is_type_conditional() -> i32 {
-    #[cpp] { cv_test_catch_guard_calls = 0; }
+    cv_test_reset_catch_guard_calls();
     let result = try {
         fail_selected(false)?
     } catch {
-        ReadError(_) if #[cpp] { cv_test_record_catch_guard() } => -1,
+        ReadError(_) if cv_test_record_catch_guard() => -1,
         ReadError(error) => error.code,
         ParseError(error) => error.code,
     };
-    let calls: i32 = #[cpp] { cv_test_catch_guard_calls };
+    let calls = cv_test_catch_guard_call_count();
     return result + calls * 100;
 }
 
 fn overlapping_alternatives_share_one_guard() -> i32 {
-    #[cpp] { cv_test_catch_guard_calls = 0; }
+    cv_test_reset_catch_guard_calls();
     let result = try {
         fail_pair()?
     } catch {
         PairError(.Pair(1, _)) | PairError(.Pair(_, 1))
-            if #[cpp] { cv_test_record_catch_guard() } => 7,
+            if cv_test_record_catch_guard() => 7,
         PairError(_) => 0,
     };
-    let calls: i32 = #[cpp] { cv_test_catch_guard_calls };
+    let calls = cv_test_catch_guard_call_count();
     return result + calls * 10;
 }
 

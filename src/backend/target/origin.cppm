@@ -35,5 +35,4 @@ enum class TargetMaterializationReason {
     ValueCategory,
     Ownership,
     FailureTransport,
-    RawBoundary,
 };

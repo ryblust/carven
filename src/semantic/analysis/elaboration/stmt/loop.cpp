@@ -28,7 +28,7 @@ auto while_statement(
     auto& builder = module_analysis.builder();
     const auto condition = build_expression(module_analysis, scopes, control, loop.condition);
     if (!is_bool(module_analysis, expression_type(module_analysis, condition))
-        && !is_opaque_or_error(module_analysis, expression_type(module_analysis, condition))) {
+        && !is_error_type(module_analysis, expression_type(module_analysis, condition))) {
         module_analysis.emit(
             ast.expression(loop.condition).span,
             "while condition must have type bool",
@@ -104,7 +104,7 @@ auto for_statement(
                         );
                     }
                     if (!is_integer(module_analysis, expression_type(module_analysis, begin))
-                        && !is_opaque_or_error(
+                        && !is_error_type(
                             module_analysis,
                             expression_type(module_analysis, begin)
                         )) {
@@ -115,10 +115,7 @@ auto for_statement(
                         );
                     }
                     if (!is_integer(module_analysis, expression_type(module_analysis, end))
-                        && !is_opaque_or_error(
-                            module_analysis,
-                            expression_type(module_analysis, end)
-                        )) {
+                        && !is_error_type(module_analysis, expression_type(module_analysis, end))) {
                         module_analysis.emit(
                             ast.expression(bounds->end).span,
                             "range bound must have an integer type",
@@ -130,14 +127,8 @@ auto for_statement(
                             expression_type(module_analysis, begin),
                             expression_type(module_analysis, end)
                         )
-                        && !is_opaque_or_error(
-                            module_analysis,
-                            expression_type(module_analysis, begin)
-                        )
-                        && !is_opaque_or_error(
-                            module_analysis,
-                            expression_type(module_analysis, end)
-                        )) {
+                        && !is_error_type(module_analysis, expression_type(module_analysis, begin))
+                        && !is_error_type(module_analysis, expression_type(module_analysis, end))) {
                         module_analysis.emit(
                             bounds->operator_span,
                             "range bounds have incompatible types",
@@ -183,13 +174,12 @@ auto for_statement(
                                 DiagnosticCode::AccessTextRangeBinding
                             );
                         }
-                    } else if (std::holds_alternative<HIRForeignTypeValue>(iterable_type)
-                               || std::holds_alternative<HIRErrorTypeValue>(iterable_type)) {
+                    } else if (std::holds_alternative<HIRErrorTypeValue>(iterable_type)) {
                         inferred_binding_type = expression_type(module_analysis, value);
                     } else {
                         module_analysis.emit(
                             ast.expression(std::get<ASTExprID>(range.iterable)).span,
-                            "range source must be an array or an explicit C++ boundary",
+                            "range source must be an array or text range",
                             DiagnosticCode::TypeRangeIterable
                         );
                         inferred_binding_type = error_type(module_analysis, statement_span);
@@ -203,7 +193,7 @@ auto for_statement(
                 if (declared_binding_type.has_value()
                     && inferred_binding_type.has_value()
                     && !compatible(module_analysis, *declared_binding_type, *inferred_binding_type)
-                    && !is_opaque_or_error(module_analysis, *inferred_binding_type)) {
+                    && !is_error_type(module_analysis, *inferred_binding_type)) {
                     module_analysis.emit(
                         range.type.has_value() ? ast.type(*range.type).span : statement_span,
                         "range binding type is incompatible with the element type",
@@ -269,7 +259,7 @@ auto for_statement(
                     condition =
                         build_expression(module_analysis, scopes, control, *c_style.condition);
                     if (!is_bool(module_analysis, expression_type(module_analysis, *condition))
-                        && !is_opaque_or_error(
+                        && !is_error_type(
                             module_analysis,
                             expression_type(module_analysis, *condition)
                         )) {

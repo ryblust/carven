@@ -23,11 +23,6 @@ auto is_error(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
     return valid_type(hir, type) && std::holds_alternative<HIRErrorTypeValue>(hir.type(type).value);
 }
 
-auto is_foreign(SemanticDraftView hir, HIRTypeID type) noexcept -> bool {
-    return valid_type(hir, type)
-        && std::holds_alternative<HIRForeignTypeValue>(hir.type(type).value);
-}
-
 } // namespace
 
 auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<HIRBuiltinType> {
@@ -46,9 +41,6 @@ auto check_unary_operator(
                                                                  : OperatorResult::Operand;
     if (!valid_type(hir, operand) || is_error(hir, operand)) {
         return {.status = UnaryOperatorStatus::Error, .result = result};
-    }
-    if (is_foreign(hir, operand)) {
-        return {.status = UnaryOperatorStatus::Foreign, .result = result};
     }
     const auto builtin = builtin_type(hir, operand);
     switch (op) {
@@ -102,13 +94,6 @@ auto check_binary_operator(
         return {
             .equality_supported = !equality || equality_capable,
             .status = BinaryOperatorStatus::Error,
-            .result = result,
-        };
-    }
-    if (is_foreign(hir, left) || is_foreign(hir, right)) {
-        return {
-            .equality_supported = !equality || equality_capable,
-            .status = BinaryOperatorStatus::Foreign,
             .result = result,
         };
     }
@@ -171,9 +156,6 @@ auto check_cast(
         || is_error(hir, source)
         || is_error(hir, target)) {
         return {.status = CastStatus::Error, .kind = std::nullopt};
-    }
-    if (is_foreign(hir, source) || is_foreign(hir, target)) {
-        return {.status = CastStatus::Invalid, .kind = std::nullopt};
     }
     if (source == target) {
         return {

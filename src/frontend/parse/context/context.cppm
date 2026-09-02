@@ -8,7 +8,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -126,14 +126,19 @@ private:
     auto remember_speculative_failure(ParseFailure failure) noexcept -> void;
     static auto join(Span first, Span last) noexcept -> Span;
     auto parse_module_reference() noexcept -> ASTModuleReference;
-    auto parse_import() noexcept -> ASTImportID;
+    auto parse_cpp_header_import() noexcept -> ASTCppHeaderImport;
+    auto parse_module_import() noexcept -> ASTModuleImportID;
     auto parse_top_level_item() noexcept -> std::optional<ASTItemID>;
     auto parse_enum(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTEnumDecl>>;
     auto parse_struct(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTStructDecl>>;
-    auto parse_function(ASTDeclarationVisibility visibility) noexcept
-        -> std::optional<std::pair<Span, ASTFunctionDecl>>;
+    auto parse_cpp_declaration_form(Token keyword) noexcept -> Span;
+    auto parse_function(
+        ASTDeclarationVisibility visibility,
+        std::optional<ASTCppExportForm> cpp_export,
+        std::optional<Span> cpp_import
+    ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>>;
     auto parse_constant(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTConstantDecl>>;
     auto parse_test() noexcept -> std::optional<std::pair<Span, ASTTestDecl>>;
@@ -204,5 +209,5 @@ private:
         -> std::optional<ParsedNumericLiteral>;
     auto expect_string_literal(std::string_view message) noexcept
         -> std::optional<ParsedStringLiteral>;
-    auto cpp_region(Span full_span) const noexcept -> CppRegion;
+    auto make_cpp_source_fragment(Span full_span) const noexcept -> ASTCppSourceFragment;
 };

@@ -14,6 +14,7 @@ publication path.
 
 ```text
 SemanticProgram + TargetGenerationRequest
+  -> generate_artifacts
   -> TargetProgram::build(move(SemanticProgram), move(request))
        -> names and module identities
        -> type recipes and target-call signatures
@@ -102,15 +103,14 @@ artifacts, and source attribution.
 
 Supported consumer modes and toolchain responsibilities are defined by
 [compatibility.md](compatibility.md#compiler-and-toolchain-boundary). The
-`#[cpp]` boundary and stable diagnostic identities are defined by
-[semantics.md](semantics.md).
+C++ interoperation contract and stable diagnostic identities are defined by
+[semantics.md](semantics.md#c-interoperation).
 
 ## Types, target signatures, and names
 
 Every semantic type has one target recipe. Recipes distinguish intrinsic and
 nominal identities, arrays, callable and function-reference signatures,
-deduced/foreign forms, parameter passing policy, and the traits required by
-lowering.
+parameter passing policy, and the traits required by lowering.
 
 `TargetArrayExtent` is a type-owned value. An array type can therefore be shared
 without treating its extent as an expression occurrence. Array construction
@@ -118,16 +118,34 @@ expressions retain their own occurrence-owned extent expression when the
 generated syntax requires one.
 
 Every concrete callable and first-class callable signature maps to one
-interned `TargetCallSignatureRecipe`. Equal target signatures may share
+interned `TargetCallSignature`. Equal target signatures may share
 identity. Parameter passing is decided once and referenced by every declaration,
 call, callable view, and type materialization.
 
 A target-call signature is a compiler-private identity for generated C++
-parameter, result, value-category, and carrier forms; it is not a platform ABI.
+parameter passing, result, failure profile, and optional failure transport; it
+is not a platform ABI.
 
 Stable target names are allocated once by the target program. Relative and
 qualified spellings are context projections of the same identity. Unit-local
 allocation is limited to bindings, temporaries, and synthetic labels.
+
+`import(cpp)` bridges, `export(cpp)` declarations, and `export(cpp)` façades
+consume the callable's ordinary `TargetCallSignature`. Its
+`TargetCallParameter` facts select parameter passing while their types, and the
+result, lower through canonical target type recipes. Unicode checks derive
+`char` from the intrinsic target recipe, and result omission uses the
+target-type `void` query.
+
+`import(cpp)` direction comes from `HIRCppImportImplementation`; `export(cpp)`
+direction comes from the function's `cpp_export_form_origin`. The function
+symbol identifies the owning module, and the function declaration name supplies
+the provider spelling.
+
+`import(cpp)` lowering derives the global provider spelling from the function
+name and the owning module from its symbol. It emits a `const auto` binding
+initialized with `std::addressof(::provider)` and calls that binding. C++ name
+lookup and downstream compilation resolve the supplied provider.
 
 ## Failure profiles and carrier transport
 
@@ -145,8 +163,7 @@ incomparable profiles, and result changes are invariant violations.
 Lowering applies the sealed classifier to an actual occurrence. It does not
 recompute failure order, set inclusion, or carrier necessity in separate syntax
 domains. Runtime `Outcome` and `FunctionRef` remain private generated-code
-support; their representation and platform ABI are not a handwritten-C++
-compatibility promise.
+support and are outside the public C++ API.
 
 ## Interface and artifact graph
 
@@ -162,8 +179,27 @@ completeness rules:
 Each `TargetArtifactSpec` has one typed identity and contains its logical path,
 role, source-mapping policy, directive groups, typed dependencies, and complete
 schedule. Interface schedules own component members, forward declarations, and
-declarations. Module schedules own nominal implementation order, opaque
-preamble items, private declarations, definitions, tests, and entry placement.
+Carven declarations. C++ API header schedules own only the `export(cpp)`
+function declarations for one module. Module schedules own nominal
+implementation order, private declarations, definitions, `export(cpp)`
+façades, tests, and entry placement. The semantic module itself owns its
+ordered source-fragment payload origins. Test-entry schedules own only the
+generated default runner.
+
+Private generated interfaces and module implementations include the
+version-matched `carven/runtime/runtime.hpp` core support prelude. The prelude
+supplies their runtime components and standard-library facilities. Generated
+test support uses `carven/std/testing/testing.hpp`.
+
+C++ header dependencies are ordered module-implementation directives and retain
+every source occurrence. Lowering slices every C++ source fragment independently
+from provenance into one `TargetRawFragment`, preserving its own attribution
+and source order. These fragments are emitted at global scope after
+compiler-owned and user header includes and before generated namespaces.
+
+A C++ API header is a self-contained stable-interface artifact. Its directives
+contain `#pragma once` and the standard headers required by its public scalar
+declarations.
 
 The component anchor and public logical-path rules are governed by
 [compatibility.md](compatibility.md#generated-artifacts). Unit lowering resolves
@@ -178,8 +214,8 @@ barrier. The sequencer materializes a value only when required by
 non-commuting access, ownership transfer, C++ value category or lifetime,
 failure transport, or an opaque boundary.
 
-Lowering prefers direct structured C++ conditionals, loops, returns, matches,
-and regions. A narrow synthetic route is used only where C++ has no direct
+Lowering prefers direct structured C++ conditionals, loops, returns, and
+matches. A narrow synthetic route is used only where C++ has no direct
 structured form and the route preserves initialization and scope-entry rules.
 Synthetic control remains unit-local and is checked by the unit verifier.
 
@@ -249,9 +285,11 @@ returning the unit. The validator checks at least:
 
 The pure validation function is an owner-local test seam, not a recoverable
 product error channel. Its scope is the target graph and explicitly modeled
-synthetic-control rules. C++ and `#[cpp]` validation occur at the boundaries
-defined by [compatibility.md](compatibility.md#compiler-and-toolchain-boundary)
-and [semantics.md](semantics.md#cpp-boundary).
+synthetic-control rules. Carven validates the declared C++ boundary shape;
+opaque source-fragment/header contents and provider conformance remain at the
+downstream boundary defined by
+[compatibility.md](compatibility.md#compiler-and-toolchain-boundary) and
+[semantics.md](semantics.md#c-interoperation).
 
 ## Rendering and artifact collection
 

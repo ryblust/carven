@@ -1,6 +1,6 @@
 module carven:driver.options.impl;
 
-import :compilation.request;
+import :backend.generation.request;
 import :driver.options;
 import std;
 
@@ -27,7 +27,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
     -> std::expected<CompileCommandOptions, CompileOptionError> {
     auto request = CompileCommandOptions {
         .destination = DirectoryArtifactDestination {.root = "."},
-        .test_mode = TestEmissionMode::None,
+        .test_mode = TestGenerationMode::None,
         .linkage_domain = std::nullopt,
         .input_paths = {},
     };
@@ -83,8 +83,8 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
                     compile_option_error(CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce)
                 );
             }
-            request.test_mode = arg == "--tests=default" ? TestEmissionMode::DefaultRunner
-                                                         : TestEmissionMode::ExternalRunner;
+            request.test_mode = arg == "--tests=default" ? TestGenerationMode::DefaultRunner
+                                                         : TestGenerationMode::ExternalRunner;
             has_test_option = true;
         } else if (arg == "-o" || arg == "--output-dir") {
             auto path = next_output_path(index, arg);

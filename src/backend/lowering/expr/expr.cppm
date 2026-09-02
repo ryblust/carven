@@ -39,7 +39,6 @@ enum class MaterializationKind {
     ReadReference,
     WriteReference,
     Take,
-    Preserve,
     Snapshot,
 };
 
@@ -93,9 +92,6 @@ public:
         HIRExprID expression
     ) noexcept -> bool;
 };
-
-auto cpp_bool_cast(TargetCallableLowerer& context, TargetExprID expression) noexcept
-    -> TargetExprID;
 
 auto static_member_expression(
     TargetModuleLowerer& context,
@@ -194,7 +190,6 @@ auto ordered_call(
     TargetCallableLowerer& context,
     LoweredExpression callee,
     std::span<const HIRCallArgument> arguments,
-    bool foreign_callee,
     const TargetControlDestinations& control
 ) noexcept -> LoweredExpression;
 
@@ -332,12 +327,6 @@ auto lower_expression(
     HIRExprID id,
     const HIRMemberExpr& expression,
     const TargetControlDestinations& control
-) noexcept -> LoweredExpression;
-
-auto lower_expression(
-    TargetCallableLowerer& context,
-    HIRExprID id,
-    const HIRCppExpr& expression
 ) noexcept -> LoweredExpression;
 
 auto lower_expression(

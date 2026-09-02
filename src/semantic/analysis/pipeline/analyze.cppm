@@ -6,4 +6,5 @@ import :frontend.program;
 import :semantic.hir;
 import std;
 
-auto analyze(ParsedBatch syntax) noexcept -> std::expected<Diagnosed<SemanticProgram>, Diagnostics>;
+auto analyze(SyntaxProgram syntax) noexcept
+    -> std::expected<Diagnosed<SemanticProgram>, Diagnostics>;

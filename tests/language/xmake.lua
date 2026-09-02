@@ -26,39 +26,35 @@ end
 
 target("carven-test-language")
     set_default(false)
-    add_packages("carven")
     add_rules("@carven/carven", {tests = "default"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++20")
+    add_includedirs(language_dir)
     add_files(table.unpack(language_sources))
     after_load(use_local_carven)
-    add_tests("language", {realtime_output = false, group = "language"})
+    add_tests("language", {group = "language"})
 
-target("carven-test-language-cxx23-compile")
+target("carven-test-language-cxx23-compatibility")
     set_default(false)
-    add_packages("carven")
     add_rules("@carven/carven", {tests = "default"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++23")
+    add_includedirs(language_dir)
     add_files(table.unpack(language_sources))
     after_load(use_local_carven)
-    add_tests("cxx23-compile", {group = "language"})
-    on_test(function ()
-        return true
-    end)
+    add_tests("cxx23-compatibility", {build_should_pass = true, group = "language"})
 
-local custom_entry_source = path.join(language_dir, "testing", "main.cv")
+local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 
-target("carven-test-language-custom-entry")
+target("carven-test-language-entry-point")
     set_default(false)
-    add_packages("carven")
     add_rules("@carven/carven", {tests = "external"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++20")
-    add_files(custom_entry_source)
+    add_includedirs(language_dir)
+    add_files(entry_point_source)
     after_load(use_local_carven)
-    add_tests("custom-entry", {
-        realtime_output = false,
+    add_tests("entry-point", {
         group = "language",
         runargs = {"alpha", "beta"},
     })
@@ -67,11 +63,11 @@ local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
 target("carven-test-language-reporting")
     set_default(false)
-    add_packages("carven")
     add_rules("@carven/carven", {tests = "external"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++20")
+    add_includedirs(language_dir)
     add_files(reporting_source)
     add_files(path.join(language_dir, "testing", "reporting_runner.cpp"))
     after_load(use_local_carven)
-    add_tests("reporting", {realtime_output = false, group = "language"})
+    add_tests("reporting", {group = "language"})

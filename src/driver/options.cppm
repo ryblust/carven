@@ -1,6 +1,6 @@
 module carven:driver.options;
 
-import :compilation.request;
+import :backend.generation.request;
 import std;
 
 struct DirectoryArtifactDestination final {
@@ -14,7 +14,7 @@ using ArtifactDestination =
 
 struct CompileCommandOptions final {
     ArtifactDestination destination;
-    TestEmissionMode test_mode;
+    TestGenerationMode test_mode;
     std::optional<LinkageDomain> linkage_domain;
     std::vector<std::string_view> input_paths;
 };

@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.diagnostics.failures;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :diagnostics.diagnostic;
@@ -42,16 +43,16 @@ TEST_CASE("Compiler diagnostics: failure copyability closes after nominal signat
         "struct Wrapper { cause: Later } "
         "struct Later {}"
     );
-    const auto input = CompilationInput {
+    const auto input = CompilationModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("forward.failure"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = std::span(&input, 1)},
+        CompilationRequest {.modules = std::span(&input, 1)},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
         }
     );
@@ -88,15 +89,15 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
         auto sources = SourceManager();
         const auto source_id =
             *sources.append_virtual("catch-warning.cv", std::string(expectation.source));
-        const auto input = CompilationInput {
+        const auto input = CompilationModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("catch_warning"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.inputs = std::span(&input, 1)},
+            CompilationRequest {.modules = std::span(&input, 1)},
             TargetGenerationRequest {
-                .tests = TestEmissionMode::None,
+                .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:catch-warnings").value(),
             }
         );
@@ -283,26 +284,6 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
             .primary_text = {},
         },
-        {
-            .name = "stored Foreign array element",
-            .source = "fn invalid() { let values = [#[cpp] { 1 }]; }",
-            .code = "CV-TYPE-FOREIGN-ESCAPE",
-            .primary_text = {},
-        },
-        {
-            .name = "captured Foreign value",
-            .source = "fn invalid() { let native = #[cpp] { 1 }; "
-                      "let closure = [native]() { let value: i32 = native; }; }",
-            .code = "CV-TYPE-FOREIGN-ESCAPE",
-            .primary_text = {},
-        },
-        {
-            .name = "returned Foreign value",
-            .source = "fn invalid() { let closure = []() { return #[cpp] { 1 }; }; "
-                      "let value: i32 = closure(); }",
-            .code = "CV-TYPE-FOREIGN-ESCAPE",
-            .primary_text = {},
-        },
     });
 
     for (const auto& expectation : cases) {
@@ -310,16 +291,16 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
         auto sources = SourceManager();
         const auto source_id =
             *sources.append_virtual("diagnostic.cv", std::string(expectation.source));
-        const auto input = CompilationInput {
+        const auto input = CompilationModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("diagnostic"),
         };
 
         const auto result = compile(
             sources,
-            CompilationRequest {.inputs = std::span(&input, 1)},
+            CompilationRequest {.modules = std::span(&input, 1)},
             TargetGenerationRequest {
-                .tests = TestEmissionMode::None,
+                .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
             }
         );

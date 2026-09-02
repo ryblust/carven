@@ -7,6 +7,7 @@ import :semantic.analysis.elaboration.decl;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.elaboration.scopes;
 import :semantic.analysis.elaboration.types;
+import :semantic.analysis.interop;
 import :semantic.hir;
 import :semantic.hir.access;
 import :semantic.hir.decl;
@@ -32,8 +33,9 @@ auto elaborate_function_contract(
     auto scopes = ScopeStack();
     auto& builder = module_analysis.builder();
     const auto function_name = module_analysis.spelling(function.name_span);
+    const auto is_cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     auto entry_point = std::optional<HIREntryPointKind>();
-    if (function_name == "main") {
+    if (function_name == "main" && !is_cpp_import) {
         const auto current_origin = module_analysis.origin(function.name_span);
         if (const auto first_entry = module_analysis.entry_points().origin()) {
             auto diagnostic = DiagnosticBuilder(
@@ -121,8 +123,14 @@ auto elaborate_function_contract(
         : (catalog_symbol->visibility == DeclarationVisibility::Module
                ? SemanticFailureContractKind::Inferred
                : SemanticFailureContractKind::UndeclaredPublished);
-    const auto callable =
-        builder.append_callable(parameter_types, result, failures, failure_contract);
+    diagnose_cpp_boundary_declaration(module_analysis, function, parameter_types, result);
+    const auto callable = is_cpp_import
+        ? builder.append_cpp_import_callable(
+              parameter_types,
+              result,
+              module_analysis.origin(std::get<ASTCppImportForm>(function.implementation).span)
+          )
+        : builder.append_body_callable(parameter_types, result, failures, failure_contract);
     definitions.define(
         catalog_function->function,
         HIRFunctionDecl {
@@ -131,6 +139,11 @@ auto elaborate_function_contract(
             .visibility = catalog_symbol->visibility,
             .name = builder.intern_string(catalog_symbol->name),
             .callable = callable,
+            .parameter_origins = function.parameters
+                | std::views::transform([&](const ASTFunctionParameter& parameter) noexcept {
+                                     return module_analysis.origin(parameter.span);
+                                 })
+                | std::ranges::to<std::vector>(),
             .result = result,
             .result_origin = module_analysis.origin(
                 function.result_type.has_value()
@@ -139,6 +152,9 @@ auto elaborate_function_contract(
             ),
             .symbol = symbol,
             .entry_point = entry_point,
+            .cpp_export_form_origin = function.cpp_export.has_value()
+                ? std::optional {module_analysis.origin(function.cpp_export->span)}
+                : std::nullopt,
         }
     );
     set_symbol_type(module_analysis, symbol, builder.intern_function_type(callable));

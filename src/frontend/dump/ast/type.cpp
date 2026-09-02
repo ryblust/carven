@@ -6,7 +6,7 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -121,15 +121,20 @@ auto ASTDumper::render_numeric_literal(
     append_line(nested_prefix, true, std::format("suffix {}", numeric_suffix(value)));
 }
 
-auto ASTDumper::render_cpp_region(
-    const CppRegion& region,
+auto ASTDumper::render_cpp_source_fragment(
+    const ASTCppSourceFragment& fragment,
     std::string_view prefix,
     bool is_last,
     std::string_view field
 ) noexcept -> void {
-    append_line(prefix, is_last, std::format("{}CppRegion", field));
+    append_line(prefix, is_last, std::format("{}CppSourceFragment", field));
     const auto nested_prefix = child_prefix(prefix, is_last);
-    append_line(nested_prefix, true, std::format("body {}", source_label(region.body_span)));
+    append_line(nested_prefix, false, std::format("form {}", source_label(fragment.form_span)));
+    append_line(
+        nested_prefix,
+        true,
+        std::format("payload {}", source_label(fragment.payload_span))
+    );
 }
 
 auto ASTDumper::render_named_type_children(

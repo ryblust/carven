@@ -2,6 +2,7 @@ module carven:semantic.hir.type;
 
 import :semantic.hir.access;
 import :semantic.hir.ids;
+import :semantic.hir.interop;
 import std;
 
 enum class HIRBuiltinType {
@@ -70,11 +71,20 @@ struct HIRCallableSignature final {
     auto operator<=>(const HIRCallableSignature&) const noexcept = default;
 };
 
+struct HIRBodyImplementation final {
+    BodyID body;
+};
+
+using HIRCallableImplementation = std::variant<HIRBodyImplementation, HIRCppImportImplementation>;
+
 struct HIRCallable final {
     std::vector<HIRFunctionParameterType> parameters;
     HIRTypeID result;
-    BodyID body;
+    HIRCallableImplementation implementation;
 };
+
+auto callable_body_id(const HIRCallable& callable) noexcept -> std::optional<BodyID>;
+auto cpp_import_form_origin(const HIRCallable& callable) noexcept -> std::optional<ProgramOriginID>;
 
 struct HIRCallableFlow final {
     FailureSetID effective_failure_set;
@@ -96,10 +106,6 @@ struct HIRClosureTypeValue final {
     constexpr auto operator<=>(const HIRClosureTypeValue&) const noexcept = default;
 };
 
-struct HIRForeignTypeValue final {
-    constexpr auto operator<=>(const HIRForeignTypeValue&) const noexcept = default;
-};
-
 struct HIRErrorTypeValue final {
     constexpr auto operator<=>(const HIRErrorTypeValue&) const noexcept = default;
 };
@@ -112,7 +118,6 @@ using HIRTypeValue = std::variant<
     HIRFunctionTypeValue,
     HIRFunctionRefTypeValue,
     HIRClosureTypeValue,
-    HIRForeignTypeValue,
     HIRErrorTypeValue>;
 
 struct HIRType final {

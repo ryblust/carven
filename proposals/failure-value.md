@@ -42,8 +42,9 @@ real API. Move-only values, owning references, and managed references need not
 share one design or ship together.
 
 Async completion is outside this proposal and remains owned by
-[async.md](async.md). Public C++ failure mapping remains owned by
-[cpp-interop.md](cpp-interop.md).
+[async.md](async.md). Public C++ failure mapping is outside this proposal and
+must extend the current
+[C++ interoperation contract](../docs/semantics.md#c-interoperation).
 
 ## Open decisions
 
@@ -85,4 +86,4 @@ rejected examples that expose invalid ownership or lifetime.
 - [Failure-contract semantics](../docs/semantics.md#failure-contracts)
 - [Classes and ownership proposal](classes.md)
 - [Async proposal](async.md)
-- [C++ interop proposal](cpp-interop.md)
+- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)

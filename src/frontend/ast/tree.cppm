@@ -1,7 +1,18 @@
 module carven:frontend.ast.tree;
 
+import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :source.text;
+import std;
+
+struct ASTModule final {
+    Span span;
+    std::vector<ASTModuleImportID> module_imports;
+    std::vector<ASTCppHeaderImport> cpp_header_imports;
+    std::vector<ASTCppSourceFragment> cpp_source_fragments;
+    std::vector<ASTItemID> items;
+};
 
 class SyntaxTree final {
 public:

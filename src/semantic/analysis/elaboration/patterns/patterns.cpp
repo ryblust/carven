@@ -291,7 +291,7 @@ auto pattern_alternatives(
                     const auto constrained =
                         constraint_type(module_analysis, scopes, control, constraint.operand);
                     if (!compatible(module_analysis, expected, constrained)
-                        && !is_opaque_or_error(module_analysis, expected)) {
+                        && !is_error_type(module_analysis, expected)) {
                         module_analysis.emit(
                             source_pattern.span,
                             "type constraint is incompatible with the subject",

@@ -7,6 +7,7 @@ module carven:test.internal.backend.generation.program;
 import :artifacts;
 import :backend.generate;
 import :backend.generation.program;
+import :backend.generation.request;
 import :compilation.request;
 import :frontend.program.parse;
 import :semantic.analyze;
@@ -22,7 +23,7 @@ namespace {
 
 auto analyze_failure_profiles() noexcept -> SemanticProgram {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationInput>();
+    auto inputs = std::vector<CompilationModuleInput>();
     const auto append = [&](std::string_view path_text, std::string source_text) noexcept {
         const auto source =
             sources.append_virtual(std::format("{}.cv", path_text), std::move(source_text));
@@ -43,7 +44,7 @@ auto analyze_failure_profiles() noexcept -> SemanticProgram {
         "private fn same_module() throw YFailure + BFailure {}\n"
         "private fn combined() throw AFailure + YFailure + ZFailure + BFailure {}\n"
     );
-    auto parsed = parse(sources, inputs);
+    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     REQUIRE(analyzed.has_value());
@@ -83,7 +84,7 @@ auto profile_names(const TargetArtifactView& artifact_view, FailureSetID failure
 TEST_CASE("Target program: every failure set has one stable nominal representation order") {
     auto semantic = analyze_failure_profiles();
     const auto request = TargetGenerationRequest {
-        .tests = TestEmissionMode::None,
+        .test_mode = TestGenerationMode::None,
         .linkage_domain = *LinkageDomain::explicit_value("failure-profile-test"),
     };
     const auto cross_module = callable_failure_set(semantic, 0);
@@ -111,7 +112,7 @@ TEST_CASE("Target program: artifact graph is typed and dependency-first") {
     const auto program = TargetProgram::build(
         std::move(semantic),
         TargetGenerationRequest {
-            .tests = TestEmissionMode::DefaultRunner,
+            .test_mode = TestGenerationMode::DefaultRunner,
             .linkage_domain = *LinkageDomain::explicit_value("artifact-graph-test"),
         }
     );
@@ -141,7 +142,7 @@ TEST_CASE("Target program: carrier conversion uses one sealed classifier") {
     const auto program = TargetProgram::build(
         std::move(semantic),
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carrier-classifier-test"),
         }
     );

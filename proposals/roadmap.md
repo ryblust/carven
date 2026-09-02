@@ -9,16 +9,12 @@ not a commitment that every listed direction ships in that milestone.
 
 ## Current design frontier
 
-Compiler architecture, target ownership, and failure-effect realization are
+Compiler architecture, target ownership, failure-effect realization, and the
+current [C++ interoperation contract](../docs/semantics.md#c-interoperation) are
 implemented foundations. Active proposals advance according to their semantic
-dependencies and readiness.
-
-The next shared prerequisite in the type and interoperation track is the
-concrete scalar boundary owned by the [C++ interop](cpp-interop.md) proposal. It
-replaces expression/statement typed `#[cpp]` with top-level companion source
-plus explicit `import(cpp)`/`export(cpp)` contracts. Documentation comments are
-independent. Async, the memory model, and threading follow the dependency edges
-below.
+dependencies and readiness. Generic participation in the C++ boundary is the
+next dependent slice. Documentation comments are independent. Async, the
+memory model, and threading follow the dependency edges below.
 
 ## Type system and abstraction track
 
@@ -26,17 +22,16 @@ The preserved order is:
 
 | Order | Design slice | Owner | Unlocks |
 | --- | --- | --- | --- |
-| 1 | Complete concrete C++ scalar interop boundary | [C++ interop](cpp-interop.md) | Explicit provider/consumer contracts and a replacement for inline typed `#[cpp]` |
-| 2 | Generic participation in typed adapters and finite instance expansion | [Generics](generics.md) | A closed generic implementation contract |
-| 3 | Parametric generic core and concrete instance identity | [Generics](generics.md) | Static capabilities and reusable generic consumers |
-| 4 | Concept, canonical evidence, coherence, and associated-type normalization | [Generics](generics.md) | Operator capabilities and generic library types |
-| 5 | Closed operator capability surface | [Operators](operators.md) | Generic operators without unrestricted overload lookup |
-| 6 | Ownership and dynamic-value forms | [Classes](classes.md) | Dynamic interfaces and runtime polymorphism |
+| 1 | Generic participation in explicit C++ boundary contracts and finite instance expansion | [Generics](generics.md) | A closed generic implementation contract |
+| 2 | Parametric generic core and concrete instance identity | [Generics](generics.md) | Static capabilities and reusable generic consumers |
+| 3 | Concept, canonical evidence, coherence, and associated-type normalization | [Generics](generics.md) | Operator capabilities and generic library types |
+| 4 | Closed operator capability surface | [Operators](operators.md) | Generic operators without unrestricted overload lookup |
+| 5 | Ownership and dynamic-value forms | [Classes](classes.md) | Dynamic interfaces and runtime polymorphism |
 
-Generics owns only future generic participation in typed adapters; it does not
-own the interop boundary's complete input, output, control, failure, and
-lifetime contract. Its remaining typed-`#[cpp]` terminology must be revised to
-the explicit adapter model before that slice can activate.
+Generics owns only generic participation in explicit `import(cpp)` and
+`export(cpp)` contracts; it does not own the C++ boundary's input, output,
+control, failure, and lifetime contract. It names provider and façade roles
+directly rather than introducing a generic adapter abstraction.
 
 `Result`, `Option`, alias/distinct types, owning callable values, static meta,
 and runtime reflection require dedicated proposals before they become active
@@ -51,14 +46,15 @@ The current failure contract and compiler realization are closed.
 Only future features that cross its boundary reactivate design work:
 
 ```text
-failure-effect private Outcome --> C++ interop failure adapter
+failure-effect private Outcome --> C++ interoperation failure contract
 failure-effect semantic facts + async suspension facts --> async completion transport
 ```
 
-The [C++ interop](cpp-interop.md) proposal owns any stable handwritten-C++
-surface, even when it adapts a private generated protocol. The
-[async](async.md) proposal owns suspension, cancellation, and completion;
-failure effects supply only their existing structured semantic facts.
+Any public C++ failure mapping must extend the permanent
+[C++ interoperation contract](../docs/semantics.md#c-interoperation), even when
+it adapts a private generated protocol. The [async](async.md) proposal owns
+suspension, cancellation, and completion; failure effects supply only their
+existing structured semantic facts.
 
 Richer failure-value ownership is explored in
 [failure-value.md](failure-value.md).
@@ -74,28 +70,27 @@ cross-proposal edges are:
 ```text
 classes: owner/shared value forms -------+
                                          +--> memory model --> threading
-C++ interop: explicit cross-thread use --+
+C++ interoperation: explicit cross-thread use --+
 
 memory model + threading --> cross-thread async
 ```
 
 Same-thread async has no memory-model or threading dependency. Threading can
-also exist without async. The [classes](classes.md) and
-[C++ interop](cpp-interop.md) arrows activate memory-model work only when
-those proposals introduce a concrete cross-thread value or use case.
+also exist without async. The classes and C++ interoperation arrows activate
+memory-model work only when a concrete cross-thread value or use case exists.
 
-## Interoperation track
+## C++ interoperation track
 
-The [C++ interop](cpp-interop.md) proposal remains opt-in. Its concrete scalar
-scope covers top-level companion source, strict `import(cpp)`, and scalar
-`export(cpp)`.
-Future generic provider or consumer surfaces depend on both that boundary and
-the generic instance contract.
+The implemented [C++ interoperation](../docs/semantics.md#c-interoperation)
+boundary is opt-in. Its concrete scalar scope covers C++ header imports,
+top-level C++ source fragments, `import(cpp)`, and `export(cpp)`. Generic
+provider or façade surfaces remain inactive until a concrete use case requires
+both that boundary and the generic instance contract.
 
 Broader ABI stability, precompiled distribution, plugin loading, and open-world
-discovery require separate proposals. Public failure mapping is a C++ interop
-decision; adapting a private generated protocol does not make that protocol
-stable.
+discovery require separate proposals. Public failure mapping is a C++
+interoperation decision; adapting a private generated protocol does not make
+that protocol stable.
 
 ## Deferred infrastructure
 

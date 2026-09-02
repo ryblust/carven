@@ -3,10 +3,11 @@ module carven:backend.generate.impl;
 import :backend.emit;
 import :backend.generate;
 import :backend.generation.program;
+import :backend.generation.request;
 import :backend.lower;
 import std;
 
-auto generate_target(SemanticProgram semantic, TargetGenerationRequest request) noexcept
+auto generate_artifacts(SemanticProgram semantic, TargetGenerationRequest request) noexcept
     -> ArtifactSet {
     const auto program = TargetProgram::build(std::move(semantic), std::move(request));
     auto artifacts = std::vector<GeneratedArtifact>();

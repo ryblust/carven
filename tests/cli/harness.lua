@@ -30,10 +30,6 @@ local function compare_output(failures, stream, actual, expected)
 end
 
 function main(target, opt, case_spec)
-    local bytes = import("core.base.bytes")
-    local pipe = import("core.base.pipe")
-    local process = import("core.base.process")
-    local scheduler = import("core.base.scheduler")
     local case_name = case_name_from_test_name(opt.name)
     local case_dir = path.join(os.projectdir(), "tests", "cli", case_name)
     if not case_spec then
@@ -60,65 +56,41 @@ function main(target, opt, case_spec)
         end
     end
 
-    local function read_pipe(reader)
-        local chunks = {}
-        local buffer = bytes(4096)
-        while true do
-            local count, data = reader:read(buffer)
-            if count > 0 then
-                table.insert(chunks, data:str())
-            elseif count == 0 then
-                if reader:wait(pipe.EV_READ, -1) ~= pipe.EV_READ then
-                    break
-                end
-            else
-                break
-            end
-        end
-        reader:close()
-        return table.concat(chunks)
-    end
-
     local failures = {}
     local function run_process(args, step_index)
-        local stdout_reader, stdout_writer = pipe.openpair("AB")
-        local stderr_reader, stderr_writer = pipe.openpair("AB")
-        local child = process.openv(
+        local stdout_file = path.join(work_dir, ".stdout-" .. step_index)
+        local stderr_file = path.join(work_dir, ".stderr-" .. step_index)
+        local exit_code, run_error = os.execv(
             path.absolute(target:dep("carven"):targetfile(), os.projectdir()),
             args,
-            {curdir = work_dir, stdout = stdout_writer, stderr = stderr_writer}
+            {
+                try = true,
+                timeout = 30000,
+                curdir = work_dir,
+                stdout = stdout_file,
+                stderr = stderr_file,
+            }
         )
-        stdout_writer:close()
-        stderr_writer:close()
-        local stdout, stderr = "", ""
-        local capture_group = "carven-cli-capture-" .. case_name .. "-" .. step_index
-        scheduler.co_group_begin(capture_group, function()
-            scheduler.co_start(function() stdout = read_pipe(stdout_reader) end)
-            scheduler.co_start(function() stderr = read_pipe(stderr_reader) end)
-        end)
-        local wait_result, exit_code = child:wait(30000)
-        if wait_result == 0 then
-            child:kill()
-            child:wait(-1)
-        end
-        scheduler.co_group_wait(capture_group)
-        child:close()
-        return wait_result, exit_code, normalize_newlines(stdout), normalize_newlines(stderr)
+        local stdout = os.isfile(stdout_file) and io.readfile(stdout_file) or ""
+        local stderr = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
+        os.tryrm(stdout_file)
+        os.tryrm(stderr_file)
+        return exit_code, run_error, normalize_newlines(stdout), normalize_newlines(stderr)
     end
 
     local function inspect_step(step, step_index)
-        local wait_result, exit_code, stdout, stderr = run_process(step.args, step_index)
+        local exit_code, run_error, stdout, stderr = run_process(step.args, step_index)
         opt.stdout = stdout ~= "" and stdout or nil
         opt.stderr = stderr ~= "" and stderr or nil
         local prefix = #((case_spec.steps) or {}) > 0 and ("step " .. step_index .. ": ") or ""
         local expected_exit_code = step.exit_code or 0
-        if wait_result == 0 then
-            table.insert(failures, prefix .. "carven process exceeded 30 second timeout")
-        elseif wait_result ~= 1 then
-            table.insert(failures, prefix .. "carven process did not exit normally: " .. tostring(exit_code))
-        elseif exit_code ~= expected_exit_code then
+        if exit_code ~= expected_exit_code then
+            local error_context = run_error and (" (" .. run_error .. ")") or ""
             table.insert(failures, prefix .. string.format(
-                "exit code mismatch: expected %d, actual %s", expected_exit_code, tostring(exit_code)
+                "exit code mismatch: expected %d, actual %s%s",
+                expected_exit_code,
+                tostring(exit_code),
+                error_context
             ))
         end
 

@@ -208,7 +208,6 @@ private:
                     nested.push_back(next_barrier++);
                     return walk_sequence(value.body, nested, loop_depth + 1);
                 },
-                [](const TargetRawFragment&) static noexcept { return true; },
             },
             current.value
         );

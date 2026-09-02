@@ -3,8 +3,9 @@
 - **Status:** Draft
 - **Implementation:** Not started
 - **Scope:** Generic instances, static capabilities, coherence, and target-realization freedom
-- **Depends on:** None for the accepted source semantics; implementation of
-  generic `#[cpp]` crossings depends on an explicitly owned typed boundary
+- **Depends on:** None for the accepted source semantics; generic
+  `import(cpp)`/`export(cpp)` participation depends on the implemented concrete
+  C++ boundary and a finite generic publication contract
 
 ## Summary
 
@@ -12,7 +13,7 @@
 definition-site checking、local inference、`concept`/`impl`、associated type、
 coherence、impl locality 与 generic instance identity 已经裁定，但尚未实现。
 
-实现前仍需关闭两项设计：`#[cpp]` boundary 如何进入 closed instance graph，以及
+实现前仍需关闭两项设计：显式 C++ boundary function 如何进入 closed instance graph，以及
 如何从语言级无限 instance expansion 中区分合法递归和 compiler resource limit。
 C++ concrete declarations、templates 或混合表示继续是 lowering 选择，不构成 source
 语义。
@@ -22,7 +23,7 @@ C++ concrete declarations、templates 或混合表示继续是 lowering 选择�
 | Parametric generic core | Accepted | 实现仍等待 `OPEN-01`、`OPEN-02` |
 | Static capability and evidence | Accepted | 等待 parametric core |
 | Associated types and coherence | Accepted | 等待 capability implementation |
-| Closed instance graph | Exploration | `OPEN-01` 因 general `#[cpp]` boundary 暂无 owner 而 blocked |
+| Closed instance graph | Exploration | `OPEN-01` 因 generic import/export publication contract 尚未定义而 blocked |
 | Target realization | Accepted freedom | 由完整 semantic facts 驱动 |
 | Advanced generic facilities | Deferred | `DEFER-01` 至 `DEFER-11` |
 
@@ -34,7 +35,7 @@ C++ concrete declarations、templates 或混合表示继续是 lowering 选择�
 
 - keyword 集合中没有 `concept`、`impl`、`Self` 或 `where`；它们目前是普通
   identifiers；
-- top-level grammar 只有现有 concrete declarations 与 opaque `#[cpp]` region，
+- top-level grammar 只有现有 concrete declarations 与 C++ source fragments，
   declaration name、named type 与 call 均没有 generic clause；
 - `<`、`>` 与 `>>` 只属于当前 expression grammar；
 - SemanticProgram nominal type 只记录 resolved declaration identity，call 也没有 type
@@ -447,22 +448,23 @@ Carven call 是否存在或选择哪个 implementation，semantic closure 尚未
 
 **Next discussion:** None
 
-### OPEN-01 — How does the typed `#[cpp]` boundary participate in generics?
+### OPEN-01 — How do C++ boundary functions participate in generics?
 
 - **Status:** Blocked
 - **Depends on:** `GEN-01`, `GEN-04`, `GEN-10` through `GEN-14`
-- **Blocked by:** The general typed `#[cpp]` input, output, control, failure,
-  and lifetime boundary has no owning proposal
-- **Activation condition:** An owner is assigned and that proposal provides a
-  concrete typed-boundary contract that generic crossings can consume.
-- **Why it matters:** Opaque C++ must not create unrecorded applications,
-  instances, conversions, or evidence outside the closed semantic graph.
+- **Blocked by:** The implemented C++ boundary accepts only concrete scalar
+  declarations; generic instance publication is not defined.
+- **Activation condition:** Representative generic `import(cpp)` or
+  `export(cpp)` use requires a finite instance and symbol contract.
+- **Why it matters:** C++ boundary participation must not create unrecorded
+  applications, instances, conversions, or evidence outside the closed
+  semantic graph.
 - **Constraints:** C++ names, deduction, overload resolution, and substitution
   failure cannot complete Carven inference or constraints; every generic value
   crossing the boundary has normalized concrete Carven types and a finite typed
   callable contract.
-- **Options:** Unknown until the general `#[cpp]` input, output, control, failure,
-  and lifetime boundary is expressed with representative generic calls.
+- **Options:** Explicit instance lists, closed compilation-derived instances,
+  or separately named generic provider/façade forms.
 - **Closure condition:** Specify typed inbound and outbound examples, prove that
   every resulting application and evidence enters the instance graph, and
   reject open uses that cannot be accounted for.
@@ -583,7 +585,7 @@ Carven call 是否存在或选择哪个 implementation，semantic closure 尚未
 Implementation is blocked by `OPEN-01` and `OPEN-02`. Once closed, delivery
 proceeds vertically:
 
-1. add parametric declaration/application syntax and ParsedBatch/SemanticProgram facts,
+1. add parametric declaration/application syntax and SyntaxProgram/SemanticProgram facts,
    definition-site checking, local inference, normalized instance identity, and
    finite graph production;
 2. add `concept`/`impl` parsing, visibility, canonical evidence, module-domain
@@ -612,7 +614,7 @@ Validation must cover:
 - associated projection normalization, aliases, cycles, and instance identity;
 - access, Take, failure, constants, storage cycles, evaluation order, and
   visibility under instantiation;
-- typed `#[cpp]` crossings and stable rejection of open/untracked applications;
+- C++ boundary instances and stable rejection of open/untracked applications;
 - finite instance production versus semantic infinite expansion and separate
   compiler resource limits;
 - C++20/C++23 compile, link, and run without fixing concrete/template target
@@ -626,5 +628,5 @@ Validation must cover:
 - [Carven philosophy](../docs/philosophy.md)
 - [Classes and dynamic polymorphism](classes.md)
 - [Operator capabilities](operators.md)
-- [C++ interop contract](cpp-interop.md)
+- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)
 - [Proposal roadmap](roadmap.md)

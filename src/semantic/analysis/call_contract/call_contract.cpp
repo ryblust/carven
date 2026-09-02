@@ -57,13 +57,6 @@ auto project_call_contract(const auto& semantic, HIRExprID verified_call) noexce
     if (auto contract = project_callable_contract(semantic, callee_type)) {
         return *contract;
     }
-    if (std::holds_alternative<HIRForeignTypeValue>(semantic.type(callee_type).value)) {
-        return {
-            .parameters = {},
-            .result = semantic.expression(verified_call).type,
-            .failure_source = ForeignCallableFailure {},
-        };
-    }
     invariant_violation("verified call expression has no callable canonical callee type");
 }
 

@@ -106,9 +106,7 @@ auto assemble_call(
     LoweredExpression callee,
     std::span<const HIRCallArgument> arguments,
     std::vector<LoweredExpression> lowered_arguments,
-    bool foreign_callee,
-    std::optional<HIRExprID> callee_source,
-    std::optional<TargetMemberName> instance_member = std::nullopt
+    std::optional<HIRExprID> callee_source
 ) noexcept -> LoweredExpression {
     auto materialize_arguments = std::vector<bool>(arguments.size());
     for (auto left = 0uz; left < arguments.size(); ++left) {
@@ -137,28 +135,17 @@ auto assemble_call(
                                            arguments[index].expression
                                        );
                                });
-    if (requires_callee_sequencing
-        && (instance_member.has_value() || !is_stable_callee(context, callee.expression))) {
+    if (requires_callee_sequencing && !is_stable_callee(context, callee.expression)) {
         callee = TargetEvaluationSequencer::materialize(
             context,
             std::move(callee),
-            foreign_callee ? MaterializationKind::Preserve
-                           : TargetEvaluationSequencer::read_materialization(
-                                 context,
-                                 context.source().expression(*callee_source).type
-                             ),
+            TargetEvaluationSequencer::read_materialization(
+                context,
+                context.source().expression(*callee_source).type
+            ),
             TargetMaterializationReason::EvaluationOrder
         );
     }
-    const auto lowered_callee = instance_member.has_value()
-        ? context.target().append_expression({
-              .value =
-                  TargetMemberExpr {
-                      .operand_id = callee.expression,
-                      .name = std::move(*instance_member),
-                  },
-          })
-        : callee.expression;
     auto prelude = std::move(callee.prelude);
     auto target_arguments = std::vector<TargetExprID>();
     target_arguments.reserve(arguments.size());
@@ -166,10 +153,7 @@ auto assemble_call(
         const auto& argument = arguments[index];
         auto lowered_argument = std::move(lowered_arguments[index]);
         if (materialize_arguments[index]) {
-            const auto foreign =
-                is_foreign_type(context, context.source().expression(argument.expression).type);
-            const auto access = foreign ? MaterializationKind::Preserve
-                : argument.access == HIRAccessMode::Read
+            const auto access = argument.access == HIRAccessMode::Read
                 ? TargetEvaluationSequencer::read_materialization(
                       context,
                       context.source().expression(argument.expression).type
@@ -192,7 +176,7 @@ auto assemble_call(
         );
         target_arguments.push_back(lowered_argument.expression);
     }
-    const auto call = call_expression(context, lowered_callee, std::move(target_arguments));
+    const auto call = call_expression(context, callee.expression, std::move(target_arguments));
     return {.prelude = std::move(prelude), .expression = call};
 }
 
@@ -202,7 +186,6 @@ auto ordered_call(
     TargetCallableLowerer& context,
     LoweredExpression callee,
     std::span<const HIRCallArgument> arguments,
-    bool foreign_callee,
     const TargetControlDestinations& control
 ) noexcept -> LoweredExpression {
     return assemble_call(
@@ -210,7 +193,6 @@ auto ordered_call(
         std::move(callee),
         arguments,
         lower_call_arguments(context, arguments, control),
-        foreign_callee,
         std::nullopt
     );
 }
@@ -221,25 +203,14 @@ auto lower_expression(
     const HIRCallExpr& expression,
     const TargetControlDestinations& control
 ) noexcept -> LoweredExpression {
-    const auto foreign_callee =
-        is_foreign_type(context, context.source().expression(expression.callee).type);
-    const auto* member =
-        std::get_if<HIRMemberExpr>(&context.source().expression(expression.callee).value);
-    const auto* unresolved =
-        member == nullptr ? nullptr : std::get_if<HIRUnresolvedMemberTarget>(&member->target);
-    const auto delayed_member = foreign_callee && unresolved != nullptr && !unresolved->scope;
-    auto callee = delayed_member ? lower_expression(context, member->operand_id, control)
-                                 : lower_expression(context, expression.callee, control);
+    auto callee = lower_expression(context, expression.callee, control);
     auto arguments = lower_call_arguments(context, expression.arguments, control);
     auto lowered = assemble_call(
         context,
         std::move(callee),
         expression.arguments,
         std::move(arguments),
-        foreign_callee,
-        expression.callee,
-        delayed_member ? std::optional<TargetMemberName> {member_name(context, *member)}
-                       : std::nullopt
+        expression.callee
     );
     lowered.unconsumed_carrier = call_result_carrier(context, id, expression.callee);
     return lowered;

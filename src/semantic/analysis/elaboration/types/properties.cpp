@@ -10,11 +10,10 @@ import :semantic.hir.type;
 import :support.visit;
 import std;
 
-auto is_opaque_or_error(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
+auto is_error_type(const ModuleAnalysis& module_analysis, HIRTypeID id) noexcept -> bool {
     const auto builder = module_analysis.builder();
     const auto& value = builder.type(id).value;
-    return std::holds_alternative<HIRForeignTypeValue>(value)
-        || std::holds_alternative<HIRErrorTypeValue>(value);
+    return std::holds_alternative<HIRErrorTypeValue>(value);
 }
 
 auto require_value_type(

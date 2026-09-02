@@ -6,5 +6,5 @@ import :frontend.program;
 import :source.manager;
 import std;
 
-auto parse(const SourceManager& sources, std::span<const CompilationInput> inputs) noexcept
-    -> std::expected<ParsedBatch, Diagnostics>;
+auto parse_program(const SourceManager& sources, CompilationRequest request) noexcept
+    -> std::expected<SyntaxProgram, Diagnostics>;

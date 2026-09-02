@@ -1,90 +1,116 @@
 local interop_dir = path.join(os.projectdir(), "tests", "interop")
 local crafts_dir = path.join(os.projectdir(), "crafts")
-local interop_source = path.join(interop_dir, "cases", "inline_cpp.cv")
 
 local function use_local_carven(target)
     import("core.project.project")
     target:values_set("carven.program", project.target("carven"):targetfile())
 end
 
-local consumer_standards = {
-    {name = "cxx20", language = "c++20"},
-    {name = "cxx23", language = "c++23"},
+local scalar_boundary_sources = {
+    path.join(interop_dir, "scalar_boundary", "scalars.cv"),
+    path.join(interop_dir, "scalar_boundary", "api_consumer.cpp"),
 }
 
-for _, standard in ipairs(consumer_standards) do
-    target("carven-test-interop-" .. standard.name, function ()
-        set_default(false)
-        add_packages("carven")
-        add_rules("@carven/carven", {tests = "default"})
-        set_values("carven.includedir", crafts_dir)
-        set_languages(standard.language)
-        add_files(interop_source)
-        after_load(use_local_carven)
-        add_tests(standard.name, {realtime_output = false, group = "interop"})
-    end)
-end
+local provider_form_sources = {
+    path.join(interop_dir, "provider_forms", "consumer.cv"),
+    path.join(interop_dir, "provider_forms", "header_bridge.cv"),
+    path.join(interop_dir, "provider_forms", "linked_provider.cpp"),
+}
 
-target("carven-test-interop-invalid-unicode")
+target("carven-test-interop-scalar-boundary")
     set_default(false)
-    add_packages("carven")
-    add_rules("@carven/carven")
+    add_rules("@carven/carven", {tests = "default"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++20")
-    add_files(path.join(interop_dir, "cases", "invalid_unicode.cv"))
+    add_includedirs(interop_dir)
+    add_files(table.unpack(scalar_boundary_sources))
     after_load(use_local_carven)
-    add_tests("invalid-unicode", {group = "interop"})
+    add_tests("scalar-boundary", {group = "interop"})
+
+target("carven-test-interop-provider-forms")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "default"})
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++20")
+    add_includedirs(interop_dir)
+    add_files(table.unpack(provider_form_sources))
+    after_load(use_local_carven)
+    add_tests("provider-forms", {group = "interop"})
+
+target("carven-test-interop-cxx23-compatibility")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "default"})
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++23")
+    add_includedirs(interop_dir)
+    add_files(table.unpack(scalar_boundary_sources))
+    add_files(table.unpack(provider_form_sources))
+    after_load(use_local_carven)
+    add_tests("cxx23-compatibility", {build_should_pass = true, group = "interop"})
+
+target("carven-test-interop-unicode-export")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "default"})
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++20")
+    add_files(
+        path.join(interop_dir, "unicode_contract", "export_argument.cv"),
+        path.join(interop_dir, "unicode_contract", "export_consumer.cpp")
+    )
+    after_load(use_local_carven)
+    add_tests("unicode-export", {group = "interop"})
     on_test(function (target)
-        local failure
-        try {
-            function ()
-                os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            end,
-            catch {
-                function (errors)
-                    failure = errors
-                end,
-            },
-        }
-        assert(failure, "invalid typed #[cpp] Unicode did not terminate")
+        local stdout_file = os.tmpfile("carven-unicode-export")
+        local stderr_file = os.tmpfile("carven-unicode-export")
+        local exit_code = os.execv(target:targetfile(), {}, {
+            try = true,
+            timeout = 30000,
+            stdout = stdout_file,
+            stderr = stderr_file,
+        })
+        local stderr = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
+        os.tryrm(stdout_file)
+        os.tryrm(stderr_file)
+        assert(exit_code ~= 0, "invalid export(cpp) Unicode scalar did not terminate")
         assert(
-            failure.stderr:find(
-                "carven runtime contract error: invalid UTF-8 from typed #[cpp]", 1, true
+            stderr:find(
+                "carven runtime contract error: invalid Unicode scalar at C++ boundary", 1, true
             ),
-            "invalid typed #[cpp] Unicode reported an unexpected diagnostic"
+            "invalid export(cpp) Unicode scalar reported an unexpected diagnostic"
         )
         return true
     end)
 
-local linkage_source = path.join(interop_dir, "cases", "linkage_domain.cv")
-
-local linkage_domains = {
-    {name = "left"},
-    {name = "right"},
-    {name = "override", domain = "carven-tests:explicit-linkage-domain"},
-}
-
-for _, domain in ipairs(linkage_domains) do
-    target("carven-test-linkage-domain-" .. domain.name, function ()
-        set_default(false)
-        set_kind("object")
-        add_packages("carven")
-        add_rules("@carven/carven", {linkage_domain = domain.domain})
-        set_values("carven.includedir", crafts_dir)
-        set_languages("c++20")
-        add_files(linkage_source)
-        after_load(use_local_carven)
-    end)
-end
-
-target("carven-test-interop-linkage-domains")
+target("carven-test-interop-unicode-import")
     set_default(false)
-    set_kind("binary")
+    add_rules("@carven/carven")
+    set_values("carven.includedir", crafts_dir)
     set_languages("c++20")
-    add_deps(
-        "carven-test-linkage-domain-left",
-        "carven-test-linkage-domain-right",
-        "carven-test-linkage-domain-override"
+    add_includedirs(interop_dir)
+    add_files(
+        path.join(interop_dir, "unicode_contract", "import_result.cv"),
+        path.join(interop_dir, "unicode_contract", "import_provider.cpp")
     )
-    add_files(path.join(interop_dir, "cases", "linkage_domain_main.cpp"))
-    add_tests("linkage-domains", {realtime_output = false, group = "interop"})
+    after_load(use_local_carven)
+    add_tests("unicode-import", {group = "interop"})
+    on_test(function (target)
+        local stdout_file = os.tmpfile("carven-unicode-import")
+        local stderr_file = os.tmpfile("carven-unicode-import")
+        local exit_code = os.execv(target:targetfile(), {}, {
+            try = true,
+            timeout = 30000,
+            stdout = stdout_file,
+            stderr = stderr_file,
+        })
+        local stderr = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
+        os.tryrm(stdout_file)
+        os.tryrm(stderr_file)
+        assert(exit_code ~= 0, "invalid import(cpp) Unicode scalar did not terminate")
+        assert(
+            stderr:find(
+                "carven runtime contract error: invalid Unicode scalar at C++ boundary", 1, true
+            ),
+            "invalid import(cpp) Unicode scalar reported an unexpected diagnostic"
+        )
+        return true
+    end)

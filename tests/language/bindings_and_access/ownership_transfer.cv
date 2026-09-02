@@ -1,16 +1,13 @@
+import "bindings_and_access/ownership_transfer.hpp";
+
 struct Pair {
     left: i32,
     right: i32,
 }
 
-#[cpp] {
-    inline auto cv_test_take_order = 0;
-
-    auto cv_test_take_record(int marker) noexcept -> int {
-        cv_test_take_order = cv_test_take_order * 10 + marker;
-        return marker;
-    }
-}
+private import(cpp) fn cv_test_take_reset_order();
+private import(cpp) fn cv_test_take_record(marker: i32) -> i32;
+private import(cpp) fn cv_test_take_order_value() -> i32;
 
 fn sum(&&pair: Pair) -> i32 {
     return pair.left + pair.right;
@@ -29,12 +26,12 @@ test "Ownership: Take transfers ownership preserves order and permits var restor
     reusable = Pair { left: 19, right: 23 };
     check(sum(&&reusable) == 42);
 
-    #[cpp] { cv_test_take_order = 0; }
+    cv_test_take_reset_order();
     let combined = combine(
-        &&Pair { left: #[cpp] { cv_test_take_record(1) }, right: 0 },
-        &&Pair { left: #[cpp] { cv_test_take_record(2) }, right: 0 },
+        &&Pair { left: cv_test_take_record(1), right: 0 },
+        &&Pair { left: cv_test_take_record(2), right: 0 },
     );
-    let observed: i32 = #[cpp] { cv_test_take_order };
+    let observed = cv_test_take_order_value();
     check(combined == 3);
     check(observed == 12);
 }

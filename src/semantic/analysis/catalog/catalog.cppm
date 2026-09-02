@@ -54,10 +54,8 @@ struct CatalogSymbol final {
 };
 
 struct CatalogTestForm final {};
-struct CatalogCppForm final {};
 
-using CatalogModuleItemForm =
-    std::variant<FunctionID, StructID, EnumID, CatalogTestForm, CatalogCppForm>;
+using CatalogModuleItemForm = std::variant<FunctionID, StructID, EnumID, CatalogTestForm>;
 
 struct CatalogModuleItem final {
     ASTItemID item_id;
@@ -85,7 +83,7 @@ struct CatalogImportSelectedSymbol final {
 struct CatalogImportBinding final {
     ImportBindingID binding_id;
     ProgramModuleID importer;
-    ASTImportID declaration_id;
+    ASTModuleImportID declaration_id;
     ProgramModuleID target;
     Span declaration_span;
     Span reference_span;

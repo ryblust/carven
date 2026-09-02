@@ -2,11 +2,11 @@ module carven:backend.generation.program;
 
 import :artifacts;
 import :backend.generation.names;
+import :backend.generation.request;
 import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
-import :compilation.request;
 import :semantic.hir;
 import :semantic.hir.access;
 import :semantic.hir.decl;
@@ -54,13 +54,13 @@ enum class TargetParameterPassing {
     MutableReference,
 };
 
-struct TargetCallParameterRecipe final {
+struct TargetCallParameter final {
     HIRTypeID type;
     TargetParameterPassing passing;
 };
 
-struct TargetCallSignatureRecipe final {
-    std::vector<TargetCallParameterRecipe> parameters;
+struct TargetCallSignature final {
+    std::vector<TargetCallParameter> parameters;
     HIRTypeID result;
     FailureSetID failure_profile;
     std::optional<TargetCarrierShapeID> carrier_shape;
@@ -87,22 +87,18 @@ struct TargetCallableTypeRecipe final {
     TargetCallSignatureID signature;
 };
 
-struct TargetDeducedTypeRecipe final {};
-
 using TargetTypeRecipeValue = std::variant<
     TargetIntrinsicTypeRecipe,
     TargetNamedTypeRecipe,
     TargetArrayTypeRecipe,
     TargetFunctionReferenceTypeRecipe,
-    TargetCallableTypeRecipe,
-    TargetDeducedTypeRecipe>;
+    TargetCallableTypeRecipe>;
 
 struct TargetTypeRecipe final {
     TargetTypeRecipeValue value;
     bool read_parameter_by_value;
     bool integer;
     bool void_type;
-    bool foreign;
 };
 
 struct TargetCarrierShape final {
@@ -140,17 +136,25 @@ struct TargetInterfaceSchedule final {
 struct TargetModuleSchedule final {
     ProgramModuleID module_id;
     std::vector<HIRNominalDeclRef> implementation_nominal_order;
-    std::vector<std::uint32_t> cpp_preamble_items;
     std::vector<FunctionID> private_function_declarations;
     std::vector<FunctionID> function_definitions;
+    std::vector<FunctionID> cpp_export_facades;
     std::optional<FunctionID> entry_point;
     std::vector<TestID> emitted_tests;
 };
 
+struct TargetCppAPIHeaderSchedule final {
+    ProgramModuleID module_id;
+    std::vector<FunctionID> cpp_export_declarations;
+};
+
 struct TargetTestEntrySchedule final {};
 
-using TargetArtifactSchedule =
-    std::variant<TargetInterfaceSchedule, TargetModuleSchedule, TargetTestEntrySchedule>;
+using TargetArtifactSchedule = std::variant<
+    TargetInterfaceSchedule,
+    TargetCppAPIHeaderSchedule,
+    TargetModuleSchedule,
+    TargetTestEntrySchedule>;
 
 struct TargetArtifactSpec final {
     std::string logical_path;
@@ -189,7 +193,7 @@ private:
         std::vector<TargetArtifactSpec> artifacts,
         std::vector<TargetTypeRecipe> types,
         std::vector<TargetFailureProfile> failure_profiles,
-        std::vector<TargetCallSignatureRecipe> call_signatures,
+        std::vector<TargetCallSignature> call_signatures,
         std::vector<TargetCallSignatureID> callable_signatures,
         std::vector<TargetCarrierShape> carrier_shapes,
         std::flat_map<std::pair<std::uint32_t, std::uint32_t>, TargetCarrierShapeID> carrier_index,
@@ -210,7 +214,7 @@ private:
     std::vector<TargetArtifactSpec> target_artifacts;
     std::vector<TargetTypeRecipe> target_types;
     std::vector<TargetFailureProfile> target_failure_profiles;
-    std::vector<TargetCallSignatureRecipe> target_call_signatures;
+    std::vector<TargetCallSignature> target_call_signatures;
     std::vector<TargetCallSignatureID> target_callable_signatures;
     std::vector<TargetCarrierShape> target_carrier_shapes;
     std::flat_map<std::pair<std::uint32_t, std::uint32_t>, TargetCarrierShapeID>
@@ -239,9 +243,8 @@ public:
     auto source_names(SemanticScopeID scope) const noexcept -> const std::flat_set<std::string>&;
     auto type_recipe(HIRTypeID id) const noexcept -> const TargetTypeRecipe&;
     auto failure_profile(FailureSetID id) const noexcept -> const TargetFailureProfile&;
-    auto callable_signature(CallableID id) const noexcept -> const TargetCallSignatureRecipe&;
-    auto call_signature(TargetCallSignatureID id) const noexcept
-        -> const TargetCallSignatureRecipe&;
+    auto callable_signature(CallableID id) const noexcept -> const TargetCallSignature&;
+    auto call_signature(TargetCallSignatureID id) const noexcept -> const TargetCallSignature&;
     auto carrier_shape(HIRTypeID result, FailureSetID failure_profile) const noexcept
         -> TargetCarrierShapeID;
     auto carrier_shape(TargetCarrierShapeID id) const noexcept -> const TargetCarrierShape&;

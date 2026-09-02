@@ -12,6 +12,8 @@ auto collect_declarations(AnalysisCatalogView catalog, ProgramAnalyzer& draft) n
     auto& builder = draft.builder();
     for (const auto& catalog_module : catalog.modules()) {
         const auto module_id = builder.append_module({
+            .cpp_header_dependencies = {},
+            .cpp_source_payload_origins = {},
             .items = {},
         });
         if (module_id != catalog_module.module_id) {

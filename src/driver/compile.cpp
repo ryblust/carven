@@ -2,6 +2,7 @@ module carven:driver.compile.impl;
 
 import :artifacts;
 import :artifacts.materialize;
+import :backend.generation.request;
 import :compiler.compile;
 import :compilation.request;
 import :diagnostics.report;
@@ -17,7 +18,7 @@ import std;
 
 namespace {
 
-struct PreparedInput final {
+struct PreparedModuleInput final {
     std::string_view input_path;
     CanonicalModulePath module_path;
 };
@@ -82,7 +83,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
     }
 
     auto exit_code = 0;
-    auto inputs = std::vector<PreparedInput> {};
+    auto inputs = std::vector<PreparedModuleInput> {};
     inputs.reserve(request->input_paths.size());
     for (const auto input_path : request->input_paths) {
         auto module_path = derive_input_module_path(input_path);
@@ -101,8 +102,8 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
     }
 
     auto sources = SourceManager();
-    auto compiler_inputs = std::vector<CompilationInput> {};
-    compiler_inputs.reserve(inputs.size());
+    auto module_inputs = std::vector<CompilationModuleInput> {};
+    module_inputs.reserve(inputs.size());
     for (const auto& input : inputs) {
         const auto source_id = sources.append_file(input.input_path);
         if (!source_id) {
@@ -115,7 +116,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             exit_code = 1;
             continue;
         }
-        compiler_inputs.push_back({
+        module_inputs.push_back({
             .source_id = *source_id,
             .module_path = input.module_path,
         });
@@ -126,9 +127,9 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = compiler_inputs},
+        CompilationRequest {.modules = module_inputs},
         TargetGenerationRequest {
-            .tests = request->test_mode,
+            .test_mode = request->test_mode,
             .linkage_domain = std::move(*linkage_domain),
         }
     );

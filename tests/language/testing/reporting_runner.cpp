@@ -43,7 +43,7 @@ auto main() noexcept -> int {
     if (result == 0 || cv_test_reporting_observed_flags() != expected_flags) {
         return 1;
     }
-    if (!contains(text, "tests/language/testing/reporting.cv:42")
+    if (!contains(text, "tests/language/testing/reporting.cv:23")
         || !contains(text, "operation: check")
         || !contains(
             text,
@@ -55,11 +55,11 @@ auto main() noexcept -> int {
             "        )"
         )
         || !contains(text, "message: check message")
-        || !contains(text, "tests/language/testing/reporting.cv:53")
+        || !contains(text, "tests/language/testing/reporting.cv:34")
         || !contains(text, "operation: require")
         || !contains(text, "condition: traced_reporting_condition(3, false)")
         || !contains(text, "message: require message")
-        || !contains(text, "tests/language/testing/reporting.cv:58")
+        || !contains(text, "tests/language/testing/reporting.cv:39")
         || !contains(text, "operation: fail")
         || !contains(text, "message: fail message")) {
         std::cerr << text;

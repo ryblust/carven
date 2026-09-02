@@ -37,9 +37,9 @@ Meter  * Meter  -> SquareMeter
 Matrix * Matrix -> Matrix
 ```
 
-Fieldwise derive 只能自然覆盖其中一部分。把其他行为放进 `#[cpp]` 会让 arithmetic、
-evaluation order、failure 与 access 逃离 Carven ordinary semantic path。目标是允许
-nominal behavior，而不是复制 C++ multi-path lookup。
+Fieldwise derive 只能自然覆盖其中一部分。通过 C++ source fragment/provider 绕行其他行为会让
+arithmetic、evaluation order、failure 与 access 逃离 Carven ordinary semantic path。目标是
+允许 nominal behavior，而不是复制 C++ multi-path lookup。
 
 ### 已实现或已接受的约束
 
@@ -63,8 +63,8 @@ short-circuit behavior 或 availability transition。
   checking、coherence 与 associated normalization；本文只拥有 existing token 到这些
   facts 的映射。
 - Grammar precedence 与本文正交：hook 只改变 resolved meaning，不改变 parse tree。
-- [C++ interop contract](cpp-interop.md) 独立决定 public adapter 是否暴露带 nominal
-  operator behavior 的 type；operator capability 不自动扩大 consumer surface。
+- [C++ interoperation contract](../docs/semantics.md#c-interoperation) 独立决定 export façade 是否暴露带 nominal
+  operator behavior 的 type；operator capability 不自动扩大 C++ caller surface。
 - Concurrency 与本文正交：operator evidence 不提供 synchronization、data-race 或
   thread-safety guarantee。
 
@@ -86,7 +86,8 @@ short-circuit behavior 或 availability transition。
 - Blanket impl、local impl activation 或 call-site witness selection。
 - Overload short-circuit、call、index、member access、plain assignment 或
   Read/Write/Take syntax。
-- 把 `#[cpp]` 扩张为 general attribute namespace，或为 `@` 增加含义。
+- 把 top-level C++ source-fragment fence 扩张为 general attribute namespace，或为 `@`
+  增加含义。
 - 通过 `str + str` 隐藏 allocation。
 
 ## Design
@@ -348,7 +349,7 @@ operator registry 或 unused capability scaffolding。
 ## References
 
 - [泛型与静态约束](generics.md)
-- [C++ interop contract](cpp-interop.md)
+- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)
 - [Memory model](memory-model.md)
 - [Proposal roadmap](roadmap.md)
 - [Carven grammar](../docs/grammar.md)

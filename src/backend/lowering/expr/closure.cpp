@@ -24,8 +24,11 @@ auto lower_expression(
     const HIRClosureExpr& expression,
     const TargetControlDestinations&
 ) noexcept -> LoweredExpression {
-    const auto& source_body =
-        context.source().body(context.source().callable(expression.callable).body);
+    const auto body_id = callable_body_id(context.source().callable(expression.callable));
+    if (!body_id.has_value()) {
+        invariant_violation("closure lowering requires a Carven body");
+    }
+    const auto& source_body = context.source().body(*body_id);
     const auto& target_signature = context.source().callable_signature(expression.callable);
     if (source_body.parameters.size() != target_signature.parameters.size()) {
         invariant_violation("target closure signature does not align with its body parameters");

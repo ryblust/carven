@@ -20,11 +20,10 @@ carry compiler-host feature branches for older implementations.
 
 ## Generated-C++ consumers
 
-Generated C++ and crafts have one C++20 implementation without standard-mode
-branches. C++20 and C++23 are supported generated-C++ consumer modes. Routine
-verification executes the complete language corpus in C++20, compiles that
-corpus in C++23, and executes the focused C++ boundary corpus in both modes.
-The downstream build selects its consumer mode; Carven generation is unchanged.
+Generated C++ and crafts target C++20. C++20 and C++23 are supported
+generated-C++ consumer modes. The downstream build selects its consumer mode;
+Carven generation is mode-independent. Repository evidence for each mode is
+defined by [testing.md](testing.md#consumer-coverage).
 
 Host and consumer standards are separate axes. C++26 library or language
 features used to implement the Carven compiler must not leak into generated
@@ -33,14 +32,16 @@ compatibility decision.
 
 ## Compiler and toolchain boundary
 
-Carven emits C++20 artifacts and does not invoke a downstream C++ compiler. For
-ordinary valid Carven source, those artifacts must compile in every supported
+Carven emits C++20 artifacts and does not invoke a downstream C++ compiler.
+Given downstream inputs that satisfy the C++ responsibilities below, artifacts
+for a semantically valid Carven compilation must compile in every supported
 consumer mode; failure to do so is a Carven compatibility defect.
 
 The downstream toolchain performs C++ compilation and linking and determines
-platform ABI, object layout, and machine code. Code inside an explicit `#[cpp]`
-boundary is checked by that toolchain under the responsibility defined by
-[semantics.md](semantics.md#cpp-boundary).
+platform ABI, object layout, and machine code. C++ header/source-fragment
+contents, provider declaration conformance, definitions, and link satisfaction
+are checked by that toolchain under the responsibility defined by
+[semantics.md](semantics.md#c-interoperation).
 
 Toolchain diagnostics remain toolchain diagnostics. Generated source
 attribution may identify a `.cv` location but does not change diagnostic
@@ -69,7 +70,7 @@ The integration surface is divided among these owning contracts:
 | Surface | Owning contract |
 | --- | --- |
 | Generated-C++ consumption in C++20 and C++23 | This document |
-| Observable Carven behavior, diagnostics, and the `#[cpp]` boundary | [semantics.md](semantics.md) |
+| Observable Carven behavior, diagnostics, and C++ boundary validity | [semantics.md](semantics.md) |
 | Command options, status, and streams | [cli.md](cli.md) |
 | Filesystem output behavior | [cli.md](cli.md) |
 | Installed headers required by generated artifacts | This document |
@@ -80,6 +81,7 @@ One closed compilation emits these logical paths:
 
 ```text
 carven/generated/<component-anchor>.hpp  # one per published-surface SCC
+carven/api/<canonical-module-path>.hpp   # one per module with export(cpp)
 <canonical-module-path>.cpp
 carven-test-main.cpp                     # only for default test mode
 ```
@@ -96,6 +98,22 @@ instead be represented by deterministic C++ forward declarations. Output roots
 do not carry compiler ownership metadata; stale-path retirement is a
 build-system or caller responsibility.
 
+### C++ interoperation artifacts
+
+C++ header imports produce matching `#include` directives in source order in
+the owning module implementation. Each C++ source fragment is preserved as an
+independent attributed payload and appears at global scope, in source order,
+after implementation includes and before compiler-generated namespaces.
+
+`carven/api/<canonical-module-path>.hpp` is the explicit C++ consumer surface.
+It is self-contained and safe to include more than once. It declares the
+module's `export(cpp)` functions under `carven::api` followed by the canonical
+module components as nested namespaces, using the scalar spellings defined by
+[semantics.md](semantics.md#c-interoperation). The corresponding façades are
+defined by that module's implementation artifact. The public path, namespace,
+function names, declarations, and `noexcept` contract are stable; include
+selection and generated body shape are private.
+
 ## Installed support headers
 
 Generated artifacts consume exactly these installed headers:
@@ -107,16 +125,16 @@ carven/runtime/outcome.hpp
 carven/std/testing/testing.hpp
 ```
 
-The first three form the generated runtime support surface. The testing header
-is required only by artifacts that include test support.
+The first three form the generated runtime support surface. Artifacts with test
+support use the testing header.
 
 ## Private generated implementation
 
 The following are not compatibility promises:
 
 - complete generated C++ text, whitespace, or declaration layout;
-- generated namespaces, private identifiers, temporaries, labels, or helper
-  selection;
+- private generated namespaces, identifiers, temporaries, labels, or helper
+  selection outside the documented `carven::api` surface;
 - `LinkageDomainID` and `ModuleNamespaceID` bytes and hash-input encoding;
 - the grouping of declarations inside a generated unit beyond the documented
   logical artifact paths;
@@ -126,7 +144,7 @@ The following are not compatibility promises:
   construction state;
 - diagnostic prose, notes, formatting, colors, or incidental ordering.
 
-Support headers are compiler dependencies for generated artifacts, not a
-general handwritten-C++ API. An explicit C++ consumer surface requires its own
-documented contract; incidental accessibility of a generated or runtime name
-does not create one.
+Support headers are compiler dependencies for generated artifacts and are not
+part of the public C++ API. The `export(cpp)` header and façade contract is the
+explicit consumer surface; accessibility of another generated or runtime name
+does not add it to that surface.

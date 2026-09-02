@@ -6,7 +6,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :frontend.lex.token;
@@ -478,15 +477,6 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
             ASTExpr {
                 .span = form->span,
                 .value = std::move(*form),
-            }
-        );
-    }
-    if (check(TokenKind::CppRegion)) {
-        const auto token = consume();
-        return builder.append_expression(
-            ASTExpr {
-                .span = token.span,
-                .value = cpp_region(token.span),
             }
         );
     }

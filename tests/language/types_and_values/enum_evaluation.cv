@@ -1,25 +1,19 @@
+import "types_and_values/enum_evaluation.hpp";
+
 enum Value {
     Number(i32),
     Pair(i32, i32),
 }
 
-#[cpp] {
-    inline auto cv_test_sum_evaluation_order = 0;
-    inline auto cv_test_match_subject_evaluations = 0;
-
-    auto cv_test_sum_record(int marker) noexcept -> int {
-        cv_test_sum_evaluation_order = cv_test_sum_evaluation_order * 10 + marker;
-        return marker;
-    }
-
-    auto cv_test_record_match_subject() noexcept -> int {
-        ++cv_test_match_subject_evaluations;
-        return cv_test_match_subject_evaluations;
-    }
-}
+private import(cpp) fn cv_test_reset_sum_evaluation_order();
+private import(cpp) fn cv_test_sum_record(marker: i32) -> i32;
+private import(cpp) fn cv_test_sum_evaluation_order_value() -> i32;
+private import(cpp) fn cv_test_reset_match_subject_evaluations();
+private import(cpp) fn cv_test_record_match_subject() -> i32;
+private import(cpp) fn cv_test_match_subject_evaluation_count() -> i32;
 
 fn next_value() -> Value {
-    let _ = #[cpp] { cv_test_record_match_subject }();
+    let _ = cv_test_record_match_subject();
     return .Number(21);
 }
 
@@ -38,17 +32,17 @@ fn second(value: Value) -> i32 {
 }
 
 test "Enums: sum construction and matching evaluate once from left to right" {
-    #[cpp] { cv_test_sum_evaluation_order = 0; }
+    cv_test_reset_sum_evaluation_order();
     let ordered: Value = .Pair(
-        #[cpp] { cv_test_sum_record(1) },
-        #[cpp] { cv_test_sum_record(2) },
+        cv_test_sum_record(1),
+        cv_test_sum_record(2),
     );
-    let observed: i32 = #[cpp] { cv_test_sum_evaluation_order };
+    let observed = cv_test_sum_evaluation_order_value();
     check(second(ordered) == 2);
     check(observed == 12);
 
-    #[cpp] { cv_test_match_subject_evaluations = 0; }
+    cv_test_reset_match_subject_evaluations();
     check(describe_next() == 21);
-    let match_evaluations: i32 = #[cpp] { cv_test_match_subject_evaluations };
+    let match_evaluations = cv_test_match_subject_evaluation_count();
     check(match_evaluations == 1);
 }

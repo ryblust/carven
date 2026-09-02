@@ -3,7 +3,6 @@ module carven:semantic.analysis.elaboration.stmt.impl;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
@@ -192,22 +191,6 @@ auto build_statement(
     BodyControl control
 ) noexcept -> HIRStmtID {
     return elaborate_update(module_analysis, scopes, statement, control);
-}
-
-auto build_statement(
-    ModuleAnalysis& module_analysis,
-    ScopeStack&,
-    const CppRegion& region,
-    Span span,
-    BodyControl
-) noexcept -> HIRStmtID {
-    auto& builder = module_analysis.builder();
-    return builder.append_statement({
-        .origin = module_analysis.origin(span),
-        .value = HIRCppStmt {
-            .bytes = builder.intern_string(module_analysis.spelling(region.body_span)),
-        },
-    });
 }
 
 auto build_statement(

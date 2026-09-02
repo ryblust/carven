@@ -5,13 +5,13 @@ document introduces the shape of supported Carven source, following
 the order in which a reader normally encounters it in a file.
 
 This guide is nonnormative. Its examples present the ordinary language surface
-without enumerating every validity, evaluation, ownership, failure, or
-interoperability rule.
+without enumerating every validity, evaluation, ownership, failure, or C++
+interoperation rule.
 
 ## A source file
 
 A source file contains one contiguous import prefix followed by top-level
-declarations, tests, and optional C++ regions:
+declarations, tests, and optional C++ source fragments:
 
 ```carven
 import .math using answer;
@@ -38,13 +38,15 @@ compile-time facts may refer forward, and functions may be mutually recursive.
 ## Imports
 
 An import names a module and selects one name, a list of names, or every visible
-name from it:
+name from it. The same prefix may also contain C++ header imports:
 
 ```carven
 import math using answer;
 import .constants using *;
 import json::parser using parse;
 import geometry.vector using { Point, length };
+import <cstdint>;
+import "native/provider.hpp";
 ```
 
 An unprefixed reference starts at the current module domain root. A reference
@@ -53,6 +55,9 @@ beginning with `.` starts in the importing module's logical directory, so
 current module domain. `name::path` selects a named craft domain. Resolution
 uses logical module paths and considers only source modules explicitly supplied
 in the same compilation; it does not discover files.
+
+C++ header imports supply opaque include spellings to the downstream C++ build.
+They do not create Carven names, resolve files, or link libraries.
 
 ## Top-level declarations
 
@@ -311,20 +316,47 @@ test-emission mode determines whether generated artifacts register and run them.
 
 ## C++ interoperation
 
-`#[cpp]` introduces an explicit C++ boundary at top level, statement position,
-or expression position:
+Carven code reaches a C++ provider only through an explicit `import(cpp)`
+function. A C++ header import makes a declaration available to the generated
+module, while the definition may be inline in that header or supplied by a
+linked C++ source:
 
 ```carven
-#[cpp] {
-    #include <cstdint>
-}
+import "native/provider.hpp";
 
-fn native_answer() -> i32 {
-    return #[cpp] { std::int32_t {42} };
+private import(cpp) fn native_answer() -> i32;
+
+export(cpp) fn answer() -> i32 {
+    return native_answer();
 }
 ```
 
-The body is opaque to Carven. C++ owns names, types, overloads, templates,
-lifetime, and undefined behavior inside it. A surrounding Carven type may state
-the expected boundary result; it does not cause Carven to validate the C++ body
-as ordinary Carven source.
+`export(cpp)` publishes an ordinary Carven function to C++ consumers. An
+imported capability is never re-exported directly; widening it requires the
+explicit Carven wrapper shown above.
+
+A top-level C++ source fragment places byte-opaque C++ in the generated module
+implementation:
+
+```carven
+#[cpp] ---
+#define NATIVE_FLAG 1
+
+template<typename T>
+struct native_traits;
+---
+```
+
+The opening and closing fences contain the same number of at least three `-`
+characters. A matching fence line inside the payload closes the fragment; use a
+longer fence when those bytes are needed. Carven does not parse the payload.
+Fragments are implementation-only and do not contribute to a public C++
+header.
+
+The boundary supports concrete, infallible scalar functions. The provider has
+the same unqualified name at global C++ scope; `export(cpp)` declarations use a
+self-contained `carven/api/<module>.hpp` header. Exact validity, type mapping,
+Unicode checks, and C++ responsibilities are defined by
+[semantics.md](semantics.md#c-interoperation). Generated paths and public-output
+stability are defined by
+[compatibility.md](compatibility.md#c-interoperation-artifacts).

@@ -50,14 +50,7 @@ auto lower_unconsumed_expression(
         return lower_unconsumed_expression(context, cast->operand_id, control);
     }
     return std::visit(
-        [&](const auto& value) noexcept -> LoweredExpression {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, HIRCppExpr>) {
-                return lower_expression(context, id, value);
-            } else {
-                return lower_expression(context, id, value, control);
-            }
-        },
+        [&](const auto& value) noexcept { return lower_expression(context, id, value, control); },
         source.value
     );
 }
@@ -76,32 +69,6 @@ auto lower_tail_expression(
         return lower_unconsumed_expression(context, propagation->operand_id, control);
     }
     return lower_unconsumed_expression(context, id, control);
-}
-
-auto lower_expression(
-    TargetCallableLowerer& context,
-    HIRExprID id,
-    const HIRCppExpr& expression
-) noexcept -> LoweredExpression {
-    const auto raw = context.target().append_expression({
-        .value = TargetRawFragment {
-            .bytes = std::string(context.source().provenance().spelling(expression.bytes)),
-        },
-    });
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(
-        &context.source().type(context.source().expression(id).type).value
-    );
-    if (builtin == nullptr
-        || (builtin->kind != HIRBuiltinType::Str && builtin->kind != HIRBuiltinType::Char)) {
-        return {.prelude = {}, .expression = raw};
-    }
-    const auto checker = builtin->kind == HIRBuiltinType::Str
-        ? TargetSymbol::RuntimeCheckedForeignStr
-        : TargetSymbol::RuntimeCheckedForeignChar;
-    return {
-        .prelude = {},
-        .expression = call_expression(context, name_expression(context, checker), {raw}),
-    };
 }
 
 auto lower_expression(

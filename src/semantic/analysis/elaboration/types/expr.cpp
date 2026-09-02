@@ -3,7 +3,6 @@ module carven:semantic.analysis.elaboration.types.expr.impl;
 import :diagnostics.builder;
 import :frontend.ast.expr;
 import :frontend.ast.literal;
-import :frontend.ast.region;
 import :frontend.literal;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
@@ -87,19 +86,6 @@ auto expression_expected_diagnosing(
                 .constant = std::nullopt,
                 .value = HIRCallableViewExpr {
                     .source = result,
-                },
-            }
-        );
-    }
-    if (const auto* region = std::get_if<CppRegion>(&value.value)) {
-        return append_expression(
-            module_analysis,
-            {
-                .origin = module_analysis.origin(value.span),
-                .type = expected,
-                .constant = std::nullopt,
-                .value = HIRCppExpr {
-                    .bytes = builder.intern_string(module_analysis.spelling(region->body_span)),
                 },
             }
         );
@@ -344,9 +330,6 @@ auto expression_expected_diagnosing(
                 },
             }
         );
-    }
-    if (std::holds_alternative<HIRForeignTypeValue>(result_type)) {
-        builder.expression(result).type = expected;
     }
     return result;
 }

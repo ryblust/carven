@@ -157,8 +157,6 @@ auto adoption_compatible(
                         }
                         return hir.failure_set(source.failure_set).members;
                     },
-                    [](const ForeignCallableFailure&) static noexcept
-                        -> std::optional<std::span<const HIRTypeID>> { return std::nullopt; },
                 },
                 callable.failure_source
             );
@@ -237,9 +235,7 @@ auto type_compatible(SemanticDraftView hir, HIRTypeID left, HIRTypeID right) noe
     const auto& left_value = hir.type(left).value;
     const auto& right_value = hir.type(right).value;
     if (std::holds_alternative<HIRErrorTypeValue>(left_value)
-        || std::holds_alternative<HIRErrorTypeValue>(right_value)
-        || std::holds_alternative<HIRForeignTypeValue>(left_value)
-        || std::holds_alternative<HIRForeignTypeValue>(right_value)) {
+        || std::holds_alternative<HIRErrorTypeValue>(right_value)) {
         return true;
     }
     return shapes_compatible(hir, left, right);

@@ -95,6 +95,7 @@ private:
     std::string_view source;
     std::uint32_t position = 0;
     std::uint32_t token_start = 0;
+    std::optional<TokenKind> previous_token_kind;
     Diagnosed<TokenBuffer> result;
 
     auto at_end(std::size_t lookahead = 0) const noexcept -> bool {
@@ -124,10 +125,14 @@ private:
 
     auto span() const noexcept -> Span { return Span::from_bounds(token_start, position); }
 
-    auto append_token(TokenKind kind) noexcept -> void { result.value.append_token(kind, span()); }
+    auto append_token(TokenKind kind) noexcept -> void {
+        result.value.append_token(kind, span());
+        previous_token_kind = kind;
+    }
 
     auto append_literal_token(TokenLiteralValue value) noexcept -> void {
         result.value.append_literal_token(span(), std::move(value));
+        previous_token_kind = result.value.tokens().back().kind;
     }
 
     auto diagnose(std::string_view message, Span diagnostic_span) noexcept -> void {
@@ -227,6 +232,10 @@ private:
             case '!': append_token(match('=') ? BangEqual : Bang); return;
             case '=': append_token(match('=') ? EqualEqual : match('>') ? FatArrow : Equal); return;
             case '<':
+                if (previous_token_kind == Import) {
+                    scan_cpp_header_name('>', CppAngleHeaderName);
+                    return;
+                }
                 append_token(
                     match('<') ? (match('=') ? LeftShiftEqual : LeftShift)
                                : (match('=') ? LessEqual : Less)
@@ -245,13 +254,19 @@ private:
                                      : Ampersand
                 );
                 return;
-            case '|':  append_token(match('|') ? PipePipe : match('=') ? PipeEqual : Pipe); return;
-            case '^':  append_token(match('=') ? CaretEqual : Caret); return;
-            case '~':  append_token(Tilde); return;
-            case '?':  append_token(Question); return;
-            case '"':  scan_string(); return;
+            case '|': append_token(match('|') ? PipePipe : match('=') ? PipeEqual : Pipe); return;
+            case '^': append_token(match('=') ? CaretEqual : Caret); return;
+            case '~': append_token(Tilde); return;
+            case '?': append_token(Question); return;
+            case '"':
+                if (previous_token_kind == Import) {
+                    scan_cpp_header_name('"', CppQuoteHeaderName);
+                    return;
+                }
+                scan_string();
+                return;
             case '\'': scan_character(); return;
-            case '#':  scan_cpp_region(); return;
+            case '#':  scan_cpp_source_fragment(); return;
             default:   diagnose_invalid("unknown source character"); return;
         }
     }
@@ -314,169 +329,95 @@ private:
         }
     }
 
-    auto scan_quoted_cpp(char quote) noexcept -> bool {
-        ++position;
-        while (!at_end()) {
-            if (current() == '\\') {
-                ++position;
-                if (!at_end()) {
-                    ++position;
-                }
-                continue;
-            }
-            if (current() == quote) {
-                ++position;
-                return true;
-            }
+    auto scan_cpp_header_name(char closing, TokenKind kind) noexcept -> void {
+        const auto content_start = position;
+        while (!at_end() && current() != closing && current() != '\n' && current() != '\r') {
             if (static_cast<unsigned char>(current()) >= 0x80) {
                 consume_utf8();
             } else {
                 ++position;
             }
         }
-        return false;
-    }
-
-    auto raw_cpp_prefix_length() const noexcept -> std::size_t {
-        static constexpr auto prefixes = std::to_array<std::string_view>({
-            "u8R\"",
-            "uR\"",
-            "UR\"",
-            "LR\"",
-            "R\"",
-        });
-        for (const auto prefix : prefixes) {
-            if (source.substr(position).starts_with(prefix)) {
-                return prefix.size();
+        if (position == content_start) {
+            if (!at_end() && current() == closing) {
+                ++position;
             }
+            diagnose_invalid("a C++ header name must not be empty");
+            return;
         }
-        return 0;
+        if (at_end() || current() != closing) {
+            diagnose_invalid("unterminated C++ header name");
+            return;
+        }
+        ++position;
+        append_token(kind);
     }
 
-    auto scan_raw_cpp(std::size_t prefix_length) noexcept -> bool {
-        const auto start = position;
-        position += static_cast<std::uint32_t>(prefix_length);
-        const auto delimiter_start = position;
-        while (!at_end()
-               && current() != '('
-               && current() != ' '
-               && current() != ')'
-               && current() != '\\'
-               && current() != '\t'
-               && current() != '\r'
-               && current() != '\n') {
-            ++position;
+    auto consume_line_ending() noexcept -> bool {
+        if (match('\n')) {
+            return true;
         }
-        const auto delimiter_size = position - delimiter_start;
-        if (delimiter_size > 16 || !match('(')) {
-            // An invalid raw-string opener is ordinary payload, including its
-            // introducer quote. Continue after that quote so it is not
-            // reinterpreted as an ordinary string literal.
-            position = start + static_cast<std::uint32_t>(prefix_length);
+        if (!match('\r')) {
             return false;
         }
-
-        const auto delimiter = source.substr(delimiter_start, position - delimiter_start - 1);
-        while (!at_end()) {
-            if (current() == ')'
-                && source.substr(position + 1).starts_with(delimiter)
-                && source.substr(position + 1 + delimiter.size()).starts_with('"')) {
-                position += static_cast<std::uint32_t>(delimiter.size() + 2);
-                return true;
-            }
-            if (static_cast<unsigned char>(current()) >= 0x80) {
-                consume_utf8();
-            } else {
-                ++position;
-            }
-        }
+        static_cast<void>(match('\n'));
         return true;
     }
 
-    auto scan_cpp_region() noexcept -> void {
+    auto scan_cpp_source_fragment() noexcept -> void {
         if (!source.substr(token_start).starts_with("#[cpp]")) {
-            diagnose_invalid("expected '#[cpp]' inline C++ introducer");
+            diagnose_invalid("expected '#[cpp]' C++ source fragment introducer");
             return;
         }
         position = token_start + 6;
-        while (current() == ' ' || current() == '\t' || current() == '\n' || current() == '\r') {
+        if (current() != ' ' && current() != '\t') {
+            diagnose_invalid("expected horizontal whitespace before the C++ source fragment fence");
+            return;
+        }
+        while (current() == ' ' || current() == '\t') {
             ++position;
         }
-        if (!match('{')) {
-            diagnose_invalid("expected '{' after '#[cpp]'");
+        auto fence_size = 0uz;
+        while (match('-')) {
+            ++fence_size;
+        }
+        if (fence_size < 3) {
+            diagnose_invalid("a C++ source fragment fence requires at least three '-' characters");
+            return;
+        }
+        while (current() == ' ' || current() == '\t') {
+            ++position;
+        }
+        if (!consume_line_ending()) {
+            diagnose_invalid("expected a line ending after the C++ source fragment fence");
             return;
         }
 
-        auto depth = 1uz;
         while (!at_end()) {
-            if (current() == '/' && current(1) == '/') {
-                position += 2;
-                while (!at_end() && current() != '\n' && current() != '\r') {
-                    if (static_cast<unsigned char>(current()) >= 0x80) {
-                        consume_utf8();
-                    } else {
-                        ++position;
-                    }
-                }
-                continue;
-            }
-
-            if (current() == '/' && current(1) == '*') {
-                position += 2;
-                auto closed = false;
-                while (!at_end()) {
-                    if (current() == '*' && current(1) == '/') {
-                        position += 2;
-                        closed = true;
-                        break;
-                    }
-                    if (static_cast<unsigned char>(current()) >= 0x80) {
-                        consume_utf8();
-                    } else {
-                        ++position;
-                    }
-                }
-                if (!closed) {
-                    break;
-                }
-                continue;
-            }
-
-            if (const auto prefix = raw_cpp_prefix_length(); prefix != 0 && scan_raw_cpp(prefix)) {
-                continue;
-            }
-
-            if (current() == '"' || current() == '\'') {
-                if (!scan_quoted_cpp(current())) {
-                    break;
-                }
-                continue;
-            }
-
-            if (current() == '{') {
-                ++depth;
-                ++position;
-                continue;
-            }
-
-            if (current() == '}') {
-                --depth;
-                ++position;
-                if (depth == 0) {
-                    append_token(TokenKind::CppRegion);
-                    return;
-                }
-                continue;
-            }
-
-            if (static_cast<unsigned char>(current()) >= 0x80) {
-                consume_utf8();
-            } else {
+            const auto line_start = position;
+            while (current() == ' ' || current() == '\t') {
                 ++position;
             }
+            auto closing_size = 0uz;
+            while (match('-')) {
+                ++closing_size;
+            }
+            while (current() == ' ' || current() == '\t') {
+                ++position;
+            }
+            if (closing_size == fence_size
+                && (at_end() || current() == '\n' || current() == '\r')) {
+                append_token(TokenKind::CppSourceFragment);
+                return;
+            }
+            position = line_start;
+            while (!at_end() && current() != '\n' && current() != '\r') {
+                ++position;
+            }
+            static_cast<void>(consume_line_ending());
         }
 
-        diagnose_invalid("unterminated inline C++ region");
+        diagnose_invalid("unterminated C++ source fragment; expected a matching fence");
     }
 };
 

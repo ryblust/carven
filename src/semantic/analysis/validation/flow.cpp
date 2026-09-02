@@ -250,7 +250,6 @@ auto SemanticVerifier<Program>::visit_statement(HIRStmtID id, SemanticScopeID sc
             [&](const HIRTestFailStmt& test) noexcept {
                 return !test.message.has_value() || visit_expression(*test.message, scope);
             },
-            [](const HIRCppStmt&) static noexcept { return true; },
         },
         statement.value
     );

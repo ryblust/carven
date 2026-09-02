@@ -63,9 +63,7 @@ auto lower_statement(
     const TargetControlDestinations& control
 ) noexcept -> TargetStmtValue {
     const auto* named_target = std::get_if<HIRNamedBindingTarget>(&statement.target);
-    const auto target_type = is_foreign_type(context, statement.type)
-        ? intrinsic_type(context, TargetSymbol::Auto)
-        : lower_type(context, statement.type);
+    const auto target_type = lower_type(context, statement.type);
     auto initializer = lower_expression(context, statement.initializer, control);
     const auto maybe_unused =
         named_target == nullptr || !symbol_is_used(context, named_target->symbol);

@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.diagnostics.modules;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :diagnostics.diagnostic;
@@ -43,11 +44,11 @@ TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source"
     );
     const auto failing_source = *sources.append_virtual("failing.cv", std::string(failing_text));
     const auto inputs = std::array {
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = healthy_source,
             .module_path = *CanonicalModulePath::from_value("healthy"),
         },
-        CompilationInput {
+        CompilationModuleInput {
             .source_id = failing_source,
             .module_path = *CanonicalModulePath::from_value("failing"),
         },
@@ -55,9 +56,9 @@ TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source"
 
     const auto result = compile(
         sources,
-        CompilationRequest {.inputs = inputs},
+        CompilationRequest {.modules = inputs},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
         }
     );
@@ -84,15 +85,15 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
             "fn read() -> i32 { return value(); }\n"
         );
         const auto inputs = std::array {
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = first,
                 .module_path = *CanonicalModulePath::from_value("first")
             },
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = second,
                 .module_path = *CanonicalModulePath::from_value("second")
             },
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = app,
                 .module_path = *CanonicalModulePath::from_value("app")
             },
@@ -100,9 +101,9 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
 
         const auto result = compile(
             sources,
-            CompilationRequest {.inputs = inputs},
+            CompilationRequest {.modules = inputs},
             TargetGenerationRequest {
-                .tests = TestEmissionMode::None,
+                .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );
@@ -120,11 +121,11 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         const auto first = *sources.append_virtual("first.cv", "fn main() {}\n");
         const auto second = *sources.append_virtual("second.cv", "fn main() {}\n");
         const auto inputs = std::array {
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = first,
                 .module_path = *CanonicalModulePath::from_value("first")
             },
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = second,
                 .module_path = *CanonicalModulePath::from_value("second")
             },
@@ -132,9 +133,9 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
 
         const auto result = compile(
             sources,
-            CompilationRequest {.inputs = inputs},
+            CompilationRequest {.modules = inputs},
             TargetGenerationRequest {
-                .tests = TestEmissionMode::None,
+                .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );
@@ -156,11 +157,11 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         const auto second =
             *sources.append_virtual("b.cv", "import a using A;\nexport struct B { value: A }\n");
         const auto inputs = std::array {
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = first,
                 .module_path = *CanonicalModulePath::from_value("a")
             },
-            CompilationInput {
+            CompilationModuleInput {
                 .source_id = second,
                 .module_path = *CanonicalModulePath::from_value("b")
             },
@@ -168,9 +169,9 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
 
         const auto result = compile(
             sources,
-            CompilationRequest {.inputs = inputs},
+            CompilationRequest {.modules = inputs},
             TargetGenerationRequest {
-                .tests = TestEmissionMode::None,
+                .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
         );

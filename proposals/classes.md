@@ -4,8 +4,8 @@
 - **Implementation:** Not started
 - **Scope:** Transparent data, ordinary classes, class forms, receivers, and dynamic abstraction
 - **Depends on:** None for ordinary classes; dynamic generic operations depend
-  on [Generics](generics.md), and cross-boundary calls depend on a typed
-  `#[cpp]` contract
+  on [Generics](generics.md), and cross-boundary calls depend on explicit
+  [C++ interoperation](../docs/semantics.md#c-interoperation) contracts
 
 ## Summary
 
@@ -51,8 +51,8 @@ member、constructor、allocation 与 reference identity 只是 target mechanism
 language defaults。Observable class semantics 必须先于这些 mechanism。
 
 Read、Write、Take 已经描述 ordinary arguments 的 access。Receiver 必须复用同一套
-ownership/availability rules。Opaque `#[cpp]` 不能通过偶然 generated identifier
-制造未进入 semantic graph 的 dynamic generic call site。
+ownership/availability rules。C++ source-fragment 或 provider code 不能通过偶然
+generated identifier 制造未进入 semantic graph 的 dynamic generic call site。
 
 下文标记 Accepted 的示例是尚未实现的 proposal decisions，不是当前实现保证。
 
@@ -291,7 +291,7 @@ Spelling 未接受。如果未来选择 source contract，closed compilation 可
 这些只是 feasibility candidates，不是 selected lowering。任何 accepted design 都必须
 让 signature、evaluation、failure、lifetime 与 diagnostics 独立于表示。Raw C++ 不能
 通过 incidental generated names 添加 graph 之外的 generic dynamic calls；这类 call
-需要 explicit finite typed adapter。
+需要 finite、显式的 `import(cpp)`/`export(cpp)` contract。
 
 Open-world artifacts 需要独立 ABI/registration contract，继续 Deferred。
 
@@ -463,7 +463,7 @@ Open-world artifacts 需要独立 ABI/registration contract，继续 Deferred。
 
 - **Reason deferred:** Closed source composition 没有为 dynamic values 定义 layout、
   ownership、calling convention 或 binary compatibility。
-- **Depends on:** Dynamic value implementation and a dedicated ABI/interop proposal
+- **Depends on:** Dynamic value implementation and a dedicated ABI/interoperation proposal
 - **Reactivation condition:** Supported external consumer 需要 stable layout、call、
   lifetime responsibility 与 compatibility。
 
@@ -495,7 +495,8 @@ semantic IR、lowering 与 permanent docs 必须一起落地。
 
 Dynamic implementation 等待 `OPEN-03` 至 `OPEN-05`，顺序是 contract/conformance、
 explicit erased construction、call 与 lifetime。只有 `OPEN-06` 的 optional generic
-slice 依赖 generics；只有跨 C++ boundary 的切片依赖 typed `#[cpp]` contract。
+slice 依赖 generics；只有跨 C++ boundary 的切片依赖显式 `import(cpp)`/`export(cpp)`
+carrier contract。
 
 Private lowering 只能在 Carven facts 固定后选择 C++ values、factories、operation tables、
 specialized thunks、proxy-style storage 或 direct/indirect mixed calls。
@@ -515,7 +516,7 @@ Ordinary-class slice 必须覆盖：
 Dynamic slice 还要验证 nominal conformance、missing/extra/signature diagnostics、
 explicit ownership/allocation、referent lifetime、copy/mutation/nullability、exactly-once
 calls、typed failure、direct/erased equivalence、finite generic dispatch，以及拒绝
-untracked `#[cpp]` entry points。
+untracked C++ source-fragment definitions 和 provider entry points。
 
 ## References
 

@@ -6,7 +6,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :frontend.lex.token;
@@ -112,7 +111,6 @@ auto Parser::starts_unambiguous_statement() const noexcept -> bool {
         || check(TokenKind::Try)
         || check(TokenKind::While)
         || check(TokenKind::For)
-        || check(TokenKind::CppRegion)
         || check(TokenKind::PlusPlus)
         || check(TokenKind::MinusMinus)
         || test_operation_starts_here();
@@ -237,13 +235,6 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
         return builder.append_statement({
             .span = form->span,
             .value = std::move(*form),
-        });
-    }
-    if (check(TokenKind::CppRegion)) {
-        const auto token = consume();
-        return builder.append_statement({
-            .span = token.span,
-            .value = cpp_region(token.span),
         });
     }
     if (check(TokenKind::PlusPlus) || check(TokenKind::MinusMinus)) {

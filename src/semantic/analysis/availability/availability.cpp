@@ -85,7 +85,9 @@ auto diagnose_availability(SemanticDraftView builder, DiagnosticSink& diagnostic
     const auto catalog = AvailabilityPlaceCatalog(builder);
     for (auto index = 0uz; index < builder.callables().size(); ++index) {
         const auto callable = CallableID::from_index(static_cast<std::uint32_t>(index));
-        diagnose_body(builder, diagnostics, catalog, builder.callable(callable).body);
+        if (const auto body = callable_body_id(builder.callable(callable))) {
+            diagnose_body(builder, diagnostics, catalog, *body);
+        }
     }
     for (auto index = 0uz; index < builder.tests().size(); ++index) {
         const auto test = TestID::from_index(static_cast<std::uint32_t>(index));

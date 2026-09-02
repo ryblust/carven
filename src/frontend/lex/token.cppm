@@ -9,7 +9,9 @@ enum class TokenKind {
     NumberLiteral,
     CharLiteral,
     StringLiteral,
-    CppRegion,
+    CppAngleHeaderName,
+    CppQuoteHeaderName,
+    CppSourceFragment,
 
     As,
     Break,

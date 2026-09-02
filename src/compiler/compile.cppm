@@ -1,6 +1,7 @@
 module carven:compiler.compile;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :diagnostics.diagnosed;
 import :source.manager;

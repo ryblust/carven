@@ -2,7 +2,6 @@ module carven:semantic.analysis.elaboration.expr.control.impl;
 
 import :frontend.ast.control;
 import :frontend.ast.expr;
-import :frontend.ast.region;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.expr;
 import :semantic.analysis.elaboration.module_analysis;
@@ -33,7 +32,7 @@ auto build_expression(
         const auto condition =
             build_expression(module_analysis, scopes, control, source_branch.condition);
         if (!is_bool(module_analysis, expression_type(module_analysis, condition))
-            && !is_opaque_or_error(module_analysis, expression_type(module_analysis, condition))) {
+            && !is_error_type(module_analysis, expression_type(module_analysis, condition))) {
             module_analysis.emit(
                 ast.expression(source_branch.condition).span,
                 "if condition must have type bool",
@@ -408,29 +407,6 @@ auto build_expression(
             .value = HIRTryExpr {
                 .body = body,
                 .arms = std::move(arms),
-            },
-        }
-    );
-}
-
-auto build_expression(
-    ModuleAnalysis& module_analysis,
-    ScopeStack&,
-    BodyControl,
-    const CppRegion& region,
-    ASTExprID id,
-    ProgramOriginID expression_origin
-) noexcept -> HIRExprID {
-    const auto ast = module_analysis.syntax();
-    auto& builder = module_analysis.builder();
-    return append_expression(
-        module_analysis,
-        {
-            .origin = expression_origin,
-            .type = foreign_type(module_analysis, ast.expression(id).span),
-            .constant = std::nullopt,
-            .value = HIRCppExpr {
-                .bytes = builder.intern_string(module_analysis.spelling(region.body_span)),
             },
         }
     );

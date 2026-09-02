@@ -10,7 +10,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -128,7 +127,6 @@ public:
                     );
                 },
                 [](const HIRBuiltinTypeValue&) static noexcept {},
-                [](const HIRForeignTypeValue&) static noexcept {},
                 [](const HIRErrorTypeValue&) static noexcept {},
             },
             value
@@ -275,16 +273,6 @@ auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnost
         }
         return false;
     };
-    const auto contains_foreign = [&](this const auto& self, HIRTypeID type_id) noexcept -> bool {
-        const auto& value = builder.type(type_id).value;
-        if (std::holds_alternative<HIRForeignTypeValue>(value)) {
-            return true;
-        }
-        if (const auto* array = std::get_if<HIRArrayTypeValue>(&value)) {
-            return self(array->element_type_id);
-        }
-        return false;
-    };
     const auto report =
         [&](ProgramOriginID source_origin, std::string message, DiagnosticCode code) noexcept {
             diagnostics.emit(DiagnosticBuilder(code, std::move(message))
@@ -354,16 +342,16 @@ auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnost
     for (auto index = 0uz; index < builder.functions().size(); ++index) {
         const auto id = FunctionID::from_index(static_cast<std::uint32_t>(index));
         const auto& function = builder.function(id);
-        const auto& body = builder.body(builder.callable(function.callable).body);
+        const auto& callable = builder.callable(function.callable);
         const auto defining_module = declaration_module(builder, function.symbol);
-        for (const auto& parameter : body.parameters) {
+        for (const auto [parameter_index, parameter] : std::views::enumerate(callable.parameters)) {
             diagnose_declaration_surface_type(
                 builder,
                 diagnostics,
                 function.visibility,
                 defining_module,
                 parameter.type,
-                parameter.origin,
+                function.parameter_origins[parameter_index],
                 "function parameter"
             );
         }
@@ -398,14 +386,6 @@ auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnost
         }
     }
     for (const auto& expression : builder.expressions()) {
-        if (std::holds_alternative<HIRArrayExpr>(expression.value)
-            && contains_foreign(expression.type)) {
-            report(
-                expression.origin,
-                "Foreign values cannot be stored in a Carven array",
-                DiagnosticCode::TypeForeignEscape
-            );
-        }
         const auto* closure = std::get_if<HIRClosureExpr>(&expression.value);
         if (closure == nullptr) {
             continue;
@@ -417,26 +397,12 @@ auto diagnose_type_contracts(SemanticDraftView builder, DiagnosticSink& diagnost
                 DiagnosticCode::TypeCallableViewEscape
             );
         }
-        if (contains_foreign(closure->result)) {
-            report(
-                expression.origin,
-                "Foreign value cannot be returned from a lambda",
-                DiagnosticCode::TypeForeignEscape
-            );
-        }
         for (const auto& capture : closure->captures) {
             if (contains_callable_view(capture.type)) {
                 report(
                     capture.origin,
                     "non-owning callable view cannot be captured by a lambda",
                     DiagnosticCode::TypeCallableViewEscape
-                );
-            }
-            if (contains_foreign(capture.type)) {
-                report(
-                    capture.origin,
-                    "Foreign value cannot be captured by a lambda",
-                    DiagnosticCode::TypeForeignEscape
                 );
             }
         }

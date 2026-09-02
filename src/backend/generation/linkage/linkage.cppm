@@ -1,6 +1,6 @@
 module carven:backend.generation.linkage;
 
-import :backend.generate;
+import :backend.generation.request;
 import std;
 
 class LinkageDomainID final {

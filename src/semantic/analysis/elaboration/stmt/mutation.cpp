@@ -62,7 +62,7 @@ auto elaborate_assignment(
         expression_type(module_analysis, target)
     );
     if (assignment.op != ASTAssignmentOperator::Assign
-        && !is_opaque_or_error(module_analysis, expression_type(module_analysis, target))) {
+        && !is_error_type(module_analysis, expression_type(module_analysis, target))) {
         const auto integer_only = assignment.op == ASTAssignmentOperator::Remainder
             || assignment.op == ASTAssignmentOperator::BitwiseAnd
             || assignment.op == ASTAssignmentOperator::BitwiseOr
@@ -101,7 +101,7 @@ auto elaborate_update(
     const auto target = build_expression(module_analysis, scopes, control, update.target);
     diagnose_mutation_target(module_analysis, target, ast.expression(update.target).span);
     if (!is_integer(module_analysis, expression_type(module_analysis, target))
-        && !is_opaque_or_error(module_analysis, expression_type(module_analysis, target))) {
+        && !is_error_type(module_analysis, expression_type(module_analysis, target))) {
         module_analysis.emit(
             ast.expression(update.target).span,
             "update target must have an integer type",

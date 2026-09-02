@@ -2,11 +2,11 @@ module carven:backend.target.expr;
 
 import :backend.target.ids;
 import :backend.target.name;
-import :backend.target.raw;
 import :backend.target.symbol;
 import std;
 
 enum class TargetPrefixOperator {
+    AddressOf,
     LogicalNot,
     Negate,
     BitwiseNot,
@@ -145,7 +145,7 @@ struct TargetMemberExpr final {
 };
 
 struct TargetScopeMemberExpr final {
-    std::variant<TargetExprID, TargetRawFragment> operand;
+    TargetExprID operand_id;
     TargetMemberName name;
 };
 
@@ -213,7 +213,6 @@ using TargetExprValue = std::variant<
     TargetStaticMemberExpr,
     TargetForwardExpr,
     TargetStaticCastExpr,
-    TargetRawFragment,
     TargetLambdaExpr,
     TargetClosureExpr>;
 

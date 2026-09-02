@@ -3,7 +3,6 @@ module carven:frontend.ast.stmt;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.ids;
-import :frontend.ast.region;
 import :frontend.ast.type;
 import :source.text;
 import std;
@@ -132,8 +131,7 @@ struct ASTStmt final {
         ASTForStmt,
         ASTIfForm,
         ASTMatchForm,
-        ASTTryForm,
-        CppRegion>
+        ASTTryForm>
         value;
 };
 

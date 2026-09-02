@@ -20,6 +20,8 @@ enum class TargetTemporaryNameKind {
     Continue,
     TestValue,
     TestRegistration,
+    CppBoundaryParameter,
+    CppProviderPointer,
 };
 
 struct TargetScopeID final {

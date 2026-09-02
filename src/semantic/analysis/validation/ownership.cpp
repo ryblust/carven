@@ -103,7 +103,6 @@ public:
                             return claim(test_claims, id, "test")
                                 && claim_body(program.test(id).body);
                         },
-                        [](const HIRCppRegion&) static noexcept { return true; },
                     },
                     item
                 );
@@ -242,14 +241,32 @@ private:
     }
 
     auto claim_callable(CallableID id) noexcept -> bool {
-        return claim(callable_claims, id, "callable") && claim_body(program.callable(id).body);
+        if (!claim(callable_claims, id, "callable")) {
+            return false;
+        }
+        return std::visit(
+            Overloaded {
+                [&](const HIRBodyImplementation& implementation) noexcept {
+                    return claim_body(implementation.body);
+                },
+                [](const HIRCppImportImplementation&) static noexcept { return true; },
+            },
+            program.callable(id).implementation
+        );
     }
 
     auto claim_closure_callable(CallableID id) noexcept -> bool {
         if (!active_scope.has_value() || !claim_callable(id)) {
             return false;
         }
-        closure_enclosings.emplace_back(program.callable(id).body, *active_scope);
+        const auto body = callable_body_id(program.callable(id));
+        if (!body.has_value()) {
+            return fail(
+                SemanticProgramErrorKind::InvalidContract,
+                "closure callable is not implemented by a Carven body"
+            );
+        }
+        closure_enclosings.emplace_back(*body, *active_scope);
         return true;
     }
 
@@ -468,7 +485,6 @@ private:
                                return visit_catch_arm(arm);
                            });
                 },
-                [](const HIRCppExpr&) static noexcept { return true; },
             },
             program.expression(id).value
         );
@@ -576,7 +592,6 @@ private:
                 [&](const HIRTestFailStmt& value) noexcept {
                     return !value.message.has_value() || visit_expression(*value.message);
                 },
-                [](const HIRCppStmt&) static noexcept { return true; },
             },
             program.statement(id).value
         );

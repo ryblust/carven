@@ -8,6 +8,7 @@ import :semantic.analysis.effects;
 import :semantic.analysis.elaboration.decl;
 import :semantic.analysis.elaboration.module_analysis;
 import :semantic.analysis.lint;
+import :semantic.analysis.interop;
 import :semantic.analysis.pipeline.decl;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.validation;
@@ -16,7 +17,7 @@ import :semantic.analyze;
 import :support.invariant;
 import std;
 
-auto analyze(ParsedBatch syntax) noexcept
+auto analyze(SyntaxProgram syntax) noexcept
     -> std::expected<Diagnosed<SemanticProgram>, Diagnostics> {
     auto analyzer = ProgramAnalyzer(std::move(syntax));
     {
@@ -74,6 +75,7 @@ auto analyze(ParsedBatch syntax) noexcept
         for (auto& module_analysis : modules) {
             build_module(module_analysis);
         }
+        diagnose_cpp_api_surface(analyzer.builder(), analyzer.diagnostics());
         if (analyzer.has_errors()) {
             return std::unexpected(analyzer.take_diagnostics());
         }

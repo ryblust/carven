@@ -204,7 +204,6 @@ private:
                 [&](const HIRClosureTypeValue& value) noexcept {
                     collect_callable(module_id, value.callable, completeness, guard);
                 },
-                [](const HIRForeignTypeValue&) static noexcept {},
                 [](const HIRErrorTypeValue&) static noexcept {},
             },
             semantic.type(type_id).value
@@ -285,7 +284,9 @@ private:
                 [&](FunctionID id) noexcept {
                     const auto callable = semantic.function(id).callable;
                     collect_callable_contract(module_id, callable);
-                    collect_body(module_id, semantic.callable(callable).body);
+                    if (const auto body = callable_body_id(semantic.callable(callable))) {
+                        collect_body(module_id, *body);
+                    }
                 },
                 [&](StructID id) noexcept {
                     for (const auto& field : semantic.structure(id).fields) {
@@ -304,7 +305,6 @@ private:
                     }
                 },
                 [&](TestID id) noexcept { collect_body(module_id, semantic.test(id).body); },
-                [](const HIRCppRegion&) static noexcept {},
             },
             item
         );
@@ -496,7 +496,7 @@ private:
                     }
                 },
                 [&](const HIRClosureExpr& value) noexcept {
-                    collect_body(module_id, semantic.callable(value.callable).body);
+                    collect_body(module_id, *callable_body_id(semantic.callable(value.callable)));
                 },
                 [&](const HIRCallableViewExpr& value) noexcept {
                     collect_expression(module_id, value.source);
@@ -543,7 +543,6 @@ private:
                         collect_block(module_id, arm.body);
                     }
                 },
-                [](const HIRCppExpr&) static noexcept {},
             },
             expression.value
         );
@@ -638,7 +637,6 @@ private:
                         collect_expression(module_id, *value.message);
                     }
                 },
-                [](const HIRCppStmt&) static noexcept {},
             },
             statement.value
         );

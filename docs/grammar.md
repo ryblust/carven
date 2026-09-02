@@ -57,7 +57,7 @@ The notation has the following meaning:
   conveniently expressed in context-free EBNF.
 
 Productions describe token sequences. Whitespace and comments are discarded by
-lexical analysis except inside literals and opaque C++ regions.
+lexical analysis except inside literals and opaque C++ source fragments.
 
 Statement parsing also carries a test context. A `test-block` enables it;
 structurally nested loop and control-flow blocks inherit it, and a lambda body
@@ -69,9 +69,10 @@ from nonterminal names for readability.
 
 ### 2.1 Source Text
 
-Carven source is UTF-8 encoded. The identifier alphabet is ASCII-only. Unicode
-source characters may occur in comments, string literals, and inline C++
-regions, but not in identifiers.
+Carven-tokenized source is UTF-8 encoded. C++ source-fragment payloads are
+byte-opaque and are not validated as UTF-8. The identifier alphabet is
+ASCII-only. Unicode source characters may occur in comments, string literals,
+and C++ header names, but not in identifiers.
 
 ```ebnf
 line-terminator = U+000A | U+000D, [ U+000A ];
@@ -82,8 +83,8 @@ line-comment = "//", { source-character - line-terminator },
                [ line-terminator ];
 ```
 
-Block comments are not Carven tokens. A block comment may occur only inside an
-opaque inline C++ region, where C++ lexical rules apply.
+Block comments are not Carven tokens. Their byte spellings may occur inside an
+opaque C++ source fragment because Carven does not tokenize its payload.
 
 ### 2.2 Identifiers and Keywords
 
@@ -195,27 +196,57 @@ normalization.
 Adjacent string literal tokens do not form one token and are not implicitly
 concatenated by the Carven grammar.
 
-### 2.5 Inline C++ Regions
+### 2.5 C++ Header Names
 
 ```ebnf
-CPP_REGION = "#[cpp]", { whitespace }, balanced-cpp-brace-region;
+CPP_ANGLE_HEADER_NAME = "<", cpp-angle-header-content, ">";
+CPP_QUOTE_HEADER_NAME = "\"", cpp-quote-header-content, "\"";
+cpp-angle-header-content = cpp-angle-header-character,
+                           { cpp-angle-header-character };
+cpp-angle-header-character = source-character - ">" - line-terminator;
+cpp-quote-header-content = cpp-quote-header-character,
+                           { cpp-quote-header-character };
+cpp-quote-header-character = source-character - "\"" - line-terminator;
 ```
 
-The exact introducer is `#[cpp]`; no whitespace is allowed inside it. Whitespace
-may occur between the introducer and the opening brace. The opening brace and
-its matching closing brace belong to the one `CPP_REGION` token.
+Immediately after an `import` token and intervening whitespace or line comments,
+`<` and `"` begin dedicated C++ header-name tokens. Their content is nonempty,
+ends at the matching delimiter, and cannot contain a line terminator. No Carven
+escape decoding or interpolation occurs. Outside that lexical context, `<` is
+an operator token and `"` begins an ordinary Carven string literal.
 
-`balanced-cpp-brace-region` is an opaque lexical scan. Brace matching ignores
-braces inside C++ character literals, string literals, recognized raw string
-literals, line comments, and block comments. A malformed raw-string prefix is
-ordinary payload text. The scan does not interpret the enclosed C++
-declarations, statements, expressions, names, types, macros, or effects.
+### 2.6 C++ Source Fragments
 
-An inline C++ region may be empty. The complete region is one opaque token. Its
-payload is the source byte span between the outer braces. The grammar assigns
-no C++ scope or generated placement to its outer braces.
+```ebnf
+cpp-fence = "-", "-", "-", { "-" };
 
-### 2.6 Punctuators
+CPP_SOURCE_FRAGMENT = "#[cpp]",
+                      horizontal-space, { horizontal-space },
+                      cpp-fence, { horizontal-space }, line-terminator,
+                      cpp-source-tail;
+```
+
+The exact introducer is `#[cpp]`; no whitespace is allowed inside it. At least
+one horizontal-space character separates it from an opening fence of at least
+three `-` characters. Only horizontal space may follow that fence before the
+required line terminator.
+
+`cpp-source-tail` is scanned as bytes through the first matching closing fence
+line. The closing fence uses exactly the same number of `-` characters as the
+opening fence. It is the only non-horizontal-space content on its line and may
+be indented. The payload is every byte before that closing line and may be
+empty. A line terminator after the closing line is not part of the token. The
+complete form, including both fences, is one `CPP_SOURCE_FRAGMENT` token and has
+no terminating semicolon.
+
+Scanning is line-based and byte-opaque. Carven does not recognize C++ braces,
+comments, character or string literals, raw strings, preprocessing directives,
+declarations, names, types, or effects. Consequently, a payload line that is a
+matching closing fence ends the fragment even when C++ would treat that line as
+part of another construct. The author selects a longer fence when the payload
+contains such a line.
+
+### 2.7 Punctuators
 
 Lexical analysis uses maximal munch. The punctuator set is:
 
@@ -238,8 +269,10 @@ source-module = { import-declaration },
               { top-level-item };
 
 top-level-item = module-item
+               | cpp-import-function-declaration
+               | cpp-export-function-definition
                | test-declaration
-               | CPP_REGION;
+               | CPP_SOURCE_FRAGMENT;
 
 module-item = [ visibility-modifier ], module-declaration;
 
@@ -249,6 +282,13 @@ module-declaration = enum-declaration
                    | struct-declaration
                    | function-definition
                    | module-constant-declaration;
+
+cpp-import-function-declaration = [ "private" ],
+                                  "import", "(", "cpp", ")",
+                                  function-head, ";";
+
+cpp-export-function-definition = "export", "(", "cpp", ")",
+                                 function-head, ordinary-block;
 
 module-constant-declaration = "const", declaration-name,
                               [ ":", type ],
@@ -268,9 +308,16 @@ production. The grammar has no namespace-declaration block.
 ### 3.1 Imports
 
 ```ebnf
-import-declaration = "import", module-reference,
-                     using-clause,
-                     ";";
+import-declaration = module-import-declaration
+                   | cpp-header-import-declaration;
+
+module-import-declaration = "import", module-reference,
+                            using-clause, ";";
+
+cpp-header-import-declaration = "import",
+                                ( CPP_ANGLE_HEADER_NAME
+                                | CPP_QUOTE_HEADER_NAME ),
+                                ";";
 
 module-reference = module-path
                  | ".", module-path
@@ -295,11 +342,14 @@ import math using answer;
 import .math using *;
 import json::parser using parse;
 import geometry.vector using { Point, length, };
+import <cstdint>;
+import "native/provider.hpp";
 ```
 
-Quoted strings, `/`, and `..` are not productions. `craft` is an ordinary
-identifier. The grammar preserves the three token-distinct module-reference
-forms but does not assign resolution or filesystem behavior to them.
+Quoted strings, `/`, and `..` are not module-reference productions. `craft` is
+an ordinary identifier. The grammar preserves the three token-distinct module
+reference forms and the two header-name forms but does not assign resolution,
+filesystem, or header-search behavior to them.
 
 ### 3.2 Enumerations
 
@@ -339,11 +389,12 @@ contain fields only.
 ### 3.4 Functions
 
 ```ebnf
-function-definition = "fn", IDENTIFIER,
-                      "(", [ parameter-list ], ")",
-                      [ "->", function-result-type ],
-                      [ throw-clause ],
-                      ordinary-block;
+function-definition = function-head, ordinary-block;
+
+function-head = "fn", IDENTIFIER,
+                "(", [ parameter-list ], ")",
+                [ "->", function-result-type ],
+                [ throw-clause ];
 
 parameter-list = parameter, { ",", parameter }, [ "," ];
 
@@ -356,10 +407,11 @@ function-result-type = type;
 throw-clause = "throw", named-type, { "+", named-type };
 ```
 
-Function definitions are top-level items. `throw` introduces the callable's
-failure contract after the success result. `throws` is an ordinary identifier.
-Nested functions, default arguments, variadic parameters, and explicit generic
-parameter lists have no syntax.
+Function definitions are top-level items. `import(cpp)` uses the same function
+head followed by `;`; `export(cpp)` uses it followed by an ordinary block.
+`throw` introduces the callable's failure contract after the success result.
+`throws` is an ordinary identifier. Nested functions, default arguments,
+variadic parameters, and explicit generic parameter lists have no syntax.
 
 ### 3.5 Module Constants
 
@@ -453,7 +505,6 @@ statement = variable-declaration
           | update-statement
           | expression-statement
           | control-flow-statement
-          | cpp-region-statement
           | test-operation-statement
             where test context is enabled;
 
@@ -464,14 +515,10 @@ update-statement = update-form, ";";
 expression-statement = expression, ";";
 
 control-flow-statement = if-form | match-form | try-form;
-
-cpp-region-statement = CPP_REGION;
 ```
 
-A standalone inline C++ region is terminated by its closing brace and does not
-accept a following semicolon. A direct unparenthesized `if-form`, `match-form`,
-or `try-form` at the beginning of a statement is likewise terminated by its own
-structure.
+A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning
+of a statement is terminated by its own structure.
 
 `test-operation-statement` is a contextual statement alternative. In
 particular, the grammar has no standalone `{ ... }` block statement.
@@ -683,8 +730,7 @@ primary-expression = literal
                    | lambda-expression
                    | if-form
                    | match-form
-                   | try-form
-                   | CPP_REGION;
+                   | try-form;
 
 literal = NUMBER_LITERAL | STRING_LITERAL | CHAR_LITERAL
         | "true" | "false";
@@ -848,8 +894,6 @@ lookup.
   `branch-block` is a `branch-result` candidate.
 - A trailing `if-form`, `match-form`, or `try-form` without `;` occupies the role
   required by its branch position.
-- A standalone `CPP_REGION` is complete at its closing brace and cannot be
-  followed by a statement semicolon.
 - In test context, an exact `check(...) ;`, `require(...) ;`, or `fail(...) ;`
   at a statement boundary is a test operation before ordinary expression-
   statement parsing is considered. Source lambda bodies clear that context.

@@ -5,6 +5,7 @@ module;
 module carven:test.internal.compiler.generation.interfaces;
 
 import :artifacts;
+import :backend.generation.request;
 import :compilation.request;
 import :compiler.compile;
 import :source.manager;
@@ -21,7 +22,7 @@ struct ModuleFixture final {
 
 auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> ArtifactSet {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationInput>();
+    auto inputs = std::vector<CompilationModuleInput>();
     inputs.reserve(modules.size());
     for (const auto& fixture : modules) {
         const auto source =
@@ -33,9 +34,9 @@ auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> Artifac
     }
     auto result = compile(
         sources,
-        CompilationRequest {.inputs = inputs},
+        CompilationRequest {.modules = inputs},
         TargetGenerationRequest {
-            .tests = TestEmissionMode::None,
+            .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:interfaces").value(),
         }
     );

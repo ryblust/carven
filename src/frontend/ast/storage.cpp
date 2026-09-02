@@ -36,8 +36,8 @@ auto ASTView::item(ASTItemID id) const noexcept -> const ASTItem& {
     return ast_storage->item_table.get(id);
 }
 
-auto ASTView::import_declaration(ASTImportID id) const noexcept -> const ASTImportDecl& {
-    return ast_storage->import_table.get(id);
+auto ASTView::module_import(ASTModuleImportID id) const noexcept -> const ASTModuleImport& {
+    return ast_storage->module_import_table.get(id);
 }
 
 auto ASTView::ast_module() const noexcept -> const ASTModule& {
@@ -72,8 +72,8 @@ auto ASTView::items() const noexcept -> std::span<const ASTItem> {
     return ast_storage->item_table.values();
 }
 
-auto ASTView::imports() const noexcept -> std::span<const ASTImportDecl> {
-    return ast_storage->import_table.values();
+auto ASTView::module_imports() const noexcept -> std::span<const ASTModuleImport> {
+    return ast_storage->module_import_table.values();
 }
 
 auto ASTView::source_id() const noexcept -> SourceID {

@@ -9,7 +9,7 @@
 
 本文负责显式 multi-thread execution 与 synchronization：thread creation/shutdown、跨线程
 callable/value admission、mutex/condition/semaphore、atomic 与 memory order、channel，以及
-failure、cancellation 与 C++ thread interop。
+failure、cancellation 与 C++ thread interoperation。
 
 整个领域当前保持 Deferred。Carven 没有对应 source form；在 memory model 之前设计 API，会让
 value movement、data race 与 happens-before 缺少定义。Thread 可以独立于 async 存在；future
@@ -38,7 +38,7 @@ capture 或 completion 可能迁移到另一 thread，或 blocking primitive 暴
 - 为每一种 blocking/atomic operation 提供显式 synchronization 与 failure contract；
 - 保持 shared lifetime 与 synchronized access 的区别；
 - 先以最窄真实 cross-thread vertical slice 建立能力，再扩张 API family；
-- 显式定义 C++ thread interop 与 target limitation，而不是从标准库可用性推导。
+- 显式定义 C++ thread interoperation 与 target limitation，而不是从标准库可用性推导。
 
 ### Non-goals
 
@@ -62,7 +62,7 @@ guarantee。
 ### Authority boundary
 
 本文定义 ordinary Carven thread 与 synchronization semantics。C++ thread、callback、atomic 或
-lock 只能在 source contract 固定后作为 lowering/interop mechanism；target API 不能自动决定
+lock 只能在 source contract 固定后作为 lowering/C++ interoperation mechanism；target API 不能自动决定
 ownership、failure propagation、cancellation、lock poisoning、memory-order default 或
 blocking-in-async validity。
 
@@ -142,8 +142,8 @@ mutex、atomic、channel 与 executor surface。
 对应 `DEFER-*` reactivation condition。
 
 未来切片必须连接 source form、value/callable admission、ownership/shutdown、
-SemanticProgram facts、memory-model edges、target lowering、`#[cpp]`/C++
-interop、diagnostics、tests 与永久文档。
+SemanticProgram facts、memory-model edges、target lowering、显式 C++ interoperation contract、
+diagnostics、tests 与永久文档。
 不应提前建立 generic Send/Sync-like、lock、atomic 或 channel representation。
 
 ## Validation
@@ -153,7 +153,7 @@ interop、diagnostics、tests 与永久文档。
 - normal completion、failure 与 shutdown 下的 thread/captured-value lifetime；
 - accepted/rejected cross-thread values 与精确 diagnostics；
 - promised happens-before 与 data-race behavior；
-- target fallback 与 C++ interop obligation；
+- target fallback 与 C++ interoperation obligation；
 - 没有 implicit detach、orphan work 或 shared-lifetime/synchronization 混淆；
 - 若跨越 async boundary，blocking-in-async behavior 已定义；
 - supported targets 上 generated C++ compile/link/run。
@@ -164,5 +164,5 @@ interop、diagnostics、tests 与永久文档。
 - [Async proposal](async.md)
 - [Classes proposal](classes.md)
 - [Generics proposal](generics.md)
-- [C++ interop proposal](cpp-interop.md)
+- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)
 - [Proposal roadmap](roadmap.md)

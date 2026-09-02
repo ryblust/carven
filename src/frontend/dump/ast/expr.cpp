@@ -6,7 +6,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -469,14 +468,4 @@ auto ASTDumper::render_expression(
     std::string_view field
 ) noexcept -> void {
     render_try_form(form, prefix, is_last, field);
-}
-
-auto ASTDumper::render_expression(
-    const CppRegion& region,
-    ASTExprID,
-    std::string_view prefix,
-    bool is_last,
-    std::string_view field
-) noexcept -> void {
-    render_cpp_region(region, prefix, is_last, field);
 }

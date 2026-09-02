@@ -13,10 +13,7 @@ struct FixedSignatureFailure final {
     FailureSetID failure_set;
 };
 
-struct ForeignCallableFailure final {};
-
-using CallFailureSource =
-    std::variant<ConcreteCallableFailure, FixedSignatureFailure, ForeignCallableFailure>;
+using CallFailureSource = std::variant<ConcreteCallableFailure, FixedSignatureFailure>;
 
 struct CallContractView final {
     std::span<const HIRFunctionParameterType> parameters;

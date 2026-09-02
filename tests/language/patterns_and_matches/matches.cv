@@ -1,3 +1,5 @@
+import "patterns_and_matches/matches.hpp";
+
 fn classify(value: i32) -> i32 {
     return match value {
         -1 => 0,
@@ -24,23 +26,14 @@ fn mutate_and_reject(&value: i32) -> bool {
     return false;
 }
 
-#[cpp] {
-    inline auto cv_match_subject_evaluations = 0;
-    inline auto cv_match_dead_guard_evaluations = 0;
-
-    auto cv_match_subject_once() noexcept -> bool {
-        ++cv_match_subject_evaluations;
-        return true;
-    }
-
-    auto cv_match_dead_guard() noexcept -> bool {
-        ++cv_match_dead_guard_evaluations;
-        return true;
-    }
-}
+private import(cpp) fn cv_match_reset_evaluations();
+private import(cpp) fn cv_match_subject_once() -> bool;
+private import(cpp) fn cv_match_dead_guard() -> bool;
+private import(cpp) fn cv_match_subject_evaluation_count() -> i32;
+private import(cpp) fn cv_match_dead_guard_evaluation_count() -> i32;
 
 fn next_match_subject() -> bool {
-    return #[cpp] { cv_match_subject_once() };
+    return cv_match_subject_once();
 }
 
 test "Pattern matching: matches support statement value and binding forms" {
@@ -55,20 +48,18 @@ test "Pattern matching: matches support statement value and binding forms" {
     check(preserve_outer_binding(7, 42) == 42);
     check(__identity(9) == 9);
 
-    #[cpp] {
-        cv_match_subject_evaluations = 0;
-        cv_match_dead_guard_evaluations = 0;
-    }
+    cv_match_reset_evaluations();
     let dead_arm_result = match next_match_subject() {
         false => 1,
         true => 2,
-        _ if #[cpp] { cv_match_dead_guard() } => 3,
+        _ if cv_match_dead_guard() => 3,
     };
-    let subject_evaluations: i32 = #[cpp] { cv_match_subject_evaluations };
-    let dead_guard_evaluations: i32 = #[cpp] { cv_match_dead_guard_evaluations };
+    let subject_evaluations = cv_match_subject_evaluation_count();
+    let dead_guard_evaluations = cv_match_dead_guard_evaluation_count();
     check(dead_arm_result == 2);
     check(subject_evaluations == 1);
     check(dead_guard_evaluations == 0);
+    check(cv_match_dead_guard());
 
     let guarded_binding = match 1 {
         candidate if candidate == 0 => 10,

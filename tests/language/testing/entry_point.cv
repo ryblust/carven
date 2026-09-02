@@ -1,0 +1,17 @@
+import "testing/entry_point.hpp";
+
+private import(cpp) fn cv_test_entry_mark_test_observed();
+private import(cpp) fn cv_test_entry_run_tests() -> i32;
+private import(cpp) fn cv_test_entry_observe(condition: bool);
+private import(cpp) fn cv_test_entry_test_was_observed() -> bool;
+
+test "Testing: explicit entry point executes emitted tests" {
+    cv_test_entry_mark_test_observed();
+    check(true);
+}
+
+fn main(args) {
+    let result = cv_test_entry_run_tests();
+    cv_test_entry_observe(result == 0);
+    cv_test_entry_observe(cv_test_entry_test_was_observed());
+}

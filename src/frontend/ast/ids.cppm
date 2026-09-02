@@ -9,7 +9,7 @@ struct ASTPatternIDTag final {};
 struct ASTBlockIDTag final {};
 struct ASTBranchBlockIDTag final {};
 struct ASTItemIDTag final {};
-struct ASTImportIDTag final {};
+struct ASTModuleImportIDTag final {};
 
 using ASTExprID = TypedID<ASTExprIDTag>;
 using ASTTypeID = TypedID<ASTTypeIDTag>;
@@ -18,4 +18,4 @@ using ASTPatternID = TypedID<ASTPatternIDTag>;
 using ASTBlockID = TypedID<ASTBlockIDTag>;
 using ASTBranchBlockID = TypedID<ASTBranchBlockIDTag>;
 using ASTItemID = TypedID<ASTItemIDTag>;
-using ASTImportID = TypedID<ASTImportIDTag>;
+using ASTModuleImportID = TypedID<ASTModuleImportIDTag>;

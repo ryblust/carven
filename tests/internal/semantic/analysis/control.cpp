@@ -30,11 +30,11 @@ auto analyze_errors(std::string source_text) noexcept -> Diagnostics {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("control.cv", std::move(source_text));
     REQUIRE(source_id.has_value());
-    const auto inputs = std::array {CompilationInput {
+    const auto inputs = std::array {CompilationModuleInput {
         .source_id = *source_id,
         .module_path = control_module_path(),
     }};
-    auto parsed = parse(sources, inputs);
+    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     if (analyzed.has_value()) {
@@ -47,11 +47,11 @@ auto analyze_program(std::string source_text) noexcept -> SemanticProgram {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("control.cv", std::move(source_text));
     REQUIRE(source_id.has_value());
-    const auto inputs = std::array {CompilationInput {
+    const auto inputs = std::array {CompilationModuleInput {
         .source_id = *source_id,
         .module_path = control_module_path(),
     }};
-    auto parsed = parse(sources, inputs);
+    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     REQUIRE(analyzed.has_value());
@@ -96,7 +96,8 @@ TEST_CASE("Semantic structure: nested lambda owns a distinct body") {
     REQUIRE_EQ(program.bodies().size(), 2);
 
     const auto outer_callable = program.function(FunctionID::from_index(0)).callable;
-    const auto outer_body = program.callable(outer_callable).body;
+    const auto outer_body = callable_body_id(program.callable(outer_callable));
+    REQUIRE(outer_body.has_value());
     auto closure_callable = std::optional<CallableID>();
     for (const auto& expression : program.expressions()) {
         if (const auto* closure = std::get_if<HIRClosureExpr>(&expression.value)) {
@@ -104,9 +105,10 @@ TEST_CASE("Semantic structure: nested lambda owns a distinct body") {
         }
     }
     REQUIRE(closure_callable.has_value());
-    const auto nested_body = program.callable(*closure_callable).body;
-    CHECK_NE(outer_body, nested_body);
-    CHECK_NE(program.body(outer_body).root, program.body(nested_body).root);
+    const auto nested_body = callable_body_id(program.callable(*closure_callable));
+    REQUIRE(nested_body.has_value());
+    CHECK_NE(*outer_body, *nested_body);
+    CHECK_NE(program.body(*outer_body).root, program.body(*nested_body).root);
 }
 
 TEST_CASE("Semantic place use: one symbol root owns a structural projection path") {

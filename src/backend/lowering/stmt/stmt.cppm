@@ -200,9 +200,6 @@ auto lower_statement(
     const TargetControlDestinations& control
 ) noexcept -> TargetStmtValue;
 
-auto lower_statement(const TargetCallableLowerer& context, const HIRCppStmt& statement) noexcept
-    -> TargetStmtValue;
-
 auto lower_void_try(
     TargetCallableLowerer& context,
     HIRExprID id,

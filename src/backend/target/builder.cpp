@@ -155,19 +155,8 @@ auto TargetUnitBuilder::clone_expression_occurrence(
                 };
             },
             [&](const TargetScopeMemberExpr& expression) noexcept -> TargetExprValue {
-                auto operand = std::visit(
-                    Overloaded {
-                        [&](TargetExprID value_id) noexcept
-                            -> std::variant<TargetExprID, TargetRawFragment> {
-                            return clone_expression_occurrence(value_id, active_path);
-                        },
-                        [](const TargetRawFragment& value) static noexcept
-                            -> std::variant<TargetExprID, TargetRawFragment> { return value; },
-                    },
-                    expression.operand
-                );
                 return TargetScopeMemberExpr {
-                    .operand = std::move(operand),
+                    .operand_id = clone_expression_occurrence(expression.operand_id, active_path),
                     .name = expression.name,
                 };
             },
@@ -182,9 +171,6 @@ auto TargetUnitBuilder::clone_expression_occurrence(
                     .type = expression.type,
                     .operand_id = clone_expression_occurrence(expression.operand_id, active_path),
                 };
-            },
-            [](const TargetRawFragment& expression) static noexcept -> TargetExprValue {
-                return expression;
             },
             [&](const TargetLambdaExpr& expression) noexcept -> TargetExprValue {
                 return TargetLambdaExpr {
@@ -420,9 +406,6 @@ auto TargetUnitBuilder::clone_statement_occurrence(
                     .body = clone_statement_occurrences(current.body, active_path),
                     .maybe_unused = current.maybe_unused,
                 };
-            },
-            [](const TargetRawFragment& current) static noexcept -> TargetStmtValue {
-                return current;
             },
         },
         source.value

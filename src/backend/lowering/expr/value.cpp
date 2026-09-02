@@ -228,5 +228,5 @@ auto lower_expression(
             .expression = value,
         });
     }
-    return ordered_call(context, {.prelude = {}, .expression = callee}, arguments, false, control);
+    return ordered_call(context, {.prelude = {}, .expression = callee}, arguments, control);
 }

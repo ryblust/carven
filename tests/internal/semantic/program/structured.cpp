@@ -10,6 +10,7 @@ import :semantic.analysis.control;
 import :semantic.analysis.validation.invariants;
 import :semantic.hir.decl;
 import :semantic.hir.expr;
+import :semantic.hir.interop;
 import :semantic.hir.pattern;
 import :semantic.hir.place;
 import :semantic.hir.stmt;
@@ -70,6 +71,8 @@ public:
           ),
           module_id(ProgramModuleID::from_index(0)) {
         const auto added_module = builder.append_module({
+            .cpp_header_dependencies = {},
+            .cpp_source_payload_origins = {},
             .items = {},
         });
         REQUIRE_EQ(added_module, module_id);
@@ -169,6 +172,28 @@ public:
         });
         builder.hir_module(module_id).items.push_back(structure);
         return type;
+    }
+
+    auto publish_cpp_import(std::optional<ProgramOriginID> export_origin) noexcept -> FunctionID {
+        const auto symbol = top_symbol("native_value");
+        const auto callable = builder.append_cpp_import_callable({}, integer, origin);
+        builder.adopt_symbol_type(symbol, builder.intern_function_type(callable));
+        const auto function = FunctionID::from_index(static_cast<std::uint32_t>(functions.size()));
+        functions.push_back({
+            .origin = origin,
+            .visibility = DeclarationVisibility::Module,
+            .name = builder.intern_string("native_value"),
+            .callable = callable,
+            .parameter_origins = {},
+            .result = integer,
+            .result_origin = origin,
+            .symbol = symbol,
+            .entry_point = std::nullopt,
+            .cpp_export_form_origin = export_origin,
+        });
+        builder.hir_module(module_id).items.push_back(function);
+        commit_declarations();
+        return function;
     }
 
     auto commit_declarations() noexcept -> void {
@@ -272,6 +297,37 @@ auto require_error(SemanticFixture& fixture, SemanticProgramErrorKind kind) noex
 
 } // namespace
 
+TEST_CASE("Semantic interop seal: header spelling identities are valid") {
+    auto fixture = SemanticFixture();
+    fixture.builder.hir_module(fixture.module_id)
+        .cpp_header_dependencies.push_back({
+            .delimiter = HIRCppHeaderDelimiter::Quotes,
+            .name = ProgramSpellingID::from_index(99),
+        });
+    fixture.commit_declarations();
+    require_error(fixture, SemanticProgramErrorKind::InvalidReference);
+}
+
+TEST_CASE("Semantic interop seal: fragment origins are valid") {
+    auto fixture = SemanticFixture();
+    fixture.builder.hir_module(fixture.module_id)
+        .cpp_source_payload_origins.push_back(ProgramOriginID::from_index(99));
+    fixture.commit_declarations();
+    require_error(fixture, SemanticProgramErrorKind::InvalidReference);
+}
+
+TEST_CASE("Semantic interop seal: export origins are valid") {
+    auto fixture = SemanticFixture();
+    static_cast<void>(fixture.publish_cpp_import(ProgramOriginID::from_index(99)));
+    require_error(fixture, SemanticProgramErrorKind::InvalidReference);
+}
+
+TEST_CASE("Semantic interop seal: import implementation and export role are exclusive") {
+    auto fixture = SemanticFixture();
+    static_cast<void>(fixture.publish_cpp_import(fixture.origin));
+    require_error(fixture, SemanticProgramErrorKind::InvalidContract);
+}
+
 TEST_CASE("Semantic invariants: every occurrence has exactly one structural owner") {
     auto fixture = SemanticFixture();
     const auto statement = fixture.builder.append_statement({
@@ -298,7 +354,7 @@ TEST_CASE("Semantic structure: every completed body is claimed") {
     auto fixture = SemanticFixture();
     const auto callable =
         fixture.builder
-            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
+            .append_body_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     const auto root = fixture.block(fixture.root_scope);
     fixture.builder.define_callable_body(callable, {}, fixture.root_scope, root);
     fixture.commit_declarations();
@@ -339,7 +395,7 @@ TEST_CASE("Semantic structure: closure root is a strict descendant of its enclos
     const auto closure_root = fixture.block(sibling);
     const auto callable =
         fixture.builder
-            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
+            .append_body_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     fixture.builder.define_callable_body(callable, {}, sibling, closure_root);
     const auto closure = fixture.expression(
         HIRClosureExpr {
@@ -425,7 +481,7 @@ TEST_CASE("Semantic invariants: place projections preserve resolved types") {
 
 TEST_CASE("Semantic invariants: callable contracts only reference published types") {
     auto fixture = SemanticFixture();
-    static_cast<void>(fixture.builder.append_callable(
+    static_cast<void>(fixture.builder.append_body_callable(
         {},
         HIRTypeID::from_index(99),
         {},
@@ -442,17 +498,19 @@ TEST_CASE("Semantic invariants: every closed function contract has one body") {
     const auto function = FunctionID::from_index(0);
     const auto callable =
         fixture.builder
-            .append_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
+            .append_body_callable({}, fixture.integer, {}, SemanticFailureContractKind::Inferred);
     fixture.builder.adopt_symbol_type(symbol, fixture.builder.intern_function_type(callable));
     fixture.functions.push_back({
         .origin = fixture.origin,
         .visibility = DeclarationVisibility::Module,
         .name = fixture.builder.intern_string("missing_body"),
         .callable = callable,
+        .parameter_origins = {},
         .result = fixture.integer,
         .result_origin = fixture.origin,
         .symbol = symbol,
         .entry_point = std::nullopt,
+        .cpp_export_form_origin = std::nullopt,
     });
     fixture.builder.hir_module(fixture.module_id).items.push_back(function);
     fixture.commit_declarations();

@@ -167,7 +167,6 @@ auto SemanticVerifier<Program>::verify_type_value(const HIRTypeValue& value) noe
                            "closure type references an unknown callable"
                     );
             },
-            [](const HIRForeignTypeValue&) static noexcept { return true; },
             [&](const HIRErrorTypeValue&) noexcept {
                 return fail(
                     SemanticProgramErrorKind::InvalidType,
@@ -454,10 +453,24 @@ auto SemanticVerifier<Program>::verify_canonical_tables() noexcept -> bool {
         if (!verify_callable_shape(callable)) {
             return false;
         }
-        if (!input.program().has_body(callable.body)) {
+        const auto implementation_known = std::visit(
+            Overloaded {
+                [&](const HIRBodyImplementation& implementation) noexcept {
+                    return input.program().has_body(implementation.body);
+                },
+                [&](const HIRCppImportImplementation& implementation) noexcept {
+                    return semantic_id_known(
+                        implementation.form_origin,
+                        input.program().provenance().origins().size()
+                    );
+                },
+            },
+            callable.implementation
+        );
+        if (!implementation_known) {
             return fail(
                 SemanticProgramErrorKind::InvalidContract,
-                "callable contract has no published body"
+                "callable contract has no published implementation"
             );
         }
         if (!failure_set_known(input.program().callable_flow(id).effective_failure_set)) {

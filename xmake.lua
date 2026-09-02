@@ -31,10 +31,7 @@ target("carven")
     end
     add_deps("carven-modules")
     add_files("src/carven.cpp")
-    add_installfiles("crafts/(carven/runtime/runtime.hpp)", {prefixdir = "include"})
-    add_installfiles("crafts/(carven/runtime/callable.hpp)", {prefixdir = "include"})
-    add_installfiles("crafts/(carven/runtime/outcome.hpp)", {prefixdir = "include"})
-    add_installfiles("crafts/(carven/std/testing/testing.hpp)", {prefixdir = "include"})
+    add_installfiles("crafts/(carven/**.hpp)", {prefixdir = "include"})
 
 option("build_tests", {default = true, description = "Build the test targets"})
 

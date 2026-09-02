@@ -1,8 +1,9 @@
 module carven:backend.generation.program.construction;
 
 import :backend.generation.linkage;
-import :backend.generation.program;
 import :backend.generation.names;
+import :backend.generation.program;
+import :backend.generation.request;
 import :semantic.hir;
 import std;
 
@@ -17,7 +18,11 @@ struct TargetNameAllocation final {
 
 auto module_implementation_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
+
 auto interface_component_logical_path(std::span<const std::string> anchor_components) noexcept
+    -> std::string;
+
+auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
 
 class TargetProgramBuilder final {
@@ -41,7 +46,7 @@ private:
     std::optional<TargetNameAllocation> name_allocation;
     std::vector<TargetTypeRecipe> types;
     std::vector<TargetFailureProfile> failure_profiles;
-    std::vector<TargetCallSignatureRecipe> call_signatures;
+    std::vector<TargetCallSignature> call_signatures;
     std::vector<TargetCallSignatureID> callable_signatures;
     std::vector<TargetCallSignatureID> function_reference_signatures;
     std::vector<TargetCarrierShape> carrier_shapes;

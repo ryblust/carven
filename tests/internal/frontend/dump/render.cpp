@@ -60,7 +60,7 @@ TEST_CASE("Dump: AST output exposes grammar fields without implementation detail
     CHECK(output.contains("SourceModule [0, 12) \"main.cv\""));
     CHECK(output.contains("imports (0)"));
     CHECK(output.contains("items (1)"));
-    CHECK(output.contains("FunctionDefinition [0, 12)"));
+    CHECK(output.contains("FunctionDeclaration [0, 12)"));
     CHECK(output.contains("name [3, 7) \"main\""));
     CHECK(output.contains("parameters (0)"));
     CHECK(output.contains("body OrdinaryBlock [10, 12)"));
@@ -86,6 +86,45 @@ TEST_CASE("Dump: imports expose structured module references") {
     CHECK(output.contains("component [12, 18) \"vector\""));
     CHECK(output.contains("selection WildcardImport [25, 26)"));
     CHECK(!output.contains("quoted"));
+}
+
+TEST_CASE("Dump: module and C++ header imports recover source order only for rendering") {
+    const auto owned = dump_source(
+        "main.cv",
+        "import <native/first.hpp>;\n"
+        "import .value using Value;\n"
+        "import \"native/second.hpp\";"
+    );
+    const auto source = owned.sources.view(owned.source_id);
+    const auto lexical = lex(source);
+    REQUIRE(lexical.diagnostics.empty());
+    const auto parsed = parse(owned.sources, lexical.value);
+    REQUIRE(parsed.has_value());
+
+    const auto output = render_ast_dump(owned.sources, *parsed);
+    const auto first_header = output.find("cpp_header Angle");
+    const auto module_import = output.find("module_reference ParentRelative");
+    const auto second_header = output.find("cpp_header Quote");
+    REQUIRE_NE(first_header, std::string::npos);
+    REQUIRE_NE(module_import, std::string::npos);
+    REQUIRE_NE(second_header, std::string::npos);
+    CHECK(first_header < module_import);
+    CHECK(module_import < second_header);
+}
+
+TEST_CASE("Dump: C++ source fragments expose form and payload spans") {
+    const auto owned = dump_source("native.cv", "#[cpp] ---\nstatic_assert(true);\n---\n");
+    const auto source = owned.sources.view(owned.source_id);
+    const auto lexical = lex(source);
+    REQUIRE(lexical.diagnostics.empty());
+    const auto parsed = parse(owned.sources, lexical.value);
+    REQUIRE(parsed.has_value());
+
+    const auto output = render_ast_dump(owned.sources, *parsed);
+    CHECK(output.contains("cpp_source_fragments (1)"));
+    CHECK(output.contains("CppSourceFragment"));
+    CHECK(output.contains("form [0, 35)"));
+    CHECK(output.contains("payload [11, 32) \"static_assert(true);\\n\""));
 }
 
 TEST_CASE("Dump: declaration visibility and constants remain structured") {
@@ -205,6 +244,7 @@ TEST_CASE("Dump: empty AST roots remain explicit") {
         render_ast_dump(owned.sources, *parsed),
         R"DUMP(SourceModule [0, 0) "empty.cv"
 ├─ imports (0)
+├─ cpp_source_fragments (0)
 └─ items (0)
 )DUMP"
     );

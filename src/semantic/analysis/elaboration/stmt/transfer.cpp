@@ -133,15 +133,13 @@ auto elaborate_transfer(
     }
     if (control.expected_return.has_value()) {
         const auto result = *control.expected_return;
-        const auto foreign_result =
-            std::holds_alternative<HIRForeignTypeValue>(builder.type(result).value);
         if (is_void(module_analysis, result) && value.has_value()) {
             module_analysis.emit(
                 transfer.span,
                 "a void function cannot return a value",
                 DiagnosticCode::TypeReturnValue
             );
-        } else if (!is_void(module_analysis, result) && !foreign_result && !value.has_value()) {
+        } else if (!is_void(module_analysis, result) && !value.has_value()) {
             module_analysis.emit(
                 transfer.span,
                 "a value-returning function must return a value",

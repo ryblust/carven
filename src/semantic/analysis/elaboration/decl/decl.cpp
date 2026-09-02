@@ -2,7 +2,7 @@ module carven:semantic.analysis.elaboration.decl.impl;
 
 import :diagnostics.builder;
 import :frontend.ast.decl;
-import :frontend.ast.region;
+import :frontend.ast.interop;
 import :frontend.literal;
 import :semantic.analysis.elaboration.body;
 import :semantic.analysis.elaboration.decl;
@@ -11,6 +11,7 @@ import :semantic.analysis.elaboration.types;
 import :semantic.hir;
 import :semantic.hir.access;
 import :semantic.hir.decl;
+import :semantic.hir.interop;
 import :semantic.hir.symbol;
 import :semantic.visibility;
 import :support.invariant;
@@ -26,9 +27,11 @@ auto build_function_body(
     HIRModule& target
 ) noexcept -> void {
     const auto callable = source.declarations().function(function_id).callable;
-    auto body = BodyElaborator(source).elaborate_function(function, callable);
-    source.builder()
-        .define_callable_body(callable, std::move(body.parameters), body.scope, body.root);
+    if (std::holds_alternative<ASTFunctionBody>(function.implementation)) {
+        auto body = BodyElaborator(source).elaborate_function(function, callable);
+        source.builder()
+            .define_callable_body(callable, std::move(body.parameters), body.scope, body.root);
+    }
     target.items.push_back(function_id);
 }
 
@@ -71,6 +74,21 @@ auto build_module(ModuleAnalysis& source) noexcept -> void {
     }
     const auto ast = source.syntax();
     auto& target = source.builder().hir_module(source.module_id());
+    target.cpp_header_dependencies.clear();
+    target.cpp_header_dependencies.reserve(ast.ast_module().cpp_header_imports.size());
+    for (const auto& header : ast.ast_module().cpp_header_imports) {
+        target.cpp_header_dependencies.push_back({
+            .delimiter = header.delimiter == ASTCppHeaderDelimiter::AngleBrackets
+                ? HIRCppHeaderDelimiter::AngleBrackets
+                : HIRCppHeaderDelimiter::Quotes,
+            .name = source.builder().intern_string(source.spelling(header.name_span)),
+        });
+    }
+    target.cpp_source_payload_origins.clear();
+    target.cpp_source_payload_origins.reserve(ast.ast_module().cpp_source_fragments.size());
+    for (const auto& fragment : ast.ast_module().cpp_source_fragments) {
+        target.cpp_source_payload_origins.push_back(source.origin(fragment.payload_span));
+    }
     target.items.clear();
     target.items.reserve(catalog_module->items.size());
     for (const auto& scheduled : catalog_module->items) {
@@ -92,19 +110,6 @@ auto build_module(ModuleAnalysis& source) noexcept -> void {
                         invariant_violation("test schedule does not match its syntax item");
                     }
                     build_test(source, *test, item.span, target);
-                },
-                [&](const CatalogCppForm&) noexcept {
-                    const auto* region = std::get_if<CppRegion>(&item.value);
-                    if (region == nullptr) {
-                        invariant_violation("C++ schedule does not match its syntax item");
-                    }
-                    target.items.push_back(
-                        HIRCppRegion {
-                            .origin = source.origin(item.span),
-                            .bytes =
-                                source.builder().intern_string(source.spelling(region->body_span)),
-                        }
-                    );
                 },
             },
             scheduled.form

@@ -11,7 +11,6 @@ import :frontend.ast.expr;
 import :frontend.ast.ids;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.region;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -54,6 +53,13 @@ auto check_invalid(std::string_view text, std::string_view message) noexcept -> 
     CHECK_EQ(result.error()[0].finding.message, message);
 }
 
+auto check_rejected(std::string_view text) noexcept -> void {
+    const auto result = parse_source(text);
+    CAPTURE(text);
+    REQUIRE(!result.has_value());
+    REQUIRE(!result.error().empty());
+}
+
 template<typename Alternative, typename Family>
     requires requires (const Family& family) { family.value; }
 auto is(const Family& family) noexcept -> bool {
@@ -81,4 +87,10 @@ auto item(const SyntaxTree& tree, std::size_t index) noexcept -> const ASTItem& 
 
 auto function(const SyntaxTree& tree, std::size_t index = 0) noexcept -> const ASTFunctionDecl& {
     return get<ASTFunctionDecl>(item(tree, index));
+}
+
+auto function_body(const SyntaxTree& tree, std::size_t index = 0) noexcept -> const ASTBlock& {
+    const auto ast = tree.view();
+    const auto& implementation = get<ASTFunctionBody>(function(tree, index).implementation);
+    return ast.block(implementation.body);
 }
