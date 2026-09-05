@@ -1,20 +1,21 @@
 module carven:backend.target.stmt;
 
+import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
 import std;
 
 struct TargetExprStmt final {
-    TargetExprID expression;
+    TargetExpr expression;
 };
 
 struct TargetDiscardStmt final {
-    TargetExprID expression;
+    TargetExpr expression;
 };
 
 struct TargetReturnStmt final {
-    std::optional<TargetExprID> expression;
+    std::optional<TargetExpr> expression;
 };
 
 enum class TargetVariableBinding {
@@ -27,14 +28,14 @@ enum class TargetVariableBinding {
 
 struct TargetVariableStmt final {
     TargetVariableBinding binding;
+    bool maybe_unused;
     TargetIdentifier name;
     TargetTypeID type;
-    TargetExprID initializer;
-    bool maybe_unused;
+    TargetExpr initializer;
 };
 
 struct TargetBlockStmt final {
-    std::vector<TargetStmtID> statements;
+    std::vector<TargetStmt> statements;
     bool scoped;
 };
 
@@ -53,9 +54,9 @@ enum class TargetAssignmentOperator {
 };
 
 struct TargetAssignmentStmt final {
-    TargetExprID target;
+    TargetExpr target;
     TargetAssignmentOperator op;
-    TargetExprID value;
+    TargetExpr value;
 };
 
 enum class TargetUpdateOperator {
@@ -65,14 +66,34 @@ enum class TargetUpdateOperator {
 
 struct TargetUpdateStmt final {
     TargetUpdateOperator op;
-    TargetExprID target;
+    TargetExpr target;
 };
 
 struct TargetBreakStmt final {};
 
 struct TargetContinueStmt final {};
 
+enum class TargetUnreachableReason {
+    SemIRProof,
+};
+
+struct TargetUnreachableStmt final {
+    TargetUnreachableReason reason;
+};
+
+enum class TargetRuntimeTrapReason {
+    Bounds,
+    Shift,
+    UnicodeScalar,
+    SourceContract,
+};
+
+struct TargetRuntimeTrapStmt final {
+    TargetRuntimeTrapReason reason;
+};
+
 enum class TargetJumpRole {
+    RegionExit,
     FailureTransfer,
     ForLoopContinue,
 };
@@ -88,18 +109,18 @@ struct TargetLabelStmt final {
 };
 
 struct TargetIfBranch final {
-    TargetExprID condition;
-    std::vector<TargetStmtID> body;
+    TargetExpr condition;
+    std::vector<TargetStmt> body;
 };
 
 struct TargetIfStmt final {
     std::vector<TargetIfBranch> branches;
-    std::optional<std::vector<TargetStmtID>> else_body;
+    std::optional<std::vector<TargetStmt>> else_body;
 };
 
 struct TargetWhileStmt final {
-    TargetExprID condition;
-    std::vector<TargetStmtID> body;
+    TargetExpr condition;
+    std::vector<TargetStmt> body;
 };
 
 using TargetForInitializerValue = std::variant<
@@ -122,24 +143,18 @@ struct TargetForStep final {
 
 struct TargetForStmt final {
     std::optional<TargetForInitializer> initializer;
-    std::optional<TargetExprID> condition;
+    std::optional<TargetExpr> condition;
     std::vector<TargetForStep> steps;
-    std::vector<TargetStmtID> body;
-};
-
-enum class TargetRangeBindingMode {
-    ReadValue,
-    ReadReference,
-    MutableReference,
+    std::vector<TargetStmt> body;
 };
 
 struct TargetRangeForStmt final {
-    TargetRangeBindingMode binding_mode;
+    TargetVariableBinding binding;
+    bool maybe_unused;
     TargetIdentifier name;
     TargetTypeID type;
-    TargetExprID iterable;
-    std::vector<TargetStmtID> body;
-    bool maybe_unused;
+    TargetExpr range;
+    std::vector<TargetStmt> body;
 };
 
 using TargetStmtValue = std::variant<
@@ -152,6 +167,8 @@ using TargetStmtValue = std::variant<
     TargetUpdateStmt,
     TargetBreakStmt,
     TargetContinueStmt,
+    TargetUnreachableStmt,
+    TargetRuntimeTrapStmt,
     TargetGotoStmt,
     TargetLabelStmt,
     TargetIfStmt,

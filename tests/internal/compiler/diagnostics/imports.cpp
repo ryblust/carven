@@ -6,8 +6,8 @@ module carven:test.internal.compiler.diagnostics.imports;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
@@ -67,7 +67,7 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
     const auto result = compile(
         sources,
         CompilationRequest {.modules = inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }
@@ -114,7 +114,7 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
     const auto result = compile(
         sources,
         CompilationRequest {.modules = inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
         }

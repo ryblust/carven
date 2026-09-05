@@ -6,8 +6,8 @@ module carven:test.internal.compiler.diagnostics.modules;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
@@ -57,7 +57,7 @@ TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source"
     const auto result = compile(
         sources,
         CompilationRequest {.modules = inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
         }
@@ -102,7 +102,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         const auto result = compile(
             sources,
             CompilationRequest {.modules = inputs},
-            TargetGenerationRequest {
+            TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
@@ -134,7 +134,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         const auto result = compile(
             sources,
             CompilationRequest {.modules = inputs},
-            TargetGenerationRequest {
+            TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }
@@ -170,7 +170,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         const auto result = compile(
             sources,
             CompilationRequest {.modules = inputs},
-            TargetGenerationRequest {
+            TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
             }

@@ -1,22 +1,28 @@
 module carven:frontend.program.parse.impl;
 
-import :compilation.request;
+import :compiler.request;
 import :diagnostics.builder;
 import :diagnostics.sink;
+import :frontend.ast.decl;
+import :frontend.ast.storage;
 import :frontend.lex;
 import :frontend.parse;
-import :frontend.program;
 import :frontend.program.parse;
 import :frontend.program.verify;
+import :frontend.program;
 import :source.provenance;
-import :support.id_table;
 import :support.invariant;
+import :support.visit;
 import std;
 
 class SyntaxProgramBuilder final {
 public:
-    explicit SyntaxProgramBuilder(CompilationProvenance provenance_value) noexcept
-        : provenance(std::move(provenance_value)) {}
+    SyntaxProgramBuilder(
+        CompilationProvenance provenance_value,
+        ResolvedModuleImportGraph import_graph
+    ) noexcept
+        : provenance(std::move(provenance_value)),
+          resolved_import_graph(std::move(import_graph)) {}
 
     SyntaxProgramBuilder(const SyntaxProgramBuilder&) = delete;
     SyntaxProgramBuilder(SyntaxProgramBuilder&&) = default;
@@ -26,15 +32,19 @@ public:
     auto operator=(SyntaxProgramBuilder&&) -> SyntaxProgramBuilder& = default;
 
     auto define_module_syntax(ProgramModuleID module_id, SyntaxTree syntax_tree) noexcept -> void {
-        const auto defined_module_id = syntax_by_module.add(std::move(syntax_tree));
-        if (defined_module_id != module_id) {
+        const auto expected_module_id = provenance.view().module_id_at(syntax_by_module.size());
+        if (expected_module_id != module_id) {
             invariant_violation("syntax modules must be defined in provenance module order");
         }
+        syntax_by_module.push_back(std::move(syntax_tree));
     }
 
     auto finish() && noexcept -> SyntaxProgram {
-        auto program =
-            SyntaxProgram(SyntaxProgramParts(std::move(provenance), std::move(syntax_by_module)));
+        auto program = SyntaxProgram(SyntaxProgramParts(
+            std::move(provenance),
+            std::move(syntax_by_module),
+            std::move(resolved_import_graph)
+        ));
         const auto verification = verify_syntax_program(program);
         if (!verification.has_value()) {
             invariant_violation(verification.error().message);
@@ -44,13 +54,138 @@ public:
 
 private:
     CompilationProvenance provenance;
-    IDTable<SyntaxTree, ProgramModuleID> syntax_by_module;
+    std::vector<SyntaxTree> syntax_by_module;
+    ResolvedModuleImportGraph resolved_import_graph;
 };
 
 namespace {
 
 auto compilation_input_error(std::string message) noexcept -> Diagnostic {
     return DiagnosticBuilder(DiagnosticCode::CompilationInput, std::move(message)).build();
+}
+
+auto import_error(SourceID source, std::string message, Span span) noexcept -> Diagnostic {
+    return DiagnosticBuilder(DiagnosticCode::ImportResolution, std::move(message))
+        .primary(locate(source, span))
+        .build();
+}
+
+auto append_domain_prefix(
+    std::vector<std::string_view>& components,
+    const ModuleDomainPrefix& prefix
+) noexcept -> void {
+    if (const auto craft_name = prefix.craft_name()) {
+        components.push_back("crafts");
+        components.push_back(*craft_name);
+    }
+}
+
+enum class ModuleReferenceResolutionError {
+    InvalidCanonicalPath,
+    EscapesModuleDomain,
+};
+
+auto resolve_import_path(
+    std::string_view source,
+    const CanonicalModulePath& importer_path,
+    const ASTModuleReference& reference
+) noexcept -> std::expected<CanonicalModulePath, ModuleReferenceResolutionError> {
+    auto components = std::vector<std::string_view>();
+    std::visit(
+        Overloaded {
+            [&](const ASTDomainRootModuleReference& value) noexcept {
+                append_domain_prefix(components, importer_path.module_domain_prefix());
+                for (const auto component : value.components) {
+                    components.push_back(slice(source, component));
+                }
+            },
+            [&](const ASTParentRelativeModuleReference& value) noexcept {
+                append_domain_prefix(components, importer_path.module_domain_prefix());
+                const auto relative = importer_path.domain_relative_components();
+                for (auto index = 0uz; index + 1uz < relative.size(); ++index) {
+                    components.push_back(relative[index]);
+                }
+                for (const auto component : value.components) {
+                    components.push_back(slice(source, component));
+                }
+            },
+            [&](const ASTCraftQualifiedModuleReference& value) noexcept {
+                components.push_back("crafts");
+                components.push_back(slice(source, value.name_span));
+                for (const auto component : value.components) {
+                    components.push_back(slice(source, component));
+                }
+            },
+        },
+        reference.value
+    );
+    auto resolved = CanonicalModulePath::from_components(components);
+    if (!resolved.has_value()) {
+        return std::unexpected(ModuleReferenceResolutionError::InvalidCanonicalPath);
+    }
+    const auto domain_local =
+        !std::holds_alternative<ASTCraftQualifiedModuleReference>(reference.value);
+    if (domain_local && !same_module_domain(importer_path, *resolved)) {
+        return std::unexpected(ModuleReferenceResolutionError::EscapesModuleDomain);
+    }
+    return std::move(*resolved);
+}
+
+auto close_import_graph(
+    CompilationProvenanceView provenance,
+    std::span<const SyntaxTree> syntax_trees
+) noexcept -> std::expected<ResolvedModuleImportGraph, Diagnostics> {
+    auto result = ResolvedModuleImportGraph();
+    auto diagnostics = Diagnostics();
+    for (auto index = 0uz; index < syntax_trees.size(); ++index) {
+        const auto module_id = provenance.module_id_at(index);
+        const auto& module = provenance.module_record(module_id);
+        const auto& source = provenance.source_snapshot(module.source_id);
+        const auto ast = syntax_trees[index].view();
+        auto imports = std::vector<ResolvedModuleImport>();
+        imports.reserve(ast.ast_module().module_imports.size());
+        for (const auto declaration : ast.ast_module().module_imports) {
+            const auto& module_import = ast.module_import(declaration);
+            const auto resolved =
+                resolve_import_path(source.text(), module.path, module_import.module_reference);
+            if (!resolved.has_value()) {
+                diagnostics.push_back(import_error(
+                    source.manager_source_id(),
+                    resolved.error() == ModuleReferenceResolutionError::EscapesModuleDomain
+                        ? "domain-local module reference escapes the importer's module domain"
+                        : "module reference does not form a canonical path",
+                    module_import.module_reference.span
+                ));
+                continue;
+            }
+            const auto target = provenance.find_program_module(*resolved);
+            if (!target.has_value()) {
+                diagnostics.push_back(import_error(
+                    source.manager_source_id(),
+                    std::format(
+                        "imported module '{}' is not present in this compilation batch",
+                        resolved->value()
+                    ),
+                    module_import.module_reference.span
+                ));
+                continue;
+            }
+            if (*target == module_id) {
+                diagnostics.push_back(import_error(
+                    source.manager_source_id(),
+                    "a module cannot import itself",
+                    module_import.module_reference.span
+                ));
+                continue;
+            }
+            imports.push_back({.declaration = declaration, .target = *target});
+        }
+        result.push_back(std::move(imports));
+    }
+    if (!diagnostics.empty()) {
+        return std::unexpected(std::move(diagnostics));
+    }
+    return result;
 }
 
 auto validate_inputs(
@@ -159,7 +294,12 @@ auto parse_program(const SourceManager& sources, CompilationRequest request) noe
         return std::unexpected(diagnostics.take());
     }
 
-    auto construction = SyntaxProgramBuilder(std::move(provenance_construction).finish());
+    auto provenance = std::move(provenance_construction).finish();
+    auto import_graph = close_import_graph(provenance.view(), syntax_trees);
+    if (!import_graph.has_value()) {
+        return std::unexpected(std::move(import_graph.error()));
+    }
+    auto construction = SyntaxProgramBuilder(std::move(provenance), std::move(*import_graph));
     for (auto index = 0uz; index < syntax_trees.size(); ++index) {
         construction.define_module_syntax(
             program_module_ids[index],

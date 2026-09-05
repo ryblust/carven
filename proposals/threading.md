@@ -142,7 +142,7 @@ mutex、atomic、channel 与 executor surface。
 对应 `DEFER-*` reactivation condition。
 
 未来切片必须连接 source form、value/callable admission、ownership/shutdown、
-SemanticProgram facts、memory-model edges、target lowering、显式 C++ interoperation contract、
+SemIRProgram facts、memory-model edges、target lowering、显式 C++ interoperation contract、
 diagnostics、tests 与永久文档。
 不应提前建立 generic Send/Sync-like、lock、atomic 或 channel representation。
 

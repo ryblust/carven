@@ -29,8 +29,9 @@ local function compare_output(failures, stream, actual, expected)
     end
 end
 
-function main(target, opt, case_spec)
+function main(target, opt, case_specs)
     local case_name = case_name_from_test_name(opt.name)
+    local case_spec = case_specs[case_name]
     local case_dir = path.join(os.projectdir(), "tests", "cli", case_name)
     if not case_spec then
         raise("unknown CLI test case: " .. case_name)
@@ -111,14 +112,14 @@ function main(target, opt, case_spec)
                 table.insert(failures, prefix .. "stdout does not contain: " .. expected)
             end
         end
-        local prior_position = 0
+        local stdout_offset = 1
         for _, expected in ipairs(step.stdout_ordered or {}) do
-            local position = stdout:find(expected, prior_position + 1, true)
-            if not position then
+            local found = stdout:find(expected, stdout_offset, true)
+            if not found then
                 table.insert(failures, prefix .. "stdout is missing ordered text: " .. expected)
                 break
             end
-            prior_position = position
+            stdout_offset = found + #expected
         end
         for _, expected in ipairs(step.stderr_contains or {}) do
             if not stderr:find(expected, 1, true) then
@@ -130,30 +131,9 @@ function main(target, opt, case_spec)
                 table.insert(failures, prefix .. "missing output file: " .. filename)
             end
         end
-        for _, pattern in ipairs(step.output_globs or {}) do
-            if #os.files(path.join(work_dir, pattern)) == 0 then
-                table.insert(failures, prefix .. "missing output matching: " .. pattern)
-            end
-        end
-        for pattern, count in pairs(step.output_glob_counts or {}) do
-            local actual = #os.files(path.join(work_dir, pattern))
-            if actual ~= count then
-                table.insert(failures, prefix .. string.format(
-                    "output count mismatch for %s: expected %d, actual %d",
-                    pattern,
-                    count,
-                    actual
-                ))
-            end
-        end
         for _, filename in ipairs(step.absent_files or {}) do
             if os.exists(path.join(work_dir, filename)) then
                 table.insert(failures, prefix .. "unexpected output file: " .. filename)
-            end
-        end
-        for _, pattern in ipairs(step.absent_globs or {}) do
-            if #os.files(path.join(work_dir, pattern)) ~= 0 then
-                table.insert(failures, prefix .. "unexpected output matching: " .. pattern)
             end
         end
         for _, filename in ipairs(sorted_keys(step.file_contains)) do
@@ -170,31 +150,18 @@ function main(target, opt, case_spec)
                 end
             end
         end
-        for _, filename in ipairs(sorted_keys(step.file_excludes)) do
+        for _, filename in ipairs(sorted_keys(step.file_not_contains)) do
             local file_path = path.join(work_dir, filename)
             if not os.isfile(file_path) then
                 table.insert(failures, prefix .. "missing inspected file: " .. filename)
             else
                 local content = normalize_newlines(io.readfile(file_path))
-                for _, unexpected in ipairs(step.file_excludes[filename]) do
+                for _, unexpected in ipairs(step.file_not_contains[filename]) do
                     if content:find(unexpected, 1, true) then
                         table.insert(failures,
                             prefix .. filename .. " unexpectedly contains: " .. unexpected)
                     end
                 end
-            end
-        end
-        for _, filename in ipairs(sorted_keys(step.file_snapshots)) do
-            local file_path = path.join(work_dir, filename)
-            if not os.isfile(file_path) then
-                table.insert(failures, prefix .. "missing snapshot file: " .. filename)
-            else
-                compare_output(
-                    failures,
-                    prefix .. filename,
-                    normalize_newlines(io.readfile(file_path)),
-                    normalize_newlines(io.readfile(case_path(step.file_snapshots[filename])))
-                )
             end
         end
     end

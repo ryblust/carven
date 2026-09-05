@@ -69,10 +69,13 @@ test "Pattern matching: matches support statement value and binding forms" {
     check(guarded_binding == 20);
 
     var mutable_subject: i32 = 1;
+    var other: i32 = 0;
     let mutation_result = match mutable_subject {
-        1 if mutate_and_reject(&mutable_subject) => 10,
-        1 => 20,
+        1 if mutate_and_reject(&other) => 10,
+        1 => { mutable_subject = 3; 20 },
         _ => 30,
     };
-    check(mutation_result == 30);
+    check(mutation_result == 20);
+    check(other == 2);
+    check(mutable_subject == 3);
 }

@@ -1,7 +1,7 @@
 module carven:backend.emission.render.expr.impl;
 
-import :backend.emission.render;
 import :backend.emission.render.string;
+import :backend.emission.render;
 import :backend.target.symbol;
 import :support.visit;
 import std;
@@ -25,16 +25,20 @@ auto precedence(TargetBinaryOperator op) noexcept -> TargetPrecedence {
         case TargetBinaryOperator::RightShift:   return TargetPrecedence::Shift;
         case TargetBinaryOperator::Add:
         case TargetBinaryOperator::Subtract:     return TargetPrecedence::Additive;
-        default:                                 return TargetPrecedence::Multiplicative;
+        case TargetBinaryOperator::Multiply:
+        case TargetBinaryOperator::Divide:
+        case TargetBinaryOperator::Remainder:    return TargetPrecedence::Multiplicative;
     }
+    std::unreachable();
 }
 
 auto prefix_spelling(TargetPrefixOperator op) noexcept -> std::string_view {
     switch (op) {
-        case TargetPrefixOperator::AddressOf:  return "&";
-        case TargetPrefixOperator::LogicalNot: return "!";
-        case TargetPrefixOperator::Negate:     return "-";
-        case TargetPrefixOperator::BitwiseNot: return "~";
+        case TargetPrefixOperator::AddressOf:   return "&";
+        case TargetPrefixOperator::Dereference: return "*";
+        case TargetPrefixOperator::LogicalNot:  return "!";
+        case TargetPrefixOperator::Negate:      return "-";
+        case TargetPrefixOperator::BitwiseNot:  return "~";
     }
     std::unreachable();
 }
@@ -112,8 +116,12 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
             },
             [](const TargetStringLiteral& value) static noexcept {
                 auto result = cpp_string_token(value.bytes);
-                if (value.kind == TargetStringLiteralKind::StringView) {
-                    result = std::format("std::string_view{{{}, {}}}", result, value.bytes.size());
+                switch (value.kind) {
+                    case TargetStringLiteralKind::String: break;
+                    case TargetStringLiteralKind::StringView:
+                        result =
+                            std::format("std::string_view{{{}, {}}}", result, value.bytes.size());
+                        break;
                 }
                 return result;
             },
@@ -126,15 +134,28 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
     return std::visit(
         Overloaded {
             [](const TargetBinaryExpr& value) static noexcept { return precedence(value.op); },
+            [](const TargetConditionalExpr&) static noexcept {
+                return TargetPrecedence::Conditional;
+            },
             [](const TargetPrefixExpr&) static noexcept { return TargetPrecedence::Prefix; },
             [](const TargetCallExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetIndexExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetMemberExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetScopeMemberExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetStaticMemberExpr&) static noexcept { return TargetPrecedence::Postfix; },
-            [](const TargetForwardExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetStaticCastExpr&) static noexcept { return TargetPrecedence::Postfix; },
-            [](const auto&) static noexcept { return TargetPrecedence::Primary; },
+            []<typename Value>(const Value&) static noexcept {
+                static_assert(
+                    std::same_as<Value, TargetNameExpr>
+                        || std::same_as<Value, TargetIntrinsicNameExpr>
+                        || std::same_as<Value, TargetLiteralExpr>
+                        || std::same_as<Value, TargetArrayExpr>
+                        || std::same_as<Value, TargetConstructionExpr>
+                        || std::same_as<Value, TargetRegionExpr>,
+                    "unhandled target expression precedence"
+                );
+                return TargetPrecedence::Primary;
+            },
         },
         expression.value
     );
@@ -142,10 +163,11 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
 
 } // namespace
 
-auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent) noexcept
-    -> LayoutNodeID {
-    const auto& value = unit.expression(id);
-    const auto own_precedence = expression_precedence(value);
+auto TargetRenderer::render_expression(
+    const TargetExpr& expression,
+    TargetPrecedence parent
+) noexcept -> LayoutNodeID {
+    const auto own_precedence = expression_precedence(expression);
     auto rendered = std::visit(
         Overloaded {
             [&](const TargetNameExpr& name) noexcept { return this->render_name(name.name); },
@@ -157,27 +179,35 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
             },
             [&](const TargetPrefixExpr& prefix) noexcept {
                 auto spelling = std::string(prefix_spelling(prefix.op));
-                const auto* nested =
-                    std::get_if<TargetPrefixExpr>(&unit.expression(prefix.operand_id).value);
+                const auto* nested = std::get_if<TargetPrefixExpr>(&prefix.operand->value);
                 if (nested != nullptr && prefix_spelling(nested->op).front() == spelling.back()) {
                     spelling += ' ';
                 }
                 return concat(
-                    {text(spelling), render_expression(prefix.operand_id, TargetPrecedence::Prefix)}
+                    {text(spelling), render_expression(*prefix.operand, TargetPrecedence::Prefix)}
                 );
             },
             [&](const TargetBinaryExpr& binary) noexcept {
                 const auto right_precedence =
                     static_cast<TargetPrecedence>(static_cast<std::uint8_t>(own_precedence) + 1);
-                const auto left = render_expression(binary.left, own_precedence);
+                const auto left = render_expression(*binary.left, own_precedence);
                 const auto right = concat(
                     {text(binary_spelling(binary.op)),
                      text(" "),
-                     render_expression(binary.right, right_precedence)}
+                     render_expression(*binary.right, right_precedence)}
                 );
                 return choice(
                     {concat({left, text(" "), right}),
                      concat({left, builder.indent(indent_width, concat({builder.line(), right}))})}
+                );
+            },
+            [&](const TargetConditionalExpr& conditional) noexcept {
+                return concat(
+                    {render_expression(*conditional.condition, TargetPrecedence::LogicalOr),
+                     text(" ? "),
+                     render_expression(*conditional.true_value),
+                     text(" : "),
+                     render_expression(*conditional.false_value, TargetPrecedence::Conditional)}
                 );
             },
             [&](const TargetCallExpr& call) noexcept {
@@ -186,10 +216,10 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                     templates.push_back(render_type(argument));
                 }
                 auto arguments = std::vector<LayoutNodeID> {};
-                for (const auto argument : call.arguments) {
+                for (const auto& argument : call.arguments) {
                     arguments.push_back(render_expression(argument));
                 }
-                auto callee = render_expression(call.callee, TargetPrecedence::Postfix);
+                auto callee = render_expression(*call.callee, TargetPrecedence::Postfix);
                 if (!templates.empty()) {
                     callee = concat({callee, delimited_list(templates, "<", ">")});
                 }
@@ -198,10 +228,10 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
             [&](const TargetArrayExpr& array) noexcept {
                 const auto template_values = std::array {
                     render_type(array.element_type_id),
-                    render_expression(array.extent)
+                    render_expression(*array.extent)
                 };
                 auto values = std::vector<LayoutNodeID> {};
-                for (const auto element : array.element_ids) {
+                for (const auto& element : array.elements) {
                     values.push_back(render_expression(element));
                 }
                 return concat(
@@ -215,8 +245,8 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                 std::visit(
                     Overloaded {
                         [](const std::monostate&) static noexcept {},
-                        [&](const std::vector<TargetExprID>& positional) noexcept {
-                            for (const auto element : positional) {
+                        [&](const std::vector<TargetExpr>& positional) noexcept {
+                            for (const auto& element : positional) {
                                 values.push_back(render_expression(element));
                             }
                         },
@@ -226,7 +256,7 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                                     {text("."),
                                      render_identifier(field.name),
                                      text(" = "),
-                                     render_expression(field.value)}
+                                     render_expression(*field.value)}
                                 ));
                             }
                         },
@@ -236,9 +266,9 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                 return concat({render_type(construction.type), delimited_list(values, "{", "}")});
             },
             [&](const TargetIndexExpr& index) noexcept {
-                const auto argument = std::array {render_expression(index.index)};
+                const auto argument = std::array {render_expression(*index.index)};
                 return concat(
-                    {render_expression(index.operand_id, TargetPrecedence::Postfix),
+                    {render_expression(*index.operand, TargetPrecedence::Postfix),
                      delimited_list(argument, "[", "]")}
                 );
             },
@@ -254,8 +284,7 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                     },
                     member.name
                 );
-                const auto operand =
-                    render_expression(member.operand_id, TargetPrecedence::Postfix);
+                const auto operand = render_expression(*member.operand, TargetPrecedence::Postfix);
                 const auto suffix = concat({text("."), name});
                 return choice(
                     {concat({operand, suffix}),
@@ -265,8 +294,7 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                 );
             },
             [&](const TargetScopeMemberExpr& member) noexcept {
-                const auto operand =
-                    render_expression(member.operand_id, TargetPrecedence::Postfix);
+                const auto operand = render_expression(*member.operand, TargetPrecedence::Postfix);
                 const auto name = std::visit(
                     Overloaded {
                         [&](const TargetIdentifier& value) noexcept {
@@ -296,19 +324,8 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                      )}
                 );
             },
-            [&](const TargetForwardExpr& forward) noexcept {
-                const auto operand = render_identifier(forward.name);
-                return concat(
-                    {text(target_symbol_spelling(TargetSymbol::StdForward)),
-                     text("<decltype("),
-                     operand,
-                     text(")>("),
-                     operand,
-                     text(")")}
-                );
-            },
             [&](const TargetStaticCastExpr& cast) noexcept {
-                const auto operand = std::array {render_expression(cast.operand_id)};
+                const auto operand = std::array {render_expression(*cast.operand)};
                 return concat(
                     {text("static_cast<"),
                      render_type(cast.type),
@@ -316,50 +333,18 @@ auto TargetRenderer::render_expression(TargetExprID id, TargetPrecedence parent)
                      delimited_list(operand, "(", ")")}
                 );
             },
-            [&](const TargetLambdaExpr& lambda) noexcept {
-                return concat(
-                    {text("("),
-                     text("[&]() noexcept "),
-                     render_statement_block(lambda.body),
-                     text("()"),
-                     text(")")}
-                );
-            },
-            [&](const TargetClosureExpr& closure) noexcept {
-                auto captures = std::vector<LayoutNodeID> {};
-                for (const auto& capture : closure.captures) {
-                    auto value = concat(
-                        {text(capture.mode == TargetCaptureMode::Write ? "&" : ""),
-                         render_identifier(capture.name)}
-                    );
-                    if (capture.name != capture.source) {
-                        value = concat({value, text(" = "), render_identifier(capture.source)});
-                    }
-                    captures.push_back(value);
-                }
-                auto parameters = std::vector<LayoutNodeID> {};
-                for (const auto& parameter : closure.parameters) {
-                    if (!parameter.name.has_value()) {
-                        parameters.push_back(render_type(parameter.type));
-                    } else {
-                        parameters.push_back(concat({
-                            render_type(parameter.type),
-                            text(" "),
-                            render_identifier(*parameter.name),
-                        }));
-                    }
-                }
-                const auto result = render_type_layouts(closure.result);
+            [&](const TargetRegionExpr& region) noexcept {
                 return concat({
-                    delimited_list(captures, "[", "]"),
-                    delimited_list(parameters, "(", ")"),
-                    render_trailing_return(result, false),
+                    text("([&]() noexcept -> "),
+                    render_type(region.result),
                     text(" "),
-                    render_statement_block(closure.body),
+                    render_statement_block(region.body),
+                    text("())"),
                 });
             },
+
         },
-        value.value
+        expression.value
     );
     if (own_precedence < parent) {
         rendered = concat({text("("), rendered, text(")")});

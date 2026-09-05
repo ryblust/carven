@@ -1,20 +1,37 @@
 module carven:backend.target.decl;
 
+import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
+import :backend.target.stmt;
 import std;
 
 struct TargetParameter final {
     std::optional<TargetIdentifier> name;
     TargetTypeID type;
+    std::optional<TargetExpr> default_value = std::nullopt;
 };
+
+auto target_parameters(TargetParameter parameter) noexcept -> std::vector<TargetParameter>;
+auto target_parameters(TargetParameter first, TargetParameter second) noexcept
+    -> std::vector<TargetParameter>;
+
+struct TargetFreeFunctionDeclaration final {};
+
+struct TargetFreeFunctionDefinition final {
+    std::vector<TargetStmt> body;
+};
+
+using TargetFreeFunctionForm =
+    std::variant<TargetFreeFunctionDeclaration, TargetFreeFunctionDefinition>;
 
 struct TargetFunctionDecl final {
     TargetName name;
     std::vector<TargetParameter> parameters;
     TargetTypeID result;
-    std::vector<TargetStmtID> body;
-    bool declaration_only;
+    TargetFreeFunctionForm form;
+    bool constexpr_specifier = false;
+    bool static_specifier = false;
     bool inline_specifier;
 };
 
@@ -37,12 +54,11 @@ struct TargetTypeAlias final {
 
 struct TargetMemberInitializer final {
     TargetIdentifier name;
-    TargetExprID value;
+    TargetExpr value;
 };
 
 struct TargetConstructorDecl final {
     TargetIdentifier name;
-    std::vector<TargetIdentifier> template_type_parameters;
     std::vector<TargetParameter> parameters;
     std::vector<TargetMemberInitializer> initializers;
     bool constexpr_specifier;
@@ -52,20 +68,31 @@ struct TargetConstructorDecl final {
 enum class TargetOperatorName {
     Assignment,
     Equality,
+    Call,
 };
 
 using TargetMemberFunctionName = std::variant<TargetIdentifier, TargetOperatorName>;
+
+struct TargetMemberFunctionDeclaration final {};
+struct TargetMemberFunctionDefaulted final {};
+
+struct TargetMemberFunctionDefinition final {
+    std::vector<TargetStmt> body;
+};
+
+using TargetMemberFunctionForm = std::variant<
+    TargetMemberFunctionDeclaration,
+    TargetMemberFunctionDefaulted,
+    TargetMemberFunctionDefinition>;
 
 struct TargetMemberFunctionDecl final {
     TargetMemberFunctionName name;
     std::vector<TargetParameter> parameters;
     TargetTypeID result;
-    std::vector<TargetStmtID> body;
+    TargetMemberFunctionForm form;
     bool static_specifier;
     bool constexpr_specifier;
     bool friend_specifier;
-    bool declaration_only;
-    bool defaulted;
     bool result_reference;
     bool const_qualified;
 };
@@ -83,7 +110,7 @@ struct TargetStructForwardDecl final {
 
 struct TargetEnumCase final {
     TargetIdentifier name;
-    TargetExprID value;
+    TargetExpr value;
 };
 
 struct TargetEnumDecl final {
@@ -129,14 +156,6 @@ struct TargetClassForwardDecl final {
     TargetIdentifier name;
 };
 
-struct TargetVariableDecl final {
-    TargetTypeID type;
-    TargetName name;
-    TargetExprID initializer;
-    bool inline_specifier;
-    bool constexpr_specifier;
-};
-
 using TargetDecl = std::variant<
     TargetFunctionDecl,
     TargetStructDecl,
@@ -144,5 +163,4 @@ using TargetDecl = std::variant<
     TargetEnumDecl,
     TargetEnumForwardDecl,
     TargetClassDecl,
-    TargetClassForwardDecl,
-    TargetVariableDecl>;
+    TargetClassForwardDecl>;

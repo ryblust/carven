@@ -1,9 +1,12 @@
 module carven:semantic.analysis.operations;
 
-import :semantic.analysis.session.read;
-import :semantic.hir.expr;
-import :semantic.hir.ids;
-import :semantic.hir.type;
+import :diagnostics.code;
+import :frontend.ast.expr;
+import :frontend.ast.storage;
+import :frontend.literal;
+import :semantic.semir.body;
+import :semantic.semir.program;
+import :semantic.semir.type;
 import std;
 
 enum class OperatorResult {
@@ -11,74 +14,82 @@ enum class OperatorResult {
     Boolean,
 };
 
-enum class UnaryOperatorStatus {
-    Supported,
-    Error,
-    BooleanOperandRequired,
-    NumericOperandRequired,
-    IntegerOperandRequired,
+struct OperationDiagnostic final {
+    std::string_view message;
+    DiagnosticCode code;
 };
 
-struct UnaryOperatorCheck final {
-    UnaryOperatorStatus status;
-    OperatorResult result;
+enum class BinaryOperandPlan {
+    Independent,
+    LeftExpectedFromRight,
+    RightExpectedFromLeft,
 };
 
-enum class BinaryOperatorStatus {
-    Supported,
-    Error,
-    BooleanOperandsRequired,
-    NumericOperandsRequired,
-    IntegerOperandsRequired,
-};
+using OperatorDecision = std::expected<OperatorResult, OperationDiagnostic>;
+using CastDecision = std::expected<CastKind, OperationDiagnostic>;
+using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
+using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
-struct BinaryOperatorCheck final {
-    bool equality_supported;
-    BinaryOperatorStatus status;
-    OperatorResult result;
-};
+auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator;
+auto semantic_operator(ASTBinaryOperator op) noexcept -> std::optional<BinaryOperator>;
+auto binary_operator_requires_equality(ASTBinaryOperator op) noexcept -> bool;
+auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) noexcept
+    -> BinaryOperandPlan;
 
-enum class CastStatus {
-    Supported,
-    Error,
-    Invalid,
-};
+auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<BuiltinType>;
+auto select_contextual_numeric_type(
+    const ProgramDraft& draft,
+    TypeID inferred,
+    std::optional<ConstructionTypeRef> expected,
+    NumericSuffix suffix
+) noexcept -> TypeID;
 
-struct CastCheck final {
-    CastStatus status;
-    std::optional<HIRCastKind> kind;
-};
+auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool;
+auto type_shapes_compatible(
+    const ProgramDraft& draft,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right
+) noexcept -> bool;
+auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> bool;
+auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
 
-struct TextIntrinsicCheck final {
-    bool supported;
-    bool constant_bearing;
-    HIRBuiltinType result;
-};
-auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<HIRBuiltinType>;
+auto decide_unary_operator(
+    const ProgramDraft& draft,
+    UnaryOperator op,
+    ConstructionTypeRef operand
+) noexcept -> OperatorDecision;
 
-auto check_unary_operator(
-    SemanticDraftView hir,
-    HIRUnaryExpr::Operator op,
-    HIRTypeID operand
-) noexcept -> UnaryOperatorCheck;
-
-auto check_binary_operator(
-    SemanticDraftView hir,
-    HIRBinaryExpr::Operator op,
-    HIRTypeID left,
-    HIRTypeID right,
+auto decide_binary_operator(
+    const ProgramDraft& draft,
+    BinaryOperator op,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    bool operands_compatible,
     bool equality_capable
-) noexcept -> BinaryOperatorCheck;
+) noexcept -> OperatorDecision;
 
-auto check_cast(
-    SemanticDraftView hir,
-    HIRTypeID source,
-    HIRTypeID target,
+auto decide_binary_operator(
+    const ProgramDraft& draft,
+    ASTBinaryOperator op,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    bool operands_compatible,
+    bool equality_capable
+) noexcept -> OperatorDecision;
+
+auto decide_cast(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
     bool source_is_numeric_enum
-) noexcept -> CastCheck;
+) noexcept -> CastDecision;
 
-auto check_text_intrinsic(
-    SemanticDraftView hir,
-    HIRTextIntrinsic intrinsic,
-    HIRTypeID operand
-) noexcept -> TextIntrinsicCheck;
+auto decide_text_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t argument_count
+) noexcept -> TextMethodDecision;
+auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecision;
+auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType;

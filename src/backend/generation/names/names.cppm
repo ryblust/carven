@@ -1,9 +1,7 @@
 module carven:backend.generation.names;
 
-import :backend.target.name;
 import :backend.generation.linkage;
-import :semantic.hir.expr;
-import :semantic.hir.ids;
+import :backend.target.name;
 import std;
 
 enum class TargetTemporaryNameKind {
@@ -16,10 +14,12 @@ enum class TargetTemporaryNameKind {
     CatchDone,
     Logic,
     Outcome,
+    SuccessProjection,
+    FailureProjection,
+    PayloadProjection,
     Region,
     Continue,
     TestValue,
-    TestRegistration,
     CppBoundaryParameter,
     CppProviderPointer,
 };
@@ -31,15 +31,13 @@ struct TargetScopeID final {
 
 struct TargetPayloadEnumCaseNames final {
     TargetIdentifier record_type;
-    TargetIdentifier holds_function;
-    TargetIdentifier payload_function;
+    TargetIdentifier projection_function;
 };
 
 struct TargetPayloadEnumNames final {
     std::vector<TargetPayloadEnumCaseNames> cases;
     TargetIdentifier storage_type;
     TargetIdentifier storage_member;
-    TargetIdentifier storage_parameter;
 };
 
 class TargetNameAllocator final {
@@ -83,6 +81,7 @@ public:
     static auto process_entry() noexcept -> TargetIdentifier;
     static auto process_argument_count() noexcept -> TargetIdentifier;
     static auto process_argument_vector() noexcept -> TargetIdentifier;
+    static auto test_context() noexcept -> TargetIdentifier;
 
 private:
     auto claim(std::string_view preferred) noexcept -> TargetIdentifier;
@@ -96,7 +95,5 @@ private:
     std::flat_map<TargetScopeID, std::flat_set<std::string>> local_claimed_names;
 };
 
-auto payload_enum_names(
-    std::span<const TargetIdentifier> case_names,
-    const TargetIdentifier& enum_name
-) noexcept -> TargetPayloadEnumNames;
+auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept
+    -> TargetPayloadEnumNames;

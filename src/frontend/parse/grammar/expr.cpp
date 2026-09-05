@@ -612,21 +612,17 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
     const auto start = current().span;
     auto construction_type = std::optional<ASTConstructionType> {};
     if (check(TokenKind::Identifier)) {
-        const auto type = parse_named_type();
-        if (type.has_value()) {
-            const auto& parsed = builder.type(*type);
-            construction_type = ASTConstructionType {
-                .span = parsed.span,
-                .value = std::get<ASTNamedType>(parsed.value),
-            };
-        }
+        auto parsed = parse_named_type_form();
+        construction_type = ASTConstructionType {
+            .span = parsed.span,
+            .value = std::move(parsed.value),
+        };
     } else if (check(TokenKind::Fn)) {
-        const auto type = parse_function_type();
-        if (type.has_value()) {
-            const auto& parsed = builder.type(*type);
+        auto parsed = parse_function_type_form();
+        if (parsed.has_value()) {
             construction_type = ASTConstructionType {
-                .span = parsed.span,
-                .value = std::get<ASTFunctionType>(parsed.value),
+                .span = parsed->span,
+                .value = std::move(parsed->value),
             };
         }
     } else {

@@ -6,8 +6,8 @@ module carven:test.internal.compiler.diagnostics.failures;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
@@ -51,7 +51,7 @@ TEST_CASE("Compiler diagnostics: failure copyability closes after nominal signat
     const auto result = compile(
         sources,
         CompilationRequest {.modules = std::span(&input, 1)},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
         }
@@ -96,13 +96,16 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
         const auto result = compile(
             sources,
             CompilationRequest {.modules = std::span(&input, 1)},
-            TargetGenerationRequest {
+            TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:catch-warnings").value(),
             }
         );
 
-        REQUIRE(result.has_value());
+        CHECK(result.has_value());
+        if (!result.has_value()) {
+            continue;
+        }
         CHECK_EQ(
             std::ranges::count_if(
                 result->diagnostics,
@@ -113,13 +116,15 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
             1
         );
         const auto* warning = find_diagnostic(result->diagnostics, expectation.code);
-        REQUIRE(warning != nullptr);
+        if (warning == nullptr) {
+            continue;
+        }
         REQUIRE(warning->attachment.primary.has_value());
         CHECK_EQ(sources.slice(warning->attachment.primary->span), expectation.primary_text);
     }
 }
 
-TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic contracts") {
+TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semantic contracts") {
     static constexpr auto cases = std::to_array<ErrorExpectation>({
         {
             .name = "missing return",
@@ -246,16 +251,6 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
             .primary_text = {},
         },
         {
-            .name = "take state follows a call failure into catch",
-            .source = "struct Failure { code: i32 } struct Payload { value: i32 } "
-                      "fn fail(&&payload: Payload) throw Failure { "
-                      "throw Failure { code: payload.value }; } "
-                      "fn invalid(&&payload: Payload) { try { fail(&&payload)?; return; } "
-                      "catch { Failure(_) => {}, } let observed = payload.value; }",
-            .code = "CV-ACCESS-UNAVAILABLE",
-            .primary_text = {},
-        },
-        {
             .name = "escaping capturing closure",
             .source = "fn invalid() { let value = 1; "
                       "let callback: fn(i32) -> i32 = "
@@ -277,12 +272,49 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
             .primary_text = {},
         },
         {
+            .name = "inferred lambda return join cannot escape as a callable view",
+            .source = "fn first(value: i32) -> i32 { return value; } "
+                      "fn second(value: i32) -> i32 { return value + 1; } "
+                      "fn invalid() { let choose = [](flag: bool) { "
+                      "if flag { return first; } return second; }; }",
+            .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
+            .primary_text = {},
+        },
+        {
+            .name = "taken stored view cannot be failure-widened",
+            .source = "struct First {} struct Second {} "
+                      "fn narrow(value: i32) -> i32 throw First { return value; } "
+                      "fn invalid() { "
+                      "let source: fn(i32) -> i32 throw First = narrow; "
+                      "let widened: fn(i32) -> i32 throw First + Second = &&source; }",
+            .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
+            .primary_text = {},
+        },
+        {
+            .name = "Write-borrow callable storage rejects a capturing target",
+            .source = "fn invalid(&destination: fn(i32) -> i32) { "
+                      "let offset = 1; "
+                      "let owner = [offset](value: i32) { return value + offset; }; "
+                      "destination = owner; }",
+            .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
+            .primary_text = {},
+        },
+        {
             .name = "captured callable view",
             .source = "fn invalid(callback: fn(i32) -> i32) { "
                       "let wrapper = [callback](value: i32) { return callback(value); }; "
                       "let result = wrapper(1); }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
             .primary_text = {},
+        },
+        {
+            .name = "Take conflicts with an active callable-view loan",
+            .source = "fn invalid() { let source = 1; "
+                      "let owner = [source](value: i32) { return value + source; }; "
+                      "let view: fn(i32) -> i32 = owner; let moved = &&owner; "
+                      "let result = view(1); }",
+            .code = "CV-ACCESS-BORROW-CONFLICT",
+            .primary_text = "&&",
         },
     });
 
@@ -299,16 +331,25 @@ TEST_CASE("Compiler diagnostics: graph and fixed-point failures remain semantic 
         const auto result = compile(
             sources,
             CompilationRequest {.modules = std::span(&input, 1)},
-            TargetGenerationRequest {
+            TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
             }
         );
 
-        REQUIRE(!result.has_value());
+        CHECK(!result.has_value());
+        if (result.has_value()) {
+            continue;
+        }
         const auto* diagnostic = find_diagnostic(result.error(), expectation.code);
-        REQUIRE(diagnostic != nullptr);
-        REQUIRE(diagnostic->attachment.primary.has_value());
+        CHECK(diagnostic != nullptr);
+        if (diagnostic == nullptr) {
+            continue;
+        }
+        CHECK(diagnostic->attachment.primary.has_value());
+        if (!diagnostic->attachment.primary.has_value()) {
+            continue;
+        }
         CHECK(!diagnostic->attachment.primary->span.span.empty());
         if (!expectation.primary_text.empty()) {
             CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);

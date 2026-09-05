@@ -9,7 +9,7 @@
 ## Summary
 
 本文是 Carven async 领域的临时设计 authority。它统一记录用户侧语义、compiler-owned facts、
-尚待关闭的问题，以及 lowering/backend research。它不描述当前实现，也不承诺 grammar、SemanticProgram、
+尚待关闭的问题，以及 lowering/backend research。它不描述当前实现，也不承诺 grammar、SemIRProgram、
 coroutine lowering、runtime、scheduler 或 async-specific C++ boundary 已经存在；当前行为仍以代码、
 测试与 `docs/` 永久文档为准。
 
@@ -58,7 +58,7 @@ Backend/C++ interoperation 是单向下游 consumer。C++ coroutine、sender、r
   decision supersede；
 - working spelling 的调整不能暗中改变 completion、ownership、lifetime 或 failure semantics；
 - Deferred 表示第一阶段明确不开放，不表示永久拒绝；重新讨论时必须先补齐用例与影响轴；
-- 进入实现前，把相关 decision IDs 映射到 grammar/SemanticProgram/diagnostics/tests；进入永久语言保证后，再
+- 进入实现前，把相关 decision IDs 映射到 grammar/SemIRProgram/diagnostics/tests；进入永久语言保证后，再
   链接对应 `docs/` authority。
 
 ## Goals and non-goals
@@ -94,7 +94,7 @@ Backend/C++ interoperation 是单向下游 consumer。C++ coroutine、sender、r
 
 **Accepted.**
 
-Carven source semantics 由 compiler/SemanticProgram 拥有，不由某个 C++ async library、coroutine promise、
+Carven source semantics 由 compiler/SemIRProgram 拥有，不由某个 C++ async library、coroutine promise、
 sender concept、runtime task type 或 template substitution 反向定义。
 
 `std::execution`、stdexec、async_simple、libcoro、ASIO 等可以是思想来源、integration bridge 或 lowering
@@ -323,7 +323,7 @@ cancel(child);
 ```
 
 它是 compiler-known standard operation，不是 keyword 或 contextual keyword。Compiler 在名称解析
-后按 canonical symbol identity 形成 cancellation SemanticProgram operation；同名 user function 仍是普通调用。
+后按 canonical symbol identity 形成 cancellation SemIRProgram operation；同名 user function 仍是普通调用。
 
 `cancel(child)`：
 
@@ -646,14 +646,14 @@ Deadline 一旦赢得竞争，loser 的晚到 completion 不替换 `Timeout`。
 | `timeout(operation, duration)` | Semantics accepted; name and `Timeout` type spelling working |
 
 第一阶段不因 cancellation、join、race、timeout、shield 或 ownership transfer 新增 keyword。
-Compiler-known standard operations 可以在 canonical symbol resolution 后获得专用 SemanticProgram operations 与 diagnostics，
+Compiler-known standard operations 可以在 canonical symbol resolution 后获得专用 SemIRProgram operations 与 diagnostics，
 无需升级为 contextual keyword。
 
 ### Compiler-owned facts and feature admission
 
 **Maturity:** Draft; blocked by `OPEN-01` and `OPEN-02`.
 
-Accepted decision 不等于 implementation authorization。进入 grammar/SemanticProgram 前，至少需要把以下 facts
+Accepted decision 不等于 implementation authorization。进入 grammar/SemIRProgram 前，至少需要把以下 facts
 闭合为一个垂直切片：
 
 - async callable signature 与 value/failure/cancellation completion；
@@ -666,7 +666,7 @@ Accepted decision 不等于 implementation authorization。进入 grammar/Semant
 - frame captures、borrow admission、destruction order 与 storage requirement；
 - 与现有 name、type、call、access、failure、control 和 availability facts 的关系。
 
-SemanticProgram 必须在 publish 前拥有这些 source facts。Promise type、template substitution、destructor 或 library
+SemIRProgram 必须在 publish 前拥有这些 source facts。Promise type、template substitution、destructor 或 library
 behavior 不得重新决定 source validity。
 
 ### Selected lowering
@@ -924,10 +924,10 @@ private and do not activate implementation or select a provider.
 
 ## Implementation
 
-Implementation is not yet actionable. `OPEN-01` and `OPEN-02` block a coherent grammar/SemanticProgram/control/lifetime
+Implementation is not yet actionable. `OPEN-01` and `OPEN-02` block a coherent grammar/SemIRProgram/control/lifetime
 slice; `DEFER-08` keeps provider/lowering selection deferred until that slice exists.
 
-Once unblocked, each relevant decision ID must map through grammar, SyntaxProgram, SemanticProgram,
+Once unblocked, each relevant decision ID must map through grammar, SyntaxProgram, SemIRProgram,
 verification, TargetUnit lowering, runtime, C++ interoperation boundaries, diagnostics, tests, and
 permanent-document handoff. Scope-closing control
 edges and the parent-completion publication barrier must be explicit compiler facts rather than destructor or
@@ -960,7 +960,7 @@ be collected without turning a candidate into an implementation choice.
 
 ## References
 
-- [Carven philosophy](../docs/philosophy.md)
+- [Carven design principles](../docs/principles.md)
 - [Async learning note](../notes/async-programming.md)
 - [Failure-contract semantics](../docs/semantics.md#failure-contracts)
 - [Failure-model and runtime-materialization note](../notes/failure-models.md)

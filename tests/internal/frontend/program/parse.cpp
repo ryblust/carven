@@ -4,7 +4,7 @@ module;
 
 module carven:test.internal.frontend.program.parse;
 
-import :compilation.request;
+import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
@@ -39,7 +39,7 @@ TEST_CASE("Syntax program: real module sources publish through the program parse
     CHECK_EQ(parsed->provenance().module_records().size(), 1u);
     CHECK_EQ(parsed->provenance().source_snapshots().size(), 1u);
     CHECK_EQ(
-        parsed->provenance().module_record(ProgramModuleID::from_index(0)).path.value(),
+        parsed->provenance().module_record(parsed->provenance().module_id_at(0)).path.value(),
         "app.main"
     );
 }

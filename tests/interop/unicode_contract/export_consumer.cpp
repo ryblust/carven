@@ -1,4 +1,5 @@
 #include "carven/api/tests/interop/unicode_contract/export_argument.hpp"
+#include "carven/api/tests/interop/unicode_contract/export_argument.hpp"
 
 namespace {
 

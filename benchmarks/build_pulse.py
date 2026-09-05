@@ -75,8 +75,7 @@ def batch_sample(
         str(compiler),
         "--output-dir",
         f"out-{ordinal:03d}",
-        "--linkage-domain",
-        f"benchmark:build-pulse:{count}",
+        f"--linkage-domain=benchmark:build-pulse:{count}",
         *inputs,
     ]
     started = time.perf_counter_ns()

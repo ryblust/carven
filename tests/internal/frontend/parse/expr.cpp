@@ -59,7 +59,7 @@ TEST_CASE("Parser: literals retain typed lexer values") {
     CHECK(!std::get<BooleanLiteralValue>(literal_at(9).value).value);
 }
 
-TEST_CASE("Parser: primary and postfix alternatives remain structural") {
+TEST_CASE("Parser: primary and postfix forms keep construction types inline") {
     static constexpr auto text = std::string_view(
         "fn expressions() {"
         " let empty = []; let grouped = (value); let defaulted = Box {};"
@@ -90,6 +90,10 @@ TEST_CASE("Parser: primary and postfix alternatives remain structural") {
     CHECK_EQ(call.arguments.size(), 2u);
 
     CHECK(is<ASTFunctionType>(get<ASTConstructionExpr>(initializer(result, 6)).type));
+    REQUIRE_EQ(ast.types().size(), 2u);
+    CHECK(std::ranges::all_of(ast.types(), [](const ASTType& type) static noexcept {
+        return is<ASTNamedType>(type);
+    }));
 
     check_invalid("fn invalid() { let native = #[cpp] ---\nreturn compute();\n---\n; }");
 }

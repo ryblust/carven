@@ -6,8 +6,8 @@ module carven:test.internal.compiler.diagnostics.flow;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
@@ -34,46 +34,63 @@ struct ErrorExpectation final {
 
 } // namespace
 
-TEST_CASE("Compiler diagnostics: value try is one control-transfer boundary") {
-    auto sources = SourceManager();
-    const auto source = std::string(
-        "fn invalid() {\n"
-        "    while true {\n"
-        "        let returned = try { return; 0 } catch { _ => 0, };\n"
-        "        let broken = try { break; 0 } catch { _ => 0, };\n"
-        "        let continued = try { continue; 0 } catch { _ => 0, };\n"
-        "        break;\n"
-        "    }\n"
-        "}\n"
-    );
-    const auto source_id = *sources.append_virtual("value-try-transfer.cv", source);
-    const auto input = CompilationModuleInput {
-        .source_id = source_id,
-        .module_path = *CanonicalModulePath::from_value("value_try_transfer"),
-    };
+TEST_CASE("Compiler diagnostics: value regions report transfers and missing results") {
+    static constexpr auto cases = std::to_array<ErrorExpectation>({
+        {
+            .name = "value if return",
+            .source = "fn invalid() { let value = if true { return; 0 } else { 1 }; }",
+            .code = "CV-FLOW-TRANSFER-VALUE-BRANCH",
+            .primary_text = "return",
+        },
+        {
+            .name = "value match break",
+            .source = "fn invalid() { while true { "
+                      "let value = match 0 { _ => { break; 0 }, }; break; } }",
+            .code = "CV-FLOW-TRANSFER-VALUE-BRANCH",
+            .primary_text = "break",
+        },
+        {
+            .name = "value try continue",
+            .source = "fn invalid() { while true { "
+                      "let value = try { continue; 0 } catch { _ => 0, }; break; } }",
+            .code = "CV-FLOW-TRANSFER-VALUE-BRANCH",
+            .primary_text = "continue",
+        },
+        {
+            .name = "value try missing normal result",
+            .source = "fn invalid() { "
+                      "let value = try { let side_effect = 0; } catch { _ => 1, }; }",
+            .code = "CV-FLOW-VALUE-BRANCH-RESULT",
+            .primary_text = "{ let side_effect = 0; }",
+        },
+    });
 
-    const auto result = compile(
-        sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
-        TargetGenerationRequest {
-            .test_mode = TestGenerationMode::None,
-            .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
-        }
-    );
+    for (const auto& expectation : cases) {
+        CAPTURE(expectation.name);
+        auto sources = SourceManager();
+        const auto source_id = *sources.append_virtual(
+            std::format("{}.cv", expectation.name),
+            std::string(expectation.source)
+        );
+        const auto input = CompilationModuleInput {
+            .source_id = source_id,
+            .module_path = *CanonicalModulePath::from_value("value_region_error"),
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
+            }
+        );
 
-    REQUIRE_FALSE(result.has_value());
-    auto transfers = std::flat_set<std::string_view>();
-    for (const auto& diagnostic : result.error()) {
-        if (diagnostic.finding.code != "CV-FLOW-TRANSFER-VALUE-BRANCH") {
-            continue;
-        }
-        REQUIRE(diagnostic.attachment.primary.has_value());
-        transfers.insert(sources.slice(diagnostic.attachment.primary->span));
+        REQUIRE_FALSE(result.has_value());
+        const auto* diagnostic = find_diagnostic(result.error(), expectation.code);
+        REQUIRE(diagnostic != nullptr);
+        REQUIRE(diagnostic->attachment.primary.has_value());
+        CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);
     }
-    CHECK_EQ(transfers.size(), 3u);
-    CHECK(transfers.contains("break"));
-    CHECK(transfers.contains("continue"));
-    CHECK(transfers.contains("return"));
 }
 
 TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reachability") {
@@ -94,7 +111,7 @@ TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reacha
     const auto result = compile(
         sources,
         CompilationRequest {.modules = std::span(&input, 1)},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }
@@ -127,7 +144,7 @@ TEST_CASE("Compiler diagnostics: covered match arms retain warning identity and 
     const auto result = compile(
         sources,
         CompilationRequest {.modules = std::span(&input, 1)},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
         }

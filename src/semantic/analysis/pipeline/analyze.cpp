@@ -1,149 +1,47 @@
 module carven:semantic.analyze.impl;
 
-import :semantic.analysis.availability;
+import :diagnostics.diagnosed;
+import :diagnostics.diagnostic;
+import :diagnostics.sink;
+import :semantic.analysis.body.pipeline;
 import :semantic.analysis.catalog;
-import :semantic.analysis.control;
 import :semantic.analysis.decl;
-import :semantic.analysis.effects;
-import :semantic.analysis.elaboration.decl;
-import :semantic.analysis.elaboration.module_analysis;
-import :semantic.analysis.lint;
-import :semantic.analysis.interop;
-import :semantic.analysis.pipeline.decl;
-import :semantic.analysis.nominal.containment;
-import :semantic.analysis.validation;
-import :semantic.analysis.validation.invariants;
+import :semantic.analysis.lint.unused_imports;
+import :semantic.analysis.pipeline.publish;
 import :semantic.analyze;
-import :support.invariant;
+import :semantic.semir.program;
 import std;
 
-auto analyze(SyntaxProgram syntax) noexcept
-    -> std::expected<Diagnosed<SemanticProgram>, Diagnostics> {
-    auto analyzer = ProgramAnalyzer(std::move(syntax));
-    {
-        auto catalog_result = build_analysis_catalog(
-            analyzer.builder().provenance(),
-            analyzer.syntax_trees(),
-            analyzer.builder().entity_reservations()
-        );
-        if (!catalog_result.has_value()) {
-            return std::unexpected(std::move(catalog_result.error()));
-        }
-        const auto catalog_owner = std::move(*catalog_result);
-        const auto catalog = catalog_owner.view();
-        collect_declarations(catalog, analyzer);
-        auto declarations =
-            DeclarationResolver(catalog, analyzer.builder().declaration_capabilities());
+auto analyze(SyntaxProgram syntax) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
+    auto diagnostics = DiagnosticSink();
+    auto draft = ProgramDraft::begin(std::move(syntax), diagnostics);
 
-        auto modules = std::vector<ModuleAnalysis>();
-        modules.reserve(analyzer.module_count());
-        const auto declaration_view = declarations.view();
-        for (auto index = 0uz; index < analyzer.module_count(); ++index) {
-            const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
-            modules.emplace_back(
-                module_id,
-                analyzer.syntax(module_id),
-                catalog,
-                analyzer.builder(),
-                declaration_view,
-                analyzer.callable_constraints(),
-                analyzer.entry_points(),
-                analyzer.diagnostics()
-            );
-        }
-        const auto declaration_proofs = analyzer.builder().begin_expression_proof();
-        declarations.resolve_all(modules);
-        if (analyzer.has_errors()) {
-            return std::unexpected(analyzer.take_diagnostics());
-        }
-        analyzer.builder().finish_expression_proof(declaration_proofs);
-        modules.clear();
-        const auto resolved_view = declarations.view();
-        for (auto index = 0uz; index < analyzer.module_count(); ++index) {
-            const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
-            modules.emplace_back(
-                module_id,
-                analyzer.syntax(module_id),
-                catalog,
-                analyzer.builder(),
-                resolved_view,
-                analyzer.callable_constraints(),
-                analyzer.entry_points(),
-                analyzer.diagnostics()
-            );
-        }
-        for (auto& module_analysis : modules) {
-            build_module(module_analysis);
-        }
-        diagnose_cpp_api_surface(analyzer.builder(), analyzer.diagnostics());
-        if (analyzer.has_errors()) {
-            return std::unexpected(analyzer.take_diagnostics());
-        }
-        auto declaration_origins =
-            std::vector<std::optional<ProgramOriginID>>(catalog.symbols().size());
-        for (const auto& declaration : catalog.symbols()) {
-            if (std::holds_alternative<CatalogConstantForm>(declaration.form)) {
-                declaration_origins[declaration.symbol_id.index()] =
-                    modules[declaration.module_id.index()].origin(declaration.declaration_span);
-            }
-        }
-        modules.clear();
-        for (const auto& declaration : catalog.symbols()) {
-            if (!std::holds_alternative<CatalogConstantForm>(declaration.form)) {
-                continue;
-            }
-            const auto constant = analyzer.builder().symbol_constant(declaration.symbol_id);
-            if (!constant.has_value()) {
-                invariant_violation("resolved module constant is missing semantic facts");
-            }
-            diagnose_declaration_surface_constant(
-                analyzer.builder(),
-                analyzer.diagnostics(),
-                declaration.visibility,
-                declaration.module_id,
-                *constant,
-                *declaration_origins[declaration.symbol_id.index()],
-                "module constant"
-            );
-        }
-        if (analyzer.has_errors()) {
-            return std::unexpected(analyzer.take_diagnostics());
-        }
-        diagnose_unused_bindings(analyzer.builder(), analyzer.diagnostics());
-        diagnose_unused_imports(catalog, analyzer.builder().provenance(), analyzer.diagnostics());
+    auto catalog_result = build_analysis_catalog(draft);
+    if (!catalog_result.has_value()) {
+        return std::unexpected(std::move(catalog_result.error()));
     }
-    analyzer.release_syntax();
-    analyzer.builder().derive_binding_facts();
-    analyzer.builder().derive_place_uses();
-    if (const auto verified = verify_semantic_structure(analyzer.builder());
-        !verified.has_value()) {
-        invariant_violation(verified.error().message);
+    const auto catalog = std::move(*catalog_result);
+    auto import_usage = ImportUsage(catalog.view().imports().size());
+
+    const auto declarations = complete_declarations(draft, catalog.view(), import_usage);
+    if (!declarations.has_value() || diagnostics.has_errors()) {
+        return std::unexpected(diagnostics.take());
     }
-    {
-        auto control = analyze_control(analyzer.builder());
-        diagnose_effects(
-            analyzer.builder(),
-            analyzer.callable_constraints(),
-            analyzer.diagnostics(),
-            control
-        );
-        if (analyzer.has_errors()) {
-            return std::unexpected(analyzer.take_diagnostics());
-        }
-        freeze_flow_candidate(analyzer.builder(), std::move(control));
-        diagnose_availability(analyzer.builder(), analyzer.diagnostics());
-        if (analyzer.has_errors()) {
-            return std::unexpected(analyzer.take_diagnostics());
-        }
+
+    const auto bodies = elaborate_body_batch(draft, catalog.view(), import_usage);
+    if (!bodies.has_value() || diagnostics.has_errors()) {
+        return std::unexpected(diagnostics.take());
     }
-    diagnose_type_contracts(analyzer.builder(), analyzer.diagnostics());
-    analyze_nominal_containment(analyzer.builder(), analyzer.diagnostics());
-    if (analyzer.has_errors()) {
-        return std::unexpected(analyzer.take_diagnostics());
+    diagnose_unused_imports(draft, catalog.view(), import_usage);
+    if (diagnostics.has_errors()) {
+        return std::unexpected(diagnostics.take());
     }
-    auto diagnostics = analyzer.take_diagnostics();
-    return Diagnosed<SemanticProgram> {
-        .value = std::move(analyzer).finish(),
-        .diagnostics = std::move(diagnostics),
+    auto published = publish_semantic_program(std::move(draft));
+    if (!published.has_value() || diagnostics.has_errors()) {
+        return std::unexpected(diagnostics.take());
+    }
+    return Diagnosed<SemIRProgram> {
+        .value = std::move(*published),
+        .diagnostics = diagnostics.take(),
     };
 }

@@ -15,8 +15,7 @@ private:
 
     std::array<std::uint8_t, 16> value;
 
-    friend auto derive_linkage_domain_id(const TargetGenerationRequest&) noexcept
-        -> LinkageDomainID;
+    friend auto derive_linkage_domain_id(const TargetPlanningRequest&) noexcept -> LinkageDomainID;
 };
 
 class ModuleNamespaceID final {
@@ -31,6 +30,6 @@ private:
     friend auto derive_module_namespace_id(std::string_view) noexcept -> ModuleNamespaceID;
 };
 
-auto derive_linkage_domain_id(const TargetGenerationRequest& request) noexcept -> LinkageDomainID;
+auto derive_linkage_domain_id(const TargetPlanningRequest& request) noexcept -> LinkageDomainID;
 auto derive_module_namespace_id(std::string_view canonical_module_path) noexcept
     -> ModuleNamespaceID;

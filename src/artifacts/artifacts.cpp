@@ -71,7 +71,7 @@ auto validate_artifact_logical_path(std::string_view path) noexcept
     return check_artifact_logical_path(path);
 }
 
-ArtifactSet::ArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept
+GeneratedArtifactSet::GeneratedArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept
     : artifacts_(std::move(artifacts)) {
     std::ranges::sort(artifacts_, {}, &GeneratedArtifact::logical_path);
     auto logical_paths = std::flat_set<std::string_view> {};
@@ -94,6 +94,6 @@ ArtifactSet::ArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept
     }
 }
 
-auto ArtifactSet::artifacts() const noexcept -> std::span<const GeneratedArtifact> {
+auto GeneratedArtifactSet::artifacts() const noexcept -> std::span<const GeneratedArtifact> {
     return artifacts_;
 }

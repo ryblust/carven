@@ -7,9 +7,9 @@ enum class SyntaxProgramErrorKind {
     InvalidProvenance,
     SyntaxTreeCountMismatch,
     SyntaxSourceMismatch,
-    RootSpanOutOfBounds,
-    ChildIDOutOfBounds,
-    SpanOutOfBounds,
+    InvalidReference,
+    InvalidRootOwnership,
+    InvalidResolvedImportGraph,
 };
 
 struct SyntaxProgramError final {

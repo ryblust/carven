@@ -186,7 +186,7 @@ None. 当前 inactive memory-model questions 保留为 blocked open decisions，
 documentation；该切片不增加 syntax、IR、runtime 或 tests。
 
 未来任何 memory-model feature 都必须形成 complete vertical slice：source form、semantic
-guarantee、diagnostics、SemanticProgram facts、target/runtime、source-fragment/provider/export-caller
+guarantee、diagnostics、SemIRProgram facts、target/runtime、source-fragment/provider/export-caller
 boundary、tests 与永久文档同时闭合。实现必须由具体 movement、sharing 与 synchronization operation 驱动，而不是预造
 Send/Sync、lock、atomic 或 race-analysis IR。
 

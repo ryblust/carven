@@ -111,7 +111,7 @@ auto Parser::parse_match_form() noexcept -> std::optional<ASTMatchForm> {
         if (!arm) {
             return std::nullopt;
         }
-        arms.push_back(std::move(*arm));
+        arms.push_back(*arm);
         if (!match(TokenKind::Comma)) {
             break;
         }
@@ -290,7 +290,7 @@ auto Parser::parse_catch_arm() noexcept -> std::optional<ASTCatchArm> {
         .pattern = std::move(*pattern),
         .guard = guard,
         .arrow_span = arrow.span,
-        .body = std::move(*body),
+        .body = *body,
     };
 }
 
@@ -301,14 +301,14 @@ auto Parser::parse_catch_pattern() noexcept -> std::optional<ASTCatchPattern> {
     if (!first) {
         return std::nullopt;
     }
-    alternatives.push_back(std::move(*first));
+    alternatives.push_back(*first);
     while (const auto pipe = match(TokenKind::Pipe)) {
         pipes.push_back(pipe->span);
         auto alternative = parse_catch_pattern_atom();
         if (!alternative) {
             return std::nullopt;
         }
-        alternatives.push_back(std::move(*alternative));
+        alternatives.push_back(*alternative);
     }
     const auto start = alternatives.empty() ? current().span : alternatives.front().span;
     const auto end = alternatives.empty() ? current().span : alternatives.back().span;
@@ -418,7 +418,7 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
                 .value = ASTNegativeNumberPattern {
                     .minus_span = minus->span,
                     .number_span = number->span,
-                    .value = std::move(number->value),
+                    .value = number->value,
                 },
             }
         );
@@ -438,23 +438,18 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
             );
         }
         if (check(TokenKind::LeftBracket)) {
-            const auto type = parse_array_type();
-            if (!type) {
-                return std::nullopt;
-            }
-            const auto& parsed = builder.type(*type);
-            if (!std::holds_alternative<ASTArrayType>(parsed.value)) {
-                fail_here("expected array type after 'is'");
+            auto parsed = parse_array_type_form();
+            if (!parsed.has_value()) {
                 return std::nullopt;
             }
             return builder.append_pattern(
                 ASTPattern {
-                    .span = join(keyword->span, parsed.span),
+                    .span = join(keyword->span, parsed->span),
                     .value = ASTConstraintPattern {
                         .is_span = keyword->span,
                         .operand = {
-                            .span = parsed.span,
-                            .value = std::get<ASTArrayType>(parsed.value),
+                            .span = parsed->span,
+                            .value = parsed->value,
                         },
                     },
                 }

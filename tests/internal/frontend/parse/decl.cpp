@@ -309,9 +309,11 @@ TEST_CASE("Parser: declaration diagnostics reject malformed forms") {
     const auto empty_structure = parse_valid("struct Empty {}");
     const auto& structure = get<ASTStructDecl>(item(empty_structure, 0));
     CHECK(structure.fields.empty());
+    const auto empty_enumeration = parse_valid("enum State {}");
+    const auto& enumeration = get<ASTEnumDecl>(item(empty_enumeration, 0));
+    CHECK(enumeration.cases.empty());
 
     static constexpr auto invalid = std::to_array<std::string_view>({
-        "enum State {}",
         "fn missing_body();",
         "import(cpp) fn invalid() {}",
         "private import(cpp) const invalid = 1;",

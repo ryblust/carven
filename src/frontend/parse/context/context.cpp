@@ -22,7 +22,8 @@ Parser::Parser(SourceView source_view, const TokenBuffer& token_buffer) noexcept
     : source(source_view.text),
       source_id(source_view.source_id),
       token_buffer(std::addressof(token_buffer)),
-      tokens(token_buffer.tokens()) {}
+      tokens(token_buffer.tokens()),
+      builder(source_view) {}
 
 Parser::DepthGuard::DepthGuard(std::uint32_t* depth) noexcept
     : depth(depth) {}
@@ -122,7 +123,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         .cpp_source_fragments = std::move(cpp_source_fragments),
         .items = std::move(items),
     };
-    return SyntaxTree(std::move(builder).finish(), std::move(ast_module), source_id);
+    return std::move(builder).finish(std::move(ast_module));
 }
 
 auto Parser::synchronize_top_level_item() noexcept -> void {

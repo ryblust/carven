@@ -1,11 +1,23 @@
 module carven:backend.emission.render.item.impl;
 
-import :backend.emission.render;
 import :backend.emission.render.string;
+import :backend.emission.render;
 import :backend.target.raw;
 import :backend.target.symbol;
 import :support.visit;
 import std;
+
+namespace {
+
+auto class_access_spelling(TargetClassAccess access) noexcept -> std::string_view {
+    switch (access) {
+        case TargetClassAccess::Public:  return "public:";
+        case TargetClassAccess::Private: return "private:";
+    }
+    std::unreachable();
+}
+
+} // namespace
 
 auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName& value) noexcept
     -> LayoutNodeID {
@@ -16,6 +28,7 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
                 switch (name) {
                     case TargetOperatorName::Assignment: return text("operator=");
                     case TargetOperatorName::Equality:   return text("operator==");
+                    case TargetOperatorName::Call:       return text("operator()");
                 }
                 std::unreachable();
             },
@@ -25,10 +38,13 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
 }
 
 auto TargetRenderer::render_parameter(const TargetParameter& value) noexcept -> LayoutNodeID {
-    if (!value.name.has_value()) {
-        return render_type(value.type);
+    auto result = !value.name.has_value()
+        ? render_type(value.type)
+        : concat({render_type(value.type), text(" "), render_identifier(*value.name)});
+    if (value.default_value.has_value()) {
+        result = concat({result, text(" = "), render_expression(*value.default_value)});
     }
-    return concat({render_type(value.type), text(" "), render_identifier(*value.name)});
+    return result;
 }
 
 auto TargetRenderer::render_trailing_return(SyntaxLayouts result, bool const_qualified) noexcept
@@ -83,10 +99,50 @@ auto TargetRenderer::render_record_member(const TargetRecordMember& value) noexc
                 );
             },
             [&](const TargetMemberFunctionDecl& function) noexcept {
-                return render_class_member(TargetClassMember {function});
+                return render_member_function(function);
             },
         },
         value
+    );
+}
+
+auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& function) noexcept
+    -> LayoutNodeID {
+    auto prefix = std::string {};
+    if (function.friend_specifier) {
+        prefix += "friend ";
+    }
+    if (function.static_specifier) {
+        prefix += "static ";
+    }
+    if (function.constexpr_specifier) {
+        prefix += "constexpr ";
+    }
+    const auto function_name = render_member_function_name(function.name);
+    const auto reference = text(function.result_reference ? "&" : "");
+    auto result = render_type_layouts(function.result);
+    result.inline_qualified = concat({result.inline_qualified, reference});
+    result.wrapping = concat({result.wrapping, reference});
+    const auto signature = render_function_declarator(
+        prefix,
+        {.inline_qualified = function_name, .wrapping = function_name},
+        function.parameters,
+        result,
+        function.const_qualified
+    );
+    return std::visit(
+        Overloaded {
+            [&](const TargetMemberFunctionDeclaration&) noexcept {
+                return concat({signature, text(";")});
+            },
+            [&](const TargetMemberFunctionDefaulted&) noexcept {
+                return concat({signature, text(" = default;")});
+            },
+            [&](const TargetMemberFunctionDefinition& definition) noexcept {
+                return concat({signature, text(" "), render_statement_block(definition.body)});
+            },
+        },
+        function.form
     );
 }
 
@@ -165,50 +221,10 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
                     );
                 }
                 rendered = concat({rendered, text(" "), braced_block({})});
-                if (!constructor.template_type_parameters.empty()) {
-                    auto templates = std::vector<LayoutNodeID> {};
-                    for (const auto& name : constructor.template_type_parameters) {
-                        templates.push_back(concat({text("typename "), render_identifier(name)}));
-                    }
-                    rendered = concat(
-                        {text("template"),
-                         delimited_list(templates, "<", ">"),
-                         builder.line(),
-                         rendered}
-                    );
-                }
                 return rendered;
             },
             [&](const TargetMemberFunctionDecl& function) noexcept {
-                auto prefix = std::string {};
-                if (function.friend_specifier) {
-                    prefix += "friend ";
-                }
-                if (function.static_specifier) {
-                    prefix += "static ";
-                }
-                if (function.constexpr_specifier) {
-                    prefix += "constexpr ";
-                }
-                const auto function_name = render_member_function_name(function.name);
-                const auto reference = text(function.result_reference ? "&" : "");
-                auto result = render_type_layouts(function.result);
-                result.inline_qualified = concat({result.inline_qualified, reference});
-                result.wrapping = concat({result.wrapping, reference});
-                const auto signature = render_function_declarator(
-                    prefix,
-                    {.inline_qualified = function_name, .wrapping = function_name},
-                    function.parameters,
-                    result,
-                    function.const_qualified
-                );
-                if (function.defaulted) {
-                    return concat({signature, text(" = default;")});
-                }
-                if (function.declaration_only) {
-                    return concat({signature, text(";")});
-                }
-                return concat({signature, text(" "), render_statement_block(function.body)});
+                return render_member_function(function);
             },
         },
         value
@@ -220,8 +236,14 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
         Overloaded {
             [&](const TargetFunctionDecl& function) noexcept {
                 auto prefix = std::string {};
+                if (function.static_specifier) {
+                    prefix += "static ";
+                }
                 if (function.inline_specifier) {
                     prefix += "inline ";
+                }
+                if (function.constexpr_specifier) {
+                    prefix += "constexpr ";
                 }
                 const auto signature = render_function_declarator(
                     prefix,
@@ -229,10 +251,19 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     function.parameters,
                     render_type_layouts(function.result)
                 );
-                if (function.declaration_only) {
-                    return concat({signature, text(";")});
-                }
-                return concat({signature, text(" "), render_statement_block(function.body)});
+                return std::visit(
+                    Overloaded {
+                        [&](const TargetFreeFunctionDeclaration&) noexcept {
+                            return concat({signature, text(";")});
+                        },
+                        [&](const TargetFreeFunctionDefinition& definition) noexcept {
+                            return concat(
+                                {signature, text(" "), render_statement_block(definition.body)}
+                            );
+                        },
+                    },
+                    function.form
+                );
             },
             [&](const TargetStructDecl& structure) noexcept {
                 auto members = std::vector<LayoutNodeID> {};
@@ -288,7 +319,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                         members.push_back(render_class_member(member));
                     }
                     sections.push_back(concat(
-                        {text(section.access == TargetClassAccess::Public ? "public:" : "private:"),
+                        {text(class_access_spelling(section.access)),
                          builder.indent(indent_width, concat({builder.line(), stack(members)}))}
                     ));
                 }
@@ -305,63 +336,51 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
             [&](const TargetClassForwardDecl& target_class) noexcept {
                 return concat({text("class "), render_identifier(target_class.name), text(";")});
             },
-            [&](const TargetVariableDecl& variable) noexcept {
-                const auto declarator = concat(
-                    {render_name(variable.name),
-                     delimited_list(std::array {render_expression(variable.initializer)}, "{", "}")}
-                );
-                return concat(
-                    {text(variable.inline_specifier ? "inline " : ""),
-                     text(variable.constexpr_specifier ? "constexpr " : ""),
-                     render_type(variable.type),
-                     text(" "),
-                     declarator,
-                     text(";")}
-                );
-            },
         },
         value
     );
 }
 
-auto TargetRenderer::render_item(TargetItemID id) noexcept -> LayoutNodeID {
-    const auto& item = unit.item(id);
+auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeID {
     const auto rendered = std::visit(
         Overloaded {
             [&](const TargetDecl& value) noexcept { return render_declaration(value); },
             [&](const TargetNamespace& value) noexcept {
-                const auto nested = render_items(value.items);
+                if (value.items.empty()) {
+                    if (value.name.has_value()) {
+                        return concat(
+                            {text("namespace "),
+                             render_name(*value.name),
+                             text(" {} // namespace "),
+                             render_name(*value.name)}
+                        );
+                    }
+                    return text("namespace {} // namespace");
+                }
+                const auto nested = render_items(value.items, TargetContainerKind::Namespace);
                 if (value.name.has_value()) {
-                    const auto body_separator = [&]() noexcept {
-                        return value.body_separation == TargetVerticalSeparation::BlankLine
-                            ? concat({builder.line(), builder.line()})
-                            : builder.line();
-                    };
                     return concat(
                         {text("namespace "),
                          render_name(*value.name),
                          text(" {"),
-                         body_separator(),
-                         stack(nested, 1),
-                         body_separator(),
+                         builder.line(),
+                         nested,
+                         builder.line(),
                          generated_transition(),
                          text("} // namespace "),
                          render_name(*value.name)}
                     );
                 }
-                return concat({text("namespace "), braced_block(nested), text(" // namespace")});
-            },
-            [&](const TargetRawFragment& value) noexcept { return render_raw_fragment(value); },
-            [&](const TargetItemGroup& value) noexcept {
-                auto children = std::vector<LayoutNodeID> {};
-                for (const auto child : value.items) {
-                    children.push_back(render_item(child));
-                }
-                return stack(
-                    children,
-                    value.separation == TargetVerticalSeparation::BlankLine ? 1uz : 0uz
+                return concat(
+                    {text("namespace {"),
+                     builder.line(),
+                     nested,
+                     builder.line(),
+                     generated_transition(),
+                     text("} // namespace")}
                 );
             },
+            [&](const TargetRawFragment& value) noexcept { return render_raw_fragment(value); },
         },
         item.value
     );

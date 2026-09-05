@@ -2,7 +2,8 @@
 
 This document defines conventions for project-authored C++ under `src/`,
 `tests/`, and `crafts/`. Vendored sources, generated artifacts, and fixtures
-that preserve an external interface follow their owning format.
+that preserve an external interface follow their owning format. These are
+implementation-source rules.
 
 ## C++ versions
 
@@ -36,11 +37,14 @@ lifecycle state. Publication exposes one authoritative query surface.
   protocol requires a conditional exception specification.
 - Compiler code does not use `throw`, `try`, or `catch`.
 - Failed internal invariants terminate.
-- Defaulted and deleted special members do not repeat meaningless `noexcept`.
-- A consumer-facing template uses the operation's conditional `noexcept` or
-  admits only nothrow types.
-- An unconditional `noexcept` function does not call a potentially throwing
-  operation on an admitted type.
+- Defaulted special members use the native exception specification unless an
+  explicit protocol boundary requires `noexcept`; deleted members need none.
+- A template admits the operations its consumer needs. A declared `noexcept`
+  boundary may admit potentially throwing operations: an escaping exception
+  terminates under C++ rules. Otherwise its exception specification follows
+  the operation's contract.
+- Interop tests may enable C++ exceptions in isolated processes to verify those
+  boundaries. This does not add exceptions to the compiler or Carven failure model.
 
 ## Files and modules
 
@@ -56,13 +60,14 @@ lifecycle state. Publication exposes one authoritative query surface.
 - A branch directory contains subdirectories and no files.
 - Do not mix files and subdirectories at the same level.
 - Exceptions are the repository root, the `src/` compiler entry boundary,
-  documented build metadata, and fixtures whose layout is under test.
+  documented build metadata, test-group harness files such as
+  `tests/cli/harness.lua`, and fixtures whose layout is under test.
 - One contract may have multiple owner-local implementation slices. A file
   split does not create another owner or facade without a distinct contract.
 - Do not use catch-all directory names such as `core`, `common`, `util`, or
   `misc`.
 - Every module-name segment is a non-keyword C++ identifier. Do not use the bare
-  identifier `module`; state the role with `module_id`, `hir_module`,
+  identifier `module`; state the role with `module_id`, `semantic_module`,
   `module_record`, or another precise name.
 - Put imports in one lexical block after the module declaration. Order
   partitions by name and put `import std;` last. Import only names used by the
@@ -72,6 +77,12 @@ lifecycle state. Publication exposes one authoritative query surface.
 - Put translation-unit-private declarations in an anonymous namespace. Close
   anonymous namespaces with a namespace comment; a named namespace closing
   comment is optional.
+- In support headers, `detail` holds helpers local to the defining header.
+  Cross-header dependencies use named contracts in the owning namespace;
+  other headers and consumers do not depend on `detail` names. The namespace
+  is a naming convention, not C++ access control.
+- Helpers used only by one class belong in its private scope where C++
+  template rules permit it.
 
 ## Names
 
@@ -87,6 +98,21 @@ Use the established domain tokens `decl`, `expr`, and `stmt` for source-tree
 directories, module-name segments, and file stems. Do not use plural long forms
 to distinguish an owner from its vocabulary; the surrounding path states the
 role.
+
+Use the same domain vocabulary in directory names, module partitions, types,
+operations, and tests. A builder is named for the owned result it constructs;
+an analyzer states the scope it analyzes. Implementation slices name a stable
+responsibility rather than a storage detail or a quality claim. A file split
+does not change the lifetime or ownership of the objects involved.
+
+Name mutable `ProgramDraft` state `draft`, published `SemIRProgram` data
+`semantic`, and a `PlannedCompilation` owner `compilation` when those roles occur
+in the same pipeline. Distinguish source-module and semantic-module identities
+where both are present. Failure terms, solved failure sets, and control-flow
+completion are different facts; their names must preserve that distinction.
+Context can shorten a name when it already establishes the domain. Protocol
+names and fixture spellings that are themselves under test keep their required
+form.
 
 ## Declarations and values
 

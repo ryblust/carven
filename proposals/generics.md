@@ -38,7 +38,7 @@ C++ concrete declarations、templates 或混合表示继续是 lowering 选择�
 - top-level grammar 只有现有 concrete declarations 与 C++ source fragments，
   declaration name、named type 与 call 均没有 generic clause；
 - `<`、`>` 与 `>>` 只属于当前 expression grammar；
-- SemanticProgram nominal type 只记录 resolved declaration identity，call 也没有 type
+- SemIRProgram nominal type 只记录 resolved declaration identity，call 也没有 type
   parameter、constraint、witness 或 instance representation；
 - dependency graph 只包含 concrete declaration dependency；
 - 当前 unit-local Target lowering 已能为 array、failure transport 与 runtime helper 生成 C++ template
@@ -47,7 +47,7 @@ C++ concrete declarations、templates 或混合表示继续是 lowering 选择�
   module-domain visibility 与 direct lookup 边界。
 
 因此没有旧 generic source surface 需要兼容。实现应以完整 vertical slice 加入
-grammar、AST、SemanticProgram、instance graph、diagnostics 与 lowering，而不是先放置未使用的
+grammar、AST、SemIRProgram、instance graph、diagnostics 与 lowering，而不是先放置未使用的
 scaffolding。
 
 ### 问题与 semantic authority
@@ -105,10 +105,10 @@ monomorphization table、cache、artifact layout 或 generated spelling。
 **Maturity:** Accepted semantics.
 
 Generic declaration 只依赖 type parameter 的普遍规则与显式 capability 检查一次。
-Body 中每个 operation 在 generic SemanticProgram 中已有确定 meaning；unused invalid body 也产生
+Body 中每个 operation 在 generic SemIRProgram 中已有确定 meaning；unused invalid body 也产生
 diagnostic，错误不取决于第一个 caller。
 
-Generic SemanticProgram 可以保存 parameterized types、resolved requirement operations 与 symbolic
+Generic SemIRProgram 可以保存 parameterized types、resolved requirement operations 与 symbolic
 associated projections，但不能保存 unresolved body 等待 application site 或 C++
 substitution 重新解释。Application site 只完成 inference、argument validation、
 constraint satisfaction、唯一 evidence selection 与 concrete instance formation。
@@ -585,7 +585,7 @@ Carven call 是否存在或选择哪个 implementation，semantic closure 尚未
 Implementation is blocked by `OPEN-01` and `OPEN-02`. Once closed, delivery
 proceeds vertically:
 
-1. add parametric declaration/application syntax and SyntaxProgram/SemanticProgram facts,
+1. add parametric declaration/application syntax and SyntaxProgram/SemIRProgram facts,
    definition-site checking, local inference, normalized instance identity, and
    finite graph production;
 2. add `concept`/`impl` parsing, visibility, canonical evidence, module-domain
@@ -625,7 +625,7 @@ Validation must cover:
 - [Carven semantics](../docs/semantics.md)
 - [Carven compiler model](../docs/compiler.md)
 - [Carven backend](../docs/backend.md)
-- [Carven philosophy](../docs/philosophy.md)
+- [Carven design principles](../docs/principles.md)
 - [Classes and dynamic polymorphism](classes.md)
 - [Operator capabilities](operators.md)
 - [C++ interoperation semantics](../docs/semantics.md#c-interoperation)

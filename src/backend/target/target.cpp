@@ -1,37 +1,55 @@
 module carven:backend.target.impl;
 
 import :backend.target;
+import :support.invariant;
 import std;
 
-TargetUnit::TargetUnit(TargetStorage storage, TargetUnitRoot root) noexcept
-    : storage(std::move(storage)),
-      unit_root(std::move(root)) {}
+TargetUnit::TargetUnit(
+    TargetUnitIdentity unit_identity,
+    std::vector<TargetType> types,
+    TargetUnitContents unit_contents
+) noexcept
+    : unit_identity(unit_identity),
+      target_types(std::move(types)),
+      contents(std::move(unit_contents)),
+      active(true) {}
+
+TargetUnit::TargetUnit(TargetUnit&& other) noexcept
+    : unit_identity(other.unit_identity),
+      target_types(std::move(other.target_types)),
+      contents(std::move(other.contents)),
+      active(std::exchange(other.active, false)) {}
+
+auto TargetUnit::require_active() const noexcept -> void {
+    if (!active) {
+        invariant_violation("target unit was used after move");
+    }
+}
+
+auto TargetUnit::identity() const noexcept -> TargetUnitIdentity {
+    require_active();
+    return unit_identity;
+}
 
 auto TargetUnit::type(TargetTypeID id) const noexcept -> const TargetType& {
-    return storage.types.get(id);
-}
-auto TargetUnit::expression(TargetExprID id) const noexcept -> const TargetExpr& {
-    return storage.expressions.get(id);
-}
-auto TargetUnit::statement(TargetStmtID id) const noexcept -> const TargetStmt& {
-    return storage.statements.get(id);
-}
-auto TargetUnit::item(TargetItemID id) const noexcept -> const TargetItem& {
-    return storage.items.get(id);
-}
-auto TargetUnit::types() const noexcept -> std::span<const TargetType> {
-    return storage.types.values();
-}
-auto TargetUnit::expressions() const noexcept -> std::span<const TargetExpr> {
-    return storage.expressions.values();
-}
-auto TargetUnit::statements() const noexcept -> std::span<const TargetStmt> {
-    return storage.statements.values();
-}
-auto TargetUnit::items() const noexcept -> std::span<const TargetItem> {
-    return storage.items.values();
+    require_active();
+    if (id.owner() != unit_identity || id.index() >= target_types.size()) {
+        invariant_violation("target unit type lookup used a foreign or invalid identity");
+    }
+    return target_types[id.index()];
 }
 
-auto TargetUnit::root() const noexcept -> const TargetUnitRoot& {
-    return unit_root;
+auto TargetUnit::type_count() const noexcept -> std::size_t {
+    require_active();
+    return target_types.size();
+}
+
+auto TargetUnit::directive_groups() const noexcept -> std::span<const TargetDirectiveGroup> {
+    require_active();
+    return contents.directive_groups;
+}
+
+auto TargetUnit::sections() const noexcept -> const TargetUnitSections& {
+    require_active();
+    return contents.sections;
 }

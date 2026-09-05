@@ -58,6 +58,7 @@ test "Equality: structural equality compares values recursively" {
     let empty: Value = .Empty;
     check(empty == .Empty);
     check(.Empty == empty);
+    check(.Empty == (if true { empty } else { Value::Number(0) }));
     check(empty != .Number(0));
 }
 
@@ -66,4 +67,9 @@ test "Equality: equality evaluates operands left to right once" {
     check(traced_value(1) != traced_value(2));
     let trace = cv_test_equality_trace_value();
     check(trace == 12);
+
+    cv_test_equality_reset_trace();
+    check(.Number(cv_test_equality_record(1)) != traced_value(2));
+    let contextual_trace = cv_test_equality_trace_value();
+    check(contextual_trace == 12);
 }

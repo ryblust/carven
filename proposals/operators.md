@@ -128,7 +128,7 @@ parsed operator
   + normalized operand types
   -> one compiler-known capability obligation
   -> zero or one canonical evidence
-  -> one resolved named capability operation in SemanticProgram
+  -> one resolved named capability operation in SemIRProgram
 ```
 
 其中没有 member/non-member/ADL fallback、implicit-conversion candidate set、
@@ -175,7 +175,7 @@ projection 在 lowering 前规范化。C++ substitution 不重新选择 operator
 capability name、projection failure/cycle、signature mismatch 与被排除的 forms。
 Expression diagnostic 锚定 operator/operands；invalid evidence 锚定 `impl` head/member。
 
-若 carrier 被接受，SemanticProgram 记录 resolved capability operation 与唯一 evidence dependency；
+若 carrier 被接受，SemIRProgram 记录 resolved capability operation 与唯一 evidence dependency；
 lowering 不保留 unresolved C++ operator lookup。
 
 ### Candidate lowering boundary

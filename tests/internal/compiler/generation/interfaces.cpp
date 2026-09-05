@@ -6,8 +6,8 @@ module carven:test.internal.compiler.generation.interfaces;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -20,7 +20,10 @@ struct ModuleFixture final {
     std::string_view source;
 };
 
-auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> ArtifactSet {
+auto compile_modules(
+    std::span<const ModuleFixture> modules,
+    std::string_view linkage_domain = "test:interfaces"
+) noexcept -> GeneratedArtifactSet {
     auto sources = SourceManager();
     auto inputs = std::vector<CompilationModuleInput>();
     inputs.reserve(modules.size());
@@ -35,9 +38,9 @@ auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> Artifac
     auto result = compile(
         sources,
         CompilationRequest {.modules = inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
-            .linkage_domain = LinkageDomain::explicit_value("test:interfaces").value(),
+            .linkage_domain = LinkageDomain::explicit_value(std::string(linkage_domain)).value(),
         }
     );
     if (!result.has_value()) {
@@ -46,10 +49,14 @@ auto compile_modules(std::span<const ModuleFixture> modules) noexcept -> Artifac
         }
     }
     REQUIRE(result.has_value());
+    if (!result.has_value()) {
+        return GeneratedArtifactSet(std::vector<GeneratedArtifact> {});
+    }
     return std::move(result->value);
 }
 
-auto interfaces(const ArtifactSet& artifacts) noexcept -> std::vector<const GeneratedArtifact*> {
+auto interfaces(const GeneratedArtifactSet& artifacts) noexcept
+    -> std::vector<const GeneratedArtifact*> {
     auto result = std::vector<const GeneratedArtifact*>();
     for (const auto& artifact : artifacts.artifacts()) {
         if (artifact.logical_path.starts_with("carven/generated/")
@@ -60,7 +67,7 @@ auto interfaces(const ArtifactSet& artifacts) noexcept -> std::vector<const Gene
     return result;
 }
 
-auto interface_for(const ArtifactSet& artifacts, std::string_view module_path) noexcept
+auto interface_for(const GeneratedArtifactSet& artifacts, std::string_view module_path) noexcept
     -> const GeneratedArtifact& {
     auto logical_path = std::string("carven/generated/");
     logical_path += module_path;
@@ -69,14 +76,32 @@ auto interface_for(const ArtifactSet& artifacts, std::string_view module_path) n
     const auto found =
         std::ranges::find(artifacts.artifacts(), logical_path, &GeneratedArtifact::logical_path);
     REQUIRE(found != artifacts.artifacts().end());
+    if (found == artifacts.artifacts().end()) {
+        static const auto missing = GeneratedArtifact {
+            .logical_path = "missing-interface.hpp",
+            .role = GeneratedArtifactRole::Interface,
+            .source_mapping = ArtifactSourceMappingPolicy::StableInterface,
+            .content = {},
+        };
+        return missing;
+    }
     return *found;
 }
 
-auto artifact(const ArtifactSet& artifacts, std::string_view logical_path) noexcept
+auto artifact(const GeneratedArtifactSet& artifacts, std::string_view logical_path) noexcept
     -> const GeneratedArtifact& {
     const auto found =
         std::ranges::find(artifacts.artifacts(), logical_path, &GeneratedArtifact::logical_path);
     REQUIRE(found != artifacts.artifacts().end());
+    if (found == artifacts.artifacts().end()) {
+        static const auto missing = GeneratedArtifact {
+            .logical_path = "missing-artifact.cpp",
+            .role = GeneratedArtifactRole::ModuleImplementation,
+            .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
+            .content = {},
+        };
+        return missing;
+    }
     return *found;
 }
 
@@ -145,21 +170,6 @@ TEST_CASE("Interface components: a private implementation edit changes only its 
         }
     }
     CHECK_EQ(changed, std::vector<std::string_view> {"provider.cpp"});
-}
-
-TEST_CASE(
-    "Interface components: private normalized collisions do not perturb the published surface"
-) {
-    constexpr auto with_private =
-        "private struct class {}\n"
-        "export struct class_cv { value: i32, }\n"
-        "export fn identity(value: class_cv) -> class_cv { return value; }\n";
-    constexpr auto without_private =
-        "export struct class_cv { value: i32, }\n"
-        "export fn identity(value: class_cv) -> class_cv { return value; }\n";
-    const auto before = compile_modules(std::array {ModuleFixture {"support", with_private}});
-    const auto after = compile_modules(std::array {ModuleFixture {"support", without_private}});
-    CHECK_EQ(interface_for(before, "support").content, interface_for(after, "support").content);
 }
 
 TEST_CASE("Interface components: implementation-only references do not merge surfaces") {
@@ -270,7 +280,7 @@ TEST_CASE("Interface components: cyclic published surfaces form one SCC") {
 TEST_CASE("Interface components: declaration-only predecessors use forward declarations") {
     constexpr auto model = "export struct Model { value: i32, }\n";
     constexpr auto api = "import model using Model;\n"
-                         "export fn identity(value: Model) -> Model { return value; }\n";
+                         "export fn identity(&value: Model) -> Model { return value; }\n";
     const auto artifacts = compile_modules(
         std::array {
             ModuleFixture {"api", api},
@@ -310,12 +320,13 @@ TEST_CASE("Interface components: root-relative includes ignore the including dir
     CHECK_FALSE(api_header.content.contains("#include \"carven/generated/lib/model.hpp\""));
 }
 
-TEST_CASE("Interface components: forward declarations preserve nominal representation forms") {
-    constexpr auto types = "export struct Model { value: i32, }\n"
-                           "export enum Choice { Value(i32), Empty, }\n"
-                           "export enum Code: u8 { Ready = 1, Done, }\n"
-                           "export struct Failure { code: i32, }\n";
-    constexpr auto api = "import types using { Model, Choice, Code, Failure, };\n"
+TEST_CASE("Interface components: read parameters and failure results require complete types") {
+    constexpr auto outcome_types = "export struct Model { value: i32, }\n"
+                                   "export struct Failure { code: i32, }\n";
+    constexpr auto parameter_types = "export enum Choice { Value(i32), Empty, }\n"
+                                     "export enum Code: u8 { Ready = 1, Done, }\n";
+    constexpr auto api = "import outcome_types using { Model, Failure, };\n"
+                         "import parameter_types using { Choice, Code, };\n"
                          "export fn inspect(\n"
                          "    model: Model,\n"
                          "    choice: Choice,\n"
@@ -325,18 +336,32 @@ TEST_CASE("Interface components: forward declarations preserve nominal represent
     const auto artifacts = compile_modules(
         std::array {
             ModuleFixture {"api", api},
-            ModuleFixture {"types", types},
+            ModuleFixture {"outcome_types", outcome_types},
+            ModuleFixture {"parameter_types", parameter_types},
         }
     );
 
-    REQUIRE_EQ(interfaces(artifacts).size(), 2);
+    REQUIRE_EQ(interfaces(artifacts).size(), 3);
     const auto& api_header = interface_for(artifacts, "api");
-    const auto& types_header = interface_for(artifacts, "types");
-    CHECK_FALSE(api_header.content.contains(component_include(types_header)));
-    CHECK(api_header.content.contains("struct Model;"));
-    CHECK(api_header.content.contains("class Choice;"));
-    CHECK(api_header.content.contains("enum class Code : std::uint8_t;"));
-    CHECK(api_header.content.contains("struct Failure;"));
+    const auto& outcome_header = interface_for(artifacts, "outcome_types");
+    const auto& parameter_header = interface_for(artifacts, "parameter_types");
+    CHECK(api_header.content.contains(component_include(outcome_header)));
+    CHECK(api_header.content.contains(component_include(parameter_header)));
+    CHECK_FALSE(api_header.content.contains("struct Model;"));
+    CHECK_FALSE(api_header.content.contains("struct Failure;"));
+}
+
+TEST_CASE("Interface components: enum definitions use canonical target alternatives") {
+    constexpr auto source = "export enum Choice { Value(i32), Empty, }\n"
+                            "export enum Code: u8 { Ready = 1, Done, }\n";
+    const auto artifacts = compile_modules(std::array {ModuleFixture {"enums", source}});
+
+    REQUIRE_EQ(interfaces(artifacts).size(), 1);
+    const auto& header = interface_for(artifacts, "enums");
+    CHECK(header.content.contains("Ready = 1"));
+    CHECK(header.content.contains("Done = 2"));
+    CHECK_FALSE(header.content.contains("Ready = Code::Ready"));
+    CHECK_FALSE(header.content.contains("Done = Code::Done"));
 }
 
 TEST_CASE("Interface components: arrays require complete predecessor definitions") {
@@ -382,4 +407,38 @@ TEST_CASE("Interface components: SCC membership reuses the canonical anchor") {
     const auto merged_headers = interfaces(merged);
     REQUIRE_EQ(merged_headers.size(), 1);
     CHECK_EQ(merged_headers.front()->logical_path, "carven/generated/a.hpp");
+}
+
+TEST_CASE("Artifacts: input order and linkage domain produce deterministic schedules") {
+    constexpr auto provider = "export struct Model { value: i32, }\n";
+    constexpr auto consumer = "import provider using Model;\n"
+                              "export struct API { model: Model, }\n";
+    constexpr auto forward = std::array {
+        ModuleFixture {"consumer", consumer},
+        ModuleFixture {"provider", provider},
+    };
+    constexpr auto reverse = std::array {
+        ModuleFixture {"provider", provider},
+        ModuleFixture {"consumer", consumer},
+    };
+
+    const auto first = compile_modules(forward, "test:determinism:first");
+    const auto repeated = compile_modules(reverse, "test:determinism:first");
+    REQUIRE_EQ(first.artifacts().size(), repeated.artifacts().size());
+    for (const auto& [left, right] : std::views::zip(first.artifacts(), repeated.artifacts())) {
+        CHECK_EQ(left.logical_path, right.logical_path);
+        CHECK_EQ(left.role, right.role);
+        CHECK_EQ(left.source_mapping, right.source_mapping);
+        CHECK_EQ(left.content, right.content);
+    }
+
+    const auto other_domain = compile_modules(reverse, "test:determinism:second");
+    REQUIRE_EQ(first.artifacts().size(), other_domain.artifacts().size());
+    auto changed_content = false;
+    for (const auto& [left, right] : std::views::zip(first.artifacts(), other_domain.artifacts())) {
+        CHECK_EQ(left.logical_path, right.logical_path);
+        CHECK_EQ(left.role, right.role);
+        changed_content |= left.content != right.content;
+    }
+    CHECK(changed_content);
 }

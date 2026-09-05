@@ -8,13 +8,20 @@ import :backend.target;
 import :backend.target.unit;
 import std;
 
-auto emit(TargetUnit unit) noexcept -> GeneratedArtifact {
-    auto logical_path = unit.root().logical_path;
-    auto content = render_layout(TargetRenderer(unit).render_unit(), 100uz);
+auto emit(
+    TargetUnit unit,
+    std::string logical_path,
+    GeneratedArtifactRole role,
+    EmissionPolicy policy
+) noexcept -> GeneratedArtifact {
+    const auto source_mapping = std::holds_alternative<StableInterfaceEmission>(policy)
+        ? ArtifactSourceMappingPolicy::StableInterface
+        : ArtifactSourceMappingPolicy::SourceAttributed;
+    auto content = render_layout(TargetRenderer(unit, policy).render_unit(), 100uz);
     return GeneratedArtifact {
         .logical_path = std::move(logical_path),
-        .role = unit.root().role,
-        .source_mapping = unit.root().source_mapping,
+        .role = role,
+        .source_mapping = source_mapping,
         .content = std::move(content),
     };
 }

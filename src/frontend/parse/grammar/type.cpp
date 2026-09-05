@@ -33,6 +33,16 @@ auto Parser::parse_type() noexcept -> std::optional<ASTTypeID> {
 }
 
 auto Parser::parse_named_type() noexcept -> std::optional<ASTTypeID> {
+    auto parsed = parse_named_type_form();
+    return builder.append_type(
+        ASTType {
+            .span = parsed.span,
+            .value = std::move(parsed.value),
+        }
+    );
+}
+
+auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
     const auto start = expect(TokenKind::Identifier, "expected type name");
     auto components = std::vector<ASTTypeNameComponent> {};
     components.push_back({.name_span = start.span});
@@ -44,15 +54,26 @@ auto Parser::parse_named_type() noexcept -> std::optional<ASTTypeID> {
         end = name.span;
     }
 
+    return ParsedTypeForm<ASTNamedType> {
+        .span = join(start.span, end),
+        .value = ASTNamedType {.components = std::move(components)},
+    };
+}
+
+auto Parser::parse_array_type() noexcept -> std::optional<ASTTypeID> {
+    auto parsed = parse_array_type_form();
+    if (!parsed.has_value()) {
+        return std::nullopt;
+    }
     return builder.append_type(
         ASTType {
-            .span = join(start.span, end),
-            .value = ASTNamedType {.components = std::move(components)},
+            .span = parsed->span,
+            .value = parsed->value,
         }
     );
 }
 
-auto Parser::parse_array_type() noexcept -> std::optional<ASTTypeID> {
+auto Parser::parse_array_type_form() noexcept -> std::optional<ParsedTypeForm<ASTArrayType>> {
     const auto left = expect(TokenKind::LeftBracket, "expected '['");
     const auto element_type = parse_type();
     if (!element_type) {
@@ -64,18 +85,29 @@ auto Parser::parse_array_type() noexcept -> std::optional<ASTTypeID> {
     if (!extent || failed) {
         return std::nullopt;
     }
+    return ParsedTypeForm<ASTArrayType> {
+        .span = join(left.span, right.span),
+        .value = ASTArrayType {
+            .element_type = *element_type,
+            .extent = *extent,
+        },
+    };
+}
+
+auto Parser::parse_function_type() noexcept -> std::optional<ASTTypeID> {
+    auto parsed = parse_function_type_form();
+    if (!parsed.has_value()) {
+        return std::nullopt;
+    }
     return builder.append_type(
         ASTType {
-            .span = join(left.span, right.span),
-            .value = ASTArrayType {
-                .element_type = *element_type,
-                .extent = *extent,
-            },
+            .span = parsed->span,
+            .value = std::move(parsed->value),
         }
     );
 }
 
-auto Parser::parse_function_type() noexcept -> std::optional<ASTTypeID> {
+auto Parser::parse_function_type_form() noexcept -> std::optional<ParsedTypeForm<ASTFunctionType>> {
     const auto keyword = expect(TokenKind::Fn, "expected 'fn'");
     expect(TokenKind::LeftParen, "expected '(' after 'fn' in function type");
     auto parameters = std::vector<ASTFunctionTypeParameter> {};
@@ -121,16 +153,14 @@ auto Parser::parse_function_type() noexcept -> std::optional<ASTTypeID> {
     const auto end =
         throw_clause.has_value() ? throw_clause->span : builder.type(*result_type).span;
 
-    return builder.append_type(
-        ASTType {
-            .span = join(keyword.span, end),
-            .value = ASTFunctionType {
-                .parameters = std::move(parameters),
-                .result_type = *result_type,
-                .throw_clause = std::move(throw_clause),
-            },
-        }
-    );
+    return ParsedTypeForm<ASTFunctionType> {
+        .span = join(keyword.span, end),
+        .value = ASTFunctionType {
+            .parameters = std::move(parameters),
+            .result_type = *result_type,
+            .throw_clause = std::move(throw_clause),
+        },
+    };
 }
 
 auto Parser::parse_throw_clause() noexcept -> ASTThrowClause {

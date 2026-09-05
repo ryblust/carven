@@ -7,54 +7,39 @@ import :backend.target.item;
 import :backend.target.stmt;
 import :backend.target.type;
 import :backend.target.unit;
-import :support.id_table;
 import std;
 
 class TargetUnit;
 class TargetUnitBuilder;
 
-class TargetStorage final {
-    friend class TargetUnitBuilder;
-    friend class TargetUnit;
-
-    TargetStorage() = default;
-    TargetStorage(const TargetStorage&) = delete;
-    TargetStorage(TargetStorage&&) = default;
-    ~TargetStorage() = default;
-
-    auto operator=(const TargetStorage&) -> TargetStorage& = delete;
-    auto operator=(TargetStorage&&) -> TargetStorage& = default;
-
-    IDTable<TargetType, TargetTypeID> types;
-    IDTable<TargetExpr, TargetExprID> expressions;
-    IDTable<TargetStmt, TargetStmtID> statements;
-    IDTable<TargetItem, TargetItemID> items;
-};
-
 class TargetUnit final {
 public:
     TargetUnit(const TargetUnit&) = delete;
-    TargetUnit(TargetUnit&&) = default;
+    TargetUnit(TargetUnit&& other) noexcept;
     ~TargetUnit() = default;
 
     auto operator=(const TargetUnit&) -> TargetUnit& = delete;
-    auto operator=(TargetUnit&&) -> TargetUnit& = default;
+    auto operator=(TargetUnit&&) -> TargetUnit& = delete;
 
+    auto identity() const noexcept -> TargetUnitIdentity;
     auto type(TargetTypeID id) const noexcept -> const TargetType&;
-    auto expression(TargetExprID id) const noexcept -> const TargetExpr&;
-    auto statement(TargetStmtID id) const noexcept -> const TargetStmt&;
-    auto item(TargetItemID id) const noexcept -> const TargetItem&;
-    auto types() const noexcept -> std::span<const TargetType>;
-    auto expressions() const noexcept -> std::span<const TargetExpr>;
-    auto statements() const noexcept -> std::span<const TargetStmt>;
-    auto items() const noexcept -> std::span<const TargetItem>;
-    auto root() const noexcept -> const TargetUnitRoot&;
+    auto type_count() const noexcept -> std::size_t;
+    auto directive_groups() const noexcept -> std::span<const TargetDirectiveGroup>;
+    auto sections() const noexcept -> const TargetUnitSections&;
 
 private:
     friend class TargetUnitBuilder;
 
-    explicit TargetUnit(TargetStorage storage, TargetUnitRoot root) noexcept;
+    auto require_active() const noexcept -> void;
 
-    TargetStorage storage;
-    TargetUnitRoot unit_root;
+    TargetUnit(
+        TargetUnitIdentity identity,
+        std::vector<TargetType> types,
+        TargetUnitContents contents
+    ) noexcept;
+
+    TargetUnitIdentity unit_identity;
+    std::vector<TargetType> target_types;
+    TargetUnitContents contents;
+    bool active;
 };

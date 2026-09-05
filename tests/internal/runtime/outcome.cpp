@@ -1,7 +1,7 @@
 module;
 #define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
 #include <doctest/doctest.h>
-#include <carven/runtime/runtime.hpp>
+#include <carven/runtime/outcome.hpp>
 #include <concepts>
 #include <string>
 #include <type_traits>
@@ -67,20 +67,36 @@ constexpr auto outcome_constant_evaluation() noexcept -> bool {
     using ConstexprWide = carven::runtime::Outcome<int, ParseFailure, NetworkFailure>;
 
     auto success = ConstexprWide(ConstexprNarrow::success(42));
-    if (!success.has_value() || std::move(success).take_value() != 42) {
+    const auto* success_value = success.success_if();
+    if (success_value == nullptr || success_value->value != 42) {
         return false;
     }
 
     auto failure = ConstexprWide(ConstexprNarrow::failure(ParseFailure {.offset = 7}));
-    if (!failure.holds_failure<ParseFailure>() || failure.failure<ParseFailure>().offset != 7) {
+    const auto* failure_value = failure.failure_if<ParseFailure>();
+    if (failure_value == nullptr || failure_value->offset != 7) {
         return false;
     }
 
-    auto destination = ConstexprWide::failure(NetworkFailure {.status = 503});
-    destination = std::move(failure);
-    return destination.holds_failure<ParseFailure>()
-        && std::move(destination).take_failure<ParseFailure>().offset == 7;
+    auto destination = ConstexprWide(std::move(failure));
+    const auto* destination_failure = destination.failure_if<ParseFailure>();
+    return destination_failure != nullptr && destination_failure->offset == 7;
 }
+
+static_assert(carven::runtime::OutcomeTraits<Narrow>::is_outcome);
+static_assert(std::same_as<carven::runtime::OutcomeTraits<Narrow>::Result, std::string>);
+static_assert(std::same_as<carven::runtime::OutcomeTraits<VoidNarrow>::Result, void>);
+static_assert(!carven::runtime::OutcomeTraits<int>::is_outcome);
+static_assert(!carven::runtime::OutcomeTraits<const Narrow>::is_outcome);
+static_assert(!carven::runtime::OutcomeTraits<Narrow&>::is_outcome);
+static_assert(carven::runtime::OutcomeWidening<Narrow, Wide>);
+static_assert(carven::runtime::OutcomeWidening<VoidNarrow, VoidWide>);
+static_assert(!carven::runtime::OutcomeWidening<Narrow, Narrow>);
+static_assert(!carven::runtime::OutcomeWidening<Wide, Narrow>);
+static_assert(!carven::runtime::OutcomeWidening<Narrow, WrongResult>);
+static_assert(!carven::runtime::OutcomeWidening<NonCoveringSource, NonCoveringDestination>);
+static_assert(!carven::runtime::OutcomeWidening<int, Wide>);
+static_assert(!carven::runtime::OutcomeWidening<Narrow&, Wide>);
 
 static_assert(std::constructible_from<Wide, Narrow&&>);
 static_assert(std::convertible_to<Narrow&&, Wide>);
@@ -95,76 +111,109 @@ static_assert(!std::constructible_from<NonCoveringDestination, NonCoveringSource
 static_assert(std::constructible_from<VoidWide, VoidNarrow&&>);
 static_assert(!std::is_move_assignable_v<MoveConstructOnlyResult>);
 static_assert(!std::is_move_assignable_v<MoveConstructOnlyFailure>);
-static_assert(std::is_nothrow_move_assignable_v<Reconstructing>);
+static_assert(std::is_nothrow_move_constructible_v<Reconstructing>);
 static_assert(outcome_constant_evaluation());
-
-auto move_assign(Reconstructing& destination, Reconstructing&& source) noexcept -> void {
-    destination = std::move(source);
-}
 
 } // namespace
 
 TEST_CASE("Runtime Outcome: value and void successes stay flat") {
     using ValueOutcome = carven::runtime::Outcome<int, int>;
     auto value = ValueOutcome::success(42);
-    CHECK(value.has_value());
-    CHECK_EQ(std::move(value).take_value(), 42);
+    auto* value_success = value.success_if();
+    REQUIRE(value_success != nullptr);
+    CHECK_EQ(value_success->value, 42);
 
     using VoidOutcome = carven::runtime::Outcome<void, ParseFailure>;
     auto empty = VoidOutcome::success();
-    CHECK(empty.has_value());
-    std::move(empty).take_value();
+    CHECK(empty.success_if() != nullptr);
 }
 
 TEST_CASE("Runtime Outcome: success and failure may have the same source type") {
     using SameTypeOutcome = carven::runtime::Outcome<int, int>;
     auto failed = SameTypeOutcome::failure<int>(7);
-    CHECK_FALSE(failed.has_value());
-    CHECK(failed.holds_failure<int>());
-    CHECK_EQ(failed.failure<int>(), 7);
-    CHECK_EQ(std::move(failed).take_failure<int>(), 7);
+    CHECK(failed.success_if() == nullptr);
+    auto* failure = failed.failure_if<int>();
+    REQUIRE(failure != nullptr);
+    CHECK_EQ(*failure, 7);
+    CHECK_EQ(*failure, 7);
 }
 
 TEST_CASE("Runtime Outcome: widening preserves success and failure states") {
     auto narrow = Narrow::failure<ParseFailure>(ParseFailure {.offset = 5});
     auto widened = Wide(std::move(narrow));
-    CHECK(widened.holds_failure<ParseFailure>());
-    CHECK_EQ(std::move(widened).take_failure<ParseFailure>().offset, 5);
+    auto* widened_failure = widened.failure_if<ParseFailure>();
+    REQUIRE(widened_failure != nullptr);
+    CHECK_EQ(std::move(*widened_failure).offset, 5);
 
     auto success = Narrow::success(std::string("ready"));
     auto widened_success = Wide(std::move(success));
-    REQUIRE(widened_success.has_value());
-    CHECK_EQ(std::move(widened_success).take_value(), "ready");
+    auto* success_value = widened_success.success_if();
+    REQUIRE(success_value != nullptr);
+    CHECK_EQ(success_value->value, "ready");
 
     const auto exact = Wide::failure<NetworkFailure>(NetworkFailure {.status = 503});
-    CHECK(exact.holds_failure<NetworkFailure>());
-    CHECK_EQ(exact.failure<NetworkFailure>().status, 503);
+    const auto* exact_failure = exact.failure_if<NetworkFailure>();
+    REQUIRE(exact_failure != nullptr);
+    CHECK_EQ(exact_failure->status, 503);
 
     auto void_success = VoidNarrow::success();
     auto widened_void_success = VoidWide(std::move(void_success));
-    REQUIRE(widened_void_success.has_value());
-    std::move(widened_void_success).take_value();
+    REQUIRE(widened_void_success.success_if() != nullptr);
 
     auto void_failure = VoidNarrow::failure<ParseFailure>(ParseFailure {.offset = 9});
     auto widened_void_failure = VoidWide(std::move(void_failure));
-    CHECK(widened_void_failure.holds_failure<ParseFailure>());
-    CHECK_EQ(std::move(widened_void_failure).take_failure<ParseFailure>().offset, 9);
+    auto* void_failure_value = widened_void_failure.failure_if<ParseFailure>();
+    REQUIRE(void_failure_value != nullptr);
+    CHECK_EQ(std::move(*void_failure_value).offset, 9);
 }
 
-TEST_CASE("Runtime Outcome: move assignment reconstructs the active alternative") {
-    auto destination = Reconstructing::success(MoveConstructOnlyResult {1});
-    auto failed = Reconstructing::failure<MoveConstructOnlyFailure>(MoveConstructOnlyFailure {7});
-    destination = std::move(failed);
-    REQUIRE(destination.holds_failure<MoveConstructOnlyFailure>());
-    CHECK_EQ(destination.failure<MoveConstructOnlyFailure>().code, 7);
-
-    auto succeeded = Reconstructing::success(MoveConstructOnlyResult {42});
-    destination = std::move(succeeded);
-    REQUIRE(destination.has_value());
-    CHECK_EQ(std::move(destination).take_value().value, 42);
-
-    auto self = Reconstructing::failure<MoveConstructOnlyFailure>(MoveConstructOnlyFailure {9});
-    move_assign(self, std::move(self));
-    REQUIRE(self.holds_failure<MoveConstructOnlyFailure>());
-    CHECK_EQ(self.failure<MoveConstructOnlyFailure>().code, 9);
+TEST_CASE("Runtime Outcome: admission requires only the performed construction") {
+    struct Observed final {
+        int* copies;
+        int* moves;
+        int value;
+        Observed(int& copy_count, int& move_count, int source) noexcept
+            : copies(&copy_count),
+              moves(&move_count),
+              value(source) {}
+        Observed(const Observed& source)
+            : copies(source.copies),
+              moves(source.moves),
+              value(source.value) {
+            ++*copies;
+        }
+        Observed(Observed&& source)
+            : copies(source.copies),
+              moves(source.moves),
+              value(source.value) {
+            ++*moves;
+        }
+        auto operator=(const Observed&) -> Observed& = delete;
+        auto operator=(Observed&&) -> Observed& = delete;
+    };
+    auto copies = 0;
+    auto moves = 0;
+    const auto source = Observed(copies, moves, 42);
+    using Value = carven::runtime::Outcome<Observed, Observed>;
+    using Wider = carven::runtime::Outcome<Observed, Observed, ParseFailure>;
+    static_assert(!std::is_nothrow_move_constructible_v<Observed>);
+    static_assert(std::is_nothrow_move_constructible_v<Value>);
+    static_assert(!std::is_move_assignable_v<Value>);
+    auto success = Value::success(source);
+    CHECK_EQ(copies, 1);
+    CHECK_EQ(moves, 0);
+    auto moved = Value(std::move(success));
+    CHECK_EQ(moves, 1);
+    auto widened = Wider(std::move(moved));
+    CHECK_EQ(moves, 2);
+    REQUIRE(widened.success_if() != nullptr);
+    CHECK_EQ(widened.success_if()->value.value, 42);
+    const auto failure = Value::failure(source);
+    CHECK_EQ(copies, 2);
+    REQUIRE(failure.failure_if<Observed>() != nullptr);
+    CHECK_EQ(failure.failure_if<Observed>()->value, 42);
+    const auto text = std::string("copied text");
+    const auto copied_text = Narrow::success(text);
+    REQUIRE(copied_text.success_if() != nullptr);
+    CHECK_EQ(copied_text.success_if()->value, text);
 }

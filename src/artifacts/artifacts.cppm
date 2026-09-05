@@ -6,6 +6,7 @@ enum class GeneratedArtifactRole {
     Interface,
     CppAPIHeader,
     ModuleImplementation,
+    TestRunnerHeader,
     TestEntry,
 };
 
@@ -24,15 +25,15 @@ struct GeneratedArtifact final {
 auto validate_artifact_logical_path(std::string_view path) noexcept
     -> std::expected<void, std::string>;
 
-class ArtifactSet final {
+class GeneratedArtifactSet final {
 public:
-    explicit ArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept;
+    explicit GeneratedArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept;
 
-    ArtifactSet(const ArtifactSet&) = default;
-    ArtifactSet(ArtifactSet&&) = default;
+    GeneratedArtifactSet(const GeneratedArtifactSet&) = default;
+    GeneratedArtifactSet(GeneratedArtifactSet&&) = default;
 
-    auto operator=(const ArtifactSet&) -> ArtifactSet& = delete;
-    auto operator=(ArtifactSet&&) -> ArtifactSet& = delete;
+    auto operator=(const GeneratedArtifactSet&) -> GeneratedArtifactSet& = delete;
+    auto operator=(GeneratedArtifactSet&&) -> GeneratedArtifactSet& = delete;
 
     auto artifacts() const noexcept -> std::span<const GeneratedArtifact>;
 

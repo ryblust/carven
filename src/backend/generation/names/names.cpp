@@ -132,10 +132,12 @@ auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
         case TargetTemporaryNameKind::CatchDone:            return "catch_done";
         case TargetTemporaryNameKind::Logic:                return "logic_value";
         case TargetTemporaryNameKind::Outcome:              return "outcome";
+        case TargetTemporaryNameKind::SuccessProjection:    return "success";
+        case TargetTemporaryNameKind::FailureProjection:    return "failure";
+        case TargetTemporaryNameKind::PayloadProjection:    return "payload";
         case TargetTemporaryNameKind::Region:               return "region";
         case TargetTemporaryNameKind::Continue:             return "continue_target";
         case TargetTemporaryNameKind::TestValue:            return "test_value";
-        case TargetTemporaryNameKind::TestRegistration:     return "test_registration";
         case TargetTemporaryNameKind::CppBoundaryParameter: return "cpp_boundary_parameter";
         case TargetTemporaryNameKind::CppProviderPointer:   return "cpp_provider_pointer";
     }
@@ -193,15 +195,21 @@ auto TargetNameAllocator::local_symbol(
     auto candidate = preferred;
     auto suffix = 2uz;
     auto& scope_names = local_claimed_names[scope];
+    const auto& reserved = scoped_reserved_names[scope];
     const auto conflicts_with_initializer = [&](std::string_view value) noexcept {
         return std::ranges::any_of(avoided, [&](const TargetIdentifier& identifier) noexcept {
             return identifier.spelling() == value;
         });
     };
-    while (conflicts_with_initializer(candidate) || !scope_names.insert(candidate).second) {
+    while (reserved_names.contains(candidate)
+           || claimed_names.contains(candidate)
+           || reserved.contains(candidate)
+           || conflicts_with_initializer(candidate)
+           || !scope_names.insert(candidate).second) {
         candidate = std::format("{}_{}", preferred, suffix++);
     }
     auto identifier = TargetIdentifier::from_spelling(candidate);
+    reserved_names.insert(candidate);
     local_names.emplace(ordinal, identifier);
     return identifier;
 }
@@ -287,10 +295,8 @@ auto TargetNameAllocator::claim_value(
     return fixed(claim_spelling(preferred, "_", occupied));
 }
 
-auto payload_enum_names(
-    std::span<const TargetIdentifier> case_names,
-    const TargetIdentifier& enum_name
-) noexcept -> TargetPayloadEnumNames {
+auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept
+    -> TargetPayloadEnumNames {
     auto occupied = std::flat_set<std::string> {};
     for (const auto& name : case_names) {
         occupied.insert(std::string(name.spelling()));
@@ -299,21 +305,17 @@ auto payload_enum_names(
     cases.reserve(case_names.size());
     for (const auto& name : case_names) {
         const auto record_type = TargetNameAllocator::derived_type(name, "Payload");
-        const auto holds_function = TargetNameAllocator::derived_value("is", name);
-        const auto payload_function = TargetNameAllocator::derived_value("as", name);
+        const auto projection_base = TargetNameAllocator::derived_value("as", name);
+        const auto projection_function = std::format("{}_if", projection_base.spelling());
         cases.push_back({
             .record_type = TargetNameAllocator::claim_type(record_type.spelling(), occupied),
-            .holds_function = TargetNameAllocator::claim_value(holds_function.spelling(), occupied),
-            .payload_function =
-                TargetNameAllocator::claim_value(payload_function.spelling(), occupied),
+            .projection_function = TargetNameAllocator::claim_value(projection_function, occupied),
         });
     }
-    auto parameter_occupied = std::flat_set<std::string> {std::string(enum_name.spelling())};
     return {
         .cases = std::move(cases),
         .storage_type = TargetNameAllocator::claim_type("Storage", occupied),
         .storage_member = TargetNameAllocator::claim_value("storage", occupied),
-        .storage_parameter = TargetNameAllocator::claim_type("StorageValue", parameter_occupied),
     };
 }
 
@@ -332,4 +334,8 @@ auto TargetNameAllocator::process_argument_count() noexcept -> TargetIdentifier 
 
 auto TargetNameAllocator::process_argument_vector() noexcept -> TargetIdentifier {
     return fixed("carven_argv");
+}
+
+auto TargetNameAllocator::test_context() noexcept -> TargetIdentifier {
+    return fixed("carven_test_context");
 }

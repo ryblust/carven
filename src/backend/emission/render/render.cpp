@@ -1,16 +1,28 @@
 module carven:backend.emission.render.impl;
 
-import :artifacts;
 import :backend.emission.render.string;
 import :backend.emission.render;
 import :backend.target.symbol;
+import :support.visit;
 import std;
 
-TargetRenderer::TargetRenderer(const TargetUnit& unit) noexcept
+TargetRenderer::TargetRenderer(const TargetUnit& unit, EmissionPolicy policy) noexcept
     : unit(unit),
-      generated_origin(unit.root().logical_path),
-      stable_interface(unit.root().source_mapping == ArtifactSourceMappingPolicy::StableInterface) {
-}
+      generated_origin(
+          std::visit(
+              []<typename Policy>(const Policy& value) noexcept -> std::string {
+                  if constexpr (std::same_as<Policy, SourceAttributedEmission>) {
+                      return std::string(value.generated_origin);
+                  } else if constexpr (std::same_as<Policy, StableInterfaceEmission>) {
+                      return {};
+                  } else {
+                      static_assert(std::same_as<Policy, void>, "unhandled emission policy");
+                  }
+              },
+              policy
+          )
+      ),
+      stable_interface(std::holds_alternative<StableInterfaceEmission>(policy)) {}
 
 auto TargetRenderer::text(std::string_view value) noexcept -> LayoutNodeID {
     return builder.text(value);
@@ -119,12 +131,12 @@ auto TargetRenderer::braced_block(std::span<const LayoutNodeID> body) noexcept -
     });
 }
 
-auto TargetRenderer::render_statement_block(std::span<const TargetStmtID> body) noexcept
+auto TargetRenderer::render_statement_block(std::span<const TargetStmt> body) noexcept
     -> LayoutNodeID {
     auto rendered = std::vector<LayoutNodeID> {};
     rendered.reserve(body.size());
-    for (const auto id : body) {
-        rendered.push_back(render_statement(id));
+    for (const auto& statement : body) {
+        rendered.push_back(render_statement(statement));
     }
     return braced_block(rendered);
 }
@@ -149,15 +161,40 @@ auto TargetRenderer::with_attribution(
     if (stable_interface) {
         return value;
     }
-    if (attribution.origin.has_value()) {
-        const auto& origin = *attribution.origin;
-        const auto source =
-            builder.source_location(origin.line, cpp_string_token(origin.display_origin));
-        return concat({source, value});
-    }
-    if (attribution.kind == TargetAttributionKind::CompilerOwned
-        && attribution.reason != TargetSyntheticReason::LoweringSupport) {
-        return concat({generated_transition(), value});
-    }
-    return value;
+    return std::visit(
+        Overloaded {
+            [&](const TargetSourceOwnedAttribution& source) noexcept {
+                return concat({
+                    builder.source_location(
+                        source.origin.line,
+                        cpp_string_token(source.origin.display_origin)
+                    ),
+                    value,
+                });
+            },
+            [&](const TargetSourceExpansionAttribution& source) noexcept {
+                return concat({
+                    builder.source_location(
+                        source.origin.line,
+                        cpp_string_token(source.origin.display_origin)
+                    ),
+                    value,
+                });
+            },
+            [&](const TargetRawSourceAttribution& source) noexcept {
+                return concat({
+                    builder.source_location(
+                        source.origin.line,
+                        cpp_string_token(source.origin.display_origin)
+                    ),
+                    value,
+                });
+            },
+            [&](const TargetGeneratedExpansionAttribution&) noexcept { return value; },
+            [&](const TargetCompilerOwnedAttribution&) noexcept {
+                return concat({generated_transition(), value});
+            },
+        },
+        attribution
+    );
 }

@@ -2,8 +2,8 @@ module carven:backend.generate;
 
 import :artifacts;
 import :backend.generation.request;
-import :semantic.hir;
+import :semantic.semir;
 import std;
 
-auto generate_artifacts(SemanticProgram semantic, TargetGenerationRequest request) noexcept
-    -> ArtifactSet;
+auto generate_artifacts(SemIRProgram semantic, const TargetPlanningRequest& request) noexcept
+    -> GeneratedArtifactSet;

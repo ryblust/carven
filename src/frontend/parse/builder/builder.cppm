@@ -7,7 +7,12 @@ import :frontend.ast.ids;
 import :frontend.ast.pattern;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
+import :frontend.ast.tree;
 import :frontend.ast.type;
+import :source.text;
+import std;
+
+class Parser;
 
 class ASTBuilder final {
 public:
@@ -22,6 +27,13 @@ public:
         ASTStorage::ModuleImportTable::Checkpoint module_imports;
     };
 
+    ASTBuilder(const ASTBuilder&) = delete;
+    ASTBuilder(ASTBuilder&&) = default;
+    auto operator=(const ASTBuilder&) -> ASTBuilder& = delete;
+    auto operator=(ASTBuilder&&) -> ASTBuilder& = default;
+
+private:
+    explicit ASTBuilder(SourceView source) noexcept;
     auto append_expression(ASTExpr value) noexcept -> ASTExprID;
     auto append_type(ASTType value) noexcept -> ASTTypeID;
     auto append_statement(ASTStmt value) noexcept -> ASTStmtID;
@@ -37,8 +49,26 @@ public:
     auto branch_block(ASTBranchBlockID id) const noexcept -> const ASTBranchBlock&;
     auto checkpoint() const noexcept -> Checkpoint;
     auto rewind(Checkpoint checkpoint) noexcept -> void;
-    auto finish() && noexcept -> ASTStorage;
+    auto finish(ASTModule ast_module) && noexcept -> SyntaxTree;
 
-private:
+    auto validate(Span span) const noexcept -> void;
+    auto validate(ASTExprID id) const noexcept -> void;
+    auto validate(ASTTypeID id) const noexcept -> void;
+    auto validate(ASTStmtID id) const noexcept -> void;
+    auto validate(ASTPatternID id) const noexcept -> void;
+    auto validate(ASTBlockID id) const noexcept -> void;
+    auto validate(ASTBranchBlockID id) const noexcept -> void;
+    auto validate(ASTItemID id) const noexcept -> void;
+    auto validate(ASTModuleImportID id) const noexcept -> void;
+
+    template<typename Node>
+    auto validate_topology(const Node& node) const noexcept -> void {
+        visit_ast_topology(node, [&](auto field) noexcept { validate(field); });
+    }
+
     ASTStorage storage;
+    SourceID source_id;
+    std::size_t source_size;
+
+    friend class Parser;
 };

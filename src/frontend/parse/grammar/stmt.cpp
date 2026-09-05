@@ -529,7 +529,7 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
             if (!step) {
                 return std::nullopt;
             }
-            steps.push_back(std::move(*step));
+            steps.push_back(*step);
             if (!match(TokenKind::Comma)) {
                 break;
             }

@@ -1,7 +1,7 @@
 module;
 #define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
 #include <doctest/doctest.h>
-#include <carven/runtime/runtime.hpp>
+#include <carven/runtime/callable.hpp>
 #include <concepts>
 #include <utility>
 
@@ -65,14 +65,30 @@ struct NetworkFailure final {
 
 using NarrowOutcome = carven::runtime::Outcome<int, ParseFailure>;
 using WideOutcome = carven::runtime::Outcome<int, ParseFailure, NetworkFailure>;
+using NarrowFunctionRef = carven::runtime::FunctionRef<NarrowOutcome(int) noexcept>;
 using WideFunctionRef = carven::runtime::FunctionRef<WideOutcome(int) noexcept>;
+using VoidOutcome = carven::runtime::Outcome<void, ParseFailure>;
+using VoidOutcomeFunctionRef = carven::runtime::FunctionRef<VoidOutcome(int) noexcept>;
 
 auto narrow_result(int value) noexcept -> NarrowOutcome {
     return value >= 0 ? NarrowOutcome::success(value)
                       : NarrowOutcome::failure(ParseFailure {.offset = -value});
 }
 
+auto plain_void(int) noexcept -> void {}
+
+using WrongResultFunctionPointer = long (*)(int) noexcept;
+using WideOutcomeFunctionPointer = WideOutcome (*)(int) noexcept;
+
+static_assert(std::constructible_from<NarrowFunctionRef, decltype(&narrow_result)>);
 static_assert(std::constructible_from<WideFunctionRef, decltype(&narrow_result)>);
+static_assert(std::constructible_from<WideFunctionRef, decltype(&increment)>);
+static_assert(std::constructible_from<VoidOutcomeFunctionRef, decltype(&plain_void)>);
+static_assert(!std::constructible_from<WideFunctionRef, WrongResultFunctionPointer>);
+static_assert(!std::constructible_from<NarrowFunctionRef, WideOutcomeFunctionPointer>);
+static_assert(
+    !std::constructible_from<carven::runtime::FunctionRef<void(int) noexcept>, IntFunctionPointer>
+);
 
 static_assert(!std::default_initializable<IntFunctionRef>);
 static_assert(!std::constructible_from<IntFunctionRef, std::nullptr_t>);
@@ -83,8 +99,8 @@ static_assert(std::constructible_from<IntFunctionRef, MutableCallable&>);
 static_assert(std::constructible_from<IntFunctionRef, const ConstCallable&>);
 static_assert(std::constructible_from<IntFunctionRef, NothrowFunctionPointerConversion>);
 static_assert(!std::constructible_from<IntFunctionRef, CapturingCallable>);
-static_assert(!std::constructible_from<IntFunctionRef, ThrowingCallable&>);
-static_assert(!std::constructible_from<IntFunctionRef, ThrowingFunctionPointerConversion>);
+static_assert(std::constructible_from<IntFunctionRef, ThrowingCallable&>);
+static_assert(std::constructible_from<IntFunctionRef, ThrowingFunctionPointerConversion>);
 static_assert(!std::constructible_from<IntFunctionRef, volatile MutableCallable&>);
 static_assert(!std::constructible_from<MemberFunctionRef, MemberFunctionPointer&>);
 static_assert(!std::convertible_to<MutableCallable&, IntFunctionRef>);
@@ -126,18 +142,16 @@ TEST_CASE("Runtime: FunctionRef preserves capturing mutable callable identity wh
     CHECK_EQ(mutable_reference(10), 12);
 }
 
-TEST_CASE("Runtime: FunctionRef preserves constness and discards object return values") {
+TEST_CASE("Runtime: FunctionRef preserves constness and exact void results") {
     const auto callable = ConstCallable {};
     const auto const_reference = IntFunctionRef(callable);
     CHECK_EQ(const_reference(4), 12);
 
     auto calls = 0;
-    auto returning_callable = [&calls](int value) noexcept -> int {
+    auto void_callable = [&calls](int) noexcept -> void {
         ++calls;
-        return value * 2;
     };
-    const auto void_reference =
-        carven::runtime::FunctionRef<void(int) noexcept>(returning_callable);
+    const auto void_reference = carven::runtime::FunctionRef<void(int) noexcept>(void_callable);
     void_reference(3);
     CHECK_EQ(calls, 1);
 }
@@ -194,21 +208,60 @@ TEST_CASE("Runtime: FunctionRef preserves reference parameter categories") {
 TEST_CASE("Runtime: FunctionRef widens compatible function, object, and temporary lambda results") {
     const auto function = WideFunctionRef(&narrow_result);
     auto success = function(7);
-    REQUIRE(success.has_value());
-    CHECK_EQ(std::move(success).take_value(), 7);
+    auto* success_value = success.success_if();
+    REQUIRE(success_value != nullptr);
+    CHECK_EQ(success_value->value, 7);
 
     auto object = [](int value) noexcept -> NarrowOutcome {
         return NarrowOutcome::failure(ParseFailure {.offset = value});
     };
     const auto object_reference = WideFunctionRef(object);
     auto object_failure = object_reference(11);
-    REQUIRE(object_failure.holds_failure<ParseFailure>());
-    CHECK_EQ(std::move(object_failure).take_failure<ParseFailure>().offset, 11);
+    auto* object_failure_value = object_failure.failure_if<ParseFailure>();
+    REQUIRE(object_failure_value != nullptr);
+    CHECK_EQ(std::move(*object_failure_value).offset, 11);
 
     const auto temporary = WideFunctionRef([](int value) static noexcept -> NarrowOutcome {
         return NarrowOutcome::success(value * 2);
     });
     auto temporary_success = temporary(6);
-    REQUIRE(temporary_success.has_value());
-    CHECK_EQ(std::move(temporary_success).take_value(), 12);
+    auto* temporary_value = temporary_success.success_if();
+    REQUIRE(temporary_value != nullptr);
+    CHECK_EQ(temporary_value->value, 12);
+}
+
+TEST_CASE("Runtime: FunctionRef wraps plain success results for failing destinations") {
+    const auto value_function = WideFunctionRef(&increment);
+    auto value_success = value_function(4);
+    auto* function_value = value_success.success_if();
+    REQUIRE(function_value != nullptr);
+    CHECK_EQ(function_value->value, 5);
+
+    auto value_object = [](int value) noexcept -> int {
+        return value * 3;
+    };
+    const auto value_reference = WideFunctionRef(value_object);
+    auto object_success = value_reference(3);
+    auto* object_value = object_success.success_if();
+    REQUIRE(object_value != nullptr);
+    CHECK_EQ(object_value->value, 9);
+
+    const auto void_function = VoidOutcomeFunctionRef(&plain_void);
+    auto void_success = void_function(0);
+    REQUIRE(void_success.success_if() != nullptr);
+}
+
+TEST_CASE("Runtime FunctionRef: noexcept boundary admits potentially throwing targets") {
+    const auto callable = ThrowingCallable();
+    const auto view = IntFunctionRef(callable);
+    CHECK_EQ(view(7), 7);
+    const auto converted = IntFunctionRef(ThrowingFunctionPointerConversion());
+    CHECK_EQ(converted(7), 8);
+    const auto function = +[](int value) static -> int {
+        return value + 2;
+    };
+    const auto pointer = IntFunctionRef(function);
+    CHECK_EQ(pointer(7), 9);
+    const auto temporary = IntFunctionRef([](int value) static -> int { return value + 3; });
+    CHECK_EQ(temporary(7), 10);
 }

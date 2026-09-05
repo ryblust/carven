@@ -1,0 +1,89 @@
+struct SelectedFailure {}
+struct InactiveFailure {}
+struct Pair { first: i32, second: i32 }
+
+fn inactive_value() -> i32 throw InactiveFailure {
+    throw InactiveFailure {};
+}
+
+fn add_checked(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn terminal_argument() -> i32 throw SelectedFailure {
+    return add_checked(
+        if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; },
+        inactive_value()?
+    );
+}
+
+fn terminal_array() -> [i32; 2] throw SelectedFailure {
+    return [
+        if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; },
+        inactive_value()?
+    ];
+}
+
+fn terminal_field() -> Pair throw SelectedFailure {
+    return Pair {
+        if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; },
+        inactive_value()?
+    };
+}
+
+fn completed_value() -> i32 {
+    return 7;
+    let unused = inactive_value()?;
+}
+
+test "Control: nonreturning operands retain types and stop evaluation" {
+    var caught = 0;
+    try { terminal_argument()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_array()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_field()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    for ;; inactive_value()? { break; }
+    check(caught == 3);
+    check(completed_value() == 7);
+}
+
+fn terminal_boolean() -> bool throw SelectedFailure {
+    let answer = !(if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; });
+    return answer;
+}
+
+fn terminal_condition() throw SelectedFailure {
+    while (if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }) {
+        inactive_value()?;
+    }
+    inactive_value()?;
+}
+
+fn terminal_guard() -> i32 throw SelectedFailure {
+    return match 1 {
+        _ if if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }
+            => inactive_value()?,
+        _ => inactive_value()?,
+    };
+}
+
+fn terminal_catch_guard() -> i32 throw SelectedFailure {
+    return try { throw InactiveFailure {}; } catch {
+        InactiveFailure(_) if if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }
+            => inactive_value()?,
+        InactiveFailure(_) => inactive_value()?,
+    };
+}
+
+fn no_loop_exit() {
+    while true {}
+    inactive_value()?;
+}
+
+test "Control: a guard or condition failure has no rejected successor" {
+    var caught = 0;
+    try { terminal_boolean()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_condition()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_catch_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    check(caught == 4);
+}

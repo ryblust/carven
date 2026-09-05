@@ -14,6 +14,8 @@ struct ASTModule final {
     std::vector<ASTItemID> items;
 };
 
+class ASTBuilder;
+
 class SyntaxTree final {
 public:
     SyntaxTree(const SyntaxTree&) = delete;
@@ -30,5 +32,5 @@ private:
     ASTModule source_module;
     SourceID source_identity;
 
-    friend class Parser;
+    friend class ASTBuilder;
 };

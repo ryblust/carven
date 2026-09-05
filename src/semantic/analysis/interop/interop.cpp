@@ -1,18 +1,18 @@
 module carven:semantic.analysis.interop.impl;
 
 import :diagnostics.builder;
+import :diagnostics.diagnostic;
 import :semantic.analysis.interop;
-import :semantic.hir.decl;
-import :semantic.hir.symbol;
-import :semantic.hir.type;
+import :semantic.semir.decl;
+import :semantic.semir.type;
 import :source.cpp.identifier;
 import :support.invariant;
 import std;
 
 namespace {
 
-auto is_cpp_scalar_type(HIRBuiltinType type) noexcept -> bool {
-    using enum HIRBuiltinType;
+auto is_cpp_scalar_type(BuiltinType type) noexcept -> bool {
+    using enum BuiltinType;
     switch (type) {
         case Bool:
         case Char:
@@ -37,23 +37,25 @@ auto is_cpp_scalar_type(HIRBuiltinType type) noexcept -> bool {
     std::unreachable();
 }
 
-auto is_cpp_parameter_type(SemanticDraftView semantic, HIRTypeID type) noexcept -> bool {
-    const auto& value = semantic.type(type).value;
-    if (std::holds_alternative<HIRErrorTypeValue>(value)) {
-        return true;
+auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<BuiltinType> {
+    const auto* concrete = std::get_if<TypeID>(&type);
+    if (concrete == nullptr) {
+        return std::nullopt;
     }
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&value);
-    return builtin != nullptr && is_cpp_scalar_type(builtin->kind);
+    const auto resolved = draft.type_copy(*concrete);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&resolved.value);
+    return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
 }
 
-auto is_cpp_result_type(SemanticDraftView semantic, HIRTypeID type) noexcept -> bool {
-    const auto& value = semantic.type(type).value;
-    if (std::holds_alternative<HIRErrorTypeValue>(value)) {
-        return true;
-    }
-    const auto* builtin = std::get_if<HIRBuiltinTypeValue>(&value);
-    return builtin != nullptr
-        && (builtin->kind == HIRBuiltinType::Void || is_cpp_scalar_type(builtin->kind));
+auto is_cpp_parameter_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
+    const auto builtin = builtin_type(draft, type);
+    return builtin.has_value() && is_cpp_scalar_type(*builtin);
+}
+
+auto is_cpp_result_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
+    const auto builtin = builtin_type(draft, type);
+    return builtin.has_value() && (*builtin == BuiltinType::Void || is_cpp_scalar_type(*builtin));
 }
 
 auto is_unrepresentable_cpp_provider_name(std::string_view name) noexcept -> bool {
@@ -61,32 +63,45 @@ auto is_unrepresentable_cpp_provider_name(std::string_view name) noexcept -> boo
 }
 
 struct CppExportPath final {
-    std::vector<std::string_view> path;
+    std::vector<std::string> path;
     ProgramOriginID origin;
 };
 
 auto is_strict_prefix(
-    std::span<const std::string_view> prefix,
-    std::span<const std::string_view> value
+    std::span<const std::string> prefix,
+    std::span<const std::string> value
 ) noexcept -> bool {
     return prefix.size() < value.size() && std::ranges::equal(prefix, value.first(prefix.size()));
 }
 
+auto source_id(const ProgramDraft& draft, ProgramModuleID module) noexcept -> SourceID {
+    return draft.syntax_tree(module).view().source_id();
+}
+
 } // namespace
 
-auto diagnose_cpp_boundary_declaration(
-    ModuleAnalysis& module_analysis,
+auto validate_cpp_boundary_declaration(
+    ProgramDraft& draft,
+    ProgramModuleID module,
+    ASTView syntax,
     const ASTFunctionDecl& function,
-    std::span<const HIRFunctionParameterType> parameters,
-    HIRTypeID result
-) noexcept -> void {
+    std::span<const ConstructionCallableParameter> parameters,
+    ConstructionTypeRef result
+) noexcept -> AnalysisResult<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto cpp_export = function.cpp_export.has_value();
     if (!cpp_import && !cpp_export) {
-        return;
+        return {};
     }
+
+    auto failure = std::optional<AnalysisFailure>();
+    const auto diagnose = [&](Span span, std::string message, DiagnosticCode code) noexcept {
+        failure = draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
+                                                .primary(locate(source_id(draft, module), span))
+                                                .build());
+    };
     if (function.throw_clause.has_value()) {
-        module_analysis.emit(
+        diagnose(
             function.throw_clause->span,
             "a C++ boundary function cannot declare failures",
             DiagnosticCode::CppBoundary
@@ -96,85 +111,97 @@ auto diagnose_cpp_boundary_declaration(
         invariant_violation("C++ boundary syntax and callable parameters are not aligned");
     }
     for (const auto [index, parameter] : std::views::enumerate(parameters)) {
-        const auto& syntax = function.parameters[index];
-        if (parameter.access != HIRAccessMode::Read) {
-            module_analysis.emit(
-                syntax.access.marker.value_or(syntax.span),
+        const auto& source = function.parameters[index];
+        if (parameter.access != AccessMode::Read) {
+            diagnose(
+                source.access.marker.value_or(source.span),
                 "C++ boundary parameters must use Read access",
                 DiagnosticCode::CppBoundary
             );
         }
-        if (!is_cpp_parameter_type(module_analysis.builder(), parameter.type)) {
-            module_analysis.emit(
-                syntax.span,
+        if (!is_cpp_parameter_type(draft, parameter.type)) {
+            diagnose(
+                source.span,
                 "C++ boundary parameters require a supported scalar type",
                 DiagnosticCode::CppBoundaryType
             );
         }
     }
-    if (!is_cpp_result_type(module_analysis.builder(), result)) {
-        const auto span = function.result_type.has_value()
-            ? module_analysis.syntax().type(*function.result_type).span
-            : function.name_span;
-        module_analysis.emit(
-            span,
+    if (!is_cpp_result_type(draft, result)) {
+        diagnose(
+            function.result_type.has_value() ? syntax.type(*function.result_type).span
+                                             : function.name_span,
             "a C++ boundary result requires a supported scalar type or void",
             DiagnosticCode::CppBoundaryType
         );
     }
-    const auto name = module_analysis.spelling(function.name_span);
+    const auto name = draft.source_slice_copy(module, function.name_span);
     if (!is_supported_cpp_identifier(name)) {
-        module_analysis.emit(
+        diagnose(
             function.name_span,
             cpp_import ? "C++ provider name must be a supported C++ identifier"
                        : "C++ API function name must be a supported C++ identifier",
             DiagnosticCode::CppIdentifier
         );
     } else if (cpp_import && is_unrepresentable_cpp_provider_name(name)) {
-        module_analysis.emit(
+        diagnose(
             function.name_span,
             "this name cannot be represented as a global C++ provider",
             DiagnosticCode::CppIdentifier
         );
     }
+    return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
+                               : AnalysisResult<void>();
 }
 
-auto diagnose_cpp_api_surface(SemanticDraftView semantic, DiagnosticSink& diagnostics) noexcept
-    -> void {
-    auto functions = std::vector<CppExportPath> {};
+auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept
+    -> AnalysisResult<void> {
+    auto failure = std::optional<AnalysisFailure>();
+    const auto diagnose = [&](Diagnostic diagnostic) noexcept {
+        const auto current = draft.diagnostics().error(std::move(diagnostic));
+        if (!failure.has_value()) {
+            failure = current;
+        }
+    };
+    auto functions = std::vector<CppExportPath>();
     auto exported_module_origins =
-        std::vector<std::optional<ProgramOriginID>>(semantic.modules().size());
-    for (const auto& function : semantic.functions()) {
-        if (!function.cpp_export_form_origin.has_value()) {
+        std::vector<std::optional<ProgramOriginID>>(draft.module_count());
+    for (const auto& symbol : catalog.symbols()) {
+        const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
+        if (form == nullptr) {
             continue;
         }
-        const auto module_id = semantic.symbol(function.symbol).module_id;
-        if (!module_id.has_value()) {
-            invariant_violation("C++ API function has no owning module");
+        const auto function = draft.function_declaration_copy(form->function);
+        if (!function.cpp_export_origin.has_value()) {
+            continue;
         }
-        if (!exported_module_origins[module_id->index()].has_value()) {
-            exported_module_origins[module_id->index()] = function.cpp_export_form_origin;
+        if (symbol.module_id.index() >= exported_module_origins.size()) {
+            invariant_violation("C++ API function references an unknown module");
         }
-        auto path = std::vector<std::string_view> {};
-        const auto& module = semantic.provenance().module_record(*module_id);
-        for (const auto& component : module.path.components()) {
-            path.push_back(component);
+        if (!exported_module_origins[symbol.module_id.index()].has_value()) {
+            exported_module_origins[symbol.module_id.index()] = function.cpp_export_origin;
         }
-        path.push_back(semantic.provenance().spelling(function.name));
-        functions.push_back({.path = std::move(path), .origin = *function.cpp_export_form_origin});
+        auto path = draft.module_path_copy(symbol.module_id).components()
+            | std::views::transform([](std::string_view value) { return std::string(value); })
+            | std::ranges::to<std::vector>();
+        path.push_back(draft.spelling_copy(function.name));
+        functions.push_back({
+            .path = std::move(path),
+            .origin = *function.cpp_export_origin,
+        });
     }
     for (auto index = 0uz; index < exported_module_origins.size(); ++index) {
         const auto origin = exported_module_origins[index];
         if (!origin.has_value()) {
             continue;
         }
-        const auto module_id = ProgramModuleID::from_index(static_cast<std::uint32_t>(index));
-        const auto& module = semantic.provenance().module_record(module_id);
-        for (const auto& component : module.path.components()) {
+        const auto module = draft.provenance_module_at(index);
+        const auto module_path = draft.module_path_copy(module);
+        for (const auto& component : module_path.components()) {
             if (is_supported_cpp_identifier(component)) {
                 continue;
             }
-            diagnostics.emit(
+            diagnose(
                 DiagnosticBuilder(
                     DiagnosticCode::CppIdentifier,
                     std::format(
@@ -182,7 +209,7 @@ auto diagnose_cpp_api_surface(SemanticDraftView semantic, DiagnosticSink& diagno
                         component
                     )
                 )
-                    .primary(semantic.provenance().source_span(*origin))
+                    .primary(draft.source_span(*origin))
                     .build()
             );
         }
@@ -194,18 +221,18 @@ auto diagnose_cpp_api_surface(SemanticDraftView semantic, DiagnosticSink& diagno
             if (!collision) {
                 continue;
             }
-            diagnostics.emit(
-                DiagnosticBuilder(
-                    DiagnosticCode::CppAPIPathCollision,
-                    "a C++ API function name conflicts with another API namespace path"
-                )
-                    .primary(semantic.provenance().source_span(functions[right].origin))
-                    .related(
-                        semantic.provenance().source_span(functions[left].origin),
-                        "conflicting C++ API declaration"
-                    )
-                    .build()
-            );
+            diagnose(DiagnosticBuilder(
+                         DiagnosticCode::CppAPIPathCollision,
+                         "a C++ API function name conflicts with another API namespace path"
+            )
+                         .primary(draft.source_span(functions[right].origin))
+                         .related(
+                             draft.source_span(functions[left].origin),
+                             "conflicting C++ API declaration"
+                         )
+                         .build());
         }
     }
+    return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
+                               : AnalysisResult<void>();
 }

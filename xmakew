@@ -3,4 +3,4 @@
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec "$repo_dir/tools/xmake-clang-module-pipeline/xmake" "$@"
+exec "$repo_dir/xmake/clang-module-pipeline/xmake" "$@"

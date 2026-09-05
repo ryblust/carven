@@ -96,7 +96,7 @@ that protocol stable.
 
 | Direction | Reactivation evidence |
 | --- | --- |
-| General pass/dialect or optimization framework | At least two implemented transformations require scheduling or extension machinery that direct SemanticProgram-to-unit-local TargetUnit lowering cannot express cleanly |
+| General pass/dialect or optimization framework | At least two implemented transformations require scheduling or extension machinery that direct SemIRProgram-to-unit-local TargetUnit lowering cannot express cleanly |
 | Query system, incremental analysis, or persistent IDs | Measured compilation behavior or an interactive use case requires stable reusable analysis |
 | Multi-backend IR | A supported non-C++ backend has concrete semantic and artifact requirements |
 | Generated C++ module interfaces | A supported consumer use case requires them; BMI orchestration remains a build-system responsibility |

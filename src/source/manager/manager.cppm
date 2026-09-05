@@ -25,12 +25,18 @@ public:
     auto location(SourceSpan span) const noexcept -> SourceLocation;
 
 private:
-    struct SourceRecord final {
+    class SourceRecord final {
+    public:
+        SourceRecord(std::string origin_value, std::string text_value) noexcept;
+
+        auto display_origin() const noexcept -> std::string_view;
+        auto source_text() const noexcept -> std::string_view;
+        auto location(Span span) const noexcept -> SourceLocation;
+
+    private:
         std::string origin;
         std::string text;
         LineIndex lines;
-
-        SourceRecord(std::string origin_value, std::string text_value) noexcept;
     };
 
     std::deque<SourceRecord> entries;

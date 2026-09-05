@@ -7,32 +7,40 @@ struct TargetSourceOrigin final {
     std::uint32_t line;
 };
 
-enum class TargetSyntheticReason {
-    ArtifactScaffolding,
-    ControlNormalization,
+enum class TargetExpansionReason {
     EvaluationOrder,
     FailureTransport,
     LoweringSupport,
+};
+
+enum class TargetCompilerReason {
+    ArtifactScaffolding,
     TestHarness,
 };
 
-enum class TargetAttributionKind {
-    SourceOwned,
-    SourceExpansion,
-    CompilerOwned,
-    RawSource,
+struct TargetSourceOwnedAttribution final {
+    TargetSourceOrigin origin;
 };
 
-struct TargetAttribution final {
-    TargetAttributionKind kind;
-    std::optional<TargetSourceOrigin> origin;
-    std::optional<TargetSyntheticReason> reason;
+struct TargetSourceExpansionAttribution final {
+    TargetSourceOrigin origin;
 };
 
-enum class TargetMaterializationReason {
-    EvaluationOrder,
-    Lifetime,
-    ValueCategory,
-    Ownership,
-    FailureTransport,
+struct TargetGeneratedExpansionAttribution final {
+    TargetExpansionReason reason;
 };
+
+struct TargetCompilerOwnedAttribution final {
+    TargetCompilerReason reason;
+};
+
+struct TargetRawSourceAttribution final {
+    TargetSourceOrigin origin;
+};
+
+using TargetAttribution = std::variant<
+    TargetSourceOwnedAttribution,
+    TargetSourceExpansionAttribution,
+    TargetGeneratedExpansionAttribution,
+    TargetCompilerOwnedAttribution,
+    TargetRawSourceAttribution>;

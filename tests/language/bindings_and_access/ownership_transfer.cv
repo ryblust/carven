@@ -35,3 +35,19 @@ test "Ownership: Take transfers ownership preserves order and permits var restor
     check(combined == 3);
     check(observed == 12);
 }
+
+fn restore_pair(&&pair: Pair) -> Pair {
+    return Pair { left: pair.left + 1, right: pair.right };
+}
+
+fn combine_completed(value: i32, &&owner: i32) -> i32 {
+    return value + owner;
+}
+
+test "Ownership: completed results release access and RHS consumption restores" {
+    let scalar = 10;
+    check(combine_completed(scalar + 1, &&scalar) == 21);
+    var pair = Pair { left: 20, right: 21 };
+    pair = restore_pair(&&pair);
+    check(pair.left + pair.right == 42);
+}

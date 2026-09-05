@@ -3,6 +3,7 @@
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -49,12 +50,17 @@ private:
     bool normal;
 };
 
+[[noreturn]] inline auto testing_contract_error() noexcept -> void {
+    std::fputs("carven testing contract error\n", stderr);
+    std::abort();
+}
+
 } // namespace detail
 
 struct TestFailure final {
     std::string_view module_name;
     std::string_view case_name;
-    const char* file;
+    std::string_view file;
     std::uint32_t line;
     std::string_view operation;
     std::optional<std::string_view> condition;
@@ -62,37 +68,8 @@ struct TestFailure final {
 };
 
 using TestReporter = void (*)(const TestFailure&) noexcept;
-using TestFunction = void (*)() noexcept;
-
-struct Registrar final {
-    Registrar(
-        std::string_view module_name,
-        std::string_view case_name,
-        TestFunction function
-    ) noexcept;
-
-    std::string_view module_name;
-    std::string_view case_name;
-    TestFunction function;
-    Registrar* next = nullptr;
-};
 
 namespace detail {
-
-inline auto registry() noexcept -> Registrar*& {
-    static auto* head = static_cast<Registrar*>(nullptr);
-    return head;
-}
-
-inline auto current_case() noexcept -> const Registrar*& {
-    static auto* value = static_cast<const Registrar*>(nullptr);
-    return value;
-}
-
-inline auto failure_count() noexcept -> int& {
-    static auto value = 0;
-    return value;
-}
 
 inline auto write(std::string_view text) noexcept -> void {
     std::fwrite(text.data(), sizeof(char), text.size(), stderr);
@@ -103,7 +80,9 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
     write(failure.module_name);
     write("::");
     write(failure.case_name);
-    std::fprintf(stderr, "\n%s:%" PRIu32 ": ", failure.file, failure.line);
+    write("\n");
+    write(failure.file);
+    std::fprintf(stderr, ":%" PRIu32 ": ", failure.line);
     write(failure.operation);
     write(" failed\n");
     if (failure.condition.has_value()) {
@@ -118,70 +97,65 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
     }
 }
 
-inline auto reporter() noexcept -> TestReporter& {
-    static auto value = &default_reporter;
-    return value;
-}
-
-inline auto report_failure(
-    const char* file,
-    std::uint32_t line,
-    std::string_view operation,
-    std::optional<std::string_view> condition,
-    std::optional<std::string_view> message
-) noexcept -> void {
-    ++failure_count();
-    const auto* test = current_case();
-    reporter()({
-        .module_name = test == nullptr ? std::string_view {} : test->module_name,
-        .case_name = test == nullptr ? std::string_view {} : test->case_name,
-        .file = file,
-        .line = line,
-        .operation = operation,
-        .condition = condition,
-        .message = message,
-    });
-}
-
-inline auto less(const Registrar& left, const Registrar& right) noexcept -> bool {
-    return left.module_name < right.module_name
-        || (left.module_name == right.module_name && left.case_name < right.case_name);
-}
-
-inline auto insert(Registrar* registration) noexcept -> void {
-    auto** position = &registry();
-    while (*position != nullptr && !less(*registration, **position)) {
-        position = &(*position)->next;
-    }
-    registration->next = *position;
-    *position = registration;
-}
-
 } // namespace detail
 
-inline Registrar::Registrar(
-    std::string_view module_name,
-    std::string_view case_name,
-    TestFunction function
-) noexcept
-    : module_name(module_name),
-      case_name(case_name),
-      function(function) {
-    detail::insert(this);
-}
+class TestContext final {
+public:
+    explicit TestContext(TestReporter source_reporter = nullptr) noexcept
+        : reporter(source_reporter == nullptr ? &detail::default_reporter : source_reporter) {}
 
-inline auto set_reporter(TestReporter reporter) noexcept -> void {
-    detail::reporter() = reporter == nullptr ? &detail::default_reporter : reporter;
-}
-
-inline auto run() noexcept -> int {
-    detail::failure_count() = 0;
-    for (const auto* test = detail::registry(); test != nullptr; test = test->next) {
-        detail::current_case() = test;
-        test->function();
+    auto begin_case(std::string_view module_name, std::string_view case_name) noexcept -> void {
+        if (active.has_value()) {
+            detail::testing_contract_error();
+        }
+        active = ActiveTestCase {.module_name = module_name, .case_name = case_name};
     }
-    detail::current_case() = nullptr;
-    return detail::failure_count() == 0 ? 0 : 1;
-}
+
+    auto end_case() noexcept -> void {
+        if (!active.has_value()) {
+            detail::testing_contract_error();
+        }
+        active.reset();
+    }
+
+    auto report_failure(
+        std::string_view file,
+        std::uint32_t line,
+        std::string_view operation,
+        std::optional<std::string_view> condition,
+        std::optional<std::string_view> message
+    ) noexcept -> void {
+        if (!active.has_value()) {
+            detail::testing_contract_error();
+        }
+        failed = true;
+        reporter({
+            .module_name = active->module_name,
+            .case_name = active->case_name,
+            .file = file,
+            .line = line,
+            .operation = operation,
+            .condition = condition,
+            .message = message,
+        });
+    }
+
+    auto result() const noexcept -> int {
+        if (active.has_value()) {
+            detail::testing_contract_error();
+        }
+        return failed ? 1 : 0;
+    }
+
+private:
+    struct ActiveTestCase final {
+        std::string_view module_name;
+        std::string_view case_name;
+    };
+
+    TestReporter reporter;
+    bool failed = false;
+    std::optional<ActiveTestCase> active;
+};
 
 } // namespace carven::testing

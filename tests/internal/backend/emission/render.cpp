@@ -5,33 +5,180 @@ module;
 module carven:test.internal.backend.emission.render;
 
 import :artifacts;
-import :backend.emit;
 import :backend.emission.render.string;
+import :backend.emit;
 import :backend.target.builder;
+import :backend.target.decl;
+import :backend.target.expr;
+import :backend.target.item;
+import :backend.target.name;
+import :backend.target.origin;
+import :backend.target.stmt;
+import :backend.target.symbol;
+import :backend.target.type;
 import :backend.target.unit;
+import :test.internal.backend.target.fixture;
 import std;
+
+namespace {
+
+auto attribution() noexcept -> TargetAttribution {
+    return TargetGeneratedExpansionAttribution {
+        .reason = TargetExpansionReason::LoweringSupport,
+    };
+}
+
+template<typename Statement>
+auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
+    auto builder = TargetTestingFixture::unit_builder();
+    const auto result = builder.intern_type({
+        .value =
+            TargetIntrinsicType {
+                .symbol = TargetSymbol::Void,
+                .type_argument_ids = {},
+            },
+        .const_qualified = false,
+    });
+    auto body = std::vector<TargetStmt>();
+    if constexpr (std::invocable<Statement&, TargetUnitBuilder&>) {
+        body.push_back({.value = statement(builder), .attribution = attribution()});
+    } else {
+        body.push_back({.value = std::move(statement), .attribution = attribution()});
+    }
+    auto items = std::vector<TargetItem>();
+    items.push_back({
+        .value = TargetDecl {TargetFunctionDecl {
+            .name = TargetName(TargetIdentifier::from_spelling("fixture")),
+            .parameters = {},
+            .result = result,
+            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .static_specifier = false,
+            .inline_specifier = false,
+        }},
+        .attribution = attribution(),
+    });
+    auto unit = std::move(builder).finish({
+        .preamble = {},
+        .body = std::move(items),
+        .epilogue = {},
+    });
+    return emit(
+        std::move(unit),
+        "fixture.cpp",
+        GeneratedArtifactRole::ModuleImplementation,
+        SourceAttributedEmission {.generated_origin = "fixture.cpp"}
+    );
+}
+
+} // namespace
 
 TEST_CASE("Emission: C++ string quoting owns escape syntax") {
     CHECK_EQ(cpp_string_token("a\\b\n\"c\t"), "\"a\\\\b\\012\\\"c\\011\"");
     CHECK_EQ(cpp_string_token(std::string_view("\0018\377", 3)), "\"\\0018\\377\"");
 }
 
-TEST_CASE("Emission: unit metadata is serialized without role-derived directives") {
-    auto builder = TargetUnitBuilder();
-    auto unit = std::move(builder).finish({
-        .logical_path = "custom.cpp",
-        .role = GeneratedArtifactRole::ModuleImplementation,
-        .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
-        .directive_groups = {{
-            .directives = {{.bytes = "#custom first"}, {.bytes = "#custom second"}},
-        }},
-        .sections = {.preamble = {}, .body = {}, .epilogue = {}},
-    });
+TEST_CASE("Emission: explicit directive groups are serialized in order") {
+    auto builder = TargetTestingFixture::unit_builder();
+    auto unit = std::move(builder).finish(
+        {.preamble = {}, .body = {}, .epilogue = {}},
+        TargetDirectiveInputs {
+            .prefix_groups = {{
+                .directives = {{.bytes = "#custom first"}, {.bytes = "#custom second"}},
+                .attribution = std::nullopt,
+            }},
+            .suffix_groups = {},
+        }
+    );
+    const auto artifact = emit(
+        std::move(unit),
+        "custom.cpp",
+        GeneratedArtifactRole::ModuleImplementation,
+        SourceAttributedEmission {.generated_origin = "custom.cpp"}
+    );
 
-    const auto artifact = emit(std::move(unit));
-    CHECK_EQ(artifact.logical_path, "custom.cpp");
-    CHECK_EQ(artifact.role, GeneratedArtifactRole::ModuleImplementation);
-    CHECK_EQ(artifact.source_mapping, ArtifactSourceMappingPolicy::SourceAttributed);
     CHECK(artifact.content.contains("#custom first\n#custom second"));
     CHECK_FALSE(artifact.content.contains("carven/runtime"));
+}
+
+TEST_CASE("Emission: verified unreachable uses the C++20 runtime leaf") {
+    const auto artifact = emitted_statement(
+        TargetUnreachableStmt {
+            .reason = TargetUnreachableReason::SemIRProof,
+        }
+    );
+
+    CHECK(artifact.content.contains("#include <carven/runtime/unreachable.hpp>"));
+    CHECK(artifact.content.contains("carven::runtime::unreachable();"));
+    CHECK_FALSE(artifact.content.contains("std::unreachable"));
+    CHECK_FALSE(artifact.content.contains("std::abort();"));
+}
+
+TEST_CASE("Emission: runtime trap remains distinct from unreachable proof") {
+    const auto artifact = emitted_statement(
+        TargetRuntimeTrapStmt {
+            .reason = TargetRuntimeTrapReason::SourceContract,
+        }
+    );
+
+    CHECK(artifact.content.contains("#include <cstdlib>"));
+    CHECK(artifact.content.contains("std::abort();"));
+    CHECK_FALSE(artifact.content.contains("carven::runtime::unreachable();"));
+}
+
+TEST_CASE("Emission: value regions retain explicit result types and selective unused names") {
+    for (const auto maybe_unused : {false, true}) {
+        const auto artifact =
+            emitted_statement([&](TargetUnitBuilder& builder) noexcept -> TargetStmtValue {
+                const auto type = builder.intern_type({
+                    .value =
+                        TargetIntrinsicType {.symbol = TargetSymbol::Bool, .type_argument_ids = {}},
+                    .const_qualified = false,
+                });
+                auto body = std::vector<TargetStmt>();
+                body.push_back({
+                    .value =
+                        TargetReturnStmt {
+                            .expression = TargetExpr {.value = TargetLiteralExpr {.value = true}}
+                        },
+                    .attribution = attribution(),
+                });
+                return TargetVariableStmt {
+                    .binding = TargetVariableBinding::ConstValue,
+                    .maybe_unused = maybe_unused,
+                    .name = TargetIdentifier::from_spelling("value"),
+                    .type = type,
+                    .initializer = TargetExpr {
+                        .value = TargetRegionExpr {.result = type, .body = std::move(body)}
+                    },
+                };
+            });
+        CHECK_EQ(artifact.content.contains("[[maybe_unused]]"), maybe_unused);
+        CHECK(artifact.content.contains("const bool value"));
+        CHECK(artifact.content.contains("[&]() noexcept -> bool"));
+        CHECK(artifact.content.contains("return true;"));
+    }
+}
+
+TEST_CASE("Emission: range-for preserves native binding and loop scope") {
+    const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
+        const auto type = builder.intern_type({
+            .value = TargetIntrinsicType {.symbol = TargetSymbol::Int, .type_argument_ids = {}},
+            .const_qualified = false,
+        });
+        return TargetRangeForStmt {
+            .binding = TargetVariableBinding::ConstValue,
+            .maybe_unused = false,
+            .name = TargetIdentifier::from_spelling("element"),
+            .type = type,
+            .range =
+                TargetExpr {
+                    .value =
+                        TargetNameExpr {
+                            .name = TargetName(TargetIdentifier::from_spelling("elements"))
+                        }
+                },
+            .body = {},
+        };
+    });
+    CHECK(artifact.content.contains("for (const int element : elements)"));
 }

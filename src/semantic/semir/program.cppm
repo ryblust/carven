@@ -1,0 +1,395 @@
+module carven:semantic.semir.program;
+
+import :diagnostics.sink;
+import :frontend.ast.tree;
+import :frontend.program;
+import :semantic.analysis.diagnostics;
+import :semantic.analysis.failure;
+import :semantic.semir.body;
+import :semantic.semir.constant;
+import :semantic.semir.decl;
+import :semantic.semir.identity;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
+import :semantic.semir.table;
+import :semantic.semir.type;
+import :source.module_path;
+import :source.provenance;
+import :source.provenance.ids;
+import :source.text;
+import std;
+
+class BodyStore final {
+public:
+    BodyStore(const BodyStore&) = delete;
+    BodyStore(BodyStore&&) = default;
+    ~BodyStore() = default;
+
+    auto operator=(const BodyStore&) -> BodyStore& = delete;
+    auto operator=(BodyStore&&) -> BodyStore& = default;
+
+    auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
+    auto contains(BodyID id) const noexcept -> bool { return rows.contains(id); }
+    auto body(BodyID id) const noexcept -> const SemIRBody& { return rows.get(id); }
+    auto entries() const noexcept -> IDTableEntries<BodyID, SemIRBody, ProgramIdentity> {
+        return rows.entries();
+    }
+    auto size() const noexcept -> std::size_t { return rows.size(); }
+
+private:
+    explicit BodyStore(ImmutableProgramTable<SemIRBody, BodyID> values) noexcept
+        : rows(std::move(values)) {}
+
+    ImmutableProgramTable<SemIRBody, BodyID> rows;
+
+    friend class ProgramDraft;
+};
+
+class TestStore final {
+public:
+    TestStore(const TestStore&) = delete;
+    TestStore(TestStore&&) = default;
+    ~TestStore() = default;
+
+    auto operator=(const TestStore&) -> TestStore& = delete;
+    auto operator=(TestStore&&) -> TestStore& = default;
+
+    auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
+    auto contains(TestID id) const noexcept -> bool { return rows.contains(id); }
+    auto test(TestID id) const noexcept -> const TestDeclaration& { return rows.get(id); }
+    auto entries() const noexcept -> IDTableEntries<TestID, TestDeclaration, ProgramIdentity> {
+        return rows.entries();
+    }
+    auto size() const noexcept -> std::size_t { return rows.size(); }
+
+private:
+    explicit TestStore(ImmutableProgramTable<TestDeclaration, TestID> values) noexcept
+        : rows(std::move(values)) {}
+
+    ImmutableProgramTable<TestDeclaration, TestID> rows;
+
+    friend class ProgramDraft;
+};
+
+class SemIRProgram final {
+public:
+    SemIRProgram(const SemIRProgram&) = delete;
+    SemIRProgram(SemIRProgram&& other) noexcept;
+    ~SemIRProgram() = default;
+
+    auto operator=(const SemIRProgram&) -> SemIRProgram& = delete;
+    auto operator=(SemIRProgram&& other) noexcept -> SemIRProgram&;
+
+    auto identity() const noexcept -> ProgramIdentity {
+        require_active();
+        return program_identity;
+    }
+    auto provenance() const noexcept -> CompilationProvenanceView {
+        require_active();
+        return compilation_provenance.view();
+    }
+    auto types() const noexcept -> const CanonicalTypeStore& {
+        require_active();
+        return type_store;
+    }
+    auto constants() const noexcept -> const ConstantStore& {
+        require_active();
+        return constant_store;
+    }
+    auto failure_sets() const noexcept -> const FailureSetStore& {
+        require_active();
+        return failure_set_store;
+    }
+    auto callable_signatures() const noexcept -> const CallableSignatureStore& {
+        require_active();
+        return callable_signature_store;
+    }
+    auto declarations() const noexcept -> const DeclarationStore& {
+        require_active();
+        return declaration_store;
+    }
+    auto bodies() const noexcept -> const BodyStore& {
+        require_active();
+        return body_store;
+    }
+    auto tests() const noexcept -> const TestStore& {
+        require_active();
+        return test_store;
+    }
+    auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
+    auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
+    auto is_inhabited(TypeID type) const noexcept -> bool;
+
+private:
+    SemIRProgram(
+        ProgramIdentity identity,
+        CompilationProvenance provenance,
+        CanonicalTypeStore types,
+        ConstantStore constants,
+        FailureSetStore failure_sets,
+        CallableSignatureStore callable_signatures,
+        DeclarationStore declarations,
+        BodyStore bodies,
+        TestStore tests
+    ) noexcept;
+    auto require_active() const noexcept -> void;
+
+    ProgramIdentity program_identity;
+    CompilationProvenance compilation_provenance;
+    CanonicalTypeStore type_store;
+    ConstantStore constant_store;
+    FailureSetStore failure_set_store;
+    CallableSignatureStore callable_signature_store;
+    DeclarationStore declaration_store;
+    BodyStore body_store;
+    TestStore test_store;
+    bool active;
+
+    friend class ProgramDraft;
+};
+
+class BodyReservation final {
+public:
+    BodyReservation(const BodyReservation&) = delete;
+    BodyReservation(BodyReservation&& other) noexcept;
+    ~BodyReservation() = default;
+
+    auto operator=(const BodyReservation&) -> BodyReservation& = delete;
+    auto operator=(BodyReservation&&) -> BodyReservation& = delete;
+
+    auto id() const noexcept -> BodyID;
+    auto kind() const noexcept -> BodyKind;
+
+private:
+    struct Consumed final {
+        BodyID id;
+        BodyKind kind;
+        ProvenanceIdentity provenance;
+    };
+
+    BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept
+        : body_id(id),
+          body_kind(kind),
+          provenance_identity(provenance),
+          active(true) {}
+    auto consume() noexcept -> Consumed;
+
+    BodyID body_id;
+    BodyKind body_kind;
+    ProvenanceIdentity provenance_identity;
+    bool active;
+
+    friend class BodyBuilder;
+    friend class ProgramDraft;
+};
+
+class ProgramDraft final {
+public:
+    static auto begin(SyntaxProgram&& syntax, DiagnosticSink& sink) noexcept -> ProgramDraft;
+
+    ProgramDraft(const ProgramDraft&) = delete;
+    ProgramDraft(ProgramDraft&& other) noexcept;
+    ~ProgramDraft() = default;
+
+    auto operator=(const ProgramDraft&) -> ProgramDraft& = delete;
+    auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
+
+    auto identity() const noexcept -> ProgramIdentity {
+        require_not_failed("read program identity");
+        return program_identity;
+    }
+    auto provenance_identity() const noexcept -> ProvenanceIdentity {
+        require_not_failed("read provenance identity");
+        return provenance_appender.reader().identity();
+    }
+    auto diagnostics() const noexcept -> AnalysisDiagnostics {
+        require_not_failed("read diagnostics");
+        return analysis_diagnostics;
+    }
+
+    auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
+    auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+    auto resolved_imports(ProgramModuleID module_id) const noexcept
+        -> std::span<const ResolvedModuleImport>;
+    auto module_count() const noexcept -> std::size_t;
+    auto provenance_module_at(std::size_t index) const noexcept -> ProgramModuleID;
+
+    auto owns(ProgramModuleID id) const noexcept -> bool;
+    auto owns(ProgramSpellingID id) const noexcept -> bool;
+    auto owns(ProgramOriginID id) const noexcept -> bool;
+    auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
+    auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
+    auto origin_slice_copy(ProgramOriginID id) const noexcept -> std::string;
+    auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
+    auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
+    auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
+    auto source_slice_copy(ProgramModuleID module, Span span) const noexcept -> std::string;
+    auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
+    auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
+    auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
+        -> ProgramOriginID;
+
+    auto intern_type(CanonicalType type) noexcept -> TypeID;
+    auto intern_builtin_type(BuiltinType type) noexcept -> TypeID;
+    auto type_copy(TypeID type) const noexcept -> CanonicalType;
+    auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
+    auto constant_copy(ConstantID constant) const noexcept -> ConstantFact;
+    auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
+    auto empty_failure_set() noexcept -> FailureSetID;
+    auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
+    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
+
+    auto reserve_module_declaration() noexcept -> ModuleID;
+    auto reserve_function_declaration() noexcept -> FunctionID;
+    auto reserve_struct_declaration() noexcept -> StructID;
+    auto reserve_enum_declaration() noexcept -> EnumID;
+    auto reserve_enum_case_declaration() noexcept -> EnumCaseID;
+    auto reserve_module_constant_declaration() noexcept -> ModuleConstantID;
+    auto reserve_callable_declaration() noexcept -> CallableID;
+    auto define_declaration(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
+    auto define_declaration(FunctionID id, FunctionDeclaration declaration) noexcept -> void;
+    auto define_declaration(StructID id, ConstructionStructDeclaration declaration) noexcept
+        -> void;
+    auto define_declaration(EnumID id, ConstructionEnumDeclaration declaration) noexcept -> void;
+    auto define_declaration(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept
+        -> void;
+    auto define_declaration(
+        ModuleConstantID id,
+        ConstructionModuleConstantDeclaration declaration
+    ) noexcept -> void;
+    auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
+        -> void;
+    auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
+    auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
+
+    auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
+    auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
+    auto construction_struct_declaration_copy(StructID id) const noexcept
+        -> ConstructionStructDeclaration;
+    auto construction_enum_declaration_copy(EnumID id) const noexcept
+        -> ConstructionEnumDeclaration;
+    auto construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
+        -> ConstructionEnumCaseDeclaration;
+    auto construction_module_constant_declaration_copy(ModuleConstantID id) const noexcept
+        -> ConstructionModuleConstantDeclaration;
+    auto construction_callable_contract_copy(CallableID id) const noexcept
+        -> ConstructionCallableContract;
+    auto construction_failure_set_copy(FailureSetID failures) const noexcept -> FailureSet;
+    auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
+    auto module_declaration_count() const noexcept -> std::size_t;
+    auto function_declaration_count() const noexcept -> std::size_t;
+    auto struct_declaration_count() const noexcept -> std::size_t;
+    auto enum_declaration_count() const noexcept -> std::size_t;
+    auto enum_case_declaration_count() const noexcept -> std::size_t;
+    auto module_constant_declaration_count() const noexcept -> std::size_t;
+    auto callable_declaration_count() const noexcept -> std::size_t;
+    auto module_declaration_ids() const noexcept -> std::vector<ModuleID>;
+    auto function_declaration_ids() const noexcept -> std::vector<FunctionID>;
+    auto struct_declaration_ids() const noexcept -> std::vector<StructID>;
+    auto enum_declaration_ids() const noexcept -> std::vector<EnumID>;
+    auto enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID>;
+    auto module_constant_declaration_ids() const noexcept -> std::vector<ModuleConstantID>;
+    auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
+
+    auto add_empty_failure_term() noexcept -> FailureTermID;
+    auto add_concrete_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
+    auto add_union_failure_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
+    auto add_residual_failure_term(
+        FailureTermID input,
+        std::vector<TypeID> handled_members
+    ) noexcept -> FailureTermID;
+    auto add_intersection_failure_term(
+        FailureTermID input,
+        std::vector<TypeID> retained_members
+    ) noexcept -> FailureTermID;
+    auto add_failure_member(FailureTermID destination, TypeID member) noexcept -> void;
+    auto add_failure_contribution(FailureTermID destination, FailureTermID source) noexcept -> void;
+    auto add_guarded_failure_contribution(
+        FailureTermID destination,
+        FailureTermID gate,
+        FailureTermID source
+    ) noexcept -> void;
+    auto equate_failures(FailureTermID left, FailureTermID right) noexcept -> void;
+    auto require_empty_failures(
+        FailureTermID term,
+        ProgramOriginID origin,
+        EmptyFailureRequirementKind kind
+    ) noexcept -> void;
+    auto require_non_empty_failures(FailureTermID term, ProgramOriginID origin) noexcept -> void;
+    auto require_failure_subset(
+        FailureTermID actual,
+        FailureTermID allowed,
+        ProgramOriginID origin,
+        FailureSubsetRequirementKind kind
+    ) noexcept -> void;
+    auto require_equal_failures(
+        FailureTermID left,
+        FailureTermID right,
+        ProgramOriginID origin
+    ) noexcept -> void;
+    auto require_declared_failure_contract(FailureTermID actual, ProgramOriginID origin) noexcept
+        -> void;
+
+    auto finish_declarations() noexcept -> void;
+
+    auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
+    auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
+    auto take_body_drafts() noexcept -> std::vector<StructuredBodyDraft>;
+    auto publish_bodies(std::vector<SemIRBody> bodies) noexcept -> void;
+    auto reserve_test() noexcept -> TestID;
+    auto define_test(TestID id, TestDeclaration test) noexcept -> void;
+
+    auto solve_construction() noexcept -> AnalysisResult<void>;
+    auto concrete_type(ConstructionTypeRef type) const noexcept -> TypeID;
+    auto concrete_failure_set(FailureTermID failures) const noexcept -> FailureSetID;
+    auto canonical_type_copy(TypeID type) const noexcept -> CanonicalType;
+    auto callable_signature(CallableID callable) const noexcept -> CallableSignatureID;
+    auto callable_signature_copy(CallableSignatureID signature) const noexcept -> CallableSignature;
+    auto callable_crosses_cpp_boundary(CallableID callable) const noexcept -> bool;
+    auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
+    auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
+    auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet;
+    auto is_inhabited(TypeID type) const noexcept -> bool;
+
+    auto seal() && noexcept -> SemIRProgram;
+
+private:
+    enum class State {
+        Declarations,
+        Bodies,
+        Solved,
+        Failed,
+        Sealed,
+    };
+
+    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink) noexcept;
+    auto resolve_type(ConstructionTypeRef type) const noexcept -> TypeID;
+    auto resolve_failures(FailureTermID failures) const noexcept -> FailureSetID;
+    auto finalize_callable_signatures() noexcept -> void;
+    auto require_not_failed(std::string_view operation) const noexcept -> void;
+    auto require_construction_open(std::string_view operation) const noexcept -> void;
+    auto require_declarations_available(std::string_view operation) const noexcept -> void;
+    auto require_state(State expected, std::string_view operation) const noexcept -> void;
+
+    ProgramIdentity program_identity;
+    CompilationProvenanceAppender provenance_appender;
+    std::vector<SyntaxTree> syntax_by_module;
+    ResolvedModuleImportGraph resolved_import_graph;
+    AnalysisDiagnostics analysis_diagnostics;
+    State state;
+
+    CanonicalTypeStoreBuilder types;
+    ConstantStoreBuilder constants;
+    FailureSetStoreBuilder failure_sets;
+    CallableSignatureStoreBuilder callable_signatures;
+    ConstructionTypeStore construction_types;
+    DeclarationBuilder declarations;
+    FailureConstraintStore failure_constraints;
+    std::vector<StructuredBodyDraft> body_drafts;
+    ReservedProgramTable<SemIRBody, BodyID> body_slots;
+    ReservedProgramTable<TestDeclaration, TestID> test_slots;
+    std::vector<BodyKind> reserved_body_kinds;
+    std::vector<std::optional<TestID>> test_by_body;
+    std::optional<FailureSolution> solved_failures;
+    std::optional<TypeResolution> resolved_types;
+};

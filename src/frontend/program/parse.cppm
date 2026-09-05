@@ -1,6 +1,6 @@
 module carven:frontend.program.parse;
 
-import :compilation.request;
+import :compiler.request;
 import :diagnostics.diagnostic;
 import :frontend.program;
 import :source.manager;

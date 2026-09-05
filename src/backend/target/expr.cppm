@@ -3,10 +3,15 @@ module carven:backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.symbol;
+import :support.unique_indirect;
 import std;
+
+struct TargetExpr;
+struct TargetStmt;
 
 enum class TargetPrefixOperator {
     AddressOf,
+    Dereference,
     LogicalNot,
     Negate,
     BitwiseNot,
@@ -35,6 +40,7 @@ enum class TargetBinaryOperator {
 
 enum class TargetPrecedence {
     Lowest,
+    Conditional,
     LogicalOr,
     LogicalAnd,
     BitwiseOr,
@@ -102,50 +108,56 @@ struct TargetLiteralExpr final {
 
 struct TargetPrefixExpr final {
     TargetPrefixOperator op;
-    TargetExprID operand_id;
+    UniqueIndirect<TargetExpr> operand;
 };
 
 struct TargetBinaryExpr final {
-    TargetExprID left;
+    UniqueIndirect<TargetExpr> left;
     TargetBinaryOperator op;
-    TargetExprID right;
+    UniqueIndirect<TargetExpr> right;
+};
+
+struct TargetConditionalExpr final {
+    UniqueIndirect<TargetExpr> condition;
+    UniqueIndirect<TargetExpr> true_value;
+    UniqueIndirect<TargetExpr> false_value;
 };
 
 struct TargetCallExpr final {
-    TargetExprID callee;
+    UniqueIndirect<TargetExpr> callee;
     std::vector<TargetTypeID> template_argument_type_ids;
-    std::vector<TargetExprID> arguments;
+    std::vector<TargetExpr> arguments;
 };
 
 struct TargetArrayExpr final {
     TargetTypeID element_type_id;
-    TargetExprID extent;
-    std::vector<TargetExprID> element_ids;
+    UniqueIndirect<TargetExpr> extent;
+    std::vector<TargetExpr> elements;
 };
 
 struct TargetFieldInitializer final {
     TargetIdentifier name;
-    TargetExprID value;
+    UniqueIndirect<TargetExpr> value;
 };
 
 struct TargetConstructionExpr final {
     TargetTypeID type;
-    std::variant<std::monostate, std::vector<TargetExprID>, std::vector<TargetFieldInitializer>>
+    std::variant<std::monostate, std::vector<TargetExpr>, std::vector<TargetFieldInitializer>>
         initializer;
 };
 
 struct TargetIndexExpr final {
-    TargetExprID operand_id;
-    TargetExprID index;
+    UniqueIndirect<TargetExpr> operand;
+    UniqueIndirect<TargetExpr> index;
 };
 
 struct TargetMemberExpr final {
-    TargetExprID operand_id;
+    UniqueIndirect<TargetExpr> operand;
     TargetMemberName name;
 };
 
 struct TargetScopeMemberExpr final {
-    TargetExprID operand_id;
+    UniqueIndirect<TargetExpr> operand;
     TargetMemberName name;
 };
 
@@ -154,48 +166,14 @@ struct TargetStaticMemberExpr final {
     TargetIdentifier name;
 };
 
-struct TargetForwardExpr final {
-    TargetIdentifier name;
-};
-
 struct TargetStaticCastExpr final {
     TargetTypeID type;
-    TargetExprID operand_id;
+    UniqueIndirect<TargetExpr> operand;
 };
 
-enum class TargetIIFEReason {
-    ConditionalExpression,
-    MatchExpression,
-    TryBody,
-    FailureBoundary,
-};
-
-struct TargetLambdaExpr final {
-    TargetIIFEReason reason;
-    std::vector<TargetStmtID> body;
-};
-
-enum class TargetCaptureMode {
-    Value,
-    Write,
-};
-
-struct TargetClosureCapture final {
-    TargetCaptureMode mode;
-    TargetIdentifier source;
-    TargetIdentifier name;
-};
-
-struct TargetClosureParameter final {
-    std::optional<TargetIdentifier> name;
-    TargetTypeID type;
-};
-
-struct TargetClosureExpr final {
-    std::vector<TargetClosureCapture> captures;
-    std::vector<TargetClosureParameter> parameters;
+struct TargetRegionExpr final {
     TargetTypeID result;
-    std::vector<TargetStmtID> body;
+    std::vector<TargetStmt> body;
 };
 
 using TargetExprValue = std::variant<
@@ -204,6 +182,7 @@ using TargetExprValue = std::variant<
     TargetLiteralExpr,
     TargetPrefixExpr,
     TargetBinaryExpr,
+    TargetConditionalExpr,
     TargetCallExpr,
     TargetArrayExpr,
     TargetConstructionExpr,
@@ -211,10 +190,8 @@ using TargetExprValue = std::variant<
     TargetMemberExpr,
     TargetScopeMemberExpr,
     TargetStaticMemberExpr,
-    TargetForwardExpr,
     TargetStaticCastExpr,
-    TargetLambdaExpr,
-    TargetClosureExpr>;
+    TargetRegionExpr>;
 
 struct TargetExpr final {
     TargetExprValue value;

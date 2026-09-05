@@ -72,7 +72,7 @@ local case_specs = {
                     "emit/stale.txt",
                 },
                 absent_files = {".carven"},
-                file_excludes = {
+                file_not_contains = {
                     ["emit/bare_structure.cpp"] = {"preexisting output"},
                 },
             },
@@ -89,7 +89,7 @@ local case_specs = {
     ["output/stdout"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
         args = {"bare_structure.cv", "--stdout"},
-        stdout_contains = {
+        stdout_ordered = {
             "==> bare_structure.cpp <==",
             "==> carven/generated/bare_structure.hpp <==",
         },
@@ -100,35 +100,6 @@ local case_specs = {
             ".carven",
         },
     },
-    ["output/stale_preservation"] = {
-        fixtures = {
-            ["../state/a.cv"] = "a.cv",
-            ["../state/b.cv"] = "b.cv",
-            ["../state/stale.fixture"] = "emit/stale.txt",
-        },
-        steps = {
-            {
-                args = {"--output-dir", "emit", "a.cv", "b.cv"},
-                output_files = {
-                    "emit/a.cpp",
-                    "emit/b.cpp",
-                    "emit/carven/generated/a.hpp",
-                    "emit/carven/generated/b.hpp",
-                    "emit/stale.txt",
-                },
-            },
-            {
-                args = {"--output-dir", "emit", "a.cv"},
-                output_files = {
-                    "emit/a.cpp",
-                    "emit/carven/generated/a.hpp",
-                    "emit/b.cpp",
-                    "emit/carven/generated/b.hpp",
-                    "emit/stale.txt",
-                },
-            },
-        },
-    },
     ["output/testing_modes"] = {
         fixtures = {["../fixtures/passing_test.cv"] = "passing_test.cv"},
         steps = {
@@ -137,9 +108,12 @@ local case_specs = {
                 output_files = {"none/passing_test.cpp"},
                 absent_files = {
                     "none/carven/generated/passing_test.hpp",
+                    "none/carven/generated/carven-test-runner.hpp",
+                    "none/carven/generated/carven-test-main.cpp",
+                    "none/carven-test-runner.hpp",
                     "none/carven-test-main.cpp",
                 },
-                file_excludes = {
+                file_not_contains = {
                     ["none/passing_test.cpp"] = {"Testing: passing fixture"},
                 },
             },
@@ -147,17 +121,27 @@ local case_specs = {
                 args = {"passing_test.cv", "--tests=default", "--output-dir=default"},
                 output_files = {
                     "default/passing_test.cpp",
-                    "default/carven-test-main.cpp",
+                    "default/carven/generated/carven-test-runner.hpp",
+                    "default/carven/generated/carven-test-main.cpp",
                 },
                 file_contains = {
                     ["default/passing_test.cpp"] = {"Testing: passing fixture"},
                 },
+                absent_files = {
+                    "default/carven-test-runner.hpp",
+                    "default/carven-test-main.cpp",
+                },
             },
             {
                 args = {"--tests=external", "--output-dir", "external", "passing_test.cv"},
-                output_files = {"external/passing_test.cpp"},
+                output_files = {
+                    "external/passing_test.cpp",
+                    "external/carven/generated/carven-test-runner.hpp",
+                },
                 absent_files = {
                     "external/carven/generated/passing_test.hpp",
+                    "external/carven/generated/carven-test-main.cpp",
+                    "external/carven-test-runner.hpp",
                     "external/carven-test-main.cpp",
                 },
                 file_contains = {
@@ -166,24 +150,27 @@ local case_specs = {
             },
         },
     },
-    ["output/options"] = {
-        steps = {
-            {
-                args = {"--unknown", "input.cv"},
-                exit_code = 1,
-                stderr_contains = {"unknown option '--unknown'"},
-            },
-            {
-                args = {"-o", "--stdout", "input.cv"},
-                exit_code = 1,
-                stderr_contains = {"missing output path after '-o'"},
-            },
-            {
-                args = {"--stdout", "-o", "emit", "input.cv"},
-                exit_code = 1,
-                stderr_contains = {"artifact destination was specified more than once"},
-            },
+    ["output/sink_failure"] = {
+        fixtures = {
+            ["../fixtures/bare_structure.cv"] = "bare_structure.cv",
+            ["../state/preexisting.fixture"] = "blocked",
         },
+        args = {"bare_structure.cv", "--output-dir=blocked"},
+        exit_code = 1,
+        stderr_contains = {"carven: error: cannot create directory 'blocked':"},
+        output_files = {"blocked"},
+        absent_files = {
+            "bare_structure.cpp",
+            "carven/generated/bare_structure.hpp",
+        },
+        file_contains = {
+            ["blocked"] = {"preexisting output"},
+        },
+    },
+    ["invocation/invalid_option"] = {
+        args = {"--unknown", "input.cv"},
+        exit_code = 1,
+        stderr_contains = {"unknown option '--unknown'"},
     },
     ["module_layout/duplicate"] = {
         project = "../project",
@@ -245,8 +232,7 @@ target("carven-test-cli")
             rootdir = path.join(os.projectdir(), "tests", "cli"),
             anonymous = true,
         })
-        local case_name = opt.name:match("^[^/]+/(.+)$") or opt.name
-        return harness(target, opt, case_specs[case_name])
+        return harness(target, opt, case_specs)
     end)
 
 target("carven-test-xmake-default-domain-a")

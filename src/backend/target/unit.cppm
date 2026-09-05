@@ -1,7 +1,7 @@
 module carven:backend.target.unit;
 
-import :artifacts;
-import :backend.target.ids;
+import :backend.target.item;
+import :backend.target.origin;
 import std;
 
 struct TargetDirective final {
@@ -10,18 +10,21 @@ struct TargetDirective final {
 
 struct TargetDirectiveGroup final {
     std::vector<TargetDirective> directives;
+    std::optional<TargetAttribution> attribution;
+};
+
+struct TargetDirectiveInputs final {
+    std::vector<TargetDirectiveGroup> prefix_groups;
+    std::vector<TargetDirectiveGroup> suffix_groups;
 };
 
 struct TargetUnitSections final {
-    std::vector<TargetItemID> preamble;
-    std::vector<TargetItemID> body;
-    std::vector<TargetItemID> epilogue;
+    std::vector<TargetItem> preamble;
+    std::vector<TargetItem> body;
+    std::vector<TargetItem> epilogue;
 };
 
-struct TargetUnitRoot final {
-    std::string logical_path;
-    GeneratedArtifactRole role;
-    ArtifactSourceMappingPolicy source_mapping;
+struct TargetUnitContents final {
     std::vector<TargetDirectiveGroup> directive_groups;
     TargetUnitSections sections;
 };

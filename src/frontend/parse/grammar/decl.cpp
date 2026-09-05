@@ -219,7 +219,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
     }
 
     if (check(TokenKind::Enum)) {
-        auto parsed = parse_enum(std::move(visibility));
+        auto parsed = parse_enum(visibility);
         if (!parsed) {
             return std::nullopt;
         }
@@ -230,7 +230,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Struct)) {
-        auto parsed = parse_struct(std::move(visibility));
+        auto parsed = parse_struct(visibility);
         if (!parsed) {
             return std::nullopt;
         }
@@ -241,7 +241,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Fn)) {
-        auto parsed = parse_function(std::move(visibility), cpp_export, cpp_import);
+        auto parsed = parse_function(visibility, cpp_export, cpp_import);
         if (!parsed) {
             return std::nullopt;
         }
@@ -252,14 +252,14 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Const)) {
-        auto parsed = parse_constant(std::move(visibility));
+        auto parsed = parse_constant(visibility);
         if (!parsed) {
             return std::nullopt;
         }
         auto [end, declaration] = std::move(*parsed);
         return builder.append_item({
             .span = join(start, end),
-            .value = std::move(declaration),
+            .value = declaration,
         });
     }
     if (is_bare && check(TokenKind::Test)) {
@@ -315,55 +315,51 @@ auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
     expect(TokenKind::LeftBrace, "expected '{' after enum name");
 
     auto cases = std::vector<ASTEnumCase> {};
-    if (check(TokenKind::RightBrace)) {
-        fail_here("an enum must contain at least one member");
-    } else {
-        while (!failed) {
-            const auto member_name = expect(TokenKind::Identifier, "expected enum case name");
-            auto payload_types = std::vector<ASTTypeID> {};
-            auto initializer = std::optional<ASTExprID> {};
-            auto end = member_name.span;
-            if (match(TokenKind::LeftParen)) {
-                if (check(TokenKind::RightParen)) {
-                    fail_here("an enum payload list must contain at least one type");
-                } else {
-                    while (!failed) {
-                        const auto type = parse_type();
-                        if (!type) {
-                            return std::nullopt;
-                        }
-                        payload_types.push_back(*type);
-                        if (!match(TokenKind::Comma)) {
-                            break;
-                        }
-                        if (check(TokenKind::RightParen)) {
-                            break;
-                        }
+    while (!failed && !check(TokenKind::RightBrace)) {
+        const auto member_name = expect(TokenKind::Identifier, "expected enum case name");
+        auto payload_types = std::vector<ASTTypeID> {};
+        auto initializer = std::optional<ASTExprID> {};
+        auto end = member_name.span;
+        if (match(TokenKind::LeftParen)) {
+            if (check(TokenKind::RightParen)) {
+                fail_here("an enum payload list must contain at least one type");
+            } else {
+                while (!failed) {
+                    const auto type = parse_type();
+                    if (!type) {
+                        return std::nullopt;
+                    }
+                    payload_types.push_back(*type);
+                    if (!match(TokenKind::Comma)) {
+                        break;
+                    }
+                    if (check(TokenKind::RightParen)) {
+                        break;
                     }
                 }
-                const auto right =
-                    expect(TokenKind::RightParen, "expected ')' after enum payload types");
-                end = right.span;
             }
-            if (match(TokenKind::Equal)) {
-                initializer = parse_expression();
-                if (!initializer) {
-                    return std::nullopt;
-                }
-                end = builder.expression(*initializer).span;
+            const auto right =
+                expect(TokenKind::RightParen, "expected ')' after enum payload types");
+            end = right.span;
+        }
+        if (match(TokenKind::Equal)) {
+            initializer = parse_expression();
+            if (!initializer) {
+                return std::nullopt;
             }
-            cases.push_back({
-                .span = join(member_name.span, end),
-                .name_span = member_name.span,
-                .payload_types = std::move(payload_types),
-                .initializer = initializer,
-            });
-            if (!match(TokenKind::Comma)) {
-                break;
-            }
-            if (check(TokenKind::RightBrace)) {
-                break;
-            }
+            end = builder.expression(*initializer).span;
+        }
+        cases.push_back({
+            .span = join(member_name.span, end),
+            .name_span = member_name.span,
+            .payload_types = std::move(payload_types),
+            .initializer = initializer,
+        });
+        if (!match(TokenKind::Comma)) {
+            break;
+        }
+        if (check(TokenKind::RightBrace)) {
+            break;
         }
     }
     const auto right = expect(TokenKind::RightBrace, "expected '}' after enum cases");
@@ -374,7 +370,7 @@ auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
         std::pair {
             right.span,
             ASTEnumDecl {
-                .visibility = std::move(visibility),
+                .visibility = visibility,
                 .name_span = name.span,
                 .underlying_type = underlying,
                 .cases = std::move(cases),
@@ -417,7 +413,7 @@ auto Parser::parse_struct(ASTDeclarationVisibility visibility) noexcept
         std::pair {
             right.span,
             ASTStructDecl {
-                .visibility = std::move(visibility),
+                .visibility = visibility,
                 .name_span = name.span,
                 .fields = std::move(fields),
             },
@@ -497,13 +493,13 @@ auto Parser::parse_function(
         std::pair {
             *end,
             ASTFunctionDecl {
-                .visibility = std::move(visibility),
+                .visibility = visibility,
                 .cpp_export = cpp_export,
                 .name_span = name.span,
                 .parameters = std::move(parameters),
                 .result_type = result_type,
                 .throw_clause = std::move(throw_clause),
-                .implementation = std::move(*implementation),
+                .implementation = *implementation,
             },
         },
     };
@@ -538,7 +534,7 @@ auto Parser::parse_constant(ASTDeclarationVisibility visibility) noexcept
         std::pair {
             semicolon.span,
             ASTConstantDecl {
-                .visibility = std::move(visibility),
+                .visibility = visibility,
                 .name_span = name.span,
                 .type = type,
                 .initializer = *initializer,

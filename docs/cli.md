@@ -1,7 +1,8 @@
 # Command-line interface
 
 The `carven` command compiles an explicit batch of `.cv` source files, inspects
-frontend representations, and reports its version and command help.
+frontend representations, and reports its version and command help. This
+document defines invocation, input paths, output writes, and process behavior.
 
 ## Invocation
 
@@ -12,8 +13,7 @@ carven dump ast <source-file>
 ```
 
 `-h` and `--help` print command help. `-V` and `--version` print exactly
-`carven v0.1.0`; the CLI declares this value directly and does not obtain it
-from Xmake project metadata. With no arguments, `carven` prints the top-level
+`carven v0.1.0`. With no arguments, `carven` prints the top-level
 help and succeeds.
 
 ## Source inputs
@@ -55,16 +55,15 @@ The long filesystem option also accepts `--output-dir=<dir>`. Repeating or
 mixing destination options is an error. The default mode does not create an
 implicit output directory.
 
-Module implementation artifacts mirror each input's canonical path below the
-selected root. Interface component headers use deterministic backend-planned
-logical paths below `carven/generated/`. After successful compilation and
-generation, Carven writes the complete artifact set in logical-path order: it
-creates parent directories, truncates existing files, and writes their new
-contents. It neither removes stale or unrelated files nor checks whether the
-root is isolated or safe for a particular build target. The first I/O failure
-stops the write; files earlier in the order may already have changed. Directory
-isolation, stale cleanup, failure protection, and content-stable incremental
-promotion belong to the caller or build system.
+The generated artifact roles and logical paths are defined by
+[Toolchain and artifacts](toolchain.md#artifact-paths). After successful
+compilation and generation, Carven writes the complete artifact set in
+logical-path order: it creates parent directories, truncates existing files,
+and writes their new contents. It neither removes stale or unrelated files nor
+checks whether the root is isolated or safe for a particular build target. The
+first I/O failure stops the write; files earlier in the order may already have
+changed. Directory isolation, stale cleanup, failure protection, and
+content-stable incremental promotion belong to the caller or build system.
 
 `--stdout` selects no filesystem sink. It prints every artifact in canonical
 order with a heading of this form:
@@ -82,18 +81,22 @@ Test emission is omitted by default. One explicit mode may be selected:
 
 | Option | Generated test artifacts |
 | --- | --- |
-| `--tests=default` | Registered inline tests and `carven-test-main.cpp` |
-| `--tests=external` | Registered inline tests without a generated runner |
+| `--tests=default` | Module test functions, the generated runner header, and the default test entry |
+| `--tests=external` | Module test functions and the generated runner header, without a generated entry |
 
 The two options are mutually exclusive and cannot be repeated. Test emission
 does not suppress a source `main`; the downstream build chooses which generated
-translation units form an application or test executable.
+translation units form an application or test executable. External mode
+supplies the generated runner function through the private companion header;
+its consumer owns the process entry point and may pass a custom reporter. The
+exact paths and companion boundary are defined by
+[Toolchain and artifacts](toolchain.md#artifact-paths).
 
 ## Linkage domain
 
-`--linkage-domain <value>` (also `--linkage-domain=<value>`) supplies opaque
-caller identity for the deterministic private generated namespace. It must be
-nonempty and may be specified at most once.
+`--linkage-domain=<value>` supplies opaque caller identity for the deterministic
+private generated namespace. The equals sign is required. The value must be
+nonempty, and the option may be specified at most once.
 
 When the option is omitted, the driver derives a path domain from the
 lexically-normalized absolute artifact root. The artifact root is the output
@@ -105,8 +108,7 @@ A logical generation target must reuse its domain across edits. Different
 targets whose generated objects may enter the same linked image must use
 different domains. Moving the output root changes the CLI default; callers that
 need identity across output layouts or checkouts must provide an explicit
-value. Xmake does so by default using the normalized absolute project directory
-plus `target:fullname()`.
+value.
 
 Source text, module membership, source order, and source locations are not
 linkage-domain inputs. The linkage domain does not alter Carven nominal

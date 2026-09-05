@@ -10,8 +10,8 @@ constexpr auto linkage_domain_tag = std::string_view("carven-linkage-domain-v2")
 constexpr auto explicit_domain_tag = std::string_view("explicit");
 constexpr auto artifact_root_domain_tag = std::string_view("artifact-root");
 constexpr auto no_tests_tag = std::string_view("tests:none");
-constexpr auto external_tests_tag = std::string_view("tests:external-runner");
-constexpr auto default_tests_tag = std::string_view("tests:default-runner");
+constexpr auto runner_header_tests_tag = std::string_view("tests:external-runner");
+constexpr auto runner_entry_point_tests_tag = std::string_view("tests:default-runner");
 constexpr auto module_namespace_tag = std::string_view("carven-module-namespace-v1");
 
 class Sha256 final {
@@ -186,20 +186,22 @@ auto LinkageDomainID::namespace_identifier() const noexcept -> std::string {
     return std::format("d_{}", hex());
 }
 
-auto derive_linkage_domain_id(const TargetGenerationRequest& request) noexcept -> LinkageDomainID {
+auto derive_linkage_domain_id(const TargetPlanningRequest& request) noexcept -> LinkageDomainID {
     auto digest = Sha256();
     digest.append_field(linkage_domain_tag);
     switch (request.test_mode) {
-        case TestGenerationMode::None:           digest.append_field(no_tests_tag); break;
-        case TestGenerationMode::ExternalRunner: digest.append_field(external_tests_tag); break;
-        case TestGenerationMode::DefaultRunner:  digest.append_field(default_tests_tag); break;
+        case TestGenerationMode::None:         digest.append_field(no_tests_tag); break;
+        case TestGenerationMode::RunnerHeader: digest.append_field(runner_header_tests_tag); break;
+        case TestGenerationMode::RunnerEntryPoint:
+            digest.append_field(runner_entry_point_tests_tag);
+            break;
     }
     switch (request.linkage_domain.kind()) {
         case LinkageDomainKind::Explicit:     digest.append_field(explicit_domain_tag); break;
         case LinkageDomainKind::ArtifactRoot: digest.append_field(artifact_root_domain_tag); break;
     }
     digest.append_field(request.linkage_domain.value());
-    return LinkageDomainID(identity128(std::move(digest)));
+    return LinkageDomainID(identity128(digest));
 }
 
 ModuleNamespaceID::ModuleNamespaceID(std::array<std::uint8_t, 16> bytes) noexcept
@@ -218,5 +220,5 @@ auto derive_module_namespace_id(std::string_view canonical_module_path) noexcept
     auto digest = Sha256();
     digest.append_field(module_namespace_tag);
     digest.append_field(canonical_module_path);
-    return ModuleNamespaceID(identity128(std::move(digest)));
+    return ModuleNamespaceID(identity128(digest));
 }

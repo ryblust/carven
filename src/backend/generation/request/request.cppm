@@ -4,8 +4,8 @@ import std;
 
 enum class TestGenerationMode {
     None,
-    ExternalRunner,
-    DefaultRunner,
+    RunnerHeader,
+    RunnerEntryPoint,
 };
 
 enum class LinkageDomainKind {
@@ -46,7 +46,7 @@ private:
     std::string domain_value;
 };
 
-struct TargetGenerationRequest final {
+struct TargetPlanningRequest final {
     TestGenerationMode test_mode;
     LinkageDomain linkage_domain;
 };

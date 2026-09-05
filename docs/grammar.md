@@ -10,10 +10,6 @@ The grammar owns:
 - expression precedence and associativity;
 - parser-level disambiguation that can be decided from tokens and delimiters.
 
-The grammar does not define the meaning of accepted programs, name resolution,
-type compatibility, control-flow validity, pattern coverage, diagnostics, or
-generated output.
-
 Lexer and parser behavior conform to the productions and disambiguation rules
 in this document. Accepted syntax may still violate semantic constraints;
 only the complete productions defined here are accepted as AST forms.
@@ -476,7 +472,7 @@ function-type-parameter-list = function-type-parameter,
 function-type-parameter = [ access-marker ], type;
 ```
 
-There is no initial type-alias declaration, tuple type syntax, generic
+There is no type-alias declaration, tuple type syntax, generic
 parameter declaration, or reference/pointer type syntax.
 
 ## 5. Statements and Blocks

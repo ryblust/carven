@@ -7,24 +7,14 @@ import :backend.target.origin;
 import :backend.target.raw;
 import std;
 
-enum class TargetVerticalSeparation {
-    Line,
-    BlankLine,
-};
+struct TargetItem;
 
 struct TargetNamespace final {
     std::optional<TargetName> name;
-    std::vector<TargetItemID> items;
-    TargetVerticalSeparation body_separation;
+    std::vector<TargetItem> items;
 };
 
-struct TargetItemGroup final {
-    std::vector<TargetItemID> items;
-    TargetVerticalSeparation separation;
-};
-
-using TargetItemValue =
-    std::variant<TargetDecl, TargetNamespace, TargetRawFragment, TargetItemGroup>;
+using TargetItemValue = std::variant<TargetDecl, TargetNamespace, TargetRawFragment>;
 
 struct TargetItem final {
     TargetItemValue value;

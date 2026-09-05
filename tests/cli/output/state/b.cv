@@ -1,3 +1,0 @@
-export struct ValueB {
-    value: i32,
-}

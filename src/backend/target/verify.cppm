@@ -7,28 +7,45 @@ import :backend.target.type;
 import :backend.target.unit;
 import std;
 
-enum class TargetUnitViolationKind {
-    InvalidReference,
-    InvalidOwnership,
-    InvalidCycle,
-    InvalidAttribution,
-    InvalidStructure,
+class TargetTestingFixture;
+class TargetUnitBuilder;
+
+enum class TargetSealViolationKind {
+    InvalidTypeReference,
     InvalidControl,
-    OrphanNode,
 };
 
-struct TargetUnitViolation final {
-    TargetUnitViolationKind kind;
+struct TargetSealViolation final {
+    TargetSealViolationKind kind;
     std::string message;
 };
 
-struct TargetUnitValidationView final {
-    std::span<const TargetType> types;
-    std::span<const TargetExpr> expressions;
-    std::span<const TargetStmt> statements;
-    std::span<const TargetItem> items;
-    const TargetUnitRoot& root;
+class TargetVerificationInput final {
+public:
+    auto identity() const noexcept -> TargetUnitIdentity { return unit_identity; }
+    auto types() const noexcept -> std::span<const TargetType> { return type_rows; }
+    auto sections() const noexcept -> const TargetUnitSections& { return *unit_sections; }
+
+private:
+    TargetVerificationInput(
+        TargetUnitIdentity identity,
+        std::span<const TargetType> types,
+        const TargetUnitSections& sections
+    ) noexcept
+        : unit_identity(identity),
+          type_rows(types),
+          unit_sections(std::addressof(sections)) {}
+
+    TargetUnitIdentity unit_identity;
+    std::span<const TargetType> type_rows;
+    const TargetUnitSections* unit_sections;
+
+    friend class TargetTestingFixture;
+    friend class TargetUnitBuilder;
 };
 
-auto validate_target_unit(TargetUnitValidationView unit) noexcept
-    -> std::expected<void, TargetUnitViolation>;
+auto validate_target_unit(const TargetVerificationInput& input) noexcept
+    -> std::expected<void, TargetSealViolation>;
+
+auto validate_jumps(const TargetUnitSections& sections) noexcept
+    -> std::expected<void, TargetSealViolation>;

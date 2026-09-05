@@ -41,7 +41,7 @@ TEST_CASE("Parser: ordinary and branch blocks preserve different result rules") 
     CHECK(ast.branch_block(*value_if.else_branch).result.has_value());
 }
 
-TEST_CASE("Parser: patterns and match arm bodies are independent typed families") {
+TEST_CASE("Parser: patterns own inline type children and typed match-arm bodies") {
     const auto result = parse_valid(
         "fn classify(value) {\n"
         " match value {\n"
@@ -76,6 +76,8 @@ TEST_CASE("Parser: patterns and match arm bodies are independent typed families"
 
     const auto& array_constraint = get<ASTConstraintPattern>(ast.pattern(match.arms[3].pattern));
     CHECK(is<ASTArrayType>(array_constraint.operand));
+    REQUIRE_EQ(ast.types().size(), 1u);
+    CHECK(is<ASTNamedType>(ast.types().front()));
 
     parse_valid("fn f() { match value { _ | 1 => value() } }");
     check_invalid("fn f() { match value { is 1 => value() } }");

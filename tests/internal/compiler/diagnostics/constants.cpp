@@ -6,8 +6,8 @@ module carven:test.internal.compiler.diagnostics.constants;
 
 import :artifacts;
 import :backend.generation.request;
-import :compilation.request;
 import :compiler.compile;
+import :compiler.request;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
 import :source.manager;
@@ -33,7 +33,7 @@ struct VisibilityExpectation final {
 };
 
 auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modules) noexcept
-    -> std::expected<Diagnosed<ArtifactSet>, Diagnostics> {
+    -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
     auto inputs = std::vector<CompilationModuleInput>();
     inputs.reserve(modules.size());
     for (const auto& source_module : modules) {
@@ -52,7 +52,7 @@ auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modu
     return compile(
         sources,
         CompilationRequest {.modules = inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:constants").value(),
         }
@@ -196,6 +196,43 @@ TEST_CASE("Top-level constants: cycles retain one stable diagnostic") {
         REQUIRE(diagnostic->attachment.primary.has_value());
         REQUIRE_EQ(diagnostic->attachment.related.size(), 2uz);
     }
+
+    SUBCASE("numeric enum case cycle") {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "enum-cycle.cv",
+                .path = "enum_cycle",
+                .source = "enum Code: i32 {\n"
+                          "    First = Code::Second as i32,\n"
+                          "    Second = Code::First as i32,\n"
+                          "}\n",
+            },
+        });
+
+        const auto result = compile_fixture(sources, modules);
+
+        REQUIRE_FALSE(result.has_value());
+        CHECK_EQ(diagnostic_count(result.error(), "CV-CONST-CYCLE"), 1uz);
+    }
+}
+
+TEST_CASE("Top-level constants: enum owners resolve before case lookup") {
+    auto sources = SourceManager();
+    static constexpr auto modules = std::to_array<ModuleFixture>({
+        {
+            .origin = "enum-owner.cv",
+            .path = "enum_owner",
+            .source = "const invalid = Empty::Missing;\n"
+                      "enum Empty {}\n",
+        },
+    });
+
+    const auto result = compile_fixture(sources, modules);
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK_EQ(diagnostic_count(result.error(), "CV-TYPE-ENUM-EMPTY"), 1uz);
+    CHECK_EQ(diagnostic_count(result.error(), "CV-TYPE-MEMBER-UNRESOLVED"), 0uz);
 }
 
 TEST_CASE("Top-level constants: lexical facts stay outside declaration elaboration") {
@@ -213,6 +250,34 @@ TEST_CASE("Top-level constants: lexical facts stay outside declaration elaborati
     REQUIRE_FALSE(result.has_value());
     REQUIRE_EQ(result.error().size(), 1uz);
     CHECK_EQ(diagnostic_count(result.error(), "CV-CONST-INITIALIZER"), 1uz);
+}
+
+TEST_CASE("Top-level constants: a nullary enum case remains a value") {
+    static constexpr auto cases = std::to_array<std::string_view>({
+        "enum Choice { Empty }\n"
+        "const invalid = Choice::Empty();\n",
+        "enum Choice { Empty, Value(i32) }\n"
+        "const invalid = Choice::Empty();\n",
+    });
+
+    for (const auto source : cases) {
+        CAPTURE(source);
+        auto sources = SourceManager();
+        const auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "nullary-call.cv",
+                .path = "nullary_call",
+                .source = source,
+            },
+        });
+        const auto result = compile_fixture(sources, modules);
+
+        REQUIRE_FALSE(result.has_value());
+        const auto* diagnostic = find_diagnostic(result.error(), "CV-TYPE-ENUM-CASE-ARITY");
+        REQUIRE(diagnostic != nullptr);
+        REQUIRE(diagnostic->attachment.primary.has_value());
+        CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), "Choice::Empty()");
+    }
 }
 
 TEST_CASE("Top-level constants: published values close their declared surface") {
@@ -252,5 +317,21 @@ TEST_CASE("Top-level constants: published values close their declared surface") 
         const auto* diagnostic = find_diagnostic(result.error(), "CV-TYPE-VISIBILITY-LEAK");
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
+    }
+
+    SUBCASE("normalization removes an implementation-only enum identity") {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "normalized-surface.cv",
+                .path = "normalized_surface",
+                .source = "private enum Hidden: i32 { Value = 7 }\n"
+                          "export const exposed: i32 = Hidden::Value as i32;\n",
+            },
+        });
+
+        const auto result = compile_fixture(sources, modules);
+
+        CHECK(result.has_value());
     }
 }

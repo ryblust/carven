@@ -7,6 +7,7 @@ module carven:test.internal.artifacts.materialize;
 import :artifacts;
 import :artifacts.materialize;
 import :support.file;
+import :test.internal.harness.death;
 import std;
 
 namespace {
@@ -56,8 +57,8 @@ auto contents(const std::filesystem::path& path) noexcept -> std::string {
 
 } // namespace
 
-TEST_CASE("Artifacts: ArtifactSet establishes one canonical order") {
-    const auto artifacts = ArtifactSet({
+TEST_CASE("Artifacts: GeneratedArtifactSet establishes one canonical order") {
+    const auto artifacts = GeneratedArtifactSet({
         generated("nested/api.hpp", "interface"),
         generated("api.cpp", "implementation"),
         generated("api.hpp", "interface"),
@@ -69,16 +70,54 @@ TEST_CASE("Artifacts: ArtifactSet establishes one canonical order") {
     CHECK_EQ(artifacts.artifacts()[2].logical_path, "nested/api.hpp");
 }
 
+TEST_CASE("Artifacts: logical paths are normalized relative paths") {
+    for (const auto* const valid : {"api.hpp", "carven/api/example.hpp", ".carven-artifacts"}) {
+        CAPTURE(valid);
+        CHECK(validate_artifact_logical_path(valid).has_value());
+    }
+    for (const auto* const invalid : {
+             "",
+             "/api.hpp",
+             "api.hpp/",
+             "carven//api.hpp",
+             "carven/./api.hpp",
+             "carven/../api.hpp",
+             "carven\\api.hpp",
+             "C:/api.hpp",
+         }) {
+        CAPTURE(invalid);
+        CHECK_FALSE(validate_artifact_logical_path(invalid).has_value());
+    }
+}
+
+TEST_CASE("Artifacts: duplicate and prefix-colliding logical paths violate the set invariant") {
+    CHECK(expect_termination("artifact-set-duplicate-logical-path", []() static noexcept {
+        const auto artifacts = GeneratedArtifactSet({
+            generated("module.cpp", "first"),
+            generated("module.cpp", "second"),
+        });
+        static_cast<void>(artifacts);
+    }));
+
+    CHECK(expect_termination("artifact-set-prefix-logical-path", []() static noexcept {
+        const auto artifacts = GeneratedArtifactSet({
+            generated("carven/generated", "file"),
+            generated("carven/generated/module.hpp", "descendant"),
+        });
+        static_cast<void>(artifacts);
+    }));
+}
+
 TEST_CASE("Artifacts: ordinary writes overwrite generated files and preserve stale files") {
     const auto temporary = TemporaryDirectory();
-    const auto initial = ArtifactSet({
+    const auto initial = GeneratedArtifactSet({
         generated("nested/api.cpp", "implementation\n"),
         generated("nested/api.hpp", "interface\n"),
         generated(".carven-artifacts", "ordinary file\n"),
     });
     REQUIRE(write_artifacts(temporary.path(), initial).has_value());
 
-    const auto next = ArtifactSet({generated("nested/api.cpp", "replacement\n")});
+    const auto next = GeneratedArtifactSet({generated("nested/api.cpp", "replacement\n")});
     REQUIRE(write_artifacts(temporary.path(), next).has_value());
 
     CHECK_EQ(contents(temporary.path() / "nested/api.cpp"), "replacement\n");
@@ -89,7 +128,7 @@ TEST_CASE("Artifacts: ordinary writes overwrite generated files and preserve sta
 TEST_CASE("Artifacts: writes fail at the first filesystem error without rollback") {
     const auto temporary = TemporaryDirectory();
     REQUIRE(write_file(temporary.path() / "z", "not a directory\n").has_value());
-    const auto batch = ArtifactSet({
+    const auto batch = GeneratedArtifactSet({
         generated("z/api.cpp", "blocked\n"),
         generated("a.cpp", "written first\n"),
     });

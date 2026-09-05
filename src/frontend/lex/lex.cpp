@@ -297,7 +297,7 @@ private:
                 [&](auto value) noexcept {
                     append_literal_token(TokenLiteralValue {std::move(value)});
                 },
-                std::move(scanned->value)
+                scanned->value
             );
         } else {
             diagnose_invalid(
@@ -323,7 +323,7 @@ private:
         const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
         position = token_start + static_cast<std::uint32_t>(consumed);
         if (scanned.has_value()) {
-            append_literal_token(std::move(scanned->value));
+            append_literal_token(scanned->value);
         } else {
             diagnose_invalid("malformed character literal");
         }
@@ -412,7 +412,11 @@ private:
             }
             position = line_start;
             while (!at_end() && current() != '\n' && current() != '\r') {
-                ++position;
+                if (static_cast<unsigned char>(current()) >= 0x80) {
+                    consume_utf8();
+                } else {
+                    ++position;
+                }
             }
             static_cast<void>(consume_line_ending());
         }

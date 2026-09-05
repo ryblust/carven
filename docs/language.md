@@ -242,8 +242,9 @@ fn describe(value: Value) -> i32 {
 }
 ```
 
-The match subject is evaluated once. A value match requires compatible results
-from every arm.
+The match subject expression is evaluated once. A value match requires
+compatible results from every arm. Guarded place-subject redispatch is defined
+precisely by [Semantics](semantics.md#patterns-and-matches).
 
 ## Failure contracts
 
@@ -297,6 +298,14 @@ Without an expected view, parameters state their types and the result may be
 inferred from returns. Callable views are non-owning and retain the access,
 parameter, result, and failure shape of the callable.
 
+An inferred binding such as `let copy = closure` owns a closure copy. A typed
+binding such as `let view: fn(i32) -> i32 = closure` borrows its target instead.
+Copies retain any Write aliases inside their captured values. Neither copying
+nor borrowing extends the lifetime of those referents. Calling a closure does
+not implicitly snapshot its captures. See the
+[closure contract](semantics.md#lambdas-and-callable-views) for creation,
+assignment, invocation order, escape restrictions, and examples.
+
 ## Tests
 
 A test is a named module-local body. `check` reports a failed condition and
@@ -312,7 +321,8 @@ test "arithmetic produces the expected value" {
 ```
 
 Tests are parsed and analyzed with the rest of their compilation. The selected
-test-emission mode determines whether generated artifacts register and run them.
+test-emission mode determines whether generated artifacts contain and invoke
+them.
 
 ## C++ interoperation
 
@@ -358,5 +368,5 @@ the same unqualified name at global C++ scope; `export(cpp)` declarations use a
 self-contained `carven/api/<module>.hpp` header. Exact validity, type mapping,
 Unicode checks, and C++ responsibilities are defined by
 [semantics.md](semantics.md#c-interoperation). Generated paths and public-output
-stability are defined by
-[compatibility.md](compatibility.md#c-interoperation-artifacts).
+roles are defined by
+[toolchain.md](toolchain.md#artifact-paths).

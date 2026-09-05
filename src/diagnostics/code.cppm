@@ -16,6 +16,7 @@ struct DiagnosticCodeInfo final {
 enum class DiagnosticCode {
     Invalid,
     AccessCallMismatch,
+    AccessBorrowConflict,
     AccessCaptureConflict,
     AccessExpression,
     AccessOperationConflict,

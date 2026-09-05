@@ -1,0 +1,506 @@
+module carven:semantic.analysis.body.context;
+
+import :diagnostics.builder;
+import :diagnostics.code;
+import :frontend.ast.control;
+import :frontend.ast.decl;
+import :frontend.ast.expr;
+import :frontend.ast.literal;
+import :frontend.ast.pattern;
+import :frontend.ast.stmt;
+import :frontend.ast.storage;
+import :frontend.ast.tree;
+import :semantic.analysis.body.builder;
+import :semantic.analysis.body.pipeline;
+import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.constant.proof;
+import :semantic.analysis.coverage;
+import :semantic.analysis.operations;
+import :semantic.analysis.types;
+import :semantic.analysis.validation;
+import :semantic.semir.decl;
+import :semantic.semir.structured;
+import :semantic.semir.type;
+import :support.invariant;
+import :support.visit;
+import std;
+
+namespace body_elaboration {
+
+enum class LocalRole {
+    Local,
+    Parameter,
+    Capture,
+    RangeRead,
+};
+
+struct LocalStorage final {
+    std::variant<BoundStorage, ConstantID, ExpressionHandle, PlaceHandle> storage;
+    ConstructionTypeRef type;
+    bool writable_owner;
+    bool used = false;
+    bool takeable = true;
+    LocalRole role = LocalRole::Local;
+    std::optional<Span> unused_candidate;
+};
+
+struct LocalFrame final {
+    ScopeID scope;
+    LifetimeRegionID lifetime;
+    std::flat_map<std::string, LocalStorage, std::less<>> names;
+};
+
+struct DirectCallable final {
+    CallableID callable;
+};
+struct NoExpressionValue final {};
+
+using ExpressionStorage =
+    std::variant<NoExpressionValue, ExpressionHandle, PlaceHandle, DirectCallable>;
+using PendingFailureTerms = std::vector<FailureTermID>;
+
+struct BuiltExpression final {
+    ConstructionTypeRef type;
+    ExpressionStorage storage;
+    std::optional<ConstantID> constant;
+    PendingFailureTerms pending_failures;
+    bool takeable = true;
+    bool completes = true;
+};
+
+struct BuiltCallArgument final {
+    expression_construction::Argument argument;
+    PendingFailureTerms pending_failures;
+    bool completes;
+};
+
+auto does_not_complete(const BuiltExpression& expression) noexcept -> bool {
+    return !expression.completes;
+}
+
+auto take_pending(BuiltExpression& expression) noexcept -> PendingFailureTerms {
+    return std::exchange(expression.pending_failures, {});
+}
+
+auto append_pending(PendingFailureTerms& destination, const PendingFailureTerms& source) noexcept
+    -> void {
+    for (const auto failure_term_id : source) {
+        if (std::ranges::contains(destination, failure_term_id)) {
+            continue;
+        }
+        destination.push_back(failure_term_id);
+    }
+}
+
+struct FailureContext final {
+    FailureTermID term;
+    bool accepts_catch_residual;
+};
+struct LoopContext final {
+    bool has_break = false;
+    bool has_continue = false;
+};
+struct CatchContext final {
+    FailureTermID failures;
+    FailureContext outward;
+};
+
+struct BuiltPattern final {
+    PatternID pattern;
+    std::vector<LocalBindingID> bindings;
+    bool irrefutable;
+    std::array<bool, 2> booleans;
+    std::flat_set<EnumCaseID> enum_cases;
+};
+
+struct PatternBindingStorage final {
+    BoundStorage storage;
+    ConstructionTypeRef type;
+};
+
+class FullExpressionSuspension final {
+public:
+    explicit FullExpressionSuspension(std::optional<LifetimeRegionID>& active) noexcept
+        : slot(std::addressof(active)),
+          saved(std::exchange(active, std::nullopt)) {}
+    FullExpressionSuspension(const FullExpressionSuspension&) = delete;
+    FullExpressionSuspension(FullExpressionSuspension&&) = delete;
+    auto operator=(const FullExpressionSuspension&) -> FullExpressionSuspension& = delete;
+    auto operator=(FullExpressionSuspension&&) -> FullExpressionSuspension& = delete;
+    ~FullExpressionSuspension() noexcept { *slot = saved; }
+
+private:
+    std::optional<LifetimeRegionID>* slot;
+    std::optional<LifetimeRegionID> saved;
+};
+
+class ReferencePathGuard final {
+public:
+    ReferencePathGuard(bool& active, bool path_is_reachable) noexcept
+        : slot(std::addressof(active)),
+          saved(std::exchange(active, active && path_is_reachable)) {}
+    ReferencePathGuard(const ReferencePathGuard&) = delete;
+    ReferencePathGuard(ReferencePathGuard&&) = delete;
+    auto operator=(const ReferencePathGuard&) -> ReferencePathGuard& = delete;
+    auto operator=(ReferencePathGuard&&) -> ReferencePathGuard& = delete;
+    ~ReferencePathGuard() noexcept { *slot = saved; }
+
+private:
+    bool* slot;
+    bool saved;
+};
+
+auto is_void_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
+    const auto* concrete = std::get_if<TypeID>(&type);
+    if (concrete == nullptr) {
+        return false;
+    }
+    return draft.type_copy(*concrete).value
+        == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}};
+}
+
+auto is_failure_payload_type(const ProgramDraft& draft, TypeID type) noexcept -> bool {
+    const auto& canonical = draft.type_copy(type).value;
+    return std::holds_alternative<StructTypeValue>(canonical)
+        || std::holds_alternative<EnumTypeValue>(canonical);
+}
+
+auto known_boolean_constant(const ProgramDraft& draft, std::optional<ConstantID> constant) noexcept
+    -> std::optional<bool> {
+    if (!constant.has_value()) {
+        return std::nullopt;
+    }
+    const auto fact = draft.constant_copy(*constant);
+    const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
+    return boolean == nullptr ? std::nullopt : std::optional(boolean->value);
+}
+
+auto create_body_failure_term(
+    ProgramDraft& draft,
+    const ConstructionCallableContract& contract,
+    ProgramOriginID origin
+) noexcept -> FailureTermID {
+    const auto actual = draft.add_empty_failure_term();
+    switch (contract.policy) {
+        case FailureContractPolicy::Declared: {
+            draft.require_failure_subset(
+                actual,
+                contract.failures,
+                origin,
+                FailureSubsetRequirementKind::DeclaredCallable
+            );
+            break;
+        }
+        case FailureContractPolicy::Inferred:
+        case FailureContractPolicy::UndeclaredPublished: {
+            draft.equate_failures(actual, contract.failures);
+            if (contract.policy == FailureContractPolicy::UndeclaredPublished) {
+                draft.require_declared_failure_contract(actual, origin);
+            }
+            break;
+        }
+    }
+    return actual;
+}
+
+class BatchElaborator;
+
+class BodyElaborator final {
+public:
+    BodyElaborator(
+        BatchElaborator& owner,
+        ProgramModuleID source_module_id,
+        ModuleID semantic_module_id,
+        ASTView source,
+        BodyReservation&& reservation,
+        std::optional<ConstructionTypeRef> result,
+        FailureTermID outward_failure_term_id,
+        bool accepts_catch_residual,
+        bool test_body
+    ) noexcept;
+
+    auto add_parameter(
+        const ASTFunctionParameter& source,
+        const ConstructionCallableParameter& contract
+    ) noexcept -> AnalysisResult<void>;
+    auto add_capture(Span name, ConstructionTypeRef type, CaptureMode mode) noexcept
+        -> AnalysisResult<void>;
+    auto inferred_result_type() const noexcept -> ConstructionTypeRef;
+    auto local_was_used(std::string_view name) const noexcept -> bool;
+    auto run(ASTBlockID source_body) noexcept -> AnalysisResult<StructuredBodyDraft>;
+
+private:
+    auto draft() const noexcept -> ProgramDraft&;
+    auto catalog() const noexcept -> AnalysisCatalogView;
+    auto import_usage() const noexcept -> ImportUsage&;
+    auto origin(Span span) noexcept -> ProgramOriginID;
+    auto expansion(Span span, ProgramExpansionReason reason) noexcept -> ProgramOriginID;
+    auto spelling(Span span) const noexcept -> std::string;
+    auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
+    auto warn(Span span, DiagnosticCode code, std::string message) noexcept -> void;
+
+    auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef>;
+    auto resolve_construction_type(const ASTConstructionType& type) noexcept
+        -> AnalysisResult<ConstructionTypeRef>;
+    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisResult<std::uint64_t>;
+    auto constant_environment() noexcept -> ConstantExpressionEnvironment;
+    auto resolve_constant_name(std::string_view name, Span span) noexcept
+        -> AnalysisResult<ConstantNamedValue>;
+    auto resolve_enum_qualifier(ASTExprID expression) noexcept
+        -> AnalysisResult<std::optional<TypeID>>;
+    auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
+        -> AnalysisResult<ConstantEnumCase>;
+    auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
+    auto require_writable_storage_type(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        Span span
+    ) noexcept -> AnalysisResult<void>;
+    auto require_bool(BuiltExpression& expression, Span span) noexcept
+        -> AnalysisResult<ExpressionHandle>;
+    auto publish_constant(ConstantFact fact, Span span) noexcept -> BuiltExpression;
+
+    auto active_builder() noexcept -> BodyBuilder&;
+    auto begin_full_expression(Span span) noexcept -> void;
+    auto end_full_expression(Span span) noexcept -> void;
+    auto ensure_reachable_diagnostics(Span span) noexcept -> void;
+    auto empty_region(Span span) noexcept -> DraftRegion;
+    auto take_built(BuiltExpression& value, Span span) noexcept -> DraftExpression;
+    auto make_built(
+        ConstructionTypeRef type,
+        DraftExpressionValue value,
+        Span span,
+        PendingFailureTerms pending = {}
+    ) noexcept -> BuiltExpression;
+
+    auto mark_noncompleting(BuiltExpression value) noexcept -> BuiltExpression;
+    auto append_statement(decltype(DraftStatement::value) value, Span span) noexcept -> void;
+    auto append_expression(BuiltExpression& expression, Span span) noexcept -> void;
+    auto build_branch(
+        ASTBranchBlockID id,
+        bool value_form,
+        std::optional<ConstructionTypeRef>& result_type,
+        PendingFailureTerms& pending
+    ) noexcept -> AnalysisResult<DraftRegion>;
+    auto build_arm(
+        const ASTMatchArmBody& source,
+        bool value_form,
+        std::optional<ConstructionTypeRef>& type,
+        PendingFailureTerms& pending
+    ) noexcept -> AnalysisResult<DraftRegion>;
+    auto build_if(
+        const ASTIfForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected,
+        bool value_form
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+
+    auto push_frame(Span span) noexcept -> void;
+    auto pop_frame(bool diagnose = true) noexcept -> void;
+    auto diagnose_unused(const LocalFrame& frame) noexcept -> void;
+    auto bind_local(Span name, LocalStorage storage, DiagnosticCode duplicate_code) noexcept
+        -> AnalysisResult<void>;
+    auto find_local(std::string_view name) const noexcept -> const LocalStorage*;
+    auto use_local(std::string_view name) noexcept -> LocalStorage*;
+    auto find_global(std::string_view name, Span span) noexcept
+        -> AnalysisResult<const CatalogSymbol*>;
+
+    auto as_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
+        -> AnalysisResult<ExpressionHandle>;
+    auto as_place(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<PlaceHandle>;
+    auto coerce_to(BuiltExpression& expression, ConstructionTypeRef target, Span span) noexcept
+        -> AnalysisResult<void>;
+    auto infer_value_type(BuiltExpression& expression, Span span) noexcept
+        -> AnalysisResult<ConstructionTypeRef>;
+    auto consume_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
+    auto propagate_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
+    auto collect_pending(PendingFailureTerms& destination, BuiltExpression& expression) noexcept
+        -> void;
+    auto discard_pending(BuiltExpression& expression) noexcept -> void;
+    auto route_pending(
+        PendingFailureTerms failure_term_ids,
+        const FailureContext& target,
+        std::optional<Span> propagation_span
+    ) noexcept -> void;
+    auto failure_context_for_current_path() const noexcept -> const FailureContext&;
+
+    auto expression(
+        ASTExprID id,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto literal_expression(
+        const ASTLiteral& literal,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto name_expression(const ASTNameExpr& name, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto array_expression(
+        const ASTArrayExpr& array,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto construction_expression(const ASTConstructionExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto prefix_expression(
+        const ASTPrefixExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto access_expression(const ASTAccessExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto binary_expression(
+        const ASTBinaryExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto cast_expression(const ASTCastExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto call_expression(
+        const ASTCallExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto enum_case_expression(
+        TypeID enumeration_type,
+        std::string_view case_name,
+        std::span<const ASTCallArgument> arguments,
+        Span span,
+        Span case_span
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto enum_case_reference(
+        TypeID enumeration_type,
+        std::string_view case_name,
+        Span span,
+        Span case_span
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto expected_enum_type(std::optional<ConstructionTypeRef> expected, Span span) noexcept
+        -> AnalysisResult<TypeID>;
+    auto index_expression(const ASTIndexExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto member_expression(const ASTMemberExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto member_projection(const ASTMemberExpr& source, Span span, BuiltExpression operand) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
+    auto conditional_expression(
+        const ASTIfForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto match_expression(
+        const ASTMatchForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto match_statement(const ASTMatchForm& source, Span span) noexcept -> AnalysisResult<void>;
+    auto try_expression(
+        const ASTTryForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto try_statement(const ASTTryForm& source, Span span) noexcept -> AnalysisResult<void>;
+    auto build_try(
+        const ASTTryForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected,
+        bool value_form
+    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+    auto build_pattern(
+        ASTPatternID source,
+        ConstructionTypeRef type,
+        std::flat_map<std::string, PatternBindingStorage, std::less<>>& bindings,
+        bool allow_new_bindings,
+        std::flat_set<std::string, std::less<>>& used_bindings
+    ) noexcept -> AnalysisResult<BuiltPattern>;
+    auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
+        -> AnalysisResult<ConstructionTypeRef>;
+    auto build_match(
+        const ASTMatchForm& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected,
+        bool value_form
+    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+    auto lambda_expression(
+        const ASTLambdaExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+
+    auto statement(ASTStmtID id) noexcept -> AnalysisResult<void>;
+    auto variable_statement(const ASTVariableDecl& source) noexcept -> AnalysisResult<void>;
+    auto assignment_statement(const ASTAssignment& source) noexcept -> AnalysisResult<void>;
+    auto update_statement(const ASTUpdate& source) noexcept -> AnalysisResult<void>;
+    auto test_statement(const ASTTestOperationStmt& source, Span span) noexcept
+        -> AnalysisResult<void>;
+    auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisResult<void>;
+    auto while_statement(const ASTWhileStmt& source, Span span) noexcept -> AnalysisResult<void>;
+    auto for_statement(const ASTForStmt& source, Span span) noexcept -> AnalysisResult<void>;
+    auto c_style_for_statement(
+        const ASTForStmt& source,
+        const ASTCStyleForHeader& header,
+        Span span
+    ) noexcept -> AnalysisResult<void>;
+    auto range_for_statement(
+        const ASTForStmt& source,
+        const ASTRangeForHeader& header,
+        Span span
+    ) noexcept -> AnalysisResult<void>;
+    auto if_statement(const ASTIfForm& source, Span span) noexcept -> AnalysisResult<void>;
+    auto block(ASTBlockID id) noexcept -> AnalysisResult<void>;
+    auto branch_block(
+        ASTBranchBlockID id,
+        bool consume_result,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
+    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+
+    auto callable_contract(BuiltExpression& callee, Span span) noexcept
+        -> AnalysisResult<ConstructionCallableContract>;
+    auto build_call_argument(
+        ASTExprID source,
+        const ConstructionCallableParameter& parameter
+    ) noexcept -> AnalysisResult<BuiltCallArgument>;
+
+    BatchElaborator* batch;
+    ProgramModuleID source_module_id;
+    ModuleID semantic_module_id;
+    ASTView ast;
+    BodyBuilder body_builder;
+    LifetimeRegionID static_lifetime_id;
+    std::optional<ConstructionTypeRef> result_type;
+    FailureTermID outward_failure_term_id;
+    bool is_test;
+    std::vector<LocalFrame> frames;
+    std::vector<DraftRegion> regions;
+    FailureContext dead_failure_context;
+    std::vector<FailureContext> failure_contexts;
+    std::vector<CatchContext> catches;
+    std::vector<LoopContext> loops;
+    std::vector<std::size_t> value_boundary_loop_depths;
+    std::optional<LifetimeRegionID> active_full_expression;
+    bool reachable;
+    bool reference_path_reachable;
+    bool reported_unreachable;
+};
+
+class BatchElaborator final {
+public:
+    BatchElaborator(
+        ProgramDraft& builder,
+        AnalysisCatalogView catalog_view,
+        ImportUsage& usage
+    ) noexcept
+        : draft(std::addressof(builder)),
+          catalog_data(catalog_view),
+          imports(std::addressof(usage)) {}
+
+    auto run() noexcept -> AnalysisResult<void>;
+
+    ProgramDraft* draft;
+    AnalysisCatalogView catalog_data;
+    ImportUsage* imports;
+};
+
+} // namespace body_elaboration

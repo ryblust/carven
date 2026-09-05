@@ -3,6 +3,7 @@ module carven:source.provenance.verify.impl;
 import :source.provenance;
 import :source.provenance.ids;
 import :source.provenance.verify;
+import :support.visit;
 import std;
 
 namespace {
@@ -38,7 +39,7 @@ auto verify_compilation_provenance(CompilationProvenanceView provenance) noexcep
     auto module_paths = std::flat_set<CanonicalModulePath>();
     for (auto index = 0uz; index < provenance.module_records().size(); ++index) {
         const auto& module_record = provenance.module_records()[index];
-        if (module_record.source_id.index() >= provenance.source_snapshots().size()) {
+        if (!provenance.contains(module_record.source_id)) {
             return verification_error(
                 CompilationProvenanceErrorKind::MissingModuleSource,
                 std::format("program module {} references an unknown source snapshot", index)
@@ -82,26 +83,51 @@ auto verify_compilation_provenance(CompilationProvenanceView provenance) noexcep
 
     const auto origins = provenance.origins();
     for (auto index = 0uz; index < origins.size(); ++index) {
-        const auto origin_id = ProgramOriginID::from_index(static_cast<std::uint32_t>(index));
+        const auto origin_id = provenance.origin_id_at(index);
         const auto& origin = origins[index];
-        if (origin.source_id.index() >= provenance.source_snapshots().size()) {
-            return verification_error(
-                CompilationProvenanceErrorKind::MissingOriginSource,
-                std::format("program origin {} references an unknown source snapshot", index)
-            );
-        }
-        if (origin.span.end() > provenance.source_snapshot(origin.source_id).size()) {
-            return verification_error(
-                CompilationProvenanceErrorKind::InvalidOriginSpan,
-                std::format("program origin {} extends beyond its source snapshot", index)
-            );
-        }
-        if (origin.parent_origin_id.has_value()
-            && origin.parent_origin_id->index() >= origin_id.index()) {
-            return verification_error(
-                CompilationProvenanceErrorKind::InvalidParentOrigin,
-                std::format("program origin {} does not reference an earlier parent origin", index)
-            );
+        const auto result = std::visit(
+            Overloaded {
+                [&](const ProgramSourceOrigin& value) noexcept
+                    -> std::expected<void, CompilationProvenanceError> {
+                    if (!provenance.contains(value.source_id)) {
+                        return verification_error(
+                            CompilationProvenanceErrorKind::MissingOriginSource,
+                            std::format(
+                                "program origin {} references an unknown source snapshot",
+                                index
+                            )
+                        );
+                    }
+                    if (value.span.end() > provenance.source_snapshot(value.source_id).size()) {
+                        return verification_error(
+                            CompilationProvenanceErrorKind::InvalidOriginSpan,
+                            std::format(
+                                "program origin {} extends beyond its source snapshot",
+                                index
+                            )
+                        );
+                    }
+                    return {};
+                },
+                [&](const ProgramExpansionOrigin& value) noexcept
+                    -> std::expected<void, CompilationProvenanceError> {
+                    if (!provenance.contains(value.parent_origin_id)
+                        || value.parent_origin_id.index() >= origin_id.index()) {
+                        return verification_error(
+                            CompilationProvenanceErrorKind::InvalidParentOrigin,
+                            std::format(
+                                "program origin {} does not reference an earlier local parent",
+                                index
+                            )
+                        );
+                    }
+                    return {};
+                },
+            },
+            origin.value
+        );
+        if (!result.has_value()) {
+            return result;
         }
     }
 

@@ -23,13 +23,13 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdSize:                  return "std::size_t";
         case TargetSymbol::Float:                    return "float";
         case TargetSymbol::Double:                   return "double";
+        case TargetSymbol::RuntimeReadArg:           return "carven::runtime::ReadArg";
+        case TargetSymbol::RuntimeTransfer:          return "carven::runtime::transfer";
         case TargetSymbol::RuntimeOutcome:           return "carven::runtime::Outcome";
         case TargetSymbol::RuntimeStrBytesView:      return "carven::runtime::StrBytesView";
         case TargetSymbol::RuntimeStrCharsView:      return "carven::runtime::StrCharsView";
         case TargetSymbol::RuntimeEntryArgs:         return "carven::runtime::entry_args";
         case TargetSymbol::RuntimeFunctionRef:       return "carven::runtime::FunctionRef";
-        case TargetSymbol::RuntimeIs:                return "carven::runtime::is";
-        case TargetSymbol::RuntimeIntegerRange:      return "carven::runtime::integer_range";
         case TargetSymbol::RuntimeStrBytes:          return "carven::runtime::str_bytes";
         case TargetSymbol::RuntimeStrChars:          return "carven::runtime::str_chars";
         case TargetSymbol::RuntimeIntegerNegate:     return "carven::runtime::integer_negate";
@@ -58,19 +58,19 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeCheckedArrayIndex: return "carven::runtime::checked_array_index";
         case TargetSymbol::RuntimeCheckedUnicodeScalar:
             return "carven::runtime::checked_unicode_scalar";
-        case TargetSymbol::StdAbort:             return "std::abort";
-        case TargetSymbol::StdAddressof:         return "std::addressof";
-        case TargetSymbol::StdGet:               return "std::get";
-        case TargetSymbol::StdHoldsAlternative:  return "std::holds_alternative";
-        case TargetSymbol::StdForward:           return "std::forward";
-        case TargetSymbol::StdMove:              return "std::move";
-        case TargetSymbol::StdNullopt:           return "std::nullopt";
-        case TargetSymbol::StdStringView:        return "std::string_view";
-        case TargetSymbol::StdVariant:           return "std::variant";
-        case TargetSymbol::TestingRun:           return "carven::testing::run";
-        case TargetSymbol::TestingReportFailure: return "carven::testing::detail::report_failure";
-        case TargetSymbol::TestingControl:       return "carven::testing::detail::TestControl";
-        case TargetSymbol::TestingRegistrar:     return "carven::testing::Registrar";
+        case TargetSymbol::StdReferenceWrapper: return "std::reference_wrapper";
+        case TargetSymbol::StdAddressof:        return "std::addressof";
+        case TargetSymbol::StdGetIf:            return "std::get_if";
+        case TargetSymbol::StdForward:          return "std::forward";
+        case TargetSymbol::StdMove:             return "std::move";
+        case TargetSymbol::StdNullopt:          return "std::nullopt";
+        case TargetSymbol::StdNullptr:          return "nullptr";
+        case TargetSymbol::StdOptional:         return "std::optional";
+        case TargetSymbol::StdStringView:       return "std::string_view";
+        case TargetSymbol::StdVariant:          return "std::variant";
+        case TargetSymbol::TestingContext:      return "carven::testing::TestContext";
+        case TargetSymbol::TestingReporter:     return "carven::testing::TestReporter";
+        case TargetSymbol::TestingControl:      return "carven::testing::detail::TestControl";
     }
     std::unreachable();
 }

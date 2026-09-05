@@ -83,8 +83,8 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
                     compile_option_error(CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce)
                 );
             }
-            request.test_mode = arg == "--tests=default" ? TestGenerationMode::DefaultRunner
-                                                         : TestGenerationMode::ExternalRunner;
+            request.test_mode = arg == "--tests=default" ? TestGenerationMode::RunnerEntryPoint
+                                                         : TestGenerationMode::RunnerHeader;
             has_test_option = true;
         } else if (arg == "-o" || arg == "--output-dir") {
             auto path = next_output_path(index, arg);
@@ -111,23 +111,6 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
                 !selected) {
                 return std::unexpected(selected.error());
             }
-        } else if (arg == "--linkage-domain") {
-            if (has_linkage_domain_option) {
-                return std::unexpected(
-                    compile_option_error(CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce)
-                );
-            }
-            if (index + 1 >= args.size() || std::string_view(args[index + 1]).starts_with('-')) {
-                return std::unexpected(
-                    compile_option_error(CompileOptionErrorKind::MissingLinkageDomain)
-                );
-            }
-            auto domain = linkage_domain(args[++index]);
-            if (!domain.has_value()) {
-                return std::unexpected(domain.error());
-            }
-            request.linkage_domain = std::move(*domain);
-            has_linkage_domain_option = true;
         } else if (arg.starts_with("--linkage-domain=")) {
             if (has_linkage_domain_option) {
                 return std::unexpected(
@@ -166,8 +149,6 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
         case CompileOptionErrorKind::EmptyOutputPath: return "output directory is empty";
         case CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce:
             return "linkage domain was specified more than once";
-        case CompileOptionErrorKind::MissingLinkageDomain:
-            return "missing value after '--linkage-domain'";
         case CompileOptionErrorKind::EmptyLinkageDomain: return "linkage domain is empty";
         case CompileOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);

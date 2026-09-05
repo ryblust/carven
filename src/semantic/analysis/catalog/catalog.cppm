@@ -3,20 +3,23 @@ module carven:semantic.analysis.catalog;
 import :diagnostics.diagnostic;
 import :frontend.ast.ids;
 import :frontend.ast.tree;
-import :semantic.analysis.session;
-import :semantic.hir.ids;
+import :frontend.program;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import :semantic.visibility;
-import :source.provenance;
 import :source.text;
-import :support.id_table;
 import :support.typed_id;
 import std;
+
+struct CatalogSymbolIDTag final {};
+using CatalogSymbolID = TypedID<CatalogSymbolIDTag>;
 
 struct ImportBindingIDTag final {};
 using ImportBindingID = TypedID<ImportBindingIDTag>;
 
 struct CatalogFunctionForm final {
     FunctionID function;
+    CallableID callable;
 };
 
 struct CatalogStructForm final {
@@ -34,7 +37,9 @@ struct CatalogEnumCaseForm final {
     std::uint32_t index;
 };
 
-struct CatalogConstantForm final {};
+struct CatalogConstantForm final {
+    ModuleConstantID constant;
+};
 
 using CatalogSymbolForm = std::variant<
     CatalogFunctionForm,
@@ -44,7 +49,7 @@ using CatalogSymbolForm = std::variant<
     CatalogConstantForm>;
 
 struct CatalogSymbol final {
-    SymbolID symbol_id;
+    CatalogSymbolID symbol_id;
     ProgramModuleID module_id;
     ASTItemID item_id;
     std::string name;
@@ -53,9 +58,12 @@ struct CatalogSymbol final {
     Span declaration_span;
 };
 
-struct CatalogTestForm final {};
+struct CatalogTestForm final {
+    TestID test;
+};
 
-using CatalogModuleItemForm = std::variant<FunctionID, StructID, EnumID, CatalogTestForm>;
+using CatalogModuleItemForm =
+    std::variant<FunctionID, StructID, EnumID, ModuleConstantID, CatalogTestForm>;
 
 struct CatalogModuleItem final {
     ASTItemID item_id;
@@ -64,7 +72,8 @@ struct CatalogModuleItem final {
 
 struct CatalogModule final {
     ProgramModuleID module_id;
-    std::vector<SymbolID> symbols;
+    ModuleID declaration;
+    std::vector<CatalogSymbolID> symbols;
     std::vector<CatalogModuleItem> items;
 };
 
@@ -75,7 +84,7 @@ enum class CatalogImportSelectionKind {
 };
 
 struct CatalogImportSelectedSymbol final {
-    SymbolID symbol_id;
+    CatalogSymbolID symbol_id;
     std::string name;
     Span origin;
 };
@@ -90,11 +99,10 @@ struct CatalogImportBinding final {
     Span selection_span;
     CatalogImportSelectionKind selection_kind;
     std::vector<CatalogImportSelectedSymbol> selected_symbols;
-    bool used;
 };
 
 struct CatalogLookupCandidate final {
-    SymbolID symbol_id;
+    CatalogSymbolID symbol_id;
     std::optional<ImportBindingID> import_binding;
 };
 
@@ -112,25 +120,21 @@ public:
     auto view() const noexcept -> AnalysisCatalogView;
 
 private:
-    explicit AnalysisCatalog(CompilationProvenanceView provenance) noexcept;
-
-    CompilationProvenanceView compilation_provenance;
+    AnalysisCatalog() = default;
     std::vector<CatalogModule> modules;
     std::vector<CatalogSymbol> symbols;
-    std::vector<SymbolID> function_symbols;
-    std::vector<SymbolID> struct_symbols;
-    std::vector<SymbolID> enum_symbols;
-    std::vector<SymbolID> enum_case_symbols;
+    std::vector<CatalogSymbolID> function_symbols;
+    std::vector<CatalogSymbolID> struct_symbols;
+    std::vector<CatalogSymbolID> enum_symbols;
+    std::vector<CatalogSymbolID> enum_case_symbols;
+    std::vector<CatalogSymbolID> module_constant_symbols;
     std::vector<std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>>
         visible_candidates;
-    mutable std::vector<CatalogImportBinding> import_bindings;
+    std::vector<CatalogImportBinding> import_bindings;
 
     friend class AnalysisCatalogView;
-    friend auto build_analysis_catalog(
-        CompilationProvenanceView,
-        std::span<const SyntaxTree>,
-        SemanticEntityReservations
-    ) noexcept -> std::expected<AnalysisCatalog, Diagnostics>;
+    friend auto build_analysis_catalog(ProgramDraft&) noexcept
+        -> std::expected<AnalysisCatalog, Diagnostics>;
 };
 
 class AnalysisCatalogView final {
@@ -138,20 +142,19 @@ public:
     auto modules() const noexcept -> std::span<const CatalogModule>;
     auto symbols() const noexcept -> std::span<const CatalogSymbol>;
     auto imports() const noexcept -> std::span<const CatalogImportBinding>;
-    auto module_record(ProgramModuleID module_id) const noexcept -> const ProgramModule&;
     auto find_module(ProgramModuleID module_id) const noexcept -> const CatalogModule*;
-    auto symbol(SymbolID id) const noexcept -> const CatalogSymbol*;
-    auto function_symbol(FunctionID id) const noexcept -> SymbolID;
-    auto struct_symbol(StructID id) const noexcept -> SymbolID;
-    auto enum_symbol(EnumID id) const noexcept -> SymbolID;
-    auto enum_case_symbol(EnumCaseID id) const noexcept -> SymbolID;
+    auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
+    auto function_symbol(FunctionID id) const noexcept -> CatalogSymbolID;
+    auto struct_symbol(StructID id) const noexcept -> CatalogSymbolID;
+    auto enum_symbol(EnumID id) const noexcept -> CatalogSymbolID;
+    auto enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID;
+    auto module_constant_symbol(ModuleConstantID id) const noexcept -> CatalogSymbolID;
     auto function_count() const noexcept -> std::size_t;
     auto struct_count() const noexcept -> std::size_t;
     auto enum_count() const noexcept -> std::size_t;
     auto enum_case_count() const noexcept -> std::size_t;
     auto lookup(ProgramModuleID module_id, std::string_view name) const noexcept
         -> std::span<const CatalogLookupCandidate>;
-    auto mark_import_used(ImportBindingID binding) const noexcept -> void;
 
 private:
     explicit AnalysisCatalogView(const AnalysisCatalog& catalog) noexcept;
@@ -161,8 +164,15 @@ private:
     friend class AnalysisCatalog;
 };
 
-auto build_analysis_catalog(
-    CompilationProvenanceView provenance,
-    std::span<const SyntaxTree> syntax_trees,
-    SemanticEntityReservations reservations
-) noexcept -> std::expected<AnalysisCatalog, Diagnostics>;
+auto build_analysis_catalog(ProgramDraft& draft) noexcept
+    -> std::expected<AnalysisCatalog, Diagnostics>;
+
+class ImportUsage final {
+public:
+    explicit ImportUsage(std::size_t import_count) noexcept;
+    auto record(ImportBindingID import_id) noexcept -> void;
+    auto was_used(ImportBindingID import_id) const noexcept -> bool;
+
+private:
+    std::vector<std::uint8_t> used_imports;
+};

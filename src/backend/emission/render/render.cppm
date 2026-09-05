@@ -14,14 +14,32 @@ import :backend.target.type;
 import :backend.target.unit;
 import std;
 
+struct StableInterfaceEmission final {};
+
+struct SourceAttributedEmission final {
+    std::string_view generated_origin;
+};
+
+using EmissionPolicy = std::variant<StableInterfaceEmission, SourceAttributedEmission>;
+
 class TargetRenderer final {
 public:
-    explicit TargetRenderer(const TargetUnit& unit) noexcept;
+    TargetRenderer(const TargetUnit& unit, EmissionPolicy policy) noexcept;
 
     auto render_unit() && noexcept -> LayoutDocument;
 
 private:
     static constexpr auto indent_width = 4uz;
+
+    enum class TargetItemCategory : std::uint8_t {
+        ForwardOrFunctionDeclaration,
+        OtherDeclaration,
+    };
+
+    enum class TargetContainerKind : std::uint8_t {
+        TopLevel,
+        Namespace,
+    };
 
     struct SyntaxLayouts final {
         LayoutNodeID inline_qualified;
@@ -51,7 +69,7 @@ private:
         std::string_view close
     ) noexcept -> LayoutNodeID;
     auto braced_block(std::span<const LayoutNodeID> body) noexcept -> LayoutNodeID;
-    auto render_statement_block(std::span<const TargetStmtID> body) noexcept -> LayoutNodeID;
+    auto render_statement_block(std::span<const TargetStmt> body) noexcept -> LayoutNodeID;
     auto directive(LayoutNodeID value) noexcept -> LayoutNodeID;
     auto with_attribution(LayoutNodeID value, const TargetAttribution& attribution) noexcept
         -> LayoutNodeID;
@@ -66,6 +84,7 @@ private:
     auto render_name(const TargetName& value) noexcept -> LayoutNodeID;
     auto render_member_function_name(const TargetMemberFunctionName& value) noexcept
         -> LayoutNodeID;
+    auto render_member_function(const TargetMemberFunctionDecl& value) noexcept -> LayoutNodeID;
     auto render_parameter(const TargetParameter& value) noexcept -> LayoutNodeID;
     auto render_function_declarator(
         std::string_view prefix,
@@ -80,14 +99,21 @@ private:
     auto render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayouts;
     auto render_type(TargetTypeID id) noexcept -> LayoutNodeID;
     auto render_expression(
-        TargetExprID id,
+        const TargetExpr& expression,
         TargetPrecedence parent = TargetPrecedence::Lowest
     ) noexcept -> LayoutNodeID;
-    auto render_statement(TargetStmtID id) noexcept -> LayoutNodeID;
+    auto render_statement(const TargetStmt& statement) noexcept -> LayoutNodeID;
     auto render_for_initializer(const TargetForInitializer& value) noexcept -> LayoutNodeID;
     auto render_for_step(const TargetForStep& value) noexcept -> LayoutNodeID;
-    auto render_item(TargetItemID id) noexcept -> LayoutNodeID;
-    auto render_items(std::span<const TargetItemID> items) noexcept -> std::vector<LayoutNodeID>;
+    auto render_item(const TargetItem& item) noexcept -> LayoutNodeID;
+    auto item_category(const TargetItem& item) const noexcept -> std::optional<TargetItemCategory>;
+    auto separation_between(
+        TargetItemCategory previous,
+        TargetItemCategory current,
+        TargetContainerKind container
+    ) const noexcept -> std::size_t;
+    auto render_items(std::span<const TargetItem> items, TargetContainerKind container) noexcept
+        -> LayoutNodeID;
     auto render_sections(const TargetUnitSections& sections) noexcept
         -> std::optional<LayoutNodeID>;
     auto render_declaration(const TargetDecl& value) noexcept -> LayoutNodeID;

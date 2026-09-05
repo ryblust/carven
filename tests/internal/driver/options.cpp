@@ -27,8 +27,7 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     const auto output_args = std::to_array<const char*>({
         "--tests=external",
         "--output-dir=emit",
-        "--linkage-domain",
-        "domain",
+        "--linkage-domain=-domain=value",
         "main.cv",
     });
     const auto output = parse_compile_command_options(output_args);
@@ -37,17 +36,17 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     const auto* destination = std::get_if<DirectoryArtifactDestination>(&output->destination);
     REQUIRE(destination != nullptr);
     CHECK_EQ(destination->root, std::filesystem::path("emit"));
-    CHECK_EQ(output->test_mode, TestGenerationMode::ExternalRunner);
+    CHECK_EQ(output->test_mode, TestGenerationMode::RunnerHeader);
     REQUIRE(output->linkage_domain.has_value());
     CHECK_EQ(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
-    CHECK_EQ(output->linkage_domain->value(), "domain");
+    CHECK_EQ(output->linkage_domain->value(), "-domain=value");
 
     const auto stdout_args = std::to_array<const char*>({"--stdout", "--tests=default", "main.cv"});
     const auto stdout = parse_compile_command_options(stdout_args);
 
     REQUIRE(stdout.has_value());
     CHECK(std::holds_alternative<StandardOutputArtifactDestination>(stdout->destination));
-    CHECK_EQ(stdout->test_mode, TestGenerationMode::DefaultRunner);
+    CHECK_EQ(stdout->test_mode, TestGenerationMode::RunnerEntryPoint);
 }
 
 TEST_CASE("Compile options: invalid combinations report structured failures") {
@@ -96,10 +95,10 @@ TEST_CASE("Compile options: invalid combinations report structured failures") {
             .message = "unknown option '--unknown'",
         },
         InvalidCase {
-            .args = {"main.cv", "--linkage-domain"},
-            .kind = CompileOptionErrorKind::MissingLinkageDomain,
-            .option = std::nullopt,
-            .message = "missing value after '--linkage-domain'",
+            .args = {"--linkage-domain", "domain", "main.cv"},
+            .kind = CompileOptionErrorKind::UnknownOption,
+            .option = "--linkage-domain",
+            .message = "unknown option '--linkage-domain'",
         },
         InvalidCase {
             .args = {"--linkage-domain=", "main.cv"},
@@ -108,7 +107,7 @@ TEST_CASE("Compile options: invalid combinations report structured failures") {
             .message = "linkage domain is empty",
         },
         InvalidCase {
-            .args = {"--linkage-domain=first", "--linkage-domain", "second", "main.cv"},
+            .args = {"--linkage-domain=first", "--linkage-domain=second", "main.cv"},
             .kind = CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce,
             .option = std::nullopt,
             .message = "linkage domain was specified more than once",

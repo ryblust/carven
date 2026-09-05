@@ -2,9 +2,14 @@
 
 This document defines the observable semantics of supported Carven
 programs. It owns name resolution, types, values, evaluation, control flow,
-semantic validity, the explicitly named stable diagnostic identities, and the
-C++ interoperation contract. It does not define lexical or syntactic validity,
-compiler representations, host filesystem policy, or generated C++ forms.
+semantic validity, the explicitly named diagnostic identities, and the
+C++ interoperation contract.
+
+This is the normative language-behavior contract. Tests verify these rules;
+acceptance by the compiler or by C++ alone does not establish an additional
+language rule.
+Uncovered observable behavior is a specification gap to resolve against the
+implementation and tests.
 
 ## Contents
 
@@ -12,6 +17,7 @@ compiler representations, host filesystem policy, or generated C++ forms.
 - [Declarations and names](#declarations-and-names)
 - [Module constants](#module-constants)
 - [Types and compatibility](#types-and-compatibility)
+- [Type context and inference](#type-context-and-inference)
 - [C++ interoperation](#c-interoperation)
 - [Bindings, access, and mutation](#bindings-access-and-mutation)
 - [Functions and calls](#functions-and-calls)
@@ -167,7 +173,54 @@ exceptions are contextual numeric literals and compatible callable-to-view
 adoption. There are no general implicit numeric promotions, structural
 conversions, truthiness conversions, or opaque dynamically typed values.
 
-`void` is the absence of a value.
+`void` is the absence of a value. It may describe a callable's success result,
+but cannot be a parameter type, structure field, array element, runtime binding
+value, or match subject. Calling a `void` function as a statement is valid;
+binding its nonexistent result is not.
+
+## Type context and inference
+
+An expected type is supplied by a surrounding source operation; it is not a
+conversion request. An explicit annotation fixes the required type, and an
+incompatible initializer is rejected rather than changing that annotation.
+The following are supported sources of context:
+
+| Position | Source of expected type |
+| --- | --- |
+| Annotated binding or constant initializer | Declared type |
+| Assignment value | Destination type |
+| Call argument | Selected parameter type |
+| Return value | Declared or context-supplied callable result |
+| Structure field or enum payload initializer | Declared field or payload type |
+| Array element with an expected array type | Expected element type |
+| Value-control result branch | Expected result type, when supplied |
+| Lambda parameter and result | Expected callable view, subject to explicit annotations |
+
+Grouping passes an existing expected type to its operand. Contextual numeric
+literals and enum cases use that context as specified in their sections.
+Context does not change a named value's type, supply an omitted call access
+marker, insert a capture, or make an incompatible ordinary value convertible.
+
+For ordinary binary operands, a direct unsuffixed numeric literal on the left
+obtains context from a right operand that is not a direct unsuffixed numeric
+literal. Otherwise the left operand receives the surrounding context and
+supplies context to the right operand. For equality, a direct contextual
+`.Case` or `.Case(...)` obtains its enum context from the other operand when
+that operand is not itself a direct contextual case. This selection precedes
+the numeric-literal rule. Logical operators instead require `bool` operands.
+
+These sibling-selection rules inspect the direct operand form: they do not
+search inside grouping, unary operations, or composite expressions to discover
+a literal or case. Thus grouping can receive context without itself acting as
+a direct contextual operand for sibling selection. Type-context selection
+never changes runtime left-to-right evaluation order.
+
+Without an annotation, a runtime binding takes its initializer's inferred
+type; later uses do not revise it. Unsuffixed numeric defaults, array element
+inference, lambda signature inference, and private callable failure inference
+are defined in their respective sections. There is no general search for a
+type that would make all uses succeed. A contextual form without a determining
+context is invalid; spell the type or enum owner explicitly.
 
 ## C++ interoperation
 
@@ -185,8 +238,6 @@ Each top-level `#[cpp]` payload remains an independent, byte-opaque C++ source
 fragment. Carven does not parse or type-check it, interpolate Carven values, or
 bind same-spelled Carven names. C++ owns macros, overloads, templates, linkage,
 exceptions, lifetime, ODR, and undefined behavior inside each fragment.
-Generated placement and preservation requirements belong to
-[compatibility.md](compatibility.md#c-interoperation-artifacts).
 
 An `import(cpp)` declaration is private or bare and has no Carven body:
 
@@ -245,8 +296,7 @@ an import bridge terminates under ordinary C++ rules.
 
 Module components and public function names must be supported C++ identifiers.
 A function/namespace prefix collision anywhere in the compilation's public API
-tree is invalid. Public header paths, namespaces, declarations, and stability
-belong to [compatibility.md](compatibility.md#c-interoperation-artifacts).
+tree is invalid.
 
 ## Bindings, access, and mutation
 
@@ -283,7 +333,11 @@ A call repeats every declared parameter access exactly: `read(value)`,
 access permits but does not require mutation. It is non-owning and nonexclusive:
 the same mutable owner may be passed to multiple `Write` parameters in one call.
 Arguments are evaluated left to right, and mutations take effect in the
-function body's execution order.
+function body's execution order. Read is implemented as a const value
+or a const reference according to the
+[native Read parameter policy](toolchain.md#read-parameter-realization). It grants
+no write access through that parameter and does not isolate the object from
+writes through other aliases.
 
 Runtime `let`, `var`, ordinary pattern bindings, and `Take` parameters are
 owners. A `Take` parameter is an immutable owner and may itself be taken.
@@ -304,16 +358,32 @@ join, a binding is available only when it is available on every normally
 continuing path. Loops include their zero-iteration path and all backedges.
 
 Member and element mutation inherit eligibility from their receiver. Plain
-assignment requires a compatible value. Compound `+`, `-`, `*`, and `/`
+assignment requires a compatible value and uses the target C++ assignment
+operation; it does not end the destination object's lifetime and reconstruct it.
+A complete writable owner may be consumed by its RHS and restored by a normally
+completed assignment, as in `x = relay(&&x)`. If the RHS fails, the owner remains
+unavailable. Direct self-transfer assignment `x = &&x` is invalid, including
+parenthesized forms. Member and compound assignment still require the old value.
+Compound `+`, `-`, `*`, and `/`
 assignment require numeric operands; `%`, bitwise, and shift assignment require
 integer operands. Increment and decrement require an integer target. Assignment
 evaluates the target before the new value, once each.
 
-One operation cannot both Take and otherwise access the same owner, including
-through a callee or nested argument. An outer binding cannot be both a Write
-capture source and a Take source in one callable. Value-capture snapshots are
+Take cannot conflict with a place access retained by an unfinished call,
+including its callee and outer call arguments. A completed independent result
+retains no read access to its inputs: `f(x + 1, &&x)` and
+`f(identity(x), &&x)` are valid when their results are independent values.
+Direct `f(x, &&x)` is invalid regardless of the target Read parameter policy.
+Value-capture snapshots are
 independent after creation, but capture creation requires the source to be
 available. Lambda captures and range bindings do not support Take access.
+
+A Write capture remains active with every live value that directly or
+transitively contains its closure. Moving the closure into an aggregate,
+projecting or reading it back out, and carrying it through a control-flow
+result preserve that association. The capture ends with its actual holders,
+not with the expression that created it; its source cannot be taken while any
+such holder remains live.
 
 A `const` initializer must be proven by Carven; target acceptance is not enough.
 Constant facts include scalar and string literals, numeric enum cases,
@@ -325,13 +395,37 @@ constant expressions. Local and module constant declarations are
 compile-time-only; their later uses denote the selected normalized value without
 creating a runtime binding or lambda capture.
 
+### Value ownership and lifetime
+
+Initializing an owner from an existing value without `&&` copies that value;
+the source remains available. Initializing from `&&owner` transfers ownership
+and changes source availability. An independently produced temporary can be
+delivered to its destination without creating another source binding. These
+are value and availability rules, not a fixed count of native constructor calls.
+
+A copy owns its immediate value, including structure fields, array elements,
+and enum payloads. Non-owning contents retain their backing: copying `str`, a
+callable view, or a closure containing Write captures does not clone or prolong
+the referenced storage. The recursive callable-view restrictions and closure
+holder rules apply to these copies as well.
+
+Local owners live in their enclosing lexical scope. Exiting that scope by
+normal completion or a control transfer ends its local lifetimes. Temporary
+storage belongs to the full expression that evaluates it unless an explicit
+construct retains it, such as an owned match subject or a temporary range
+source. Delivering a result into a longer-lived owner does not prolong the
+lifetimes of that result's borrowed backing. Carven has no source destructor
+or general lifetime-extension syntax.
+
 ## Functions and calls
 
 Every ordinary function parameter requires an explicit type. Omitted result
 syntax means `void`. Parameter names must be unique. A call requires the exact
 arity, access marker, and compatible argument type declared by the callable.
 The callee is evaluated first, then arguments are evaluated once from left to
-right.
+right. A concrete closure selects its object identity; a callable view selects
+its target description. Invocation reads that target's current captures after
+argument evaluation. An explicit closure copy requests a capture-value snapshot.
 
 A `return` without a value is valid only for `void`; a value return is required
 for every other ordinary result type and must be compatible with it. Every
@@ -382,11 +476,55 @@ Declaration-surface visibility recursively follows the audience rules above.
 
 ## Lambdas and callable views
 
-Every lambda expression has a unique concrete closure type. Value captures own
-immutable snapshots; Write captures alias mutable outer bindings. Free runtime
-bindings require explicit capture, while module functions, types, enum cases,
-and compile-time constants do not. Unused explicit captures produce
-`CV-LAMBDA-CAPTURE-UNUSED`.
+### Creation and captures
+
+A lambda expression creates a closure value; it does not execute its body.
+The capture list is mandatory, including `[]` for no captures. Capture entries
+name runtime bindings visible at the creation site, and each name may occur
+only once. A module declaration or compile-time constant cannot be an explicit
+capture. Captures are established in list order when the expression runs.
+
+| Source form | Stored state | Access inside the body | Effect on the source |
+| --- | --- | --- | --- |
+| `[value]` | An owned copy of the selected value | Read | Source remains available; later replacement of the source does not replace the copy |
+| `[&value]` | An alias to writable source storage | Write | Writes reach the same storage; source ownership is not transferred |
+| `[&&value]` | Unsupported | None | Rejected |
+
+Write capture requires writable storage. A value capture cannot be assigned
+through, and neither capture mode permits taking the captured binding. A nested
+lambda must explicitly capture any runtime state it uses across its own
+capture boundary; capturing it in an outer lambda does not implicitly capture
+it in the inner one. Closure creation does not propagate failures from the
+body; invocation uses the body's callable failure contract.
+
+### Closure identity, copies, and aliases
+
+Every lambda expression has a unique concrete closure type. Assignment between
+values of the same closure type copies value captures and rebinds Write
+captures to the source closure's targets; it does not assign through those
+captures. Unused explicit captures produce `CV-LAMBDA-CAPTURE-UNUSED`.
+
+Repeated evaluation of one lambda expression produces values of the same
+closure type. Separate lambda expressions have distinct types even when their
+parameter lists, bodies, and captures look identical. A concrete closure type
+has no source type spelling; an inferred binding preserves it.
+
+`let copy = closure` creates another closure owner. Copying value captures
+copies their values; copying Write captures preserves their referents. Copying
+a closure does not recursively clone storage reached through aliases. In
+particular, a value capture of a closure that itself has a Write capture still
+permits writes to that original referent. An immutable closure owner may invoke
+such writes: immutability of the owner does not revoke its stored Write access.
+
+`let moved = &&closure` transfers the closure and makes the source owner
+unavailable. It preserves the destination's Write-capture associations. Copies,
+transfers, arrays of closures, and returned closures do not extend a captured
+owner's lifetime. A closure may not escape into storage that outlives its Write
+referent. Returning a closure that aliases a caller's Write parameter is
+possible when the actual caller-owned storage outlives the resulting holder;
+returning a closure that aliases a callee-local owner is invalid.
+
+### Signatures and views
 
 A lambda parameter may omit its type only when an expected callable view
 supplies the parameter type at that position. Without such an expected view,
@@ -409,6 +547,44 @@ as a direct call argument and remains valid for that call. A named capturing
 closure may initialize a local view while its owner remains in an enclosing
 scope.
 
+Adopting a capturing closure as a callable view borrows the closure object; it
+does not copy its captures or acquire ownership. Copying a view copies its
+target description and preserves its backing requirement. While the view's
+loan remains active, its closure owner cannot be taken. Ending an inner scope
+containing the borrowers permits a later Take of the still-live owner.
+Assigning a capturing target through a Write parameter of callable-view type
+is rejected; the parameter does not establish a sufficient backing lifetime.
+
+### Invocation and snapshots
+
+Calling a concrete closure first selects its object identity, then evaluates
+arguments, then runs the body using that object's current captures. Assigning
+new contents to the same closure object during argument evaluation therefore
+affects this invocation. Calling a view first saves its target description:
+reassigning the view variable during argument evaluation affects later calls,
+but replacing contents of the already-selected closure object affects this
+call. Neither form creates an implicit capture snapshot.
+
+For example, the following uses one closure type produced by `factory`:
+
+```carven
+let factory = [](value: i32) {
+    return [value](_: i32) { return value; };
+};
+var selected = factory(1);
+let replacement = factory(10);
+let rebind = [&selected, replacement]() {
+    selected = replacement;
+    return 0;
+};
+let snapshot = selected;
+let current = selected(rebind()); // 10: selected object now holds 10
+let saved = snapshot(0);          // 1: separate closure owner
+```
+
+Use an inferred closure copy when an independent capture-value snapshot is
+required. An annotated `fn(...) -> R` binding requests a view instead.
+
 ## Control flow and loops
 
 Conditions and guards require `bool`. Value-form `if` requires an `else` and
@@ -430,7 +606,12 @@ Arrays support Read and, for a mutable source, Write range bindings. `str.bytes`
 and `str.chars` support Read bindings only. A range binding is scoped to the
 loop and cannot be taken. Its name is not visible in its declared type or range
 source; it is published only after those inputs complete and is then visible
-throughout the loop body.
+throughout the loop body. Array iteration retains access to its source owner
+until the loop exits, so the source cannot be taken during traversal. Writing
+an element does not restore an unavailable whole-array owner.
+
+Array and text-range loops access an element only after confirming that the
+cursor is within the range. The terminating check does not access an element.
 
 `break` and `continue` are valid only inside a loop. `return` targets the
 current function or lambda. A value-form `if`, `match`, or `try` is a control
@@ -445,7 +626,8 @@ Carven models recoverable failure as a typed control effect represented to
 source users by callable failure contracts. Failure values are copyable nominal
 structures or enums. A failure contract denotes one exact closed mathematical
 set: member spelling order and declaration order are not observable. An
-explicit `throw` clause is an upper bound on a callable body. Module-private
+explicit clause may name each failure type only once; `throw E + E` is invalid,
+not a request to deduplicate entries. An explicit `throw` clause is an upper bound on a callable body. Module-private
 functions and lambdas that omit it infer the least fixed-point failure set
 across forward calls, direct recursion, and mutual recursion. A published
 function—bare or exported—with a nonempty actual set must state an explicit
@@ -461,6 +643,12 @@ target. The operand may be a call or a composite expression whose selected
 evaluation path carries pending failures. Applying `?` to an infallible operand
 is invalid. `throw` transfers the supplied failure and does not complete
 normally.
+
+Carven failures are independent of C++ exceptions. Generated C++ bridges and
+runtime invocation and outcome protocols are `noexcept` boundaries. They do not
+require every wrapped operation to declare `noexcept`; an escaping C++ exception
+terminates and is not translated into a Carven failure. Explicit native exception
+code belongs in `#[cpp]` fragments under its C++ contract.
 
 `try` handles failures produced by its protected body. Catch arms may select a
 failure type, wildcard, alternatives, payload patterns, and guards; they must
@@ -502,14 +690,27 @@ It rejects narrowing `f64` to `f32`, floating-point to integer or `bool`,
 `bool` to floating-point, integer to enum, conversions between `char` and a
 numeric type, and non-identity `str` conversions.
 
+Integer-to-`bool` yields `false` for zero and `true` for every nonzero value,
+including negative values. `bool`-to-integer yields zero for `false` and one for
+`true` in the requested integer type. These conversions require `as`; they do
+not make integer conditions valid.
+
 A constant integer cast to an `N`-bit integer reduces the mathematical value
 modulo `2^N`. An unsigned target is that residue; a signed target interprets the
 same bits as an `N`-bit two's-complement value. Accepted constant casts remain
 constant facts.
 
-Constant arithmetic is checked. Literal range errors, overflow, division by
-zero, and invalid shift counts are Carven diagnostics and are never evaluated
-through undefined host arithmetic.
+Constant integer arithmetic is checked. Literal range errors, integer overflow,
+division by zero, and invalid shift counts are Carven diagnostics and are never
+evaluated through undefined host arithmetic. A runtime binding does not disable
+constant checking of its initializer: a provably overflowing literal operation
+is rejected even in a `let` initializer.
+
+Floating literals, supported casts, and equality can supply constant facts.
+General floating arithmetic and ordering do not supply constant facts; for
+example, `const sum = 1.0 + 2.0;` is rejected although the same operation may
+initialize a runtime binding. A directly negated numeric literal is normalized
+with its sign during literal checking.
 
 Runtime integer negate, add, subtract, multiply, and left shift wrap at the
 Carven type width; compound assignment and increment/decrement inherit the same
@@ -519,7 +720,15 @@ is arithmetic.
 
 `isize` and `usize` are the signed and unsigned native-model integers. Their
 width is fixed by the supported compilation data model and participates in the
-ordinary integer rules above.
+ordinary integer rules above. The supported host/target relationship is defined
+by [the numeric model](toolchain.md#numeric-model).
+
+`f32` and `f64` use IEEE 754 binary32 and binary64 storage. Runtime floating
+arithmetic and integer-to-floating conversion use the corresponding native C++
+operations. The language does not supply a rounding-mode control or a separate
+floating exception mechanism. Exact native floating evaluation requirements
+belong to [toolchain.md](toolchain.md#numeric-model); an integer termination
+rule does not apply to floating division.
 
 ## Operators and evaluation
 
@@ -545,6 +754,15 @@ includes callee before arguments, binary left before right, receiver before
 index, assignment target before value, and initializer clauses in source order.
 Short-circuiting operators and control expressions evaluate only the selected
 operands or branches.
+
+Every source operand and branch receives operation, result-compatibility, and
+failure-consumption checks, including after a terminal statement or when a
+constant proves it cannot execute. A proven inactive path contributes
+no runtime evaluation, outward failure, ownership transition, or reachable-use
+evidence. A nonreturning expression can occupy a position whose type is already
+known. If its type cannot be determined, the enclosing operation is rejected;
+for example, a call still needs a callable type and match still needs a subject
+type. Nonreturning control does not exempt later source from type checking.
 
 ## Enums
 
@@ -598,8 +816,14 @@ resolution depends on the receiver type.
 ## Patterns and matches
 
 Both value and statement matches must be exhaustive. A value match also
-requires compatible arm results. The subject is evaluated exactly once, and
-the first matching arm is selected.
+requires compatible arm results. The subject expression is evaluated exactly
+once. An rvalue subject is retained across guard rejection. When the subject
+denotes a place, its receiver and index expressions identify that place once,
+and selection requires that storage to remain stable. During a guard, obtaining
+Write or Take access to overlapping subject storage is invalid, including
+through aliases or callable captures. Guards may modify other storage, call
+functions, and produce failures. A selected arm's body may modify the subject.
+The first arm whose pattern matches and whose optional guard succeeds is selected.
 
 Patterns are recursive. Enum payload positions admit case, literal, binding,
 wildcard, `is`, and or-patterns. Structure and array destructuring are not
@@ -685,7 +909,7 @@ layout are not language contracts.
 
 ## Diagnostics
 
-The following table is the stable public diagnostic catalog:
+The following table names semantic diagnostic identities covered by this contract:
 
 | Code | Severity | Condition |
 | --- | --- | --- |
@@ -712,8 +936,9 @@ The following table is the stable public diagnostic catalog:
 | `CV-TEST-MESSAGE-TYPE` | Error | A test message is not exactly `str` |
 | `CV-TYPE-VISIBILITY-LEAK` | Error | A declaration surface exposes a narrower nominal identity |
 
-The code, severity, and condition in this table are stable. Human-readable
-messages, notes, formatting, colors, and incidental ordering may change.
+The code, severity, and condition in this table describe the current compiler.
+This table is not a complete list of internal diagnostic codes. Human-readable
+messages, notes, formatting, colors, and incidental ordering are presentation.
 Warnings do not make an otherwise valid program fail.
 
 For unused diagnostics, a reachable reference counts as a use and `_` is never

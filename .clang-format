@@ -54,10 +54,8 @@ PenaltyReturnTypeOnItsOwnLine: 1000
 
 PackArguments:
   BinPack: OnePerLine
-  BreakAfter: 0
 PackParameters:
   BinPack: OnePerLine
-  BreakAfter: 0
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 PackConstructorInitializers: Never

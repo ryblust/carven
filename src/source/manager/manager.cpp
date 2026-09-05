@@ -13,6 +13,18 @@ SourceManager::SourceRecord::SourceRecord(std::string origin_value, std::string 
       text(std::move(text_value)),
       lines(text) {}
 
+auto SourceManager::SourceRecord::display_origin() const noexcept -> std::string_view {
+    return origin;
+}
+
+auto SourceManager::SourceRecord::source_text() const noexcept -> std::string_view {
+    return text;
+}
+
+auto SourceManager::SourceRecord::location(Span span) const noexcept -> SourceLocation {
+    return lines.location(span.start());
+}
+
 auto SourceManager::append_file(std::string_view path) noexcept
     -> std::expected<SourceID, SourceLoadError> {
     if (entries.size() == std::numeric_limits<std::uint32_t>::max()) {
@@ -64,8 +76,8 @@ auto SourceManager::try_view(SourceID source_id) const noexcept -> std::optional
     const auto& entry = entries[source_id.index()];
     return SourceView {
         .source_id = source_id,
-        .text = entry.text,
-        .origin = entry.origin,
+        .text = entry.source_text(),
+        .origin = entry.display_origin(),
     };
 }
 
@@ -85,5 +97,5 @@ auto SourceManager::location(SourceSpan span) const noexcept -> SourceLocation {
     if (!contains(span.source_id)) {
         invariant_violation("source location used an invalid source identity");
     }
-    return entries[span.source_id.index()].lines.location(span.span.start());
+    return entries[span.source_id.index()].location(span.span);
 }

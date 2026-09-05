@@ -49,3 +49,31 @@ test "Testing: inline-test context reaches control blocks but not lambdas" {
     let ordinary = check(callback());
     check(ordinary);
 }
+
+test "Testing: test exits do not participate in value-region merges" {
+    let selected_if = if true {
+        require(true);
+        11
+    } else {
+        fail("unselected value-if branch");
+    };
+
+    let selected_match = match 1 {
+        1 => {
+            require(true);
+            22
+        },
+        _ => { fail("unselected value-match arm"); },
+    };
+
+    let selected_try = try {
+        require(true);
+        33
+    } catch {
+        _ => { fail("unreachable value-try handler"); },
+    };
+
+    check(selected_if == 11);
+    check(selected_match == 22);
+    check(selected_try == 33);
+}

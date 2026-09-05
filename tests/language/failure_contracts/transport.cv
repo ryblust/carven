@@ -91,6 +91,11 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
 
     let exact_function: fn(i32) -> i32 throw ZFailure = narrow;
     let wide_function: fn(i32) -> i32 throw ZFailure + AFailure = narrow;
+    let widened_stored_view: fn(i32) -> i32 throw ZFailure + AFailure = exact_function;
+    let narrow_array: [fn(i32) -> i32 throw ZFailure; 2] = [narrow, narrow];
+    let wide_array: [fn(i32) -> i32 throw ZFailure + AFailure; 2] = narrow_array;
+    let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [[narrow]];
+    let nested_wide: [[fn(i32) -> i32 throw ZFailure + AFailure; 1]; 1] = nested_narrow;
     let closure = [](value: i32) { return narrow(value)?; };
     let exact_closure: fn(i32) -> i32 throw ZFailure = closure;
     let wide_closure: fn(i32) -> i32 throw ZFailure + AFailure = closure;
@@ -102,6 +107,16 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
         AFailure(_) => -2,
     };
     check(function_result == 30);
+
+    let stored_result = try {
+        invoke_wide(widened_stored_view, 31)?
+            + invoke_wide(wide_array[1], 37)?
+            + invoke_wide(nested_wide[0][0], 41)?
+    } catch {
+        ZFailure(_) => -1,
+        AFailure(_) => -2,
+    };
+    check(stored_result == 109);
 
     let closure_result = try {
         invoke_exact(exact_closure, 19)? + invoke_wide(wide_closure, 23)?

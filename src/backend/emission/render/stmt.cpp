@@ -23,10 +23,17 @@ auto assignment_spelling(TargetAssignmentOperator op) noexcept -> std::string_vi
     std::unreachable();
 }
 
+auto update_spelling(TargetUpdateOperator op) noexcept -> std::string_view {
+    switch (op) {
+        case TargetUpdateOperator::Increment: return "++";
+        case TargetUpdateOperator::Decrement: return "--";
+    }
+    std::unreachable();
+}
+
 } // namespace
 
-auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID {
-    const auto& statement = unit.statement(id);
+auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> LayoutNodeID {
     const auto rendered = std::visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
@@ -45,10 +52,7 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = std::string {};
-                if (value.maybe_unused) {
-                    prefix += "[[maybe_unused]] ";
-                }
+                auto prefix = value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
                 if (value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference) {
                     prefix += "const ";
@@ -83,7 +87,7 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
                     return render_statement_block(value.statements);
                 }
                 auto children = std::vector<LayoutNodeID> {};
-                for (const auto child : value.statements) {
+                for (const auto& child : value.statements) {
                     children.push_back(render_statement(child));
                 }
                 return stack(children);
@@ -105,13 +109,17 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
             },
             [&](const TargetUpdateStmt& value) noexcept {
                 return concat(
-                    {text(value.op == TargetUpdateOperator::Increment ? "++" : "--"),
+                    {text(update_spelling(value.op)),
                      render_expression(value.target, TargetPrecedence::Prefix),
                      text(";")}
                 );
             },
             [&](const TargetBreakStmt&) noexcept { return text("break;"); },
             [&](const TargetContinueStmt&) noexcept { return text("continue;"); },
+            [&](const TargetUnreachableStmt&) noexcept {
+                return text("carven::runtime::unreachable();");
+            },
+            [&](const TargetRuntimeTrapStmt&) noexcept { return text("std::abort();"); },
             [&](const TargetGotoStmt& value) noexcept {
                 return concat({text("goto "), render_identifier(value.label), text(";")});
             },
@@ -139,7 +147,7 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
             },
             [&](const TargetWhileStmt& value) noexcept {
                 auto body = std::vector<LayoutNodeID> {};
-                for (const auto child : value.body) {
+                for (const auto& child : value.body) {
                     body.push_back(render_statement(child));
                 }
                 const auto condition = std::array {render_expression(value.condition)};
@@ -148,6 +156,20 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
                      delimited_list(condition, "(", ")"),
                      text(" "),
                      braced_block(body)}
+                );
+            },
+            [&](const TargetRangeForStmt& value) noexcept {
+                return concat(
+                    {text("for ("),
+                     text(value.maybe_unused ? "[[maybe_unused]] " : ""),
+                     text(value.binding == TargetVariableBinding::ConstValue ? "const " : ""),
+                     render_type(value.type),
+                     text(value.binding == TargetVariableBinding::MutableReference ? "& " : " "),
+                     text(value.name.spelling()),
+                     text(" : "),
+                     render_expression(value.range),
+                     text(") "),
+                     render_statement_block(value.body)}
                 );
             },
             [&](const TargetForStmt& value) noexcept {
@@ -194,32 +216,6 @@ auto TargetRenderer::render_statement(TargetStmtID id) noexcept -> LayoutNodeID 
                      render_statement_block(value.body)}
                 );
             },
-            [&](const TargetRangeForStmt& value) noexcept {
-                auto binding = std::string(value.maybe_unused ? "[[maybe_unused]] " : "");
-                if (value.binding_mode != TargetRangeBindingMode::MutableReference) {
-                    binding += "const ";
-                }
-                auto suffix = std::string {};
-                if (value.binding_mode != TargetRangeBindingMode::ReadValue) {
-                    suffix = "&";
-                }
-                const auto header = concat(
-                    {text(binding),
-                     render_type(value.type),
-                     text(suffix),
-                     text(" "),
-                     render_identifier(value.name),
-                     text(" : "),
-                     render_expression(value.iterable)}
-                );
-                const auto arguments = std::array {header};
-                return concat(
-                    {text("for "),
-                     delimited_list(arguments, "(", ")"),
-                     text(" "),
-                     render_statement_block(value.body)}
-                );
-            },
         },
         statement.value
     );
@@ -239,7 +235,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = std::string(value.maybe_unused ? "[[maybe_unused]] " : "");
+                auto prefix = value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
                 if (value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference) {
                     prefix += "const ";
@@ -272,7 +268,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
             },
             [&](const TargetUpdateStmt& value) noexcept {
                 return concat(
-                    {text(value.op == TargetUpdateOperator::Increment ? "++" : "--"),
+                    {text(update_spelling(value.op)),
                      render_expression(value.target, TargetPrecedence::Prefix)}
                 );
             },
@@ -303,7 +299,7 @@ auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> Layo
             },
             [&](const TargetUpdateStmt& value) noexcept {
                 return concat(
-                    {text(value.op == TargetUpdateOperator::Increment ? "++" : "--"),
+                    {text(update_spelling(value.op)),
                      render_expression(value.target, TargetPrecedence::Prefix)}
                 );
             },

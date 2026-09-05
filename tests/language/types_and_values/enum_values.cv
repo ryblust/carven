@@ -49,6 +49,9 @@ test "Enums: sum values construct compare and expose constructors" {
     let factory = Value::Number;
     let from_factory = factory(13);
     let keyword_case: class = .template(17);
+    var original: Value = .Number(19);
+    let copied = original;
+    original = .Empty;
 
     check(positive == same);
     check(positive != different);
@@ -56,6 +59,8 @@ test "Enums: sum values construct compare and expose constructors" {
     check(from_factory == Value::Number(13));
     check(keyword_value(keyword_case) == 17);
     check(collision_value(Collision::Number(23)) == 23);
+    check(copied == Value::Number(19));
+    check(original == Value::Empty);
 
     const raw = Status::Done as i32;
     check(raw == 5);

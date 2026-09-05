@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.source.module_path;
 
-import :source.identifier;
 import :source.module_path;
 import std;
 
@@ -37,14 +36,4 @@ TEST_CASE("Module path: domain projection is derived from reserved path structur
     CHECK_EQ(craft_parser->domain_relative_components().front(), "parser");
     CHECK(same_module_domain(*craft_parser, *craft_value));
     CHECK(!same_module_domain(*local, *craft_parser));
-}
-
-TEST_CASE("Source identifier: classification is independent of token kinds") {
-    const auto keyword = classify_identifier("match");
-    REQUIRE(std::holds_alternative<KeywordIdentifier>(keyword));
-    CHECK_EQ(std::get<KeywordIdentifier>(keyword).keyword, SourceKeyword::Match);
-    CHECK(std::holds_alternative<OrdinaryIdentifier>(classify_identifier("module_42")));
-    CHECK(std::holds_alternative<OrdinaryIdentifier>(classify_identifier("craft")));
-    CHECK(std::holds_alternative<InvalidIdentifier>(classify_identifier("hyphen-name")));
-    CHECK(std::holds_alternative<InvalidIdentifier>(classify_identifier("42module")));
 }

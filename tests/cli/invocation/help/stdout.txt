@@ -9,9 +9,9 @@ OPTIONS:
     -o, --output-dir <dir>   Write generated files below this directory
                              (default: current directory)
     --stdout                 Print all generated artifacts for inspection
-    --tests=default          Emit inline tests and the default runner
-    --tests=external         Emit inline tests without a runner
-    --linkage-domain <value> Override the generated linkage domain
+    --tests=default          Emit tests, runner header, and default main
+    --tests=external         Emit tests and runner header without main
+    --linkage-domain=<value> Override the generated linkage domain
 
 DEVELOPER COMMANDS:
     dump tokens              Dump the token stream to stdout

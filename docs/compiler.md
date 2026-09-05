@@ -1,252 +1,124 @@
 # Compiler architecture
 
-This document defines the implemented compiler pipeline, persistent
-representations, ownership boundaries, publication gates, and dependency
-direction. Observable language behavior and diagnostic identities belong to
-[semantics.md](semantics.md). Generated-C++ realization belongs to
-[backend.md](backend.md), and consumer/toolchain contracts belong to
-[compatibility.md](compatibility.md).
-
-Private helpers and module partitions may change. The lasting contract is that
-each fact has one producer, owner, lifetime, verifier, and publication path.
+This document describes semantic construction and analysis, including publication
+gates, ownership boundaries, and dependency direction.
 
 ## Pipeline
 
-Carven compiles one explicit closed batch:
+`compiler/` owns the compilation input contract and end-to-end orchestration.
+`compiler.request` describes the closed source batch and depends only on source
+types; the frontend consumes this contract independently. `compiler.compile`
+sequences parsing, semantic analysis, and artifact generation. Command-line
+input preparation and filesystem output belong to `driver/`.
 
 ```text
-CompilationRequest
-  -> parse_program and close inputs
-  -> SyntaxProgram
-  -> ProgramAnalyzer
-       -> SemanticSession and SemanticDraft
-       -> catalog and stable entity reservation
-       -> declaration-contract resolution and freeze
-       -> body elaboration
-       -> C++ boundary and public-surface validation
-       -> binding and place-use derivation
-       -> structural verification
-       -> failure/control/evaluation analysis
-       -> effect diagnostics and flow-candidate freeze
-       -> availability, contract, and nominal analysis
-       -> exact-layout assembly and final verification
-  -> SemanticProgram
-  -> generate_artifacts(move(SemanticProgram), move(TargetGenerationRequest))
-       -> TargetProgram::build
-  -> per-artifact TargetUnit
-  -> GeneratedArtifact
-  -> ArtifactSet
+CompilationRequest → SyntaxProgram → ProgramDraft → SemIRProgram
 ```
 
-Parsing and semantic analysis return diagnostics without a partial
-`SemanticProgram` on error. A successful `SemanticProgram` is move-only and is
-consumed by target-program construction. The resulting `TargetProgram`
-owns that semantic program by value for the complete target-generation
-lifetime.
+`parse_program` parses the closed source batch and resolves module imports.
+`analyze` constructs declarations and typed structured bodies, solves types and
+failure sets, validates contracts, checks ownership and callable loans, and
+publishes an immutable semantic program. Source errors discard the draft.
 
-## Owners and lifetimes
+## Publication gates
 
-| Owner or role | Owns | Lifetime |
-| --- | --- | --- |
-| `SyntaxProgram` | closed syntax trees, source snapshots, module identities, and initial provenance | parse publication through semantic handoff |
-| `ProgramAnalyzer` | syntax access, diagnostics, entry tracking, deferred callable constraints, and one semantic session | one semantic analysis |
-| `SemanticSession` | provenance construction, one `SemanticDraft`, and the outer semantic publication gate | one semantic analysis |
-| `SemanticDraft` | incomplete semantic slots, canonical builders and indexes, construction state, and compact fact candidates | construction through semantic seal |
-| declaration capabilities | stable entity reservations and required declaration slots | declaration discovery through declaration freeze |
-| recorded control workspace | rich failure, control, transfer, and diagnostic reasons | control analysis through flow freeze |
-| availability workspace | one body's place catalog, CFG, states, witnesses, and worklist | one body only |
-| `SemanticProgram` | exact verified structural, canonical, flow, binding, nominal, and provenance facts | semantic seal through target-program ownership |
+The analysis driver first builds the declaration catalog and completes
+signatures and required constants, then elaborates the body batch and emits
+unused-import diagnostics. Publication consumes the draft and performs these
+steps in order:
 
-Target-program ownership, artifact lowering, target units, and artifact
-collection belong to [backend.md](backend.md).
+1. Solve construction types and failure terms.
+2. Validate global semantic contracts.
+3. Resolve body drafts into typed structured bodies.
+4. Analyze the body batch, including ownership and callable relationships.
+5. Publish the bodies and seal the program.
 
-`SemanticDraftStorage` and `SemanticProgramStorage` are distinct private
-layouts. The draft layout may contain indexes, reservations, optional slots,
-and construction vectors. The published layout can represent only final values.
-Assembly moves final ID tables without remapping identities and leaves
-construction-only state behind.
+Failure at a gate prevents publication. Warnings accompany a successful
+`SemIRProgram`. No unresolved draft is passed to target planning.
 
-## Semantic stage gates
+## Ownership and identity
 
-| Gate | Input | Required proof | Output |
-| --- | --- | --- | --- |
-| Input closure | request and source manager | normalized unique paths, unique canonical modules, valid snapshots, and closed imports | `SyntaxProgram` |
-| Declaration-contract freeze | catalog and reserved identities | every required named declaration slot and nominal capability is complete | immutable declaration view for body elaboration |
-| Structural gate | completed declarations and callable implementations | valid IDs, scopes, bodies, `import(cpp)` implementations, ownership trees, type/form relations, bindings, and match-fact alignment | structurally verified `SemanticDraftView` |
-| Flow-candidate freeze | solved failures and recorded control/evaluation | diagnostics complete; callable, expression, block, try, and effect columns total and normalized | immutable compact flow facts |
-| Semantic seal | fully analyzed draft | exact published layout assembled; canonical tables, references, ownership, cycles, provenance, flow, binding, match, and nominal invariants verified | `SemanticProgram` |
+`SyntaxProgram` owns source provenance, syntax trees, and resolved imports.
+`ProgramDraft` consumes it and owns mutable declarations, canonical interning,
+construction types, failure constraints, and body construction. Declarations
+may reserve identities for recursion and forward references.
 
-An internal freeze makes already-decided facts immutable for the next analysis;
-it does not publish another program. Only `SemanticSession::finish()`
-constructs `SemanticProgram`, after `verify_semantic_program` accepts the exact
-storage that will be returned.
+Program IDs belong to one program. Binding, pattern, scope, and lifetime IDs
+belong to one body. Owning query surfaces validate identity and range. Expression,
+statement, and region occurrences are recursively owned values.
 
-## Input closure and identity
+Publication consumes construction state. `SemIRProgram` retains resolved
+semantic data and provenance; lowering does not query source syntax.
 
-The parser consumes only paths supplied by the request. It validates source
-identity, canonical module paths, snapshots, source spans, cross-tree
-references, and root forms. File discovery outside the request belongs to the
-caller or build integration.
+## Structured semantics
 
-Identity allocation follows the owning domain:
+Bodies retain conditionals, loops, matches, handlers, lexical scopes, and exits.
+Places describe storage identity and projection evaluation. Values describe
+computation. Initialization, assignment, and Take remain distinct operations.
+Children and operation contracts specify evaluation order.
 
-- source and module IDs enter semantic analysis through `SyntaxProgram` and are
-  never reallocated;
-- origins and spellings share one append-only provenance domain across the
-  frontend-to-semantic handoff;
-- `SemanticEntityReservations` allocates stable symbol, function, structure,
-  enumeration, and case identities directly for their final semantic tables;
-- types, callable signatures, and failure sets are allocated only by their
-  canonical value builders;
-- availability and CFG identities are body-local and never enter
-  `SemanticProgram`.
+Bindings carry their role and access. Scope and full-expression boundaries
+record lifetimes. Function return, failure propagation, loop transfer, and test
+exit retain their destinations. Nested callables have separate boundaries.
 
-IDs are local to one compilation and identify values only in their owning
-program.
+Match distinguishes a source place from an owned temporary. Pattern owners and
+guards retain their order. Constant-inactive source is validated but contributes
+no executed operations or ownership transitions.
 
-## Declaration and body construction
+## Solving and validation
 
-The analysis catalog owns transient lookup and discovery data, not a second
-copy of declaration facts. `DeclarationResolver` fills stable required slots
-through `SemanticDeclarationCapabilities`; declaration freeze makes the
-resolved contracts available to body elaboration without another publication
-owner.
+Canonical types, callable signatures, constants, and failure sets are the
+published query surfaces. Construction types and failure terms are solved
+before publication. Failure inference computes the least fixed point of the
+program's failure constraints.
 
-Closure callables are created during body elaboration, so structural
-verification is the first gate that proves all named and closure callables,
-implementations, bodies, scopes, and occurrence trees complete. A callable owns
-one explicit implementation origin: either `HIRBodyImplementation` with a
-`BodyID` or `HIRCppImportImplementation` with the declaration's
-`ProgramOriginID`. An `import(cpp)` implementation has no independent semantic
-identity or table. Its function symbol identifies the owning module, and its
-function declaration name supplies the provider spelling. Body-only passes
-query the body implementation and never invent a body for the C++
-implementation. Module items own top-level declaration order, modules directly
-own ordered C++ header dependencies and source-fragment payload origins, bodies
-and scopes own local occurrences, and enumerations own their ordered cases.
+Constant evaluation, operator selection, and pattern coverage each have one
+semantic implementation. Construction and structured contract checking consume those rules.
+Operator contracts are checked on structured expressions; ownership analysis
+consumes their access and result relationships.
 
-Reverse indexes are allowed only as disposable projections for a measured
-consumer. They are never a competing canonical owner.
+Local construction checks its preconditions. Program validation checks owner
+and range relations, type and call contracts, scope and control legality,
+binding relations, declaration topology, and cross-body callable relations.
+Each declaration and body has its required unique owner; each closure has one
+construction site and one body.
 
-## Published semantic facts
+## Ownership and callable loans
 
-`SemanticProgram` is the only published semantic representation. Its storage
-contains:
+Ownership analysis walks resolved structured bodies. Availability belongs to an
+owner; holder relationships belong to storage positions within that owner.
+Known field and element writes replace the relationships at that position;
+unknown element writes merge possible relationships. Ordinary scalar elements
+need no relationship rows.
 
-- provenance, source snapshots, modules, origins, spellings, and source
-  locations;
-- module-owned ordered `HIRCppHeaderDependency` facts and
-  `cpp_source_payload_origins`;
-- callable-owned `HIRCppImportImplementation` facts with source-form origins;
-- function-owned optional `cpp_export_form_origin` facts;
-- declarations, symbols, bodies, expressions, statements, patterns, blocks,
-  scopes, and constants;
-- canonical types, callable signatures, constant values, and failure sets;
-- symbol-keyed binding facts;
-- expression control facts and evaluation effects;
-- expression place uses rooted directly in `SymbolID` with structural field or
-  index projections;
-- block control, try/catch, and callable flow facts;
-- match-owned `HIRMatchCoverageFacts` aligned with source arms;
-- nominal equality capabilities and direct by-value containment dependencies.
+Value captures carry copied relationships. Write captures refer to live
+storage, so consumers follow the target's current contents. Lexical regions and
+full expressions release their own objects on each normal and control exit.
+A result's destination lifetime does not change the execution position.
 
-Place use does not create a second storage identity. The symbol is the root;
-the projection path describes only how one occurrence reaches a subobject.
-Types remain available from the canonical symbol/expression/type relations.
+Calls map parameters and captures to actual storage. Aliases share one state,
+including the order of external writes. Call answers contain returned
+relationships and external state for normal and typed failure completion;
+completed locals are discarded. Queries normalize reachable input storage,
+aliases, active accesses, and relative lifetimes. Recursive dependencies reach a
+fixed point over these relationships. Query state remains private to semantic
+analysis and never enters generation or runtime.
 
-C++ boundary validation uses local predicates over canonical `HIRTypeValue`
-facts. Parameters accept the supported scalar set; results accept that same set
-plus `void`. HIR publishes the canonical types rather than a separate boundary
-type classification.
+Unfinished calls retain direct place and borrowed-target accesses. Array
+iteration retains its source owner. Match guards additionally require stable
+subject storage. Branches merge only real successors; loops include entry,
+backedges, and exits. Diagnostic witnesses do not distinguish execution states.
+Return and failure states have caller consumers; test termination has none.
+All source operations receive contract checks independently of execution-state
+analysis, including unreachable source.
 
-A callable's structural contract and effective flow are separate columns.
-`CallContractView` is a pure projection of the verified callee type; call
-expressions do not persist a competing resolved-target field. Concrete
-callables use effective failure facts, first-class signatures use their fixed
-contract, and `import(cpp)` functions remain ordinary concrete callables whose
-explicit implementation origin records the source form.
+## Diagnostics and dependencies
 
-## Failure, control, effects, and availability
+Source operations retain origins. Implicit operations use linked expansion
+origins. Diagnostics are produced at the rule owner. Compiler-private invariant
+failures terminate at the violated boundary.
 
-Failure solving owns its dependency graph, SCC state, reverse callers, and
-worklist. Rich `RecordedControlAnalysis` retains diagnostic reasons while effect
-diagnostics run. The single consuming `freeze_flow_candidate` then publishes
-only compact immutable callable, expression, block, try, and evaluation facts
-and destroys the rich workspace.
-
-Evaluation effects contain sorted unique read, write, and take symbol sets plus
-the opaque reorder barrier. Whether an expression may terminate is a query over
-its control fact, not a duplicated effect flag.
-
-Availability starts only after compact flow and effect facts are immutable. It
-builds and solves a disposable CFG for one Carven body at a time, emits
-diagnostics after convergence, and publishes no graph, state, witness, or
-availability ID. An `import(cpp)` function has no body and therefore never
-enters this pass.
-The CFG is an analysis projection and does not prescribe generated C++ control
-shape.
-
-Pattern coverage has one producer. The same coverage result diagnoses repeated
-or covered alternatives and publishes arm-aligned `Reachable` or `Covered`
-states plus exhaustiveness. Semantic control and availability still analyze the
-source program; target construction and lowering consume the published arm
-states instead of re-deriving reachability from pattern syntax.
-
-## Nominal facts
-
-Semantic analysis owns language-level nominal capabilities and direct by-value
-containment. It verifies duplicate edges and cycles before publication. C++
-complete-definition requirements, declaration order, interface components, and
-artifact schedules are target facts and do not enter semantic storage.
-
-## Provenance and diagnostics
-
-The frontend establishes initial provenance, then the semantic session takes
-exclusive ownership of the same append-only origin and spelling domains.
-Existing identities never change. Diagnostics resolve stable source locations
-while provenance is live; on success the finished provenance moves into
-`SemanticProgram` for target attribution.
-
-Diagnostic identities, severities, and required source locations are governed
-by [semantics.md](semantics.md).
-
-## Verification
-
-Semantic verification is read-only proof, never a fallback producer. The
-structural and final gates cover at least:
-
-- ID bounds, table alignment, canonical uniqueness, and normalized ordering;
-- exactly one owner for modules, declarations, bodies, expressions, statements,
-  patterns, blocks, and scopes;
-- valid callable/implementation, `import(cpp)` implementation, body,
-  parent/scope, binding, type, and occurrence relations;
-- acyclic expression, statement, body, scope, and nominal containment graphs;
-- total and aligned control, effect, place-use, try, block, callable-flow, and
-  match-coverage columns;
-- normalized failure sets and valid callable/call projections;
-- valid origins, spellings, source IDs, and module IDs, including C++ header
-  spelling IDs, module-owned source-fragment payload origins, function-owned
-  `cpp_export_form_origin` facts, and exclusion of an `import(cpp)` implementation
-  on an `export(cpp)` function.
-
-A verifier may recompute a relation to check an invariant. It does not publish
-the recomputed relation or repair invalid storage.
-
-## Dependency direction
-
-- frontend depends on source, diagnostics, and support vocabulary, not semantic
-  or backend modules;
-- semantic construction depends on frontend input, source/provenance,
-  diagnostics, shared support, and semantic vocabulary;
-- `SemanticProgram` and semantic vocabulary do not depend on target or backend
-  modules;
-- target-program construction consumes a move-only verified `SemanticProgram`;
-- the lowering entry receives the target program and an artifact identity;
-  artifact-local lowerers receive only the resulting focused view,
-  target-building vocabulary, and immutable semantic vocabulary exposed through
-  that view;
-- target units, rendering, and artifact collection do not depend on semantic
-  construction state.
-
-Build and test evidence belongs to [testing.md](testing.md); source conventions
-belong to [conventions.md](conventions.md).
+Frontend facilities depend on source and syntax. Semantic construction consumes
+syntax; analysis consumes resolved operations. The backend consumes published
+semantics. Runtime support and build orchestration do not determine Carven
+access or ownership legality.

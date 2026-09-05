@@ -25,7 +25,6 @@ enum class CompileOptionErrorKind {
     MissingOutputPath,
     EmptyOutputPath,
     LinkageDomainSpecifiedMoreThanOnce,
-    MissingLinkageDomain,
     EmptyLinkageDomain,
     UnknownOption,
     NoSourceInput,

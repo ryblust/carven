@@ -67,6 +67,26 @@ fn ignore_unreachable_catch_effect() -> i32 {
     };
 }
 
+fn ignore_absent_typed_catch_effect() -> i32 {
+    return try {
+        fail_decode(1)?
+    } catch {
+        ReadError(_) => fail_unreachable()?,
+        DecodeError(.Empty) => 11,
+        DecodeError(.Invalid(code)) => code,
+    };
+}
+
+fn ignore_constant_dead_effect() -> i32 {
+    if false {
+        return fail_unreachable()?;
+    }
+    while false {
+        fail_unreachable()?;
+    }
+    return if true { 73 } else { fail_unreachable()? };
+}
+
 fn residual_decode(kind: i32) -> i32 throw DecodeError {
     return try {
         fail_decode(kind)?
@@ -270,6 +290,8 @@ test "Failure contracts: preserve rethrow and handler semantics" {
     check(recover_decode(0) == 11);
     check(recover_decode(1) == 73);
     check(ignore_unreachable_catch_effect() == 73);
+    check(ignore_absent_typed_catch_effect() == 73);
+    check(ignore_constant_dead_effect() == 73);
     check(recover_residual_decode() == 73);
     check(recover_nested_rethrow() == 7);
     check(recover_recursive_failure() == 83);

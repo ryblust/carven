@@ -1,0 +1,860 @@
+module carven:semantic.semir.decl.impl;
+
+import :semantic.semir.decl;
+import :support.invariant;
+import std;
+
+namespace {
+
+auto require_owner(ProgramIdentity actual, ProgramIdentity expected, std::string_view fact) noexcept
+    -> void {
+    if (actual != expected) {
+        invariant_violation(fact);
+    }
+}
+
+auto require_provenance_owner(
+    ProvenanceIdentity actual,
+    ProvenanceIdentity expected,
+    std::string_view fact
+) noexcept -> void {
+    if (actual != expected) {
+        invariant_violation(fact);
+    }
+}
+
+template<typename ID>
+auto require_ids_owner(
+    std::span<const ID> ids,
+    ProgramIdentity owner,
+    std::string_view fact
+) noexcept -> void {
+    for (const auto id : ids) {
+        require_owner(id.owner(), owner, fact);
+    }
+}
+
+auto validate_construction_type(ConstructionTypeRef type, ProgramIdentity owner) noexcept -> void {
+    std::visit(
+        [owner](const auto id) noexcept {
+            using ID = std::remove_cvref_t<decltype(id)>;
+            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+            require_owner(id.owner(), owner, "construction type used a foreign program");
+        },
+        type
+    );
+}
+
+auto resolve_construction_type(
+    ConstructionTypeRef type,
+    ProgramIdentity owner,
+    const TypeResolution& resolution
+) noexcept -> TypeID {
+    return std::visit(
+        [&](const auto id) noexcept -> TypeID {
+            using ID = std::remove_cvref_t<decltype(id)>;
+            require_owner(id.owner(), owner, "declaration type used a foreign program");
+            if constexpr (std::same_as<ID, TypeID>) {
+                return id;
+            } else if constexpr (std::same_as<ID, TypeTermID>) {
+                return resolution.type(id);
+            } else {
+                static_assert(std::same_as<ID, void>);
+            }
+        },
+        type
+    );
+}
+
+auto validate_callable_contract(
+    const ConstructionCallableContract& contract,
+    ProgramIdentity owner
+) noexcept -> void {
+    for (const auto& parameter : contract.parameters) {
+        validate_construction_type(parameter.type, owner);
+    }
+    validate_construction_type(contract.result, owner);
+    require_owner(
+        contract.failures.owner(),
+        owner,
+        "callable failure contract used a foreign program"
+    );
+}
+
+auto implementation_body_id(const CallableImplementation& implementation) noexcept
+    -> std::optional<BodyID> {
+    return std::visit(
+        [](const auto& value) static noexcept -> std::optional<BodyID> {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, FunctionBodyImplementation>
+                          || std::same_as<Value, ClosureBodyImplementation>) {
+                return value.body;
+            } else {
+                static_assert(std::same_as<Value, CppImportImplementation>);
+                return std::nullopt;
+            }
+        },
+        implementation
+    );
+}
+
+} // namespace
+
+auto callable_body_id(const CallableDeclaration& callable) noexcept -> std::optional<BodyID> {
+    return implementation_body_id(callable.implementation);
+}
+
+auto cpp_import_form_origin(const CallableDeclaration& callable) noexcept
+    -> std::optional<ProgramOriginID> {
+    if (const auto* imported = std::get_if<CppImportImplementation>(&callable.implementation)) {
+        return imported->form_origin;
+    }
+    return std::nullopt;
+}
+
+DeclarationStore::DeclarationStore(
+    ImmutableProgramTable<ModuleDeclaration, ModuleID> modules,
+    ImmutableProgramTable<FunctionDeclaration, FunctionID> functions,
+    ImmutableProgramTable<StructDeclaration, StructID> structures,
+    ImmutableProgramTable<EnumDeclaration, EnumID> enumerations,
+    ImmutableProgramTable<EnumCaseDeclaration, EnumCaseID> enum_cases,
+    ImmutableProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constants,
+    ImmutableProgramTable<CallableDeclaration, CallableID> callables
+) noexcept
+    : module_rows(std::move(modules)),
+      function_rows(std::move(functions)),
+      struct_rows(std::move(structures)),
+      enum_rows(std::move(enumerations)),
+      enum_case_rows(std::move(enum_cases)),
+      module_constant_rows(std::move(module_constants)),
+      callable_rows(std::move(callables)) {}
+
+auto DeclarationStore::owner() const noexcept -> ProgramIdentity {
+    return module_rows.owner();
+}
+
+auto DeclarationStore::contains(ModuleID id) const noexcept -> bool {
+    return module_rows.contains(id);
+}
+auto DeclarationStore::contains(FunctionID id) const noexcept -> bool {
+    return function_rows.contains(id);
+}
+auto DeclarationStore::contains(StructID id) const noexcept -> bool {
+    return struct_rows.contains(id);
+}
+auto DeclarationStore::contains(EnumID id) const noexcept -> bool {
+    return enum_rows.contains(id);
+}
+auto DeclarationStore::contains(EnumCaseID id) const noexcept -> bool {
+    return enum_case_rows.contains(id);
+}
+auto DeclarationStore::contains(ModuleConstantID id) const noexcept -> bool {
+    return module_constant_rows.contains(id);
+}
+auto DeclarationStore::contains(CallableID id) const noexcept -> bool {
+    return callable_rows.contains(id);
+}
+
+auto DeclarationStore::module_decl(ModuleID id) const noexcept -> const ModuleDeclaration& {
+    return module_rows.get(id);
+}
+auto DeclarationStore::function(FunctionID id) const noexcept -> const FunctionDeclaration& {
+    return function_rows.get(id);
+}
+auto DeclarationStore::structure(StructID id) const noexcept -> const StructDeclaration& {
+    return struct_rows.get(id);
+}
+auto DeclarationStore::enumeration(EnumID id) const noexcept -> const EnumDeclaration& {
+    return enum_rows.get(id);
+}
+auto DeclarationStore::enum_case(EnumCaseID id) const noexcept -> const EnumCaseDeclaration& {
+    return enum_case_rows.get(id);
+}
+auto DeclarationStore::module_constant(ModuleConstantID id) const noexcept
+    -> const ModuleConstantDeclaration& {
+    return module_constant_rows.get(id);
+}
+auto DeclarationStore::callable(CallableID id) const noexcept -> const CallableDeclaration& {
+    return callable_rows.get(id);
+}
+auto DeclarationStore::body_for_callable(CallableID callable) const noexcept
+    -> std::optional<BodyID> {
+    return callable_body_id(callable_rows.get(callable));
+}
+auto DeclarationStore::callable_for_body(BodyID body) const noexcept -> std::optional<CallableID> {
+    require_owner(body.owner(), owner(), "callable lookup used a foreign body");
+    auto result = std::optional<CallableID>();
+    for (const auto [id, declaration] : callable_rows.entries()) {
+        if (callable_body_id(declaration) != body) {
+            continue;
+        }
+        if (result.has_value()) {
+            invariant_violation("body was owned by more than one callable declaration");
+        }
+        result = id;
+    }
+    return result;
+}
+
+auto DeclarationStore::modules() const noexcept
+    -> IDTableEntries<ModuleID, ModuleDeclaration, ProgramIdentity> {
+    return module_rows.entries();
+}
+auto DeclarationStore::functions() const noexcept
+    -> IDTableEntries<FunctionID, FunctionDeclaration, ProgramIdentity> {
+    return function_rows.entries();
+}
+auto DeclarationStore::structures() const noexcept
+    -> IDTableEntries<StructID, StructDeclaration, ProgramIdentity> {
+    return struct_rows.entries();
+}
+auto DeclarationStore::enumerations() const noexcept
+    -> IDTableEntries<EnumID, EnumDeclaration, ProgramIdentity> {
+    return enum_rows.entries();
+}
+auto DeclarationStore::enum_cases() const noexcept
+    -> IDTableEntries<EnumCaseID, EnumCaseDeclaration, ProgramIdentity> {
+    return enum_case_rows.entries();
+}
+auto DeclarationStore::module_constants() const noexcept
+    -> IDTableEntries<ModuleConstantID, ModuleConstantDeclaration, ProgramIdentity> {
+    return module_constant_rows.entries();
+}
+auto DeclarationStore::callables() const noexcept
+    -> IDTableEntries<CallableID, CallableDeclaration, ProgramIdentity> {
+    return callable_rows.entries();
+}
+
+ResolvedDeclarationView::ResolvedDeclarationView(const DeclarationBuilder& builder) noexcept
+    : declaration_builder(std::addressof(builder)) {}
+
+auto ResolvedDeclarationView::owner() const noexcept -> ProgramIdentity {
+    return declaration_builder->owner();
+}
+auto ResolvedDeclarationView::module_decl(ModuleID id) const noexcept -> ModuleDeclaration {
+    return declaration_builder->modules.copy_defined(id);
+}
+auto ResolvedDeclarationView::function(FunctionID id) const noexcept -> FunctionDeclaration {
+    return declaration_builder->functions.copy_defined(id);
+}
+auto ResolvedDeclarationView::structure(StructID id) const noexcept
+    -> ConstructionStructDeclaration {
+    return declaration_builder->structures.copy_defined(id);
+}
+auto ResolvedDeclarationView::enumeration(EnumID id) const noexcept -> ConstructionEnumDeclaration {
+    return declaration_builder->enumerations.copy_defined(id);
+}
+auto ResolvedDeclarationView::enum_case(EnumCaseID id) const noexcept
+    -> ConstructionEnumCaseDeclaration {
+    return declaration_builder->enum_cases.copy_defined(id);
+}
+auto ResolvedDeclarationView::module_constant(ModuleConstantID id) const noexcept
+    -> ConstructionModuleConstantDeclaration {
+    return declaration_builder->module_constants.copy_defined(id);
+}
+auto ResolvedDeclarationView::callable_contract(CallableID id) const noexcept
+    -> ConstructionCallableContract {
+    return declaration_builder->callable_contracts.copy_defined(id);
+}
+auto ResolvedDeclarationView::callable_signature(CallableID id) const noexcept
+    -> CallableSignatureID {
+    declaration_builder->require_concrete();
+    return declaration_builder->callable_signature_ids.copy_defined(id);
+}
+auto ResolvedDeclarationView::callable_implementation(CallableID id) const noexcept
+    -> CallableImplementation {
+    declaration_builder->require_resolution_finished();
+    return declaration_builder->callable_implementations.copy_defined(id);
+}
+auto ResolvedDeclarationView::body_for_callable(CallableID callable) const noexcept
+    -> std::optional<BodyID> {
+    declaration_builder->require_resolution_finished();
+    return implementation_body_id(
+        declaration_builder->callable_implementations.copy_defined(callable)
+    );
+}
+auto ResolvedDeclarationView::callable_for_body(BodyID body) const noexcept
+    -> std::optional<CallableID> {
+    declaration_builder->require_resolution_finished();
+    require_owner(body.owner(), owner(), "callable lookup used a foreign body");
+    auto result = std::optional<CallableID>();
+    for (const auto id : declaration_builder->callable_order) {
+        if (!declaration_builder->callable_implementations.is_defined(id)) {
+            continue;
+        }
+        const auto implementation = declaration_builder->callable_implementations.copy_defined(id);
+        if (implementation_body_id(implementation) != body) {
+            continue;
+        }
+        if (result.has_value()) {
+            invariant_violation("body was owned by more than one callable declaration");
+        }
+        result = id;
+    }
+    return result;
+}
+auto ResolvedDeclarationView::module_count() const noexcept -> std::size_t {
+    return declaration_builder->modules.size();
+}
+auto ResolvedDeclarationView::function_count() const noexcept -> std::size_t {
+    return declaration_builder->functions.size();
+}
+auto ResolvedDeclarationView::struct_count() const noexcept -> std::size_t {
+    return declaration_builder->structures.size();
+}
+auto ResolvedDeclarationView::enum_count() const noexcept -> std::size_t {
+    return declaration_builder->enumerations.size();
+}
+auto ResolvedDeclarationView::enum_case_count() const noexcept -> std::size_t {
+    return declaration_builder->enum_cases.size();
+}
+auto ResolvedDeclarationView::module_constant_count() const noexcept -> std::size_t {
+    return declaration_builder->module_constants.size();
+}
+auto ResolvedDeclarationView::callable_count() const noexcept -> std::size_t {
+    return declaration_builder->callable_contracts.size();
+}
+auto ResolvedDeclarationView::module_ids() const noexcept -> std::vector<ModuleID> {
+    return declaration_builder->modules.ids();
+}
+auto ResolvedDeclarationView::function_ids() const noexcept -> std::vector<FunctionID> {
+    return declaration_builder->functions.ids();
+}
+auto ResolvedDeclarationView::struct_ids() const noexcept -> std::vector<StructID> {
+    return declaration_builder->structures.ids();
+}
+auto ResolvedDeclarationView::enum_ids() const noexcept -> std::vector<EnumID> {
+    return declaration_builder->enumerations.ids();
+}
+auto ResolvedDeclarationView::enum_case_ids() const noexcept -> std::vector<EnumCaseID> {
+    return declaration_builder->enum_cases.ids();
+}
+auto ResolvedDeclarationView::module_constant_ids() const noexcept
+    -> std::vector<ModuleConstantID> {
+    return declaration_builder->module_constants.ids();
+}
+auto ResolvedDeclarationView::callable_ids() const noexcept -> std::vector<CallableID> {
+    return declaration_builder->callable_order;
+}
+auto ResolvedDeclarationView::callable_implementations_complete() const noexcept -> bool {
+    return declaration_builder->callable_implementations.all_defined();
+}
+
+DeclarationBuilder::DeclarationBuilder(
+    ProgramIdentity owner,
+    ProvenanceIdentity provenance
+) noexcept
+    : program_identity(owner),
+      provenance_identity(provenance),
+      state(State::Reserving),
+      modules(owner),
+      functions(owner),
+      structures(owner),
+      enumerations(owner),
+      enum_cases(owner),
+      module_constants(owner),
+      callable_contracts(owner),
+      callable_signature_ids(owner),
+      callable_implementations(owner),
+      callable_order() {}
+
+auto DeclarationBuilder::owner() const noexcept -> ProgramIdentity {
+    return program_identity;
+}
+
+auto DeclarationBuilder::reserve_module() noexcept -> ModuleID {
+    require_reserving();
+    return modules.reserve();
+}
+auto DeclarationBuilder::reserve_function() noexcept -> FunctionID {
+    require_reserving();
+    return functions.reserve();
+}
+auto DeclarationBuilder::reserve_struct() noexcept -> StructID {
+    require_reserving();
+    return structures.reserve();
+}
+auto DeclarationBuilder::reserve_enum() noexcept -> EnumID {
+    require_reserving();
+    return enumerations.reserve();
+}
+auto DeclarationBuilder::reserve_enum_case() noexcept -> EnumCaseID {
+    require_reserving();
+    return enum_cases.reserve();
+}
+auto DeclarationBuilder::reserve_module_constant() noexcept -> ModuleConstantID {
+    require_reserving();
+    return module_constants.reserve();
+}
+auto DeclarationBuilder::reserve_callable() noexcept -> CallableID {
+    require_reserving();
+    return reserve_callable_pair();
+}
+auto DeclarationBuilder::reserve_callable_pair() noexcept -> CallableID {
+    const auto contract_id = callable_contracts.reserve();
+    const auto signature_id = callable_signature_ids.reserve();
+    const auto implementation_id = callable_implementations.reserve();
+    if (contract_id != signature_id || contract_id != implementation_id) {
+        invariant_violation("callable construction identities diverged");
+    }
+    callable_order.push_back(contract_id);
+    return contract_id;
+}
+
+auto DeclarationBuilder::define(ModuleID id, ModuleDeclaration declaration) noexcept -> void {
+    require_reserving();
+    require_provenance_owner(
+        declaration.provenance_module.owner(),
+        provenance_identity,
+        "module declaration used a foreign provenance module"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "module declaration used a foreign origin"
+    );
+    for (const auto& header : declaration.cpp_headers) {
+        require_provenance_owner(
+            header.name.owner(),
+            provenance_identity,
+            "C++ header dependency used a foreign spelling"
+        );
+        require_provenance_owner(
+            header.origin.owner(),
+            provenance_identity,
+            "C++ header dependency used a foreign origin"
+        );
+    }
+    for (const auto& fragment : declaration.cpp_source_fragments) {
+        require_provenance_owner(
+            fragment.payload_origin.owner(),
+            provenance_identity,
+            "C++ source fragment used a foreign origin"
+        );
+    }
+    for (const auto& item : declaration.items) {
+        std::visit(
+            [this](const auto item_id) noexcept {
+                using ID = std::remove_cvref_t<decltype(item_id)>;
+                static_assert(
+                    std::same_as<ID, FunctionID>
+                    || std::same_as<ID, StructID>
+                    || std::same_as<ID, EnumID>
+                    || std::same_as<ID, ModuleConstantID>
+                    || std::same_as<ID, TestID>
+                );
+                require_owner(item_id.owner(), program_identity, "module used a foreign item");
+            },
+            item
+        );
+    }
+    modules.define(id, std::move(declaration));
+}
+auto DeclarationBuilder::define(FunctionID id, FunctionDeclaration declaration) noexcept -> void {
+    require_reserving();
+    require_owner(
+        declaration.module_id.owner(),
+        program_identity,
+        "function used a foreign module"
+    );
+    require_owner(
+        declaration.callable.owner(),
+        program_identity,
+        "function used a foreign callable"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "function used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "function used a foreign origin"
+    );
+    if (declaration.cpp_export_origin.has_value()) {
+        require_provenance_owner(
+            declaration.cpp_export_origin->owner(),
+            provenance_identity,
+            "function C++ export used a foreign origin"
+        );
+    }
+    functions.define(id, declaration);
+}
+auto DeclarationBuilder::define(StructID id, ConstructionStructDeclaration declaration) noexcept
+    -> void {
+    require_reserving();
+    require_owner(
+        declaration.module_id.owner(),
+        program_identity,
+        "structure used a foreign module"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "structure used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "structure used a foreign origin"
+    );
+    for (const auto& field : declaration.fields) {
+        validate_construction_type(field.type, program_identity);
+        require_provenance_owner(
+            field.name.owner(),
+            provenance_identity,
+            "structure field used a foreign spelling"
+        );
+        require_provenance_owner(
+            field.origin.owner(),
+            provenance_identity,
+            "structure field used a foreign origin"
+        );
+    }
+    structures.define(id, std::move(declaration));
+}
+auto DeclarationBuilder::define(EnumID id, ConstructionEnumDeclaration declaration) noexcept
+    -> void {
+    require_reserving();
+    require_owner(declaration.module_id.owner(), program_identity, "enum used a foreign module");
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "enum used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "enum used a foreign origin"
+    );
+    require_ids_owner(
+        std::span<const EnumCaseID>(declaration.cases),
+        program_identity,
+        "enum used a foreign case"
+    );
+    std::visit(
+        [this](const auto& representation) noexcept {
+            using Representation = std::remove_cvref_t<decltype(representation)>;
+            if constexpr (std::same_as<Representation, ConstructionNumericEnumRepresentation>) {
+                validate_construction_type(representation.underlying_type, program_identity);
+            } else {
+                static_assert(std::same_as<Representation, PayloadEnumRepresentation>);
+            }
+        },
+        declaration.representation
+    );
+    enumerations.define(id, std::move(declaration));
+}
+auto DeclarationBuilder::define(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept
+    -> void {
+    require_reserving();
+    require_owner(declaration.owner.owner(), program_identity, "enum case used a foreign enum");
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "enum case used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "enum case used a foreign origin"
+    );
+    for (const auto type : declaration.payload_types) {
+        validate_construction_type(type, program_identity);
+    }
+    if (declaration.constant.has_value()) {
+        require_owner(
+            declaration.constant->owner(),
+            program_identity,
+            "enum case used a foreign constant"
+        );
+    }
+    enum_cases.define(id, std::move(declaration));
+}
+auto DeclarationBuilder::define(
+    ModuleConstantID id,
+    ConstructionModuleConstantDeclaration declaration
+) noexcept -> void {
+    require_reserving();
+    require_owner(
+        declaration.module_id.owner(),
+        program_identity,
+        "module constant used a foreign module"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "module constant used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "module constant used a foreign origin"
+    );
+    validate_construction_type(declaration.type, program_identity);
+    require_owner(
+        declaration.value.owner(),
+        program_identity,
+        "module constant used a foreign constant fact"
+    );
+    module_constants.define(id, declaration);
+}
+auto DeclarationBuilder::define_callable_contract(
+    CallableID id,
+    ConstructionCallableContract contract
+) noexcept -> void {
+    validate_callable_contract(contract, program_identity);
+    callable_contracts.define(id, std::move(contract));
+}
+
+auto DeclarationBuilder::finish_resolution() noexcept -> ResolvedDeclarationView {
+    require_reserving();
+    require_all_declarations_defined();
+    state = State::Resolved;
+    return ResolvedDeclarationView(*this);
+}
+auto DeclarationBuilder::resolved_view() const noexcept -> ResolvedDeclarationView {
+    require_resolution_finished();
+    return ResolvedDeclarationView(*this);
+}
+
+auto DeclarationBuilder::append_body_callable(ConstructionCallableContract contract) noexcept
+    -> CallableID {
+    require_resolved();
+    const auto id = reserve_callable_pair();
+    define_callable_contract(id, std::move(contract));
+    return id;
+}
+auto DeclarationBuilder::define_callable_signature(
+    CallableID id,
+    CallableSignatureID signature
+) noexcept -> void {
+    require_resolved();
+    require_owner(signature.owner(), program_identity, "callable used a foreign signature");
+    callable_signature_ids.define(id, signature);
+}
+auto DeclarationBuilder::finish_callable_signatures() noexcept -> void {
+    require_resolved();
+    if (!callable_signature_ids.all_defined()) {
+        invariant_violation("callable signature resolution left an undefined callable");
+    }
+    state = State::Concrete;
+}
+auto DeclarationBuilder::complete_callable(
+    CallableID id,
+    CallableImplementation implementation
+) noexcept -> void {
+    require_resolution_finished();
+    std::visit(
+        [this](const auto& value) noexcept {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, FunctionBodyImplementation>
+                          || std::same_as<Value, ClosureBodyImplementation>) {
+                require_owner(value.body.owner(), program_identity, "callable used a foreign body");
+            } else {
+                static_assert(std::same_as<Value, CppImportImplementation>);
+                require_provenance_owner(
+                    value.form_origin.owner(),
+                    provenance_identity,
+                    "C++ import callable used a foreign origin"
+                );
+            }
+        },
+        implementation
+    );
+    if (const auto body = implementation_body_id(implementation)) {
+        for (const auto other_id : callable_order) {
+            if (other_id == id || !callable_implementations.is_defined(other_id)) {
+                continue;
+            }
+            const auto other = callable_implementations.copy_defined(other_id);
+            const auto other_body = implementation_body_id(other);
+            if (other_body == body) {
+                invariant_violation("body was assigned to more than one callable");
+            }
+        }
+    }
+    callable_implementations.define(id, implementation);
+}
+
+auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
+    -> DeclarationStore {
+    require_concrete();
+    if (type_resolution.owner() != program_identity) {
+        invariant_violation("declaration seal used a foreign type resolution");
+    }
+    if (!callable_implementations.all_defined()) {
+        invariant_violation(
+            "declaration store was sealed with incomplete callable implementations"
+        );
+    }
+
+    auto final_structures = MutableProgramTable<StructDeclaration, StructID>(program_identity);
+    const auto construction_structures = std::move(structures).seal();
+    for (const auto [id, declaration] : construction_structures.entries()) {
+        auto fields = std::vector<StructField>();
+        fields.reserve(declaration.fields.size());
+        for (const auto& field : declaration.fields) {
+            fields.push_back(
+                StructField {
+                    .name = field.name,
+                    .type =
+                        resolve_construction_type(field.type, program_identity, type_resolution),
+                    .origin = field.origin,
+                }
+            );
+        }
+        const auto final_id = final_structures.add(
+            StructDeclaration {
+                .module_id = declaration.module_id,
+                .name = declaration.name,
+                .origin = declaration.origin,
+                .visibility = declaration.visibility,
+                .fields = std::move(fields),
+                .capabilities = declaration.capabilities,
+            }
+        );
+        if (final_id != id) {
+            invariant_violation("structure declaration identity changed during sealing");
+        }
+    }
+
+    auto final_enumerations = MutableProgramTable<EnumDeclaration, EnumID>(program_identity);
+    const auto construction_enumerations = std::move(enumerations).seal();
+    for (const auto [id, declaration] : construction_enumerations.entries()) {
+        const auto representation = std::visit(
+            [&](const auto& value) noexcept -> EnumRepresentation {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, ConstructionNumericEnumRepresentation>) {
+                    return NumericEnumRepresentation {
+                        .underlying_type = resolve_construction_type(
+                            value.underlying_type,
+                            program_identity,
+                            type_resolution
+                        ),
+                    };
+                } else {
+                    static_assert(std::same_as<Value, PayloadEnumRepresentation>);
+                    return PayloadEnumRepresentation {};
+                }
+            },
+            declaration.representation
+        );
+        const auto final_id = final_enumerations.add(
+            EnumDeclaration {
+                .module_id = declaration.module_id,
+                .name = declaration.name,
+                .origin = declaration.origin,
+                .visibility = declaration.visibility,
+                .representation = representation,
+                .cases = declaration.cases,
+                .capabilities = declaration.capabilities,
+            }
+        );
+        if (final_id != id) {
+            invariant_violation("enum declaration identity changed during sealing");
+        }
+    }
+
+    auto final_enum_cases = MutableProgramTable<EnumCaseDeclaration, EnumCaseID>(program_identity);
+    const auto construction_enum_cases = std::move(enum_cases).seal();
+    for (const auto [id, declaration] : construction_enum_cases.entries()) {
+        auto payload_types = std::vector<TypeID>();
+        payload_types.reserve(declaration.payload_types.size());
+        for (const auto type : declaration.payload_types) {
+            payload_types.push_back(
+                resolve_construction_type(type, program_identity, type_resolution)
+            );
+        }
+        const auto final_id = final_enum_cases.add(
+            EnumCaseDeclaration {
+                .owner = declaration.owner,
+                .name = declaration.name,
+                .origin = declaration.origin,
+                .payload_types = std::move(payload_types),
+                .constant = declaration.constant,
+            }
+        );
+        if (final_id != id) {
+            invariant_violation("enum-case declaration identity changed during sealing");
+        }
+    }
+
+    auto final_module_constants =
+        MutableProgramTable<ModuleConstantDeclaration, ModuleConstantID>(program_identity);
+    const auto construction_module_constants = std::move(module_constants).seal();
+    for (const auto [id, declaration] : construction_module_constants.entries()) {
+        const auto final_id = final_module_constants.add(
+            ModuleConstantDeclaration {
+                .module_id = declaration.module_id,
+                .name = declaration.name,
+                .origin = declaration.origin,
+                .visibility = declaration.visibility,
+                .type =
+                    resolve_construction_type(declaration.type, program_identity, type_resolution),
+                .value = declaration.value,
+            }
+        );
+        if (final_id != id) {
+            invariant_violation("module constant identity changed during sealing");
+        }
+    }
+
+    auto final_callables = MutableProgramTable<CallableDeclaration, CallableID>(program_identity);
+    const auto signature_rows = std::move(callable_signature_ids).seal();
+    const auto implementation_rows = std::move(callable_implementations).seal();
+    for (const auto callable_id : callable_order) {
+        const auto final_id = final_callables.add(
+            CallableDeclaration {
+                .signature = signature_rows.get(callable_id),
+                .implementation = implementation_rows.get(callable_id),
+            }
+        );
+        if (final_id != callable_id) {
+            invariant_violation("callable identity changed during declaration sealing");
+        }
+    }
+    static_cast<void>(std::move(callable_contracts).seal());
+    return DeclarationStore(
+        std::move(modules).seal(),
+        std::move(functions).seal(),
+        std::move(final_structures).seal(),
+        std::move(final_enumerations).seal(),
+        std::move(final_enum_cases).seal(),
+        std::move(final_module_constants).seal(),
+        std::move(final_callables).seal()
+    );
+}
+
+auto DeclarationBuilder::require_reserving() const noexcept -> void {
+    if (state != State::Reserving) {
+        invariant_violation("named declaration storage was reopened after resolution");
+    }
+}
+auto DeclarationBuilder::require_resolved() const noexcept -> void {
+    if (state != State::Resolved) {
+        invariant_violation("resolved declaration operation used before resolution completed");
+    }
+}
+auto DeclarationBuilder::require_resolution_finished() const noexcept -> void {
+    if (state == State::Reserving) {
+        invariant_violation("declaration operation used before resolution completed");
+    }
+}
+auto DeclarationBuilder::require_concrete() const noexcept -> void {
+    if (state != State::Concrete) {
+        invariant_violation("concrete declaration operation used before signature resolution");
+    }
+}
+auto DeclarationBuilder::require_all_declarations_defined() const noexcept -> void {
+    if (!modules.all_defined()
+        || !functions.all_defined()
+        || !structures.all_defined()
+        || !enumerations.all_defined()
+        || !enum_cases.all_defined()
+        || !module_constants.all_defined()
+        || !callable_contracts.all_defined()) {
+        invariant_violation("declaration resolution completed with an undefined shell");
+    }
+}

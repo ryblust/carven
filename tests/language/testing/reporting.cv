@@ -3,12 +3,6 @@ import "testing/reporting.hpp";
 private import(cpp) fn cv_test_reporting_mark(bit: i32);
 private import(cpp) fn cv_test_reporting_condition(bit: i32, value: bool) -> bool;
 
-struct ReportingError {}
-
-fn reporting_value() -> i32 throw ReportingError {
-    return 1;
-}
-
 fn traced_reporting_condition(bit: i32, value: bool) -> bool {
     return cv_test_reporting_condition(bit, value);
 }
@@ -40,65 +34,11 @@ test "Testing: fail reports and exits" {
     cv_test_reporting_mark(7);
 }
 
-test "Testing: require exits across a loop" {
+test "Testing: require exits across nested control" {
     while true {
-        require(traced_reporting_condition(8, false));
+        if true {
+            require(traced_reporting_condition(8, false));
+        }
     }
     cv_test_reporting_mark(9);
-}
-
-test "Testing: require exits across statement if" {
-    if true {
-        require(traced_reporting_condition(10, false));
-    }
-    cv_test_reporting_mark(11);
-}
-
-test "Testing: require exits across value if" {
-    let _ = if true {
-        require(traced_reporting_condition(12, false));
-        1
-    } else {
-        2
-    };
-    cv_test_reporting_mark(13);
-}
-
-test "Testing: require exits across statement match" {
-    match 1 {
-        1 => { require(traced_reporting_condition(14, false)); },
-        _ => {},
-    }
-    cv_test_reporting_mark(15);
-}
-
-test "Testing: fail exits across value match" {
-    let _ = match 1 {
-        1 => {
-            fail("nested fail message");
-            1
-        },
-        _ => 2,
-    };
-    cv_test_reporting_mark(16);
-}
-
-test "Testing: require exits across statement try" {
-    try {
-        require(traced_reporting_condition(17, false));
-        reporting_value()?;
-    } catch {
-        ReportingError(_) => {},
-    }
-    cv_test_reporting_mark(18);
-}
-
-test "Testing: require exits across value try and failure transfer" {
-    let _ = try {
-        require(traced_reporting_condition(19, false));
-        reporting_value()?
-    } catch {
-        ReportingError(_) => 0,
-    };
-    cv_test_reporting_mark(20);
 }

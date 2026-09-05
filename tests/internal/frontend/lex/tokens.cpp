@@ -69,6 +69,32 @@ TEST_CASE("Lexer: identifiers are ASCII") {
     check_lexical_error(std::string_view("\xff", 1));
 }
 
+TEST_CASE("Lexer: every source-text ingress validates UTF-8") {
+    static constexpr auto malformed = [](std::string prefix, const std::string& suffix) {
+        prefix.push_back(static_cast<char>(0xff));
+        prefix += suffix;
+        return prefix;
+    };
+
+    const auto ordinary = malformed({}, {});
+    const auto comment = malformed("// ", "\nlet value = 1;");
+    const auto quoted_header = malformed("import \"vendor/", "\";");
+    const auto angle_header = malformed("import <vendor/", ">;");
+    const auto source_fragment = malformed("#[cpp] ---\nauto value = \"", "\";\n---");
+    for (const auto& text : {ordinary, comment, quoted_header, angle_header, source_fragment}) {
+        const auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = text,
+            .origin = "utf8-ingress-test.cv",
+        };
+        const auto result = lex(source);
+        CAPTURE(text);
+        CHECK(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) static noexcept {
+            return diagnostic.finding.message == "invalid UTF-8 encoding";
+        }));
+    }
+}
+
 TEST_CASE("Lexer: throw syntax reserves singular keywords only") {
     check_token("throws", TokenKind::Identifier);
     check_token_sequence(

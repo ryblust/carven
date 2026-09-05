@@ -5,6 +5,28 @@ add_rules("mode.debug", "mode.release")
 set_defaultmode("debug")
 set_policy("build.progress_style", "multirow")
 
+task("format")
+    set_menu({
+        usage = "xmake format [options]",
+        description = "Format C++ sources with clang-format 23",
+        options = {},
+    })
+    on_run(function ()
+        import("xmake.format").main(false)
+    end)
+task_end()
+
+task("format-check")
+    set_menu({
+        usage = "xmake format-check [options]",
+        description = "Check C++ formatting with clang-format 23",
+        options = {},
+    })
+    on_run(function ()
+        import("xmake.format").main(true)
+    end)
+task_end()
+
 if is_plat("windows") then
     set_toolchains("clang-cl[llvm]")
 else

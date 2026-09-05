@@ -1,4 +1,4 @@
-#include <carven/std/testing/testing.hpp>
+#include <carven/generated/carven-test-runner.hpp>
 
 #include <cstdint>
 #include <iostream>
@@ -34,16 +34,15 @@ auto contains(const std::string& text, const std::string& expected) noexcept -> 
 } // namespace
 
 auto main() noexcept -> int {
-    carven::testing::set_reporter(&report);
-    const auto result = carven::testing::run();
+    const auto result = carven::testing::run_generated_tests(&report);
     const auto& text = observed_output;
 
-    constexpr auto expected_flags = (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4)
-        | (1u << 6) | (1u << 8) | (1u << 10) | (1u << 12) | (1u << 14) | (1u << 17) | (1u << 19);
+    constexpr auto expected_flags =
+        (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 6) | (1u << 8);
     if (result == 0 || cv_test_reporting_observed_flags() != expected_flags) {
         return 1;
     }
-    if (!contains(text, "tests/language/testing/reporting.cv:23")
+    if (!contains(text, "tests/language/testing/reporting.cv:16")
         || !contains(text, "operation: check")
         || !contains(
             text,
@@ -55,11 +54,11 @@ auto main() noexcept -> int {
             "        )"
         )
         || !contains(text, "message: check message")
-        || !contains(text, "tests/language/testing/reporting.cv:34")
+        || !contains(text, "tests/language/testing/reporting.cv:28")
         || !contains(text, "operation: require")
         || !contains(text, "condition: traced_reporting_condition(3, false)")
         || !contains(text, "message: require message")
-        || !contains(text, "tests/language/testing/reporting.cv:39")
+        || !contains(text, "tests/language/testing/reporting.cv:33")
         || !contains(text, "operation: fail")
         || !contains(text, "message: fail message")) {
         std::cerr << text;

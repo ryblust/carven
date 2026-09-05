@@ -85,67 +85,6 @@ auto import_error(SourceID source, std::string message, Span span) noexcept -> D
         .build();
 }
 
-auto append_domain_prefix(
-    std::vector<std::string_view>& components,
-    const ModuleDomainPrefix& prefix
-) noexcept -> void {
-    if (const auto craft_name = prefix.craft_name()) {
-        components.push_back("crafts");
-        components.push_back(*craft_name);
-    }
-}
-
-enum class ModuleReferenceResolutionError {
-    InvalidCanonicalPath,
-    EscapesModuleDomain,
-};
-
-auto resolve_path(
-    SourceView source,
-    const CanonicalModulePath& importer_path,
-    const ASTModuleReference& reference
-) noexcept -> std::expected<CanonicalModulePath, ModuleReferenceResolutionError> {
-    auto components = std::vector<std::string_view>();
-    std::visit(
-        Overloaded {
-            [&](const ASTDomainRootModuleReference& value) noexcept {
-                append_domain_prefix(components, importer_path.module_domain_prefix());
-                for (const auto component : value.components) {
-                    components.push_back(slice(source.text, component));
-                }
-            },
-            [&](const ASTParentRelativeModuleReference& value) noexcept {
-                append_domain_prefix(components, importer_path.module_domain_prefix());
-                const auto relative = importer_path.domain_relative_components();
-                for (auto index = 0uz; index + 1 < relative.size(); ++index) {
-                    components.push_back(relative[index]);
-                }
-                for (const auto component : value.components) {
-                    components.push_back(slice(source.text, component));
-                }
-            },
-            [&](const ASTCraftQualifiedModuleReference& value) noexcept {
-                components.push_back("crafts");
-                components.push_back(slice(source.text, value.name_span));
-                for (const auto component : value.components) {
-                    components.push_back(slice(source.text, component));
-                }
-            },
-        },
-        reference.value
-    );
-    auto resolved = CanonicalModulePath::from_components(components);
-    if (!resolved.has_value()) {
-        return std::unexpected(ModuleReferenceResolutionError::InvalidCanonicalPath);
-    }
-    const auto domain_local =
-        !std::holds_alternative<ASTCraftQualifiedModuleReference>(reference.value);
-    if (domain_local && !same_module_domain(importer_path, *resolved)) {
-        return std::unexpected(ModuleReferenceResolutionError::EscapesModuleDomain);
-    }
-    return std::move(*resolved);
-}
-
 auto find_symbol(
     const AnalysisCatalog& catalog,
     const CatalogModule& module_record,
@@ -158,6 +97,24 @@ auto find_symbol(
         }
     }
     return nullptr;
+}
+
+auto visible_to(
+    const ProgramDraft& draft,
+    DeclarationVisibility visibility,
+    ProgramModuleID defining_module,
+    ProgramModuleID importer
+) noexcept -> bool {
+    switch (visibility) {
+        case DeclarationVisibility::Module: return defining_module == importer;
+        case DeclarationVisibility::ModuleDomain:
+            return same_module_domain(
+                draft.module_path_copy(defining_module),
+                draft.module_path_copy(importer)
+            );
+        case DeclarationVisibility::Compilation: return true;
+    }
+    std::unreachable();
 }
 
 auto append_candidate(
@@ -241,9 +198,6 @@ auto duplicate_selection_error(
 
 } // namespace
 
-AnalysisCatalog::AnalysisCatalog(CompilationProvenanceView provenance) noexcept
-    : compilation_provenance(provenance) {}
-
 auto AnalysisCatalog::view() const noexcept -> AnalysisCatalogView {
     return AnalysisCatalogView(*this);
 }
@@ -263,37 +217,79 @@ auto AnalysisCatalogView::imports() const noexcept -> std::span<const CatalogImp
     return catalog->import_bindings;
 }
 
-auto AnalysisCatalogView::module_record(ProgramModuleID module_id) const noexcept
-    -> const ProgramModule& {
-    return catalog->compilation_provenance.module_record(module_id);
-}
-
 auto AnalysisCatalogView::find_module(ProgramModuleID module_id) const noexcept
     -> const CatalogModule* {
-    return module_id.index() >= catalog->modules.size()
-        ? nullptr
-        : std::addressof(catalog->modules[module_id.index()]);
+    if (module_id.index() >= catalog->modules.size()
+        || catalog->modules[module_id.index()].module_id != module_id) {
+        return nullptr;
+    }
+    return std::addressof(catalog->modules[module_id.index()]);
 }
 
-auto AnalysisCatalogView::symbol(SymbolID id) const noexcept -> const CatalogSymbol* {
+auto AnalysisCatalogView::symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol* {
     return id.index() >= catalog->symbols.size() ? nullptr
                                                  : std::addressof(catalog->symbols[id.index()]);
 }
 
-auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> SymbolID {
-    return catalog->function_symbols[id.index()];
+auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> CatalogSymbolID {
+    if (id.index() >= catalog->function_symbols.size()) {
+        invariant_violation("catalog function lookup used an invalid identity");
+    }
+    const auto symbol = catalog->function_symbols[id.index()];
+    const auto* form = std::get_if<CatalogFunctionForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->function != id) {
+        invariant_violation("catalog function lookup crossed semantic program owners");
+    }
+    return symbol;
 }
 
-auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> SymbolID {
-    return catalog->struct_symbols[id.index()];
+auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> CatalogSymbolID {
+    if (id.index() >= catalog->struct_symbols.size()) {
+        invariant_violation("catalog struct lookup used an invalid identity");
+    }
+    const auto symbol = catalog->struct_symbols[id.index()];
+    const auto* form = std::get_if<CatalogStructForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->structure != id) {
+        invariant_violation("catalog struct lookup crossed semantic program owners");
+    }
+    return symbol;
 }
 
-auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> SymbolID {
-    return catalog->enum_symbols[id.index()];
+auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> CatalogSymbolID {
+    if (id.index() >= catalog->enum_symbols.size()) {
+        invariant_violation("catalog enum lookup used an invalid identity");
+    }
+    const auto symbol = catalog->enum_symbols[id.index()];
+    const auto* form = std::get_if<CatalogEnumForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->enumeration != id) {
+        invariant_violation("catalog enum lookup crossed semantic program owners");
+    }
+    return symbol;
 }
 
-auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> SymbolID {
-    return catalog->enum_case_symbols[id.index()];
+auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID {
+    if (id.index() >= catalog->enum_case_symbols.size()) {
+        invariant_violation("catalog enum-case lookup used an invalid identity");
+    }
+    const auto symbol = catalog->enum_case_symbols[id.index()];
+    const auto* form = std::get_if<CatalogEnumCaseForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->enum_case != id) {
+        invariant_violation("catalog enum-case lookup crossed semantic program owners");
+    }
+    return symbol;
+}
+
+auto AnalysisCatalogView::module_constant_symbol(ModuleConstantID id) const noexcept
+    -> CatalogSymbolID {
+    if (id.index() >= catalog->module_constant_symbols.size()) {
+        invariant_violation("catalog module-constant lookup used an invalid identity");
+    }
+    const auto symbol = catalog->module_constant_symbols[id.index()];
+    const auto* form = std::get_if<CatalogConstantForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->constant != id) {
+        invariant_violation("catalog module-constant lookup crossed semantic program owners");
+    }
+    return symbol;
 }
 
 auto AnalysisCatalogView::function_count() const noexcept -> std::size_t {
@@ -314,7 +310,9 @@ auto AnalysisCatalogView::enum_case_count() const noexcept -> std::size_t {
 
 auto AnalysisCatalogView::lookup(ProgramModuleID module_id, std::string_view name) const noexcept
     -> std::span<const CatalogLookupCandidate> {
-    if (module_id.index() >= catalog->visible_candidates.size()) {
+    if (module_id.index() >= catalog->visible_candidates.size()
+        || module_id.index() >= catalog->modules.size()
+        || catalog->modules[module_id.index()].module_id != module_id) {
         return {};
     }
     const auto& candidates = catalog->visible_candidates[module_id.index()];
@@ -323,85 +321,126 @@ auto AnalysisCatalogView::lookup(ProgramModuleID module_id, std::string_view nam
                                      : std::span<const CatalogLookupCandidate>(named->second);
 }
 
-auto AnalysisCatalogView::mark_import_used(ImportBindingID binding) const noexcept -> void {
-    if (binding.index() >= catalog->import_bindings.size()) {
-        invariant_violation("semantic lookup selected an unknown import binding");
-    }
-    catalog->import_bindings[binding.index()].used = true;
-}
-
-auto build_analysis_catalog(
-    CompilationProvenanceView provenance,
-    std::span<const SyntaxTree> syntax_trees,
-    SemanticEntityReservations reservations
-) noexcept -> std::expected<AnalysisCatalog, Diagnostics> {
-    auto result = AnalysisCatalog(provenance);
+auto build_analysis_catalog(ProgramDraft& draft) noexcept
+    -> std::expected<AnalysisCatalog, Diagnostics> {
+    auto result = AnalysisCatalog();
     auto diagnostics = Diagnostics();
+    const auto syntax_trees = draft.syntax_trees();
+    const auto module_count = draft.module_count();
 
-    result.modules.reserve(provenance.module_records().size());
-    result.visible_candidates.reserve(provenance.module_records().size());
-    for (auto module_index = 0uz; module_index < provenance.module_records().size();
-         ++module_index) {
-        const auto module_id =
-            ProgramModuleID::from_index(static_cast<std::uint32_t>(module_index));
-        const auto& source_module = provenance.module_record(module_id);
-        const auto& source_snapshot = provenance.source_snapshot(source_module.source_id);
+    if (syntax_trees.size() != module_count) {
+        invariant_violation("syntax trees are not aligned with compilation modules");
+    }
+
+    result.modules.reserve(module_count);
+    result.visible_candidates.reserve(module_count);
+    auto first_entry = std::optional<SourceSpan>();
+    for (auto module_index = 0uz; module_index < module_count; ++module_index) {
+        const auto module_id = draft.provenance_module_at(module_index);
+        const auto source_id = syntax_trees[module_index].view().source_id();
         const auto ast = syntax_trees[module_index].view();
         const auto& ast_module = ast.ast_module();
+        const auto declaration = draft.reserve_module_declaration();
+        if (declaration.index() != module_index) {
+            invariant_violation("semantic module reservation is not aligned with source modules");
+        }
         auto catalog_module = CatalogModule {
             .module_id = module_id,
+            .declaration = declaration,
             .symbols = {},
             .items = {},
         };
         auto names = std::flat_map<std::string, Span, std::less<>>();
+        auto test_names = std::flat_map<std::string, Span, std::less<>>();
         auto local_candidates =
             std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>();
         for (const auto item_id : ast_module.items) {
             const auto& item = ast.item(item_id);
+            if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value)) {
+                const auto function_name = draft.source_slice_copy(module_id, function->name_span);
+                const auto is_cpp_import =
+                    std::holds_alternative<ASTCppImportForm>(function->implementation);
+                if (function_name == "main" && !is_cpp_import) {
+                    const auto current = locate(source_id, function->name_span);
+                    if (first_entry.has_value()) {
+                        auto diagnostic = DiagnosticBuilder(
+                            DiagnosticCode::EntryDuplicate,
+                            "a program may define only one entry function"
+                        );
+                        diagnostic.primary(current, "duplicate entry");
+                        diagnostic.related(*first_entry, "first entry");
+                        diagnostics.push_back(diagnostic.build());
+                    } else {
+                        first_entry = current;
+                    }
+                }
+            }
+            if (const auto* test = std::get_if<ASTTestDecl>(&item.value)) {
+                if (test->name == "main") {
+                    diagnostics.push_back(DiagnosticBuilder(
+                                              DiagnosticCode::TestMainName,
+                                              "a test cannot be named 'main'"
+                    )
+                                              .primary(locate(source_id, test->name_span))
+                                              .build());
+                }
+                const auto [position, inserted] = test_names.emplace(test->name, test->name_span);
+                if (!inserted) {
+                    auto diagnostic = DiagnosticBuilder(
+                        DiagnosticCode::TestDuplicateName,
+                        "a test name is defined more than once"
+                    );
+                    diagnostic.primary(locate(source_id, test->name_span), "duplicate test name");
+                    diagnostic.related(locate(source_id, position->second), "first definition");
+                    diagnostics.push_back(diagnostic.build());
+                }
+            }
             const auto name_span = declaration_name(item);
             if (!name_span.has_value()) {
                 if (std::holds_alternative<ASTTestDecl>(item.value)) {
                     catalog_module.items.push_back({
                         .item_id = item_id,
-                        .form = CatalogTestForm {},
+                        .form = CatalogTestForm {.test = draft.reserve_test()},
                     });
                 }
                 continue;
             }
-            auto name = std::string(source_snapshot.slice(*name_span));
+            auto name = draft.source_slice_copy(module_id, *name_span);
             if (const auto prior = names.find(name); prior != names.end()) {
                 auto error = catalog_error(
-                    source_snapshot.manager_source_id(),
+                    source_id,
                     "a module declaration name is defined more than once",
                     *name_span
                 );
                 error.attachment.primary->message = "duplicate declaration";
                 error.attachment.related.push_back({
-                    .span = locate(source_snapshot.manager_source_id(), prior->second),
+                    .span = locate(source_id, prior->second),
                     .message = "first declaration",
                 });
                 diagnostics.push_back(std::move(error));
                 continue;
             }
             names.emplace(name, *name_span);
-            const auto symbol_id = reservations.reserve_symbol();
-            if (symbol_id.index() != result.symbols.size()) {
-                invariant_violation("semantic symbol reservation is not append-aligned");
+            if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
+                resource_limit_exceeded("catalog symbols exhausted their 32-bit identity space");
             }
+            const auto symbol_id =
+                CatalogSymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
             auto form = std::visit(
                 Overloaded {
                     [&](const ASTFunctionDecl&) noexcept -> CatalogSymbolForm {
-                        const auto function = reservations.reserve_function();
+                        const auto function = draft.reserve_function_declaration();
                         if (function.index() != result.function_symbols.size()) {
                             invariant_violation("semantic function reservation is not aligned");
                         }
                         result.function_symbols.push_back(symbol_id);
                         return CatalogFunctionForm {
                             .function = function,
+                            .callable = draft.reserve_callable_declaration(),
                         };
                     },
                     [&](const ASTStructDecl&) noexcept -> CatalogSymbolForm {
-                        const auto structure = reservations.reserve_struct();
+                        const auto structure = draft.reserve_struct_declaration();
                         if (structure.index() != result.struct_symbols.size()) {
                             invariant_violation("semantic struct reservation is not aligned");
                         }
@@ -411,7 +450,7 @@ auto build_analysis_catalog(
                         };
                     },
                     [&](const ASTEnumDecl&) noexcept -> CatalogSymbolForm {
-                        const auto enumeration = reservations.reserve_enum();
+                        const auto enumeration = draft.reserve_enum_declaration();
                         if (enumeration.index() != result.enum_symbols.size()) {
                             invariant_violation("semantic enum reservation is not aligned");
                         }
@@ -421,10 +460,17 @@ auto build_analysis_catalog(
                             .cases = {},
                         };
                     },
-                    [](const ASTConstantDecl&) static noexcept -> CatalogSymbolForm {
-                        return CatalogConstantForm {};
+                    [&](const ASTConstantDecl&) noexcept -> CatalogSymbolForm {
+                        const auto constant = draft.reserve_module_constant_declaration();
+                        if (constant.index() != result.module_constant_symbols.size()) {
+                            invariant_violation(
+                                "semantic module-constant reservation is not aligned"
+                            );
+                        }
+                        result.module_constant_symbols.push_back(symbol_id);
+                        return CatalogConstantForm {.constant = constant};
                     },
-                    [](const auto&) static noexcept -> CatalogSymbolForm {
+                    [](const ASTTestDecl&) static noexcept -> CatalogSymbolForm {
                         invariant_violation("catalog declaration item has no symbol form");
                     },
                 },
@@ -466,7 +512,12 @@ auto build_analysis_catalog(
                             .form = value.enumeration,
                         });
                     },
-                    [](const CatalogConstantForm&) static noexcept {},
+                    [&](const CatalogConstantForm& value) noexcept {
+                        catalog_module.items.push_back({
+                            .item_id = item_id,
+                            .form = value.constant,
+                        });
+                    },
                     [](const CatalogEnumCaseForm&) static noexcept {
                         invariant_violation("enum case cannot be a module declaration item");
                     },
@@ -480,13 +531,16 @@ auto build_analysis_catalog(
             }
             for (auto case_index = 0uz; case_index < enumeration->cases.size(); ++case_index) {
                 const auto& enum_case = enumeration->cases[case_index];
-                const auto case_symbol = reservations.reserve_symbol();
-                if (case_symbol.index() != result.symbols.size()) {
-                    invariant_violation("semantic enum-case symbol reservation is not aligned");
+                if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
+                    resource_limit_exceeded(
+                        "catalog symbols exhausted their 32-bit identity space"
+                    );
                 }
+                const auto case_symbol =
+                    CatalogSymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
                 const auto& owner_form =
                     std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form);
-                const auto case_id = reservations.reserve_enum_case();
+                const auto case_id = draft.reserve_enum_case_declaration();
                 if (case_id.index() != result.enum_case_symbols.size()) {
                     invariant_violation("semantic enum-case reservation is not aligned");
                 }
@@ -495,7 +549,7 @@ auto build_analysis_catalog(
                     .symbol_id = case_symbol,
                     .module_id = module_id,
                     .item_id = item_id,
-                    .name = std::string(source_snapshot.slice(enum_case.name_span)),
+                    .name = draft.source_slice_copy(module_id, enum_case.name_span),
                     .form =
                         CatalogEnumCaseForm {
                             .enum_case = case_id,
@@ -517,76 +571,45 @@ auto build_analysis_catalog(
         return std::unexpected(std::move(diagnostics));
     }
 
-    for (auto module_index = 0uz; module_index < provenance.module_records().size();
-         ++module_index) {
-        const auto module_id =
-            ProgramModuleID::from_index(static_cast<std::uint32_t>(module_index));
-        const auto& source_module = provenance.module_record(module_id);
-        const auto& source_snapshot = provenance.source_snapshot(source_module.source_id);
+    for (auto module_index = 0uz; module_index < module_count; ++module_index) {
+        const auto module_id = draft.provenance_module_at(module_index);
+        const auto source_id = syntax_trees[module_index].view().source_id();
+        const auto source_module_path = draft.module_path_copy(module_id);
         const auto ast = syntax_trees[module_index].view();
-        const auto source = SourceView {
-            .source_id = source_snapshot.manager_source_id(),
-            .text = source_snapshot.text(),
-            .origin = source_snapshot.display_origin(),
-        };
         const auto& ast_module = ast.ast_module();
         const auto& local_module = result.modules[module_index];
         auto& candidates = result.visible_candidates[module_index];
         struct ExplicitSelection final {
-            SymbolID symbol;
+            CatalogSymbolID symbol;
             Span origin;
         };
         auto explicit_names = std::flat_map<std::string, ExplicitSelection, std::less<>>();
         auto wildcard_targets = std::flat_map<ProgramModuleID, ImportBindingID>();
 
-        for (const auto import_id : ast_module.module_imports) {
+        const auto closed_imports = draft.resolved_imports(module_id);
+        if (closed_imports.size() != ast_module.module_imports.size()) {
+            invariant_violation("resolved import row is not aligned with source imports");
+        }
+        for (const auto& closed_import : closed_imports) {
+            const auto import_id = closed_import.declaration;
             const auto& module_import = ast.module_import(import_id);
             const auto& reference = module_import.module_reference;
-            const auto resolved = resolve_path(source, source_module.path, reference);
-            if (!resolved.has_value()) {
-                diagnostics.push_back(import_error(
-                    source_snapshot.manager_source_id(),
-                    resolved.error() == ModuleReferenceResolutionError::EscapesModuleDomain
-                        ? "domain-local module reference escapes the importer's module domain"
-                        : "module reference does not form a canonical path",
-                    reference.span
-                ));
-                continue;
-            }
-            const auto target_id = provenance.find_program_module(*resolved);
-            if (!target_id.has_value()) {
-                diagnostics.push_back(import_error(
-                    source_snapshot.manager_source_id(),
-                    std::format(
-                        "imported module '{}' is not present in this compilation batch",
-                        resolved->value()
-                    ),
-                    reference.span
-                ));
-                continue;
-            }
-            if (*target_id == module_id) {
-                diagnostics.push_back(import_error(
-                    source_snapshot.manager_source_id(),
-                    "a module cannot import itself",
-                    reference.span
-                ));
-                continue;
-            }
-            const auto& target_module = result.modules[target_id->index()];
+            const auto target_id = closed_import.target;
+            const auto& target_module = result.modules[target_id.index()];
 
             auto selected_names = std::vector<Span>();
             auto selection_kind = CatalogImportSelectionKind::Single;
             std::visit(
-                [&](const auto& selection) noexcept {
-                    using T = std::decay_t<decltype(selection)>;
-                    if constexpr (std::same_as<T, ASTSingleImport>) {
+                [&]<typename Selection>(const Selection& selection) noexcept {
+                    if constexpr (std::same_as<Selection, ASTSingleImport>) {
                         selected_names.push_back(selection.name_span);
-                    } else if constexpr (std::same_as<T, ASTImportList>) {
+                    } else if constexpr (std::same_as<Selection, ASTImportList>) {
                         selection_kind = CatalogImportSelectionKind::List;
                         selected_names.assign(selection.names.begin(), selection.names.end());
-                    } else {
+                    } else if constexpr (std::same_as<Selection, ASTWildcardImport>) {
                         selection_kind = CatalogImportSelectionKind::Wildcard;
+                    } else {
+                        static_assert(std::same_as<Selection, void>, "unhandled import selection");
                     }
                 },
                 module_import.selection.value
@@ -602,23 +625,22 @@ auto build_analysis_catalog(
                 .binding_id = binding_id,
                 .importer = module_id,
                 .declaration_id = import_id,
-                .target = *target_id,
+                .target = target_id,
                 .declaration_span = module_import.span,
                 .reference_span = reference.span,
                 .selection_span = module_import.selection.span,
                 .selection_kind = selection_kind,
                 .selected_symbols = {},
-                .used = false,
             });
 
             auto names_in_declaration = std::flat_map<std::string, Span, std::less<>>();
 
             for (const auto name_span : selected_names) {
-                const auto name = slice(source.text, name_span);
+                const auto name = draft.source_slice_copy(module_id, name_span);
                 if (const auto prior = names_in_declaration.find(name);
                     prior != names_in_declaration.end()) {
                     diagnostics.push_back(duplicate_selection_error(
-                        source_snapshot.manager_source_id(),
+                        source_id,
                         name_span,
                         prior->second,
                         std::format("imported name '{}' is selected more than once", name)
@@ -629,28 +651,23 @@ auto build_analysis_catalog(
                 const auto* symbol = find_symbol(result, target_module, name);
                 if (symbol == nullptr) {
                     diagnostics.push_back(import_error(
-                        source_snapshot.manager_source_id(),
+                        source_id,
                         std::format(
                             "module '{}' has no declaration named '{}'",
-                            resolved->value(),
+                            draft.module_path_copy(target_id).value(),
                             name
                         ),
                         name_span
                     ));
                     continue;
                 }
-                if (!declaration_visible_to(
-                        symbol->visibility,
-                        symbol->module_id,
-                        module_id,
-                        provenance
-                    )) {
+                if (!visible_to(draft, symbol->visibility, symbol->module_id, module_id)) {
                     diagnostics.push_back(import_error(
-                        source_snapshot.manager_source_id(),
+                        source_id,
                         std::format(
                             "declaration '{}' is not visible from module '{}'",
                             name,
-                            source_module.path.value()
+                            source_module_path.value()
                         ),
                         name_span
                     ));
@@ -658,7 +675,7 @@ auto build_analysis_catalog(
                 }
                 if (contains_local_declaration(candidates, local_module, name)) {
                     diagnostics.push_back(import_error(
-                        source_snapshot.manager_source_id(),
+                        source_id,
                         std::format("imported name '{}' conflicts with a module declaration", name),
                         name_span
                     ));
@@ -667,20 +684,19 @@ auto build_analysis_catalog(
                 if (const auto prior = explicit_names.find(name); prior != explicit_names.end()) {
                     if (prior->second.symbol == symbol->symbol_id) {
                         diagnostics.push_back(duplicate_selection_error(
-                            source_snapshot.manager_source_id(),
+                            source_id,
                             name_span,
                             prior->second.origin,
                             std::format("imported name '{}' is selected more than once", name)
                         ));
                     } else {
                         auto diagnostic = import_error(
-                            source_snapshot.manager_source_id(),
+                            source_id,
                             std::format("imported name '{}' refers to more than one symbol", name),
                             name_span
                         );
                         diagnostic.attachment.related.push_back({
-                            .span =
-                                locate(source_snapshot.manager_source_id(), prior->second.origin),
+                            .span = locate(source_id, prior->second.origin),
                             .message = "first import selection",
                         });
                         diagnostics.push_back(std::move(diagnostic));
@@ -707,29 +723,24 @@ auto build_analysis_catalog(
             if (selection_kind != CatalogImportSelectionKind::Wildcard) {
                 continue;
             }
-            if (const auto prior = wildcard_targets.find(*target_id);
+            if (const auto prior = wildcard_targets.find(target_id);
                 prior != wildcard_targets.end()) {
                 const auto& first = result.import_bindings[prior->second.index()];
                 diagnostics.push_back(duplicate_selection_error(
-                    source_snapshot.manager_source_id(),
+                    source_id,
                     module_import.selection.span,
                     first.selection_span,
                     std::format(
                         "module '{}' is imported by wildcard more than once",
-                        resolved->value()
+                        draft.module_path_copy(target_id).value()
                     )
                 ));
                 continue;
             }
-            wildcard_targets.emplace(*target_id, binding_id);
+            wildcard_targets.emplace(target_id, binding_id);
             for (const auto symbol_id : target_module.symbols) {
                 const auto& symbol = result.symbols[symbol_id.index()];
-                if (!declaration_visible_to(
-                        symbol.visibility,
-                        symbol.module_id,
-                        module_id,
-                        provenance
-                    )) {
+                if (!visible_to(draft, symbol.visibility, symbol.module_id, module_id)) {
                     continue;
                 }
                 result.import_bindings[binding_id.index()].selected_symbols.push_back({
@@ -754,4 +765,21 @@ auto build_analysis_catalog(
         return std::unexpected(std::move(diagnostics));
     }
     return result;
+}
+
+ImportUsage::ImportUsage(std::size_t import_count) noexcept
+    : used_imports(import_count, std::uint8_t {0}) {}
+
+auto ImportUsage::record(ImportBindingID import_id) noexcept -> void {
+    if (import_id.index() >= used_imports.size()) {
+        invariant_violation("import usage references an unknown binding");
+    }
+    used_imports[import_id.index()] = 1;
+}
+
+auto ImportUsage::was_used(ImportBindingID import_id) const noexcept -> bool {
+    if (import_id.index() >= used_imports.size()) {
+        invariant_violation("import usage references an unknown binding");
+    }
+    return used_imports[import_id.index()] != 0;
 }

@@ -8,6 +8,10 @@ namespace {
 #define CARVEN_DIAGNOSTIC_CODES(X)                                                                 \
     X(Invalid, "CV-INVALID", Error, "Invalid diagnostic code.")                                    \
     X(AccessCallMismatch, "CV-ACCESS-CALL-MISMATCH", Error, "Call access mismatch.")               \
+    X(AccessBorrowConflict,                                                                        \
+      "CV-ACCESS-BORROW-CONFLICT",                                                                 \
+      Error,                                                                                       \
+      "Binding is borrowed by a callable view.")                                                   \
     X(AccessCaptureConflict,                                                                       \
       "CV-ACCESS-CAPTURE-CONFLICT",                                                                \
       Error,                                                                                       \

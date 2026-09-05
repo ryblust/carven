@@ -1,16 +1,24 @@
 module carven:frontend.program;
 
 import :frontend.ast.tree;
+import :frontend.ast.ids;
 import :source.provenance;
-import :support.id_table;
 import std;
 
 class SyntaxProgramBuilder;
 
+struct ResolvedModuleImport final {
+    ASTModuleImportID declaration;
+    ProgramModuleID target;
+};
+
+using ResolvedModuleImportGraph = std::vector<std::vector<ResolvedModuleImport>>;
+
 struct SyntaxProgramParts final {
     SyntaxProgramParts(
         CompilationProvenance provenance,
-        IDTable<SyntaxTree, ProgramModuleID> syntax_trees
+        std::vector<SyntaxTree> syntax_trees,
+        ResolvedModuleImportGraph resolved_imports
     ) noexcept;
     SyntaxProgramParts(const SyntaxProgramParts&) = delete;
     SyntaxProgramParts(SyntaxProgramParts&&) = default;
@@ -20,7 +28,8 @@ struct SyntaxProgramParts final {
     auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = default;
 
     CompilationProvenance provenance;
-    IDTable<SyntaxTree, ProgramModuleID> syntax_by_module;
+    std::vector<SyntaxTree> syntax_by_module;
+    ResolvedModuleImportGraph resolved_import_graph;
 };
 
 class SyntaxProgram final {
@@ -34,6 +43,10 @@ public:
 
     auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
+    auto resolved_imports(ProgramModuleID module_id) const noexcept
+        -> std::span<const ResolvedModuleImport>;
+    auto resolved_import_graph() const noexcept
+        -> std::span<const std::vector<ResolvedModuleImport>>;
     auto provenance() const noexcept -> CompilationProvenanceView;
     auto decompose() && noexcept -> SyntaxProgramParts;
 

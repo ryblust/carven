@@ -51,6 +51,12 @@ private:
         StringLiteralValue value;
     };
 
+    template<typename Value>
+    struct ParsedTypeForm final {
+        Span span;
+        Value value;
+    };
+
     std::string_view source;
     SourceID source_id;
     const TokenBuffer* token_buffer;
@@ -147,6 +153,9 @@ private:
     auto parse_named_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_array_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_function_type() noexcept -> std::optional<ASTTypeID>;
+    auto parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType>;
+    auto parse_array_type_form() noexcept -> std::optional<ParsedTypeForm<ASTArrayType>>;
+    auto parse_function_type_form() noexcept -> std::optional<ParsedTypeForm<ASTFunctionType>>;
     auto parse_throw_clause() noexcept -> ASTThrowClause;
     auto parse_ordinary_block() noexcept -> std::optional<ASTBlockID>;
     auto parse_branch_block() noexcept -> std::optional<ASTBranchBlockID>;

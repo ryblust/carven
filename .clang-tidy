@@ -69,7 +69,14 @@ FormatStyle: none
 SystemHeaders: false
 CheckOptions:
   misc-const-correctness.AllowedTypes: 'doctest::detail::ContextScope'
-  performance-move-const-arg.CheckTriviallyCopyableMove: false
-  performance-unnecessary-value-param.AllowedTypes: 'TargetGenerationRequest'
-  readability-qualified-auto.AddConstToQualified: false
+  misc-const-correctness.AnalyzeAutoVariables: true
+  misc-const-correctness.AnalyzeLambdas: true
+  misc-const-correctness.AnalyzeParameters: true
+  # Check pointee constness without requiring top-level const on borrowed pointers.
+  misc-const-correctness.WarnPointersAsPointers: true
+  misc-const-correctness.WarnPointersAsValues: false
+  misc-const-correctness.TransformPointersAsPointers: true
+  misc-const-correctness.TransformPointersAsValues: false
+  performance-move-const-arg.CheckTriviallyCopyableMove: true
+  readability-qualified-auto.AddConstToQualified: true
 ...

@@ -1,10 +1,9 @@
 module carven:semantic.analysis.coverage;
 
-import :semantic.analysis.decl;
-import :semantic.analysis.session.read;
-import :semantic.hir;
-import :semantic.hir.expr;
-import :semantic.hir.ids;
+import :semantic.analysis.body.builder;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import std;
 
 struct CoverageRedundantAlternative final {
@@ -13,7 +12,7 @@ struct CoverageRedundantAlternative final {
 };
 
 struct PatternCoverageArm final {
-    std::vector<std::optional<HIRPatternID>> alternatives;
+    std::vector<std::optional<PatternID>> alternatives;
     bool guarded;
 };
 
@@ -21,32 +20,21 @@ struct PatternCoverage final {
     std::vector<bool> arm_usefulness;
     std::vector<std::vector<bool>> alternative_usefulness;
     std::vector<CoverageRedundantAlternative> redundant_alternatives;
+    std::vector<bool> exhaustive_after_arm;
     bool exhaustive;
     std::string missing_witness;
 };
 
 auto compute_pattern_coverage(
-    SemanticDraftView hir,
-    HIRTypeID subject_type,
-    std::span<const HIRMatchArm> arms
-) noexcept -> std::expected<PatternCoverage, std::string>;
-
-auto compute_pattern_coverage(
-    SemanticDraftView hir,
-    HIRTypeID subject_type,
+    const ProgramDraft& draft,
+    const BodyBuilder& body,
+    ConstructionTypeRef subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
 auto compute_pattern_coverage(
-    SemanticDraftView hir,
-    const DeclarationContractView& declarations,
-    HIRTypeID subject_type,
-    std::span<const HIRMatchArm> arms
-) noexcept -> std::expected<PatternCoverage, std::string>;
-
-auto compute_pattern_coverage(
-    SemanticDraftView hir,
-    const DeclarationContractView& declarations,
-    HIRTypeID subject_type,
+    const ProgramDraft& draft,
+    const SemIRBody& body,
+    TypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;

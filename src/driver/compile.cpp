@@ -1,10 +1,10 @@
 module carven:driver.compile.impl;
 
-import :artifacts;
 import :artifacts.materialize;
+import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compilation.request;
+import :compiler.request;
 import :diagnostics.report;
 import :driver.compile;
 import :driver.input_path;
@@ -57,7 +57,7 @@ auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
     return std::move(*domain);
 }
 
-auto print_artifacts(const ArtifactSet& artifacts) noexcept -> void {
+auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
     for (const auto& artifact : artifacts.artifacts()) {
         std::println("==> {} <==", artifact.logical_path);
         std::print("{}", artifact.content);
@@ -128,7 +128,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
     const auto result = compile(
         sources,
         CompilationRequest {.modules = module_inputs},
-        TargetGenerationRequest {
+        TargetPlanningRequest {
             .test_mode = request->test_mode,
             .linkage_domain = std::move(*linkage_domain),
         }

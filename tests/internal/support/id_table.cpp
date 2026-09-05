@@ -13,6 +13,7 @@ namespace {
 struct TestIDTag final {};
 using TestID = TypedID<TestIDTag>;
 using TestTable = IDTable<std::string, TestID>;
+using TestReservedTable = ReservedTable<std::string, TestID>;
 
 template<typename Table>
 concept HasRvalueGet =
@@ -28,6 +29,8 @@ concept HasRvalueValues = requires (Table&& table) { static_cast<Table&&>(table)
 static_assert(!std::default_initializable<TestID>);
 static_assert(!std::copy_constructible<TestTable>);
 static_assert(std::movable<TestTable>);
+static_assert(!std::copy_constructible<TestReservedTable>);
+static_assert(std::movable<TestReservedTable>);
 static_assert(
     std::same_as<decltype(std::declval<TestTable&>().get(std::declval<TestID>())), std::string&>
 );
@@ -68,4 +71,19 @@ TEST_CASE("Support IDTable: typed IDs, views and rewind") {
     table.rewind(checkpoint);
     CHECK(!table.contains(second));
     CHECK_EQ(table.values().size(), 1u);
+}
+
+TEST_CASE("Support ReservedTable: reservations preserve identity when sealed") {
+    auto reservations = TestReservedTable();
+    const auto first = reservations.reserve();
+    const auto second = reservations.reserve();
+
+    reservations.define(second, "second");
+    reservations.define(first, "first");
+    CHECK_EQ(reservations.get_defined(first), "first");
+    CHECK_EQ(std::as_const(reservations).get_defined(second), "second");
+
+    const auto table = std::move(reservations).seal();
+    CHECK_EQ(table.get(first), "first");
+    CHECK_EQ(table.get(second), "second");
 }

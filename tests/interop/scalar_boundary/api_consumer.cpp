@@ -1,4 +1,5 @@
 #include "carven/api/tests/interop/scalar_boundary/scalars.hpp"
+#include "carven/api/tests/interop/scalar_boundary/scalars.hpp"
 
 #include <cstdlib>
 #include <type_traits>

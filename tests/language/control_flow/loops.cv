@@ -37,6 +37,11 @@ test "Loops: loops support clauses iteration and control transfer" {
         shadowed_total += shadowed;
     }
 
+    var writable_values: [i32; 3] = [1, 2, 3];
+    for &value in writable_values {
+        value += 10;
+    }
+
     var countdown: i32 = 2;
     while countdown > 0 {
         --countdown;
@@ -72,9 +77,19 @@ test "Loops: loops support clauses iteration and control transfer" {
         LoopStepFailure(_) => {},
     }
 
+    var constant_false_trace: i32 = 0;
+    for record_loop_effect(&constant_false_trace, 0); false;
+        record_loop_effect(&constant_false_trace, 0)
+    {
+        constant_false_trace += 100;
+    }
+
     check(total == 12);
     check(odd_total == 9);
     check(shadowed_total == 42);
+    check(writable_values[0] == 11);
+    check(writable_values[1] == 12);
+    check(writable_values[2] == 13);
     check(countdown == 0);
     check(assigned == 2);
     check(multi_index == 3);
@@ -85,4 +100,5 @@ test "Loops: loops support clauses iteration and control transfer" {
     check(mutation_index == 1);
     check(recovered_index == 2);
     check(recovered_visits == 2);
+    check(constant_false_trace == 1);
 }

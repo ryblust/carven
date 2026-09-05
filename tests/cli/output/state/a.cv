@@ -1,3 +1,0 @@
-export fn value_a() -> i32 {
-    return 1;
-}
