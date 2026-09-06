@@ -24,14 +24,14 @@ public:
 
     auto finish() && noexcept -> TargetReferenceFacts {
         auto visited_modules = std::vector<bool>(surface_declarations.size());
-        for (const auto module : semantic.declarations().modules()) {
-            if (module.id.index() >= surface_declarations.size()
-                || visited_modules[module.id.index()]) {
+        for (const auto module_record : semantic.declarations().modules()) {
+            if (module_record.id.index() >= surface_declarations.size()
+                || visited_modules[module_record.id.index()]) {
                 invariant_violation("semantic modules are not a dense owned table");
             }
-            visited_modules[module.id.index()] = true;
-            for (const auto declaration : surface_declarations[module.id.index()]) {
-                collect_declaration(module.id, declaration);
+            visited_modules[module_record.id.index()] = true;
+            for (const auto declaration : surface_declarations[module_record.id.index()]) {
+                collect_declaration(module_record.id, declaration);
             }
         }
         if (!std::ranges::all_of(visited_modules, std::identity {})) {
@@ -47,11 +47,11 @@ private:
     };
 
     auto require_nominal(
-        ModuleID module,
+        ModuleID module_id,
         NominalDeclarationRef nominal,
         TargetTypeCompleteness completeness
     ) noexcept -> void {
-        auto& requirements = result.surface_requirements[module.index()];
+        auto& requirements = result.surface_requirements[module_id.index()];
         const auto found = requirements.find(nominal);
         if (found == requirements.end()) {
             requirements.emplace(nominal, completeness);
@@ -61,18 +61,18 @@ private:
     }
 
     auto collect_failure_set(
-        ModuleID module,
+        ModuleID module_id,
         FailureSetID failure_set,
         TargetTypeCompleteness completeness,
         RecursionGuard& guard
     ) noexcept -> void {
         for (const auto member : semantic.failure_sets().failure_set(failure_set).members) {
-            collect_type(module, member, completeness, guard);
+            collect_type(module_id, member, completeness, guard);
         }
     }
 
     auto collect_signature(
-        ModuleID module,
+        ModuleID module_id,
         CallableSignatureID signature_id,
         RecursionGuard& guard
     ) noexcept -> void {
@@ -82,7 +82,7 @@ private:
         const auto& signature = semantic.callable_signatures().signature(signature_id);
         for (const auto& parameter : signature.parameters) {
             collect_type(
-                module,
+                module_id,
                 parameter.type,
                 parameter.access == AccessMode::Read ? TargetTypeCompleteness::CompleteDefinition
                                                      : TargetTypeCompleteness::Declaration,
@@ -90,18 +90,18 @@ private:
             );
         }
         const auto result_completeness = TargetTypeCompleteness::Declaration;
-        collect_type(module, signature.result, result_completeness, guard);
-        collect_failure_set(module, signature.failures, result_completeness, guard);
+        collect_type(module_id, signature.result, result_completeness, guard);
+        collect_failure_set(module_id, signature.failures, result_completeness, guard);
         guard.signatures.erase(signature_id);
     }
 
-    auto collect_callable(ModuleID module, CallableID callable, RecursionGuard& guard) noexcept
+    auto collect_callable(ModuleID module_id, CallableID callable, RecursionGuard& guard) noexcept
         -> void {
-        collect_signature(module, semantic.declarations().callable(callable).signature, guard);
+        collect_signature(module_id, semantic.declarations().callable(callable).signature, guard);
     }
 
     auto collect_type(
-        ModuleID module,
+        ModuleID module_id,
         TypeID type_id,
         TargetTypeCompleteness completeness,
         RecursionGuard& guard
@@ -111,28 +111,49 @@ private:
         }
         std::visit(
             Overloaded {
+                [&](const CppTypeValue& value) noexcept {
+                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                        for (const auto argument : named->arguments) {
+                            collect_type(
+                                module_id,
+                                argument,
+                                TargetTypeCompleteness::CompleteDefinition,
+                                guard
+                            );
+                        }
+                    } else {
+                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                            collect_type(
+                                module_id,
+                                operand.type,
+                                TargetTypeCompleteness::CompleteDefinition,
+                                guard
+                            );
+                        }
+                    }
+                },
                 [](const BuiltinTypeValue&) static noexcept {},
                 [&](const StructTypeValue& value) noexcept {
-                    require_nominal(module, NominalDeclarationRef {value.structure}, completeness);
+                    require_nominal(module_id, NominalDeclarationRef {value.structure}, completeness);
                 },
                 [&](const EnumTypeValue& value) noexcept {
                     require_nominal(
-                        module,
+                        module_id,
                         NominalDeclarationRef {value.enumeration},
                         completeness
                     );
                 },
                 [&](const ArrayTypeValue& value) noexcept {
-                    collect_type(module, value.element, completeness, guard);
+                    collect_type(module_id, value.element, completeness, guard);
                 },
                 [&](const FunctionTypeValue& value) noexcept {
-                    collect_callable(module, value.callable, guard);
+                    collect_callable(module_id, value.callable, guard);
                 },
                 [&](const ClosureTypeValue& value) noexcept {
-                    collect_callable(module, value.callable, guard);
+                    collect_callable(module_id, value.callable, guard);
                 },
                 [&](const CallableViewTypeValue& value) noexcept {
-                    collect_signature(module, value.signature, guard);
+                    collect_signature(module_id, value.signature, guard);
                 },
             },
             semantic.types().type(type_id).value
@@ -140,17 +161,17 @@ private:
         guard.types.erase(type_id);
     }
 
-    auto collect_declaration(ModuleID module, DeclarationRef declaration) noexcept -> void {
+    auto collect_declaration(ModuleID module_id, DeclarationRef declaration) noexcept -> void {
         auto guard = RecursionGuard();
         std::visit(
             Overloaded {
                 [&](FunctionID id) noexcept {
-                    collect_callable(module, semantic.declarations().function(id).callable, guard);
+                    collect_callable(module_id, semantic.declarations().function(id).callable, guard);
                 },
                 [&](StructID id) noexcept {
                     for (const auto& field : semantic.declarations().structure(id).fields) {
                         collect_type(
-                            module,
+                            module_id,
                             field.type,
                             TargetTypeCompleteness::CompleteDefinition,
                             guard
@@ -162,7 +183,7 @@ private:
                     if (const auto* numeric =
                             std::get_if<NumericEnumRepresentation>(&enumeration.representation)) {
                         collect_type(
-                            module,
+                            module_id,
                             numeric->underlying_type,
                             TargetTypeCompleteness::CompleteDefinition,
                             guard
@@ -172,7 +193,7 @@ private:
                         for (const auto type :
                              semantic.declarations().enum_case(case_id).payload_types) {
                             collect_type(
-                                module,
+                                module_id,
                                 type,
                                 TargetTypeCompleteness::CompleteDefinition,
                                 guard
@@ -182,7 +203,7 @@ private:
                 },
                 [&](ModuleConstantID id) noexcept {
                     collect_type(
-                        module,
+                        module_id,
                         semantic.declarations().module_constant(id).type,
                         TargetTypeCompleteness::CompleteDefinition,
                         guard

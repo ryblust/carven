@@ -333,6 +333,36 @@ auto validate_publication_facts(
         static_cast<void>(type_id);
         std::visit(
             Overloaded {
+                [&](const CppTypeValue& value) noexcept {
+                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                        if (!declarations.contains(named->module_id) || named->components.empty()) {
+                            invariant_violation("C++ type used an invalid binding");
+                        }
+                        for (const auto argument : named->arguments) {
+                            if (!types.contains(argument)) {
+                                invariant_violation("C++ type used an unpublished type argument");
+                            }
+                        }
+                    } else {
+                        const auto& query = std::get<CppDeducedType>(value.form);
+                        if (!provenance.contains(query.origin)
+                            || !cpp_operation_accepts_arity(query.operation, query.operands.size())
+                            || std::holds_alternative<CppUpdateOperation>(query.operation)
+                            || std::holds_alternative<CppConstructOperation>(query.operation)
+                            || std::holds_alternative<CppConvertOperation>(query.operation)) {
+                            invariant_violation("C++ query has an invalid derivation");
+                        }
+                        if (const auto* name = std::get_if<CppNameOperation>(&query.operation);
+                            name != nullptr && !declarations.contains(name->module_id)) {
+                            invariant_violation("C++ query has an unpublished module");
+                        }
+                        for (const auto& operand : query.operands) {
+                            if (!types.contains(operand.type)) {
+                                invariant_violation("C++ query used an unpublished operand type");
+                            }
+                        }
+                    }
+                },
                 [](const BuiltinTypeValue&) static noexcept {},
                 [&](const StructTypeValue& value) noexcept {
                     if (!declarations.contains(value.structure)) {

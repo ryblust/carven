@@ -233,8 +233,8 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
     }
     auto result = LoweredModuleSchedule();
     const auto& declarations = context.semantic().declarations();
-    const auto& module = declarations.module_decl(schedule.module_id);
-    for (const auto& fragment : module.cpp_source_fragments) {
+    const auto& module_decl = declarations.module_decl(schedule.module_id);
+    for (const auto& fragment : module_decl.cpp_source_fragments) {
         result.source_fragments.push_back({
             .value =
                 TargetRawFragment {
@@ -273,7 +273,7 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
         ));
     }
     auto functions = std::vector<FunctionID>();
-    for (const auto item : module.items) {
+    for (const auto item : module_decl.items) {
         const auto* function = std::get_if<FunctionID>(&item);
         if (function == nullptr) {
             continue;

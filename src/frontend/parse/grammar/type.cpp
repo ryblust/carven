@@ -54,9 +54,26 @@ auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
         end = name.span;
     }
 
+    auto arguments = std::vector<ASTTypeID>();
+    if (match(TokenKind::Less)) {
+        do {
+            auto argument = parse_type();
+            if (!argument.has_value()) {
+                break;
+            }
+            arguments.push_back(*argument);
+        } while (match(TokenKind::Comma));
+        if (check(TokenKind::RightShift)) {
+            end = Span::from_bounds(current().span.start(), current().span.start() + 1);
+            split_right_shift = true;
+        } else {
+            end = expect(TokenKind::Greater, "expected '>' after type arguments").span;
+        }
+    }
     return ParsedTypeForm<ASTNamedType> {
         .span = join(start.span, end),
-        .value = ASTNamedType {.components = std::move(components)},
+        .value =
+            ASTNamedType {.components = std::move(components), .arguments = std::move(arguments)},
     };
 }
 

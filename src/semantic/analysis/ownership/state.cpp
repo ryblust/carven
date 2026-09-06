@@ -207,6 +207,10 @@ auto BodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> Place
                                   : found->second;
 }
 auto BodyAnalyzer::location(const SemIRExpression& source) const noexcept -> std::optional<Place> {
+    if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value);
+        foreign != nullptr && source.category == SemanticValueCategory::Place) {
+        return location(foreign->operands.front().expression);
+    }
     if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
         return binding_place(binding->binding);
     }

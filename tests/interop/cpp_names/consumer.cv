@@ -1,0 +1,8 @@
+import .values using { create, count, append };
+import <vector> using std::*;
+
+test "C++ types cross module interfaces without leaking bindings" {
+    var values: vector<i32> = create();
+    append(&values, 4);
+    check(count(values) == 4usize);
+}

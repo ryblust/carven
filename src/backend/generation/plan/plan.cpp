@@ -66,21 +66,21 @@ auto TargetClosureCatalog::owner(CallableID callable) const noexcept -> ModuleID
     return *result;
 }
 
-auto TargetClosureCatalog::production(ModuleID module) const noexcept
+auto TargetClosureCatalog::production(ModuleID module_id) const noexcept
     -> std::span<const CallableID> {
     return semantic_row(
         production_definitions,
         semantic_identity,
-        module,
+        module_id,
         "target closure catalog used an unknown module"
     );
 }
 
-auto TargetClosureCatalog::tests(ModuleID module) const noexcept -> std::span<const CallableID> {
+auto TargetClosureCatalog::tests(ModuleID module_id) const noexcept -> std::span<const CallableID> {
     return semantic_row(
         test_definitions,
         semantic_identity,
-        module,
+        module_id,
         "target closure catalog used an unknown module"
     );
 }
@@ -124,7 +124,7 @@ auto TargetNamePlan::semantic_owner() const noexcept -> ProgramIdentity {
     return source_identity;
 }
 
-auto TargetNamePlan::module(ModuleID id) const noexcept -> const TargetModuleNames& {
+auto TargetNamePlan::module_names(ModuleID id) const noexcept -> const TargetModuleNames& {
     return semantic_row(
         target_modules,
         source_identity,
@@ -156,7 +156,7 @@ auto TargetNamePlan::entity_name(
         return TargetName::from_components(std::move(relative));
     }
     const auto& target_namespace =
-        module(entity.owner_module).qualified_namespace_name.components();
+        module_names(entity.owner_module).qualified_namespace_name.components();
     auto qualified =
         std::vector<TargetIdentifier>(target_namespace.begin(), target_namespace.end());
     qualified.insert(qualified.end(), relative.begin(), relative.end());
@@ -166,7 +166,7 @@ auto TargetNamePlan::entity_name(
 auto TargetNamePlan::global_entity_name(const TargetEntityName& entity) const noexcept
     -> TargetName {
     const auto& target_namespace =
-        module(entity.owner_module).qualified_namespace_name.components();
+        module_names(entity.owner_module).qualified_namespace_name.components();
     auto qualified =
         std::vector<TargetIdentifier>(target_namespace.begin(), target_namespace.end());
     qualified.insert(

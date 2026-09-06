@@ -76,3 +76,19 @@ auto BodyBuilder::pattern_copy(PatternID id) const noexcept -> ElaboratedPattern
     }
     return patterns.copy(id);
 }
+
+auto BodyBuilder::place_access(PlaceHandle place) const noexcept -> AccessMode {
+    return std::visit(
+        [](const auto& storage) static noexcept -> AccessMode {
+            using Storage = std::remove_cvref_t<decltype(storage)>;
+            if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
+                return storage.writable ? AccessMode::Write : AccessMode::Read;
+            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
+                return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
+            } else {
+                return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
+            }
+        },
+        bindings.copy(place_root(place)).storage
+    );
+}

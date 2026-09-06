@@ -308,6 +308,9 @@ auto BodyElaborator::require_writable_storage_type(
     ConstructionTypeRef target,
     Span span
 ) noexcept -> AnalysisResult<void> {
+    if (is_cpp_type(source) || is_cpp_type(target)) {
+        return {};
+    }
     struct ArrayShape final {
         ConstructionTypeRef element;
         std::uint64_t extent;

@@ -119,6 +119,23 @@ auto BodyElaborator::name_expression(const ASTNameExpr& name, Span span) noexcep
             .takeable = local->takeable,
         };
     }
+    if (catalog().lookup(source_module_id, text).empty()) {
+        auto admitted = false;
+        for (const auto& binding : catalog().cpp_imports(source_module_id)) {
+            admitted |= binding.opens_namespace;
+            if (!binding.opens_namespace && binding.components.back() == text) {
+                admitted = true;
+                import_usage().record_cpp(source_module_id, binding.origin);
+            }
+        }
+        if (admitted) {
+            return cpp_expression(
+                CppNameOperation {.module_id = semantic_module_id, .name = text},
+                {},
+                span
+            );
+        }
+    }
     auto selected = find_global(text, name.name_span);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
@@ -281,6 +298,49 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
     auto resolved = resolve_construction_type(source.type);
     if (!resolved.has_value()) {
         return std::unexpected(resolved.error());
+    }
+    if (is_cpp_type(*resolved)) {
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        if (const auto* values =
+                std::get_if<ASTPositionalInitializerList>(&source.initializer.value)) {
+            for (auto value_id : values->values) {
+                auto access = AccessMode::Read;
+                if (const auto* marker =
+                        std::get_if<ASTAccessExpr>(&ast.expression(value_id).value)) {
+                    access =
+                        marker->mode == ASTAccessMode::Write ? AccessMode::Write : AccessMode::Take;
+                    value_id = marker->operand_id;
+                }
+                auto value = expression(value_id);
+                if (!value.has_value()) {
+                    return std::unexpected(value.error());
+                }
+                if (access == AccessMode::Write) {
+                    auto place = as_place(*value, ast.expression(value_id).span);
+                    if (!place.has_value()) {
+                        return std::unexpected(place.error());
+                    }
+                    operands.push_back(
+                        {.access = access, .expression = active_builder().take_place(*place)}
+                    );
+                } else {
+                    auto read = as_value(*value, ast.expression(value_id).span, access);
+                    if (!read.has_value()) {
+                        return std::unexpected(read.error());
+                    }
+                    operands.push_back(
+                        {.access = access, .expression = active_builder().take_value(*read)}
+                    );
+                }
+            }
+        } else if (std::holds_alternative<ASTFieldInitializerList>(source.initializer.value)) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeConstructNotStruct,
+                "named initializers require a Carven structure"
+            ));
+        }
+        return cpp_expression(CppConstructOperation {}, std::move(operands), span, *resolved);
     }
     const auto* concrete = std::get_if<TypeID>(&*resolved);
     if (concrete == nullptr) {

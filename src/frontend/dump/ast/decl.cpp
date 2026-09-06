@@ -4,9 +4,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -134,11 +134,28 @@ auto ASTDumper::render_cpp_header_import(
     const auto nested_prefix = child_prefix(prefix, is_last);
     append_line(
         nested_prefix,
-        true,
+        header.bindings.empty(),
         header.delimiter == ASTCppHeaderDelimiter::AngleBrackets ? "cpp_header Angle"
                                                                  : "cpp_header Quote"
     );
-    render_span_field(child_prefix(nested_prefix, true), true, "name", header.name_span);
+    render_span_field(
+        child_prefix(nested_prefix, header.bindings.empty()),
+        true,
+        "name",
+        header.name_span
+    );
+    for (const auto [index, binding] : std::views::enumerate(header.bindings)) {
+        const auto last = index + 1uz == header.bindings.size();
+        append_line(nested_prefix, last, binding.opens_namespace ? "using namespace" : "using");
+        for (const auto [component_index, component] : std::views::enumerate(binding.components)) {
+            render_span_field(
+                child_prefix(nested_prefix, last),
+                component_index + 1uz == binding.components.size(),
+                "component",
+                component
+            );
+        }
+    }
 }
 
 auto ASTDumper::render_top_level_item(

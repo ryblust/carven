@@ -137,10 +137,12 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         if (!right.has_value()) {
             return std::unexpected(right.error());
         }
-        auto coerced =
-            coerce_to(*right, target_expression->type, ast.expression(source.value).span);
-        if (!coerced.has_value()) {
-            return std::unexpected(coerced.error());
+        if (!is_cpp_type(target_expression->type)) {
+            auto coerced =
+                coerce_to(*right, target_expression->type, ast.expression(source.value).span);
+            if (!coerced.has_value()) {
+                return std::unexpected(coerced.error());
+            }
         }
         auto value = as_value(*right, ast.expression(source.value).span, AccessMode::Read);
         if (!value.has_value()) {
@@ -188,7 +190,9 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         compatible(target_expression->type, right->type),
         type_supports_equality(draft(), target_expression->type)
     );
-    if (!decision.has_value() || *decision != OperatorResult::Operand) {
+    if (!is_cpp_type(target_expression->type)
+        && !is_cpp_type(right->type)
+        && (!decision.has_value() || *decision != OperatorResult::Operand)) {
         return std::unexpected(fail(
             source.operator_span,
             decision.has_value() ? DiagnosticCode::TypeBinary : decision.error().code,
@@ -215,6 +219,28 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
     auto target = as_place(*target_expression, ast.expression(source.target).span);
     if (!target.has_value()) {
         return std::unexpected(target.error());
+    }
+    if (is_cpp_type(target_expression->type)) {
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Write, .expression = active_builder().take_place(*target)}
+        );
+        auto updated = cpp_expression(
+            CppUpdateOperation {.increment = source.op == ASTUpdateOperator::Increment},
+            std::move(operands),
+            source.span,
+            draft().intern_builtin_type(BuiltinType::Void)
+        );
+        if (!updated.has_value()) {
+            return std::unexpected(updated.error());
+        }
+        append_statement(
+            SemExpressionStatement<ConstructionTypeRef, FailureTermID> {
+                take_built(*updated, source.span)
+            },
+            source.span
+        );
+        return {};
     }
     const auto* concrete = std::get_if<TypeID>(&target_expression->type);
     if (concrete == nullptr) {
@@ -300,6 +326,12 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
         const auto boolean = ConstructionTypeRef {
             draft().intern_builtin_type(BuiltinType::Bool),
         };
+        if (is_cpp_type(built->type)) {
+            auto converted = coerce_to(*built, boolean, condition_span);
+            if (!converted.has_value()) {
+                return std::unexpected(converted.error());
+            }
+        }
         if (!compatible(built->type, boolean)) {
             return std::unexpected(fail(
                 condition_span,

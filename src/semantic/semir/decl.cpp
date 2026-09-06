@@ -414,6 +414,23 @@ auto DeclarationBuilder::define(ModuleID id, ModuleDeclaration declaration) noex
         "module declaration used a foreign origin"
     );
     for (const auto& header : declaration.cpp_headers) {
+        for (const auto& binding : header.bindings) {
+            if (binding.components.empty()) {
+                invariant_violation("C++ using binding has no name");
+            }
+            require_provenance_owner(
+                binding.origin.owner(),
+                provenance_identity,
+                "C++ using binding used a foreign origin"
+            );
+            for (const auto component : binding.components) {
+                require_provenance_owner(
+                    component.owner(),
+                    provenance_identity,
+                    "C++ using binding used a foreign spelling"
+                );
+            }
+        }
         require_provenance_owner(
             header.name.owner(),
             provenance_identity,

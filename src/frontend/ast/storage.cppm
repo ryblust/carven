@@ -138,8 +138,11 @@ private:
         std::visit([&](const auto& alternative) noexcept { visit(alternative); }, value);
     }
 
+    auto visit(const ASTCppUsing& value) noexcept -> void {
+        visit_fields(value.span, value.components);
+    }
     auto visit(const ASTCppHeaderImport& value) noexcept -> void {
-        visit_fields(value.span, value.name_span);
+        visit_fields(value.span, value.name_span, value.bindings);
     }
     auto visit(const ASTCppExportForm& value) noexcept -> void { visit(value.span); }
     auto visit(const ASTCppImportForm& value) noexcept -> void { visit(value.span); }
@@ -149,7 +152,9 @@ private:
 
     auto visit(const ASTAccessSyntax& value) noexcept -> void { visit(value.marker); }
     auto visit(const ASTTypeNameComponent& value) noexcept -> void { visit(value.name_span); }
-    auto visit(const ASTNamedType& value) noexcept -> void { visit(value.components); }
+    auto visit(const ASTNamedType& value) noexcept -> void {
+        visit_fields(value.components, value.arguments);
+    }
     auto visit(const ASTArrayType& value) noexcept -> void {
         visit_fields(value.element_type, value.extent);
     }

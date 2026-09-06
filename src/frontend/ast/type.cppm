@@ -21,6 +21,7 @@ struct ASTTypeNameComponent final {
 
 struct ASTNamedType final {
     std::vector<ASTTypeNameComponent> components;
+    std::vector<ASTTypeID> arguments;
 };
 
 struct ASTArrayType final {

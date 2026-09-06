@@ -2,13 +2,13 @@ module carven:backend.lowering.context;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.target;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
 import :backend.target.item;
 import :backend.target.stmt;
 import :backend.target.type;
+import :backend.target;
 import :semantic.semir;
 import :support.unique_indirect;
 import std;
@@ -29,7 +29,7 @@ public:
     auto plan() const noexcept -> const TargetPlan&;
     auto artifact() const noexcept -> const TargetArtifactPlan&;
     auto target() noexcept -> TargetUnitBuilder&;
-    auto module(ModuleID id) noexcept -> ModuleLowering;
+    auto module_context(ModuleID id) noexcept -> ModuleLowering;
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
 
 private:
@@ -40,13 +40,14 @@ private:
     TargetArtifactID artifact_id;
     TargetUnitBuilder target_builder;
     std::flat_set<TargetArtifactID> lowering_dependencies;
+    std::flat_map<ModuleID, std::flat_set<std::string, std::less<>>> cpp_type_providers;
 
     friend class ModuleLowering;
 };
 
 class ModuleLowering final {
 public:
-    ModuleLowering(ArtifactLowering& artifact, ModuleID module) noexcept;
+    ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept;
     ModuleLowering(const ModuleLowering&) = delete;
     ModuleLowering(ModuleLowering&& other) noexcept;
     ~ModuleLowering() = default;
@@ -76,6 +77,7 @@ public:
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
     auto outcome_type(CallableSignatureID signature) noexcept -> TargetTypeID;
     auto lower_type(TypeID id) noexcept -> TargetTypeID;
+    auto cpp_type_query(const CppDeducedType& query) noexcept -> TargetTypeQuery;
     auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
     auto lower_signature_result(CallableSignatureID signature) noexcept -> TargetTypeID;
     auto is_void(TypeID id) const noexcept -> bool;

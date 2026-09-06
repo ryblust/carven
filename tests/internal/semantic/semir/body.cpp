@@ -33,7 +33,7 @@ auto path(std::string_view value) noexcept -> CanonicalModulePath {
 struct PreparedFunction final {
     ProgramDraft builder;
     CallableID callable;
-    ModuleID module;
+    ModuleID module_id;
     ProgramOriginID origin;
     ProgramSpellingID parameter_name;
     TypeID boolean_type;
@@ -57,7 +57,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     const auto origin = builder.append_source_origin(source_id, Span::at(0u));
     const auto parameter_name = builder.intern_spelling("value");
     const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto function = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
     const auto failures = builder.add_empty_failure_term();
@@ -79,7 +79,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     builder.define_declaration(
         function,
         FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("identity"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -89,7 +89,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,
@@ -102,7 +102,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     return PreparedFunction {
         .builder = std::move(builder),
         .callable = callable,
-        .module = module,
+        .module_id = module_id,
         .origin = origin,
         .parameter_name = parameter_name,
         .boolean_type = boolean,

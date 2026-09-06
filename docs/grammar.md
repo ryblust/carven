@@ -313,7 +313,11 @@ module-import-declaration = "import", module-reference,
 cpp-header-import-declaration = "import",
                                 ( CPP_ANGLE_HEADER_NAME
                                 | CPP_QUOTE_HEADER_NAME ),
-                                ";";
+                                [ "using", cpp-import-selection ], ";";
+
+cpp-name = IDENTIFIER, { "::", IDENTIFIER };
+cpp-import-selection = cpp-name, [ "::", "*" ]
+                     | "{", cpp-name, { ",", cpp-name }, [ "," ], "}";
 
 module-reference = module-path
                  | ".", module-path
@@ -449,7 +453,7 @@ with the same spelling is visible.
 ```ebnf
 type = named-type | array-type | function-type;
 
-named-type = qualified-type-name;
+named-type = qualified-type-name, [ "<", type, { ",", type }, ">" ];
 
 qualified-type-name = type-name-component,
                       { "::", type-name-component };
@@ -471,6 +475,10 @@ function-type-parameter-list = function-type-parameter,
 
 function-type-parameter = [ access-marker ], type;
 ```
+
+A named type can carry a nonempty type argument list after its qualified name.
+Nested lists may close with `>>`; token splitting applies only during type
+parsing and leaves expression shift operators unchanged.
 
 There is no type-alias declaration, tuple type syntax, generic
 parameter declaration, or reference/pointer type syntax.

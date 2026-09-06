@@ -31,8 +31,8 @@ struct TargetClosureCatalog final {
     std::vector<std::vector<CallableID>> test_definitions;
 
     auto owner(CallableID callable) const noexcept -> ModuleID;
-    auto production(ModuleID module) const noexcept -> std::span<const CallableID>;
-    auto tests(ModuleID module) const noexcept -> std::span<const CallableID>;
+    auto production(ModuleID module_id) const noexcept -> std::span<const CallableID>;
+    auto tests(ModuleID module_id) const noexcept -> std::span<const CallableID>;
 };
 
 class TargetNamePlan final {
@@ -60,7 +60,7 @@ public:
     auto operator=(TargetNamePlan&&) -> TargetNamePlan& = default;
 
     auto semantic_owner() const noexcept -> ProgramIdentity;
-    auto module(ModuleID id) const noexcept -> const TargetModuleNames&;
+    auto module_names(ModuleID id) const noexcept -> const TargetModuleNames&;
     auto generated_namespace() const noexcept -> const TargetName&;
     auto domain_namespace() const noexcept -> const TargetName&;
     auto function_identifier(FunctionID id) const noexcept -> const TargetIdentifier&;
@@ -77,7 +77,7 @@ public:
     auto closure_owner(CallableID id) const noexcept -> ModuleID;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto test_function(TestID test) const noexcept -> const TargetIdentifier&;
-    auto module_runner(ModuleID module) const noexcept -> const TargetIdentifier&;
+    auto module_runner(ModuleID module_id) const noexcept -> const TargetIdentifier&;
 
 private:
     auto entity_name(ModuleID active_module, const TargetEntityName& entity) const noexcept
@@ -148,7 +148,7 @@ struct TargetInterfaceArtifact final {
 
 struct TargetCppAPIHeaderArtifact final {
     std::string logical_path;
-    ModuleID module;
+    ModuleID module_id;
     std::vector<FunctionID> cpp_export_declarations;
     std::vector<TargetArtifactID> interface_dependencies;
 };

@@ -380,6 +380,13 @@ auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeI
                      text("} // namespace")}
                 );
             },
+            [&](const TargetUsing& value) noexcept {
+                return concat(
+                    {text(value.opens_namespace ? "using namespace " : "using "),
+                     render_name(value.name),
+                     text(";")}
+                );
+            },
             [&](const TargetRawFragment& value) noexcept { return render_raw_fragment(value); },
         },
         item.value

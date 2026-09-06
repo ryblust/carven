@@ -74,15 +74,15 @@ auto is_strict_prefix(
     return prefix.size() < value.size() && std::ranges::equal(prefix, value.first(prefix.size()));
 }
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module) noexcept -> SourceID {
-    return draft.syntax_tree(module).view().source_id();
+auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
+    return draft.syntax_tree(module_id).view().source_id();
 }
 
 } // namespace
 
 auto validate_cpp_boundary_declaration(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionDecl& function,
     std::span<const ConstructionCallableParameter> parameters,
@@ -97,7 +97,7 @@ auto validate_cpp_boundary_declaration(
     auto failure = std::optional<AnalysisFailure>();
     const auto diagnose = [&](Span span, std::string message, DiagnosticCode code) noexcept {
         failure = draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                                .primary(locate(source_id(draft, module), span))
+                                                .primary(locate(source_id(draft, module_id), span))
                                                 .build());
     };
     if (function.throw_clause.has_value()) {
@@ -135,7 +135,7 @@ auto validate_cpp_boundary_declaration(
             DiagnosticCode::CppBoundaryType
         );
     }
-    const auto name = draft.source_slice_copy(module, function.name_span);
+    const auto name = draft.source_slice_copy(module_id, function.name_span);
     if (!is_supported_cpp_identifier(name)) {
         diagnose(
             function.name_span,
@@ -195,8 +195,8 @@ auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) 
         if (!origin.has_value()) {
             continue;
         }
-        const auto module = draft.provenance_module_at(index);
-        const auto module_path = draft.module_path_copy(module);
+        const auto module_id = draft.provenance_module_at(index);
+        const auto module_path = draft.module_path_copy(module_id);
         for (const auto& component : module_path.components()) {
             if (is_supported_cpp_identifier(component)) {
                 continue;

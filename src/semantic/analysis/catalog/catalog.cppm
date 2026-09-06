@@ -101,6 +101,12 @@ struct CatalogImportBinding final {
     std::vector<CatalogImportSelectedSymbol> selected_symbols;
 };
 
+struct CatalogCppBinding final {
+    std::vector<std::string> components;
+    bool opens_namespace;
+    Span origin;
+};
+
 struct CatalogLookupCandidate final {
     CatalogSymbolID symbol_id;
     std::optional<ImportBindingID> import_binding;
@@ -131,6 +137,7 @@ private:
     std::vector<std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>>
         visible_candidates;
     std::vector<CatalogImportBinding> import_bindings;
+    std::vector<std::vector<CatalogCppBinding>> cpp_bindings;
 
     friend class AnalysisCatalogView;
     friend auto build_analysis_catalog(ProgramDraft&) noexcept
@@ -153,6 +160,8 @@ public:
     auto struct_count() const noexcept -> std::size_t;
     auto enum_count() const noexcept -> std::size_t;
     auto enum_case_count() const noexcept -> std::size_t;
+    auto cpp_imports(ProgramModuleID module_id) const noexcept
+        -> std::span<const CatalogCppBinding>;
     auto lookup(ProgramModuleID module_id, std::string_view name) const noexcept
         -> std::span<const CatalogLookupCandidate>;
 
@@ -171,8 +180,11 @@ class ImportUsage final {
 public:
     explicit ImportUsage(std::size_t import_count) noexcept;
     auto record(ImportBindingID import_id) noexcept -> void;
+    auto record_cpp(ProgramModuleID module_id, Span origin) noexcept -> void;
+    auto cpp_was_used(ProgramModuleID module_id, Span origin) const noexcept -> bool;
     auto was_used(ImportBindingID import_id) const noexcept -> bool;
 
 private:
     std::vector<std::uint8_t> used_imports;
+    std::flat_set<std::pair<ProgramModuleID, std::uint32_t>> used_cpp_imports;
 };

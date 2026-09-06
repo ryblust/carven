@@ -4,9 +4,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :frontend.lex.token;
@@ -106,6 +106,36 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
 auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     const auto header = consume();
+    auto bindings = std::vector<ASTCppUsing>();
+    if (match(TokenKind::Using)) {
+        const auto list = match(TokenKind::LeftBrace).has_value();
+        do {
+            const auto first = expect(TokenKind::Identifier, "expected a C++ name after 'using'");
+            auto components = std::vector<Span> {first.span};
+            auto end = first.span;
+            auto opens_namespace = false;
+            while (!failed && match(TokenKind::ColonColon)) {
+                if (!list && check(TokenKind::Star)) {
+                    end = consume().span;
+                    opens_namespace = true;
+                    break;
+                }
+                end = expect(TokenKind::Identifier, "expected a C++ name after '::'").span;
+                components.push_back(end);
+            }
+            bindings.push_back({
+                .span = join(first.span, end),
+                .components = std::move(components),
+                .opens_namespace = opens_namespace,
+            });
+            if (failed || !list || !match(TokenKind::Comma) || check(TokenKind::RightBrace)) {
+                break;
+            }
+        } while (!failed);
+        if (list) {
+            expect(TokenKind::RightBrace, "expected '}' after C++ import list");
+        }
+    }
     const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after C++ header import");
     return {
         .span = join(start, semicolon.span),
@@ -113,6 +143,7 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
             ? ASTCppHeaderDelimiter::AngleBrackets
             : ASTCppHeaderDelimiter::Quotes,
         .name_span = Span::from_bounds(header.span.start() + 1, header.span.end() - 1),
+        .bindings = std::move(bindings),
     };
 }
 

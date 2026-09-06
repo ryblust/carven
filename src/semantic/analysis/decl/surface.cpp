@@ -8,8 +8,8 @@ import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.constant.proof;
-import :semantic.analysis.decl;
 import :semantic.analysis.decl.context;
+import :semantic.analysis.decl;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
@@ -59,7 +59,7 @@ public:
         ProgramDraft& target,
         AnalysisCatalogView source_catalog,
         DeclarationVisibility visibility,
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         SourceSpan primary,
         std::string_view description,
         std::optional<AnalysisFailure>& failure_state
@@ -67,7 +67,7 @@ public:
         : draft(target),
           catalog(source_catalog),
           surface_visibility(visibility),
-          surface_module(module),
+          surface_module(module_id),
           primary_span(primary),
           surface_description(description),
           failure(failure_state) {}
@@ -110,6 +110,18 @@ public:
                 [&](const FunctionTypeValue& value) noexcept { validate_callable(value.callable); },
                 [&](const ClosureTypeValue& value) noexcept { validate_callable(value.callable); },
                 [](const CallableViewTypeValue&) static noexcept {},
+                [&](const CppTypeValue& value) noexcept {
+                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                        for (const auto argument : named->arguments) {
+                            validate(ConstructionTypeRef {argument});
+                        }
+                    } else {
+                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                            const auto argument = operand.type;
+                            validate(ConstructionTypeRef {argument});
+                        }
+                    }
+                },
             },
             draft.type_copy(concrete).value
         );

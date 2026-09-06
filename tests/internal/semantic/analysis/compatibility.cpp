@@ -68,7 +68,7 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
         compilation.module_source(provenance_module),
         Span::at(0u)
     );
-    const auto module = compilation.reserve_module_declaration();
+    const auto module_id = compilation.reserve_module_declaration();
     const auto failure_structure = compilation.reserve_struct_declaration();
     const auto failure_type = compilation.intern_type(
         CanonicalType {
@@ -113,7 +113,7 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
     compilation.define_declaration(
         failure_structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = compilation.intern_spelling("Failure"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -122,7 +122,7 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
         }
     );
     compilation.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,

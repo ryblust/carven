@@ -23,6 +23,7 @@ import :semantic.analysis.validation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.cpp.identifier;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -44,6 +45,61 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
     auto index_value = as_value(*index, ast.expression(source.index).span, AccessMode::Read);
     if (!index_value.has_value()) {
         return std::unexpected(index_value.error());
+    }
+    if (is_cpp_type(operand->type)) {
+        const auto* concrete_index = std::get_if<TypeID>(&index->type);
+        if (concrete_index == nullptr) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeMismatch,
+                "C++ indexing requires a concrete index type"
+            ));
+        }
+        const auto location = origin(span);
+        const auto type = draft().intern_type(
+            {.value = CppTypeValue {
+                 .form = CppDeducedType {
+                     .origin = location,
+                     .operation = CppIndexOperation {},
+                     .operands = {
+                         {.type = std::get<TypeID>(operand->type),
+                          .access = std::holds_alternative<PlaceHandle>(operand->storage)
+                              ? active_builder()
+                                    .place_access(std::get<PlaceHandle>(operand->storage))
+                              : AccessMode::Read},
+                         {.type = *concrete_index, .access = AccessMode::Read}
+                     }
+                 }
+             }}
+        );
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*index_value)}
+        );
+        if (const auto* place = std::get_if<PlaceHandle>(&operand->storage)) {
+            return BuiltExpression {
+                .type = type,
+                .storage = active_builder().append_cpp_place(
+                    *place,
+                    type,
+                    CppIndexOperation {},
+                    std::move(operands),
+                    location
+                ),
+                .constant = std::nullopt,
+                .pending_failures = std::move(pending_failures),
+                .takeable = false
+            };
+        }
+        auto value = as_value(*operand, span, AccessMode::Read);
+        if (!value.has_value()) {
+            return std::unexpected(value.error());
+        }
+        operands.insert(
+            operands.begin(),
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+        );
+        return cpp_expression(CppIndexOperation {}, std::move(operands), span, type);
     }
     auto element = std::optional<ConstructionTypeRef>();
     auto extent = std::optional<std::uint64_t>();
@@ -157,6 +213,56 @@ auto BodyElaborator::member_projection(
     BuiltExpression operand
 ) noexcept -> AnalysisResult<BuiltExpression> {
     const auto name = spelling(source.name_span);
+    if (is_cpp_type(operand.type)) {
+        if (!is_supported_cpp_identifier(name)) {
+            return std::unexpected(fail(
+                source.name_span,
+                DiagnosticCode::CppIdentifier,
+                "external member cannot be represented as a C++ identifier"
+            ));
+        }
+        const auto location = origin(span);
+        const auto type = draft().intern_type(
+            {.value = CppTypeValue {
+                 .form = CppDeducedType {
+                     .origin = location,
+                     .operation = CppMemberOperation {.name = name},
+                     .operands = {
+                         {.type = std::get<TypeID>(operand.type),
+                          .access = std::holds_alternative<PlaceHandle>(operand.storage)
+                              ? active_builder()
+                                    .place_access(std::get<PlaceHandle>(operand.storage))
+                              : AccessMode::Read}
+                     }
+                 }
+             }}
+        );
+        if (const auto* place = std::get_if<PlaceHandle>(&operand.storage)) {
+            const auto result = active_builder().append_cpp_place(
+                *place,
+                type,
+                CppMemberOperation {.name = name},
+                {},
+                location
+            );
+            return BuiltExpression {
+                .type = type,
+                .storage = result,
+                .constant = std::nullopt,
+                .pending_failures = std::move(operand.pending_failures),
+                .takeable = false
+            };
+        }
+        auto value = as_value(operand, span, AccessMode::Read);
+        if (!value.has_value()) {
+            return std::unexpected(value.error());
+        }
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+        );
+        return cpp_expression(CppMemberOperation {.name = name}, std::move(operands), span, type);
+    }
     auto pending_failures = take_pending(operand);
     if (const auto* concrete = std::get_if<TypeID>(&operand.type)) {
         const auto canonical = draft().type_copy(*concrete);

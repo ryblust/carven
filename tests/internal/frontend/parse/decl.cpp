@@ -8,9 +8,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -34,15 +34,15 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     );
     const auto result = parse_valid(text);
     const auto ast = result.view();
-    const auto& module = root(result);
-    CHECK_EQ(module.span.start(), 0u);
-    CHECK_EQ(module.span.end(), text.size());
-    REQUIRE_EQ(module.module_imports.size(), 3u);
-    REQUIRE(module.cpp_header_imports.empty());
-    REQUIRE_EQ(module.cpp_source_fragments.size(), 1u);
-    REQUIRE_EQ(module.items.size(), 4u);
+    const auto& module_syntax = root(result);
+    CHECK_EQ(module_syntax.span.start(), 0u);
+    CHECK_EQ(module_syntax.span.end(), text.size());
+    REQUIRE_EQ(module_syntax.module_imports.size(), 3u);
+    REQUIRE(module_syntax.cpp_header_imports.empty());
+    REQUIRE_EQ(module_syntax.cpp_source_fragments.size(), 1u);
+    REQUIRE_EQ(module_syntax.items.size(), 4u);
 
-    const auto& first = ast.module_import(module.module_imports[0]);
+    const auto& first = ast.module_import(module_syntax.module_imports[0]);
     REQUIRE(std::holds_alternative<ASTDomainRootModuleReference>(first.module_reference.value));
     const auto& first_reference =
         std::get<ASTDomainRootModuleReference>(first.module_reference.value);
@@ -50,10 +50,10 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     CHECK_EQ(slice(text, first_reference.components[0]), "math");
     const auto& selected = get<ASTImportList>(first.selection);
     CHECK_EQ(selected.names.size(), 2u);
-    CHECK(is<ASTWildcardImport>(ast.module_import(module.module_imports[1]).selection));
-    CHECK(is<ASTSingleImport>(ast.module_import(module.module_imports[2]).selection));
+    CHECK(is<ASTWildcardImport>(ast.module_import(module_syntax.module_imports[1]).selection));
+    CHECK(is<ASTSingleImport>(ast.module_import(module_syntax.module_imports[2]).selection));
     const auto& qualified = std::get<ASTCraftQualifiedModuleReference>(
-        ast.module_import(module.module_imports[2]).module_reference.value
+        ast.module_import(module_syntax.module_imports[2]).module_reference.value
     );
     CHECK_EQ(slice(text, qualified.name_span), "logging");
     CHECK_EQ(slice(text, qualified.separator_span), "::");
@@ -61,7 +61,7 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     CHECK_EQ(slice(text, qualified.components[0]), "api");
     CHECK_EQ(slice(text, qualified.components[1]), "write");
 
-    const auto& enumeration = get<ASTEnumDecl>(ast.item(module.items[0]));
+    const auto& enumeration = get<ASTEnumDecl>(ast.item(module_syntax.items[0]));
     CHECK(std::holds_alternative<ASTExportDeclarationVisibility>(enumeration.visibility));
     CHECK_EQ(slice(text, enumeration.name_span), "State");
     REQUIRE(enumeration.underlying_type.has_value());
@@ -69,11 +69,11 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     REQUIRE_EQ(enumeration.cases.size(), 2u);
     CHECK(enumeration.cases[1].initializer.has_value());
 
-    const auto& structure = get<ASTStructDecl>(ast.item(module.items[1]));
+    const auto& structure = get<ASTStructDecl>(ast.item(module_syntax.items[1]));
     CHECK(std::holds_alternative<ASTBareDeclarationVisibility>(structure.visibility));
-    const auto& function = get<ASTFunctionDecl>(ast.item(module.items[2]));
+    const auto& function = get<ASTFunctionDecl>(ast.item(module_syntax.items[2]));
     CHECK(std::holds_alternative<ASTPrivateDeclarationVisibility>(function.visibility));
-    const auto& constant = get<ASTConstantDecl>(ast.item(module.items[3]));
+    const auto& constant = get<ASTConstantDecl>(ast.item(module_syntax.items[3]));
     CHECK(std::holds_alternative<ASTPrivateDeclarationVisibility>(constant.visibility));
     CHECK_EQ(
         slice(text, std::get<ASTPrivateDeclarationVisibility>(constant.visibility).keyword_span),
@@ -83,7 +83,7 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     REQUIRE(constant.type.has_value());
     CHECK(is<ASTNamedType>(ast.type(*constant.type)));
     CHECK_EQ(slice(text, ast.expression(constant.initializer).span), "42");
-    const auto& fragment = module.cpp_source_fragments.front();
+    const auto& fragment = module_syntax.cpp_source_fragments.front();
     CHECK_EQ(slice(text, fragment.payload_span), "static_assert(true);\n");
 }
 
@@ -99,17 +99,17 @@ TEST_CASE("Parser: C++ headers, fragments, and function forms retain distinct st
         "---\n"
     );
     const auto result = parse_valid(text);
-    const auto& module = root(result);
-    REQUIRE(module.module_imports.empty());
-    REQUIRE_EQ(module.cpp_header_imports.size(), 2u);
-    REQUIRE_EQ(module.cpp_source_fragments.size(), 1u);
-    REQUIRE_EQ(module.items.size(), 3u);
+    const auto& module_syntax = root(result);
+    REQUIRE(module_syntax.module_imports.empty());
+    REQUIRE_EQ(module_syntax.cpp_header_imports.size(), 2u);
+    REQUIRE_EQ(module_syntax.cpp_source_fragments.size(), 1u);
+    REQUIRE_EQ(module_syntax.items.size(), 3u);
 
-    const auto& angle = module.cpp_header_imports[0];
+    const auto& angle = module_syntax.cpp_header_imports[0];
     CHECK_EQ(slice(text, angle.span), "import <cstdint>;");
     CHECK_EQ(angle.delimiter, ASTCppHeaderDelimiter::AngleBrackets);
     CHECK_EQ(slice(text, angle.name_span), "cstdint");
-    const auto& quote = module.cpp_header_imports[1];
+    const auto& quote = module_syntax.cpp_header_imports[1];
     CHECK_EQ(slice(text, quote.span), "import \"native/provider.hpp\";");
     CHECK_EQ(quote.delimiter, ASTCppHeaderDelimiter::Quotes);
     CHECK_EQ(slice(text, quote.name_span), "native/provider.hpp");
@@ -129,7 +129,7 @@ TEST_CASE("Parser: C++ headers, fragments, and function forms retain distinct st
     CHECK_EQ(slice(text, cpp_export.cpp_export->span), "export(cpp)");
     CHECK(is<ASTFunctionBody>(cpp_export.implementation));
 
-    const auto& fragment = module.cpp_source_fragments.front();
+    const auto& fragment = module_syntax.cpp_source_fragments.front();
     CHECK_EQ(slice(text, fragment.form_span), "#[cpp] ---\nstatic_assert(true);\n---");
     CHECK_EQ(slice(text, fragment.payload_span), "static_assert(true);\n");
 }
@@ -143,20 +143,20 @@ TEST_CASE("Parser: module and C++ header imports keep independent ownership") {
     );
     const auto result = parse_valid(text);
     const auto ast = result.view();
-    const auto& module = root(result);
-    REQUIRE_EQ(module.module_imports.size(), 2u);
-    REQUIRE_EQ(module.cpp_header_imports.size(), 2u);
+    const auto& module_syntax = root(result);
+    REQUIRE_EQ(module_syntax.module_imports.size(), 2u);
+    REQUIRE_EQ(module_syntax.cpp_header_imports.size(), 2u);
 
     CHECK_EQ(
-        slice(text, ast.module_import(module.module_imports[0]).span),
+        slice(text, ast.module_import(module_syntax.module_imports[0]).span),
         "import .first using First;"
     );
     CHECK_EQ(
-        slice(text, ast.module_import(module.module_imports[1]).span),
+        slice(text, ast.module_import(module_syntax.module_imports[1]).span),
         "import .second using Second;"
     );
-    CHECK_EQ(slice(text, module.cpp_header_imports[0].span), "import <native/first.hpp>;");
-    CHECK_EQ(slice(text, module.cpp_header_imports[1].span), "import \"native/second.hpp\";");
+    CHECK_EQ(slice(text, module_syntax.cpp_header_imports[0].span), "import <native/first.hpp>;");
+    CHECK_EQ(slice(text, module_syntax.cpp_header_imports[1].span), "import \"native/second.hpp\";");
 }
 
 TEST_CASE("Parser: C++ source fragments remain independent module-owned spans") {
@@ -172,12 +172,12 @@ TEST_CASE("Parser: C++ source fragments remain independent module-owned spans") 
         "---\n"
     );
     const auto result = parse_valid(text);
-    const auto& module = root(result);
-    REQUIRE_EQ(module.items.size(), 1u);
-    REQUIRE_EQ(module.cpp_source_fragments.size(), 3u);
-    CHECK_EQ(slice(text, module.cpp_source_fragments[0].payload_span), "first();\n");
-    CHECK_EQ(slice(text, module.cpp_source_fragments[1].payload_span), "auto raw = R\"(---)\";\n");
-    CHECK(module.cpp_source_fragments[2].payload_span.empty());
+    const auto& module_syntax = root(result);
+    REQUIRE_EQ(module_syntax.items.size(), 1u);
+    REQUIRE_EQ(module_syntax.cpp_source_fragments.size(), 3u);
+    CHECK_EQ(slice(text, module_syntax.cpp_source_fragments[0].payload_span), "first();\n");
+    CHECK_EQ(slice(text, module_syntax.cpp_source_fragments[1].payload_span), "auto raw = R\"(---)\";\n");
+    CHECK(module_syntax.cpp_source_fragments[2].payload_span.empty());
 
     check_invalid("#[cpp] ---\n---\n;");
 }
@@ -399,4 +399,30 @@ TEST_CASE("Parser: callable parameters retain Read Write and Take access") {
     CHECK_EQ(closure.parameters[2].access.mode, ASTAccessMode::Take);
 
     check_invalid("fn invalid() { let closure = [&&value]() {}; }");
+}
+
+TEST_CASE("Parser: C++ selections retain qualified names and explicit namespaces") {
+    constexpr auto text = std::string_view(
+        "import <vector> using std::vector;\n"
+        "import \"provider.hpp\" using { vendor::Widget, vendor::create, };\n"
+        "import <utility> using std::*;\n"
+    );
+    const auto tree = parse_valid(text);
+    const auto& imports = root(tree).cpp_header_imports;
+    REQUIRE_EQ(imports.size(), 3uz);
+    REQUIRE_EQ(imports[0].bindings.size(), 1uz);
+    CHECK_FALSE(imports[0].bindings[0].opens_namespace);
+    REQUIRE_EQ(imports[0].bindings[0].components.size(), 2uz);
+    CHECK_EQ(slice(text, imports[0].bindings[0].components.back()), "vector");
+    CHECK_EQ(imports[1].bindings.size(), 2uz);
+    CHECK(imports[2].bindings[0].opens_namespace);
+    const auto invalid = std::array {
+        "import <vector> using *;",
+        "import <vector> using {};",
+        "import <vector> using std::;",
+        "import <vector> using {std::*,};",
+    };
+    for (const auto* const source : invalid) {
+        check_invalid(source);
+    }
 }

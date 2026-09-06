@@ -3,10 +3,12 @@ module carven:semantic.analysis.catalog.impl;
 import :diagnostics.builder;
 import :frontend.ast.decl;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.catalog;
 import :semantic.visibility;
+import :source.cpp.identifier;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -321,6 +323,15 @@ auto AnalysisCatalogView::lookup(ProgramModuleID module_id, std::string_view nam
                                      : std::span<const CatalogLookupCandidate>(named->second);
 }
 
+auto AnalysisCatalogView::cpp_imports(ProgramModuleID module_id) const noexcept
+    -> std::span<const CatalogCppBinding> {
+    if (module_id.index() >= catalog->modules.size()
+        || catalog->modules[module_id.index()].module_id != module_id) {
+        invariant_violation("C++ import lookup used an invalid module");
+    }
+    return catalog->cpp_bindings[module_id.index()];
+}
+
 auto build_analysis_catalog(ProgramDraft& draft) noexcept
     -> std::expected<AnalysisCatalog, Diagnostics> {
     auto result = AnalysisCatalog();
@@ -563,6 +574,38 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     .cases.push_back(case_id);
             }
         }
+        auto cpp_bindings = std::vector<CatalogCppBinding>();
+        for (const auto& header : ast_module.cpp_header_imports) {
+            for (const auto& binding : header.bindings) {
+                auto components = std::vector<std::string>();
+                for (const auto component : binding.components) {
+                    components.push_back(draft.source_slice_copy(module_id, component));
+                    if (!is_supported_cpp_identifier(components.back())) {
+                        diagnostics.push_back(
+                            DiagnosticBuilder(
+                                DiagnosticCode::CppIdentifier,
+                                "external name cannot be represented as a C++ identifier"
+                            )
+                                .primary(locate(source_id, component))
+                                .build()
+                        );
+                    }
+                }
+                if (!binding.opens_namespace && names.contains(components.back())) {
+                    diagnostics.push_back(catalog_error(
+                        source_id,
+                        "a C++ import conflicts with a Carven declaration",
+                        binding.span
+                    ));
+                }
+                cpp_bindings.push_back({
+                    .components = std::move(components),
+                    .opens_namespace = binding.opens_namespace,
+                    .origin = binding.span,
+                });
+            }
+        }
+        result.cpp_bindings.push_back(std::move(cpp_bindings));
         result.modules.push_back(std::move(catalog_module));
         result.visible_candidates.push_back(std::move(local_candidates));
     }
@@ -761,6 +804,18 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
         }
     }
 
+    for (auto module_index = 0uz; module_index < module_count; ++module_index) {
+        for (const auto& binding : result.cpp_bindings[module_index]) {
+            if (!binding.opens_namespace
+                && result.visible_candidates[module_index].contains(binding.components.back())) {
+                diagnostics.push_back(catalog_error(
+                    syntax_trees[module_index].view().source_id(),
+                    "a C++ import conflicts with a Carven binding",
+                    binding.origin
+                ));
+            }
+        }
+    }
     if (!diagnostics.empty()) {
         return std::unexpected(std::move(diagnostics));
     }
@@ -782,4 +837,12 @@ auto ImportUsage::was_used(ImportBindingID import_id) const noexcept -> bool {
         invariant_violation("import usage references an unknown binding");
     }
     return used_imports[import_id.index()] != 0;
+}
+
+auto ImportUsage::record_cpp(ProgramModuleID module_id, Span origin) noexcept -> void {
+    used_cpp_imports.emplace(module_id, origin.start());
+}
+
+auto ImportUsage::cpp_was_used(ProgramModuleID module_id, Span origin) const noexcept -> bool {
+    return used_cpp_imports.contains({module_id, origin.start()});
 }

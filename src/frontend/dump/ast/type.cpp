@@ -4,9 +4,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.type;
@@ -155,6 +155,17 @@ auto ASTDumper::render_named_type_children(
             render_span_field(nested_prefix, true, "name", component.name_span);
         }
     );
+    if (!named.arguments.empty()) {
+        render_list(
+            prefix,
+            true,
+            "arguments",
+            named.arguments,
+            [&](ASTTypeID argument, std::string_view item_prefix, bool item_last) noexcept {
+                render_type(argument, item_prefix, item_last);
+            }
+        );
+    }
 }
 
 auto ASTDumper::render_function_type_children(

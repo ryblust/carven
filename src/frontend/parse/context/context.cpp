@@ -6,9 +6,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.tree;
 import :frontend.ast.type;
@@ -167,6 +167,13 @@ auto Parser::at_end() const noexcept -> bool {
 
 auto Parser::current() const noexcept -> Token {
     if (cursor < tokens.size()) {
+        if (split_right_shift) {
+            return {
+                .kind = TokenKind::Greater,
+                .span =
+                    Span::from_bounds(tokens[cursor].span.start() + 1, tokens[cursor].span.end())
+            };
+        }
         return tokens[cursor];
     }
     const auto end = static_cast<std::uint32_t>(source.size());
@@ -186,6 +193,7 @@ auto Parser::check_next(TokenKind kind) const noexcept -> bool {
 
 auto Parser::consume() noexcept -> Token {
     const auto token = current();
+    split_right_shift = false;
     if (cursor < tokens.size()) {
         ++cursor;
     }
@@ -232,6 +240,7 @@ auto Parser::expect(TokenKind kind, std::string_view message) noexcept -> Token 
 auto Parser::save() const noexcept -> Checkpoint {
     return {
         .cursor = cursor,
+        .split_right_shift = split_right_shift,
         .builder = builder.checkpoint(),
         .failed = failed,
         .diagnostic_count = diagnostics.size(),
@@ -244,6 +253,7 @@ auto Parser::save() const noexcept -> Checkpoint {
 auto Parser::restore(const Checkpoint& checkpoint) noexcept -> void {
     builder.rewind(checkpoint.builder);
     cursor = checkpoint.cursor;
+    split_right_shift = checkpoint.split_right_shift;
     failed = checkpoint.failed;
     diagnostics.resize(checkpoint.diagnostic_count);
     expression_nesting = checkpoint.expression_nesting;

@@ -96,6 +96,28 @@ auto BodyElaborator::coerce_to(
     if (built.type == target) {
         return {};
     }
+    if (is_cpp_type(built.type) || is_cpp_type(target)) {
+        auto value = as_value(built, span, AccessMode::Read);
+        if (!value.has_value()) {
+            return std::unexpected(value.error());
+        }
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+        );
+        auto converted = cpp_expression(
+            CppConvertOperation {.explicit_cast = false},
+            std::move(operands),
+            span,
+            target
+        );
+        if (!converted.has_value()) {
+            return std::unexpected(converted.error());
+        }
+        converted->completes = built.completes;
+        built = std::move(*converted);
+        return {};
+    }
     if (!compatible(built.type, target)) {
         return std::unexpected(
             fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
@@ -241,6 +263,12 @@ auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     const auto boolean = ConstructionTypeRef {
         draft().intern_builtin_type(BuiltinType::Bool),
     };
+    if (is_cpp_type(value.type)) {
+        auto converted = coerce_to(value, boolean, span);
+        if (!converted.has_value()) {
+            return std::unexpected(converted.error());
+        }
+    }
     if (!compatible(value.type, boolean)) {
         return std::unexpected(
             fail(span, DiagnosticCode::TypeConditionBool, "condition must have type bool")

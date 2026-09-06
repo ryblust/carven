@@ -320,8 +320,14 @@ auto BodyLowerer::statement(
                     return stable_target.has_value() ? name_expression(*stable_target)
                                                      : binding_expression(binding->binding);
                 };
+                const auto external = std::holds_alternative<CppTypeValue>(
+                                          context.semantic().types().type(value.target.type).value
+                                      )
+                    || std::holds_alternative<CppTypeValue>(
+                                          context.semantic().types().type(value.value.type).value
+                    );
                 auto previous = std::optional<TargetExpr>();
-                if (value.compound.has_value()) {
+                if (value.compound.has_value() && !external) {
                     const auto immediate = std::holds_alternative<SemLiteral>(value.value.value)
                         || std::holds_alternative<SemConstant>(value.value.value)
                         || std::holds_alternative<SemBinding>(value.value.value);
@@ -348,7 +354,7 @@ auto BodyLowerer::statement(
                     );
                     return;
                 }
-                if (value.compound.has_value()) {
+                if (value.compound.has_value() && !external) {
                     assigned = binary(
                         std::move(*previous),
                         *value.compound,
@@ -356,10 +362,44 @@ auto BodyLowerer::statement(
                         value.target.type
                     );
                 }
+                auto assignment = TargetAssignmentOperator::Assign;
+                if (external && value.compound.has_value()) {
+                    switch (*value.compound) {
+                        case BinaryOperator::Add: assignment = TargetAssignmentOperator::Add; break;
+                        case BinaryOperator::Subtract:
+                            assignment = TargetAssignmentOperator::Subtract;
+                            break;
+                        case BinaryOperator::Multiply:
+                            assignment = TargetAssignmentOperator::Multiply;
+                            break;
+                        case BinaryOperator::Divide:
+                            assignment = TargetAssignmentOperator::Divide;
+                            break;
+                        case BinaryOperator::Remainder:
+                            assignment = TargetAssignmentOperator::Remainder;
+                            break;
+                        case BinaryOperator::BitwiseAnd:
+                            assignment = TargetAssignmentOperator::BitwiseAnd;
+                            break;
+                        case BinaryOperator::BitwiseOr:
+                            assignment = TargetAssignmentOperator::BitwiseOr;
+                            break;
+                        case BinaryOperator::BitwiseXor:
+                            assignment = TargetAssignmentOperator::BitwiseXor;
+                            break;
+                        case BinaryOperator::LeftShift:
+                            assignment = TargetAssignmentOperator::LeftShift;
+                            break;
+                        case BinaryOperator::RightShift:
+                            assignment = TargetAssignmentOperator::RightShift;
+                            break;
+                        default: invariant_violation("invalid external compound assignment");
+                    }
+                }
                 statements.push_back(generated_statement(
                     TargetAssignmentStmt {
                         .target = std::move(target),
-                        .op = TargetAssignmentOperator::Assign,
+                        .op = assignment,
                         .value = std::move(assigned)
                     }
                 ));

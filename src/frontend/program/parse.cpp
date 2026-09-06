@@ -139,15 +139,15 @@ auto close_import_graph(
     auto diagnostics = Diagnostics();
     for (auto index = 0uz; index < syntax_trees.size(); ++index) {
         const auto module_id = provenance.module_id_at(index);
-        const auto& module = provenance.module_record(module_id);
-        const auto& source = provenance.source_snapshot(module.source_id);
+        const auto& module_record = provenance.module_record(module_id);
+        const auto& source = provenance.source_snapshot(module_record.source_id);
         const auto ast = syntax_trees[index].view();
         auto imports = std::vector<ResolvedModuleImport>();
         imports.reserve(ast.ast_module().module_imports.size());
         for (const auto declaration : ast.ast_module().module_imports) {
             const auto& module_import = ast.module_import(declaration);
             const auto resolved =
-                resolve_import_path(source.text(), module.path, module_import.module_reference);
+                resolve_import_path(source.text(), module_record.path, module_import.module_reference);
             if (!resolved.has_value()) {
                 diagnostics.push_back(import_error(
                     source.manager_source_id(),

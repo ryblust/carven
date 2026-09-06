@@ -140,3 +140,127 @@ TEST_CASE("Compiler diagnostics: an exported module path is validated once") {
     REQUIRE(diagnostic->attachment.primary.has_value());
     CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), "export(cpp)");
 }
+
+TEST_CASE("Compiler diagnostics: external delegation retains Carven access rules") {
+    constexpr auto cases = std::to_array<ErrorExpectation>({
+        {.name = "external result is not a Carven constant",
+         .source = "import <native> using value; fn f() { const x = value(); }",
+         .code = "CV-CONST-INITIALIZER",
+         .primary_text = "const x = value()"},
+        {.name = "external value cannot create a callable borrow",
+         .source = "import <native> using value; fn f() { let callback: fn() -> i32 = value(); }",
+         .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
+         .primary_text = "value()"},
+        {.name = "external spelling must be representable",
+         .source = "import <native> using native::class;",
+         .code = "CV-CPP-IDENTIFIER",
+         .primary_text = "class"},
+        {.name = "external Write cannot mutate let",
+         .source = "import <native> using change; fn f() { let x = 1; change(&x); }",
+         .code = "CV-ACCESS-IMMUTABLE",
+         .primary_text = "x"},
+        {.name = "external call cannot read taken owner",
+         .source = "import <native> using consume; fn f() { let x = 1; consume(&&x); consume(x); }",
+         .code = "CV-ACCESS-UNAVAILABLE",
+         .primary_text = "x"},
+        {.name = "external call retains unfinished argument access",
+         .source = "import <native> using consume; fn f() { let x = 1; consume(x, &&x); }",
+         .code = "CV-ACCESS-OPERATION-CONFLICT",
+         .primary_text = "x"},
+        {.name = "external import conflicts with declaration",
+         .source = "import <native> using vendor::f; fn f() {}",
+         .code = "CV-CATALOG",
+         .primary_text = "vendor::f"},
+        {.name = "known Carven names do not fall back to C++",
+         .source = "import <native> using vendor::*; fn f() { let x = 1; x(); }",
+         .code = "CV-TYPE-NOT-CALLABLE",
+         .primary_text = "x"},
+    });
+    check_errors(cases);
+}
+
+TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module") {
+    struct Case final {
+        std::string_view consumer;
+        std::string_view code;
+    };
+    constexpr auto cases = std::to_array<Case>({
+        {"fn f() { unknown(); }", "CV-NAME-UNRESOLVED"},
+        {"import .provider using external; fn f() {}", "CV-IMPORT-RESOLUTION"},
+        {"import .provider using known; import <native> using known; fn f() {}", "CV-CATALOG"},
+    });
+    for (const auto& test : cases) {
+        CAPTURE(test.consumer);
+        auto sources = SourceManager();
+        const auto provider = *sources.append_virtual(
+            "provider.cv",
+            "import <native> using { native::external }; import <native> using native::*; fn known() {}"
+        );
+        const auto consumer = *sources.append_virtual("consumer.cv", std::string(test.consumer));
+        const auto inputs = std::array {
+            CompilationModuleInput {
+                .source_id = provider,
+                .module_path = *CanonicalModulePath::from_value("provider")
+            },
+            CompilationModuleInput {
+                .source_id = consumer,
+                .module_path = *CanonicalModulePath::from_value("consumer")
+            },
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = inputs},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value()
+            }
+        );
+        REQUIRE(!result.has_value());
+        CHECK(find_diagnostic(result.error(), test.code) != nullptr);
+    }
+}
+
+TEST_CASE("Compiler: external validity is delegated to C++") {
+    struct Case final {
+        std::string_view name;
+        std::string_view source;
+    };
+    constexpr auto cases = std::to_array<Case>({
+        {.name = "bad_argument",
+         .source =
+             "import <vector> using std::vector; fn f() { var v = vector<i32> {}; v.push_back(v); }"},
+        {.name = "bad_template",
+         .source =
+             "import <vector> using std::vector; fn f() { let v = vector<i32, i32> {}; v.size(); }"},
+        {.name = "immutable_receiver",
+         .source =
+             "import <vector> using std::vector; fn f() { let v = vector<i32> {}; v.push_back(1); }"},
+        {.name = "missing_header", .source = "import <carven_nonexistent_header>; fn f() {}"},
+        {.name = "missing_member",
+         .source =
+             "import <vector> using std::vector; fn f() { let v = vector<i32> {}; v.carven_nonexistent(); }"},
+        {.name = "missing_name",
+         .source =
+             "import <vector> using std::carven_nonexistent; fn f() { carven_nonexistent(); }"},
+        {.name = "read_argument",
+         .source = "import <native> using native::increment; fn f() { var x = 1; increment(x); }"},
+    });
+    for (const auto& test : cases) {
+        CAPTURE(test.name);
+        auto sources = SourceManager();
+        const auto source_id = *sources.append_virtual("delegation.cv", std::string(test.source));
+        const auto input = CompilationModuleInput {
+            .source_id = source_id,
+            .module_path = *CanonicalModulePath::from_value("delegation"),
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:cpp-delegation").value(),
+            }
+        );
+        CHECK(result.has_value());
+    }
+}

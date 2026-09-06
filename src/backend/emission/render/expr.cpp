@@ -34,6 +34,8 @@ auto precedence(TargetBinaryOperator op) noexcept -> TargetPrecedence {
 
 auto prefix_spelling(TargetPrefixOperator op) noexcept -> std::string_view {
     switch (op) {
+        case TargetPrefixOperator::Increment:   return "++";
+        case TargetPrefixOperator::Decrement:   return "--";
         case TargetPrefixOperator::AddressOf:   return "&";
         case TargetPrefixOperator::Dereference: return "*";
         case TargetPrefixOperator::LogicalNot:  return "!";

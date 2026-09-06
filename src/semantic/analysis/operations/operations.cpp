@@ -408,6 +408,7 @@ auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type)
             [](const FunctionTypeValue&) static noexcept { return false; },
             [](const ClosureTypeValue&) static noexcept { return false; },
             [](const CallableViewTypeValue&) static noexcept { return false; },
+            [](const CppTypeValue&) static noexcept { return false; },
         },
         draft.type_copy(*concrete).value
     );

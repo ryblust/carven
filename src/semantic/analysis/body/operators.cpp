@@ -75,6 +75,22 @@ auto BodyElaborator::prefix_expression(
     }
     auto pending_failures = take_pending(*operand);
     const auto operation = semantic_operator(source.op);
+    if (is_cpp_type(operand->type)) {
+        auto value = as_value(*operand, span, AccessMode::Read);
+        if (!value.has_value()) {
+            return std::unexpected(value.error());
+        }
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+        );
+        auto result =
+            cpp_expression(CppUnaryOperation {.operation = operation}, std::move(operands), span);
+        if (result.has_value()) {
+            result->pending_failures = std::move(pending_failures);
+        }
+        return result;
+    }
     const auto decision = decide_unary_operator(draft(), operation, operand->type);
     if (!decision.has_value()) {
         return std::unexpected(
@@ -221,7 +237,10 @@ auto BodyElaborator::binary_expression(
             return std::unexpected(built_right.error());
         }
         right.emplace(std::move(*built_right));
-        auto built_left = expression(source.left, right->type);
+        auto built_left = expression(
+            source.left,
+            is_cpp_type(right->type) ? std::nullopt : std::optional(right->type)
+        );
         if (!built_left.has_value()) {
             return std::unexpected(built_left.error());
         }
@@ -238,7 +257,10 @@ auto BodyElaborator::binary_expression(
             return std::unexpected(built_left.error());
         }
         left.emplace(std::move(*built_left));
-        auto built_right = expression(source.right, left->type);
+        auto built_right = expression(
+            source.right,
+            is_cpp_type(left->type) ? std::nullopt : std::optional(left->type)
+        );
         if (!built_right.has_value()) {
             return std::unexpected(built_right.error());
         }
@@ -250,6 +272,24 @@ auto BodyElaborator::binary_expression(
     const auto operation = semantic_operator(source.op);
     if (!operation.has_value()) {
         invariant_violation("logical operator reached ordinary binary lowering");
+    }
+    if (is_cpp_type(left->type) || is_cpp_type(right->type)) {
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        for (auto* built : {std::addressof(*left), std::addressof(*right)}) {
+            auto value = as_value(*built, span, AccessMode::Read);
+            if (!value.has_value()) {
+                return std::unexpected(value.error());
+            }
+            operands.push_back(
+                {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+            );
+        }
+        auto result =
+            cpp_expression(CppBinaryOperation {.operation = *operation}, std::move(operands), span);
+        if (result.has_value()) {
+            result->pending_failures = std::move(pending_failures);
+        }
+        return result;
     }
     const auto operands_compatible = compatible(left->type, right->type);
     const auto equality = type_supports_equality(draft(), left->type);
@@ -320,6 +360,26 @@ auto BodyElaborator::cast_expression(const ASTCastExpr& source, Span span) noexc
         return std::unexpected(target.error());
     }
     auto pending_failures = take_pending(*operand);
+    if (is_cpp_type(operand->type) || is_cpp_type(*target)) {
+        auto value = as_value(*operand, span, AccessMode::Read);
+        if (!value.has_value()) {
+            return std::unexpected(value.error());
+        }
+        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+        operands.push_back(
+            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
+        );
+        auto result = cpp_expression(
+            CppConvertOperation {.explicit_cast = true},
+            std::move(operands),
+            span,
+            *target
+        );
+        if (result.has_value()) {
+            result->pending_failures = std::move(pending_failures);
+        }
+        return result;
+    }
     auto source_is_enum = false;
     if (const auto* concrete = std::get_if<TypeID>(&operand->type)) {
         source_is_enum = std::holds_alternative<EnumTypeValue>(draft().type_copy(*concrete).value);

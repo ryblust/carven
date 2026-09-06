@@ -131,6 +131,22 @@ auto BodyContractVerifier::verify_expression(const SemIRExpression& source) cons
                     invariant_violation("binding expression type mismatch");
                 }
             },
+            [&](const SemCpp<TypeID, FailureSetID>& value) noexcept {
+                if (!cpp_operation_accepts_arity(value.operation, value.operands.size())) {
+                    invariant_violation("invalid C++ operation operands");
+                }
+                if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
+                    static_cast<void>(draft->module_declaration_copy(name->module_id));
+                }
+                if (source.category == SemanticValueCategory::Place
+                    && !(
+                        std::holds_alternative<CppMemberOperation>(value.operation)
+                        || std::holds_alternative<CppIndexOperation>(value.operation)
+                        || std::holds_alternative<CppConvertOperation>(value.operation)
+                    )) {
+                    invariant_violation("C++ operation cannot denote storage");
+                }
+            },
             [&](const SemCall<TypeID, FailureSetID>& value) noexcept {
                 const auto signature =
                     draft->callable_signature_copy(signature_for_type(value.callee->type));

@@ -161,6 +161,13 @@ public:
         -> SemCallArgument<TypeID, FailureSetID> {
         return {.access = value.access, .expression = (*this)(std::move(value.expression))};
     }
+    auto operator()(SemCpp<ConstructionTypeRef, FailureTermID>&& value) const noexcept
+        -> SemCpp<TypeID, FailureSetID> {
+        return {
+            .operation = std::move(value.operation),
+            .operands = (*this)(std::move(value.operands))
+        };
+    }
     auto operator()(SemCall<ConstructionTypeRef, FailureTermID>&& value) const noexcept
         -> SemCall<TypeID, FailureSetID> {
         return {

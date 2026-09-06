@@ -35,7 +35,7 @@ struct ConstantExpressionEnvironment final {
 
 auto prove_constant_expression(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     ASTExprID expression,
@@ -44,7 +44,7 @@ auto prove_constant_expression(
 
 auto prove_array_extent(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     ASTExprID expression

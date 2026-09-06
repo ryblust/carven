@@ -1,7 +1,4 @@
-module;
-#include <memory>
-
-export module carven:support.unique_indirect;
+module carven:support.unique_indirect;
 
 import std;
 
@@ -10,38 +7,49 @@ class UniqueIndirect final {
 public:
     template<typename Value>
         requires std::same_as<std::remove_cvref_t<Value>, T>
-    explicit UniqueIndirect(Value&& value)
+              && std::is_constructible_v<T, Value&&>
+    explicit constexpr UniqueIndirect(Value&& value) noexcept
         : pointer(std::make_unique<T>(std::forward<Value>(value))) {}
 
-    UniqueIndirect(const UniqueIndirect&) = delete;
-    UniqueIndirect(UniqueIndirect&&) noexcept = default;
-    ~UniqueIndirect() = default;
+    constexpr UniqueIndirect(const UniqueIndirect&) = delete;
+    constexpr UniqueIndirect(UniqueIndirect&&) = default;
+    constexpr ~UniqueIndirect() = default;
 
-    auto operator=(const UniqueIndirect&) -> UniqueIndirect& = delete;
-    auto operator=(UniqueIndirect&&) noexcept -> UniqueIndirect& = default;
+    constexpr auto operator=(const UniqueIndirect&) -> UniqueIndirect& = delete;
+    constexpr auto operator=(UniqueIndirect&&) -> UniqueIndirect& = default;
 
-    auto operator*() noexcept -> T& {
+    constexpr auto operator*() & noexcept -> T& {
         require_live();
         return *pointer;
     }
 
-    auto operator*() const noexcept -> const T& {
+    constexpr auto operator*() const & noexcept -> const T& {
         require_live();
         return *pointer;
     }
 
-    auto operator->() noexcept -> T* {
+    constexpr auto operator*() && noexcept -> T&& {
+        require_live();
+        return std::move(*pointer);
+    }
+
+    constexpr auto operator*() const && noexcept -> const T&& {
+        require_live();
+        return std::move(*pointer);
+    }
+
+    constexpr auto operator->() noexcept -> T* {
         require_live();
         return pointer.get();
     }
 
-    auto operator->() const noexcept -> const T* {
+    constexpr auto operator->() const noexcept -> const T* {
         require_live();
         return pointer.get();
     }
 
 private:
-    auto require_live() const noexcept -> void {
+    constexpr auto require_live() const noexcept -> void {
         if (pointer == nullptr) {
             std::terminate();
         }

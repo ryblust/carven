@@ -127,8 +127,8 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
 }
 
 auto first_module(const SemIRProgram& semantic) noexcept -> ModuleID {
-    for (const auto module : semantic.declarations().modules()) {
-        return module.id;
+    for (const auto module_record : semantic.declarations().modules()) {
+        return module_record.id;
     }
     invariant_violation("target artifact lowering requires at least one semantic module");
 }
@@ -172,14 +172,14 @@ auto lower_test_runner_header(
     ArtifactLowering& artifact,
     const TargetTestRunnerHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
-    auto context = artifact.module(first_module(artifact.semantic()));
+    auto context = artifact.module_context(first_module(artifact.semantic()));
     const auto testing_context = context.intrinsic_type(TargetSymbol::TestingContext);
     auto declarations = std::vector<TargetItem>();
-    for (const auto module : schedule.module_runners) {
+    for (const auto module_id : schedule.module_runners) {
         auto module_items = std::vector<TargetItem>();
         module_items.push_back(compiler_item(
             TargetDecl {TargetFunctionDecl {
-                .name = TargetName {artifact.plan().names().module_runner(module)},
+                .name = TargetName {artifact.plan().names().module_runner(module_id)},
                 .parameters = target_parameters({
                     .name = TargetNameAllocator::test_context(),
                     .type = context.reference_type(testing_context),
@@ -192,7 +192,7 @@ auto lower_test_runner_header(
             TargetCompilerReason::TestHarness
         ));
         declarations.push_back(namespace_item(
-            artifact.plan().names().module(module).qualified_namespace_name,
+            artifact.plan().names().module_names(module_id).qualified_namespace_name,
             std::move(module_items),
             TargetCompilerReason::TestHarness
         ));
@@ -213,9 +213,9 @@ auto lower_test_runner_header(
             },
         }
     ));
-    for (const auto module : schedule.module_runners) {
-        auto name = artifact.plan().names().module(module).qualified_namespace_name;
-        name.append(artifact.plan().names().module_runner(module));
+    for (const auto module_id : schedule.module_runners) {
+        auto name = artifact.plan().names().module_names(module_id).qualified_namespace_name;
+        name.append(artifact.plan().names().module_runner(module_id));
         body.push_back(generated_statement(
             TargetExprStmt {
                 .expression = call_expression(
@@ -262,7 +262,7 @@ auto lower_test_runner_header(
 }
 
 auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections {
-    auto context = artifact.module(first_module(artifact.semantic()));
+    auto context = artifact.module_context(first_module(artifact.semantic()));
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetReturnStmt {

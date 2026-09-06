@@ -39,7 +39,13 @@ auto BodyContractVerifier::verify_region(const SemIRRegion& source) const noexce
                             }
                         },
                         [&](const SemAssign<TypeID, FailureSetID>& value) noexcept {
-                            if (value.target.type != value.value.type
+                            const auto external = std::holds_alternative<CppTypeValue>(
+                                                      require_type(value.target.type).value
+                                                  )
+                                || std::holds_alternative<CppTypeValue>(
+                                                      require_type(value.value.type).value
+                                );
+                            if ((!external && value.target.type != value.value.type)
                                 || value.target.category != SemanticValueCategory::Place) {
                                 invariant_violation("invalid assignment contract");
                             }

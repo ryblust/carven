@@ -113,16 +113,16 @@ auto DeclarationResolver::resolve_module_constant(
 }
 
 auto DeclarationResolver::resolve_constant_name(
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     std::string_view name,
     Span origin
 ) noexcept -> AnalysisResult<ConstantNamedValue> {
-    auto selected = select_symbol(module, name, origin);
+    auto selected = select_symbol(module_id, name, origin);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
     if (const auto* form = std::get_if<CatalogConstantForm>(&(*selected)->form)) {
-        auto result = resolve((*selected)->symbol_id, module, origin);
+        auto result = resolve((*selected)->symbol_id, module_id, origin);
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
@@ -142,7 +142,7 @@ auto DeclarationResolver::resolve_constant_name(
 }
 
 auto DeclarationResolver::resolve_enum_qualifier(
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     ASTExprID expression
 ) noexcept -> AnalysisResult<std::optional<TypeID>> {
@@ -154,8 +154,8 @@ auto DeclarationResolver::resolve_enum_qualifier(
     if (name == nullptr) {
         return std::optional<TypeID>();
     }
-    const auto spelling = draft.source_slice_copy(module, name->name_span);
-    auto selected = select_symbol(module, spelling, name->name_span);
+    const auto spelling = draft.source_slice_copy(module_id, name->name_span);
+    auto selected = select_symbol(module_id, spelling, name->name_span);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
@@ -171,7 +171,7 @@ auto DeclarationResolver::resolve_enum_qualifier(
 }
 
 auto DeclarationResolver::resolve_constant_enum_case(
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     TypeID type,
     std::string_view name,
     Span origin
@@ -181,14 +181,14 @@ auto DeclarationResolver::resolve_constant_enum_case(
     if (nominal == nullptr) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             origin,
             DiagnosticCode::TypeEnumContext,
             "enum case qualifier does not name an enum type"
         ));
     }
     const auto owner_symbol_id = catalog.enum_symbol(nominal->enumeration);
-    auto owner_result = resolve(owner_symbol_id, module, origin);
+    auto owner_result = resolve(owner_symbol_id, module_id, origin);
     if (!owner_result.has_value()) {
         return std::unexpected(owner_result.error());
     }
@@ -199,7 +199,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
         if (candidate.name != name) {
             continue;
         }
-        auto result = resolve(candidate.symbol_id, module, origin);
+        auto result = resolve(candidate.symbol_id, module_id, origin);
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
@@ -216,7 +216,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
     }
     return std::unexpected(fail(
         draft,
-        module,
+        module_id,
         origin,
         DiagnosticCode::TypeMemberUnresolved,
         std::format("enum has no case named '{}'", name)

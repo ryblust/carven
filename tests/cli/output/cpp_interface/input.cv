@@ -1,0 +1,3 @@
+import <vector> using std::vector;
+import <cmath> using std::abs;
+fn create(value: i32) -> vector<i32> { return vector<i32> { abs(value) }; }

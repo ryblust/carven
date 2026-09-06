@@ -15,18 +15,18 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
         Overloaded {
             [&](const StructTypeValue& value) noexcept {
                 const auto& declaration = declarations.structure(value.structure);
-                const auto& module = declarations.module_decl(declaration.module_id);
+                const auto& module_decl = declarations.module_decl(declaration.module_id);
                 return std::tuple {
-                    std::string(provenance.module_record(module.provenance_module).path.value()),
+                    std::string(provenance.module_record(module_decl.provenance_module).path.value()),
                     std::string(provenance.spelling(declaration.name)),
                     std::uint8_t {0},
                 };
             },
             [&](const EnumTypeValue& value) noexcept {
                 const auto& declaration = declarations.enumeration(value.enumeration);
-                const auto& module = declarations.module_decl(declaration.module_id);
+                const auto& module_decl = declarations.module_decl(declaration.module_id);
                 return std::tuple {
-                    std::string(provenance.module_record(module.provenance_module).path.value()),
+                    std::string(provenance.module_record(module_decl.provenance_module).path.value()),
                     std::string(provenance.spelling(declaration.name)),
                     std::uint8_t {1},
                 };
@@ -38,7 +38,8 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                         || std::same_as<Value, ArrayTypeValue>
                         || std::same_as<Value, FunctionTypeValue>
                         || std::same_as<Value, ClosureTypeValue>
-                        || std::same_as<Value, CallableViewTypeValue>,
+                        || std::same_as<Value, CallableViewTypeValue>
+                        || std::same_as<Value, CppTypeValue>,
                     "unhandled canonical failure type"
                 );
                 invariant_violation("failure set contains a non-nominal type");

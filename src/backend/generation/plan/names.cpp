@@ -47,23 +47,23 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto scanned_tests = std::vector<std::uint8_t>(callable_count);
     auto discovery = std::vector<CallableID>();
 
-    const auto record = [&](ModuleID module, CallableID callable, bool test) noexcept {
+    const auto record = [&](ModuleID module_id, CallableID callable, bool test) noexcept {
         if (callable.owner() != semantic.identity() || callable.index() >= owners.size()) {
             invariant_violation("closure discovery received a foreign callable");
         }
         auto& owner = owners[callable.index()];
-        if (owner.has_value() && *owner != module) {
+        if (owner.has_value() && *owner != module_id) {
             invariant_violation("one closure callable is constructed by multiple modules");
         }
         if (!owner.has_value()) {
-            owner = module;
+            owner = module_id;
             discovery.push_back(callable);
         }
         (test ? tests : production)[callable.index()] = 1;
     };
 
     auto visit_body = std::function<void(ModuleID, BodyID, bool)>();
-    visit_body = [&](ModuleID module, BodyID body_id, bool test) noexcept {
+    visit_body = [&](ModuleID module_id, BodyID body_id, bool test) noexcept {
         const auto& body = semantic.bodies().body(body_id);
         visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
             const auto* closure = std::get_if<SemClosure<TypeID, FailureSetID>>(&expression.value);
@@ -78,17 +78,17 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                     "closure expression references a callable without a closure body"
                 );
             }
-            record(module, closure->callable, test);
+            record(module_id, closure->callable, test);
             auto& scanned = (test ? scanned_tests : scanned_production)[closure->callable.index()];
             if (scanned == 0) {
                 scanned = 1;
-                visit_body(module, implementation->body, test);
+                visit_body(module_id, implementation->body, test);
             }
         });
     };
 
-    for (const auto module : declarations.modules()) {
-        for (const auto item : module.value.items) {
+    for (const auto module_record : declarations.modules()) {
+        for (const auto item : module_record.value.items) {
             std::visit(
                 Overloaded {
                     [&](FunctionID id) noexcept {
@@ -96,11 +96,11 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                             declarations.callable(declarations.function(id).callable);
                         if (const auto* implementation =
                                 std::get_if<FunctionBodyImplementation>(&callable.implementation)) {
-                            visit_body(module.id, implementation->body, false);
+                            visit_body(module_record.id, implementation->body, false);
                         }
                     },
                     [&](TestID id) noexcept {
-                        visit_body(module.id, semantic.tests().test(id).body, true);
+                        visit_body(module_record.id, semantic.tests().test(id).body, true);
                     },
                     [](StructID) static noexcept {},
                     [](EnumID) static noexcept {},
@@ -133,6 +133,18 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                     destination.push_back(value.callable);
                 },
                 [](const CallableViewTypeValue&) static noexcept {},
+                [&](const CppTypeValue& value) noexcept {
+                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                        for (const auto argument : named->arguments) {
+                            self(argument, destination, active_types);
+                        }
+                    } else {
+                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                            const auto argument = operand.type;
+                            self(argument, destination, active_types);
+                        }
+                    }
+                },
             },
             semantic.types().type(type_id).value
         );
@@ -182,9 +194,9 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             invariant_violation("closure target-type dependency is cyclic");
         }
         state[callable.index()] = 1;
-        const auto module = *owners[callable.index()];
+        const auto module_id = *owners[callable.index()];
         for (const auto dependency : dependencies[callable.index()]) {
-            if (!owners[dependency.index()].has_value() || *owners[dependency.index()] != module) {
+            if (!owners[dependency.index()].has_value() || *owners[dependency.index()] != module_id) {
                 invariant_violation("closure target type depends on a foreign or unowned closure");
             }
             if (production[dependency.index()] != 0 || (test && tests[dependency.index()] != 0)) {
@@ -192,7 +204,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             }
         }
         state[callable.index()] = 2;
-        auto& destination = test ? test_order[module.index()] : production_order[module.index()];
+        auto& destination = test ? test_order[module_id.index()] : production_order[module_id.index()];
         destination.push_back(callable);
     };
     for (const auto callable : discovery) {
@@ -239,46 +251,46 @@ auto plan_names(
     auto module_occupied = std::vector<std::flat_set<std::string>>(module_count);
 
     const auto claim_entity =
-        [&](ModuleID module, ProgramSpellingID spelling, auto id, auto& rows) noexcept {
-            if (module.owner() != semantic.identity()
+        [&](ModuleID module_id, ProgramSpellingID spelling, auto id, auto& rows) noexcept {
+            if (module_id.owner() != semantic.identity()
                 || id.owner() != semantic.identity()
-                || module.index() >= module_occupied.size()
+                || module_id.index() >= module_occupied.size()
                 || id.index() >= rows.size()) {
                 invariant_violation("target name planning received a foreign semantic declaration");
             }
             const auto preferred = allocator.source(provenance.spelling(spelling));
             const auto claimed = TargetNameAllocator::claim_source(
                 preferred.spelling(),
-                module_occupied[module.index()]
+                module_occupied[module_id.index()]
             );
             rows[id.index()] = TargetEntityName {
-                .owner_module = module,
+                .owner_module = module_id,
                 .relative_name = TargetName {claimed},
             };
         };
 
-    const auto allocate_item = [&](ModuleID module, ModuleItem item, bool published) noexcept {
+    const auto allocate_item = [&](ModuleID module_id, ModuleItem item, bool published) noexcept {
         std::visit(
             Overloaded {
                 [&](FunctionID id) noexcept {
                     const auto& value = declarations.function(id);
                     if ((value.visibility != DeclarationVisibility::Module) == published
                         && !function_names[id.index()].has_value()) {
-                        claim_entity(module, value.name, id, function_names);
+                        claim_entity(module_id, value.name, id, function_names);
                     }
                 },
                 [&](StructID id) noexcept {
                     const auto& value = declarations.structure(id);
                     if ((value.visibility != DeclarationVisibility::Module) == published
                         && !structure_names[id.index()].has_value()) {
-                        claim_entity(module, value.name, id, structure_names);
+                        claim_entity(module_id, value.name, id, structure_names);
                     }
                 },
                 [&](EnumID id) noexcept {
                     const auto& value = declarations.enumeration(id);
                     if ((value.visibility != DeclarationVisibility::Module) == published
                         && !enumeration_names[id.index()].has_value()) {
-                        claim_entity(module, value.name, id, enumeration_names);
+                        claim_entity(module_id, value.name, id, enumeration_names);
                     }
                 },
                 [](ModuleConstantID) static noexcept {},
@@ -288,12 +300,12 @@ auto plan_names(
         );
     };
 
-    for (const auto module : declarations.modules()) {
-        for (const auto item : module.value.items) {
-            allocate_item(module.id, item, true);
+    for (const auto module_record : declarations.modules()) {
+        for (const auto item : module_record.value.items) {
+            allocate_item(module_record.id, item, true);
         }
-        for (const auto item : module.value.items) {
-            allocate_item(module.id, item, false);
+        for (const auto item : module_record.value.items) {
+            allocate_item(module_record.id, item, false);
         }
     }
 
@@ -357,23 +369,23 @@ auto plan_names(
     );
 
     auto modules = std::vector<std::optional<TargetModuleNames>>(module_count);
-    for (const auto module : declarations.modules()) {
-        const auto& path = provenance.module_record(module.value.provenance_module).path;
+    for (const auto module_record : declarations.modules()) {
+        const auto& path = provenance.module_record(module_record.value.provenance_module).path;
         const auto module_namespace = TargetNameAllocator::fixed(
             derive_module_namespace_id(path.value()).namespace_identifier()
         );
         auto qualified = namespace_prefix;
         qualified.push_back(module_namespace);
-        modules[module.id.index()] = TargetModuleNames {
+        modules[module_record.id.index()] = TargetModuleNames {
             .qualified_namespace_name = TargetName::from_components(std::move(qualified)),
             .module_namespace_name = TargetName {module_namespace},
-            .reserved_identifiers = std::move(module_occupied[module.id.index()]),
+            .reserved_identifiers = std::move(module_occupied[module_record.id.index()]),
         };
     }
 
-    for (const auto module : declarations.modules()) {
+    for (const auto module_record : declarations.modules()) {
         const auto allocate_closure = [&](CallableID callable) noexcept {
-            if (closures.owner(callable) != module.id
+            if (closures.owner(callable) != module_record.id
                 || closure_type_names[callable.index()].has_value()) {
                 invariant_violation(
                     "target closure naming received a duplicate or foreign closure"
@@ -381,17 +393,17 @@ auto plan_names(
             }
             const auto name = TargetNameAllocator::claim_type(
                 std::format("Closure{}", callable.index()),
-                modules[module.id.index()]->reserved_identifiers
+                modules[module_record.id.index()]->reserved_identifiers
             );
             closure_type_names[callable.index()] = TargetEntityName {
-                .owner_module = module.id,
+                .owner_module = module_record.id,
                 .relative_name = TargetName {name},
             };
         };
-        for (const auto callable : closures.production(module.id)) {
+        for (const auto callable : closures.production(module_record.id)) {
             allocate_closure(callable);
         }
-        for (const auto callable : closures.tests(module.id)) {
+        for (const auto callable : closures.tests(module_record.id)) {
             allocate_closure(callable);
         }
     }
@@ -414,22 +426,22 @@ auto plan_names(
     auto tests = std::vector<std::optional<TargetIdentifier>>(semantic.tests().size());
     auto module_test_ordinals = std::vector<std::size_t>(module_count);
     for (const auto test : semantic.tests().entries()) {
-        const auto module = test.value.module_id;
-        if (module.owner() != semantic.identity() || module.index() >= module_count) {
+        const auto module_id = test.value.module_id;
+        if (module_id.owner() != semantic.identity() || module_id.index() >= module_count) {
             invariant_violation("test names a foreign or unknown module");
         }
-        const auto ordinal = module_test_ordinals[module.index()]++;
+        const auto ordinal = module_test_ordinals[module_id.index()]++;
         tests[test.id.index()] = TargetNameAllocator::claim_source(
             std::format("carven_generated_test_{}", ordinal),
-            modules[module.index()]->reserved_identifiers
+            modules[module_id.index()]->reserved_identifiers
         );
     }
 
     auto module_runners = std::vector<std::optional<TargetIdentifier>>(module_count);
-    for (const auto module : declarations.modules()) {
-        module_runners[module.id.index()] = TargetNameAllocator::claim_source(
+    for (const auto module_record : declarations.modules()) {
+        module_runners[module_record.id.index()] = TargetNameAllocator::claim_source(
             "carven_run_module_tests",
-            modules[module.id.index()]->reserved_identifiers
+            modules[module_record.id.index()]->reserved_identifiers
         );
     }
 

@@ -13,10 +13,17 @@ enum class CppHeaderDelimiter {
     Quotes,
 };
 
+struct CppUsingBinding final {
+    std::vector<ProgramSpellingID> components;
+    bool opens_namespace;
+    ProgramOriginID origin;
+};
+
 struct CppHeaderDependency final {
     CppHeaderDelimiter delimiter;
     ProgramSpellingID name;
     ProgramOriginID origin;
+    std::vector<CppUsingBinding> bindings;
 };
 
 struct CppSourceFragment final {

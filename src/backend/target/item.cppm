@@ -14,7 +14,12 @@ struct TargetNamespace final {
     std::vector<TargetItem> items;
 };
 
-using TargetItemValue = std::variant<TargetDecl, TargetNamespace, TargetRawFragment>;
+struct TargetUsing final {
+    TargetName name;
+    bool opens_namespace;
+};
+
+using TargetItemValue = std::variant<TargetDecl, TargetNamespace, TargetUsing, TargetRawFragment>;
 
 struct TargetItem final {
     TargetItemValue value;

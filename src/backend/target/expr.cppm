@@ -10,6 +10,8 @@ struct TargetExpr;
 struct TargetStmt;
 
 enum class TargetPrefixOperator {
+    Increment,
+    Decrement,
     AddressOf,
     Dereference,
     LogicalNot,

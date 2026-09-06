@@ -7,7 +7,20 @@ namespace ownership {
 
 auto BodyAnalyzer::place(const SemIRExpression& source, State state, bool read) noexcept -> Flow {
     auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
-    if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
+    if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value)) {
+        result = place(foreign->operands.front().expression, std::move(*result.normal));
+        for (const auto& operand : std::span(foreign->operands).subspan(1)) {
+            if (!result.normal.has_value()) {
+                break;
+            }
+            const auto previous = accesses.size();
+            accesses.push_back({*location(foreign->operands.front().expression), false});
+            auto next = expression(operand.expression, std::move(*result.normal));
+            accesses.resize(previous);
+            result.normal = std::move(next.normal);
+            append_exits(result, next);
+        }
+    } else if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
         result = place(*field->source, std::move(*result.normal));
     } else if (const auto* index = std::get_if<SemIndex<TypeID, FailureSetID>>(&source.value)) {
         result = place(*index->source, std::move(*result.normal));
@@ -293,6 +306,38 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                             aggregate(capture.expression, ProjectionPath {index});
                         }
                     }
+                },
+                [&](const SemCpp<TypeID, FailureSetID>& value) noexcept {
+                    if (type_contents.contains_view(source.type)) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "an undeclared C++ contract cannot establish a Carven callable borrow",
+                            source.origin
+                        );
+                    }
+                    const auto previous = accesses.size();
+                    for (const auto& operand : value.operands) {
+                        const auto relationships = evaluate(operand.expression, true);
+                        if (!flow.normal.has_value()) {
+                            break;
+                        }
+                        if (!relationships.loans.empty() || !relationships.captures.empty()) {
+                            diagnose(
+                                DiagnosticCode::TypeCallableViewEscape,
+                                "tracked borrows cannot cross an undeclared C++ contract",
+                                source.origin
+                            );
+                        }
+                        if (operand.access != AccessMode::Take) {
+                            if (const auto target = location(operand.expression)) {
+                                if (operand.access == AccessMode::Write) {
+                                    write_access(*target, operand.expression.origin);
+                                }
+                                accesses.push_back({*target, false});
+                            }
+                        }
+                    }
+                    accesses.resize(previous);
                 },
                 [&](const SemCall<TypeID, FailureSetID>& value) noexcept {
                     const auto previous = accesses.size();

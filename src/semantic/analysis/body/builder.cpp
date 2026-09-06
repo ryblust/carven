@@ -54,6 +54,11 @@ auto BodyBuilder::make_expression(
             [](const SemBinding&) static noexcept {},
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
+            [&](const SemCpp<ConstructionTypeRef, FailureTermID>& node) noexcept {
+                for (const auto& operand : node.operands) {
+                    add(operand.expression);
+                }
+            },
             [&](const SemSequence<ConstructionTypeRef, FailureTermID>& node) noexcept {
                 for (const auto& child : node.expressions) {
                     add(child);
@@ -532,4 +537,29 @@ auto BodyBuilder::finish(DraftRegion region) && noexcept -> StructuredBodyDraft 
         .patterns = std::move(patterns).seal(),
         .region = std::move(region)
     };
+}
+
+auto BodyBuilder::append_cpp_place(
+    PlaceHandle source,
+    ConstructionTypeRef type,
+    CppOperation operation,
+    std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>> operands,
+    ProgramOriginID origin
+) noexcept -> PlaceHandle {
+    const auto root = place_root(source);
+    operands.insert(
+        operands.begin(),
+        {.access = place_access(source), .expression = take_place(source)}
+    );
+    auto expression = make_expression(
+        type,
+        lifetime(),
+        origin,
+        SemCpp<ConstructionTypeRef, FailureTermID> {
+            .operation = std::move(operation),
+            .operands = std::move(operands)
+        }
+    );
+    expression.category = SemanticValueCategory::Place;
+    return add_place(ProjectedPlace {.root = root, .expression = std::move(expression)});
 }

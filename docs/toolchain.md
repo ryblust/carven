@@ -12,11 +12,13 @@ crafts use C++20. Host-only features stay within the compiler implementation.
 Carven is a source-generation step. The build system supplies source batches,
 C++ providers, libraries, include paths, and native compiler options, then
 compiles and links the artifacts. C++ validates provider declarations and
-protocols, object definitions, and link requirements.
+protocols, object definitions, and link requirements. It also checks overloads,
+templates, and conversions for explicitly delegated operations.
 
-For the implemented Carven types and declared boundary requirements, successful
-analysis must produce valid target C++. C++ diagnostics remain native toolchain
-diagnostics; source mapping identifies the corresponding Carven location.
+For Carven-owned operations and declared boundary requirements, successful
+analysis must produce valid target C++ subject to those provider requirements.
+C++ diagnostics remain native toolchain diagnostics; source mapping identifies
+the corresponding Carven location.
 
 ## Numeric model
 
@@ -32,9 +34,10 @@ outside this contract.
 ## Read parameter realization
 
 Ordinary Read parameters and Read array-range bindings use a native type
-policy. A type with trivial C++ copy construction and destruction and a size
-of at most two pointers is passed as a const value. Other types use a const
-reference. The policy depends on the generated type and target data model.
+policy. A type with trivial C++ copy construction and destruction is passed
+as a const value, regardless of size. Other types use a const reference to
+avoid introducing user-defined copying or destruction. The C++ compiler and
+target ABI determine how value parameters are physically passed.
 The scalar C++ interoperability boundary has its own by-value rules in
 [semantics.md](semantics.md#c-interoperation).
 
@@ -65,8 +68,10 @@ The `carven/api` header contains explicit `export(cpp)` declarations in
 `carven::api` followed by the module namespace components. Its implementation
 contains the corresponding façades. The header is self-contained.
 
-C++ header imports become ordered includes in the owning implementation. Raw
-source fragments follow includes at global scope before generated namespaces.
+C++ header imports become ordered includes in the owning implementation. External
+types used by an interface also bring their header dependencies and module-scoped
+name bindings into that interface. Raw source fragments follow includes at
+global scope before generated namespaces.
 
 Test generation emits the runner header. Default test generation also emits a
 main source; external test generation supplies the runner to a caller-provided

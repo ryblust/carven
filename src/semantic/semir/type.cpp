@@ -40,6 +40,25 @@ auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexc
                     owner,
                     "callable view type used a foreign signature"
                 );
+            } else if constexpr (std::same_as<Value, CppTypeValue>) {
+                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                    require_owner(
+                        named->module_id.owner(),
+                        owner,
+                        "C++ type used a foreign module"
+                    );
+                    for (const auto argument : named->arguments) {
+                        require_owner(argument.owner(), owner, "C++ type used a foreign argument");
+                    }
+                } else {
+                    for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                        require_owner(
+                            operand.type.owner(),
+                            owner,
+                            "C++ query used a foreign operand type"
+                        );
+                    }
+                }
             } else {
                 static_assert(std::same_as<Value, BuiltinTypeValue>);
             }
@@ -62,6 +81,30 @@ auto validate_signature_owner(const CallableSignature& signature, ProgramIdentit
 }
 
 } // namespace
+
+auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept
+    -> bool {
+    return std::visit(
+        [arity](const auto& value) noexcept {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, CppNameOperation>) {
+                return arity == 0uz && !value.name.empty();
+            } else if constexpr (std::same_as<Value, CppConstructOperation>) {
+                return true;
+            } else if constexpr (std::same_as<Value, CppCallOperation>) {
+                return arity >= 1uz;
+            } else if constexpr (std::same_as<Value, CppMemberOperation>) {
+                return arity == 1uz && !value.name.empty();
+            } else if constexpr (std::same_as<Value, CppIndexOperation>
+                                 || std::same_as<Value, CppBinaryOperation>) {
+                return arity == 2uz;
+            } else {
+                return arity == 1uz;
+            }
+        },
+        operation
+    );
+}
 
 auto builtin_is_integer(BuiltinType type) noexcept -> bool {
     switch (type) {
@@ -165,7 +208,7 @@ auto CanonicalTypeStore::size() const noexcept -> std::size_t {
 CanonicalTypeStoreBuilder::CanonicalTypeStoreBuilder(ProgramIdentity owner) noexcept
     : rows(owner) {}
 
-auto CanonicalTypeStoreBuilder::intern(CanonicalType type) noexcept -> TypeID {
+auto CanonicalTypeStoreBuilder::intern(const CanonicalType& type) noexcept -> TypeID {
     validate_type_owner(type, rows.owner());
     if (std::holds_alternative<CallableViewTypeValue>(type.value)) {
         invariant_violation(

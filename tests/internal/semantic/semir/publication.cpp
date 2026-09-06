@@ -68,10 +68,10 @@ struct ModuleFacts final {
 };
 
 auto module_facts(ProgramDraft& builder, std::size_t index = 0uz) noexcept -> ModuleFacts {
-    const auto module = builder.provenance_module_at(index);
+    const auto module_id = builder.provenance_module_at(index);
     return {
-        .provenance_module = module,
-        .origin = builder.append_source_origin(builder.module_source(module), Span::at(0u)),
+        .provenance_module = module_id,
+        .origin = builder.append_source_origin(builder.module_source(module_id), Span::at(0u)),
     };
 }
 
@@ -176,7 +176,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     const auto text_type = builder.intern_builtin_type(BuiltinType::Str);
     const auto text_value = builder.intern_spelling("publication");
 
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto function = builder.reserve_function_declaration();
     const auto structure = builder.reserve_struct_declaration();
     const auto enumeration = builder.reserve_enum_declaration();
@@ -195,7 +195,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_declaration(
         function,
         FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("function"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -207,7 +207,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -228,7 +228,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_declaration(
         enumeration,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -240,7 +240,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_declaration(
         module_constant,
         ConstructionModuleConstantDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("constant"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -249,7 +249,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -294,7 +294,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_test(
         test,
         TestDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("publication topology"),
             .origin = facts.origin,
             .body = test_body_id,
@@ -310,7 +310,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     publish(std::move(graphs), builder);
     const auto program = std::move(builder).seal();
 
-    const auto& published_module = program.declarations().module_decl(module);
+    const auto& published_module = program.declarations().module_decl(module_id);
     CHECK_EQ(published_module.items.size(), 5uz);
     CHECK(std::ranges::contains(published_module.items, ModuleItem {function}));
     CHECK(std::ranges::contains(published_module.items, ModuleItem {structure}));
@@ -379,11 +379,11 @@ TEST_CASE("SemIR publication invariant: every failure-set member is nominal") {
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.failure_member");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
     static_cast<void>(builder.intern_failure_set({boolean}));
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -404,7 +404,7 @@ TEST_CASE("SemIR publication invariant: every constant matches its canonical typ
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.constant_fact");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto integer = builder.intern_builtin_type(BuiltinType::I32);
     static_cast<void>(builder.intern_constant(
         ConstantFact {
@@ -413,7 +413,7 @@ TEST_CASE("SemIR publication invariant: every constant matches its canonical typ
         }
     ));
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -434,12 +434,12 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.missing_item");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto structure = builder.reserve_struct_declaration();
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -448,7 +448,7 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -496,12 +496,12 @@ TEST_CASE("SemIR publication invariant: a named declaration has one module item"
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.module_item");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto structure = builder.reserve_struct_declaration();
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -510,7 +510,7 @@ TEST_CASE("SemIR publication invariant: a named declaration has one module item"
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -582,7 +582,7 @@ TEST_CASE("SemIR publication invariant: enum owner and case list are bidirection
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_case");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto enumeration = builder.reserve_enum_declaration();
     const auto enum_case = builder.reserve_enum_case_declaration();
     builder.define_declaration(
@@ -598,7 +598,7 @@ TEST_CASE("SemIR publication invariant: enum owner and case list are bidirection
     builder.define_declaration(
         enumeration,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -608,7 +608,7 @@ TEST_CASE("SemIR publication invariant: enum owner and case list are bidirection
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -629,7 +629,7 @@ TEST_CASE("SemIR publication invariant: an enum case appears once in its owner l
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_unique");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto enumeration = builder.reserve_enum_declaration();
     const auto enum_case = builder.reserve_enum_case_declaration();
     builder.define_declaration(
@@ -645,7 +645,7 @@ TEST_CASE("SemIR publication invariant: an enum case appears once in its owner l
     builder.define_declaration(
         enumeration,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -655,7 +655,7 @@ TEST_CASE("SemIR publication invariant: an enum case appears once in its owner l
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -676,7 +676,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.callable");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto first = builder.reserve_function_declaration();
     const auto second = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
@@ -684,7 +684,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
     builder.define_callable_contract(callable, callable_contract(builder, void_type));
     const auto function = [&](std::string_view name) noexcept {
         return FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling(name),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -696,7 +696,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
     builder.define_declaration(first, function("first"));
     builder.define_declaration(second, function("second"));
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -718,10 +718,10 @@ TEST_CASE("SemIR publication invariant: a test has one owning module item") {
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.test_item");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto test = builder.reserve_test();
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -736,7 +736,7 @@ TEST_CASE("SemIR publication invariant: a test has one owning module item") {
     builder.define_test(
         test,
         TestDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("test"),
             .origin = facts.origin,
             .body = body_id,
@@ -756,7 +756,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
     auto builder =
         begin_compilation(sources, diagnostics, "semir.publication.function_implementation");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto function = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
     const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
@@ -764,7 +764,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
     builder.define_declaration(
         function,
         FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = builder.intern_spelling("function"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
@@ -774,7 +774,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,
@@ -800,9 +800,9 @@ TEST_CASE("SemIR publication invariant: a closure callable has one closure opera
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.closure_site");
     const auto facts = module_facts(builder);
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = facts.provenance_module,
             .origin = facts.origin,

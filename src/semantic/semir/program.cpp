@@ -57,6 +57,7 @@ auto compute_type_inhabitance(
                 [](const FunctionTypeValue&) static noexcept { return true; },
                 [](const ClosureTypeValue&) static noexcept { return true; },
                 [](const CallableViewTypeValue&) static noexcept { return true; },
+                [](const CppTypeValue&) static noexcept { return false; },
             },
             std::invoke(type_lookup, type).value
         );
@@ -281,7 +282,7 @@ auto ProgramDraft::provenance_module_at(std::size_t index) const noexcept -> Pro
     return provenance_appender.reader().module_id_at(index);
 }
 
-auto ProgramDraft::intern_type(CanonicalType type) noexcept -> TypeID {
+auto ProgramDraft::intern_type(const CanonicalType& type) noexcept -> TypeID {
     require_construction_open("intern type");
     return types.intern(type);
 }
@@ -637,9 +638,9 @@ auto ProgramDraft::source_slice_copy(ProgramSourceID source, Span span) const no
     }
     return reader.source_slice_copy(source, span);
 }
-auto ProgramDraft::source_slice_copy(ProgramModuleID module, Span span) const noexcept
+auto ProgramDraft::source_slice_copy(ProgramModuleID module_id, Span span) const noexcept
     -> std::string {
-    return source_slice_copy(module_source(module), span);
+    return source_slice_copy(module_source(module_id), span);
 }
 auto ProgramDraft::intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID {
     require_not_failed("intern spelling");

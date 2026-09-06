@@ -334,6 +334,15 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto is_cpp_type(ConstructionTypeRef type) const noexcept -> bool;
+    auto cpp_expression(
+        CppOperation operation,
+        std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>> operands,
+        Span span,
+        std::optional<ConstructionTypeRef> type = std::nullopt
+    ) noexcept -> AnalysisResult<BuiltExpression>;
+    auto cpp_call(BuiltExpression& callee, const ASTCallExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
     auto name_expression(const ASTNameExpr& name, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
     auto array_expression(

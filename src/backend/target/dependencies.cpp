@@ -42,6 +42,10 @@ public:
         const auto& value = types[id.index()].value;
         std::visit(
             Overloaded {
+                [&](const TargetDeducedType&) noexcept {
+                    include("type_traits");
+                    include("utility");
+                },
                 [](const TargetNamedType&) static noexcept {},
                 [&](const TargetIntrinsicType& intrinsic) noexcept {
                     visit_symbol(intrinsic.symbol);

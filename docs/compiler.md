@@ -122,3 +122,19 @@ Frontend facilities depend on source and syntax. Semantic construction consumes
 syntax; analysis consumes resolved operations. The backend consumes published
 semantics. Runtime support and build orchestration do not determine Carven
 access or ownership legality.
+
+## External C++ delegation
+
+Scope bindings distinguish Carven declarations from explicitly imported C++ names
+and namespace lookup environments. External names do not reserve synthetic
+function or nominal declaration identities.
+
+Published types distinguish named external type expressions from external result
+queries. Queries retain their originating operation and operand types and access
+as published delegation records. Structured external operations share ordinary
+operands, source provenance, scopes and control flow with Carven operations.
+
+Publication verifies Carven-owned contracts and the structural integrity of
+external delegation. External result queries remain in the published program
+for C++ type determination. Ownership analysis checks known callable borrows and
+Write captures at external operations before publication.

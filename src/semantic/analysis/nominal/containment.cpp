@@ -53,7 +53,8 @@ auto nominal_declaration(ProgramDraft& draft, ConstructionTypeRef type) noexcept
                     std::same_as<Value, BuiltinTypeValue>
                         || std::same_as<Value, FunctionTypeValue>
                         || std::same_as<Value, ClosureTypeValue>
-                        || std::same_as<Value, CallableViewTypeValue>,
+                        || std::same_as<Value, CallableViewTypeValue>
+                        || std::same_as<Value, CppTypeValue>,
                     "unhandled non-containing canonical type"
                 );
                 return std::nullopt;

@@ -19,19 +19,19 @@ import std;
 
 namespace {
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module) noexcept -> SourceID {
-    return draft.syntax_tree(module).view().source_id();
+auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
+    return draft.syntax_tree(module_id).view().source_id();
 }
 
 auto fail(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span span,
     DiagnosticCode code,
     std::string message
 ) noexcept -> AnalysisFailure {
     return draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                         .primary(locate(source_id(draft, module), span))
+                                         .primary(locate(source_id(draft, module_id), span))
                                          .build());
 }
 
@@ -132,7 +132,7 @@ auto require_enum_case_constant(const ConstantFact& fact, EnumCaseID enum_case) 
 
 auto adopt_expected(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span span,
     std::optional<ConstructionTypeRef> expected,
     std::optional<ConstantFact> proof
@@ -143,7 +143,7 @@ auto adopt_expected(
     if (!type_shapes_compatible(draft, *expected, ConstructionTypeRef {proof->type})) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             span,
             DiagnosticCode::TypeMismatch,
             "expression has an incompatible type"
@@ -159,7 +159,7 @@ auto adopt_expected(
 
 auto evaluation_result(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span span,
     std::expected<ConstantFact, ConstantEvaluationFailure> result
 ) noexcept -> AnalysisResult<std::optional<ConstantFact>> {
@@ -171,13 +171,13 @@ auto evaluation_result(
         return std::optional<ConstantFact>();
     }
     return std::unexpected(
-        fail(draft, module, span, diagnostic->code, std::string(diagnostic->message))
+        fail(draft, module_id, span, diagnostic->code, std::string(diagnostic->message))
     );
 }
 
 auto literal_result(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     const ASTLiteral& literal,
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign
@@ -186,7 +186,7 @@ auto literal_result(
     if (normalized.has_value()) {
         return adopt_expected(
             draft,
-            module,
+            module_id,
             literal.span,
             expected,
             std::optional(std::move(normalized->constant))
@@ -194,12 +194,12 @@ auto literal_result(
     }
     if (const auto diagnostic = constant_evaluation_diagnostic(normalized.error())) {
         return std::unexpected(
-            fail(draft, module, literal.span, diagnostic->code, std::string(diagnostic->message))
+            fail(draft, module_id, literal.span, diagnostic->code, std::string(diagnostic->message))
         );
     }
     return std::unexpected(fail(
         draft,
-        module,
+        module_id,
         literal.span,
         DiagnosticCode::TypeMismatch,
         "literal is incompatible with its expected type"
@@ -208,14 +208,14 @@ auto literal_result(
 
 auto expected_enum_type(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span name_span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisResult<TypeID> {
     if (!expected.has_value()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             name_span,
             DiagnosticCode::TypeEnumContext,
             "contextual enum case requires an expected enum type"
@@ -225,7 +225,7 @@ auto expected_enum_type(
     if (!type.has_value()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             name_span,
             DiagnosticCode::TypeEnumContext,
             "contextual enum case requires an expected enum type"
@@ -236,7 +236,7 @@ auto expected_enum_type(
 
 auto prove_empty_case(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     const ConstantExpressionEnvironment& environment,
     TypeID type,
     std::string_view name,
@@ -250,7 +250,7 @@ auto prove_empty_case(
     if (!resolved->payload_types.empty()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             name_span,
             DiagnosticCode::TypeEnumCaseArity,
             "payload enum case must be called with its payload"
@@ -269,7 +269,7 @@ auto prove_empty_case(
 
 auto prove_form(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     const ASTExpr& source,
@@ -279,7 +279,7 @@ auto prove_form(
 
 auto prove_payload_case(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     TypeID type,
@@ -296,7 +296,7 @@ auto prove_payload_case(
     if (resolved->payload_types.empty()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             call_span,
             DiagnosticCode::TypeEnumCaseArity,
             "nullary enum case is a value and cannot be called"
@@ -305,7 +305,7 @@ auto prove_payload_case(
     if (call.arguments.size() != resolved->payload_types.size()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             call_span,
             DiagnosticCode::TypeEnumCaseArity,
             "enum case payload arity does not match"
@@ -320,7 +320,7 @@ auto prove_payload_case(
          std::views::zip(call.arguments, resolved->payload_types)) {
         auto child = prove_constant_expression(
             draft,
-            module,
+            module_id,
             syntax,
             environment,
             argument.expression,
@@ -347,7 +347,7 @@ auto prove_payload_case(
 
 auto prove_binary(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     const ASTExpr& source,
@@ -358,11 +358,11 @@ auto prove_binary(
     auto right = AnalysisResult<std::optional<ConstantFact>>(std::optional<ConstantFact>());
     switch (binary_operand_plan(syntax, binary)) {
         case BinaryOperandPlan::LeftExpectedFromRight:
-            right = prove_constant_expression(draft, module, syntax, environment, binary.right);
+            right = prove_constant_expression(draft, module_id, syntax, environment, binary.right);
             if (right.has_value() && right->has_value()) {
                 left = prove_constant_expression(
                     draft,
-                    module,
+                    module_id,
                     syntax,
                     environment,
                     binary.left,
@@ -371,11 +371,11 @@ auto prove_binary(
             }
             break;
         case BinaryOperandPlan::RightExpectedFromLeft:
-            left = prove_constant_expression(draft, module, syntax, environment, binary.left);
+            left = prove_constant_expression(draft, module_id, syntax, environment, binary.left);
             if (left.has_value() && left->has_value()) {
                 right = prove_constant_expression(
                     draft,
-                    module,
+                    module_id,
                     syntax,
                     environment,
                     binary.right,
@@ -384,9 +384,9 @@ auto prove_binary(
             }
             break;
         case BinaryOperandPlan::Independent:
-            left = prove_constant_expression(draft, module, syntax, environment, binary.left);
+            left = prove_constant_expression(draft, module_id, syntax, environment, binary.left);
             if (left.has_value() && left->has_value()) {
-                right = prove_constant_expression(draft, module, syntax, environment, binary.right);
+                right = prove_constant_expression(draft, module_id, syntax, environment, binary.right);
             }
             break;
     }
@@ -419,7 +419,7 @@ auto prove_binary(
     if (!decision.has_value()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             binary.operator_span,
             decision.error().code,
             std::string(decision.error().message)
@@ -440,7 +440,7 @@ auto prove_binary(
             : left_boolean->value && right_boolean->value;
         return adopt_expected(
             draft,
-            module,
+            module_id,
             source.span,
             expected,
             std::optional(
@@ -457,19 +457,19 @@ auto prove_binary(
     }
     auto result = evaluation_result(
         draft,
-        module,
+        module_id,
         binary.operator_span,
         evaluate_binary_constant_value(draft, *operation, left_fact, right_fact, result_type)
     );
     if (!result.has_value()) {
         return std::unexpected(result.error());
     }
-    return adopt_expected(draft, module, source.span, expected, std::move(*result));
+    return adopt_expected(draft, module_id, source.span, expected, std::move(*result));
 }
 
 auto prove_form(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     const ASTExpr& source,
@@ -478,18 +478,18 @@ auto prove_form(
 ) noexcept -> AnalysisResult<std::optional<ConstantFact>> {
     using Form = std::remove_cvref_t<decltype(form)>;
     if constexpr (std::same_as<Form, ASTLiteral>) {
-        return literal_result(draft, module, form, expected, LiteralSign::Positive);
+        return literal_result(draft, module_id, form, expected, LiteralSign::Positive);
     } else if constexpr (std::same_as<Form, ASTGroupExpr>) {
         return prove_constant_expression(
             draft,
-            module,
+            module_id,
             syntax,
             environment,
             form.expression,
             expected
         );
     } else if constexpr (std::same_as<Form, ASTNameExpr>) {
-        const auto name = draft.source_slice_copy(module, form.name_span);
+        const auto name = draft.source_slice_copy(module_id, form.name_span);
         auto named = environment.resolve_name(name, form.name_span);
         if (!named.has_value()) {
             return std::unexpected(named.error());
@@ -510,18 +510,18 @@ auto prove_form(
         if (!named_type.has_value() || *named_type != fact.type) {
             invariant_violation("constant name resolution returned a mismatched type and value");
         }
-        return adopt_expected(draft, module, source.span, expected, std::optional(std::move(fact)));
+        return adopt_expected(draft, module_id, source.span, expected, std::optional(std::move(fact)));
     } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
-        auto type = expected_enum_type(draft, module, form.name_span, expected);
+        auto type = expected_enum_type(draft, module_id, form.name_span, expected);
         if (!type.has_value()) {
             return std::unexpected(type.error());
         }
         return prove_empty_case(
             draft,
-            module,
+            module_id,
             environment,
             *type,
-            draft.source_slice_copy(module, form.name_span),
+            draft.source_slice_copy(module_id, form.name_span),
             form.name_span
         );
     } else if constexpr (std::same_as<Form, ASTMemberExpr>) {
@@ -537,16 +537,16 @@ auto prove_form(
         }
         auto proof = prove_empty_case(
             draft,
-            module,
+            module_id,
             environment,
             **qualifier,
-            draft.source_slice_copy(module, form.name_span),
+            draft.source_slice_copy(module_id, form.name_span),
             form.name_span
         );
         if (!proof.has_value()) {
             return std::unexpected(proof.error());
         }
-        return adopt_expected(draft, module, source.span, expected, std::move(*proof));
+        return adopt_expected(draft, module_id, source.span, expected, std::move(*proof));
     } else if constexpr (std::same_as<Form, ASTPrefixExpr>) {
         auto literal_id = form.operand_id;
         while (const auto* group =
@@ -558,10 +558,10 @@ auto prove_form(
             && literal != nullptr
             && (std::holds_alternative<IntegerLiteralValue>(literal->value)
                 || std::holds_alternative<FloatingLiteralValue>(literal->value))) {
-            return literal_result(draft, module, *literal, expected, LiteralSign::Negative);
+            return literal_result(draft, module_id, *literal, expected, LiteralSign::Negative);
         }
         auto operand =
-            prove_constant_expression(draft, module, syntax, environment, form.operand_id);
+            prove_constant_expression(draft, module_id, syntax, environment, form.operand_id);
         if (!operand.has_value()) {
             return std::unexpected(operand.error());
         }
@@ -574,7 +574,7 @@ auto prove_form(
         if (!decision.has_value()) {
             return std::unexpected(fail(
                 draft,
-                module,
+                module_id,
                 form.operator_span,
                 decision.error().code,
                 std::string(decision.error().message)
@@ -586,19 +586,19 @@ auto prove_form(
             : (**operand).type;
         auto result = evaluation_result(
             draft,
-            module,
+            module_id,
             form.operator_span,
             evaluate_unary_constant_value(draft, operation, **operand, result_type)
         );
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
-        return adopt_expected(draft, module, source.span, expected, std::move(*result));
+        return adopt_expected(draft, module_id, source.span, expected, std::move(*result));
     } else if constexpr (std::same_as<Form, ASTBinaryExpr>) {
-        return prove_binary(draft, module, syntax, environment, source, form, expected);
+        return prove_binary(draft, module_id, syntax, environment, source, form, expected);
     } else if constexpr (std::same_as<Form, ASTCastExpr>) {
         auto operand =
-            prove_constant_expression(draft, module, syntax, environment, form.operand_id);
+            prove_constant_expression(draft, module_id, syntax, environment, form.operand_id);
         if (!operand.has_value()) {
             return std::unexpected(operand.error());
         }
@@ -618,7 +618,7 @@ auto prove_form(
         if (!decision.has_value()) {
             return std::unexpected(fail(
                 draft,
-                module,
+                module_id,
                 form.operator_span,
                 decision.error().code,
                 std::string(decision.error().message)
@@ -629,28 +629,28 @@ auto prove_form(
         }
         auto result = evaluation_result(
             draft,
-            module,
+            module_id,
             form.operator_span,
             evaluate_cast_constant_value(draft, *decision, **operand, *target_type)
         );
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
-        return adopt_expected(draft, module, source.span, expected, std::move(*result));
+        return adopt_expected(draft, module_id, source.span, expected, std::move(*result));
     } else if constexpr (std::same_as<Form, ASTCallExpr>) {
         const auto& callee = syntax.expression(form.callee);
         if (const auto* contextual = std::get_if<ASTContextualCaseExpr>(&callee.value)) {
-            auto type = expected_enum_type(draft, module, contextual->name_span, expected);
+            auto type = expected_enum_type(draft, module_id, contextual->name_span, expected);
             if (!type.has_value()) {
                 return std::unexpected(type.error());
             }
             return prove_payload_case(
                 draft,
-                module,
+                module_id,
                 syntax,
                 environment,
                 *type,
-                draft.source_slice_copy(module, contextual->name_span),
+                draft.source_slice_copy(module_id, contextual->name_span),
                 contextual->name_span,
                 form,
                 source.span
@@ -670,11 +670,11 @@ auto prove_form(
             }
             auto proof = prove_payload_case(
                 draft,
-                module,
+                module_id,
                 syntax,
                 environment,
                 **qualifier,
-                draft.source_slice_copy(module, member->name_span),
+                draft.source_slice_copy(module_id, member->name_span),
                 member->name_span,
                 form,
                 source.span
@@ -682,17 +682,17 @@ auto prove_form(
             if (!proof.has_value()) {
                 return std::unexpected(proof.error());
             }
-            return adopt_expected(draft, module, source.span, expected, std::move(*proof));
+            return adopt_expected(draft, module_id, source.span, expected, std::move(*proof));
         }
         auto operand =
-            prove_constant_expression(draft, module, syntax, environment, member->operand_id);
+            prove_constant_expression(draft, module_id, syntax, environment, member->operand_id);
         if (!operand.has_value()) {
             return std::unexpected(operand.error());
         }
         if (!operand->has_value()) {
             return std::optional<ConstantFact>();
         }
-        const auto name = draft.source_slice_copy(module, member->name_span);
+        const auto name = draft.source_slice_copy(module_id, member->name_span);
         const auto decision = decide_text_method(
             draft,
             ConstructionTypeRef {(**operand).type},
@@ -702,7 +702,7 @@ auto prove_form(
         if (!decision.has_value()) {
             return std::unexpected(fail(
                 draft,
-                module,
+                module_id,
                 decision.error().code == DiagnosticCode::TypeStrMethodArity ? source.span
                                                                             : member->name_span,
                 decision.error().code,
@@ -715,14 +715,14 @@ auto prove_form(
         const auto result_type = draft.intern_builtin_type(text_intrinsic_result(**decision));
         auto result = evaluation_result(
             draft,
-            module,
+            module_id,
             source.span,
             evaluate_text_intrinsic_constant_value(draft, **decision, **operand, result_type)
         );
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
-        return adopt_expected(draft, module, source.span, expected, std::move(*result));
+        return adopt_expected(draft, module_id, source.span, expected, std::move(*result));
     } else if constexpr (std::same_as<Form, ASTArrayExpr>
                          || std::same_as<Form, ASTConstructionExpr>
                          || std::same_as<Form, ASTAccessExpr>
@@ -742,7 +742,7 @@ auto prove_form(
 
 auto prove_constant_expression(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     ASTExprID expression,
@@ -756,13 +756,13 @@ auto prove_constant_expression(
             "constant proof received a foreign expected type"
         );
     }
-    if (syntax.source_id() != source_id(draft, module)) {
+    if (syntax.source_id() != source_id(draft, module_id)) {
         invariant_violation("constant proof mixed a module with another syntax tree");
     }
     const auto& source = syntax.expression(expression);
     return std::visit(
         [&](const auto& form) noexcept {
-            return prove_form(draft, module, syntax, environment, source, form, expected);
+            return prove_form(draft, module_id, syntax, environment, source, form, expected);
         },
         source.value
     );
@@ -770,12 +770,12 @@ auto prove_constant_expression(
 
 auto prove_array_extent(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ConstantExpressionEnvironment& environment,
     ASTExprID expression
 ) noexcept -> AnalysisResult<std::uint64_t> {
-    auto proof = prove_constant_expression(draft, module, syntax, environment, expression);
+    auto proof = prove_constant_expression(draft, module_id, syntax, environment, expression);
     if (!proof.has_value()) {
         return std::unexpected(proof.error());
     }
@@ -785,7 +785,7 @@ auto prove_array_extent(
     if (constant == nullptr) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             span,
             DiagnosticCode::ConstArrayExtent,
             "array extent must be a constant integer"
@@ -794,7 +794,7 @@ auto prove_array_extent(
     if (constant->negative()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             span,
             DiagnosticCode::ConstNegativeArrayExtent,
             "array extent cannot be negative"

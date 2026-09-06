@@ -1,8 +1,8 @@
 module carven:backend.generation.plan.artifacts.impl;
 
 import :artifacts;
-import :backend.generation.plan;
 import :backend.generation.plan.references;
+import :backend.generation.plan;
 import :backend.generation.request;
 import :semantic.visibility;
 import :support.graph;
@@ -90,6 +90,18 @@ auto complete_type_nominals(
             [](const FunctionTypeValue&) static noexcept {},
             [](const ClosureTypeValue&) static noexcept {},
             [](const CallableViewTypeValue&) static noexcept {},
+            [&](const CppTypeValue& value) noexcept {
+                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                    for (const auto argument : named->arguments) {
+                        complete_type_nominals(semantic, argument, active, result);
+                    }
+                } else {
+                    for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                        const auto argument = operand.type;
+                        complete_type_nominals(semantic, argument, active, result);
+                    }
+                }
+            },
         },
         semantic.types().type(type).value
     );
@@ -235,52 +247,52 @@ auto plan_artifacts(
     auto module_by_index = std::vector<std::optional<ModuleID>>(module_count);
     auto schedules = std::vector<std::optional<TargetModuleSchedule>>(module_count);
     auto surface_declarations = std::vector<std::vector<DeclarationRef>>(module_count);
-    for (const auto module : declarations.modules()) {
-        module_ids.push_back(module.id);
-        module_by_index[module.id.index()] = module.id;
-        schedules[module.id.index()] = TargetModuleSchedule {
-            .module_id = module.id,
+    for (const auto module_record : declarations.modules()) {
+        module_ids.push_back(module_record.id);
+        module_by_index[module_record.id.index()] = module_record.id;
+        schedules[module_record.id.index()] = TargetModuleSchedule {
+            .module_id = module_record.id,
             .private_nominal_order = {},
             .closure_definitions = {},
             .emitted_tests = {},
         };
-        auto& closure_definitions = schedules[module.id.index()]->closure_definitions;
+        auto& closure_definitions = schedules[module_record.id.index()]->closure_definitions;
         closure_definitions.assign(
-            closures.production(module.id).begin(),
-            closures.production(module.id).end()
+            closures.production(module_record.id).begin(),
+            closures.production(module_record.id).end()
         );
         if (request.test_mode != TestGenerationMode::None) {
             closure_definitions.insert(
                 closure_definitions.end(),
-                closures.tests(module.id).begin(),
-                closures.tests(module.id).end()
+                closures.tests(module_record.id).begin(),
+                closures.tests(module_record.id).end()
             );
         }
-        for (const auto item : module.value.items) {
+        for (const auto item : module_record.value.items) {
             std::visit(
                 Overloaded {
                     [&](FunctionID id) noexcept {
                         const auto& function = declarations.function(id);
                         if (function.visibility != DeclarationVisibility::Module) {
-                            surface_declarations[module.id.index()].push_back(id);
+                            surface_declarations[module_record.id.index()].push_back(id);
                         }
                     },
                     [&](StructID id) noexcept {
                         if (declarations.structure(id).visibility
                             != DeclarationVisibility::Module) {
-                            surface_declarations[module.id.index()].push_back(id);
+                            surface_declarations[module_record.id.index()].push_back(id);
                         }
                     },
                     [&](EnumID id) noexcept {
                         if (declarations.enumeration(id).visibility
                             != DeclarationVisibility::Module) {
-                            surface_declarations[module.id.index()].push_back(id);
+                            surface_declarations[module_record.id.index()].push_back(id);
                         }
                     },
                     [](ModuleConstantID) static noexcept {},
                     [&](TestID id) noexcept {
                         if (request.test_mode != TestGenerationMode::None) {
-                            schedules[module.id.index()]->emitted_tests.push_back(id);
+                            schedules[module_record.id.index()]->emitted_tests.push_back(id);
                         }
                     },
                 },
@@ -306,7 +318,7 @@ auto plan_artifacts(
         if (!module_by_index[index].has_value()) {
             invariant_violation("semantic module table contains a missing row");
         }
-        const auto module = *module_by_index[index];
+        const auto module_id = *module_by_index[index];
         for (const auto& [nominal, completeness] : references.surface_requirements[index]) {
             if (completeness != TargetTypeCompleteness::CompleteDefinition) {
                 continue;
@@ -315,16 +327,16 @@ auto plan_artifacts(
                 invariant_violation("published surface requires a module-private nominal");
             }
             const auto dependency = target_owner_module(semantic, target_declaration_ref(nominal));
-            if (dependency != module) {
+            if (dependency != module_id) {
                 complete_dependencies[index].insert(dependency);
             }
         }
     }
 
     auto surface_modules = std::vector<ModuleID>();
-    for (const auto module : module_ids) {
-        if (!surface_declarations[module.index()].empty()) {
-            surface_modules.push_back(module);
+    for (const auto module_id : module_ids) {
+        if (!surface_declarations[module_id.index()].empty()) {
+            surface_modules.push_back(module_id);
         }
     }
     auto surface_index = std::vector<std::optional<std::uint32_t>>(module_count);
@@ -349,9 +361,9 @@ auto plan_artifacts(
          ++component_index) {
         auto members = std::vector<ModuleID>();
         for (const auto member : strong_components.dependency_first[component_index]) {
-            const auto module = surface_modules[member];
-            members.push_back(module);
-            module_component[module.index()] = component_index;
+            const auto module_id = surface_modules[member];
+            members.push_back(module_id);
+            module_component[module_id.index()] = component_index;
         }
         std::ranges::sort(members, [&](ModuleID left, ModuleID right) noexcept {
             return module_path(semantic, left) < module_path(semantic, right);
@@ -491,9 +503,9 @@ auto plan_artifacts(
         component_artifacts[component_index] = id;
     }
 
-    for (const auto module : module_ids) {
+    for (const auto module_id : module_ids) {
         auto cpp_exports = std::vector<FunctionID>();
-        for (const auto item : declarations.module_decl(module).items) {
+        for (const auto item : declarations.module_decl(module_id).items) {
             const auto* function_id = std::get_if<FunctionID>(&item);
             if (function_id != nullptr
                 && declarations.function(*function_id).cpp_export_origin.has_value()) {
@@ -503,31 +515,31 @@ auto plan_artifacts(
         if (cpp_exports.empty()) {
             continue;
         }
-        if (!module_component[module.index()].has_value()) {
+        if (!module_component[module_id.index()].has_value()) {
             invariant_violation("C++ export module has no published interface component");
         }
-        const auto& declaration = declarations.module_decl(module);
+        const auto& declaration = declarations.module_decl(module_id);
         const auto& path = provenance.module_record(declaration.provenance_module).path;
         static_cast<void>(artifacts.add(
             TargetCppAPIHeaderArtifact {
                 .logical_path = cpp_api_header_logical_path(path.components()),
-                .module = module,
+                .module_id = module_id,
                 .cpp_export_declarations = std::move(cpp_exports),
                 .interface_dependencies = {
-                    *component_artifacts[*module_component[module.index()]],
+                    *component_artifacts[*module_component[module_id.index()]],
                 },
             }
         ));
     }
 
-    for (const auto module : module_ids) {
+    for (const auto module_id : module_ids) {
         auto interface_dependencies = std::vector<TargetArtifactID>();
-        if (module_component[module.index()].has_value()) {
-            const auto component = *module_component[module.index()];
+        if (module_component[module_id.index()].has_value()) {
+            const auto component = *module_component[module_id.index()];
             interface_dependencies.push_back(*component_artifacts[component]);
         }
         auto user_directives = std::vector<TargetDirectiveGroup>();
-        const auto& declaration = declarations.module_decl(module);
+        const auto& declaration = declarations.module_decl(module_id);
         for (const auto& dependency : declaration.cpp_headers) {
             user_directives.push_back({
                 .directives =
@@ -543,7 +555,7 @@ auto plan_artifacts(
         static_cast<void>(artifacts.add(
             TargetModuleImplementationArtifact {
                 .logical_path = module_implementation_logical_path(path.components()),
-                .schedule = std::move(*schedules[module.index()]),
+                .schedule = std::move(*schedules[module_id.index()]),
                 .interface_dependencies = std::move(interface_dependencies),
                 .user_directives = std::move(user_directives),
             }
@@ -553,9 +565,9 @@ auto plan_artifacts(
     auto test_runner_modules = std::vector<ModuleID>();
     if (request.test_mode != TestGenerationMode::None) {
         for (const auto test : semantic.tests().entries()) {
-            const auto module = test.value.module_id;
-            if (!std::ranges::contains(test_runner_modules, module)) {
-                test_runner_modules.push_back(module);
+            const auto module_id = test.value.module_id;
+            if (!std::ranges::contains(test_runner_modules, module_id)) {
+                test_runner_modules.push_back(module_id);
             }
         }
         std::ranges::sort(test_runner_modules, [&](ModuleID left, ModuleID right) noexcept {

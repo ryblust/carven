@@ -20,24 +20,24 @@ auto catalog_symbol(AnalysisCatalogView catalog, CatalogSymbolID id) noexcept
     return *result;
 }
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module) noexcept -> SourceID {
-    return draft.syntax_tree(module).view().source_id();
+auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
+    return draft.syntax_tree(module_id).view().source_id();
 }
 
-auto declaration_origin(ProgramDraft& draft, ProgramModuleID module, Span span) noexcept
+auto declaration_origin(ProgramDraft& draft, ProgramModuleID module_id, Span span) noexcept
     -> ProgramOriginID {
-    return draft.append_source_origin(draft.module_source(module), span);
+    return draft.append_source_origin(draft.module_source(module_id), span);
 }
 
 auto fail(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span span,
     DiagnosticCode code,
     std::string message
 ) noexcept -> AnalysisFailure {
     return draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                         .primary(locate(source_id(draft, module), span))
+                                         .primary(locate(source_id(draft, module_id), span))
                                          .build());
 }
 

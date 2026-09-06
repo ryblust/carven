@@ -9,7 +9,7 @@ import std;
 
 auto validate_cpp_boundary_declaration(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionDecl& function,
     std::span<const ConstructionCallableParameter> parameters,

@@ -223,13 +223,13 @@ public:
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
-    auto source_slice_copy(ProgramModuleID module, Span span) const noexcept -> std::string;
+    auto source_slice_copy(ProgramModuleID module_id, Span span) const noexcept -> std::string;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
 
-    auto intern_type(CanonicalType type) noexcept -> TypeID;
+    auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto intern_builtin_type(BuiltinType type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;

@@ -1,0 +1,44 @@
+import <vector> using std::vector;
+
+fn create() -> vector<i32> {
+    return vector<i32> { 1, 2, 3 };
+}
+
+fn count(values: vector<i32>) -> usize {
+    return values.size();
+}
+
+fn append(&values: vector<i32>, value: i32) {
+    values.push_back(value);
+}
+
+test "C++ names preserve vector operations and owner bindings" {
+    var values = create();
+    append(&values, 42);
+    check(count(values) == 4usize);
+    check(values.size() == 4usize);
+    values[0] = 5;
+    values[0] += 1;
+    ++values[0];
+    check((values.size() as i32) == 4);
+    check(values[0] == 7);
+    let copied = values;
+    values[0] = 9;
+    check(copied[0] == 7);
+    let moved = &&values;
+    check(moved[0] == 9);
+    let nested = vector<vector<i32>> {};
+    check(nested.empty());
+}
+
+struct Entry { value: i32 }
+struct Entries { values: vector<Entry> }
+
+fn entries() -> Entries {
+    return Entries { values: vector<Entry> { Entry { value: 11 } } };
+}
+
+test "External owners in structure fields retain Carven template dependencies" {
+    let result = entries();
+    check(result.values[0].value == 11);
+}

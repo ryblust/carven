@@ -55,6 +55,15 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
             [](const BuiltinTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false};
             },
+            [&](const CppTypeValue& value) noexcept -> TypeContents {
+                auto result = TypeContents {.closure_owner = false, .callable_view = false};
+                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                    for (const auto argument : named->arguments) {
+                        merge(result, contents(argument));
+                    }
+                }
+                return result;
+            },
             [](const FunctionTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false};
             },

@@ -63,6 +63,7 @@ public:
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
     auto place_lifetime(PlaceHandle) const noexcept -> LifetimeRegionID;
+    auto place_access(PlaceHandle) const noexcept -> AccessMode;
     auto append_value(
         ConstructionTypeRef,
         LifetimeRegionID,
@@ -74,6 +75,13 @@ public:
         ConstructionTypeRef,
         expression_construction::Projection,
         ProgramOriginID
+    ) noexcept -> PlaceHandle;
+    auto append_cpp_place(
+        PlaceHandle source,
+        ConstructionTypeRef type,
+        CppOperation operation,
+        std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>> operands,
+        ProgramOriginID origin
     ) noexcept -> PlaceHandle;
     auto append_unresolved_callable_borrow(
         ConstructionTypeRef,

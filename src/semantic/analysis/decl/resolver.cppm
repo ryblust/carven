@@ -78,8 +78,8 @@ private:
     };
     using State = std::variant<Unvisited, Resolving, Resolved, Failed>;
 
-    auto module_declaration(ProgramModuleID module) const noexcept -> ModuleID {
-        const auto* record = catalog.find_module(module);
+    auto module_declaration(ProgramModuleID module_id) const noexcept -> ModuleID {
+        const auto* record = catalog.find_module(module_id);
         if (record == nullptr) {
             invariant_violation("declaration references an unknown source module");
         }
@@ -189,13 +189,13 @@ private:
         );
     }
 
-    auto select_symbol(ProgramModuleID module, std::string_view name, Span origin) noexcept
+    auto select_symbol(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
         -> AnalysisResult<const CatalogSymbol*> {
-        const auto candidates = catalog.lookup(module, name);
+        const auto candidates = catalog.lookup(module_id, name);
         if (candidates.empty()) {
             return std::unexpected(fail(
                 draft,
-                module,
+                module_id,
                 origin,
                 DiagnosticCode::NameUnresolved,
                 std::format("unresolved name '{}'", name)
@@ -206,7 +206,7 @@ private:
                 DiagnosticCode::NameAmbiguous,
                 std::format("name '{}' is provided by more than one wildcard import", name)
             );
-            diagnostic.primary(locate(source_id(draft, module), origin), "ambiguous reference");
+            diagnostic.primary(locate(source_id(draft, module_id), origin), "ambiguous reference");
             for (const auto& candidate : candidates) {
                 const auto& selected = catalog_symbol(catalog, candidate.symbol_id);
                 diagnostic.related(
@@ -226,24 +226,24 @@ private:
         return std::addressof(catalog_symbol(catalog, selected.symbol_id));
     }
 
-    auto constant_environment(ProgramModuleID module, ASTView syntax) noexcept
+    auto constant_environment(ProgramModuleID module_id, ASTView syntax) noexcept
         -> ConstantExpressionEnvironment {
         return ConstantExpressionEnvironment {
             .resolve_name =
-                [this, module](std::string_view name, Span span) noexcept {
-                    return resolve_constant_name(module, name, span);
+                [this, module_id](std::string_view name, Span span) noexcept {
+                    return resolve_constant_name(module_id, name, span);
                 },
             .resolve_enum_qualifier =
-                [this, module, syntax](ASTExprID expression) noexcept {
-                    return resolve_enum_qualifier(module, syntax, expression);
+                [this, module_id, syntax](ASTExprID expression) noexcept {
+                    return resolve_enum_qualifier(module_id, syntax, expression);
                 },
             .resolve_enum_case =
-                [this, module](TypeID type, std::string_view name, Span span) noexcept {
-                    return resolve_constant_enum_case(module, type, name, span);
+                [this, module_id](TypeID type, std::string_view name, Span span) noexcept {
+                    return resolve_constant_enum_case(module_id, type, name, span);
                 },
-            .resolve_type = [this, module, syntax](
+            .resolve_type = [this, module_id, syntax](
                                 ASTTypeID type
-                            ) noexcept { return resolve_type(module, syntax, type); },
+                            ) noexcept { return resolve_type(module_id, syntax, type); },
             .supports_equality =
                 [this](ConstructionTypeRef type) noexcept {
                     auto visiting = std::flat_set<TypeID>();
@@ -263,38 +263,38 @@ private:
         };
     }
 
-    auto resolve_type(ProgramModuleID module, ASTView syntax, ASTTypeID type) noexcept
+    auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
         -> AnalysisResult<ConstructionTypeRef> {
-        auto environment = constant_environment(module, syntax);
+        auto environment = constant_environment(module_id, syntax);
         const auto extent = [&](ASTExprID expression) noexcept {
-            return prove_array_extent(draft, module, syntax, environment, expression);
+            return prove_array_extent(draft, module_id, syntax, environment, expression);
         };
-        return resolve_source_type(draft, catalog, import_usage, module, syntax, type, extent);
+        return resolve_source_type(draft, catalog, import_usage, module_id, syntax, type, extent);
     }
 
     auto resolve_value_type(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         ASTView syntax,
         ASTTypeID type,
         std::string_view role
     ) noexcept -> AnalysisResult<ConstructionTypeRef> {
-        auto resolved = resolve_type(module, syntax, type);
+        auto resolved = resolve_type(module_id, syntax, type);
         if (!resolved.has_value()) {
             return std::unexpected(resolved.error());
         }
-        return require_source_value_type(draft, *resolved, module, syntax.type(type).span, role);
+        return require_source_value_type(draft, *resolved, module_id, syntax.type(type).span, role);
     }
 
     auto resolve_failures(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         ASTView syntax,
         const ASTThrowClause& clause
     ) noexcept -> AnalysisResult<std::vector<TypeID>> {
-        auto environment = constant_environment(module, syntax);
+        auto environment = constant_environment(module_id, syntax);
         const auto extent = [&](ASTExprID expression) noexcept {
-            return prove_array_extent(draft, module, syntax, environment, expression);
+            return prove_array_extent(draft, module_id, syntax, environment, expression);
         };
-        return resolve_failure_types(draft, catalog, import_usage, module, syntax, clause, extent);
+        return resolve_failure_types(draft, catalog, import_usage, module_id, syntax, clause, extent);
     }
 
     auto resolve_function(
@@ -327,15 +327,15 @@ private:
         const ASTConstantDecl& declaration,
         Span item_span
     ) noexcept -> AnalysisResult<void>;
-    auto resolve_constant_name(ProgramModuleID module, std::string_view name, Span origin) noexcept
+    auto resolve_constant_name(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
         -> AnalysisResult<ConstantNamedValue>;
     auto resolve_enum_qualifier(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         ASTView syntax,
         ASTExprID expression
     ) noexcept -> AnalysisResult<std::optional<TypeID>>;
     auto resolve_constant_enum_case(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         TypeID type,
         std::string_view name,
         Span origin

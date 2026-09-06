@@ -11,6 +11,10 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
         if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
             return binding->binding;
         }
+        if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value);
+            foreign != nullptr && source.category == SemanticValueCategory::Place) {
+            return self(foreign->operands.front().expression);
+        }
         if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
             return self(*field->source);
         }
@@ -55,6 +59,13 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
                                     "Take requires an owner",
                                     source.origin
                                 );
+                            }
+                        },
+                        [&](const SemCpp<TypeID, FailureSetID>& value) noexcept {
+                            for (const auto& operand : value.operands) {
+                                if (operand.access == AccessMode::Write) {
+                                    write(operand.expression);
+                                }
                             }
                         },
                         [&](const SemCall<TypeID, FailureSetID>& value) noexcept {

@@ -75,6 +75,104 @@ struct CallableViewTypeValue final {
     constexpr auto operator==(const CallableViewTypeValue&) const noexcept -> bool = default;
 };
 
+struct CppNamedType final {
+    ModuleID module_id;
+    std::vector<std::string> components;
+    std::vector<TypeID> arguments;
+    auto operator==(const CppNamedType&) const noexcept -> bool = default;
+};
+
+enum class UnaryOperator {
+    LogicalNot,
+    Negate,
+    BitwiseNot,
+};
+
+enum class BinaryOperator {
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseAnd,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    LeftShift,
+    RightShift,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+};
+
+struct CppNameOperation final {
+    ModuleID module_id;
+    std::string name;
+
+    auto operator==(const CppNameOperation&) const noexcept -> bool = default;
+};
+struct CppCallOperation final {
+    auto operator==(const CppCallOperation&) const noexcept -> bool = default;
+};
+struct CppConstructOperation final {
+    auto operator==(const CppConstructOperation&) const noexcept -> bool = default;
+};
+struct CppMemberOperation final {
+    std::string name;
+    auto operator==(const CppMemberOperation&) const noexcept -> bool = default;
+};
+struct CppIndexOperation final {
+    auto operator==(const CppIndexOperation&) const noexcept -> bool = default;
+};
+struct CppConvertOperation final {
+    bool explicit_cast;
+    auto operator==(const CppConvertOperation&) const noexcept -> bool = default;
+};
+struct CppUpdateOperation final {
+    bool increment;
+    auto operator==(const CppUpdateOperation&) const noexcept -> bool = default;
+};
+struct CppBinaryOperation final {
+    BinaryOperator operation;
+    auto operator==(const CppBinaryOperation&) const noexcept -> bool = default;
+};
+struct CppUnaryOperation final {
+    UnaryOperator operation;
+    auto operator==(const CppUnaryOperation&) const noexcept -> bool = default;
+};
+using CppOperation = std::variant<
+    CppNameOperation,
+    CppCallOperation,
+    CppConstructOperation,
+    CppMemberOperation,
+    CppIndexOperation,
+    CppConvertOperation,
+    CppBinaryOperation,
+    CppUnaryOperation,
+    CppUpdateOperation>;
+
+auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept -> bool;
+
+struct CppTypeOperand final {
+    TypeID type;
+    AccessMode access;
+    auto operator==(const CppTypeOperand&) const noexcept -> bool = default;
+};
+
+struct CppDeducedType final {
+    ProgramOriginID origin;
+    CppOperation operation;
+    std::vector<CppTypeOperand> operands;
+    auto operator==(const CppDeducedType&) const noexcept -> bool = default;
+};
+
+struct CppTypeValue final {
+    std::variant<CppNamedType, CppDeducedType> form;
+    auto operator==(const CppTypeValue&) const noexcept -> bool = default;
+};
+
 using CanonicalTypeValue = std::variant<
     BuiltinTypeValue,
     StructTypeValue,
@@ -82,7 +180,8 @@ using CanonicalTypeValue = std::variant<
     ArrayTypeValue,
     FunctionTypeValue,
     ClosureTypeValue,
-    CallableViewTypeValue>;
+    CallableViewTypeValue,
+    CppTypeValue>;
 
 struct CanonicalType final {
     CanonicalTypeValue value;
@@ -201,7 +300,7 @@ public:
     auto operator=(const CanonicalTypeStoreBuilder&) -> CanonicalTypeStoreBuilder& = delete;
     auto operator=(CanonicalTypeStoreBuilder&&) -> CanonicalTypeStoreBuilder& = default;
 
-    auto intern(CanonicalType type) noexcept -> TypeID;
+    auto intern(const CanonicalType& type) noexcept -> TypeID;
     auto intern_builtin(BuiltinType type) noexcept -> TypeID;
     auto copy(TypeID id) const noexcept -> CanonicalType;
     auto owner() const noexcept -> ProgramIdentity;

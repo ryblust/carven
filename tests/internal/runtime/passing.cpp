@@ -28,7 +28,7 @@ TEST_CASE("Value access: read parameters require no nontrivial copy") {
     static_assert(std::is_same_v<ReadArg<std::vector<int>>, const std::vector<int>&>);
     static_assert(std::is_trivially_copyable_v<TrivialMoveOnly>);
     static_assert(std::is_same_v<ReadArg<TrivialMoveOnly>, const TrivialMoveOnly&>);
-    static_assert(std::is_same_v<ReadArg<std::array<int, 1024>>, const std::array<int, 1024>&>);
+    static_assert(std::is_same_v<ReadArg<std::array<int, 1024>>, const std::array<int, 1024>>);
     const auto owner = std::make_unique<int>(42);
     const auto read = [](ReadArg<std::unique_ptr<int>> value) static noexcept {
         return *value;

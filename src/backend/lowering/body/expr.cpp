@@ -107,6 +107,113 @@ auto BodyLowerer::expression(
                     }
                 };
             },
+            [&](const SemCpp<TypeID, FailureSetID>& value) noexcept -> TargetExpr {
+                if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
+                    const auto owner =
+                        context.plan().names().module_names(name->module_id).qualified_namespace_name;
+                    auto components = std::vector<TargetIdentifier>(
+                        owner.components().begin(),
+                        owner.components().end()
+                    );
+                    components.push_back(TargetIdentifier::from_spelling(name->name));
+                    return name_expression(TargetName::globally_qualified(std::move(components)));
+                }
+                if (std::holds_alternative<CppConvertOperation>(value.operation)
+                    && source.category == SemanticValueCategory::Place) {
+                    return expression(value.operands.front().expression, destination);
+                }
+                if (std::holds_alternative<CppCallOperation>(value.operation)) {
+                    const auto& callee_source = value.operands.front().expression;
+                    const auto* foreign_callee =
+                        std::get_if<SemCpp<TypeID, FailureSetID>>(&callee_source.value);
+                    const auto named_callee = foreign_callee != nullptr
+                        && (std::holds_alternative<CppNameOperation>(foreign_callee->operation)
+                            || std::holds_alternative<CppMemberOperation>(
+                                foreign_callee->operation
+                            ));
+                    auto callee = named_callee
+                        ? expression(callee_source, destination)
+                        : operand(callee_source, destination, OperandUse::ConstPlace);
+                    auto arguments = std::vector<TargetExpr>();
+                    for (const auto& argument : std::span(value.operands).subspan(1)) {
+                        arguments.push_back(operand(
+                            argument.expression,
+                            destination,
+                            argument.access == AccessMode::Write      ? OperandUse::Place
+                                : argument.access == AccessMode::Take ? OperandUse::Own
+                                                                      : OperandUse::Read
+                        ));
+                    }
+                    return call_expression(std::move(callee), std::move(arguments));
+                }
+                auto arguments = std::vector<TargetExpr>();
+                for (const auto& argument : value.operands) {
+                    arguments.push_back(operand(
+                        argument.expression,
+                        destination,
+                        (arguments.empty()
+                         && (std::holds_alternative<CppMemberOperation>(value.operation)
+                             || std::holds_alternative<CppIndexOperation>(value.operation)))
+                            ? (argument.access == AccessMode::Write ? OperandUse::Place
+                                                                    : OperandUse::ConstPlace)
+                            : argument.access == AccessMode::Write ? OperandUse::Place
+                            : argument.access == AccessMode::Take  ? OperandUse::Own
+                                                                   : OperandUse::Read
+                    ));
+                }
+                if (const auto* operation = std::get_if<CppBinaryOperation>(&value.operation)) {
+                    return binary(
+                        std::move(arguments[0]),
+                        operation->operation,
+                        std::move(arguments[1]),
+                        source.type
+                    );
+                }
+                if (const auto* update = std::get_if<CppUpdateOperation>(&value.operation)) {
+                    return prefix_expression(
+                        update->increment ? TargetPrefixOperator::Increment
+                                          : TargetPrefixOperator::Decrement,
+                        std::move(arguments.front())
+                    );
+                }
+                if (const auto* operation = std::get_if<CppUnaryOperation>(&value.operation)) {
+                    const auto prefix = operation->operation == UnaryOperator::LogicalNot
+                        ? TargetPrefixOperator::LogicalNot
+                        : operation->operation == UnaryOperator::Negate
+                        ? TargetPrefixOperator::Negate
+                        : TargetPrefixOperator::BitwiseNot;
+                    return prefix_expression(prefix, std::move(arguments[0]));
+                }
+                if (const auto* member = std::get_if<CppMemberOperation>(&value.operation)) {
+                    return member_expression(
+                        std::move(arguments.front()),
+                        TargetIdentifier::from_spelling(member->name)
+                    );
+                }
+                if (std::holds_alternative<CppIndexOperation>(value.operation)) {
+                    return TargetExpr {
+                        .value = TargetIndexExpr {
+                            .operand = UniqueIndirect(std::move(arguments[0])),
+                            .index = UniqueIndirect(std::move(arguments[1]))
+                        }
+                    };
+                }
+                if (const auto* conversion = std::get_if<CppConvertOperation>(&value.operation);
+                    conversion != nullptr && conversion->explicit_cast) {
+                    return TargetExpr {
+                        .value = TargetStaticCastExpr {
+                            .type = context.lower_type(source.type),
+                            .operand = UniqueIndirect(std::move(arguments.front()))
+                        }
+                    };
+                }
+                return TargetExpr {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(source.type),
+                        .initializer = std::move(arguments)
+                    }
+                };
+            },
             [&](const SemLiteral& value) noexcept {
                 return literal_expression(context, value.value, source.type);
             },

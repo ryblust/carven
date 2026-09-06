@@ -16,7 +16,7 @@ inline constexpr bool trivially_copied_and_destroyed =
 
 template<typename Value>
 using ReadArg = std::conditional_t<
-    detail::trivially_copied_and_destroyed<Value> && sizeof(Value) <= 2 * sizeof(void*),
+    detail::trivially_copied_and_destroyed<Value>,
     const Value,
     const Value&>;
 

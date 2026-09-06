@@ -18,7 +18,8 @@ ArtifactLowering::ArtifactLowering(ArtifactLowering&& other) noexcept
     : planned_compilation(std::exchange(other.planned_compilation, nullptr)),
       artifact_id(other.artifact_id),
       target_builder(std::move(other.target_builder)),
-      lowering_dependencies(std::move(other.lowering_dependencies)) {}
+      lowering_dependencies(std::move(other.lowering_dependencies)),
+      cpp_type_providers(std::move(other.cpp_type_providers)) {}
 
 auto ArtifactLowering::require_compilation() const noexcept -> const PlannedCompilation& {
     if (planned_compilation == nullptr) {
@@ -44,7 +45,7 @@ auto ArtifactLowering::target() noexcept -> TargetUnitBuilder& {
     return target_builder;
 }
 
-auto ArtifactLowering::module(ModuleID id) noexcept -> ModuleLowering {
+auto ArtifactLowering::module_context(ModuleID id) noexcept -> ModuleLowering {
     return ModuleLowering(*this, id);
 }
 
@@ -70,22 +71,71 @@ auto ArtifactLowering::record_provider_interface(ModuleID active, ModuleID provi
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
-    return std::move(target_builder)
-        .finish(std::move(sections), materialize_directives(plan(), artifact_id, dependencies));
+    auto directives = materialize_directives(plan(), artifact_id, dependencies);
+    auto imports = std::vector<TargetItem>();
+    for (const auto& [provider, names] : cpp_type_providers) {
+        const auto needed = [&](const CppUsingBinding& binding) noexcept {
+            return binding.opens_namespace
+                || names.contains(semantic().provenance().spelling(binding.components.back()));
+        };
+        auto bindings = std::vector<TargetItem>();
+        for (const auto& header : semantic().declarations().module_decl(provider).cpp_headers) {
+            if (!std::ranges::any_of(header.bindings, needed)) {
+                continue;
+            }
+            const auto name = semantic().provenance().spelling(header.name);
+            directives.prefix_groups.push_back(
+                {.directives =
+                     {{.bytes = header.delimiter == CppHeaderDelimiter::AngleBrackets
+                           ? std::format("#include <{}>", name)
+                           : std::format("#include \"{}\"", name)}},
+                 .attribution = std::nullopt}
+            );
+            for (const auto& binding : header.bindings) {
+                if (!needed(binding)) {
+                    continue;
+                }
+                auto components = std::vector<TargetIdentifier>();
+                for (const auto component : binding.components) {
+                    components.push_back(
+                        TargetIdentifier::from_spelling(semantic().provenance().spelling(component))
+                    );
+                }
+                bindings.push_back(source_item(
+                    semantic(),
+                    binding.origin,
+                    TargetUsing {
+                        .name = TargetName::globally_qualified(std::move(components)),
+                        .opens_namespace = binding.opens_namespace
+                    }
+                ));
+            }
+        }
+        imports.push_back(namespace_item(
+            plan().names().module_names(provider).qualified_namespace_name,
+            std::move(bindings)
+        ));
+    }
+    sections.preamble.insert(
+        sections.preamble.begin(),
+        std::make_move_iterator(imports.begin()),
+        std::make_move_iterator(imports.end())
+    );
+    return std::move(target_builder).finish(std::move(sections), std::move(directives));
 }
 
-ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID module) noexcept
+ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
     : artifact_lowering(std::addressof(artifact)),
-      module_id(module),
+      module_id(owner_module_id),
       type_states(artifact.semantic().types().size(), LoweringState::Unseen),
       type_cache(artifact.semantic().types().size()),
       signature_states(artifact.semantic().callable_signatures().size(), LoweringState::Unseen),
       signature_result_cache(artifact.semantic().callable_signatures().size()) {
-    if (module.owner() != semantic().identity()) {
+    if (owner_module_id.owner() != semantic().identity()) {
         invariant_violation("module lowering received a foreign semantic module ID");
     }
-    static_cast<void>(semantic().declarations().module_decl(module));
-    for (const auto& name : plan().names().module(module).reserved_identifiers) {
+    static_cast<void>(semantic().declarations().module_decl(owner_module_id));
+    for (const auto& name : plan().names().module_names(owner_module_id).reserved_identifiers) {
         allocator.reserve(name);
     }
 }
@@ -168,7 +218,7 @@ auto ModuleLowering::name_allocator() noexcept -> TargetNameAllocator& {
 
 auto ModuleLowering::make_callable_name_allocator() const noexcept -> TargetNameAllocator {
     auto result = TargetNameAllocator {};
-    for (const auto& name : plan().names().module(module_id).reserved_identifiers) {
+    for (const auto& name : plan().names().module_names(module_id).reserved_identifiers) {
         result.reserve(name);
     }
     return result;

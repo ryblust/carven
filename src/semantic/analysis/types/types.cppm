@@ -17,7 +17,7 @@ auto resolve_source_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
     const ArrayExtentResolver& resolve_extent
@@ -27,7 +27,7 @@ auto resolve_source_construction_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
     const ArrayExtentResolver& resolve_extent
@@ -37,7 +37,7 @@ auto resolve_source_constraint_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
     const ArrayExtentResolver& resolve_extent
@@ -46,7 +46,7 @@ auto resolve_source_constraint_type(
 auto require_source_value_type(
     const ProgramDraft& draft,
     ConstructionTypeRef type,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span origin,
     std::string_view role
 ) noexcept -> AnalysisResult<ConstructionTypeRef>;
@@ -55,7 +55,7 @@ auto resolve_failure_types(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
     const ArrayExtentResolver& resolve_extent

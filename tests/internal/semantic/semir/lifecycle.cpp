@@ -125,7 +125,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto declared_no_failures = builder.add_empty_failure_term();
     CHECK(builder.empty_failure_set() == no_failures);
 
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     const auto holder = builder.reserve_struct_declaration();
     const auto guarded_failure_structure = builder.reserve_struct_declaration();
     const auto nominal_holder = builder.intern_type(
@@ -194,7 +194,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         holder,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = holder_name,
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -212,7 +212,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         guarded_failure_structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = guarded_failure_name,
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -223,7 +223,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         first_function,
         FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = first_function_name,
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -235,7 +235,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         second_function,
         FunctionDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = second_function_name,
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -245,7 +245,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         }
     );
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,
@@ -275,7 +275,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     CHECK_EQ(active_builder.function_declaration_count(), 2uz);
     CHECK_EQ(active_builder.struct_declaration_count(), 2uz);
     CHECK_EQ(active_builder.callable_declaration_count(), 2uz);
-    CHECK_EQ(active_builder.module_declaration_ids(), std::vector {module});
+    CHECK_EQ(active_builder.module_declaration_ids(), std::vector {module_id});
     CHECK_EQ(
         active_builder.function_declaration_ids(),
         std::vector {first_function, second_function}
@@ -288,7 +288,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         active_builder.callable_declaration_ids(),
         std::vector {first_callable, second_callable}
     );
-    CHECK_EQ(active_builder.module_declaration_copy(module).provenance_module, provenance_module);
+    CHECK_EQ(active_builder.module_declaration_copy(module_id).provenance_module, provenance_module);
     CHECK_EQ(active_builder.function_declaration_copy(first_function).callable, first_callable);
     CHECK_EQ(
         active_builder.construction_struct_declaration_copy(holder).fields.front().type,
@@ -311,7 +311,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     REQUIRE(solved.has_value());
     REQUIRE(diagnostics.empty());
 
-    CHECK_EQ(active_builder.module_declaration_ids(), std::vector {module});
+    CHECK_EQ(active_builder.module_declaration_ids(), std::vector {module_id});
     CHECK_EQ(active_builder.callable_declaration_count(), 2uz);
     const auto cyclic_failure_set = active_builder.concrete_failure_set(cyclic_failure);
     const auto residual_failure_set = active_builder.concrete_failure_set(residual_failure);
@@ -421,7 +421,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
             },
         }
     );
-    const auto module = builder.reserve_module_declaration();
+    const auto module_id = builder.reserve_module_declaration();
     auto item = std::optional<ModuleItem>();
     if (use_enum) {
         const auto enumeration = builder.reserve_enum_declaration();
@@ -439,7 +439,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         builder.define_declaration(
             enumeration,
             ConstructionEnumDeclaration {
-                .module_id = module,
+                .module_id = module_id,
                 .name = nominal_name,
                 .origin = origin,
                 .visibility = DeclarationVisibility::Module,
@@ -454,7 +454,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         builder.define_declaration(
             structure,
             ConstructionStructDeclaration {
-                .module_id = module,
+                .module_id = module_id,
                 .name = nominal_name,
                 .origin = origin,
                 .visibility = DeclarationVisibility::Module,
@@ -472,7 +472,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         item = ModuleItem {structure};
     }
     builder.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,

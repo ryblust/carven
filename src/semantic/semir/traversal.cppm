@@ -28,6 +28,11 @@ auto visit_semantic_nodes(
             [](const SemBinding&) static noexcept {},
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
+            [&](const SemCpp<Type, Failures>& value) noexcept {
+                for (const auto& operand : value.operands) {
+                    child(operand.expression);
+                }
+            },
             [&](const SemSequence<Type, Failures>& value) noexcept {
                 for (const auto& expression : value.expressions) {
                     child(expression);

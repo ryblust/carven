@@ -3,25 +3,26 @@ module carven:semantic.analysis.types.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.types;
+import :source.cpp.identifier;
 import :support.invariant;
 import :support.visit;
 import std;
 
 namespace {
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module) noexcept -> SourceID {
-    return draft.syntax_tree(module).view().source_id();
+auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
+    return draft.syntax_tree(module_id).view().source_id();
 }
 
 auto fail(
     const ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span span,
     DiagnosticCode code,
     std::string message
 ) noexcept -> AnalysisFailure {
     return draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                         .primary(locate(source_id(draft, module), span))
+                                         .primary(locate(source_id(draft, module_id), span))
                                          .build());
 }
 
@@ -54,15 +55,15 @@ auto select_global_symbol(
     const ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     std::string_view name,
     Span origin
 ) noexcept -> AnalysisResult<const CatalogSymbol*> {
-    const auto candidates = catalog.lookup(module, name);
+    const auto candidates = catalog.lookup(module_id, name);
     if (candidates.empty()) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             origin,
             DiagnosticCode::TypeUnresolved,
             std::format("unresolved type name '{}'", name)
@@ -73,7 +74,7 @@ auto select_global_symbol(
             DiagnosticCode::NameAmbiguous,
             std::format("name '{}' is provided by more than one wildcard import", name)
         );
-        diagnostic.primary(locate(source_id(draft, module), origin), "ambiguous reference");
+        diagnostic.primary(locate(source_id(draft, module_id), origin), "ambiguous reference");
         for (const auto& candidate : candidates) {
             const auto* symbol = catalog.symbol(candidate.symbol_id);
             if (symbol == nullptr) {
@@ -104,26 +105,99 @@ auto resolve_named(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     const ASTNamedType& named,
+    ASTView syntax,
+    const ArrayExtentResolver& resolve_extent,
     Span origin
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
+    if (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty()) {
+        const auto bindings = catalog.cpp_imports(module_id);
+        const auto admitted = std::ranges::any_of(bindings, [&](const auto& binding) noexcept {
+            return binding.opens_namespace || binding.components.back() == root;
+        });
+        if (admitted) {
+            for (const auto& binding : bindings) {
+                if (!binding.opens_namespace && binding.components.back() == root) {
+                    import_usage.record_cpp(module_id, binding.origin);
+                }
+            }
+            auto components = std::vector<std::string>();
+            for (const auto& component : named.components) {
+                components.push_back(draft.source_slice_copy(module_id, component.name_span));
+                if (!is_supported_cpp_identifier(components.back())) {
+                    return std::unexpected(fail(
+                        draft,
+                        module_id,
+                        component.name_span,
+                        DiagnosticCode::CppIdentifier,
+                        "external type cannot be represented as a C++ identifier"
+                    ));
+                }
+            }
+            auto arguments = std::vector<TypeID>();
+            for (const auto argument : named.arguments) {
+                auto resolved = resolve_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    argument,
+                    resolve_extent
+                );
+                if (!resolved.has_value()) {
+                    return std::unexpected(resolved.error());
+                }
+                const auto* concrete = std::get_if<TypeID>(&*resolved);
+                if (concrete == nullptr) {
+                    return std::unexpected(fail(
+                        draft,
+                        module_id,
+                        origin,
+                        DiagnosticCode::TypeUnresolved,
+                        "C++ type arguments require concrete types"
+                    ));
+                }
+                arguments.push_back(*concrete);
+            }
+            return ConstructionTypeRef {draft.intern_type(
+                {.value = CppTypeValue {
+                     .form = CppNamedType {
+                         .module_id = catalog.find_module(module_id)->declaration,
+                         .components = std::move(components),
+                         .arguments = std::move(arguments)
+                     }
+                 }}
+            )};
+        }
+    }
+    if (!named.arguments.empty()) {
+        return std::unexpected(fail(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::TypeUnresolved,
+            "type arguments require an imported C++ name"
+        ));
+    }
     if (named.components.size() != 1uz) {
         return std::unexpected(fail(
             draft,
-            module,
+            module_id,
             origin,
             DiagnosticCode::TypeUnresolved,
             "type names cannot contain value-member qualification"
         ));
     }
     const auto component = named.components.front().name_span;
-    const auto name = draft.source_slice_copy(module, component);
+    const auto name = draft.source_slice_copy(module_id, component);
     if (const auto builtin = builtin_kind(name)) {
         return ConstructionTypeRef {draft.intern_builtin_type(*builtin)};
     }
     const auto selected =
-        select_global_symbol(draft, catalog, import_usage, module, name, component);
+        select_global_symbol(draft, catalog, import_usage, module_id, name, component);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
@@ -143,7 +217,7 @@ auto resolve_named(
     }
     return std::unexpected(fail(
         draft,
-        module,
+        module_id,
         origin,
         DiagnosticCode::TypeUnresolved,
         std::format("'{}' does not name a type", name)
@@ -154,7 +228,7 @@ auto resolve_function_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionType& function,
     const ArrayExtentResolver& resolve_extent
@@ -166,7 +240,7 @@ auto resolve_function_type(
             draft,
             catalog,
             import_usage,
-            module,
+            module_id,
             syntax,
             parameter.type,
             resolve_extent
@@ -177,7 +251,7 @@ auto resolve_function_type(
         auto value_type = require_source_value_type(
             draft,
             *type,
-            module,
+            module_id,
             syntax.type(parameter.type).span,
             "function parameter"
         );
@@ -193,7 +267,7 @@ auto resolve_function_type(
         draft,
         catalog,
         import_usage,
-        module,
+        module_id,
         syntax,
         function.result_type,
         resolve_extent
@@ -207,7 +281,7 @@ auto resolve_function_type(
             draft,
             catalog,
             import_usage,
-            module,
+            module_id,
             syntax,
             *function.throw_clause,
             resolve_extent
@@ -233,7 +307,7 @@ auto resolve_type_value(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTType& source_type,
     const ArrayExtentResolver& resolve_extent
@@ -241,14 +315,23 @@ auto resolve_type_value(
     return std::visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
-                return resolve_named(draft, catalog, import_usage, module, named, source_type.span);
+                return resolve_named(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    named,
+                    syntax,
+                    resolve_extent,
+                    source_type.span
+                );
             },
             [&](const ASTArrayType& array) noexcept -> AnalysisResult<ConstructionTypeRef> {
                 auto element = resolve_source_type(
                     draft,
                     catalog,
                     import_usage,
-                    module,
+                    module_id,
                     syntax,
                     array.element_type,
                     resolve_extent
@@ -259,7 +342,7 @@ auto resolve_type_value(
                 auto value_element = require_source_value_type(
                     draft,
                     *element,
-                    module,
+                    module_id,
                     syntax.type(array.element_type).span,
                     "array element"
                 );
@@ -291,7 +374,7 @@ auto resolve_type_value(
                     draft,
                     catalog,
                     import_usage,
-                    module,
+                    module_id,
                     syntax,
                     function,
                     resolve_extent
@@ -317,7 +400,7 @@ auto resolve_source_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
     const ArrayExtentResolver& resolve_extent
@@ -326,7 +409,7 @@ auto resolve_source_type(
         draft,
         catalog,
         import_usage,
-        module,
+        module_id,
         syntax,
         syntax.type(source_type),
         resolve_extent
@@ -337,7 +420,7 @@ auto resolve_source_construction_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
     const ArrayExtentResolver& resolve_extent
@@ -345,14 +428,23 @@ auto resolve_source_construction_type(
     return std::visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
-                return resolve_named(draft, catalog, import_usage, module, named, source_type.span);
+                return resolve_named(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    named,
+                    syntax,
+                    resolve_extent,
+                    source_type.span
+                );
             },
             [&](const ASTFunctionType& function) noexcept {
                 return resolve_function_type(
                     draft,
                     catalog,
                     import_usage,
-                    module,
+                    module_id,
                     syntax,
                     function,
                     resolve_extent
@@ -367,7 +459,7 @@ auto resolve_source_constraint_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
     const ArrayExtentResolver& resolve_extent
@@ -384,8 +476,10 @@ auto resolve_source_constraint_type(
                     draft,
                     catalog,
                     import_usage,
-                    module,
-                    ASTNamedType {.components = std::move(components)},
+                    module_id,
+                    ASTNamedType {.components = std::move(components), .arguments = {}},
+                    syntax,
+                    resolve_extent,
                     source_type.span
                 );
             },
@@ -394,7 +488,7 @@ auto resolve_source_constraint_type(
                     draft,
                     catalog,
                     import_usage,
-                    module,
+                    module_id,
                     syntax,
                     ASTType {
                         .span = source_type.span,
@@ -411,7 +505,7 @@ auto resolve_source_constraint_type(
 auto require_source_value_type(
     const ProgramDraft& draft,
     ConstructionTypeRef type,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span origin,
     std::string_view role
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
@@ -427,7 +521,7 @@ auto require_source_value_type(
     }
     return std::unexpected(fail(
         draft,
-        module,
+        module_id,
         origin,
         DiagnosticCode::TypeValueRequired,
         std::format("{} requires a value type", role)
@@ -438,7 +532,7 @@ auto resolve_failure_types(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
     const ArrayExtentResolver& resolve_extent
@@ -451,7 +545,7 @@ auto resolve_failure_types(
             draft,
             catalog,
             import_usage,
-            module,
+            module_id,
             syntax,
             source_failure,
             resolve_extent
@@ -472,7 +566,8 @@ auto resolve_failure_types(
                                   || std::same_as<Value, ArrayTypeValue>
                                   || std::same_as<Value, FunctionTypeValue>
                                   || std::same_as<Value, ClosureTypeValue>
-                                  || std::same_as<Value, CallableViewTypeValue>,
+                                  || std::same_as<Value, CallableViewTypeValue>
+                                  || std::same_as<Value, CppTypeValue>,
                               "unhandled non-nominal failure type"
                           );
                           return false;
@@ -483,7 +578,7 @@ auto resolve_failure_types(
         if (!nominal) {
             return std::unexpected(fail(
                 draft,
-                module,
+                module_id,
                 syntax.type(source_failure).span,
                 DiagnosticCode::EffectThrowType,
                 "failure clause entries must be copyable nominal struct or enum types"
@@ -495,10 +590,10 @@ auto resolve_failure_types(
                 "failure clause contains the same nominal type more than once"
             );
             diagnostic.primary(
-                locate(source_id(draft, module), syntax.type(source_failure).span),
+                locate(source_id(draft, module_id), syntax.type(source_failure).span),
                 "duplicate failure type"
             );
-            diagnostic.related(locate(source_id(draft, module), prior->second), "first occurrence");
+            diagnostic.related(locate(source_id(draft, module_id), prior->second), "first occurrence");
             return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
         first_seen.emplace(*concrete, syntax.type(source_failure).span);

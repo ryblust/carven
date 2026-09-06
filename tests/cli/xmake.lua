@@ -1,4 +1,16 @@
 local case_specs = {
+    ["output/cpp_interface"] = {
+        inputs = {"input.cv"},
+        args = {"input.cv"},
+        output_files = {"input.cpp", "carven/generated/input.hpp"},
+        file_contains = {
+            ["input.cpp"] = {"#include <cmath>"},
+            ["carven/generated/input.hpp"] = {"#include <vector>", "using ::std::vector;"},
+        },
+        file_not_contains = {
+            ["carven/generated/input.hpp"] = {"#include <cmath>", "using ::std::abs;"},
+        },
+    },
     ["commands/dump"] = {
         inputs = {"input.cv", "lexical_error.cv", "syntax_error.cv"},
         steps = {

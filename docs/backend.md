@@ -149,3 +149,16 @@ The renderer serializes nodes, directives, source mapping, and whitespace. It
 does not infer language meaning or repair target syntax. Artifact collection
 checks logical paths, uniqueness, and prefix safety. Unused parameter names are
 omitted; unused local owners retain their initialization and lifetime.
+
+## External names and operations
+
+External imports lower to includes and module-scoped using declarations or
+namespace directives. References preserve their binding's module identity.
+External types used in interfaces carry their header and name-environment
+dependencies into those artifacts.
+
+External result queries lower to structured unevaluated C++ expressions and
+`std::remove_cvref_t<decltype(...)>` owner types. Executed calls use the ordinary
+argument sequencing and access lowering. Receiver access is preserved
+independently of storage made mutable to realize a later Take. Discarded external
+calls need no result storage, so void-returning providers remain usable.

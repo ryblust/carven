@@ -11,6 +11,9 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
             [](const TargetRawFragment&) static noexcept -> std::optional<TargetItemCategory> {
                 return std::nullopt;
             },
+            [](const TargetUsing&) static noexcept -> std::optional<TargetItemCategory> {
+                return TargetItemCategory::OtherDeclaration;
+            },
             [](const TargetNamespace&) static noexcept -> std::optional<TargetItemCategory> {
                 return TargetItemCategory::OtherDeclaration;
             },

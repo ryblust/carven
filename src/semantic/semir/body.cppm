@@ -220,31 +220,6 @@ using LiteralValue = std::variant<
     StringLiteral>;
 
 
-enum class UnaryOperator {
-    LogicalNot,
-    Negate,
-    BitwiseNot,
-};
-
-enum class BinaryOperator {
-    BitwiseOr,
-    BitwiseXor,
-    BitwiseAnd,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    LeftShift,
-    RightShift,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Remainder,
-};
-
 enum class CastKind {
     Identity,
     IntegerToInteger,

@@ -41,12 +41,12 @@ private:
     std::filesystem::path directory_path;
 };
 
-auto generated(std::string logical_path, std::string content) noexcept -> GeneratedArtifact {
+auto generated(const std::string& logical_path, const std::string& content) noexcept -> GeneratedArtifact {
     return {
-        .logical_path = std::move(logical_path),
+        .logical_path = logical_path,
         .role = GeneratedArtifactRole::ModuleImplementation,
         .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
-        .content = std::move(content),
+        .content = content,
     };
 }
 

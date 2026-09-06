@@ -6,9 +6,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -33,6 +33,7 @@ private:
 
     struct Checkpoint final {
         std::size_t cursor;
+        bool split_right_shift;
         ASTBuilder::Checkpoint builder;
         bool failed;
         std::size_t diagnostic_count;
@@ -62,6 +63,7 @@ private:
     const TokenBuffer* token_buffer;
     std::span<const Token> tokens;
     std::size_t cursor = 0;
+    bool split_right_shift = false;
     ASTBuilder builder;
     Diagnostics diagnostics;
     std::vector<std::optional<ParseFailure>> speculation_failures;

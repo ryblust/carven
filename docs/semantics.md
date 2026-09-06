@@ -230,9 +230,50 @@ fragment, `import(cpp)` declares a C++-implemented Carven function, and
 `export(cpp)` publishes a Carven function to C++ consumers. A source fragment
 has no public API placement.
 
-Header imports create no Carven names, resolve no files, expose no external C++
-symbols to semantic analysis, and link no library. Header search is the
-downstream preprocessor's responsibility.
+A header import without `using` creates no Carven names. A `using` selection
+introduces external names or a namespace lookup environment in the importing
+module:
+
+```carven
+import <vector> using std::vector;
+import "provider.hpp" using { vendor::Widget, vendor::create };
+import <vector> using std::*;
+```
+
+Explicit selections bind their final name component. Namespace selections open
+a C++ lookup environment without enumerating declarations. Carven does not read
+or parse the header.
+
+Local bindings and resolved Carven declarations retain their ordinary lookup
+rules. Explicit external imports cannot collide with local module declarations.
+Otherwise unresolved names can use a module's explicitly opened C++ namespaces.
+External declarations, overloads, template arguments, members and conversions are
+checked by C++. External imports are module-local and are not re-exported through
+Carven module imports. Explicit selections have unused-import diagnostics;
+namespace selections do not.
+
+Type arguments are accepted only for imported C++ names and must be types;
+nested external type applications are supported. External construction uses
+`T { ... }` with positional initializers, which may be empty. External types in
+function signatures and field declarations must be named explicitly; local
+owners may infer their type from an external expression. Such results are
+not Carven compile-time constants and do not participate in pattern coverage or
+failure-set construction.
+
+Carven access rules still apply. Ordinary external-call arguments provide Read
+access, `&value` provides Write, and `&&value` takes an owner. Receivers inherit
+their storage's access. Local bindings remain owners: initializing one from a
+C++ reference result initializes an owned value, subject to C++ construction
+rules. External member and index places inherit the root's access; external
+indexing has the provider's bounds behavior, not Carven array bounds checks.
+External calls do not expose typed failures; exceptions escaping generated
+`noexcept` boundaries terminate.
+
+Carven checks its own storage availability and explicit access conflicts but
+does not infer C++ reference retention, pointer validity or iterator invalidation.
+Known callable borrows and Write captures cannot cross an undeclared external
+contract. External reference bindings, pointer operations and external iteration
+protocols are unsupported.
 
 Each top-level `#[cpp]` payload remains an independent, byte-opaque C++ source
 fragment. Carven does not parse or type-check it, interpolate Carven values, or

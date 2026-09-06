@@ -48,7 +48,8 @@ auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexc
                             || std::same_as<Value, StructTypeValue>
                             || std::same_as<Value, EnumTypeValue>
                             || std::same_as<Value, ArrayTypeValue>
-                            || std::same_as<Value, CallableViewTypeValue>,
+                            || std::same_as<Value, CallableViewTypeValue>
+                            || std::same_as<Value, CppTypeValue>,
                         "unhandled non-owning callable type"
                     );
                 },
@@ -127,6 +128,15 @@ auto BodyElaborator::build_call_argument(
         auto place = as_place(*built, source.span);
         if (!place.has_value()) {
             return std::unexpected(place.error());
+        }
+        if (built->type != parameter.type) {
+            *place = active_builder().append_cpp_place(
+                *place,
+                parameter.type,
+                CppConvertOperation {.explicit_cast = false},
+                {},
+                origin(source.span)
+            );
         }
         return BuiltCallArgument {
             .argument = expression_construction::Argument {expression_construction::WriteArgument {
@@ -483,7 +493,7 @@ auto BodyElaborator::call_expression(
     }
     if (const auto* name = std::get_if<ASTNameExpr>(&callee_source.value)) {
         const auto text = spelling(name->name_span);
-        if (find_local(text) == nullptr) {
+        if (find_local(text) == nullptr && !catalog().lookup(source_module_id, text).empty()) {
             auto selected = find_global(text, name->name_span);
             if (!selected.has_value()) {
                 return std::unexpected(selected.error());
@@ -506,6 +516,9 @@ auto BodyElaborator::call_expression(
     }();
     if (!callee.has_value()) {
         return std::unexpected(callee.error());
+    }
+    if (is_cpp_type(callee->type)) {
+        return cpp_call(*callee, source, span);
     }
     auto pending_failures = take_pending(*callee);
     auto contract = callable_contract(*callee, ast.expression(source.callee).span);

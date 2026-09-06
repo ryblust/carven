@@ -8,9 +8,9 @@ import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.constant.proof;
-import :semantic.analysis.decl;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
+import :semantic.analysis.decl;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
@@ -87,6 +87,7 @@ auto DeclarationResolver::supports_equality(
             [](const FunctionTypeValue&) static noexcept { return false; },
             [](const ClosureTypeValue&) static noexcept { return false; },
             [](const CallableViewTypeValue&) static noexcept { return false; },
+            [](const CppTypeValue&) static noexcept { return false; },
         },
         draft.type_copy(concrete).value
     );
@@ -119,12 +120,12 @@ auto DeclarationResolver::finish_capabilities() noexcept -> void {
 }
 
 auto DeclarationResolver::publish() noexcept -> void {
-    for (const auto& module : catalog.modules()) {
-        const auto syntax = draft.syntax_tree(module.module_id).view();
+    for (const auto& module_record : catalog.modules()) {
+        const auto syntax = draft.syntax_tree(module_record.module_id).view();
         const auto& source = syntax.ast_module();
         auto declaration = ModuleDeclaration {
-            .provenance_module = module.module_id,
-            .origin = declaration_origin(draft, module.module_id, source.span),
+            .provenance_module = module_record.module_id,
+            .origin = declaration_origin(draft, module_record.module_id, source.span),
             .cpp_headers = {},
             .cpp_source_fragments = {},
             .items = {},
@@ -136,20 +137,34 @@ auto DeclarationResolver::publish() noexcept -> void {
                     ? CppHeaderDelimiter::AngleBrackets
                     : CppHeaderDelimiter::Quotes,
                 .name = draft.intern_spelling(
-                    draft.source_slice_copy(module.module_id, header.name_span)
+                    draft.source_slice_copy(module_record.module_id, header.name_span)
                 ),
-                .origin = declaration_origin(draft, module.module_id, header.span),
+                .origin = declaration_origin(draft, module_record.module_id, header.span),
+                .bindings = {},
             });
+            for (const auto& binding : header.bindings) {
+                auto components = std::vector<ProgramSpellingID>();
+                for (const auto component : binding.components) {
+                    components.push_back(
+                        draft.intern_spelling(draft.source_slice_copy(module_record.module_id, component))
+                    );
+                }
+                declaration.cpp_headers.back().bindings.push_back({
+                    .components = std::move(components),
+                    .opens_namespace = binding.opens_namespace,
+                    .origin = declaration_origin(draft, module_record.module_id, binding.span),
+                });
+            }
         }
         declaration.cpp_source_fragments.reserve(source.cpp_source_fragments.size());
         for (const auto& fragment : source.cpp_source_fragments) {
             declaration.cpp_source_fragments.push_back({
                 .payload_origin =
-                    declaration_origin(draft, module.module_id, fragment.payload_span),
+                    declaration_origin(draft, module_record.module_id, fragment.payload_span),
             });
         }
-        declaration.items.reserve(module.items.size());
-        for (const auto& item : module.items) {
+        declaration.items.reserve(module_record.items.size());
+        for (const auto& item : module_record.items) {
             declaration.items.push_back(
                 std::visit(
                     Overloaded {
@@ -165,19 +180,19 @@ auto DeclarationResolver::publish() noexcept -> void {
                 )
             );
         }
-        if (module.declaration.index() >= modules.size()) {
+        if (module_record.declaration.index() >= modules.size()) {
             invariant_violation("module declaration identity is outside its reserved table");
         }
-        modules[module.declaration.index()] = std::move(declaration);
+        modules[module_record.declaration.index()] = std::move(declaration);
     }
 
-    for (const auto& module : catalog.modules()) {
-        if (!modules[module.declaration.index()].has_value()) {
+    for (const auto& module_record : catalog.modules()) {
+        if (!modules[module_record.declaration.index()].has_value()) {
             invariant_violation("resolved module has no declaration fact");
         }
         draft.define_declaration(
-            module.declaration,
-            std::move(*modules[module.declaration.index()])
+            module_record.declaration,
+            std::move(*modules[module_record.declaration.index()])
         );
     }
     for (const auto& symbol : catalog.symbols()) {

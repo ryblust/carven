@@ -51,6 +51,13 @@ support.
 
 ## Assertions
 
+Every registered test target must build successfully. Do not use
+`build_should_fail` or `should_fail`: a test driver succeeds only when its
+assertions establish the expected behavior. Compile-only success checks may use
+`build_should_pass`. Diagnostic and termination tests retain explicit assertions
+about the expected diagnostic or termination contract; arbitrary failure is not
+sufficient evidence.
+
 Each test establishes valid behavior, rejection of an invalid program, or an
 invariant of a representation. Place it at the boundary that owns the fact.
 Retain multiple tests only when they establish distinct contracts.
@@ -84,8 +91,13 @@ and private-edit locality; its contract is in `benchmarks/README.md`.
 
 Each group owns its `xmake.lua`. Cases follow the repository directory and C++
 conventions. The internal harness owns process-based invariant termination.
-The CLI harness limits each process to 30 seconds and preserves failed fixtures.
+The CLI harness limits each process to 30 seconds and preserves failed fixtures
+with stdout and stderr logs for every step. Successful cases remove their
+temporary directories; multi-step reports retain each step's output.
 Generated target configuration directly expresses the boundary under test.
+Interop cases with compatible build and execution requirements share a target.
+Cases initialize their own observable state. Header self-containment checks use
+one translation unit per header, including generated interfaces.
 
 Runtime exception boundaries are tested in isolated C++ consumer processes.
 The throwing operation itself must execute, and the process must reach the

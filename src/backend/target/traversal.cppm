@@ -134,6 +134,17 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
     };
     return std::visit(
         Overloaded {
+            [&](const TargetDeducedType& deduced) noexcept {
+                const auto visit_query = [&](this const auto& self,
+                                             const TargetTypeQuery& query) noexcept -> bool {
+                    if (const auto* type = std::get_if<TargetTypeID>(&query.operation);
+                        type != nullptr && !target_traversal_detail::visit_type(visitor, *type)) {
+                        return false;
+                    }
+                    return std::ranges::all_of(query.operands, self);
+                };
+                return visit_query(deduced.query);
+            },
             [&](const TargetNamedType& named) noexcept {
                 if (!visit_types(named.type_argument_ids)) {
                     return false;
@@ -606,6 +617,7 @@ auto traverse_target_item(const TargetItem& item, Visitor& visitor) noexcept -> 
                     }
                 );
             },
+            [](const TargetUsing&) static noexcept { return true; },
             [](const TargetRawFragment&) static noexcept { return true; },
         },
         item.value

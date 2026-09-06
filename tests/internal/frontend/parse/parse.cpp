@@ -31,12 +31,12 @@ static_assert(!std::constructible_from<ASTBuilder, SourceView>);
 
 TEST_CASE("Parser: empty input owns an empty typed module root") {
     const auto result = parse_valid("");
-    const auto& module = root(result);
-    CHECK_EQ(module.span.start(), 0u);
-    CHECK_EQ(module.span.end(), 0u);
-    CHECK(module.module_imports.empty());
-    CHECK(module.cpp_header_imports.empty());
-    CHECK(module.items.empty());
+    const auto& module_syntax = root(result);
+    CHECK_EQ(module_syntax.span.start(), 0u);
+    CHECK_EQ(module_syntax.span.end(), 0u);
+    CHECK(module_syntax.module_imports.empty());
+    CHECK(module_syntax.cpp_header_imports.empty());
+    CHECK(module_syntax.items.empty());
 }
 
 TEST_CASE("Parser: token source identity crosses the API boundary") {

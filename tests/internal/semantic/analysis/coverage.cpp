@@ -56,7 +56,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     const auto origin = compilation.append_source_origin(source_id, Span::at(0u));
     const auto boolean = compilation.intern_builtin_type(BuiltinType::Bool);
 
-    const auto module = compilation.reserve_module_declaration();
+    const auto module_id = compilation.reserve_module_declaration();
     const auto enumeration = compilation.reserve_enum_declaration();
     const auto pair_case = compilation.reserve_enum_case_declaration();
     const auto empty_case = compilation.reserve_enum_case_declaration();
@@ -96,7 +96,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     compilation.define_declaration(
         enumeration,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = compilation.intern_spelling("PairError"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -108,7 +108,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     compilation.define_declaration(
         uninhabited,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = compilation.intern_spelling("Never"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
@@ -118,7 +118,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
         }
     );
     compilation.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,
@@ -133,7 +133,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     compilation.define_test(
         test,
         TestDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = compilation.intern_spelling("coverage"),
             .origin = origin,
             .body = reservation.id(),

@@ -203,6 +203,42 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
     state = LoweringState::Visiting;
     auto lowered = std::visit(
         Overloaded {
+            [&](const CppTypeValue& value) noexcept -> TargetType {
+                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                    artifact_lowering->cpp_type_providers[named->module_id].insert(
+                        named->components.front()
+                    );
+                    const auto owner =
+                        plan().names().module_names(named->module_id).qualified_namespace_name;
+                    auto components = std::vector<TargetIdentifier>(
+                        owner.components().begin(),
+                        owner.components().end()
+                    );
+                    for (const auto& component : named->components) {
+                        components.push_back(TargetIdentifier::from_spelling(component));
+                    }
+                    auto arguments = std::vector<TargetTypeID>();
+                    for (const auto argument : named->arguments) {
+                        arguments.push_back(lower_type(argument));
+                    }
+                    return {
+                        .value =
+                            TargetNamedType {
+                                .name = TargetName::globally_qualified(std::move(components)),
+                                .type_argument_ids = std::move(arguments),
+                                .nested = {}
+                            },
+                        .const_qualified = false
+                    };
+                }
+                return {
+                    .value =
+                        TargetDeducedType {
+                            .query = cpp_type_query(std::get<CppDeducedType>(value.form))
+                        },
+                    .const_qualified = false
+                };
+            },
             [](const BuiltinTypeValue& value) noexcept -> TargetType {
                 return {
                     .value =
@@ -280,4 +316,89 @@ auto ModuleLowering::is_void(TypeID id) const noexcept -> bool {
 auto ModuleLowering::is_integer(TypeID id) const noexcept -> bool {
     const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic().types().type(id).value);
     return builtin != nullptr && builtin_is_integer(builtin->kind);
+}
+
+auto ModuleLowering::cpp_type_query(const CppDeducedType& query) noexcept -> TargetTypeQuery {
+    auto operands = std::vector<TargetTypeQuery>();
+    for (const auto& input : query.operands) {
+        const auto& type = semantic().types().type(input.type).value;
+        const auto* cpp = std::get_if<CppTypeValue>(&type);
+        const auto* inferred = cpp == nullptr ? nullptr : std::get_if<CppDeducedType>(&cpp->form);
+        if (operands.empty()
+            && std::holds_alternative<CppCallOperation>(query.operation)
+            && inferred != nullptr
+            && (std::holds_alternative<CppNameOperation>(inferred->operation)
+                || std::holds_alternative<CppMemberOperation>(inferred->operation))) {
+            operands.push_back(cpp_type_query(*inferred));
+        } else {
+            operands.push_back(
+                {.operation = reference_type(
+                     lower_type(input.type),
+                     input.access == AccessMode::Read,
+                     input.access == AccessMode::Take
+                 ),
+                 .operands = {}}
+            );
+        }
+    }
+    auto operation = std::visit(
+        Overloaded {
+            [&](const CppNameOperation& name) noexcept -> decltype(TargetTypeQuery::operation) {
+                const auto owner = plan().names().module_names(name.module_id).qualified_namespace_name;
+                auto components = std::vector<TargetIdentifier>(
+                    owner.components().begin(),
+                    owner.components().end()
+                );
+                components.push_back(TargetIdentifier::from_spelling(name.name));
+                artifact_lowering->cpp_type_providers[name.module_id].insert(name.name);
+                return TargetName::globally_qualified(std::move(components));
+            },
+            [](const CppCallOperation&) static noexcept -> decltype(TargetTypeQuery::operation) {
+                return TargetQueryCall {};
+            },
+            [](const CppIndexOperation&) static noexcept -> decltype(TargetTypeQuery::operation) {
+                return TargetQueryIndex {};
+            },
+            [](const CppMemberOperation& member) static noexcept
+                -> decltype(TargetTypeQuery::operation) {
+                return TargetQueryMember {.name = TargetIdentifier::from_spelling(member.name)};
+            },
+            [](const CppUnaryOperation& unary) static noexcept
+                -> decltype(TargetTypeQuery::operation) {
+                switch (unary.operation) {
+                    case UnaryOperator::LogicalNot: return TargetPrefixOperator::LogicalNot;
+                    case UnaryOperator::Negate:     return TargetPrefixOperator::Negate;
+                    case UnaryOperator::BitwiseNot: return TargetPrefixOperator::BitwiseNot;
+                }
+                std::unreachable();
+            },
+            [](const CppBinaryOperation& binary) static noexcept
+                -> decltype(TargetTypeQuery::operation) {
+                switch (binary.operation) {
+                    case BinaryOperator::BitwiseOr:    return TargetBinaryOperator::BitwiseOr;
+                    case BinaryOperator::BitwiseXor:   return TargetBinaryOperator::BitwiseXor;
+                    case BinaryOperator::BitwiseAnd:   return TargetBinaryOperator::BitwiseAnd;
+                    case BinaryOperator::Equal:        return TargetBinaryOperator::Equal;
+                    case BinaryOperator::NotEqual:     return TargetBinaryOperator::NotEqual;
+                    case BinaryOperator::Less:         return TargetBinaryOperator::Less;
+                    case BinaryOperator::LessEqual:    return TargetBinaryOperator::LessEqual;
+                    case BinaryOperator::Greater:      return TargetBinaryOperator::Greater;
+                    case BinaryOperator::GreaterEqual: return TargetBinaryOperator::GreaterEqual;
+                    case BinaryOperator::LeftShift:    return TargetBinaryOperator::LeftShift;
+                    case BinaryOperator::RightShift:   return TargetBinaryOperator::RightShift;
+                    case BinaryOperator::Add:          return TargetBinaryOperator::Add;
+                    case BinaryOperator::Subtract:     return TargetBinaryOperator::Subtract;
+                    case BinaryOperator::Multiply:     return TargetBinaryOperator::Multiply;
+                    case BinaryOperator::Divide:       return TargetBinaryOperator::Divide;
+                    case BinaryOperator::Remainder:    return TargetBinaryOperator::Remainder;
+                }
+                std::unreachable();
+            },
+            [](const auto&) static noexcept -> decltype(TargetTypeQuery::operation) {
+                invariant_violation("explicit C++ construction or conversion used a deduced type");
+            },
+        },
+        query.operation
+    );
+    return {.operation = std::move(operation), .operands = std::move(operands)};
 }

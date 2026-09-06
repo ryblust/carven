@@ -108,6 +108,12 @@ struct SemCallArgument final {
     SemanticExpression<Type, Failures> expression;
 };
 template<typename Type, typename Failures>
+struct SemCpp final {
+    CppOperation operation;
+    std::vector<SemCallArgument<Type, Failures>> operands;
+};
+
+template<typename Type, typename Failures>
 struct SemCall final {
     OwnedSemanticExpression<Type, Failures> callee;
     std::vector<SemCallArgument<Type, Failures>> arguments;
@@ -206,6 +212,7 @@ struct SemanticExpression final {
         SemBinding,
         SemCallable,
         SemEnumConstructor,
+        SemCpp<Type, Failures>,
         SemSequence<Type, Failures>,
         SemArray<Type, Failures>,
         SemArrayAdopt<Type, Failures>,

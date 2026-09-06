@@ -76,10 +76,10 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
         compilation.module_source(provenance_module),
         Span::at(0u)
     );
-    const auto module = compilation.reserve_module_declaration();
+    const auto module_id = compilation.reserve_module_declaration();
     const auto enumeration = compilation.reserve_enum_declaration();
     compilation.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,
@@ -91,7 +91,7 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
     compilation.define_declaration(
         enumeration,
         ConstructionEnumDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = compilation.intern_spelling("Number"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
