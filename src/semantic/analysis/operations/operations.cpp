@@ -6,6 +6,7 @@ import :frontend.ast.literal;
 import :frontend.ast.storage;
 import :frontend.literal;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.type;
@@ -14,6 +15,12 @@ import :support.visit;
 import std;
 
 namespace {
+auto builtin_type(const CanonicalTypeStore& types, TypeID type) noexcept
+    -> std::optional<BuiltinType> {
+    const auto* value = std::get_if<BuiltinTypeValue>(&types.type(type).value);
+    return value == nullptr ? std::nullopt : std::optional(value->kind);
+}
+
 
 auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<BuiltinType> {
@@ -150,24 +157,7 @@ auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
                 .result = contract.result,
             };
         }
-        const auto* view = std::get_if<CallableViewTypeValue>(&canonical.value);
-        if (view == nullptr) {
-            return std::nullopt;
-        }
-        const auto signature = draft.callable_signature_copy(view->signature);
-        auto parameters = std::vector<ConstructionCallableParameter>();
-        parameters.reserve(signature.parameters.size());
-        for (const auto& parameter : signature.parameters) {
-            parameters.push_back({
-                .access = parameter.access,
-                .type = parameter.type,
-            });
-        }
-        return CallableShape {
-            .owning_type = std::nullopt,
-            .parameters = std::move(parameters),
-            .result = signature.result,
-        };
+        return std::nullopt;
     }
 
     const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
@@ -381,6 +371,30 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
 
+template<typename StructCapability, typename EnumCapability, typename ElementCapability>
+auto supports_equality(
+    const CanonicalType& canonical,
+    StructCapability structure,
+    EnumCapability enumeration,
+    ElementCapability element
+) noexcept -> bool {
+    return std::visit(
+        Overloaded {
+            [](const BuiltinTypeValue& value) noexcept {
+                return builtin_type_supports_equality(value.kind);
+            },
+            [&](const StructTypeValue& value) noexcept { return structure(value.structure); },
+            [&](const EnumTypeValue& value) noexcept { return enumeration(value.enumeration); },
+            [&](const ArrayTypeValue& value) noexcept { return element(value.element); },
+            [](const FunctionTypeValue&) static noexcept { return false; },
+            [](const ClosureTypeValue&) static noexcept { return false; },
+            [](const CallableViewTypeValue&) static noexcept { return false; },
+            [](const CppTypeValue&) static noexcept { return false; },
+        },
+        canonical.value
+    );
+}
+
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
     const auto* concrete = std::get_if<TypeID>(&type);
     if (concrete == nullptr) {
@@ -390,37 +404,31 @@ auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type)
         }
         return false;
     }
-    return std::visit(
-        Overloaded {
-            [](const BuiltinTypeValue& value) noexcept {
-                return builtin_type_supports_equality(value.kind);
-            },
-            [&](const StructTypeValue& value) noexcept {
-                return draft.construction_struct_declaration_copy(value.structure)
-                    .capabilities.equality;
-            },
-            [&](const EnumTypeValue& value) noexcept {
-                return draft.construction_enum_declaration_copy(value.enumeration)
-                    .capabilities.equality;
-            },
-            [&](const ArrayTypeValue& value) noexcept {
-                return type_supports_equality(draft, ConstructionTypeRef {value.element});
-            },
-            [](const FunctionTypeValue&) static noexcept { return false; },
-            [](const ClosureTypeValue&) static noexcept { return false; },
-            [](const CallableViewTypeValue&) static noexcept { return false; },
-            [](const CppTypeValue&) static noexcept { return false; },
+    return supports_equality(
+        draft.type_copy(*concrete),
+        [&](StructID id) noexcept {
+            return draft.construction_struct_declaration_copy(id).capabilities.equality;
         },
-        draft.type_copy(*concrete).value
+        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).capabilities.equality; },
+        [&](TypeID id) noexcept { return type_supports_equality(draft, ConstructionTypeRef {id}); }
     );
 }
 
-auto decide_unary_operator(
-    const ProgramDraft& draft,
-    UnaryOperator op,
-    ConstructionTypeRef operand
-) noexcept -> OperatorDecision {
-    const auto builtin = builtin_type(draft, operand);
+auto type_supports_equality(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations,
+    TypeID type
+) noexcept -> bool {
+    return supports_equality(
+        types.type(type),
+        [&](StructID id) noexcept { return declarations.structure(id).capabilities.equality; },
+        [&](EnumID id) noexcept { return declarations.enumeration(id).capabilities.equality; },
+        [&](TypeID id) noexcept { return type_supports_equality(types, declarations, id); }
+    );
+}
+
+auto decide_unary_builtin(UnaryOperator op, std::optional<BuiltinType> builtin) noexcept
+    -> OperatorDecision {
     switch (op) {
         case UnaryOperator::LogicalNot:
             if (builtin != BuiltinType::Bool) {
@@ -450,11 +458,10 @@ auto decide_unary_operator(
     std::unreachable();
 }
 
-auto decide_binary_operator(
-    const ProgramDraft& draft,
+auto decide_binary_builtins(
     BinaryOperator op,
-    ConstructionTypeRef left,
-    ConstructionTypeRef right,
+    std::optional<BuiltinType> left_builtin,
+    std::optional<BuiltinType> right_builtin,
     bool operands_compatible,
     bool equality_capable
 ) noexcept -> OperatorDecision {
@@ -471,8 +478,6 @@ auto decide_binary_operator(
             DiagnosticCode::TypeEqualityUnsupported
         );
     }
-    const auto left_builtin = builtin_type(draft, left);
-    const auto right_builtin = builtin_type(draft, right);
     switch (op) {
         case BinaryOperator::Add:
         case BinaryOperator::Subtract:
@@ -524,6 +529,110 @@ auto decide_binary_operator(
     std::unreachable();
 }
 
+auto decide_builtin_cast(
+    bool identical,
+    std::optional<BuiltinType> source_builtin,
+    std::optional<BuiltinType> target_builtin,
+    bool source_is_numeric_enum
+) noexcept -> CastDecision {
+    if (identical) {
+        return CastKind::Identity;
+    }
+    const auto source_integer = source_builtin.has_value() && builtin_is_integer(*source_builtin);
+    const auto target_integer = target_builtin.has_value() && builtin_is_integer(*target_builtin);
+    auto kind = std::optional<CastKind>();
+    if (source_integer && target_integer) {
+        kind = CastKind::IntegerToInteger;
+    } else if (source_integer && target_builtin == BuiltinType::Bool) {
+        kind = CastKind::IntegerToBool;
+    } else if (source_builtin == BuiltinType::Bool && target_integer) {
+        kind = CastKind::BoolToInteger;
+    } else if (source_integer
+               && (target_builtin == BuiltinType::F32 || target_builtin == BuiltinType::F64)) {
+        kind = CastKind::IntegerToFloating;
+    } else if (source_builtin == BuiltinType::F32 && target_builtin == BuiltinType::F64) {
+        kind = CastKind::FloatingWiden;
+    } else if (source_is_numeric_enum && target_integer) {
+        kind = CastKind::EnumToInteger;
+    }
+    if (kind.has_value()) {
+        return *kind;
+    }
+    return operation_error("invalid 'as' conversion", DiagnosticCode::TypeCast);
+}
+
+auto decide_unary_operator(
+    const ProgramDraft& facts,
+    UnaryOperator op,
+    ConstructionTypeRef operand
+) noexcept -> OperatorDecision {
+    return decide_unary_builtin(op, builtin_type(facts, operand));
+}
+auto decide_binary_operator(
+    const ProgramDraft& facts,
+    BinaryOperator op,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    bool compatible,
+    bool equality
+) noexcept -> OperatorDecision {
+    return decide_binary_builtins(
+        op,
+        builtin_type(facts, left),
+        builtin_type(facts, right),
+        compatible,
+        equality
+    );
+}
+auto decide_cast(
+    const ProgramDraft& facts,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    bool numeric_enum
+) noexcept -> CastDecision {
+    return decide_builtin_cast(
+        source == target,
+        builtin_type(facts, source),
+        builtin_type(facts, target),
+        numeric_enum
+    );
+}
+auto decide_unary_operator(
+    const CanonicalTypeStore& facts,
+    UnaryOperator op,
+    TypeID operand
+) noexcept -> OperatorDecision {
+    return decide_unary_builtin(op, builtin_type(facts, operand));
+}
+auto decide_binary_operator(
+    const CanonicalTypeStore& facts,
+    BinaryOperator op,
+    TypeID left,
+    TypeID right,
+    bool compatible,
+    bool equality
+) noexcept -> OperatorDecision {
+    return decide_binary_builtins(
+        op,
+        builtin_type(facts, left),
+        builtin_type(facts, right),
+        compatible,
+        equality
+    );
+}
+auto decide_cast(
+    const CanonicalTypeStore& facts,
+    TypeID source,
+    TypeID target,
+    bool numeric_enum
+) noexcept -> CastDecision {
+    return decide_builtin_cast(
+        source == target,
+        builtin_type(facts, source),
+        builtin_type(facts, target),
+        numeric_enum
+    );
+}
 auto decide_binary_operator(
     const ProgramDraft& draft,
     ASTBinaryOperator op,
@@ -555,46 +664,15 @@ auto decide_binary_operator(
     return decide_binary_operator(draft, *semantic, left, right, true, equality_capable);
 }
 
-auto decide_cast(
-    const ProgramDraft& draft,
-    ConstructionTypeRef source,
-    ConstructionTypeRef target,
-    bool source_is_numeric_enum
-) noexcept -> CastDecision {
-    if (source == target) {
-        return CastKind::Identity;
-    }
-    const auto source_builtin = builtin_type(draft, source);
-    const auto target_builtin = builtin_type(draft, target);
-    const auto source_integer = source_builtin.has_value() && builtin_is_integer(*source_builtin);
-    const auto target_integer = target_builtin.has_value() && builtin_is_integer(*target_builtin);
-    auto kind = std::optional<CastKind>();
-    if (source_integer && target_integer) {
-        kind = CastKind::IntegerToInteger;
-    } else if (source_integer && target_builtin == BuiltinType::Bool) {
-        kind = CastKind::IntegerToBool;
-    } else if (source_builtin == BuiltinType::Bool && target_integer) {
-        kind = CastKind::BoolToInteger;
-    } else if (source_integer
-               && (target_builtin == BuiltinType::F32 || target_builtin == BuiltinType::F64)) {
-        kind = CastKind::IntegerToFloating;
-    } else if (source_builtin == BuiltinType::F32 && target_builtin == BuiltinType::F64) {
-        kind = CastKind::FloatingWiden;
-    } else if (source_is_numeric_enum && target_integer) {
-        kind = CastKind::EnumToInteger;
-    }
-    if (kind.has_value()) {
-        return *kind;
-    }
-    return operation_error("invalid 'as' conversion", DiagnosticCode::TypeCast);
-}
-
 auto decide_text_method(
     const ProgramDraft& draft,
     ConstructionTypeRef operand,
     std::string_view name,
     std::size_t argument_count
 ) noexcept -> TextMethodDecision {
+    if (builtin_type(draft, operand) != BuiltinType::Str) {
+        return std::optional<TextIntrinsic>();
+    }
     auto intrinsic = TextIntrinsic::Len;
     if (name == "len") {
         intrinsic = TextIntrinsic::Len;
@@ -612,9 +690,6 @@ auto decide_text_method(
             "str text methods take no arguments",
             DiagnosticCode::TypeStrMethodArity
         );
-    }
-    if (builtin_type(draft, operand) != BuiltinType::Str) {
-        return std::optional<TextIntrinsic>();
     }
     return std::optional(intrinsic);
 }

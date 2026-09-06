@@ -1,18 +1,8 @@
-module carven:semantic.analysis.body.scopes.impl;
+module carven:semantic.analysis.body.lifetimes.impl;
 
 import :semantic.analysis.body.builder;
 import :support.invariant;
 import std;
-
-auto BodyBuilder::add_scope(std::optional<ScopeID> parent, ProgramOriginID origin) noexcept
-    -> ScopeID {
-    if (parent.has_value()) {
-        if (!scopes.contains(*parent)) {
-            invariant_violation("foreign scope parent");
-        }
-    }
-    return scopes.add(Scope {.parent = parent, .origin = origin});
-}
 
 auto BodyBuilder::add_lifetime_region(
     std::optional<LifetimeRegionID> parent,

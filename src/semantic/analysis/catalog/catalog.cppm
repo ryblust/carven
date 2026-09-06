@@ -4,6 +4,7 @@ import :diagnostics.diagnostic;
 import :frontend.ast.ids;
 import :frontend.ast.tree;
 import :frontend.program;
+import :semantic.analysis.program;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.visibility;

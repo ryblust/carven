@@ -125,7 +125,7 @@ auto lower_module(
     auto module_context = context.module_context(schedule.module_id);
     auto lowered = lower_module_schedule(module_context, schedule);
     auto module_items = std::vector<TargetItem>();
-    context.require_cpp_environment(schedule.module_id, CppNameLookup::ModuleScope);
+    context.require_cpp_environment(schedule.module_id, CppEnvironmentRequirement::Using);
     if (!lowered.private_items.empty()) {
         module_items.push_back(namespace_item(std::nullopt, std::move(lowered.private_items)));
     }

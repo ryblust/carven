@@ -15,8 +15,8 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -55,10 +55,7 @@ auto BodyElaborator::run(ASTBlockID source_body) noexcept -> AnalysisResult<Stru
                 "reachable path of value-returning callable has no return"
             ));
         }
-        append_statement(
-            SemReturn<ConstructionTypeRef, FailureTermID> {std::nullopt},
-            ast.block(source_body).span
-        );
+        append_statement(SemReturn {std::nullopt}, ast.block(source_body).span);
     }
     if (is_test) {
         draft().require_empty_failures(
@@ -68,7 +65,7 @@ auto BodyElaborator::run(ASTBlockID source_body) noexcept -> AnalysisResult<Stru
         );
     }
     diagnose_unused(frames.front());
-    regions.front().failures = outward_failure_term_id;
+    regions.front().failures = BodyFailures(outward_failure_term_id);
     return std::move(body_builder).finish(std::move(regions.front()));
 }
 

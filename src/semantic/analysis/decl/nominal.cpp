@@ -7,10 +7,11 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.proof;
-import :semantic.analysis.decl;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
+import :semantic.analysis.decl;
+import :semantic.analysis.expr.constant;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
@@ -161,7 +162,7 @@ auto DeclarationResolver::resolve_enum(
         };
     }
 
-    auto representation = ConstructionEnumRepresentation {PayloadEnumRepresentation {}};
+    auto representation = EnumRepresentation {PayloadEnumRepresentation {}};
     if (!payload_representation) {
         auto underlying = ConstructionTypeRef {draft.intern_builtin_type(BuiltinType::I32)};
         if (enumeration.underlying_type.has_value()) {
@@ -189,11 +190,11 @@ auto DeclarationResolver::resolve_enum(
                 "enum underlying type must be an integer type"
             ));
         }
-        representation = ConstructionNumericEnumRepresentation {
-            .underlying_type = underlying,
+        representation = NumericEnumRepresentation {
+            .underlying_type = *concrete,
         };
     }
-    enumerations[form.enumeration.index()] = ConstructionEnumDeclaration {
+    enumerations[form.enumeration.index()] = EnumDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
         .origin = declaration_origin(draft, symbol.module_id, item_span),
@@ -235,7 +236,7 @@ auto DeclarationResolver::resolve_enum_case(
         }
     );
 
-    const auto* numeric = std::get_if<ConstructionNumericEnumRepresentation>(&owner.representation);
+    const auto* numeric = std::get_if<NumericEnumRepresentation>(&owner.representation);
     if (numeric == nullptr) {
         if (source_case.initializer.has_value()) {
             return std::unexpected(fail(
@@ -260,26 +261,25 @@ auto DeclarationResolver::resolve_enum_case(
         return {};
     }
 
-    const auto* underlying = std::get_if<TypeID>(&numeric->underlying_type);
-    if (underlying == nullptr) {
-        invariant_violation("numeric enum underlying type is not concrete");
-    }
     auto value = IntegerConstant::zero();
     if (source_case.initializer.has_value()) {
-        const auto environment = constant_environment(symbol.module_id, syntax);
-        auto proof = prove_constant_expression(
+        auto scope = ConstantScope {*this, symbol.module_id, syntax};
+        auto result = evaluate_constant_expression(
             draft,
             symbol.module_id,
             syntax,
-            environment,
+            scope,
             *source_case.initializer,
             numeric->underlying_type
         );
-        if (!proof.has_value()) {
-            return std::unexpected(proof.error());
+        if (!result.has_value()) {
+            return std::unexpected(result.error());
         }
+        const auto fact = std::holds_alternative<ConstantID>(*result)
+            ? std::optional(draft.constant_copy(std::get<ConstantID>(*result)))
+            : std::nullopt;
         const auto* selected =
-            proof->has_value() ? std::get_if<IntegerConstant>(&(**proof).value) : nullptr;
+            fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
         if (selected == nullptr) {
             return std::unexpected(fail(
                 draft,
@@ -333,7 +333,7 @@ auto DeclarationResolver::resolve_enum_case(
             value = IntegerConstant::from_parts(previous->value.magnitude() + 1u, false);
         }
     }
-    const auto canonical = draft.type_copy(*underlying);
+    const auto canonical = draft.type_copy(numeric->underlying_type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
     if (builtin == nullptr || !integer_constant_fits(value, builtin->kind)) {
         return std::unexpected(fail(
@@ -359,9 +359,7 @@ auto DeclarationResolver::validate_enum_codes(const CatalogSymbol& symbol) noexc
     const auto& form = std::get<CatalogEnumForm>(symbol.form);
     const auto& declaration = enumerations[form.enumeration.index()];
     if (!declaration.has_value()
-        || !std::holds_alternative<ConstructionNumericEnumRepresentation>(
-            declaration->representation
-        )) {
+        || !std::holds_alternative<NumericEnumRepresentation>(declaration->representation)) {
         return {};
     }
     auto prior = std::vector<std::pair<IntegerConstant, EnumCaseID>>();

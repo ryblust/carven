@@ -8,6 +8,7 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.decl;
 import :semantic.analysis.lint.unused_imports;
 import :semantic.analysis.pipeline.publish;
+import :semantic.analysis.program;
 import :semantic.analyze;
 import :semantic.semir.program;
 import std;
@@ -16,24 +17,30 @@ auto analyze(SyntaxProgram syntax) noexcept -> std::expected<Diagnosed<SemIRProg
     auto diagnostics = DiagnosticSink();
     auto draft = ProgramDraft::begin(std::move(syntax), diagnostics);
 
-    auto catalog_result = build_analysis_catalog(draft);
-    if (!catalog_result.has_value()) {
-        return std::unexpected(std::move(catalog_result.error()));
-    }
-    const auto catalog = std::move(*catalog_result);
-    auto import_usage = ImportUsage(catalog.view().imports().size());
+    {
+        auto catalog_result = build_analysis_catalog(draft);
+        if (!catalog_result.has_value()) {
+            return std::unexpected(std::move(catalog_result.error()));
+        }
+        const auto catalog = std::move(*catalog_result);
+        auto import_usage = ImportUsage(catalog.view().imports().size());
 
-    const auto declarations = complete_declarations(draft, catalog.view(), import_usage);
-    if (!declarations.has_value() || diagnostics.has_errors()) {
-        return std::unexpected(diagnostics.take());
-    }
+        const auto declarations = complete_declarations(draft, catalog.view(), import_usage);
+        if (!declarations.has_value() || diagnostics.has_errors()) {
+            return std::unexpected(diagnostics.take());
+        }
 
-    const auto bodies = elaborate_body_batch(draft, catalog.view(), import_usage);
-    if (!bodies.has_value() || diagnostics.has_errors()) {
-        return std::unexpected(diagnostics.take());
+        const auto bodies = elaborate_body_batch(draft, catalog.view(), import_usage);
+        if (!bodies.has_value() || diagnostics.has_errors()) {
+            return std::unexpected(diagnostics.take());
+        }
+        diagnose_unused_imports(draft, catalog.view(), import_usage);
+        if (diagnostics.has_errors()) {
+            return std::unexpected(diagnostics.take());
+        }
     }
-    diagnose_unused_imports(draft, catalog.view(), import_usage);
-    if (diagnostics.has_errors()) {
+    const auto solved = draft.solve_construction();
+    if (!solved.has_value() || diagnostics.has_errors()) {
         return std::unexpected(diagnostics.take());
     }
     auto published = publish_semantic_program(std::move(draft));

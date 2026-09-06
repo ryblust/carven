@@ -21,8 +21,6 @@ reads the payload. Both calls in `main` are independent requests against five
 available seats; this example does not retain a booking database.
 
 Inputs here are positive. Try another request larger than the available count.
-Carven failures follow [failure contracts](../../../docs/semantics.md#failure-contracts);
-they are not native C++ exceptions.
 
 Next: [Order quote](../composition/), which combines failures from multiple
 modules. See the [full failure-contract series](../README.md).

@@ -127,7 +127,7 @@ TEST_CASE("Target type construction: children already belong to the unit") {
         }));
     }
     const auto element = builder.intern_type(bool_type());
-    const auto array = builder.intern_type(
+    [[maybe_unused]] const auto array = builder.intern_type(
         TargetType {
             .value =
                 TargetArrayType {
@@ -137,7 +137,6 @@ TEST_CASE("Target type construction: children already belong to the unit") {
             .const_qualified = false,
         }
     );
-    CHECK_EQ(std::get<TargetArrayType>(builder.copy_type(array).value).element_type_id, element);
 }
 
 TEST_CASE("Target jump verifier: entering an empty nested scope is legal") {

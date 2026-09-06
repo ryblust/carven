@@ -6,18 +6,11 @@ import :frontend.ast.storage;
 import :frontend.ast.type;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
+import :semantic.analysis.program;
 import :semantic.semir.program;
 import std;
 
 using ArrayExtentResolver = std::function<AnalysisResult<std::uint64_t>(ASTExprID)>;
-
-auto resolve_cpp_name(
-    const ProgramDraft& draft,
-    ProgramModuleID source_module,
-    ModuleID context_module,
-    CppNameLookup lookup,
-    std::span<const Span> components
-) noexcept -> AnalysisResult<CppNameReference>;
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode;
 

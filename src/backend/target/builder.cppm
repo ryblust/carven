@@ -23,7 +23,6 @@ public:
     auto identity() const noexcept -> TargetUnitIdentity;
     auto intern_type(TargetType type) noexcept -> TargetTypeID;
 
-    auto copy_type(TargetTypeID id) const noexcept -> TargetType;
     auto finish(TargetUnitSections sections, TargetDirectiveInputs directives = {}) && noexcept
         -> TargetUnit;
 

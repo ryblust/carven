@@ -3,6 +3,7 @@ module carven:semantic.analysis.interop.impl;
 import :diagnostics.builder;
 import :diagnostics.diagnostic;
 import :semantic.analysis.interop;
+import :semantic.analysis.program;
 import :semantic.semir.decl;
 import :semantic.semir.type;
 import :source.cpp.identifier;

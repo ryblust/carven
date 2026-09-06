@@ -4,6 +4,7 @@ import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
 import :frontend.literal;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.program;
 import :semantic.semir.type;
@@ -93,3 +94,28 @@ auto decide_text_method(
 ) noexcept -> TextMethodDecision;
 auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecision;
 auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType;
+
+auto decide_unary_operator(
+    const CanonicalTypeStore& types,
+    UnaryOperator operation,
+    TypeID operand
+) noexcept -> OperatorDecision;
+auto decide_binary_operator(
+    const CanonicalTypeStore& types,
+    BinaryOperator operation,
+    TypeID left,
+    TypeID right,
+    bool compatible,
+    bool equality
+) noexcept -> OperatorDecision;
+auto decide_cast(
+    const CanonicalTypeStore& types,
+    TypeID source,
+    TypeID target,
+    bool numeric_enum
+) noexcept -> CastDecision;
+auto type_supports_equality(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations,
+    TypeID type
+) noexcept -> bool;

@@ -50,16 +50,14 @@ Change the small inputs in `main` and run the target again after rebuilding it.
 The output check uses the documented inputs, so restore them before running the
 example test group.
 
-Carven does not yet provide a standard console I/O craft. The Carven-entry
-examples import two C++ `print` overloads from [support/console.hpp](support/console.hpp):
+The Carven-entry examples use C++ console output. They import two C++ `print` overloads from [support/console.hpp](support/console.hpp):
 one for text and one for i32. This shared helper only prints values; the task's
 logic stays in the example. The native parser examines the same header-import
 mechanism in more detail.
 
-The [language guide](../docs/language.md) explains language features, and the
-[semantics](../docs/semantics.md) owns their contracts. Examples use small,
-bounded inputs to keep their subject visible. They are not complete accounting,
-inventory, booking, or network configuration applications.
+For an introduction to individual concepts, read the [tutorial](../docs/tutorial.md).
+The [documentation index](../docs/README.md) lists language and tool references.
+Examples use small, bounded inputs to keep each task focused.
 
 ## Maintaining examples
 

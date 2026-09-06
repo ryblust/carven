@@ -12,12 +12,15 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.body.expression_site;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.constant;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.semir.decl;
@@ -45,11 +48,6 @@ BodyElaborator::BodyElaborator(
       semantic_module_id(semantic_module_id),
       ast(source),
       body_builder(std::move(reservation), *owner.draft),
-      static_lifetime_id(body_builder.add_lifetime_region(
-          std::nullopt,
-          LifetimeRegionKind::Static,
-          origin(ast.ast_module().span)
-      )),
       result_type(result),
       outward_failure_term_id(outward_failure_term_id),
       is_test(test_body),
@@ -58,12 +56,10 @@ BodyElaborator::BodyElaborator(
       reference_path_reachable(true),
       reported_unreachable(false) {
     const auto root_origin = origin(ast.ast_module().span);
-    const auto root_scope = body_builder.add_scope(std::nullopt, root_origin);
     const auto root_lifetime =
         body_builder.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, root_origin);
     frames.push_back(
         LocalFrame {
-            .scope = root_scope,
             .lifetime = root_lifetime,
             .names = {},
         }
@@ -112,45 +108,15 @@ auto BodyElaborator::warn(Span span, DiagnosticCode code, std::string message) n
 }
 
 auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisResult<std::uint64_t> {
-    const auto environment = constant_environment();
-    return prove_array_extent(draft(), source_module_id, ast, environment, id);
-}
-
-auto BodyElaborator::constant_environment() noexcept -> ConstantExpressionEnvironment {
-    return ConstantExpressionEnvironment {
-        .resolve_name =
-            [this](std::string_view name, Span span) noexcept {
-                return resolve_constant_name(name, span);
-            },
-        .resolve_enum_qualifier =
-            [this](ASTExprID expression) noexcept { return resolve_enum_qualifier(expression); },
-        .resolve_enum_case =
-            [this](TypeID type, std::string_view name, Span span) noexcept {
-                return resolve_constant_enum_case(type, name, span);
-            },
-        .resolve_type = [this](ASTTypeID type) noexcept { return resolve_type(type); },
-        .supports_equality = [this](
-                                 ConstructionTypeRef type
-                             ) noexcept { return type_supports_equality(draft(), type); },
-        .is_numeric_enum =
-            [this](TypeID type) noexcept {
-                const auto canonical = draft().type_copy(type);
-                const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-                return nominal != nullptr
-                    && std::holds_alternative<ConstructionNumericEnumRepresentation>(
-                           draft()
-                               .construction_enum_declaration_copy(nominal->enumeration)
-                               .representation
-                    );
-            },
-    };
+    auto scope = BodyExpressionSite(*this);
+    return evaluate_array_extent(draft(), source_module_id, ast, scope, id);
 }
 
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
-    -> AnalysisResult<ConstantNamedValue> {
+    -> AnalysisResult<ResolvedConstantName> {
     if (const auto* local = use_local(name)) {
         const auto* constant = std::get_if<ConstantID>(&local->storage);
-        return ConstantNamedValue {
+        return ResolvedConstantName {
             .type = local->type,
             .constant = constant == nullptr ? std::nullopt : std::optional(*constant),
         };
@@ -161,15 +127,14 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
     }
     return std::visit(
         Overloaded {
-            [&](const CatalogConstantForm& form) noexcept -> AnalysisResult<ConstantNamedValue> {
-                const auto declaration =
-                    draft().construction_module_constant_declaration_copy(form.constant);
-                return ConstantNamedValue {
-                    .type = declaration.type,
+            [&](const CatalogConstantForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+                const auto declaration = draft().module_constant_declaration_copy(form.constant);
+                return ResolvedConstantName {
+                    .type = draft().constant_copy(declaration.value).type,
                     .constant = declaration.value,
                 };
             },
-            [&](const CatalogEnumCaseForm& form) noexcept -> AnalysisResult<ConstantNamedValue> {
+            [&](const CatalogEnumCaseForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
                 const auto declaration =
                     draft().construction_enum_case_declaration_copy(form.enum_case);
                 const auto type = draft().intern_type(
@@ -177,13 +142,13 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
                         .value = EnumTypeValue {.enumeration = declaration.owner},
                     }
                 );
-                return ConstantNamedValue {
+                return ResolvedConstantName {
                     .type = type,
                     .constant = declaration.constant,
                 };
             },
-            [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<ConstantNamedValue> {
-                return ConstantNamedValue {
+            [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+                return ResolvedConstantName {
                     .type = draft().intern_type(
                         CanonicalType {
                             .value = FunctionTypeValue {.callable = form.callable},
@@ -192,7 +157,7 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
                     .constant = std::nullopt,
                 };
             },
-            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<ConstantNamedValue> {
+            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<ResolvedConstantName> {
                 static_assert(
                     std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
                     "unhandled non-constant catalog symbol"
@@ -243,7 +208,7 @@ auto BodyElaborator::resolve_constant_enum_case(
     TypeID type,
     std::string_view name,
     Span span
-) noexcept -> AnalysisResult<ConstantEnumCase> {
+) noexcept -> AnalysisResult<ResolvedEnumCase> {
     const auto canonical = draft().type_copy(type);
     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
     if (nominal == nullptr) {
@@ -253,13 +218,13 @@ auto BodyElaborator::resolve_constant_enum_case(
             "enum case qualifier does not name an enum type"
         ));
     }
-    const auto enumeration = draft().construction_enum_declaration_copy(nominal->enumeration);
+    const auto enumeration = draft().enum_declaration_copy(nominal->enumeration);
     for (const auto case_id : enumeration.cases) {
         const auto declaration = draft().construction_enum_case_declaration_copy(case_id);
         if (draft().spelling_copy(declaration.name) != name) {
             continue;
         }
-        return ConstantEnumCase {
+        return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration.owner,
             .payload_types = declaration.payload_types,
@@ -344,30 +309,8 @@ auto BodyElaborator::require_writable_storage_type(
     };
     const auto callable_view_shape =
         [&](ConstructionTypeRef type) noexcept -> std::optional<CallableViewShape> {
-        if (const auto* concrete = std::get_if<TypeID>(&type)) {
-            const auto canonical = draft().type_copy(*concrete);
-            const auto* view = std::get_if<CallableViewTypeValue>(&canonical.value);
-            if (view == nullptr) {
-                return std::nullopt;
-            }
-            const auto signature = draft().callable_signature_copy(view->signature);
-            auto parameters = std::vector<ConstructionCallableParameter>();
-            parameters.reserve(signature.parameters.size());
-            for (const auto& parameter : signature.parameters) {
-                parameters.push_back(
-                    ConstructionCallableParameter {
-                        .access = parameter.access,
-                        .type = parameter.type,
-                    }
-                );
-            }
-            return CallableViewShape {
-                .parameters = std::move(parameters),
-                .result = signature.result,
-                .failures = draft().add_concrete_failure_term(
-                    draft().construction_failure_set_copy(signature.failures).members
-                ),
-            };
+        if (std::holds_alternative<TypeID>(type)) {
+            return std::nullopt;
         }
         const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
         const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);

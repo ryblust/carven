@@ -183,7 +183,7 @@ auto BodyLowerer::lower_pattern(PatternID pattern_id, PatternSubject subject) no
 auto BodyLowerer::cache_pattern_projections(
     std::vector<PatternSelection>& selections,
     std::vector<PatternProjection>& projections,
-    std::vector<TargetStmt>& destination
+    StatementSequence& destination
 ) noexcept -> void {
     const auto same_subject = [](const PatternSubject& left, const PatternSubject& right) noexcept {
         if (left.root != right.root
@@ -253,7 +253,7 @@ auto BodyLowerer::cache_pattern_projections(
                 : found->name;
             if (found == projections.end()) {
                 const auto ordinal = enum_case_index(context.semantic(), *enum_case);
-                destination.push_back(generated_statement(
+                destination.emit(generated_statement(
                     TargetVariableStmt {
                         .binding = TargetVariableBinding::MutableValue,
                         .maybe_unused = false,

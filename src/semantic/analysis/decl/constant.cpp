@@ -7,10 +7,11 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.proof;
-import :semantic.analysis.decl;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
+import :semantic.analysis.decl;
+import :semantic.analysis.expr.constant;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
@@ -53,19 +54,19 @@ auto DeclarationResolver::resolve_module_constant(
         }
         declared_type = *resolved;
     }
-    const auto environment = constant_environment(symbol.module_id, syntax);
-    auto proof = prove_constant_expression(
+    auto scope = ConstantScope {*this, symbol.module_id, syntax};
+    auto result = evaluate_constant_expression(
         draft,
         symbol.module_id,
         syntax,
-        environment,
+        scope,
         declaration.initializer,
         declared_type
     );
-    if (!proof.has_value()) {
-        return std::unexpected(proof.error());
+    if (!result.has_value()) {
+        return std::unexpected(result.error());
     }
-    if (!proof->has_value()) {
+    if (!std::holds_alternative<ConstantID>(*result)) {
         return std::unexpected(fail(
             draft,
             symbol.module_id,
@@ -74,7 +75,7 @@ auto DeclarationResolver::resolve_module_constant(
             "constant initializer is not a supported compile-time value"
         ));
     }
-    auto fact = std::move(**proof);
+    auto fact = draft.constant_copy(std::get<ConstantID>(*result));
     const auto selected = declared_type.value_or(ConstructionTypeRef {fact.type});
     auto value_type = require_source_value_type(
         draft,
@@ -101,12 +102,11 @@ auto DeclarationResolver::resolve_module_constant(
     if (form.constant.index() >= module_constants.size()) {
         invariant_violation("module constant identity is outside its reserved table");
     }
-    module_constants[form.constant.index()] = ConstructionModuleConstantDeclaration {
+    module_constants[form.constant.index()] = ModuleConstantDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
         .origin = declaration_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
-        .type = *value_type,
         .value = draft.intern_constant(std::move(fact)),
     };
     return {};
@@ -116,7 +116,7 @@ auto DeclarationResolver::resolve_constant_name(
     ProgramModuleID module_id,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<ConstantNamedValue> {
+) noexcept -> AnalysisResult<ResolvedConstantName> {
     auto selected = select_symbol(module_id, name, origin);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
@@ -130,12 +130,12 @@ auto DeclarationResolver::resolve_constant_name(
         if (!declaration.has_value()) {
             invariant_violation("resolved module constant has no declaration fact");
         }
-        return ConstantNamedValue {
-            .type = declaration->type,
+        return ResolvedConstantName {
+            .type = draft.constant_copy(declaration->value).type,
             .constant = declaration->value,
         };
     }
-    return ConstantNamedValue {
+    return ResolvedConstantName {
         .type = draft.intern_builtin_type(BuiltinType::Void),
         .constant = std::nullopt,
     };
@@ -175,7 +175,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
     TypeID type,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<ConstantEnumCase> {
+) noexcept -> AnalysisResult<ResolvedEnumCase> {
     const auto canonical = draft.type_copy(type);
     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
     if (nominal == nullptr) {
@@ -207,7 +207,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
         if (!declaration.has_value()) {
             invariant_violation("resolved enum case has no declaration fact");
         }
-        return ConstantEnumCase {
+        return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration->owner,
             .payload_types = declaration->payload_types,

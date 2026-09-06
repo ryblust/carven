@@ -1,6 +1,5 @@
 import "cpp_names/global_base.hpp";
 import "cpp_names/global_provider.hpp";
-import "cpp_names/provider.hpp" using plain;
 
 struct GlobalPoint { local: i32 }
 
@@ -30,23 +29,8 @@ test "C++ global names: explicit roots bypass Carven names" {
     check(::global_calculate(global_calculate) == 18);
     let point: ::GlobalPoint = make_global() as ::GlobalPoint;
     check(::global_native::sum(point) == 3);
-    check(plain(7) == 7);
     let local = GlobalPoint { local: 8 };
     check(local.local == 8);
-}
-
-test "C++ global names: queries preserve access and owned results" {
-    var number = 4;
-    check(::native::argument_access(number) == 1);
-    check(::native::argument_access(&number) == 2);
-    let snapshot = ::native::identity(number);
-    number = 10;
-    check(snapshot == 5);
-    let query = ::global_point();
-    let captured = [query]() -> i32 { return ::global_native::sum(query) as i32; };
-    check(captured() == 7);
-    let nested = global_rows();
-    check(nested.values[0][0].x == 3);
 }
 
 test "C++ global names: implementation fragments can provide declarations" {

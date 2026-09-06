@@ -69,14 +69,6 @@ auto target_lowering_item(TargetItemValue value) noexcept -> TargetItem {
     };
 }
 
-auto TargetUnitBuilder::copy_type(TargetTypeID id) const noexcept -> TargetType {
-    const auto identity = require_identity();
-    if (id.owner() != identity || id.index() >= types.size()) {
-        invariant_violation("target unit type lookup used a foreign or invalid identity");
-    }
-    return types[id.index()];
-}
-
 auto TargetUnitBuilder::finish(
     TargetUnitSections sections,
     TargetDirectiveInputs directives

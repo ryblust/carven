@@ -53,3 +53,16 @@ test "C++ owners: copies moves and destruction preserve lifetime" {
     }
     check(live() == 0);
 }
+
+test "C++ calls: selections and callable values preserve their call forms" {
+    reset();
+    check((::native::receiver().invoke)(record(2)) == 2);
+    check(observed() == 12);
+    let object = ::native::Receiver {};
+    check((object.invoke)(3, 4) == 7);
+    check(object.callback(5) == 5);
+    var callback = ::native::callable();
+    callback.offset = 1;
+    check(callback(6) == 7);
+    check((::native::argument_access)(7) == 1);
+}

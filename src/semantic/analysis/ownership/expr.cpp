@@ -5,9 +5,10 @@ import std;
 
 namespace ownership {
 
-auto BodyAnalyzer::place(const SemIRExpression& source, State state, bool read) noexcept -> Flow {
+auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool read) noexcept
+    -> Flow {
     auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
-    if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value)) {
+    if (const auto* foreign = std::get_if<SemCpp>(&source.value)) {
         result = place(foreign->operands.front().expression, std::move(*result.normal));
         for (const auto& operand : std::span(foreign->operands).subspan(1)) {
             if (!result.normal.has_value()) {
@@ -20,9 +21,9 @@ auto BodyAnalyzer::place(const SemIRExpression& source, State state, bool read) 
             result.normal = std::move(next.normal);
             append_exits(result, next);
         }
-    } else if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
+    } else if (const auto* field = std::get_if<SemField>(&source.value)) {
         result = place(*field->source, std::move(*result.normal));
-    } else if (const auto* index = std::get_if<SemIndex<TypeID, FailureSetID>>(&source.value)) {
+    } else if (const auto* index = std::get_if<SemIndex>(&source.value)) {
         result = place(*index->source, std::move(*result.normal));
         if (result.normal.has_value()) {
             const auto previous = accesses.size();
@@ -58,10 +59,10 @@ auto BodyAnalyzer::place(const SemIRExpression& source, State state, bool read) 
     }
     return result;
 }
-auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool direct) noexcept
+auto BodyAnalyzer::expression(const SemanticExpression& source, State state, bool direct) noexcept
     -> Flow {
     auto flow = Flow {.normal = std::move(state), .value = {}, .exits = {}};
-    const auto evaluate = [&](const SemIRExpression& child,
+    const auto evaluate = [&](const SemanticExpression& child,
                               bool argument = false) noexcept -> Relationships {
         if (!flow.normal.has_value()) {
             return {};
@@ -71,12 +72,12 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
         append_exits(flow, next);
         return std::move(next.value);
     };
-    const auto aggregate = [&](const SemIRExpression& child,
+    const auto aggregate = [&](const SemanticExpression& child,
                                const ProjectionPath& path = {}) noexcept {
         merge_relationships(flow.value, nested(evaluate(child), path));
     };
     const auto callable_for = [&](TypeID type) noexcept -> std::optional<CallableID> {
-        const auto value = draft.type_copy(type).value;
+        const auto value = draft.types().type(type).value;
         if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
             return closure->callable;
         }
@@ -88,9 +89,43 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
     if (source.category == SemanticValueCategory::Place) {
         flow = place(source, std::move(*flow.normal));
     } else {
+        const auto external = [&](const auto& value) noexcept {
+            if (analysis.contents(source.type.resolved()).callable_view) {
+                diagnose(
+                    DiagnosticCode::TypeCallableViewEscape,
+                    "an undeclared C++ contract cannot establish a Carven callable borrow",
+                    source.origin
+                );
+            }
+            const auto previous = accesses.size();
+            visit_cpp_operands(
+                value,
+                [&](AccessMode access, const SemanticExpression& operand) noexcept {
+                    const auto relationships = evaluate(operand, true);
+                    if (!flow.normal.has_value()) {
+                        return;
+                    }
+                    if (!relationships.loans.empty() || !relationships.captures.empty()) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "tracked borrows cannot cross an undeclared C++ contract",
+                            source.origin
+                        );
+                    }
+                    if (access != AccessMode::Take) {
+                        if (const auto target = location(operand)) {
+                            if (access == AccessMode::Write) {
+                                write_access(*target, operand.origin);
+                            }
+                            accesses.push_back({*target, false});
+                        }
+                    }
+                }
+            );
+            accesses.resize(previous);
+        };
         std::visit(
             Overloaded {
-                [](const SemLiteral&) static noexcept {},
                 [](const SemConstant&) static noexcept {},
                 [&](const SemBinding&) noexcept { flow = place(source, std::move(*flow.normal)); },
                 [&](const SemCallable& value) noexcept {
@@ -99,37 +134,30 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                     );
                 },
                 [](const SemEnumConstructor&) static noexcept {},
-                [&](const SemSequence<TypeID, FailureSetID>& value) noexcept {
-                    for (const auto& child : value.expressions) {
-                        flow.value = evaluate(child);
-                    }
-                },
-                [&](const SemArray<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemArray& value) noexcept {
                     for (const auto [index, child] : std::views::enumerate(value.elements)) {
                         aggregate(child, ProjectionPath {index});
                     }
                 },
-                [&](const SemStruct<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemStruct& value) noexcept {
                     for (const auto& field : value.fields) {
                         aggregate(field.value, ProjectionPath {field.declaration_index});
                     }
                 },
-                [&](const SemEnumCase<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemEnumCase& value) noexcept {
                     for (const auto [index, child] : std::views::enumerate(value.payload)) {
                         aggregate(child, ProjectionPath {index});
                     }
                 },
-                [&](const SemUnary<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemUnary& value) noexcept {
                     static_cast<void>(evaluate(*value.operand));
                 },
-                [&](const SemBinary<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemBinary& value) noexcept {
                     static_cast<void>(evaluate(*value.left));
                     static_cast<void>(evaluate(*value.right));
                 },
-                [&](const SemCast<TypeID, FailureSetID>& value) noexcept {
-                    aggregate(*value.operand);
-                },
-                [&](const SemShortCircuit<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemCast& value) noexcept { aggregate(*value.operand); },
+                [&](const SemShortCircuit& value) noexcept {
                     static_cast<void>(evaluate(*value.left));
                     if (!flow.normal.has_value()) {
                         return;
@@ -145,20 +173,20 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                         join_normal(flow.normal, skipped);
                     }
                 },
-                [&](const SemField<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemField& value) noexcept {
                     flow.value =
                         project(evaluate(*value.source), ProjectionPath {value.field.field_index});
                 },
-                [&](const SemIndex<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemIndex& value) noexcept {
                     const auto relationships = evaluate(*value.source);
                     static_cast<void>(evaluate(*value.index));
                     flow.value =
                         project(relationships, ProjectionPath {constant_index(*value.index)});
                 },
-                [&](const SemTextIntrinsic<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemTextIntrinsic& value) noexcept {
                     static_cast<void>(evaluate(*value.source));
                 },
-                [&](const SemArrayAdopt<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemArrayAdopt& value) noexcept {
                     const auto original = evaluate(*value.source);
                     if (!flow.normal.has_value()) {
                         return;
@@ -166,7 +194,7 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                     const auto source_place = location(*value.source);
                     const auto backing = source_place.has_value()
                         ? *source_place
-                        : Place {temporaries.at(std::addressof(*value.source)), {}};
+                        : Place {temporary(*value.source), {}};
                     const auto adopt = [&](this const auto& self,
                                            TypeID from,
                                            TypeID to,
@@ -175,10 +203,10 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                             merge_relationships(flow.value, nested(project(original, path), path));
                             return;
                         }
-                        const auto target = draft.type_copy(to).value;
+                        const auto target = draft.types().type(to).value;
                         if (const auto* array = std::get_if<ArrayTypeValue>(&target)) {
                             const auto input =
-                                std::get<ArrayTypeValue>(draft.type_copy(from).value);
+                                std::get<ArrayTypeValue>(draft.types().type(from).value);
                             for (auto index = 0uz; index < array->extent; ++index) {
                                 auto element = path;
                                 element.push_back(index);
@@ -196,12 +224,12 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                              !source_place.has_value()}
                         );
                     };
-                    adopt(value.source->type, source.type, {});
+                    adopt(value.source->type.resolved(), source.type.resolved(), {});
                 },
-                [&](const SemBorrowCallable<TypeID, FailureSetID>& value) noexcept {
-                    if (std::holds_alternative<SemTake<TypeID, FailureSetID>>(value.source->value)
-                        && type_contents.contains_view(value.source->type)
-                        && value.source->type != source.type) {
+                [&](const SemBorrowCallable& value) noexcept {
+                    if (std::holds_alternative<SemTake>(value.source->value)
+                        && analysis.contents(value.source->type.resolved()).callable_view
+                        && value.source->type.resolved() != source.type.resolved()) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,
                             "taken callable storage cannot back a widened view",
@@ -225,20 +253,21 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                     } else {
                         const auto backing = source_place.has_value()
                             ? *source_place
-                            : Place {temporaries.at(std::addressof(*value.source)), {}};
+                            : Place {temporary(*value.source), {}};
                         flow.value = {
                             .loans =
                                 {{{},
                                   backing,
-                                  callable_for(value.source->type),
+                                  callable_for(value.source->type.resolved()),
                                   source.origin,
                                   !source_place.has_value()
-                                      && type_contents.contents(value.source->type).closure_owner}},
+                                      && analysis.contents(value.source->type.resolved())
+                                             .closure_owner}},
                             .captures = {}
                         };
                     }
                 },
-                [&](const SemTake<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemTake& value) noexcept {
                     flow = place(*value.place, std::move(*flow.normal));
                     if (!flow.normal.has_value()) {
                         return;
@@ -285,7 +314,7 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                     }
                     owner.relationships = {};
                 },
-                [&](const SemClosure<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemClosure& value) noexcept {
                     for (const auto [index, capture] : std::views::enumerate(value.captures)) {
                         if (!flow.normal.has_value()) {
                             break;
@@ -307,41 +336,11 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                         }
                     }
                 },
-                [&](const SemCpp<TypeID, FailureSetID>& value) noexcept {
-                    if (type_contents.contains_view(source.type)) {
-                        diagnose(
-                            DiagnosticCode::TypeCallableViewEscape,
-                            "an undeclared C++ contract cannot establish a Carven callable borrow",
-                            source.origin
-                        );
-                    }
+                [&](const SemCpp& value) noexcept { external(value); },
+                [&](const SemCppCall& value) noexcept { external(value); },
+                [&](const SemCall& value) noexcept {
                     const auto previous = accesses.size();
-                    for (const auto& operand : value.operands) {
-                        const auto relationships = evaluate(operand.expression, true);
-                        if (!flow.normal.has_value()) {
-                            break;
-                        }
-                        if (!relationships.loans.empty() || !relationships.captures.empty()) {
-                            diagnose(
-                                DiagnosticCode::TypeCallableViewEscape,
-                                "tracked borrows cannot cross an undeclared C++ contract",
-                                source.origin
-                            );
-                        }
-                        if (operand.access != AccessMode::Take) {
-                            if (const auto target = location(operand.expression)) {
-                                if (operand.access == AccessMode::Write) {
-                                    write_access(*target, operand.expression.origin);
-                                }
-                                accesses.push_back({*target, false});
-                            }
-                        }
-                    }
-                    accesses.resize(previous);
-                },
-                [&](const SemCall<TypeID, FailureSetID>& value) noexcept {
-                    const auto previous = accesses.size();
-                    const auto concrete = callable_for(value.callee->type);
+                    const auto concrete = callable_for(value.callee->type.resolved());
                     const auto selected = location(*value.callee);
                     auto callee = Relationships {};
                     if (concrete.has_value() && selected.has_value()) {
@@ -413,7 +412,9 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                                 } else {
                                     join_normal(invoked.normal, flow.normal);
                                     for (const auto type :
-                                         draft.failure_set_copy(value.callee_failures).members) {
+                                         draft.failure_sets()
+                                             .failure_set(value.callee_failures.resolved())
+                                             .members) {
                                         invoked.exits.push_back(
                                             {ExitKind::Failure, type, *flow.normal, {}}
                                         );
@@ -445,16 +446,16 @@ auto BodyAnalyzer::expression(const SemIRExpression& source, State state, bool d
                     }
                     accesses.resize(previous);
                 },
-                [&](const SemPropagate<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemPropagate& value) noexcept {
                     flow.value = evaluate(*value.operand, direct);
                 },
-                [&](const SemIf<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemIf& value) noexcept {
                     flow = conditional(value, std::move(*flow.normal));
                 },
-                [&](const SemMatch<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemMatch& value) noexcept {
                     flow = match(value, std::move(*flow.normal));
                 },
-                [&](const SemTry<TypeID, FailureSetID>& value) noexcept {
+                [&](const SemTry& value) noexcept {
                     flow = attempt(value, std::move(*flow.normal));
                 },
             },

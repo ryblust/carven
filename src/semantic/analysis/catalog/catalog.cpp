@@ -7,6 +7,7 @@ import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.catalog;
+import :semantic.analysis.program;
 import :semantic.visibility;
 import :source.cpp.identifier;
 import :support.invariant;

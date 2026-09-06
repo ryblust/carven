@@ -92,7 +92,7 @@ according to the [CLI](docs/cli.md) and
 
 - **Run examples:** [Learning examples](examples/README.md) and the
   [failure-contract series](examples/failures/README.md)
-- **Learn the language:** [Language](docs/language.md),
+- **Learn the language:** [Tutorial](docs/tutorial.md),
   [Grammar](docs/grammar.md), and [Semantics](docs/semantics.md)
 - **Use the compiler:** [CLI Reference](docs/cli.md) and
   [Toolchain and artifacts](docs/toolchain.md)

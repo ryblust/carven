@@ -15,8 +15,8 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -42,68 +42,20 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
     }
     auto pending_failures = take_pending(*operand);
     append_pending(pending_failures, take_pending(*index));
-    auto index_value = as_value(*index, ast.expression(source.index).span, AccessMode::Read);
+    auto index_value = consume_value(*index, ast.expression(source.index).span, AccessMode::Read);
     if (!index_value.has_value()) {
         return std::unexpected(index_value.error());
     }
-    if (is_cpp_type(operand->type)) {
-        const auto* concrete_index = std::get_if<TypeID>(&index->type);
-        if (concrete_index == nullptr) {
-            return std::unexpected(fail(
-                span,
-                DiagnosticCode::TypeMismatch,
-                "C++ indexing requires a concrete index type"
-            ));
-        }
-        const auto location = origin(span);
-        const auto type = draft().intern_type(
-            {.value = CppTypeValue {
-                 .form = CppDeducedType {
-                     .origin = location,
-                     .operation = CppIndexOperation {},
-                     .operands = {
-                         {.type = std::get<TypeID>(operand->type),
-                          .access = std::holds_alternative<PlaceHandle>(operand->storage)
-                              ? active_builder()
-                                    .place_access(std::get<PlaceHandle>(operand->storage))
-                              : AccessMode::Read},
-                         {.type = *concrete_index, .access = AccessMode::Read}
-                     }
-                 }
-             }}
-        );
-        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
-        operands.push_back(
-            {.access = AccessMode::Read, .expression = active_builder().take_value(*index_value)}
-        );
-        if (const auto* place = std::get_if<PlaceHandle>(&operand->storage)) {
-            return BuiltExpression {
-                .type = type,
-                .storage = active_builder().append_cpp_place(
-                    *place,
-                    type,
-                    CppIndexOperation {},
-                    std::move(operands),
-                    location
-                ),
-                .constant = std::nullopt,
-                .pending_failures = std::move(pending_failures),
-                .takeable = false
-            };
-        }
-        auto value = as_value(*operand, span, AccessMode::Read);
-        if (!value.has_value()) {
-            return std::unexpected(value.error());
-        }
-        operands.insert(
-            operands.begin(),
-            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
-        );
-        return cpp_expression(CppIndexOperation {}, std::move(operands), span, type);
+    if (is_cpp_type(operand->type())) {
+        auto operands = std::vector<SemCallArgument>();
+        operands.push_back({.access = AccessMode::Read, .expression = std::move(*index_value)});
+        operand->pending_failures = std::move(pending_failures);
+        operand->completes = operand->completes && index->completes;
+        return cpp_projection(std::move(*operand), CppIndexOperation {}, std::move(operands), span);
     }
     auto element = std::optional<ConstructionTypeRef>();
     auto extent = std::optional<std::uint64_t>();
-    if (const auto* concrete = std::get_if<TypeID>(&operand->type)) {
+    if (const auto* concrete = std::get_if<TypeID>(&operand->type())) {
         const auto canonical = draft().type_copy(*concrete);
         if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             element = array->element;
@@ -111,7 +63,7 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
         }
     } else {
         const auto construction =
-            draft().construction_type_copy(std::get<TypeTermID>(operand->type));
+            draft().construction_type_copy(std::get<TypeTermID>(operand->type()));
         if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
             element = array->element;
             extent = array->extent;
@@ -123,8 +75,8 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
         );
     }
     auto bounds = ArrayBoundsPolicy {RuntimeCheckedBounds {}};
-    if (index->constant.has_value()) {
-        const auto constant = draft().constant_copy(*index->constant);
+    if (index_value->constant.has_value()) {
+        const auto constant = draft().constant_copy(*index_value->constant);
         const auto* integer = std::get_if<IntegerConstant>(&constant.value);
         if (integer != nullptr) {
             if (integer->negative() || integer->magnitude() >= *extent) {
@@ -137,83 +89,54 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
             bounds = ProvenInBounds {};
         }
     }
-    if (const auto* place = std::get_if<PlaceHandle>(&operand->storage)) {
-        const auto result = active_builder().append_place(
-            *place,
+    if (auto* place = std::get_if<PlaceExpression>(&operand->storage)) {
+        auto result = active_builder().make_place(
+            place->root,
             *element,
-            expression_construction::IndexProjection {.index = *index_value, .bounds = bounds},
+            SemIndex {
+                UniqueIndirect(std::move(place->expression)),
+                UniqueIndirect(std::move(*index_value)),
+                bounds
+            },
             origin(span)
         );
         return BuiltExpression {
-            .type = *element,
-            .storage = result,
-            .constant = std::nullopt,
+            .storage = std::move(result),
+
             .pending_failures = std::move(pending_failures),
             .completes = operand->completes && index->completes,
         };
     }
     auto source_value =
-        as_value(*operand, ast.expression(source.operand_id).span, AccessMode::Read);
+        consume_value(*operand, ast.expression(source.operand_id).span, AccessMode::Read);
     if (!source_value.has_value()) {
         return std::unexpected(source_value.error());
     }
-    const auto result = active_builder().append_value(
+    auto result = active_builder().make_expression(
         *element,
         active_builder().lifetime(),
-        expression_construction::Project {
-            .source = *source_value,
-            .projection =
-                expression_construction::IndexProjection {
-                    .index = *index_value,
-                    .bounds = bounds,
-                },
-        },
-        origin(span)
+        origin(span),
+        SemIndex {
+            UniqueIndirect(std::move(*source_value)),
+            UniqueIndirect(std::move(*index_value)),
+            bounds
+        }
     );
     return BuiltExpression {
-        .type = *element,
-        .storage = result,
-        .constant = std::nullopt,
+        .storage = std::move(result),
+
         .pending_failures = std::move(pending_failures),
         .completes = operand->completes && index->completes,
     };
 }
 
-auto BodyElaborator::member_expression(const ASTMemberExpr& source, Span span) noexcept
-    -> AnalysisResult<BuiltExpression> {
-    if (source.op == ASTMemberOperator::Scope) {
-        auto enumeration = resolve_enum_qualifier(source.operand_id);
-        if (!enumeration.has_value()) {
-            return std::unexpected(enumeration.error());
-        }
-        if (!enumeration->has_value()) {
-            return std::unexpected(fail(
-                ast.expression(source.operand_id).span,
-                DiagnosticCode::TypeEnumContext,
-                "enum case qualifier does not name an enum type"
-            ));
-        }
-        return enum_case_reference(
-            **enumeration,
-            spelling(source.name_span),
-            span,
-            source.name_span
-        );
-    }
-    auto operand = expression(source.operand_id);
-    if (!operand.has_value()) {
-        return std::unexpected(operand.error());
-    }
-    return member_projection(source, span, std::move(*operand));
-}
-
-auto BodyElaborator::member_projection(
+auto BodyElaborator::select_member(
     const ASTMemberExpr& source,
     Span span,
     BuiltExpression operand
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisResult<SelectedExpression> {
     const auto name = spelling(source.name_span);
-    if (is_cpp_type(operand.type)) {
+    if (is_cpp_type(operand.type())) {
         if (!is_supported_cpp_identifier(name)) {
             return std::unexpected(fail(
                 source.name_span,
@@ -221,50 +144,13 @@ auto BodyElaborator::member_projection(
                 "external member cannot be represented as a C++ identifier"
             ));
         }
-        const auto location = origin(span);
-        const auto type = draft().intern_type(
-            {.value = CppTypeValue {
-                 .form = CppDeducedType {
-                     .origin = location,
-                     .operation = CppMemberOperation {.name = name},
-                     .operands = {
-                         {.type = std::get<TypeID>(operand.type),
-                          .access = std::holds_alternative<PlaceHandle>(operand.storage)
-                              ? active_builder()
-                                    .place_access(std::get<PlaceHandle>(operand.storage))
-                              : AccessMode::Read}
-                     }
-                 }
-             }}
-        );
-        if (const auto* place = std::get_if<PlaceHandle>(&operand.storage)) {
-            const auto result = active_builder().append_cpp_place(
-                *place,
-                type,
-                CppMemberOperation {.name = name},
-                {},
-                location
-            );
-            return BuiltExpression {
-                .type = type,
-                .storage = result,
-                .constant = std::nullopt,
-                .pending_failures = std::move(operand.pending_failures),
-                .takeable = false
-            };
-        }
-        auto value = as_value(operand, span, AccessMode::Read);
-        if (!value.has_value()) {
-            return std::unexpected(value.error());
-        }
-        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
-        operands.push_back(
-            {.access = AccessMode::Read, .expression = active_builder().take_value(*value)}
-        );
-        return cpp_expression(CppMemberOperation {.name = name}, std::move(operands), span, type);
+        return CppSelection {
+            .target = CppMemberSelection {.receiver = std::move(operand), .member = name},
+            .span = span
+        };
     }
     auto pending_failures = take_pending(operand);
-    if (const auto* concrete = std::get_if<TypeID>(&operand.type)) {
+    if (const auto* concrete = std::get_if<TypeID>(&operand.type())) {
         const auto canonical = draft().type_copy(*concrete);
         if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
             const auto declaration =
@@ -285,87 +171,40 @@ auto BodyElaborator::member_projection(
             }
             const auto index =
                 static_cast<std::uint32_t>(std::distance(declaration.fields.begin(), field));
-            if (const auto* place = std::get_if<PlaceHandle>(&operand.storage)) {
-                const auto result = active_builder().append_place(
-                    *place,
+            if (auto* place = std::get_if<PlaceExpression>(&operand.storage)) {
+                auto result = active_builder().make_place(
+                    place->root,
                     field->type,
-                    FieldProjection {.owner = structure->structure, .field_index = index},
+                    SemField {
+                        UniqueIndirect(std::move(place->expression)),
+                        FieldProjection {.owner = structure->structure, .field_index = index}
+                    },
                     origin(span)
                 );
                 return BuiltExpression {
-                    .type = field->type,
-                    .storage = result,
-                    .constant = std::nullopt,
+                    .storage = std::move(result),
+
                     .pending_failures = std::move(pending_failures),
                     .completes = operand.completes,
                 };
             }
             auto source_value =
-                as_value(operand, ast.expression(source.operand_id).span, AccessMode::Read);
+                consume_value(operand, ast.expression(source.operand_id).span, AccessMode::Read);
             if (!source_value.has_value()) {
                 return std::unexpected(source_value.error());
             }
-            const auto result = active_builder().append_value(
+            auto result = active_builder().make_expression(
                 field->type,
                 active_builder().lifetime(),
-                expression_construction::Project {
-                    .source = *source_value,
-                    .projection =
-                        FieldProjection {
-                            .owner = structure->structure,
-                            .field_index = index,
-                        },
-                },
-                origin(span)
+                origin(span),
+                SemField {
+                    UniqueIndirect(std::move(*source_value)),
+                    FieldProjection {.owner = structure->structure, .field_index = index}
+                }
             );
             return BuiltExpression {
-                .type = field->type,
-                .storage = result,
-                .constant = std::nullopt,
-                .pending_failures = std::move(pending_failures),
-                .completes = operand.completes,
-            };
-        }
-        if (canonical.value == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}) {
-            auto decision = decide_text_property(name);
-            if (!decision.has_value()) {
-                return std::unexpected(fail(
-                    source.name_span,
-                    decision.error().code,
-                    std::string(decision.error().message)
-                ));
-            }
-            const auto result_type = draft().intern_builtin_type(text_intrinsic_result(*decision));
-            auto folded =
-                fold_text_intrinsic_constant(draft(), *decision, operand.constant, result_type);
-            if (folded.has_value()) {
-                auto result = publish_constant(std::move(*folded), span);
-                result.pending_failures = std::move(pending_failures);
-                return result;
-            }
-            if (const auto diagnostic = constant_evaluation_diagnostic(folded.error())) {
-                return std::unexpected(
-                    fail(source.name_span, diagnostic->code, std::string(diagnostic->message))
-                );
-            }
-            auto source_value =
-                as_value(operand, ast.expression(source.operand_id).span, AccessMode::Read);
-            if (!source_value.has_value()) {
-                return std::unexpected(source_value.error());
-            }
-            const auto result = active_builder().append_value(
-                result_type,
-                active_builder().lifetime(),
-                expression_construction::TextOperation {
-                    .source = *source_value,
-                    .intrinsic = *decision
-                },
-                origin(span)
-            );
-            return BuiltExpression {
-                .type = result_type,
-                .storage = result,
-                .constant = std::nullopt,
+                .storage = std::move(result),
+
                 .pending_failures = std::move(pending_failures),
                 .completes = operand.completes,
             };
@@ -388,14 +227,8 @@ auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Sp
     if (!propagated.has_value()) {
         return std::unexpected(propagated.error());
     }
-    const auto type = operand->type;
-    auto result = make_built(
-        type,
-        SemPropagate<ConstructionTypeRef, FailureTermID> {
-            UniqueIndirect(take_built(*operand, span))
-        },
-        span
-    );
+    const auto type = operand->type();
+    auto result = make_built(type, SemPropagate {UniqueIndirect(take_built(*operand, span))}, span);
     result.completes = operand->completes;
     return result;
 }

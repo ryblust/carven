@@ -38,3 +38,12 @@ test "Mutation: Write access is nonexclusive and follows execution order" {
     ordered_writes(&value, &value);
     check(value == 2);
 }
+
+test "Bindings: initializer selects the outer binding before shadowing" {
+    let value = 7;
+    if true {
+        let value = value + 1;
+        check(value == 8);
+    }
+    check(value == 7);
+}

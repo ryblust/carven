@@ -6,24 +6,25 @@ import std;
 namespace ownership {
 
 auto BodyAnalyzer::check_contracts() noexcept -> void {
-    const auto root = [&](this const auto& self,
-                          const SemIRExpression& source) noexcept -> std::optional<LocalBindingID> {
+    const auto root =
+        [&](this const auto& self,
+            const SemanticExpression& source) noexcept -> std::optional<LocalBindingID> {
         if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
             return binding->binding;
         }
-        if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value);
+        if (const auto* foreign = std::get_if<SemCpp>(&source.value);
             foreign != nullptr && source.category == SemanticValueCategory::Place) {
             return self(foreign->operands.front().expression);
         }
-        if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
+        if (const auto* field = std::get_if<SemField>(&source.value)) {
             return self(*field->source);
         }
-        if (const auto* index = std::get_if<SemIndex<TypeID, FailureSetID>>(&source.value)) {
+        if (const auto* index = std::get_if<SemIndex>(&source.value)) {
             return self(*index->source);
         }
         return std::nullopt;
     };
-    const auto write = [&](const SemIRExpression& source) noexcept {
+    const auto write = [&](const SemanticExpression& source) noexcept {
         const auto id = root(source);
         if (!id.has_value() || !is_writable(*id)) {
             diagnose(
@@ -36,10 +37,10 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
     visit_semantic_nodes(
         body.region(),
         Overloaded {
-            [&](const SemIRExpression& source) noexcept {
+            [&](const SemanticExpression& source) noexcept {
                 std::visit(
                     Overloaded {
-                        [&](const SemTake<TypeID, FailureSetID>& value) noexcept {
+                        [&](const SemTake& value) noexcept {
                             const auto* binding = std::get_if<SemBinding>(&value.place->value);
                             if (binding == nullptr) {
                                 diagnose(
@@ -61,21 +62,34 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
                                 );
                             }
                         },
-                        [&](const SemCpp<TypeID, FailureSetID>& value) noexcept {
-                            for (const auto& operand : value.operands) {
-                                if (operand.access == AccessMode::Write) {
-                                    write(operand.expression);
+                        [&](const SemCpp& value) noexcept {
+                            visit_cpp_operands(
+                                value,
+                                [&](AccessMode access, const SemanticExpression& operand) noexcept {
+                                    if (access == AccessMode::Write) {
+                                        write(operand);
+                                    }
                                 }
-                            }
+                            );
                         },
-                        [&](const SemCall<TypeID, FailureSetID>& value) noexcept {
+                        [&](const SemCppCall& value) noexcept {
+                            visit_cpp_operands(
+                                value,
+                                [&](AccessMode access, const SemanticExpression& operand) noexcept {
+                                    if (access == AccessMode::Write) {
+                                        write(operand);
+                                    }
+                                }
+                            );
+                        },
+                        [&](const SemCall& value) noexcept {
                             for (const auto& argument : value.arguments) {
                                 if (argument.access == AccessMode::Write) {
                                     write(argument.expression);
                                 }
                             }
                         },
-                        [&](const SemClosure<TypeID, FailureSetID>& value) noexcept {
+                        [&](const SemClosure& value) noexcept {
                             for (const auto& capture : value.captures) {
                                 if (capture.mode == CaptureMode::Write) {
                                     write(capture.expression);
@@ -87,12 +101,10 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
                     source.value
                 );
             },
-            [&](const SemIRStatement& source) noexcept {
-                if (const auto* value =
-                        std::get_if<SemAssign<TypeID, FailureSetID>>(&source.value)) {
+            [&](const SemanticStatement& source) noexcept {
+                if (const auto* value = std::get_if<SemAssign>(&source.value)) {
                     write(value->target);
-                    if (const auto* take =
-                            std::get_if<SemTake<TypeID, FailureSetID>>(&value->value.value);
+                    if (const auto* take = std::get_if<SemTake>(&value->value.value);
                         take != nullptr && root(*take->place) == root(value->target)) {
                         diagnose(
                             DiagnosticCode::AccessOperationConflict,
@@ -101,10 +113,9 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
                         );
                     }
                 }
-                if (const auto* value = std::get_if<SemReturn<TypeID, FailureSetID>>(&source.value);
-                    value != nullptr
+                if (const auto* value = std::get_if<SemReturn>(&source.value); value != nullptr
                     && value->value.has_value()
-                    && type_contents.contains_view(value->value->type)) {
+                    && analysis.contents(value->value->type.resolved()).callable_view) {
                     diagnose(
                         DiagnosticCode::TypeCallableViewEscape,
                         "callable view cannot be returned",

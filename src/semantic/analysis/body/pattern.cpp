@@ -15,8 +15,8 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -54,8 +54,6 @@ auto BodyElaborator::build_pattern(
                     .pattern = add(WildcardPattern {}),
                     .bindings = {},
                     .irrefutable = true,
-                    .booleans = {},
-                    .enum_cases = {},
                 };
             },
             [&](const ASTLiteral& literal) noexcept -> AnalysisResult<BuiltPattern> {
@@ -70,18 +68,11 @@ auto BodyElaborator::build_pattern(
                                                : "pattern literal is incompatible with its subject"
                     ));
                 }
-                auto booleans = std::array {false, false};
-                if (const auto* boolean =
-                        std::get_if<BooleanConstant>(&normalized->constant.value)) {
-                    booleans[boolean->value ? 1uz : 0uz] = true;
-                }
-                const auto constant = draft().intern_constant(std::move(normalized->constant));
+                const auto constant = draft().intern_constant(std::move(*normalized));
                 return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
                     .irrefutable = false,
-                    .booleans = booleans,
-                    .enum_cases = {},
                 };
             },
             [&](const ASTNegativeNumberPattern& negative) noexcept -> AnalysisResult<BuiltPattern> {
@@ -111,13 +102,11 @@ auto BodyElaborator::build_pattern(
                                                : "negative pattern is incompatible with its subject"
                     ));
                 }
-                const auto constant = draft().intern_constant(std::move(normalized->constant));
+                const auto constant = draft().intern_constant(std::move(*normalized));
                 return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
                     .irrefutable = false,
-                    .booleans = {},
-                    .enum_cases = {},
                 };
             },
             [&](const ASTBindingPattern& binding) noexcept -> AnalysisResult<BuiltPattern> {
@@ -141,7 +130,6 @@ auto BodyElaborator::build_pattern(
                     const auto storage = body_builder.add_owner_binding(
                         draft().intern_spelling(name),
                         type,
-                        frames.back().scope,
                         frames.back().lifetime,
                         false,
                         origin(binding.name_span)
@@ -151,7 +139,6 @@ auto BodyElaborator::build_pattern(
                         LocalStorage {
                             .storage = storage,
                             .type = type,
-                            .writable_owner = false,
                             .unused_candidate = std::nullopt,
                         },
                         DiagnosticCode::MatchBindingMismatch
@@ -174,8 +161,6 @@ auto BodyElaborator::build_pattern(
                     .pattern = add(BindingPattern {.binding = found->second.storage.binding}),
                     .bindings = {found->second.storage.binding},
                     .irrefutable = true,
-                    .booleans = {},
-                    .enum_cases = {},
                 };
             },
             [&](const ASTConstraintPattern& constraint) noexcept -> AnalysisResult<BuiltPattern> {
@@ -194,8 +179,6 @@ auto BodyElaborator::build_pattern(
                     .pattern = add(ElaboratedTypeConstraintPattern {.type = *constrained}),
                     .bindings = {},
                     .irrefutable = true,
-                    .booleans = {},
-                    .enum_cases = {},
                 };
             },
             [&](const ASTCasePattern& case_pattern) noexcept -> AnalysisResult<BuiltPattern> {
@@ -236,7 +219,7 @@ auto BodyElaborator::build_pattern(
                         ));
                     }
                 }
-                const auto declaration = draft().construction_enum_declaration_copy(owner);
+                const auto declaration = draft().enum_declaration_copy(owner);
                 const auto case_name = spelling(case_pattern.name_span);
                 auto selected_id = std::optional<EnumCaseID>();
                 auto selected = std::optional<ConstructionEnumCaseDeclaration>();
@@ -294,8 +277,6 @@ auto BodyElaborator::build_pattern(
                         }),
                     .bindings = std::move(result_bindings),
                     .irrefutable = false,
-                    .booleans = {},
-                    .enum_cases = {*selected_id},
                 };
             },
             [&](const ASTOrPattern& or_pattern) noexcept -> AnalysisResult<BuiltPattern> {
@@ -306,8 +287,6 @@ auto BodyElaborator::build_pattern(
                 auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
                 auto result_bindings = std::vector<LocalBindingID>();
                 auto irrefutable = false;
-                auto booleans = std::array<bool, 2> {};
-                auto enum_cases = std::flat_set<EnumCaseID>();
                 for (auto index = 0uz; index < or_pattern.alternatives.size(); ++index) {
                     auto alternative_names = std::flat_set<std::string, std::less<>>();
                     auto alternative = build_pattern(
@@ -331,12 +310,6 @@ auto BodyElaborator::build_pattern(
                     }
                     alternatives.push_back(alternative->pattern);
                     irrefutable |= alternative->irrefutable;
-                    booleans[0] |= alternative->booleans[0];
-                    booleans[1] |= alternative->booleans[1];
-                    enum_cases.insert(
-                        alternative->enum_cases.begin(),
-                        alternative->enum_cases.end()
-                    );
                 }
                 for (const auto& name : *expected_names) {
                     if (!used_bindings.insert(name).second) {
@@ -355,8 +328,6 @@ auto BodyElaborator::build_pattern(
                     .pattern = add(OrPattern {.alternatives = std::move(alternatives)}),
                     .bindings = std::move(result_bindings),
                     .irrefutable = irrefutable,
-                    .booleans = booleans,
-                    .enum_cases = std::move(enum_cases),
                 };
             },
         },
@@ -397,7 +368,7 @@ auto BodyElaborator::build_match(
         return std::unexpected(consumed.error());
     }
     const auto selection_reachable = reachable;
-    const auto subject_type = subject->type;
+    const auto subject_type = subject->type();
     if (is_void_type(draft(), subject_type)) {
         return std::unexpected(fail(
             ast.expression(source.subject).span,
@@ -405,7 +376,7 @@ auto BodyElaborator::build_match(
             "void expression cannot be used as a value"
         ));
     }
-    const auto subject_is_place = std::holds_alternative<PlaceHandle>(subject->storage);
+    const auto subject_is_place = std::holds_alternative<PlaceExpression>(subject->storage);
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
     if (source.arms.empty()) {
         return std::unexpected(fail(span, DiagnosticCode::MatchNonExhaustive, "match has no arms"));
@@ -467,7 +438,12 @@ auto BodyElaborator::build_match(
             }
         );
     }
-    auto coverage = compute_pattern_coverage(draft(), body_builder, subject_type, coverage_arms);
+    auto coverage = compute_pattern_coverage(
+        draft(),
+        body_builder.pattern_table(),
+        subject_type,
+        coverage_arms
+    );
     if (!coverage.has_value()) {
         return std::unexpected(fail(
             span,
@@ -515,7 +491,7 @@ auto BodyElaborator::build_match(
         ));
     }
 
-    auto arms = std::vector<SemMatchArm<ConstructionTypeRef, FailureTermID>>();
+    auto arms = std::vector<SemMatchArm>();
     auto normal = false;
     auto remaining = selection_reachable;
     for (auto& plan : plans) {
@@ -524,7 +500,7 @@ auto BodyElaborator::build_match(
         frames.push_back(std::move(plan.frame));
         [[maybe_unused]] const auto suspended = FullExpressionSuspension(active_full_expression);
         reachable = true;
-        auto guard_tree = std::optional<DraftExpression>();
+        auto guard_tree = std::optional<SemanticExpression>();
         auto body_reachable = true;
         auto guard_may_reject = false;
         if (plan.source->guard.has_value()) {
@@ -536,19 +512,19 @@ auto BodyElaborator::build_match(
             if (value_form) {
                 collect_pending(pending, *guard);
             }
-            const auto known = known_boolean_constant(draft(), guard->constant);
+            const auto known = known_boolean_constant(draft(), guard->constant());
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 return std::unexpected(checked.error());
             }
-            guard_tree = take_built(*guard, ast.expression(id).span);
+            guard_tree = std::move(*checked);
             body_reachable = guard->completes && (!known.has_value() || *known);
             guard_may_reject = guard->completes && known != true;
         }
         if (plan.pattern.irrefutable && !guard_may_reject) {
             remaining = false;
         }
-        auto body = [&]() noexcept -> AnalysisResult<DraftRegion> {
+        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 ReferencePathGuard(reference_path_reachable, body_reachable);
             return build_arm(plan.source->body, value_form, result_type, pending);
@@ -569,11 +545,7 @@ auto BodyElaborator::build_match(
     reachable = normal;
     auto result = make_built(
         result_type.value_or(draft().intern_builtin_type(BuiltinType::Void)),
-        SemMatch<ConstructionTypeRef, FailureTermID> {
-            UniqueIndirect(std::move(subject_tree)),
-            subject_is_place,
-            std::move(arms)
-        },
+        SemMatch {UniqueIndirect(std::move(subject_tree)), subject_is_place, std::move(arms)},
         span,
         std::move(pending)
     );

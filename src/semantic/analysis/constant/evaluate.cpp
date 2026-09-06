@@ -3,6 +3,7 @@ module carven:semantic.analysis.constant.evaluate.impl;
 import :diagnostics.code;
 import :frontend.literal;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.program;
@@ -487,6 +488,9 @@ auto constant_value_equal(
                     }
                 }
                 return true;
+            } else if constexpr (std::same_as<Value, F32Constant>
+                                 || std::same_as<Value, F64Constant>) {
+                return left_value.value == right_value.value;
             } else {
                 return left_value == right_value;
             }
@@ -770,12 +774,11 @@ auto normalize_literal(
     const ASTLiteral& literal,
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign
-) noexcept -> std::expected<NormalizedLiteral, ConstantEvaluationFailure> {
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_expected_type(draft, expected);
     const auto negative = sign == LiteralSign::Negative;
     return std::visit(
-        [&](const auto& value) noexcept
-            -> std::expected<NormalizedLiteral, ConstantEvaluationFailure> {
+        [&](const auto& value) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, IntegerLiteralValue>) {
                 if (value.conversion == NumericConversion::OutOfRange) {
@@ -792,10 +795,7 @@ auto normalize_literal(
                         ConstantEvaluationFailure::IntegerLiteralNotRepresentable
                     );
                 }
-                return NormalizedLiteral {
-                    .literal = IntegerLiteral {.value = integer},
-                    .constant = ConstantFact {.type = type, .value = integer},
-                };
+                return ConstantFact {.type = type, .value = integer};
             } else if constexpr (std::same_as<Value, FloatingLiteralValue>) {
                 if (value.conversion == NumericConversion::OutOfRange) {
                     return std::unexpected(ConstantEvaluationFailure::FloatingLiteralOutOfRange);
@@ -813,44 +813,32 @@ auto normalize_literal(
                             ConstantEvaluationFailure::FloatingLiteralOutOfRange
                         );
                     }
-                    return NormalizedLiteral {
-                        .literal = F32Literal {.value = narrowed},
-                        .constant = ConstantFact {
-                            .type = type,
-                            .value = F32Constant {.value = narrowed},
-                        },
+                    return ConstantFact {
+                        .type = type,
+                        .value = F32Constant {.value = narrowed},
                     };
                 }
-                return NormalizedLiteral {
-                    .literal = F64Literal {.value = number},
-                    .constant = ConstantFact {
-                        .type = type,
-                        .value = F64Constant {.value = number},
-                    },
+                return ConstantFact {
+                    .type = type,
+                    .value = F64Constant {.value = number},
                 };
             } else if constexpr (std::same_as<Value, BooleanLiteralValue>) {
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
                 const auto type = draft.intern_builtin_type(BuiltinType::Bool);
-                return NormalizedLiteral {
-                    .literal = BooleanLiteral {.value = value.value},
-                    .constant = ConstantFact {
-                        .type = type,
-                        .value = BooleanConstant {.value = value.value},
-                    },
+                return ConstantFact {
+                    .type = type,
+                    .value = BooleanConstant {.value = value.value},
                 };
             } else if constexpr (std::same_as<Value, CharacterLiteralValue>) {
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
                 const auto type = draft.intern_builtin_type(BuiltinType::Char);
-                return NormalizedLiteral {
-                    .literal = CharacterLiteral {.scalar = value.scalar},
-                    .constant = ConstantFact {
-                        .type = type,
-                        .value = CharacterConstant {.scalar = value.scalar},
-                    },
+                return ConstantFact {
+                    .type = type,
+                    .value = CharacterConstant {.scalar = value.scalar},
                 };
             } else if constexpr (std::same_as<Value, StringLiteralValue>) {
                 if (negative) {
@@ -858,12 +846,9 @@ auto normalize_literal(
                 }
                 const auto spelling = draft.intern_spelling(value.bytes);
                 const auto type = draft.intern_builtin_type(BuiltinType::Str);
-                return NormalizedLiteral {
-                    .literal = StringLiteral {.bytes = spelling},
-                    .constant = ConstantFact {
-                        .type = type,
-                        .value = StringConstant {.value = spelling},
-                    },
+                return ConstantFact {
+                    .type = type,
+                    .value = StringConstant {.value = spelling},
                 };
             } else {
                 static_assert(std::same_as<Value, void>, "new literal form requires normalization");

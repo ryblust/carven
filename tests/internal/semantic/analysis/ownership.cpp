@@ -8,6 +8,7 @@ import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
+import :semantic.analysis.types.contents;
 import :semantic.analyze;
 import :semantic.semir.body;
 import :semantic.semir.constant;
@@ -16,6 +17,7 @@ import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.manager;
 import :source.module_path;
+import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
@@ -282,4 +284,12 @@ TEST_CASE("Semantic availability: consuming replacement fails without restoring 
         "fn invalid() { var x = 1; try { x = relay(&&x)?; } catch { Error(_) => { let read = x; }, } }\n"
     );
     CHECK(contains_code(diagnostics, DiagnosticCode::AccessUnavailable));
+}
+
+TEST_CASE("Type contents: type and declaration inputs belong to the same program") {
+    const auto program = analyze_program("");
+    const auto foreign = analyze_program("");
+    CHECK(expect_termination("type-contents-foreign-declarations", [&] noexcept {
+        static_cast<void>(compute_type_contents(program.types(), foreign.declarations()));
+    }));
 }

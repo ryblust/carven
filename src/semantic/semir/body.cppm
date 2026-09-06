@@ -16,43 +16,15 @@ enum class BodyKind {
     Test,
 };
 
-struct Scope final {
-    std::optional<ScopeID> parent;
-    ProgramOriginID origin;
-};
-
 enum class LifetimeRegionKind {
     Lexical,
     FullExpression,
-    Static,
 };
 
 struct LifetimeRegion final {
     std::optional<LifetimeRegionID> parent;
     LifetimeRegionKind kind;
     ProgramOriginID origin;
-};
-
-class ScopeTree final {
-public:
-    explicit ScopeTree(ImmutableBodyTable<Scope, ScopeID> rows) noexcept
-        : scope_rows(std::move(rows)) {}
-    ScopeTree(const ScopeTree&) = delete;
-    ScopeTree(ScopeTree&&) = default;
-    ~ScopeTree() = default;
-
-    auto operator=(const ScopeTree&) -> ScopeTree& = delete;
-    auto operator=(ScopeTree&&) -> ScopeTree& = default;
-
-    auto owner() const noexcept -> BodyIdentity { return scope_rows.owner(); }
-    auto contains(ScopeID id) const noexcept -> bool { return scope_rows.contains(id); }
-    auto scope(ScopeID id) const noexcept -> const Scope& { return scope_rows.get(id); }
-    auto entries() const noexcept -> IDTableEntries<ScopeID, Scope, BodyIdentity> {
-        return scope_rows.entries();
-    }
-
-private:
-    ImmutableBodyTable<Scope, ScopeID> scope_rows;
 };
 
 class LifetimeRegionTree final {
@@ -71,25 +43,18 @@ public:
     auto region(LifetimeRegionID id) const noexcept -> const LifetimeRegion& {
         return region_rows.get(id);
     }
-    auto is_ancestor(LifetimeRegionID ancestor, LifetimeRegionID descendant) const noexcept
-        -> bool {
-        if (!contains(ancestor) || !contains(descendant)) {
+    auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool {
+        if (!contains(outer) || !contains(inner)) {
             invariant_violation("lifetime relation received a foreign region");
         }
-        auto current = std::optional {descendant};
+        auto current = std::optional {inner};
         while (current.has_value()) {
-            if (*current == ancestor) {
+            if (*current == outer) {
                 return true;
             }
             current = region(*current).parent;
         }
         return false;
-    }
-    auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool {
-        if (!contains(outer) || !contains(inner)) {
-            invariant_violation("lifetime relation received a foreign region");
-        }
-        return region(outer).kind == LifetimeRegionKind::Static || is_ancestor(outer, inner);
     }
     auto entries() const noexcept
         -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity> {
@@ -121,7 +86,6 @@ using BindingStorage =
 struct LocalBinding final {
     ProgramSpellingID name;
     TypeID type;
-    ScopeID scope;
     LifetimeRegionID lifetime;
     BindingStorage storage;
     ProgramOriginID origin;
@@ -130,7 +94,6 @@ struct LocalBinding final {
 struct ElaboratedLocalBinding final {
     ProgramSpellingID name;
     ConstructionTypeRef type;
-    ScopeID scope;
     LifetimeRegionID lifetime;
     BindingStorage storage;
     ProgramOriginID origin;
@@ -192,32 +155,6 @@ struct FieldProjection final {
     StructID owner;
     std::uint32_t field_index;
 };
-
-struct IntegerLiteral final {
-    IntegerConstant value;
-};
-struct F32Literal final {
-    float value;
-};
-struct F64Literal final {
-    double value;
-};
-struct BooleanLiteral final {
-    bool value;
-};
-struct CharacterLiteral final {
-    char32_t scalar;
-};
-struct StringLiteral final {
-    ProgramSpellingID bytes;
-};
-using LiteralValue = std::variant<
-    IntegerLiteral,
-    F32Literal,
-    F64Literal,
-    BooleanLiteral,
-    CharacterLiteral,
-    StringLiteral>;
 
 
 enum class CastKind {

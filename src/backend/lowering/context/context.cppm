@@ -15,6 +15,8 @@ import std;
 
 class ModuleLowering;
 
+enum class CppEnvironmentRequirement { Declarations, Using };
+
 class ArtifactLowering final {
 public:
     ArtifactLowering(const PlannedCompilation& compilation, TargetArtifactID artifact) noexcept;
@@ -30,7 +32,8 @@ public:
     auto artifact() const noexcept -> const TargetArtifactPlan&;
     auto target() noexcept -> TargetUnitBuilder&;
     auto module_context(ModuleID id) noexcept -> ModuleLowering;
-    auto require_cpp_environment(ModuleID provider, CppNameLookup lookup) noexcept -> void;
+    auto require_cpp_environment(ModuleID provider, CppEnvironmentRequirement requirement) noexcept
+        -> void;
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
 
 private:
@@ -41,7 +44,12 @@ private:
     TargetArtifactID artifact_id;
     TargetUnitBuilder target_builder;
     std::flat_set<TargetArtifactID> lowering_dependencies;
-    std::flat_map<ModuleID, CppNameLookup> cpp_environments;
+    std::flat_map<ModuleID, CppEnvironmentRequirement> cpp_environments;
+
+    auto materialize_cpp_environments(
+        TargetUnitSections& sections,
+        TargetDirectiveInputs& directives
+    ) noexcept -> void;
 
     friend class ModuleLowering;
 };
@@ -79,7 +87,7 @@ public:
     auto outcome_type(CallableSignatureID signature) noexcept -> TargetTypeID;
     auto lower_type(TypeID id) noexcept -> TargetTypeID;
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
-    auto cpp_type_query(const CppDeducedType& query) noexcept -> TargetTypeQuery;
+    auto cpp_type_query(const CppQueryType& query) noexcept -> TargetExpr;
     auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
     auto lower_signature_result(CallableSignatureID signature) noexcept -> TargetTypeID;
     auto is_void(TypeID id) const noexcept -> bool;
@@ -116,7 +124,8 @@ auto target_expressions(TargetExpr first, TargetExpr second, TargetExpr third) n
 auto member_expression(TargetExpr operand, TargetMemberName member) noexcept -> TargetExpr;
 auto scope_member_expression(TargetExpr operand, TargetMemberName member) noexcept -> TargetExpr;
 auto static_member_expression(TargetTypeID owner, TargetIdentifier member) noexcept -> TargetExpr;
-auto move_expression(TargetExpr operand) noexcept -> TargetExpr;
+auto transfer_expression(TargetExpr value) noexcept -> TargetExpr;
+
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto dereference_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto bool_expression(bool value) noexcept -> TargetExpr;

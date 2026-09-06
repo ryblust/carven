@@ -6,8 +6,7 @@ import std;
 
 namespace ownership {
 
-auto BodyAnalyzer::conditional(const SemIf<TypeID, FailureSetID>& value, State state) noexcept
-    -> Flow {
+auto BodyAnalyzer::conditional(const SemIf& value, State state) noexcept -> Flow {
     auto remaining = std::optional(std::move(state));
     auto result = Flow {};
     for (const auto& branch : value.branches) {
@@ -74,15 +73,9 @@ auto BodyAnalyzer::bind_pattern(
     );
 }
 auto BodyAnalyzer::irrefutable(PatternID pattern) const noexcept -> bool {
-    const auto arms = std::array {PatternCoverageArm {.alternatives = {pattern}, .guarded = false}};
-    const auto coverage = compute_pattern_coverage(draft, body, body.pattern(pattern).type, arms);
-    if (!coverage.has_value()) {
-        invariant_violation(coverage.error());
-    }
-    return coverage->exhaustive;
+    return facts.irrefutable_patterns.contains(pattern);
 }
-auto BodyAnalyzer::match(const SemMatch<TypeID, FailureSetID>& value, State state) noexcept
-    -> Flow {
+auto BodyAnalyzer::match(const SemMatch& value, State state) noexcept -> Flow {
     auto subject = value.subject_is_place ? place(*value.subject, std::move(state))
                                           : expression(*value.subject, std::move(state));
     auto result = Flow {};
@@ -129,8 +122,7 @@ auto BodyAnalyzer::match(const SemMatch<TypeID, FailureSetID>& value, State stat
     }
     return result;
 }
-auto BodyAnalyzer::attempt(const SemTry<TypeID, FailureSetID>& value, State state) noexcept
-    -> Flow {
+auto BodyAnalyzer::attempt(const SemTry& value, State state) noexcept -> Flow {
     auto protected_flow = region(*value.body, std::move(state));
     auto result = Flow {
         .normal = std::move(protected_flow.normal),
@@ -148,34 +140,17 @@ auto BodyAnalyzer::attempt(const SemTry<TypeID, FailureSetID>& value, State stat
     for (const auto& arm : value.arms) {
         auto rejected = std::vector<Exit>();
         for (auto& failure : pending) {
-            auto alternatives = std::vector<std::optional<PatternID>>();
-            for (const auto& alternative : arm.alternatives) {
-                if (!alternative.reachable) {
-                    continue;
-                }
-                if (const auto* typed =
-                        std::get_if<SemTypedCatchPattern<TypeID>>(&alternative.pattern)) {
-                    if (typed->type == failure.failure) {
-                        alternatives.push_back(typed->inner);
-                    }
-                } else {
-                    alternatives.push_back(std::nullopt);
-                }
-            }
-            if (alternatives.empty()) {
+            const auto& accepted_types = facts.catches.at(std::addressof(arm));
+            const auto found = accepted_types.find(*failure.failure);
+            if (found == accepted_types.end()) {
                 rejected.push_back(std::move(failure));
                 continue;
             }
-            const auto patterns =
-                std::array {PatternCoverageArm {.alternatives = alternatives, .guarded = false}};
-            const auto coverage = compute_pattern_coverage(draft, body, *failure.failure, patterns);
-            if (!coverage.has_value()) {
-                invariant_violation(coverage.error());
-            }
+            const auto& acceptance = found->second;
             auto remaining =
-                coverage->exhaustive ? std::optional<State>() : std::optional(failure.state);
+                acceptance.exhaustive ? std::optional<State>() : std::optional(failure.state);
             auto accepted = std::optional(std::move(failure.state));
-            for (const auto pattern : alternatives) {
+            for (const auto pattern : acceptance.alternatives) {
                 if (pattern.has_value()) {
                     bind_pattern(*accepted, *pattern, {});
                 }
@@ -210,7 +185,8 @@ auto BodyAnalyzer::attempt(const SemTry<TypeID, FailureSetID>& value, State stat
         }
         pending = std::move(rejected);
     }
-    const auto residual = draft.failure_set_copy(value.residual_failures).members;
+    const auto residual =
+        draft.failure_sets().failure_set(value.residual_failures.resolved()).members;
     for (auto& exit : pending) {
         if (std::ranges::contains(residual, *exit.failure)) {
             result.exits.push_back(std::move(exit));
@@ -218,7 +194,7 @@ auto BodyAnalyzer::attempt(const SemTry<TypeID, FailureSetID>& value, State stat
     }
     return result;
 }
-auto BodyAnalyzer::loop(const SemLoop<TypeID, FailureSetID>& value, State state) noexcept -> Flow {
+auto BodyAnalyzer::loop(const SemLoop& value, State state) noexcept -> Flow {
     auto result = region(*value.initializer, std::move(state), false);
     if (!result.normal.has_value()) {
         return result;
@@ -285,8 +261,7 @@ auto BodyAnalyzer::loop(const SemLoop<TypeID, FailureSetID>& value, State state)
     leave(result, value.initializer->lifetime);
     return result;
 }
-auto BodyAnalyzer::range(const SemRangeLoop<TypeID, FailureSetID>& value, State state) noexcept
-    -> Flow {
+auto BodyAnalyzer::range(const SemRangeLoop& value, State state) noexcept -> Flow {
     const auto source = location(value.begin);
     auto result = !value.end.has_value() && source.has_value()
         ? place(value.begin, std::move(state))

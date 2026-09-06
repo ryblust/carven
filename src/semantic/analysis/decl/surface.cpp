@@ -7,12 +7,13 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -111,15 +112,8 @@ public:
                 [&](const ClosureTypeValue& value) noexcept { validate_callable(value.callable); },
                 [](const CallableViewTypeValue&) static noexcept {},
                 [&](const CppTypeValue& value) noexcept {
-                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        for (const auto argument : named->arguments) {
-                            validate(ConstructionTypeRef {argument});
-                        }
-                    } else {
-                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
-                            const auto argument = operand.type;
-                            validate(ConstructionTypeRef {argument});
-                        }
+                    for (const auto argument : cpp_type_references(value)) {
+                        validate(ConstructionTypeRef {argument});
                     }
                 },
             },
@@ -299,7 +293,7 @@ auto validate_module_constant_surface(
     const ASTConstantDecl& source,
     std::optional<AnalysisFailure>& failure
 ) noexcept -> void {
-    const auto declaration = draft.construction_module_constant_declaration_copy(form.constant);
+    const auto declaration = draft.module_constant_declaration_copy(form.constant);
     auto validator = DeclarationSurfaceValidator(
         draft,
         catalog,
@@ -314,8 +308,6 @@ auto validate_module_constant_surface(
     );
     if (source.type.has_value()) {
         validator.validate_source(syntax, *source.type);
-    } else {
-        validator.validate(declaration.type);
     }
     validator.validate_constant(declaration.value);
 }

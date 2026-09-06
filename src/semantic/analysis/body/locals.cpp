@@ -16,7 +16,6 @@ auto BodyElaborator::push_frame(Span span) noexcept -> void {
     const auto parent_lifetime = active_full_expression.value_or(frames.back().lifetime);
     frames.push_back(
         LocalFrame {
-            .scope = body_builder.add_scope(frames.back().scope, frame_origin),
             .lifetime = body_builder.add_lifetime_region(
                 parent_lifetime,
                 LifetimeRegionKind::Lexical,
@@ -138,7 +137,6 @@ auto BodyElaborator::add_parameter(
     const auto storage = body_builder.add_parameter(
         draft().intern_spelling(name),
         contract.type,
-        frames.front().scope,
         frames.front().lifetime,
         contract.access,
         origin(target_span)
@@ -151,7 +149,6 @@ auto BodyElaborator::add_parameter(
         LocalStorage {
             .storage = storage,
             .type = contract.type,
-            .writable_owner = false,
             .takeable = contract.access == AccessMode::Take,
             .role = LocalRole::Parameter,
             .unused_candidate = std::nullopt,
@@ -169,7 +166,6 @@ auto BodyElaborator::add_capture(
     const auto storage = body_builder.add_capture(
         draft().intern_spelling(name),
         type,
-        frames.front().scope,
         frames.front().lifetime,
         mode,
         origin(name_span)
@@ -179,7 +175,6 @@ auto BodyElaborator::add_capture(
         LocalStorage {
             .storage = storage,
             .type = type,
-            .writable_owner = false,
             .takeable = false,
             .role = LocalRole::Capture,
             .unused_candidate = std::nullopt,

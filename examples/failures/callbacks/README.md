@@ -2,7 +2,7 @@
 
 An admission pipeline accepts a caller-selected policy. One policy checks that
 an amount is positive; another also imposes a captured limit. Both fit the same
-callable interface without erasing their possible failures into a string.
+callable interface, which lists their possible failure types.
 
 ```sh
 ./xmakew build example-policies
@@ -57,9 +57,8 @@ the local `policy` view to `throw InvalidAmount` while keeping the closure body.
 The closure's possible `LimitExceeded` cannot fit that view. Restore the wider
 contract before running the output checks.
 
-This is a synchronous borrowed callback. The program does not store it in a
-service, return it, or promise asynchronous lifetime management. Those concerns
-follow the [callable-view contract](../../../docs/semantics.md#signatures-and-views).
+The program invokes the borrowed callback synchronously while its closure
+owner remains in scope.
 
 Return to the [failure-contract series](../README.md), or examine the
 [native C++ adapter](../../interop/importing/) to see the separate native

@@ -10,6 +10,8 @@ import :frontend.program.parse;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.ownership;
+import :semantic.analysis.program;
+import :semantic.analysis.types.contents;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -91,17 +93,15 @@ auto minimal_body(
     ProgramDraft& program
 ) noexcept -> StructuredBodyDraft {
     auto body = BodyBuilder(std::move(reservation), program);
-    const auto scope = body.add_scope(std::nullopt, origin);
     const auto lifetime =
         body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
     return std::move(body).finish(
-        DraftRegion {
-            .scope = scope,
+        SemanticRegion {
             .lifetime = lifetime,
             .origin = origin,
             .statements = {},
             .result = std::nullopt,
-            .failures = program.add_empty_failure_term(),
+            .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
         }
     );
@@ -115,47 +115,46 @@ auto body_with_closure(
     ProgramDraft& program
 ) noexcept -> StructuredBodyDraft {
     auto body = BodyBuilder(std::move(reservation), program);
-    const auto scope = body.add_scope(std::nullopt, origin);
     const auto lifetime =
         body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
-    auto statements = std::vector<DraftStatement>();
+    auto statements = std::vector<SemanticStatement>();
     statements.push_back(
-        DraftStatement {
+        SemanticStatement {
             .origin = origin,
             .lifetime = lifetime,
-            .value = SemExpressionStatement<ConstructionTypeRef, FailureTermID> {
+            .value = SemExpressionStatement {
                 .expression = body.make_expression(
                     closure_type,
                     lifetime,
                     origin,
-                    SemClosure<ConstructionTypeRef, FailureTermID> {
-                        .callable = closure_callable,
-                        .captures = {}
-                    }
+                    SemClosure {.callable = closure_callable, .captures = {}}
                 ),
             },
         }
     );
     return std::move(body).finish(
-        DraftRegion {
-            .scope = scope,
+        SemanticRegion {
             .lifetime = lifetime,
             .origin = origin,
             .statements = std::move(statements),
             .result = std::nullopt,
-            .failures = program.add_empty_failure_term(),
+            .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
         }
     );
 }
 
 auto publish(std::vector<StructuredBodyDraft> bodies, ProgramDraft& builder) noexcept -> void {
-    auto resolved = std::vector<SemIRBody>();
     for (auto& body : bodies) {
-        resolved.push_back(resolve_body(std::move(body), builder));
+        builder.add_body_draft(std::move(body));
     }
-    REQUIRE(analyze_body_batch(resolved, builder).has_value());
-    builder.publish_bodies(std::move(resolved));
+    REQUIRE(builder.solve_construction().has_value());
+    REQUIRE(analyze_body_batch(
+                builder.bodies(),
+                builder,
+                compute_type_contents(builder.types(), builder.declarations())
+    )
+                .has_value());
 }
 
 auto publish(StructuredBodyDraft body, ProgramDraft& builder) noexcept -> void {
@@ -227,7 +226,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     );
     builder.define_declaration(
         enumeration,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
@@ -239,12 +238,11 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     );
     builder.define_declaration(
         module_constant,
-        ConstructionModuleConstantDeclaration {
+        ModuleConstantDeclaration {
             .module_id = module_id,
             .name = builder.intern_spelling("constant"),
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
-            .type = text_type,
             .value = constant,
         }
     );
@@ -302,7 +300,6 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     );
     auto test_graph = minimal_body(std::move(test_body), facts.origin, builder);
 
-    REQUIRE(builder.solve_construction().has_value());
     auto graphs = std::vector<StructuredBodyDraft>();
     graphs.push_back(std::move(closure_graph));
     graphs.push_back(std::move(function_graph));
@@ -597,7 +594,7 @@ TEST_CASE("SemIR publication invariant: enum owner and case list are bidirection
     );
     builder.define_declaration(
         enumeration,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
@@ -644,7 +641,7 @@ TEST_CASE("SemIR publication invariant: an enum case appears once in its owner l
     );
     builder.define_declaration(
         enumeration,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
             .origin = facts.origin,
@@ -743,7 +740,6 @@ TEST_CASE("SemIR publication invariant: a test has one owning module item") {
         }
     );
     auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-    REQUIRE(builder.solve_construction().has_value());
     publish(std::move(graph), builder);
     CHECK(expect_termination("semir-publication-duplicate-test-item", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -788,7 +784,6 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
     const auto body_id = reservation.id();
     builder.complete_callable(callable, ClosureBodyImplementation {.body = body_id});
     auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-    REQUIRE(builder.solve_construction().has_value());
     publish(std::move(graph), builder);
     CHECK(expect_termination("semir-publication-function-closure-body", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -818,7 +813,6 @@ TEST_CASE("SemIR publication invariant: a closure callable has one closure opera
     const auto body_id = reservation.id();
     builder.complete_callable(callable, ClosureBodyImplementation {.body = body_id});
     auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-    REQUIRE(builder.solve_construction().has_value());
     publish(std::move(graph), builder);
     CHECK(expect_termination("semir-publication-orphan-closure", [&] noexcept {
         static_cast<void>(std::move(builder).seal());

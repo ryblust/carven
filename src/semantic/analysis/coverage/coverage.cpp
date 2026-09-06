@@ -1,10 +1,9 @@
 module carven:semantic.analysis.coverage.impl;
 
-import :semantic.analysis.body.builder;
 import :semantic.analysis.coverage;
+import :semantic.analysis.program;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
-import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.visit;
@@ -137,15 +136,46 @@ auto defaults(const Matrix& source) noexcept -> Matrix {
     return result;
 }
 
+template<typename PatternTable>
 class CoverageAnalyzer final {
 public:
-    CoverageAnalyzer(const ProgramDraft& source, const BodyBuilder& body_source) noexcept
+    CoverageAnalyzer(const ProgramDraft& source, const PatternTable& patterns) noexcept
         : draft(source),
-          draft_body(std::addressof(body_source)) {}
+          patterns(patterns) {}
 
-    CoverageAnalyzer(const ProgramDraft& source, const SemIRBody& body_source) noexcept
-        : draft(source),
-          resolved_body(std::addressof(body_source)) {}
+    auto exhaustive(
+        ConstructionTypeRef subject_type,
+        std::span<const PatternCoverageArm> arms
+    ) noexcept -> std::expected<bool, std::string> {
+        if (!owned(subject_type)) {
+            return std::unexpected("coverage subject type belongs to another program");
+        }
+        auto matrix = Matrix();
+        for (const auto& arm : arms) {
+            if (arm.guarded) {
+                continue;
+            }
+            for (const auto alternative : arm.alternatives) {
+                if (!alternative.has_value()) {
+                    matrix.push_back(
+                        Row {CoveragePattern {.value = CoverageAny {.type = subject_type}}}
+                    );
+                    continue;
+                }
+                auto pattern = lower(*alternative, subject_type);
+                if (!pattern.has_value()) {
+                    return std::unexpected(pattern.error());
+                }
+                matrix.push_back(Row {std::move(*pattern)});
+            }
+        }
+        auto missing =
+            useful(matrix, Row {CoveragePattern {.value = CoverageAny {.type = subject_type}}});
+        if (!missing.has_value()) {
+            return std::unexpected(missing.error());
+        }
+        return !*missing;
+    }
 
     auto run(ConstructionTypeRef subject_type, std::span<const PatternCoverageArm> arms) noexcept
         -> std::expected<PatternCoverage, std::string> {
@@ -330,7 +360,7 @@ private:
                             "literal coverage constant belongs to another program"
                         );
                     }
-                    const auto fact = draft.constant_copy(value.constant);
+                    const auto fact = constant(value.constant);
                     if (ConstructionTypeRef {fact.type} != expected_type) {
                         return std::unexpected(
                             "literal coverage constant type differs from its subject"
@@ -352,7 +382,7 @@ private:
                     if (concrete == nullptr) {
                         return std::unexpected("case coverage subject is not concrete");
                     }
-                    const auto canonical = draft.type_copy(*concrete);
+                    const auto canonical = this->type(*concrete);
                     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
                     if (nominal == nullptr) {
                         return std::unexpected("case coverage subject is not an enum");
@@ -360,8 +390,7 @@ private:
                     if (value.enum_case.owner() != draft.identity()) {
                         return std::unexpected("coverage enum case belongs to another program");
                     }
-                    const auto member =
-                        draft.construction_enum_case_declaration_copy(value.enum_case);
+                    const auto member = enum_case(value.enum_case);
                     if (member.owner != nominal->enumeration
                         || member.payload_types.size() != value.payload.size()) {
                         return std::unexpected(
@@ -416,13 +445,11 @@ private:
         if (id.owner().program() != draft.identity()) {
             return std::unexpected("coverage pattern belongs to another semantic program");
         }
-        if (draft_body != nullptr) {
-            return lower_pattern(draft_body->pattern_copy(id), expected_type);
+        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
+            return lower_pattern(patterns.copy(id), expected_type);
+        } else {
+            return lower_pattern(patterns.get(id), expected_type);
         }
-        if (resolved_body == nullptr) {
-            return std::unexpected("coverage analyzer has no pattern authority");
-        }
-        return lower_pattern(resolved_body->pattern(id), expected_type);
     }
 
     auto constructors(ConstructionTypeRef type) noexcept
@@ -434,7 +461,7 @@ private:
         if (concrete == nullptr) {
             return std::optional<std::vector<CoveragePattern>>();
         }
-        const auto canonical = draft.type_copy(*concrete);
+        const auto canonical = this->type(*concrete);
         if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
             if (builtin->kind != BuiltinType::Bool) {
                 return std::optional<std::vector<CoveragePattern>>();
@@ -454,11 +481,11 @@ private:
         if (nominal == nullptr) {
             return std::optional<std::vector<CoveragePattern>>();
         }
-        const auto enumeration = draft.construction_enum_declaration_copy(nominal->enumeration);
+        const auto enumeration = this->enumeration(nominal->enumeration);
         auto result = std::vector<CoveragePattern>();
         result.reserve(enumeration.cases.size());
         for (const auto member_id : enumeration.cases) {
-            const auto member = draft.construction_enum_case_declaration_copy(member_id);
+            const auto member = enum_case(member_id);
             if (member.owner != nominal->enumeration) {
                 return std::unexpected("coverage enum case has the wrong owner");
             }
@@ -543,7 +570,7 @@ private:
         if (value == nullptr || value->payload.size() != payload.size()) {
             return std::unexpected("enum coverage constructor has the wrong witness arity");
         }
-        const auto enum_case = draft.construction_enum_case_declaration_copy(value->enum_case);
+        const auto enum_case = this->enum_case(value->enum_case);
         auto witness = std::format(".{}", draft.spelling_copy(enum_case.name));
         if (!payload.empty()) {
             witness += '(';
@@ -631,27 +658,54 @@ private:
         return std::move((*witness)->front());
     }
 
+    auto type(TypeID id) const noexcept -> CanonicalType {
+        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
+            return draft.type_copy(id);
+        } else {
+            return draft.types().type(id);
+        }
+    }
+    auto constant(ConstantID id) const noexcept -> ConstantFact {
+        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
+            return draft.constant_copy(id);
+        } else {
+            return draft.constants().constant(id);
+        }
+    }
+    auto enumeration(EnumID id) const noexcept {
+        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
+            return draft.enum_declaration_copy(id);
+        } else {
+            return draft.declarations().enumeration(id);
+        }
+    }
+    auto enum_case(EnumCaseID id) const noexcept {
+        if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
+            return draft.construction_enum_case_declaration_copy(id);
+        } else {
+            return draft.declarations().enum_case(id);
+        }
+    }
     const ProgramDraft& draft;
-    const BodyBuilder* draft_body = nullptr;
-    const SemIRBody* resolved_body = nullptr;
+    const PatternTable& patterns;
 };
 
 } // namespace
 
 auto compute_pattern_coverage(
     const ProgramDraft& draft,
-    const BodyBuilder& body,
+    const MutableBodyTable<ElaboratedPattern, PatternID>& patterns,
     ConstructionTypeRef subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
-    return CoverageAnalyzer(draft, body).run(subject_type, arms);
+    return CoverageAnalyzer(draft, patterns).run(subject_type, arms);
 }
 
-auto compute_pattern_coverage(
+auto patterns_exhaustive(
     const ProgramDraft& draft,
-    const SemIRBody& body,
+    const ImmutableBodyTable<Pattern, PatternID>& patterns,
     TypeID subject_type,
     std::span<const PatternCoverageArm> arms
-) noexcept -> std::expected<PatternCoverage, std::string> {
-    return CoverageAnalyzer(draft, body).run(ConstructionTypeRef {subject_type}, arms);
+) noexcept -> std::expected<bool, std::string> {
+    return CoverageAnalyzer(draft, patterns).exhaustive(subject_type, arms);
 }

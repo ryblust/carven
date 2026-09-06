@@ -15,8 +15,8 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -65,7 +65,7 @@ auto BodyElaborator::c_style_for_statement(
     }
     auto initializer = std::move(regions.back());
     regions.pop_back();
-    auto condition = std::optional<DraftExpression>();
+    auto condition = std::optional<SemanticExpression>();
     auto known = std::optional<bool>(true);
     if (header.condition.has_value()) {
         const auto id = *header.condition;
@@ -74,12 +74,12 @@ auto BodyElaborator::c_style_for_statement(
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
-        known = known_boolean_constant(draft(), value->constant);
+        known = known_boolean_constant(draft(), value->constant());
         auto checked = require_bool(*value, ast.expression(id).span);
         if (!checked.has_value()) {
             return std::unexpected(checked.error());
         }
-        condition = take_built(*value, ast.expression(id).span);
+        condition = std::move(*checked);
         end_full_expression(ast.expression(id).span);
     }
     const auto condition_reachable = reachable;
@@ -140,7 +140,7 @@ auto BodyElaborator::c_style_for_statement(
     pop_frame();
     reachable = condition_reachable && (known != true || has_break);
     append_statement(
-        SemLoop<ConstructionTypeRef, FailureTermID> {
+        SemLoop {
             UniqueIndirect(std::move(initializer)),
             std::move(condition),
             UniqueIndirect(std::move(body)),
@@ -157,7 +157,6 @@ auto BodyElaborator::range_for_statement(
     Span span
 ) noexcept -> AnalysisResult<void> {
     push_frame(source.header.span);
-    const auto loop_scope = frames.back().scope;
     const auto loop_lifetime = frames.back().lifetime;
     auto declared = std::optional<ConstructionTypeRef>();
     if (header.type.has_value()) {
@@ -167,8 +166,8 @@ auto BodyElaborator::range_for_statement(
         }
         declared = *resolved;
     }
-    auto begin = std::optional<DraftExpression>();
-    auto end = std::optional<DraftExpression>();
+    auto begin = std::optional<SemanticExpression>();
+    auto end = std::optional<SemanticExpression>();
     auto element_type = std::optional<ConstructionTypeRef>();
     if (const auto* range = std::get_if<ASTHalfOpenRange>(&header.iterable)) {
         if (header.write_marker.has_value()) {
@@ -182,7 +181,7 @@ auto BodyElaborator::range_for_statement(
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
-        const auto* type = std::get_if<TypeID>(&value->type);
+        const auto* type = std::get_if<TypeID>(&value->type());
         if (type == nullptr) {
             return std::unexpected(fail(
                 ast.expression(range->begin).span,
@@ -199,28 +198,29 @@ auto BodyElaborator::range_for_statement(
                 "integer range bounds must be integers"
             ));
         }
-        element_type = value->type;
-        auto checked = as_value(*value, ast.expression(range->begin).span, AccessMode::Read);
+        element_type = value->type();
+        auto checked = consume_value(*value, ast.expression(range->begin).span, AccessMode::Read);
         if (!checked.has_value()) {
             return std::unexpected(checked.error());
         }
-        begin = take_built(*value, ast.expression(range->begin).span);
+        begin = std::move(*checked);
         auto limit = expression(range->end, element_type);
         if (!limit.has_value()) {
             return std::unexpected(limit.error());
         }
-        if (!compatible(*element_type, limit->type)) {
+        if (!compatible(*element_type, limit->type())) {
             return std::unexpected(fail(
                 ast.expression(range->end).span,
                 DiagnosticCode::TypeRangeBounds,
                 "integer range bounds must have one compatible type"
             ));
         }
-        auto limit_checked = as_value(*limit, ast.expression(range->end).span, AccessMode::Read);
+        auto limit_checked =
+            consume_value(*limit, ast.expression(range->end).span, AccessMode::Read);
         if (!limit_checked.has_value()) {
             return std::unexpected(limit_checked.error());
         }
-        end = take_built(*limit, ast.expression(range->end).span);
+        end = std::move(*limit_checked);
     } else {
         const auto id = std::get<ASTExprID>(header.iterable);
         auto value = expression(id);
@@ -228,7 +228,7 @@ auto BodyElaborator::range_for_statement(
             return std::unexpected(value.error());
         }
         auto text = false;
-        if (const auto* type = std::get_if<TypeID>(&value->type)) {
+        if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
@@ -243,7 +243,7 @@ auto BodyElaborator::range_for_statement(
             }
         } else {
             const auto construction =
-                draft().construction_type_copy(std::get<TypeTermID>(value->type));
+                draft().construction_type_copy(std::get<TypeTermID>(value->type()));
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 element_type = array->element;
             }
@@ -263,13 +263,15 @@ auto BodyElaborator::range_for_statement(
                     "text range bindings are read-only"
                 ));
             }
-            const auto* place = std::get_if<PlaceHandle>(&value->storage);
+            const auto* place = std::get_if<PlaceExpression>(&value->storage);
             auto stable = false;
             for (const auto& frame : frames) {
                 for (const auto& [name, local] : frame.names) {
                     static_cast<void>(name);
                     if (const auto* bound = std::get_if<BoundStorage>(&local.storage)) {
-                        stable |= place != nullptr && bound->root_place == *place;
+                        stable |= place != nullptr
+                            && bound->binding == place->root
+                            && std::holds_alternative<SemBinding>(place->expression.value);
                     }
                 }
             }
@@ -281,12 +283,15 @@ auto BodyElaborator::range_for_statement(
                 ));
             }
         } else {
-            auto checked = as_value(*value, ast.expression(id).span, AccessMode::Read);
+            auto checked = consume_value(*value, ast.expression(id).span, AccessMode::Read);
             if (!checked.has_value()) {
                 return std::unexpected(checked.error());
             }
+            begin = std::move(*checked);
         }
-        begin = take_built(*value, ast.expression(id).span);
+        if (header.write_marker.has_value()) {
+            begin = take_built(*value, ast.expression(id).span);
+        }
     }
     if (declared.has_value() && !compatible(*declared, *element_type)) {
         return std::unexpected(fail(
@@ -303,7 +308,6 @@ auto BodyElaborator::range_for_statement(
         const auto storage = body_builder.add_owner_binding(
             draft().intern_spelling(spelling(named->name_span)),
             type,
-            frames.back().scope,
             frames.back().lifetime,
             header.write_marker.has_value(),
             origin(named->name_span)
@@ -314,7 +318,6 @@ auto BodyElaborator::range_for_statement(
             LocalStorage {
                 .storage = storage,
                 .type = type,
-                .writable_owner = header.write_marker.has_value(),
                 .takeable = false,
                 .role = header.write_marker.has_value() ? LocalRole::Local : LocalRole::RangeRead,
                 .unused_candidate = std::nullopt
@@ -343,8 +346,7 @@ auto BodyElaborator::range_for_statement(
     pop_frame();
     reachable = header_reachable;
     append_statement(
-        SemRangeLoop<ConstructionTypeRef, FailureTermID> {
-            loop_scope,
+        SemRangeLoop {
             loop_lifetime,
             header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
             binding,

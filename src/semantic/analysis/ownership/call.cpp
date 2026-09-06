@@ -1,20 +1,36 @@
 module carven:semantic.analysis.ownership.call.impl;
 
 import :semantic.analysis.ownership.context;
+import :semantic.analysis.program;
 import :semantic.analysis.validation;
 import std;
 
 namespace ownership {
 
-BatchAnalyzer::BatchAnalyzer(std::span<const SemIRBody> bodies, ProgramDraft& draft) noexcept
+BatchAnalyzer::BatchAnalyzer(
+    const BodyStore& bodies,
+    ProgramDraft& draft,
+    std::span<const TypeContents> types
+) noexcept
     : draft(draft),
-      bodies(bodies) {}
-auto BatchAnalyzer::body(BodyID id) const noexcept -> const SemIRBody& {
-    const auto found = std::ranges::find(bodies, id, &SemIRBody::id);
-    if (found == bodies.end()) {
-        invariant_violation("ownership call refers to an absent body");
+      bodies(bodies),
+      type_contents(types) {
+    for (const auto [id, body] : bodies.entries()) {
+        verify_semantic_body(body, draft, bodies);
+        body_facts.emplace(id, prepare_body_facts(body, draft, type_contents));
     }
-    return *found;
+}
+auto BatchAnalyzer::facts_for_body(BodyID id) const noexcept -> const BodyFacts& {
+    return body_facts.at(id);
+}
+auto BatchAnalyzer::contents(TypeID type) const noexcept -> TypeContents {
+    if (type.owner() != draft.identity() || type.index() >= type_contents.size()) {
+        invariant_violation("ownership type facts used an invalid type");
+    }
+    return type_contents[type.index()];
+}
+auto BatchAnalyzer::body(BodyID id) const noexcept -> const SemIRBody& {
+    return bodies.body(id);
 }
 auto BatchAnalyzer::diagnose(
     DiagnosticCode code,
@@ -43,11 +59,10 @@ auto BatchAnalyzer::query(CallInput input) noexcept -> std::vector<CallCompletio
 }
 auto BatchAnalyzer::root_input(const SemIRBody& source) const noexcept -> CallInput {
     auto result = CallInput {source.id(), {}, {}, {}, {}, {}};
-    auto contents = TypeContentsQuery(draft);
     const auto abstract_value =
         [&](this const auto& self, TypeID type, ProgramOriginID origin) noexcept -> Relationships {
         auto relationships = Relationships {};
-        const auto value = draft.type_copy(type).value;
+        const auto value = draft.types().type(type).value;
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
             relationships.loans.push_back({{}, std::nullopt, std::nullopt, origin, false});
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
@@ -75,7 +90,7 @@ auto BatchAnalyzer::root_input(const SemIRBody& source) const noexcept -> CallIn
                 }
             }
         } else if (const auto* array = std::get_if<ArrayTypeValue>(&value); array != nullptr
-                   && (contents.contains_view(type) || contents.contents(type).closure_owner)) {
+                   && (contents(type).callable_view || contents(type).closure_owner)) {
             relationships = nested(self(array->element, origin), ProjectionPath {std::nullopt});
         }
         return relationships;
@@ -115,8 +130,7 @@ auto BatchAnalyzer::root_input(const SemIRBody& source) const noexcept -> CallIn
     return result;
 }
 auto BatchAnalyzer::run() noexcept -> AnalysisResult<void> {
-    for (const auto& source : bodies) {
-        verify_semantic_body(source, draft, bodies);
+    for (const auto [id, source] : bodies.entries()) {
         auto input = root_input(source);
         BodyAnalyzer(*this, input, true).check_contracts();
         static_cast<void>(query(std::move(input)));
@@ -150,7 +164,8 @@ auto BatchAnalyzer::run() noexcept -> AnalysisResult<void> {
     return {};
 }
 auto BodyAnalyzer::run() noexcept -> std::vector<CallCompletion> {
-    auto state = State {.objects = std::vector<ObjectState>(objects.size())};
+    auto state =
+        State {.objects = std::vector<ObjectState>(input.objects.size() + facts.locals.size())};
     for (auto index = 0uz; index < input.objects.size(); ++index) {
         state.objects[index] = input.objects[index].state;
     }
@@ -220,8 +235,8 @@ auto BodyAnalyzer::run() noexcept -> std::vector<CallCompletion> {
         const auto callable = draft.callable_for_body(body.id());
         if (callable.has_value() && !body.region().result.has_value()) {
             const auto result_type =
-                draft.concrete_type(draft.construction_callable_contract_copy(*callable).result);
-            if (draft.type_copy(result_type).value
+                draft.callable_signatures().signature(draft.callable_signature(*callable)).result;
+            if (draft.types().type(result_type).value
                 != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
                 invariant_violation("normal callable exit did not deliver its result");
             }
@@ -248,9 +263,9 @@ auto BodyAnalyzer::call(
     const auto target_id = draft.body_for_callable(callable);
     if (!target_id.has_value()) {
         auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
-        const auto contract = draft.construction_callable_contract_copy(callable);
-        for (const auto type :
-             draft.failure_set_copy(draft.concrete_failure_set(contract.failures)).members) {
+        const auto contract =
+            draft.callable_signatures().signature(draft.callable_signature(callable));
+        for (const auto type : draft.failure_sets().failure_set(contract.failures).members) {
             result.exits.push_back({ExitKind::Failure, type, *result.normal, {}});
         }
         return result;
@@ -312,7 +327,7 @@ auto BodyAnalyzer::call(
         auto object_state = state.objects[source];
         object_state.relationships = map_facts(std::move(object_state.relationships));
         call_input.objects.push_back(
-            {objects[source].type, objects[source].origin, std::move(object_state)}
+            {object_type(source), object_origin(source), std::move(object_state)}
         );
     }
     for (const auto source : sources) {
@@ -362,7 +377,10 @@ auto BodyAnalyzer::call(
 
 } // namespace ownership
 
-auto analyze_body_batch(std::span<const SemIRBody> bodies, ProgramDraft& draft) noexcept
-    -> AnalysisResult<void> {
-    return ownership::BatchAnalyzer(bodies, draft).run();
+auto analyze_body_batch(
+    const BodyStore& bodies,
+    ProgramDraft& draft,
+    std::span<const TypeContents> types
+) noexcept -> AnalysisResult<void> {
+    return ownership::BatchAnalyzer(bodies, draft, types).run();
 }

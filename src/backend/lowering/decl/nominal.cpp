@@ -4,8 +4,8 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
+import :backend.lowering.decl;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -19,61 +19,6 @@ import :semantic.semir;
 import :support.invariant;
 import :support.visit;
 import std;
-
-namespace {
-
-auto owned_parameter_type(ModuleLowering& context, TypeID type) noexcept -> TargetTypeID {
-    return context.lower_type(type);
-}
-
-auto is_trivially_copyable_type(const ModuleLowering& context, TypeID type) noexcept -> bool;
-
-auto is_trivially_copyable_type(const ModuleLowering& context, TypeID type) noexcept -> bool {
-    const auto* builtin =
-        std::get_if<BuiltinTypeValue>(&context.semantic().types().type(type).value);
-    if (builtin != nullptr) {
-        switch (builtin->kind) {
-            case BuiltinType::Bool:
-            case BuiltinType::Char:
-            case BuiltinType::I8:
-            case BuiltinType::I16:
-            case BuiltinType::I32:
-            case BuiltinType::I64:
-            case BuiltinType::U8:
-            case BuiltinType::U16:
-            case BuiltinType::U32:
-            case BuiltinType::U64:
-            case BuiltinType::Isize:
-            case BuiltinType::Usize:
-            case BuiltinType::F32:
-            case BuiltinType::F64:   return true;
-            default:                 return false;
-        }
-    }
-    const auto& canonical = context.semantic().types().type(type).value;
-    if (const auto* structure = std::get_if<StructTypeValue>(&canonical)) {
-        const auto& declaration = context.semantic().declarations().structure(structure->structure);
-        return std::ranges::all_of(declaration.fields, [&context](const auto& field) {
-            return is_trivially_copyable_type(context, field.type);
-        });
-    }
-    if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical)) {
-        const auto& declaration =
-            context.semantic().declarations().enumeration(enumeration->enumeration);
-        return std::ranges::all_of(declaration.cases, [&context](const auto case_id) {
-            const auto& sum_case = context.semantic().declarations().enum_case(case_id);
-            return std::ranges::all_of(sum_case.payload_types, [&context](const auto payload_type) {
-                return is_trivially_copyable_type(context, payload_type);
-            });
-        });
-    }
-    if (const auto* array = std::get_if<ArrayTypeValue>(&canonical)) {
-        return is_trivially_copyable_type(context, array->element);
-    }
-    return false;
-}
-
-} // namespace
 
 namespace decl_lowering {
 
@@ -153,13 +98,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
     const auto& representation = context.payload_enum(id);
     const auto enum_name = context.names().enumeration_identifier(id);
     const auto enum_type = context.named_type(context.enumeration_name(id));
-    auto scalar_storage = true;
     auto cases = std::vector<LoweredCase>();
     for (const auto case_id : declaration.cases) {
         const auto& source = context.semantic().declarations().enum_case(case_id);
         auto payload = std::vector<TargetTypeID>();
         for (const auto type : source.payload_types) {
-            scalar_storage = scalar_storage && is_trivially_copyable_type(context, type);
             payload.push_back(context.lower_type(type));
         }
         cases.push_back({
@@ -177,7 +120,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
             parameters.push_back({
                 .name = TargetNameAllocator::enum_payload_field(index),
-                .type = owned_parameter_type(context, source.payload_types[index]),
+                .type = context.lower_type(source.payload_types[index]),
             });
         }
         public_members.push_back(
@@ -280,8 +223,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
     auto initializers = std::vector<TargetMemberInitializer>();
     initializers.push_back({
         .name = representation.storage_member,
-        .value = scalar_storage ? name_expression(representation.storage_member)
-                                : move_expression(name_expression(representation.storage_member)),
+        .value = transfer_expression(name_expression(representation.storage_member)),
     });
     private_members.push_back(
         TargetConstructorDecl {
@@ -370,13 +312,9 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             const auto name = TargetNameAllocator::enum_payload_field(index);
             parameters.push_back({
                 .name = name,
-                .type = owned_parameter_type(context, source.payload_types[index]),
+                .type = context.lower_type(source.payload_types[index]),
             });
-            if (is_trivially_copyable_type(context, source.payload_types[index])) {
-                arguments.push_back(name_expression(name));
-            } else {
-                arguments.push_back(move_expression(name_expression(name)));
-            }
+            arguments.push_back(transfer_expression(name_expression(name)));
         }
         auto record_arguments = std::move(arguments);
         auto result_arguments = std::vector<TargetExpr>();

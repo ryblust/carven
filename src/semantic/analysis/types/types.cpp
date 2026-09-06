@@ -2,8 +2,9 @@ module carven:semantic.analysis.types.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :semantic.analysis.names;
+import :semantic.analysis.program;
 import :semantic.analysis.types;
-import :source.cpp.identifier;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -114,34 +115,22 @@ auto resolve_named(
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
     if (named.global_root.has_value()
         || (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty())) {
-        const auto bindings = catalog.cpp_imports(module_id);
-        const auto admitted =
-            named.global_root.has_value()
-            || std::ranges::any_of(bindings, [&](const auto& binding) noexcept {
-                   return binding.opens_namespace || binding.components.back() == root;
-               });
-        if (admitted) {
-            for (const auto& binding : bindings) {
-                if (!named.global_root.has_value()
-                    && !binding.opens_namespace
-                    && binding.components.back() == root) {
-                    import_usage.record_cpp(module_id, binding.origin);
-                }
-            }
-            auto components = std::vector<Span>();
-            for (const auto& component : named.components) {
-                components.push_back(component.name_span);
-            }
-            auto name = resolve_cpp_name(
-                draft,
-                module_id,
-                catalog.find_module(module_id)->declaration,
-                named.global_root.has_value() ? CppNameLookup::Global : CppNameLookup::ModuleScope,
-                components
-            );
-            if (!name.has_value()) {
-                return std::unexpected(name.error());
-            }
+        auto components = std::vector<Span>();
+        for (const auto& component : named.components) {
+            components.push_back(component.name_span);
+        }
+        auto name = lookup_cpp_name(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            named.global_root.has_value() ? CppNameLookup::Global : CppNameLookup::ModuleScope,
+            components
+        );
+        if (!name.has_value()) {
+            return std::unexpected(name.error());
+        }
+        if (name->has_value()) {
             auto arguments = std::vector<TypeID>();
             for (const auto argument : named.arguments) {
                 auto resolved = resolve_source_type(
@@ -171,7 +160,7 @@ auto resolve_named(
             return ConstructionTypeRef {draft.intern_type(
                 {.value = CppTypeValue {
                      .form =
-                         CppNamedType {.name = std::move(*name), .arguments = std::move(arguments)}
+                         CppNamedType {.name = std::move(**name), .arguments = std::move(arguments)}
                  }}
             )};
         }
@@ -389,34 +378,6 @@ auto resolve_type_value(
 }
 
 } // namespace
-
-auto resolve_cpp_name(
-    const ProgramDraft& draft,
-    ProgramModuleID source_module,
-    ModuleID context_module,
-    CppNameLookup lookup,
-    std::span<const Span> components
-) noexcept -> AnalysisResult<CppNameReference> {
-    auto names = std::vector<std::string>();
-    for (const auto component : components) {
-        auto name = draft.source_slice_copy(source_module, component);
-        if (!is_supported_cpp_identifier(name)) {
-            return std::unexpected(fail(
-                draft,
-                source_module,
-                component,
-                DiagnosticCode::CppIdentifier,
-                "external name cannot be represented as a C++ identifier"
-            ));
-        }
-        names.push_back(std::move(name));
-    }
-    return CppNameReference {
-        .context_module = context_module,
-        .lookup = lookup,
-        .components = std::move(names)
-    };
-}
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode {
     switch (access.mode) {

@@ -3,6 +3,7 @@ module carven:semantic.analysis.ownership.context;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.ownership;
+import :semantic.analysis.program;
 import :semantic.analysis.types.contents;
 import :semantic.semir.traversal;
 import :support.invariant;
@@ -109,11 +110,29 @@ struct CallQuery final {
     CallInput input;
     std::vector<CallCompletion> answer;
 };
-struct StorageObject final {
+struct LocalObject final {
     TypeID type;
     ProgramOriginID origin;
-    std::optional<LifetimeRegionID> lifetime;
+    LifetimeRegionID lifetime;
 };
+
+struct CatchAcceptance final {
+    std::vector<std::optional<PatternID>> alternatives;
+    bool exhaustive;
+};
+struct BodyFacts final {
+    std::vector<LocalObject> locals;
+    std::flat_map<const SemanticExpression*, std::size_t> temporaries;
+    std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
+    std::flat_set<PatternID> irrefutable_patterns;
+    std::flat_map<const SemCatchArm*, std::flat_map<TypeID, CatchAcceptance>> catches;
+};
+
+auto prepare_body_facts(
+    const SemIRBody& body,
+    const ProgramDraft& draft,
+    std::span<const TypeContents> types
+) noexcept -> BodyFacts;
 
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
@@ -147,7 +166,7 @@ private:
     auto retain(
         State& state,
         const Relationships& relationships,
-        const SemIRExpression& source
+        const SemanticExpression& source
     ) const noexcept -> void;
     auto use(
         const Relationships& relationships,
@@ -163,26 +182,26 @@ private:
     ) noexcept -> void;
     auto references(const Relationships& relationships, const State& state) const noexcept
         -> std::vector<Capture>;
-    auto location(const SemIRExpression& source) const noexcept -> std::optional<Place>;
+    auto location(const SemanticExpression& source) const noexcept -> std::optional<Place>;
     auto binding_place(LocalBindingID binding) const noexcept -> Place;
     auto is_writable(LocalBindingID binding) const noexcept -> bool;
     auto write_access(const Place& target, ProgramOriginID origin) noexcept -> void;
     auto require_available(const State& state, const Place& place, ProgramOriginID origin) noexcept
         -> void;
-    auto constant_truth(const SemIRExpression& source) const noexcept -> std::optional<bool>;
-    auto constant_index(const SemIRExpression& source) const noexcept
+    auto constant_truth(const SemanticExpression& source) const noexcept -> std::optional<bool>;
+    auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
-    auto place(const SemIRExpression& source, State state, bool read = true) noexcept -> Flow;
-    auto expression(const SemIRExpression& source, State state, bool direct = false) noexcept
+    auto place(const SemanticExpression& source, State state, bool read = true) noexcept -> Flow;
+    auto expression(const SemanticExpression& source, State state, bool direct = false) noexcept
         -> Flow;
-    auto complete_expression(const SemIRExpression& source, State state) noexcept -> Flow;
-    auto region(const SemIRRegion& source, State state, bool release = true) noexcept -> Flow;
-    auto statement(const SemIRStatement& source, State state) noexcept -> Flow;
-    auto conditional(const SemIf<TypeID, FailureSetID>& value, State state) noexcept -> Flow;
-    auto match(const SemMatch<TypeID, FailureSetID>& value, State state) noexcept -> Flow;
-    auto attempt(const SemTry<TypeID, FailureSetID>& value, State state) noexcept -> Flow;
-    auto loop(const SemLoop<TypeID, FailureSetID>& value, State state) noexcept -> Flow;
-    auto range(const SemRangeLoop<TypeID, FailureSetID>& value, State state) noexcept -> Flow;
+    auto complete_expression(const SemanticExpression& source, State state) noexcept -> Flow;
+    auto region(const SemanticRegion& source, State state, bool release = true) noexcept -> Flow;
+    auto statement(const SemanticStatement& source, State state) noexcept -> Flow;
+    auto conditional(const SemIf& value, State state) noexcept -> Flow;
+    auto match(const SemMatch& value, State state) noexcept -> Flow;
+    auto attempt(const SemTry& value, State state) noexcept -> Flow;
+    auto loop(const SemLoop& value, State state) noexcept -> Flow;
+    auto range(const SemRangeLoop& value, State state) noexcept -> Flow;
     auto call(
         CallableID callable,
         const Relationships& captures,
@@ -193,16 +212,16 @@ private:
     auto bind_pattern(State& state, PatternID pattern, const Relationships& relationships) noexcept
         -> void;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
+    auto object_type(std::size_t object) const noexcept -> TypeID;
+    auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;
+    auto temporary(const SemanticExpression& expression) const noexcept -> std::size_t;
 
     BatchAnalyzer& analysis;
     const CallInput& input;
     const SemIRBody& body;
     ProgramDraft& draft;
-    TypeContentsQuery type_contents;
+    const BodyFacts& facts;
     bool diagnosing;
-    std::vector<StorageObject> objects;
-    std::flat_map<const SemIRExpression*, std::size_t> temporaries;
-    std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
     std::flat_map<LocalBindingID, Place> aliases;
     std::vector<Access> accesses;
     std::vector<TypeID> caught;
@@ -211,9 +230,15 @@ private:
 
 class BatchAnalyzer final {
 public:
-    BatchAnalyzer(std::span<const SemIRBody> bodies, ProgramDraft& draft) noexcept;
+    BatchAnalyzer(
+        const BodyStore& bodies,
+        ProgramDraft& draft,
+        std::span<const TypeContents> types
+    ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
     auto body(BodyID id) const noexcept -> const SemIRBody&;
+    auto facts_for_body(BodyID id) const noexcept -> const BodyFacts&;
+    auto contents(TypeID type) const noexcept -> TypeContents;
     auto query(CallInput input) noexcept -> std::vector<CallCompletion>;
     auto diagnose(
         DiagnosticCode code,
@@ -226,7 +251,9 @@ public:
 
 private:
     auto root_input(const SemIRBody& body) const noexcept -> CallInput;
-    std::span<const SemIRBody> bodies;
+    const BodyStore& bodies;
+    std::span<const TypeContents> type_contents;
+    std::flat_map<BodyID, BodyFacts> body_facts;
     std::vector<std::unique_ptr<CallQuery>> queries;
     std::optional<AnalysisFailure> failure;
 };

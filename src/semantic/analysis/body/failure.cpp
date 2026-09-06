@@ -15,8 +15,8 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -61,7 +61,7 @@ auto BodyElaborator::build_try(
     auto normal = reachable;
     pop_frame();
 
-    auto arms = std::vector<SemCatchArm<ConstructionTypeRef, FailureTermID>>();
+    auto arms = std::vector<SemCatchArm>();
     arms.reserve(source.arms.size());
     auto coverage_history = std::vector<CatchCoverageSourceArm>();
     auto coverage_types = std::flat_set<TypeID>();
@@ -71,16 +71,14 @@ auto BodyElaborator::build_try(
         push_frame(arm.span);
         auto bindings = std::flat_map<std::string, PatternBindingStorage, std::less<>>();
         auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
-        auto alternatives = std::vector<SemCatchAlternative<ConstructionTypeRef>>();
+        auto alternatives = std::vector<SemCatchAlternative>();
         auto coverage_alternatives = std::vector<CatchCoverageAlternative>();
         auto accepted_pieces = std::vector<FailureTermID>();
         auto catches_all = false;
         for (const auto& alternative : arm.pattern.alternatives) {
             auto alternative_names = std::flat_set<std::string, std::less<>>();
             auto semantic_pattern =
-                std::variant<CatchAllPattern, SemTypedCatchPattern<ConstructionTypeRef>> {
-                    CatchAllPattern {}
-            };
+                std::variant<CatchAllPattern, SemTypedCatchPattern> {CatchAllPattern {}};
             auto accepted_piece = incoming_failures;
             auto coverage_pattern = std::optional<PatternID>();
             auto coverage_source_pattern = std::optional<ASTPatternID>();
@@ -112,8 +110,8 @@ auto BodyElaborator::build_try(
                 coverage_source_pattern = typed->inner;
                 coverage_type = *concrete;
                 coverage_types.insert(*concrete);
-                semantic_pattern = SemTypedCatchPattern<ConstructionTypeRef> {
-                    .type = *failure_type,
+                semantic_pattern = SemTypedCatchPattern {
+                    .type = BodyType(*failure_type),
                     .inner = pattern->pattern,
                 };
                 accepted_piece =
@@ -132,7 +130,7 @@ auto BodyElaborator::build_try(
             }
             accepted_pieces.push_back(accepted_piece);
             alternatives.push_back(
-                SemCatchAlternative<ConstructionTypeRef> {
+                SemCatchAlternative {
                     .origin = origin(alternative.span),
                     .pattern = semantic_pattern,
                     .reachable = false,
@@ -213,8 +211,12 @@ auto BodyElaborator::build_try(
                 source_arms.push_back(arm_index);
                 source_alternatives.push_back(std::move(indices));
             }
-            auto coverage =
-                compute_pattern_coverage(draft(), body_builder, failure_type, coverage_arms);
+            auto coverage = compute_pattern_coverage(
+                draft(),
+                body_builder.pattern_table(),
+                failure_type,
+                coverage_arms
+            );
             if (!coverage.has_value()) {
                 return std::unexpected(fail(
                     arm.pattern.span,
@@ -299,7 +301,7 @@ auto BodyElaborator::build_try(
             : draft().add_residual_failure_term(incoming_failures, std::move(exhaustive_types));
         const auto arm_useful = std::ranges::any_of(
             alternatives,
-            [](const SemCatchAlternative<ConstructionTypeRef>& alternative) static noexcept {
+            [](const SemCatchAlternative& alternative) static noexcept {
                 return alternative.reachable;
             }
         );
@@ -322,7 +324,7 @@ auto BodyElaborator::build_try(
         failure_contexts.push_back(local_failure);
         catches.push_back({accepted, local_failure});
         auto arm_pending = PendingFailureTerms();
-        auto guard_tree = std::optional<DraftExpression>();
+        auto guard_tree = std::optional<SemanticExpression>();
         auto body_reachable = true;
         auto guard_may_reject = false;
         if (arm.guard.has_value()) {
@@ -334,16 +336,16 @@ auto BodyElaborator::build_try(
             if (value_form) {
                 collect_pending(arm_pending, *guard);
             }
-            const auto known = known_boolean_constant(draft(), guard->constant);
+            const auto known = known_boolean_constant(draft(), guard->constant());
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 return std::unexpected(checked.error());
             }
-            guard_tree = take_built(*guard, ast.expression(id).span);
+            guard_tree = std::move(*checked);
             body_reachable = guard->completes && (!known.has_value() || *known);
             guard_may_reject = guard->completes && known != true;
         }
-        auto body = [&]() noexcept -> AnalysisResult<DraftRegion> {
+        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 ReferencePathGuard(reference_path_reachable, body_reachable);
             return build_arm(arm.body, value_form, result_type, arm_pending);
@@ -361,7 +363,7 @@ auto BodyElaborator::build_try(
         failure_contexts.pop_back();
         arms.push_back(
             {origin(arm.span),
-             accepted,
+             BodyFailures(accepted),
              std::move(alternatives),
              std::move(produced_bindings),
              std::move(guard_tree),
@@ -385,10 +387,10 @@ auto BodyElaborator::build_try(
     reachable = normal;
     auto result = make_built(
         result_type.value_or(draft().intern_builtin_type(BuiltinType::Void)),
-        SemTry<ConstructionTypeRef, FailureTermID> {
+        SemTry {
             UniqueIndirect(std::move(*protected_body)),
-            protected_failures,
-            incoming_failures,
+            BodyFailures(protected_failures),
+            BodyFailures(incoming_failures),
             std::move(arms)
         },
         span,

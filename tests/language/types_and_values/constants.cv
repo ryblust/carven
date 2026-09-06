@@ -1,3 +1,5 @@
+import <cmath> using std::signbit;
+
 test "Constants: typed constants preserve their values" {
     const capacity: usize = 4usize;
     const minimum_i8: i8 = -128;
@@ -49,4 +51,42 @@ test "Constants: enum-to-integer constants use target representation" {
     check((runtime_positive as u8) == narrowed);
     check((runtime_negative as u8) == wrapped);
     check((runtime_negative as i32) == widened);
+}
+
+const contextual_sum: i8 = 120 + 7;
+const grouped_minimum: i32 = -(2147483648);
+const grouped_negative: f64 = -(1.0);
+const positive_zero: f64 = 0.0;
+const negative_zero: f64 = -0.0;
+enum FloatingPayload { Value(f64), }
+const zero_equal = positive_zero == negative_zero;
+const zero_payload_equal = FloatingPayload::Value(positive_zero) == .Value(negative_zero);
+
+test "Constants: contextual arithmetic and floating values preserve their language meaning" {
+    check(contextual_sum == 127i8);
+    check(grouped_minimum + 1 == -2147483647);
+    check(grouped_negative == -1.0);
+    check(zero_equal);
+    check(zero_payload_equal);
+    check(!signbit(positive_zero));
+    check(signbit(negative_zero));
+}
+
+enum KnownPayload {
+    Value(bool),
+}
+
+fn record_known_operand(&count: i32) -> bool {
+    ++count;
+    return true;
+}
+
+test "Constants: known operation results retain operand execution" {
+    var count = 0;
+    let value = KnownPayload::Value(record_known_operand(&count) && false);
+    check(value == KnownPayload::Value(false));
+    check(count == 1);
+    let result = (record_known_operand(&count) && false) == false;
+    check(result);
+    check(count == 2);
 }

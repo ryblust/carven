@@ -65,9 +65,14 @@ assertions establish the expected behavior. Compile-only success checks may use
 about the expected diagnostic or termination contract; arbitrary failure is not
 sufficient evidence.
 
-Each test establishes valid behavior, rejection of an invalid program, or an
-invariant of a representation. Place it at the boundary that owns the fact.
-Retain multiple tests only when they establish distinct contracts.
+Tests establish what must be correct and what must be rejected. This includes
+valid internal representations and rejection of malformed representations at
+their owning boundary.
+
+Give each rule one primary responsibility test. Different syntax entry points
+need separate cases only for distinct contracts. Do not add compatibility or
+historical regression tests. Delete a malformed-state test when the new
+representation cannot express that state.
 
 Language-behavior tests identify the owning semantic section through their
 case name or a focused comment. Cover acceptance, rejection, and relevant
@@ -85,10 +90,6 @@ Diagnostic tests compare identity, severity, and relevant source location.
 Presentation tests may check diagnostic transport or wording where that is
 their subject. Malformed compiler representations use the internal death-test
 harness and an explicit invariant scenario.
-
-Tests describe the current contract. When observed behavior has no corresponding
-rule, resolve the specification gap before treating that behavior as required.
-Examples supplement normative rules rather than replacing them.
 
 Runtime cost and compilation time are measured separately. The manual workload
 in `benchmarks/build_pulse.py` measures fresh build throughput, module scaling,

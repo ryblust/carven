@@ -2,8 +2,8 @@ module carven:backend.lowering.body.constant.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body;
 import :backend.lowering.body.lowerer;
+import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.target.builder;
 import :backend.target.expr;
@@ -112,18 +112,12 @@ auto typed_integer_expression(
             },
         },
     };
-    const auto* builtin =
-        std::get_if<BuiltinTypeValue>(&context.semantic().types().type(type).value);
-    if (builtin != nullptr
-        && (builtin->kind == BuiltinType::Isize || builtin->kind == BuiltinType::Usize)) {
-        return {
-            .value = TargetStaticCastExpr {
-                .type = context.lower_type(type),
-                .operand = target_child(std::move(result)),
-            },
-        };
-    }
-    return result;
+    return {
+        .value = TargetStaticCastExpr {
+            .type = context.lower_type(type),
+            .operand = target_child(std::move(result)),
+        },
+    };
 }
 
 auto enum_case_index(const SemIRProgram& semantic, EnumCaseID case_id) noexcept -> std::size_t {
@@ -206,48 +200,6 @@ auto constant_expression(ModuleLowering& context, ConstantID id) noexcept -> Tar
             },
         },
         fact.value
-    );
-}
-
-auto literal_expression(ModuleLowering& context, const LiteralValue& literal, TypeID type) noexcept
-    -> TargetExpr {
-    return std::visit(
-        Overloaded {
-            [&](const IntegerLiteral& value) noexcept {
-                return typed_integer_expression(context, value.value, type);
-            },
-            [](const F32Literal& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetLiteralExpr {
-                        .value = TargetFloatLiteral {.value = value.value},
-                    },
-                };
-            },
-            [](const F64Literal& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetLiteralExpr {
-                        .value = TargetFloatLiteral {.value = value.value},
-                    },
-                };
-            },
-            [](const BooleanLiteral& value) noexcept { return bool_expression(value.value); },
-            [](const CharacterLiteral& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetLiteralExpr {
-                        .value = TargetCharacterLiteral {
-                            .scalar = value.scalar,
-                        },
-                    },
-                };
-            },
-            [&](const StringLiteral& value) noexcept {
-                return string_expression(
-                    std::string(context.semantic().provenance().spelling(value.bytes)),
-                    TargetStringLiteralKind::StringView
-                );
-            },
-        },
-        literal
     );
 }
 

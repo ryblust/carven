@@ -5,86 +5,6 @@ import :backend.target.symbol;
 import :support.visit;
 import std;
 
-namespace {
-auto query_expression(const TargetTypeQuery& query) noexcept -> TargetExpr {
-    auto children = std::vector<TargetExpr>();
-    for (const auto& operand : query.operands) {
-        children.push_back(query_expression(operand));
-    }
-    return std::visit(
-        Overloaded {
-            [&](TargetTypeID type) noexcept -> TargetExpr {
-                return {
-                    .value = TargetCallExpr {
-                        .callee = UniqueIndirect(
-                            TargetExpr {
-                                .value =
-                                    TargetNameExpr {
-                                        .name = TargetName::globally_qualified(
-                                            {TargetIdentifier::from_spelling("std"),
-                                             TargetIdentifier::from_spelling("declval")}
-                                        )
-                                    }
-                            }
-                        ),
-                        .template_argument_type_ids = {type},
-                        .arguments = {}
-                    }
-                };
-            },
-            [&](const TargetName& name) noexcept -> TargetExpr {
-                return {.value = TargetNameExpr {.name = name}};
-            },
-            [&](const TargetQueryCall&) noexcept -> TargetExpr {
-                auto callee = std::move(children.front());
-                children.erase(children.begin());
-                return {
-                    .value = TargetCallExpr {
-                        .callee = UniqueIndirect(std::move(callee)),
-                        .template_argument_type_ids = {},
-                        .arguments = std::move(children)
-                    }
-                };
-            },
-            [&](const TargetQueryIndex&) noexcept -> TargetExpr {
-                return {
-                    .value = TargetIndexExpr {
-                        .operand = UniqueIndirect(std::move(children[0])),
-                        .index = UniqueIndirect(std::move(children[1]))
-                    }
-                };
-            },
-            [&](const TargetQueryMember& member) noexcept -> TargetExpr {
-                return {
-                    .value = TargetMemberExpr {
-                        .operand = UniqueIndirect(std::move(children[0])),
-                        .name = member.name
-                    }
-                };
-            },
-            [&](TargetPrefixOperator op) noexcept -> TargetExpr {
-                return {
-                    .value = TargetPrefixExpr {
-                        .op = op,
-                        .operand = UniqueIndirect(std::move(children[0]))
-                    }
-                };
-            },
-            [&](TargetBinaryOperator op) noexcept -> TargetExpr {
-                return {
-                    .value = TargetBinaryExpr {
-                        .left = UniqueIndirect(std::move(children[0])),
-                        .op = op,
-                        .right = UniqueIndirect(std::move(children[1]))
-                    }
-                };
-            },
-        },
-        query.operation
-    );
-}
-} // namespace
-
 auto TargetRenderer::render_type(TargetTypeID id) noexcept -> LayoutNodeID {
     return render_type_layouts(id).wrapping;
 }
@@ -94,10 +14,9 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayo
     auto rendered = std::visit(
         Overloaded {
             [&](const TargetDeducedType& deduced) noexcept -> SyntaxLayouts {
-                const auto expression = query_expression(deduced.query);
                 const auto result = concat(
                     {text("std::remove_cvref_t<decltype("),
-                     render_expression(expression),
+                     render_expression(deduced.expression()),
                      text(")>")}
                 );
                 return {.inline_qualified = result, .wrapping = result};

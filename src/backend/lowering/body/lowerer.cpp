@@ -37,8 +37,8 @@ BodyLowerer::BodyLowerer(
         names.reserve(inputs.captures[index].spelling());
         names.reserve(inputs.captures[index].spelling(), callable_scope);
     }
-    visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
-        const auto* take = std::get_if<SemTake<TypeID, FailureSetID>>(&expression.value);
+    visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+        const auto* take = std::get_if<SemTake>(&expression.value);
         if (take == nullptr) {
             return;
         }
@@ -62,25 +62,25 @@ BodyLowerer::BodyLowerer(
 
 auto BodyLowerer::finish() noexcept -> LoweredBody {
     auto statements = region(body.region(), {.use = ResultUse::Discard, .storage = std::nullopt});
-    mark_unused(statements);
+
     auto used_parameters = std::vector<bool>();
     for (const auto binding : parameter_bindings) {
         used_parameters.push_back(used_bindings.contains(binding));
     }
     return {
-        .statements = std::move(statements),
+        .statements = std::move(statements).finish(),
         .used_parameters = std::move(used_parameters),
         .uses_test_context = uses_test_context
     };
 }
 
-auto BodyLowerer::region(const SemIRRegion& source, ResultDestination result) noexcept
-    -> std::vector<TargetStmt> {
-    auto statements = std::vector<TargetStmt>();
+auto BodyLowerer::region(const SemanticRegion& source, ResultDestination result) noexcept
+    -> StatementSequence {
+    auto statements = StatementSequence();
     for (const auto& item : source.statements) {
         statement(item, statements);
     }
-    if (source.result.has_value() && falls_through(statements)) {
+    if (source.result.has_value() && statements.continues()) {
         result_expression(*source.result, std::move(result), statements);
     }
     return statements;

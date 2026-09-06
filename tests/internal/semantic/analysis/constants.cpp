@@ -52,10 +52,10 @@ TEST_CASE("Semantic constants: declarations publish values without executable bo
     CHECK(equality->value);
 }
 
-TEST_CASE("Semantic constants: discarded constants still require a proof") {
+TEST_CASE("Semantic constants: known results do not broaden static syntax") {
     const auto diagnostics = analyze_errors(
         "fn source() -> i32 { return 1; } "
-        "fn invalid() { const _ = source(); }"
+        "fn invalid() { const _ = (source() == 1) && false; }"
     );
     CHECK(contains_code(diagnostics, DiagnosticCode::ConstInitializer));
 }

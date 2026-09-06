@@ -11,6 +11,7 @@ import :frontend.ast.literal;
 import :frontend.literal;
 import :frontend.program.parse;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.program;
@@ -88,13 +89,13 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
 
     const auto default_integer = normalize_literal(compilation, integer_literal(42u));
     REQUIRE(default_integer.has_value());
-    CHECK_EQ(default_integer->constant.type, i32);
+    CHECK_EQ(default_integer->type, i32);
 
     const auto contextual =
         normalize_literal(compilation, integer_literal(42u), ConstructionTypeRef {i64});
     REQUIRE(contextual.has_value());
-    CHECK_EQ(contextual->constant.type, i64);
-    const auto contextual_value = std::get<IntegerConstant>(contextual->constant.value).as_signed();
+    CHECK_EQ(contextual->type, i64);
+    const auto contextual_value = std::get<IntegerConstant>(contextual->value).as_signed();
     REQUIRE(contextual_value.has_value());
     CHECK_EQ(*contextual_value, 42);
 
@@ -104,7 +105,7 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
         ConstructionTypeRef {i64}
     );
     REQUIRE(suffixed.has_value());
-    CHECK_EQ(suffixed->constant.type, i32);
+    CHECK_EQ(suffixed->type, i32);
 
     const auto signed_minimum = normalize_literal(
         compilation,
@@ -113,14 +114,9 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
         LiteralSign::Negative
     );
     REQUIRE(signed_minimum.has_value());
-    const auto minimum_constant =
-        std::get<IntegerConstant>(signed_minimum->constant.value).as_signed();
-    const auto minimum_literal =
-        std::get<IntegerLiteral>(signed_minimum->literal).value.as_signed();
+    const auto minimum_constant = std::get<IntegerConstant>(signed_minimum->value).as_signed();
     REQUIRE(minimum_constant.has_value());
-    REQUIRE(minimum_literal.has_value());
     CHECK_EQ(*minimum_constant, -128);
-    CHECK_EQ(*minimum_literal, -128);
 
     const auto positive_overflow =
         normalize_literal(compilation, integer_literal(128u, NumericSuffix::I8));
@@ -157,9 +153,8 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
         ConstructionTypeRef {f32}
     );
     REQUIRE(floating.has_value());
-    CHECK_EQ(floating->constant.type, f32);
-    CHECK_EQ(std::get<F32Constant>(floating->constant.value).value, 1.25f);
-    CHECK(std::holds_alternative<F32Literal>(floating->literal));
+    CHECK_EQ(floating->type, f32);
+    CHECK_EQ(std::get<F32Constant>(floating->value).value, 1.25f);
 
     const auto default_floating = normalize_literal(
         compilation,
@@ -174,8 +169,7 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
         }
     );
     REQUIRE(default_floating.has_value());
-    CHECK_EQ(default_floating->constant.type, f64);
-    CHECK(std::holds_alternative<F64Literal>(default_floating->literal));
+    CHECK_EQ(default_floating->type, f64);
 
     const auto floating_overflow = normalize_literal(
         compilation,
@@ -200,9 +194,9 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
         }
     );
     REQUIRE(string.has_value());
-    const auto spelling = std::get<StringConstant>(string->constant.value).value;
+    const auto spelling = std::get<StringConstant>(string->value).value;
     CHECK_EQ(compilation.spelling_copy(spelling), "hello");
-    CHECK_EQ(std::get<StringLiteral>(string->literal).bytes, spelling);
+    CHECK_EQ(std::get<StringConstant>(string->value).value, spelling);
 }
 
 TEST_CASE("Semantic constant evaluation: checked integer folds preserve diagnostic classes") {
@@ -295,7 +289,7 @@ TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canoni
         }
     );
     REQUIRE(string.has_value());
-    const auto string_id = compilation.intern_constant(string->constant);
+    const auto string_id = compilation.intern_constant(*string);
     const auto length =
         fold_text_intrinsic_constant(compilation, TextIntrinsic::Len, string_id, usize);
     REQUIRE(length.has_value());
@@ -306,12 +300,8 @@ TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canoni
         fold_text_intrinsic_constant(compilation, TextIntrinsic::IsEmpty, string_id, boolean);
     REQUIRE(empty.has_value());
     CHECK_FALSE(std::get<BooleanConstant>(empty->value).value);
-    const auto view = fold_text_intrinsic_constant(
-        compilation,
-        TextIntrinsic::Bytes,
-        string_id,
-        string->constant.type
-    );
+    const auto view =
+        fold_text_intrinsic_constant(compilation, TextIntrinsic::Bytes, string_id, string->type);
     REQUIRE_FALSE(view.has_value());
     CHECK_EQ(view.error(), ConstantEvaluationFailure::UnsupportedOperation);
 }
@@ -330,4 +320,24 @@ TEST_CASE("Semantic constant evaluation: operand facts retain program owner evid
             second_i32
         ));
     }));
+}
+
+TEST_CASE(
+    "Semantic constants: floating identity preserves signed zero while equality compares values"
+) {
+    auto fixture = EvaluationFixture();
+    auto& draft = fixture.compilation;
+    const auto check_zero = [&]<typename Floating>(BuiltinType builtin) noexcept {
+        const auto type = draft.intern_builtin_type(builtin);
+        const auto positive = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
+        const auto negative = ConstantFact {.type = type, .value = Floating {.value = -0.0}};
+        const auto positive_id = draft.intern_constant(positive);
+        const auto negative_id = draft.intern_constant(negative);
+        CHECK_NE(positive_id, negative_id);
+        CHECK_EQ(draft.intern_constant(negative), negative_id);
+        CHECK(constant_value_equal(draft, positive.value, negative.value));
+        CHECK(std::signbit(std::get<Floating>(draft.constant_copy(negative_id).value).value));
+    };
+    check_zero.operator()<F32Constant>(BuiltinType::F32);
+    check_zero.operator()<F64Constant>(BuiltinType::F64);
 }

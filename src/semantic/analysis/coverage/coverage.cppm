@@ -1,7 +1,6 @@
 module carven:semantic.analysis.coverage;
 
-import :semantic.analysis.body.builder;
-import :semantic.semir.program;
+import :semantic.analysis.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -27,14 +26,14 @@ struct PatternCoverage final {
 
 auto compute_pattern_coverage(
     const ProgramDraft& draft,
-    const BodyBuilder& body,
+    const MutableBodyTable<ElaboratedPattern, PatternID>& patterns,
     ConstructionTypeRef subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
-auto compute_pattern_coverage(
+auto patterns_exhaustive(
     const ProgramDraft& draft,
-    const SemIRBody& body,
+    const ImmutableBodyTable<Pattern, PatternID>& patterns,
     TypeID subject_type,
     std::span<const PatternCoverageArm> arms
-) noexcept -> std::expected<PatternCoverage, std::string>;
+) noexcept -> std::expected<bool, std::string>;

@@ -28,6 +28,18 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
             .primary_text = "MissingType",
         },
         {
+            .name = "numeric enum requires an integer representation",
+            .source = "enum Invalid: f64 { Value }",
+            .code = "CV-TYPE-ENUM-UNDERLYING",
+            .primary_text = "f64",
+        },
+        {
+            .name = "numeric enum rejects a callable representation",
+            .source = "enum Invalid: fn() -> i32 { Value }",
+            .code = "CV-TYPE-ENUM-UNDERLYING",
+            .primary_text = "fn() -> i32",
+        },
+        {
             .name = "void function parameter",
             .source = "fn invalid(value: void) {}",
             .code = "CV-TYPE-VALUE-REQUIRED",

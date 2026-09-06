@@ -7,13 +7,14 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.decl;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -67,9 +68,7 @@ auto DeclarationResolver::supports_equality(
                     return false;
                 }
                 const auto& declaration = *enumerations[value.enumeration.index()];
-                if (std::holds_alternative<ConstructionNumericEnumRepresentation>(
-                        declaration.representation
-                    )) {
+                if (std::holds_alternative<NumericEnumRepresentation>(declaration.representation)) {
                     return true;
                 }
                 return std::ranges::all_of(declaration.cases, [&](EnumCaseID case_id) noexcept {

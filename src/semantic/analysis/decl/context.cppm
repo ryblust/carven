@@ -4,6 +4,7 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.catalog;
 import :semantic.analysis.decl;
+import :semantic.analysis.program;
 import :semantic.semir.program;
 import :source.text;
 import :support.invariant;

@@ -12,8 +12,7 @@ crafts use C++20. Host-only features stay within the compiler implementation.
 The native consumer build selects exception support for its sources and
 providers according to their C++ requirements. A `#[cpp]` fragment containing
 native `throw` or `try`/`catch` requires exception support in its generated
-translation unit. Generated exception specifications follow the
-[native exception boundary](semantics.md#native-exception-boundary).
+translation unit.
 
 Carven is a source-generation step. The build system supplies source batches,
 C++ providers, libraries, include paths, and native compiler options, then
@@ -31,29 +30,8 @@ the corresponding Carven location.
 Carven `isize` and `usize` use the host's pointer-sized integer widths during
 analysis and matching target types at runtime. Host and target data models must
 match. `f32` and `f64` require IEEE 754 binary32 and binary64; runtime headers
-check the target properties. Native floating operations use the selected C++
-compiler and floating environment. Carven does not set the rounding mode or
-promise bit-identical floating results across toolchains. Native options that
-discard the language's IEEE equality or evaluation-order requirements are
-outside this contract.
-
-## Read parameter realization
-
-Ordinary Read parameters and Read array-range bindings use a native type
-policy. A type with trivial C++ copy construction and destruction is passed
-as a const value, regardless of size. Other types use a const reference to
-avoid introducing user-defined copying or destruction. The C++ compiler and
-target ABI determine how value parameters are physically passed.
-The scalar C++ interoperability boundary has its own by-value rules in
-[semantics.md](semantics.md#c-interoperation).
-
-A by-value Read argument saves its value when that argument is evaluated. A
-by-reference Read argument retains the selected storage, so writes through
-another alias can affect subsequent reads. Read access alone is therefore not
-a uniform snapshot mechanism. An explicit owning copy establishes a separate
-value before the call; non-owning contents in that copy retain their referents.
-Both representations obey the same source access markers and Take-conflict
-checks.
+check the target properties. Native options must preserve IEEE equality and
+Carven evaluation order.
 
 ## Artifact paths
 

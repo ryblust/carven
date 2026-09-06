@@ -91,15 +91,8 @@ auto complete_type_nominals(
             [](const ClosureTypeValue&) static noexcept {},
             [](const CallableViewTypeValue&) static noexcept {},
             [&](const CppTypeValue& value) noexcept {
-                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                    for (const auto argument : named->arguments) {
-                        complete_type_nominals(semantic, argument, active, result);
-                    }
-                } else {
-                    for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
-                        const auto argument = operand.type;
-                        complete_type_nominals(semantic, argument, active, result);
-                    }
+                for (const auto argument : cpp_type_references(value)) {
+                    complete_type_nominals(semantic, argument, active, result);
                 }
             },
         },

@@ -12,11 +12,13 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.body.expression_site;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.interpret;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -155,7 +157,7 @@ auto BodyElaborator::lambda_expression(
         ASTLambdaCapture syntax;
         ConstructionTypeRef type;
         CaptureMode mode;
-        expression_construction::Capture operand;
+        SemCapture operand;
     };
     auto captures = std::vector<CaptureSource>();
     auto capture_names = std::flat_set<std::string, std::less<>>();
@@ -184,13 +186,11 @@ auto BodyElaborator::lambda_expression(
                 "callable views cannot be captured by a lambda"
             ));
         }
-        const auto storage = std::visit(
+        auto storage = std::visit(
             Overloaded {
-                [](const BoundStorage& value) noexcept -> ExpressionStorage {
-                    return value.root_place;
+                [&](const BoundStorage& value) noexcept -> ExpressionStorage {
+                    return active_builder().binding_expression(value.binding);
                 },
-                [](ExpressionHandle value) noexcept -> ExpressionStorage { return value; },
-                [](PlaceHandle value) noexcept -> ExpressionStorage { return value; },
                 [](ConstantID) noexcept -> ExpressionStorage {
                     invariant_violation("compile-time constant reached runtime capture");
                 },
@@ -198,34 +198,33 @@ auto BodyElaborator::lambda_expression(
             local->storage
         );
         auto built = BuiltExpression {BuiltExpression {
-            .type = local->type,
-            .storage = storage,
-            .constant = std::nullopt,
+            .storage = std::move(storage),
+
             .pending_failures = {},
             .takeable = false,
         }};
         const auto mode =
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
-        auto operand = std::optional<expression_construction::Capture>();
+        auto operand = std::optional<SemCapture>();
         if (mode == CaptureMode::Write) {
-            auto place = as_place(built, capture.span);
+            auto place = consume_place(built, capture.span);
             if (!place.has_value()) {
                 return std::unexpected(place.error());
             }
-            operand = expression_construction::WriteCapture {.place = *place};
+            operand = SemCapture {CaptureMode::Write, std::move(place->expression)};
         } else {
-            auto value = as_value(built, capture.span, AccessMode::Read);
+            auto value = consume_value(built, capture.span, AccessMode::Read);
             if (!value.has_value()) {
                 return std::unexpected(value.error());
             }
-            operand = expression_construction::ValueCapture {.value = *value};
+            operand = SemCapture {CaptureMode::Value, std::move(*value)};
         }
         captures.push_back(
             CaptureSource {
                 .syntax = capture,
                 .type = local->type,
                 .mode = mode,
-                .operand = *operand,
+                .operand = std::move(*operand),
             }
         );
     }
@@ -259,7 +258,6 @@ auto BodyElaborator::lambda_expression(
                 LocalStorage {
                     .storage = *constant,
                     .type = local.type,
-                    .writable_owner = false,
                     .used = false,
                     .takeable = false,
                     .role = LocalRole::Local,
@@ -323,117 +321,60 @@ auto BodyElaborator::lambda_expression(
     draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
     draft().add_body_draft(std::move(*child_body));
 
-    auto operands = std::vector<expression_construction::Capture>();
+    auto operands = std::vector<SemCapture>();
     operands.reserve(captures.size());
-    for (const auto& capture : captures) {
-        operands.push_back(capture.operand);
+    for (auto& capture : captures) {
+        operands.push_back(std::move(capture.operand));
     }
     const auto closure_type = draft().intern_type(
         CanonicalType {
             .value = ClosureTypeValue {.callable = callable},
         }
     );
-    const auto value = active_builder().append_value(
+    auto value = active_builder().make_expression(
         closure_type,
         active_builder().lifetime(),
-        expression_construction::Closure {.callable = callable, .captures = std::move(operands)},
-        lambda_origin
+        lambda_origin,
+        SemClosure {.callable = callable, .captures = std::move(operands)}
     );
     return BuiltExpression {
-        .type = closure_type,
-        .storage = value,
-        .constant = std::nullopt,
+        .storage = std::move(value),
+
         .pending_failures = {},
     };
+}
+
+auto BodyElaborator::select_expression(
+    ASTExprID id,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisResult<SelectedExpression> {
+    const auto was_reachable = reachable;
+    [[maybe_unused]] const auto path = ReferencePathGuard(reference_path_reachable, was_reachable);
+    auto site = BodyExpressionSite(*this);
+    return interpret_expression(site, id, expected);
 }
 
 auto BodyElaborator::expression(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
     -> AnalysisResult<BuiltExpression> {
     const auto was_reachable = reachable;
-    [[maybe_unused]] const auto path = ReferencePathGuard(reference_path_reachable, was_reachable);
     const auto& source = ast.expression(id);
-    auto result = std::visit(
-        Overloaded {
-            [&](const ASTLiteral& value) noexcept {
-                return literal_expression(value, source.span, expected);
-            },
-            [&](const ASTCppNameExpr& value) noexcept {
-                return global_cpp_expression(value, source.span);
-            },
-            [&](const ASTNameExpr& value) noexcept { return name_expression(value, source.span); },
-            [&](const ASTGroupExpr& value) noexcept {
-                return expression(value.expression, expected);
-            },
-            [&](const ASTArrayExpr& value) noexcept {
-                return array_expression(value, source.span, expected);
-            },
-            [&](const ASTConstructionExpr& value) noexcept {
-                return construction_expression(value, source.span);
-            },
-            [&](const ASTPrefixExpr& value) noexcept {
-                return prefix_expression(value, source.span, expected);
-            },
-            [&](const ASTAccessExpr& value) noexcept {
-                return access_expression(value, source.span);
-            },
-            [&](const ASTBinaryExpr& value) noexcept {
-                return binary_expression(value, source.span, expected);
-            },
-            [&](const ASTCastExpr& value) noexcept { return cast_expression(value, source.span); },
-            [&](const ASTCallExpr& value) noexcept {
-                return call_expression(value, source.span, expected);
-            },
-            [&](const ASTIndexExpr& value) noexcept {
-                return index_expression(value, source.span);
-            },
-            [&](const ASTMemberExpr& value) noexcept {
-                return member_expression(value, source.span);
-            },
-            [&](const ASTPropagationExpr& value) noexcept {
-                return propagation_expression(value, source.span);
-            },
-            [&](const ASTIfForm& value) noexcept {
-                return conditional_expression(value, source.span, expected);
-            },
-            [&](const ASTContextualCaseExpr& value) noexcept -> AnalysisResult<BuiltExpression> {
-                auto enumeration = expected_enum_type(expected, value.name_span);
-                if (!enumeration.has_value()) {
-                    return std::unexpected(enumeration.error());
-                }
-                return enum_case_expression(
-                    *enumeration,
-                    spelling(value.name_span),
-                    std::span<const ASTCallArgument>(),
-                    source.span,
-                    value.name_span
-                );
-            },
-            [&](const ASTLambdaExpr& value) noexcept -> AnalysisResult<BuiltExpression> {
-                return lambda_expression(value, source.span, expected);
-            },
-            [&](const ASTMatchForm& value) noexcept -> AnalysisResult<BuiltExpression> {
-                return match_expression(value, source.span, expected);
-            },
-            [&](const ASTTryForm& value) noexcept -> AnalysisResult<BuiltExpression> {
-                return try_expression(value, source.span, expected);
-            },
-        },
-        source.value
-    );
+    auto selected = select_expression(id, expected);
+    if (!selected.has_value()) {
+        return std::unexpected(selected.error());
+    }
+    auto result = materialize_selection(std::move(*selected));
     if (result.has_value()
         && does_not_complete(*result)
         && expected.has_value()
-        && is_void_type(draft(), result->type)) {
+        && is_void_type(draft(), result->type())) {
         auto node = take_built(*result, source.span);
-        node.type = *expected;
-        result->storage = body_builder.add_expression(std::move(node));
-        result->type = *expected;
+        node.type = BodyType(*expected);
+        result->storage = std::move(node);
     }
     if (result.has_value()) {
         reachable = was_reachable && result->completes;
     }
     return result;
 }
-
 
 } // namespace body_elaboration

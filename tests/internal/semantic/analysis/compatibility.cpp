@@ -8,6 +8,7 @@ import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;

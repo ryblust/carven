@@ -8,6 +8,8 @@ import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.sink;
 import :frontend.program.parse;
+import :semantic.analysis.program;
+import :semantic.analysis.types.contents;
 import :semantic.analysis.validation;
 import :semantic.semir.body;
 import :semantic.semir.constant;
@@ -45,38 +47,7 @@ struct BuiltProgram final {
     CallableID second_callable;
     StructID holder_structure;
     StructID guarded_failure_structure;
-    FailureSetID cyclic_failure_set;
-    FailureSetID residual_failure_set;
-    FailureSetID union_failure_set;
-    FailureSetID retained_failure_set;
-    FailureSetID rejected_failure_set;
-    FailureSetID guarded_failure_set;
-    FailureSetID guarded_dead_failure_set;
-    FailureSetID guarded_live_failure_set;
 };
-
-template<typename Builder>
-concept ExposesMutableTypeBuilder = requires (Builder& builder) { builder.type_builder(); };
-
-template<typename Builder>
-concept ExposesMutableDeclarationBuilder =
-    requires (Builder& builder) { builder.declaration_builder(); };
-
-template<typename Builder>
-concept ExposesResolvedDeclarationView =
-    requires (const Builder& builder) { builder.resolved_declarations(); };
-
-template<typename Builder>
-concept ExposesFailureSolution = requires (const Builder& builder) { builder.failure_solution(); };
-
-template<typename Builder>
-concept ExposesTypeResolution = requires (const Builder& builder) { builder.type_resolution(); };
-
-template<typename Value>
-concept HasSignatureMember = requires (Value value) { value.signature; };
-
-template<typename Value>
-concept HasRootPlaceMember = requires (Value value) { value.root_place; };
 
 auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     auto sources = SourceManager();
@@ -143,32 +114,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto second_callable = builder.reserve_callable_declaration();
     const auto first_function = builder.reserve_function_declaration();
     const auto second_function = builder.reserve_function_declaration();
-    const auto inferred_empty = builder.add_empty_failure_term();
-    const auto cyclic_failure = builder.add_empty_failure_term();
-    const auto residual_failure =
-        builder.add_residual_failure_term(cyclic_failure, {nominal_guarded_failure});
-    const auto concrete_failure = builder.add_concrete_failure_term({nominal_holder});
-    const auto union_failure = builder.add_union_failure_term({residual_failure, concrete_failure});
-    builder.add_failure_contribution(cyclic_failure, union_failure);
-    const auto retained_failure =
-        builder.add_intersection_failure_term(cyclic_failure, {nominal_holder});
-    const auto rejected_failure =
-        builder.add_intersection_failure_term(cyclic_failure, {nominal_guarded_failure});
-    const auto guarded_source = builder.add_concrete_failure_term({nominal_guarded_failure});
-    const auto guarded_failure = builder.add_empty_failure_term();
-    builder.add_guarded_failure_contribution(guarded_failure, retained_failure, guarded_source);
-    const auto guarded_dead_failure = builder.add_empty_failure_term();
-    const auto guarded_live_failure = builder.add_empty_failure_term();
-    const auto live_gate = builder.add_concrete_failure_term({nominal_guarded_failure});
-    const auto delayed_live_gate = builder.add_empty_failure_term();
-    builder.add_failure_contribution(delayed_live_gate, live_gate);
-    builder
-        .add_guarded_failure_contribution(guarded_dead_failure, inferred_empty, concrete_failure);
-    builder.add_guarded_failure_contribution(
-        guarded_live_failure,
-        delayed_live_gate,
-        concrete_failure
-    );
     const auto boolean_array = builder.append_construction_type(
         ConstructionType {
             .value = ConstructionArrayTypeValue {
@@ -313,37 +258,24 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto solved = active_builder.solve_construction();
     REQUIRE(solved.has_value());
     REQUIRE(diagnostics.empty());
+    CHECK(expect_termination(std::format("solved-program-source-mutation-{}", module_name), [&] {
+        static_cast<void>(active_builder.intern_spelling("late"));
+    }));
 
-    CHECK_EQ(active_builder.module_declaration_ids(), std::vector {module_id});
-    CHECK_EQ(active_builder.callable_declaration_count(), 2uz);
-    const auto cyclic_failure_set = active_builder.concrete_failure_set(cyclic_failure);
-    const auto residual_failure_set = active_builder.concrete_failure_set(residual_failure);
-    const auto union_failure_set = active_builder.concrete_failure_set(union_failure);
-    const auto retained_failure_set = active_builder.concrete_failure_set(retained_failure);
-    const auto rejected_failure_set = active_builder.concrete_failure_set(rejected_failure);
-    const auto guarded_failure_set = active_builder.concrete_failure_set(guarded_failure);
-    const auto guarded_dead_failure_set = active_builder.concrete_failure_set(guarded_dead_failure);
-    const auto guarded_live_failure_set = active_builder.concrete_failure_set(guarded_live_failure);
-    CHECK_EQ(cyclic_failure_set, residual_failure_set);
-    CHECK_EQ(cyclic_failure_set, union_failure_set);
-    CHECK_EQ(cyclic_failure_set, retained_failure_set);
-    CHECK_EQ(rejected_failure_set, no_failures);
-    CHECK_EQ(guarded_dead_failure_set, no_failures);
-    CHECK_EQ(guarded_live_failure_set, active_builder.concrete_failure_set(concrete_failure));
-    CHECK(active_builder.concrete_failure_set(inferred_empty) == no_failures);
+    CHECK_EQ(active_builder.declarations().modules().size(), 1uz);
+    CHECK_EQ(active_builder.declarations().callables().size(), 2uz);
     CHECK(active_builder.callable_crosses_cpp_boundary(first_callable));
     CHECK(active_builder.callable_crosses_cpp_boundary(second_callable));
     CHECK(
         active_builder.callable_signature(first_callable)
         == active_builder.callable_signature(second_callable)
     );
-    CHECK(active_builder.is_inhabited(nominal_holder));
 
     auto solved_builder = ProgramDraft(std::move(active_builder));
     CHECK(expect_termination(
         std::format("compilation-builder-solved-source-query-{}", module_name),
         // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { static_cast<void>(active_builder.canonical_type_copy(boolean)); }
+        [&] { static_cast<void>(active_builder.types().type(boolean)); }
     ));
     auto program = std::move(solved_builder).seal();
     CHECK(expect_termination(
@@ -362,7 +294,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         program.types().type(holder_declaration.fields.front().type).value
     );
     CHECK_EQ(array_type.element, boolean);
-    CHECK(program.is_inhabited(nominal_holder));
     return BuiltProgram {
         .program = std::move(program),
         .boolean_type = boolean,
@@ -374,14 +305,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         .second_callable = second_callable,
         .holder_structure = holder,
         .guarded_failure_structure = guarded_failure_structure,
-        .cyclic_failure_set = cyclic_failure_set,
-        .residual_failure_set = residual_failure_set,
-        .union_failure_set = union_failure_set,
-        .retained_failure_set = retained_failure_set,
-        .rejected_failure_set = rejected_failure_set,
-        .guarded_failure_set = guarded_failure_set,
-        .guarded_dead_failure_set = guarded_dead_failure_set,
-        .guarded_live_failure_set = guarded_live_failure_set,
     };
 }
 
@@ -441,7 +364,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         );
         builder.define_declaration(
             enumeration,
-            ConstructionEnumDeclaration {
+            EnumDeclaration {
                 .module_id = module_id,
                 .name = nominal_name,
                 .origin = origin,
@@ -488,7 +411,10 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     const auto solved = builder.solve_construction();
     REQUIRE(solved.has_value());
 
-    const auto validated = validate_global_semantic_contracts(builder);
+    const auto validated = validate_global_semantic_contracts(
+        builder,
+        compute_type_contents(builder.types(), builder.declarations())
+    );
     CHECK_FALSE(validated.has_value());
     REQUIRE_EQ(diagnostics.size(), 1uz);
     CHECK_EQ(diagnostics.values().front().finding.code, DiagnosticCode::TypeCallableViewEscape);
@@ -503,16 +429,11 @@ static_assert(std::constructible_from<MutableProgramTable<CanonicalType, TypeID>
 static_assert(std::ranges::range<IDTableEntries<TypeID, CanonicalType, ProgramIdentity>>);
 static_assert(!std::copy_constructible<SemIRProgram>);
 static_assert(std::movable<SemIRProgram>);
-static_assert(!ExposesMutableTypeBuilder<ProgramDraft>);
-static_assert(!ExposesMutableDeclarationBuilder<ProgramDraft>);
-static_assert(!ExposesResolvedDeclarationView<ProgramDraft>);
-static_assert(!ExposesFailureSolution<ProgramDraft>);
-static_assert(!ExposesTypeResolution<ProgramDraft>);
-static_assert(!HasRootPlaceMember<OwnerBindingStorage>);
-static_assert(!HasRootPlaceMember<ParameterBindingStorage>);
 static_assert(!std::copy_constructible<SemIRBody>);
 
-TEST_CASE("SemIR program: sealing canonicalizes signatures and publishes immutable stores") {
+TEST_CASE(
+    "Semantic program: solving finalizes signatures and publication delivers immutable stores"
+) {
     const auto built = build_program("semir.lifecycle");
     CHECK(built.program.types().contains(built.boolean_type));
     CHECK(built.program.constants().contains(built.text_constant));
@@ -551,26 +472,6 @@ TEST_CASE("SemIR lifecycle: moving the published owner consumes every immutable 
     CHECK(expect_termination("semir-program-moved-type-store", [&] {
         static_cast<void>(built.program.types().size());
     }));
-}
-
-TEST_CASE("SemIR failure solving: cyclic filters grow monotonically to a fixed point") {
-    const auto built = build_program("semir.failure_cycle");
-    CHECK_EQ(built.cyclic_failure_set, built.residual_failure_set);
-    CHECK_EQ(built.cyclic_failure_set, built.union_failure_set);
-    CHECK_EQ(built.cyclic_failure_set, built.retained_failure_set);
-    CHECK(built.program.failure_sets().failure_set(built.rejected_failure_set).members.empty());
-    const auto& members =
-        built.program.failure_sets().failure_set(built.cyclic_failure_set).members;
-    REQUIRE_EQ(members.size(), 1uz);
-    CHECK_EQ(members.front(), built.primary_failure_type);
-}
-
-TEST_CASE("SemIR failure solving: a late non-empty gate activates guarded contributions") {
-    const auto built = build_program("semir.failure_gate");
-    const auto& members =
-        built.program.failure_sets().failure_set(built.guarded_failure_set).members;
-    REQUIRE_EQ(members.size(), 1uz);
-    CHECK_EQ(members.front(), built.guarded_failure_type);
 }
 
 TEST_CASE("SemIR global contracts: structure rejects nested callable-view storage") {

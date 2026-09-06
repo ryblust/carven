@@ -3,6 +3,7 @@ module carven:backend.target.type;
 import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
+import :backend.target.stmt;
 import :backend.target.symbol;
 import std;
 
@@ -53,32 +54,14 @@ struct TargetReferenceType final {
     auto operator==(const TargetReferenceType&) const noexcept -> bool = default;
 };
 
-struct TargetQueryCall final {
-    auto operator==(const TargetQueryCall&) const noexcept -> bool = default;
-};
-struct TargetQueryIndex final {
-    auto operator==(const TargetQueryIndex&) const noexcept -> bool = default;
-};
-struct TargetQueryMember final {
-    TargetIdentifier name;
-    auto operator==(const TargetQueryMember&) const noexcept -> bool = default;
-};
-struct TargetTypeQuery final {
-    std::variant<
-        TargetTypeID,
-        TargetName,
-        TargetQueryCall,
-        TargetQueryIndex,
-        TargetQueryMember,
-        TargetPrefixOperator,
-        TargetBinaryOperator>
-        operation;
-    std::vector<TargetTypeQuery> operands;
-    auto operator==(const TargetTypeQuery&) const noexcept -> bool = default;
-};
-struct TargetDeducedType final {
-    TargetTypeQuery query;
-    auto operator==(const TargetDeducedType&) const noexcept -> bool = default;
+class TargetDeducedType final {
+public:
+    explicit TargetDeducedType(TargetExpr expression) noexcept;
+    auto expression() const noexcept -> const TargetExpr&;
+    auto operator==(const TargetDeducedType& other) const noexcept -> bool;
+
+private:
+    TargetExpr queried_expression;
 };
 
 using TargetTypeValue = std::variant<

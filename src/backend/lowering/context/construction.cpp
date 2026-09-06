@@ -82,25 +82,6 @@ auto static_member_expression(TargetTypeID owner, TargetIdentifier member) noexc
     };
 }
 
-auto move_expression(TargetExpr operand) noexcept -> TargetExpr {
-    const auto* call = std::get_if<TargetCallExpr>(&operand.value);
-    if (std::holds_alternative<TargetLiteralExpr>(operand.value)
-        || std::holds_alternative<TargetConstructionExpr>(operand.value)
-        || std::holds_alternative<TargetArrayExpr>(operand.value)
-        || std::holds_alternative<TargetRegionExpr>(operand.value)
-        // Named source callables return values; static members here are value factories.
-        // Intrinsic calls can return places, so they must retain explicit moves.
-        || (call != nullptr
-            && (std::holds_alternative<TargetNameExpr>(call->callee->value)
-                || std::holds_alternative<TargetStaticMemberExpr>(call->callee->value)))) {
-        return operand;
-    }
-    return call_expression(
-        intrinsic_expression(TargetSymbol::StdMove),
-        target_expressions(std::move(operand))
-    );
-}
-
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr {
     return {
         .value = TargetPrefixExpr {
@@ -218,5 +199,12 @@ auto namespace_item(
             .items = std::move(items),
         },
         reason
+    );
+}
+
+auto transfer_expression(TargetExpr value) noexcept -> TargetExpr {
+    return call_expression(
+        intrinsic_expression(TargetSymbol::RuntimeTransfer),
+        target_expressions(std::move(value))
     );
 }

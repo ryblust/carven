@@ -94,12 +94,10 @@ using CallableSignatureID = ProgramID<CallableSignatureIDTag>;
 using TypeTermID = ProgramID<TypeTermIDTag>;
 using FailureTermID = ProgramID<FailureTermIDTag>;
 
-struct ScopeIDTag final {};
 struct LifetimeRegionIDTag final {};
 struct LocalBindingIDTag final {};
 struct PatternIDTag final {};
 
-using ScopeID = BodyLocalID<ScopeIDTag>;
 using LifetimeRegionID = BodyLocalID<LifetimeRegionIDTag>;
 using LocalBindingID = BodyLocalID<LocalBindingIDTag>;
 using PatternID = BodyLocalID<PatternIDTag>;

@@ -1,6 +1,7 @@
 module carven:semantic.analysis.types.contents;
 
-import :semantic.semir.program;
+import :semantic.semir.decl;
+import :semantic.semir.type;
 import std;
 
 struct TypeContents final {
@@ -8,17 +9,7 @@ struct TypeContents final {
     bool callable_view;
 };
 
-// This query is scoped to analysis after construction types have been solved.
-class TypeContentsQuery final {
-public:
-    explicit TypeContentsQuery(ProgramDraft& program) noexcept;
-    auto contents(TypeID type) noexcept -> TypeContents;
-    auto contains_owner(std::variant<TypeID, FailureSetID> type) noexcept -> bool;
-    auto contains_view(std::variant<TypeID, FailureSetID> type) noexcept -> bool;
-    auto contains_view(TypeID type) noexcept -> bool;
-
-private:
-    ProgramDraft& draft;
-    std::flat_map<TypeID, TypeContents> memo;
-    std::flat_set<TypeID> visiting;
-};
+auto compute_type_contents(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations
+) noexcept -> std::vector<TypeContents>;

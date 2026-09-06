@@ -23,5 +23,4 @@ fixed-width scalar values and is exposed as `noexcept`.
 
 Change the quantity from 12 to 3 to use the regular unit price. The example's
 caller supplies a small nonnegative quantity; this calculation does not validate
-arbitrary inputs. For a fallible application API, define an explicit supported
-result protocol at the [scalar boundary](../../../docs/semantics.md#c-interoperation).
+arbitrary inputs.

@@ -17,6 +17,25 @@ inline auto reset() -> void {
 inline auto pair(std::int32_t left, std::int32_t right) -> std::int32_t {
     return left * 10 + right;
 }
+struct Callable final {
+    std::int32_t offset = 0;
+    auto operator()(std::int32_t value) const noexcept -> std::int32_t { return value + offset; }
+    auto operator()(std::int32_t) noexcept -> std::int32_t { return -1; }
+};
+struct Receiver final {
+    auto invoke(std::int32_t value) const noexcept -> std::int32_t { return value; }
+    auto invoke(std::int32_t left, std::int32_t right) const noexcept -> std::int32_t {
+        return left + right;
+    }
+    Callable callback;
+};
+inline auto receiver() noexcept -> Receiver {
+    record(1);
+    return {};
+}
+inline auto callable() noexcept -> Callable {
+    return {};
+}
 struct AccessProbe final {
     auto access() const noexcept -> std::int32_t { return 1; }
     auto access() noexcept -> std::int32_t { return 2; }

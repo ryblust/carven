@@ -14,31 +14,9 @@ BodyAnalyzer::BodyAnalyzer(
       input(input),
       body(analysis.body(input.body_id)),
       draft(analysis.draft),
-      type_contents(draft),
+      facts(analysis.facts_for_body(input.body_id)),
       diagnosing(diagnosing),
       accesses(input.accesses) {
-    for (const auto& object : input.objects) {
-        objects.push_back({object.type, object.origin, std::nullopt});
-    }
-    const auto add = [&](TypeID type, ProgramOriginID origin, LifetimeRegionID lifetime) noexcept {
-        const auto index = objects.size();
-        objects.push_back({type, origin, lifetime});
-        lifetime_objects[lifetime].push_back(index);
-        return index;
-    };
-    for (const auto [id, binding] : body.bindings()) {
-        static_cast<void>(id);
-        add(binding.type, binding.origin, binding.lifetime);
-    }
-    visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
-        const auto contents = type_contents.contents(expression.type);
-        if (contents.closure_owner || contents.callable_view) {
-            temporaries.emplace(
-                std::addressof(expression),
-                add(expression.type, expression.origin, expression.lifetime)
-            );
-        }
-    });
     const auto bind = [&](std::span<const LocalBindingID> bindings,
                           std::span<const CallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
@@ -49,6 +27,17 @@ BodyAnalyzer::BodyAnalyzer(
     };
     bind(body.inputs().parameters, input.parameters);
     bind(body.inputs().captures, input.captures);
+}
+auto BodyAnalyzer::object_type(std::size_t object) const noexcept -> TypeID {
+    return object < input.objects.size() ? input.objects[object].type
+                                         : facts.locals[object - input.objects.size()].type;
+}
+auto BodyAnalyzer::object_origin(std::size_t object) const noexcept -> ProgramOriginID {
+    return object < input.objects.size() ? input.objects[object].origin
+                                         : facts.locals[object - input.objects.size()].origin;
+}
+auto BodyAnalyzer::temporary(const SemanticExpression& expression) const noexcept -> std::size_t {
+    return input.objects.size() + facts.temporaries.at(std::addressof(expression));
 }
 auto BodyAnalyzer::diagnose(
     DiagnosticCode code,
@@ -66,18 +55,18 @@ auto BodyAnalyzer::outlives(std::size_t source, std::size_t destination) const n
     }
     return destination >= input.objects.size()
         && body.lifetime_regions().outlives(
-            *objects[source].lifetime,
-            *objects[destination].lifetime
+            facts.locals[source - input.objects.size()].lifetime,
+            facts.locals[destination - input.objects.size()].lifetime
         );
 }
 auto BodyAnalyzer::leave(Flow& flow, LifetimeRegionID lifetime) const noexcept -> void {
-    const auto found = lifetime_objects.find(lifetime);
-    if (found == lifetime_objects.end()) {
+    const auto found = facts.lifetime_objects.find(lifetime);
+    if (found == facts.lifetime_objects.end()) {
         return;
     }
     const auto release = [&](State& state) noexcept {
         for (const auto object : found->second) {
-            state.objects[object] = {};
+            state.objects[input.objects.size() + object] = {};
         }
     };
     if (flow.normal.has_value()) {
@@ -90,11 +79,11 @@ auto BodyAnalyzer::leave(Flow& flow, LifetimeRegionID lifetime) const noexcept -
 auto BodyAnalyzer::retain(
     State& state,
     const Relationships& relationships,
-    const SemIRExpression& source
+    const SemanticExpression& source
 ) const noexcept -> void {
-    const auto found = temporaries.find(std::addressof(source));
-    if (found != temporaries.end()) {
-        state.objects[found->second] =
+    const auto found = facts.temporaries.find(std::addressof(source));
+    if (found != facts.temporaries.end()) {
+        state.objects[input.objects.size() + found->second] =
             {.available = true, .taken = std::nullopt, .relationships = relationships};
     }
 }
@@ -206,22 +195,23 @@ auto BodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> Place
     return found == aliases.end() ? Place {input.objects.size() + binding.index(), {}}
                                   : found->second;
 }
-auto BodyAnalyzer::location(const SemIRExpression& source) const noexcept -> std::optional<Place> {
-    if (const auto* foreign = std::get_if<SemCpp<TypeID, FailureSetID>>(&source.value);
+auto BodyAnalyzer::location(const SemanticExpression& source) const noexcept
+    -> std::optional<Place> {
+    if (const auto* foreign = std::get_if<SemCpp>(&source.value);
         foreign != nullptr && source.category == SemanticValueCategory::Place) {
         return location(foreign->operands.front().expression);
     }
     if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
         return binding_place(binding->binding);
     }
-    if (const auto* field = std::get_if<SemField<TypeID, FailureSetID>>(&source.value)) {
+    if (const auto* field = std::get_if<SemField>(&source.value)) {
         auto result = location(*field->source);
         if (result.has_value()) {
             result->path.push_back(field->field.field_index);
         }
         return result;
     }
-    if (const auto* index = std::get_if<SemIndex<TypeID, FailureSetID>>(&source.value)) {
+    if (const auto* index = std::get_if<SemIndex>(&source.value)) {
         auto result = location(*index->source);
         if (result.has_value()) {
             result->path.push_back(constant_index(*index->index));
@@ -251,7 +241,7 @@ auto BodyAnalyzer::write_access(const Place& target, ProgramOriginID origin) noe
                 DiagnosticCode::AccessOperationConflict,
                 "Write conflicts with stable match selection",
                 origin,
-                objects[access.place.object].origin
+                object_origin(access.place.object)
             );
         }
     }
@@ -270,30 +260,20 @@ auto BodyAnalyzer::require_available(
         );
     }
 }
-auto BodyAnalyzer::constant_truth(const SemIRExpression& source) const noexcept
+auto BodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
-    if (const auto* literal = std::get_if<SemLiteral>(&source.value)) {
-        if (const auto* value = std::get_if<BooleanLiteral>(&literal->value)) {
-            return value->value;
-        }
-    }
     if (source.constant.has_value()) {
-        const auto constant = draft.constant_copy(*source.constant);
+        const auto constant = draft.constants().constant(*source.constant);
         if (const auto* value = std::get_if<BooleanConstant>(&constant.value)) {
             return value->value;
         }
     }
     return std::nullopt;
 }
-auto BodyAnalyzer::constant_index(const SemIRExpression& source) const noexcept
+auto BodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept
     -> std::optional<std::uint64_t> {
-    if (const auto* literal = std::get_if<SemLiteral>(&source.value)) {
-        if (const auto* value = std::get_if<IntegerLiteral>(&literal->value)) {
-            return value->value.as_unsigned();
-        }
-    }
     if (source.constant.has_value()) {
-        const auto constant = draft.constant_copy(*source.constant);
+        const auto constant = draft.constants().constant(*source.constant);
         if (const auto* value = std::get_if<IntegerConstant>(&constant.value)) {
             return value->as_unsigned();
         }

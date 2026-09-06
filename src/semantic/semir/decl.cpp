@@ -50,20 +50,8 @@ auto resolve_construction_type(
     ProgramIdentity owner,
     const TypeResolution& resolution
 ) noexcept -> TypeID {
-    return std::visit(
-        [&](const auto id) noexcept -> TypeID {
-            using ID = std::remove_cvref_t<decltype(id)>;
-            require_owner(id.owner(), owner, "declaration type used a foreign program");
-            if constexpr (std::same_as<ID, TypeID>) {
-                return id;
-            } else if constexpr (std::same_as<ID, TypeTermID>) {
-                return resolution.type(id);
-            } else {
-                static_assert(std::same_as<ID, void>);
-            }
-        },
-        type
-    );
+    require_owner(resolution.owner(), owner, "declaration resolution used a foreign program");
+    return resolution.resolve(type);
 }
 
 auto validate_callable_contract(
@@ -241,7 +229,7 @@ auto ResolvedDeclarationView::structure(StructID id) const noexcept
     -> ConstructionStructDeclaration {
     return declaration_builder->structures.copy_defined(id);
 }
-auto ResolvedDeclarationView::enumeration(EnumID id) const noexcept -> ConstructionEnumDeclaration {
+auto ResolvedDeclarationView::enumeration(EnumID id) const noexcept -> EnumDeclaration {
     return declaration_builder->enumerations.copy_defined(id);
 }
 auto ResolvedDeclarationView::enum_case(EnumCaseID id) const noexcept
@@ -249,7 +237,7 @@ auto ResolvedDeclarationView::enum_case(EnumCaseID id) const noexcept
     return declaration_builder->enum_cases.copy_defined(id);
 }
 auto ResolvedDeclarationView::module_constant(ModuleConstantID id) const noexcept
-    -> ConstructionModuleConstantDeclaration {
+    -> ModuleConstantDeclaration {
     return declaration_builder->module_constants.copy_defined(id);
 }
 auto ResolvedDeclarationView::callable_contract(CallableID id) const noexcept
@@ -531,8 +519,7 @@ auto DeclarationBuilder::define(StructID id, ConstructionStructDeclaration decla
     }
     structures.define(id, std::move(declaration));
 }
-auto DeclarationBuilder::define(EnumID id, ConstructionEnumDeclaration declaration) noexcept
-    -> void {
+auto DeclarationBuilder::define(EnumID id, EnumDeclaration declaration) noexcept -> void {
     require_reserving();
     require_owner(declaration.module_id.owner(), program_identity, "enum used a foreign module");
     require_provenance_owner(
@@ -553,8 +540,12 @@ auto DeclarationBuilder::define(EnumID id, ConstructionEnumDeclaration declarati
     std::visit(
         [this](const auto& representation) noexcept {
             using Representation = std::remove_cvref_t<decltype(representation)>;
-            if constexpr (std::same_as<Representation, ConstructionNumericEnumRepresentation>) {
-                validate_construction_type(representation.underlying_type, program_identity);
+            if constexpr (std::same_as<Representation, NumericEnumRepresentation>) {
+                require_owner(
+                    representation.underlying_type.owner(),
+                    program_identity,
+                    "enum underlying type used a foreign program"
+                );
             } else {
                 static_assert(std::same_as<Representation, PayloadEnumRepresentation>);
             }
@@ -589,10 +580,8 @@ auto DeclarationBuilder::define(EnumCaseID id, ConstructionEnumCaseDeclaration d
     }
     enum_cases.define(id, std::move(declaration));
 }
-auto DeclarationBuilder::define(
-    ModuleConstantID id,
-    ConstructionModuleConstantDeclaration declaration
-) noexcept -> void {
+auto DeclarationBuilder::define(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept
+    -> void {
     require_reserving();
     require_owner(
         declaration.module_id.owner(),
@@ -609,7 +598,6 @@ auto DeclarationBuilder::define(
         provenance_identity,
         "module constant used a foreign origin"
     );
-    validate_construction_type(declaration.type, program_identity);
     require_owner(
         declaration.value.owner(),
         program_identity,
@@ -737,43 +725,6 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
         }
     }
 
-    auto final_enumerations = MutableProgramTable<EnumDeclaration, EnumID>(program_identity);
-    const auto construction_enumerations = std::move(enumerations).seal();
-    for (const auto [id, declaration] : construction_enumerations.entries()) {
-        const auto representation = std::visit(
-            [&](const auto& value) noexcept -> EnumRepresentation {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, ConstructionNumericEnumRepresentation>) {
-                    return NumericEnumRepresentation {
-                        .underlying_type = resolve_construction_type(
-                            value.underlying_type,
-                            program_identity,
-                            type_resolution
-                        ),
-                    };
-                } else {
-                    static_assert(std::same_as<Value, PayloadEnumRepresentation>);
-                    return PayloadEnumRepresentation {};
-                }
-            },
-            declaration.representation
-        );
-        const auto final_id = final_enumerations.add(
-            EnumDeclaration {
-                .module_id = declaration.module_id,
-                .name = declaration.name,
-                .origin = declaration.origin,
-                .visibility = declaration.visibility,
-                .representation = representation,
-                .cases = declaration.cases,
-                .capabilities = declaration.capabilities,
-            }
-        );
-        if (final_id != id) {
-            invariant_violation("enum declaration identity changed during sealing");
-        }
-    }
-
     auto final_enum_cases = MutableProgramTable<EnumCaseDeclaration, EnumCaseID>(program_identity);
     const auto construction_enum_cases = std::move(enum_cases).seal();
     for (const auto [id, declaration] : construction_enum_cases.entries()) {
@@ -798,26 +749,6 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
         }
     }
 
-    auto final_module_constants =
-        MutableProgramTable<ModuleConstantDeclaration, ModuleConstantID>(program_identity);
-    const auto construction_module_constants = std::move(module_constants).seal();
-    for (const auto [id, declaration] : construction_module_constants.entries()) {
-        const auto final_id = final_module_constants.add(
-            ModuleConstantDeclaration {
-                .module_id = declaration.module_id,
-                .name = declaration.name,
-                .origin = declaration.origin,
-                .visibility = declaration.visibility,
-                .type =
-                    resolve_construction_type(declaration.type, program_identity, type_resolution),
-                .value = declaration.value,
-            }
-        );
-        if (final_id != id) {
-            invariant_violation("module constant identity changed during sealing");
-        }
-    }
-
     auto final_callables = MutableProgramTable<CallableDeclaration, CallableID>(program_identity);
     const auto signature_rows = std::move(callable_signature_ids).seal();
     const auto implementation_rows = std::move(callable_implementations).seal();
@@ -837,9 +768,9 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
         std::move(modules).seal(),
         std::move(functions).seal(),
         std::move(final_structures).seal(),
-        std::move(final_enumerations).seal(),
+        std::move(enumerations).seal(),
         std::move(final_enum_cases).seal(),
-        std::move(final_module_constants).seal(),
+        std::move(module_constants).seal(),
         std::move(final_callables).seal()
     );
 }

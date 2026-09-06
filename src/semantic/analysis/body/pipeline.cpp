@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.pipeline.impl;
 
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
+import :semantic.analysis.program;
 
 using body_elaboration::BatchElaborator;
 

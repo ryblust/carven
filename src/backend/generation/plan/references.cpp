@@ -112,24 +112,13 @@ private:
         std::visit(
             Overloaded {
                 [&](const CppTypeValue& value) noexcept {
-                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        for (const auto argument : named->arguments) {
-                            collect_type(
-                                module_id,
-                                argument,
-                                TargetTypeCompleteness::CompleteDefinition,
-                                guard
-                            );
-                        }
-                    } else {
-                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
-                            collect_type(
-                                module_id,
-                                operand.type,
-                                TargetTypeCompleteness::CompleteDefinition,
-                                guard
-                            );
-                        }
+                    for (const auto argument : cpp_type_references(value)) {
+                        collect_type(
+                            module_id,
+                            argument,
+                            TargetTypeCompleteness::CompleteDefinition,
+                            guard
+                        );
                     }
                 },
                 [](const BuiltinTypeValue&) static noexcept {},
@@ -212,7 +201,9 @@ private:
                 [&](ModuleConstantID id) noexcept {
                     collect_type(
                         module_id,
-                        semantic.declarations().module_constant(id).type,
+                        semantic.constants()
+                            .constant(semantic.declarations().module_constant(id).value)
+                            .type,
                         TargetTypeCompleteness::CompleteDefinition,
                         guard
                     );

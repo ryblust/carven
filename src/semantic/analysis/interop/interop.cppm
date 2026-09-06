@@ -4,6 +4,7 @@ import :frontend.ast.decl;
 import :frontend.ast.tree;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
+import :semantic.analysis.program;
 import :semantic.semir.program;
 import std;
 

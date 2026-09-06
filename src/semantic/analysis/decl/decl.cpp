@@ -1,9 +1,10 @@
 module carven:semantic.analysis.decl.impl;
 
-import :semantic.analysis.decl;
 import :semantic.analysis.decl.context;
+import :semantic.analysis.decl;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
+import :semantic.analysis.program;
 import std;
 
 using decl_resolution::resolve_declarations;

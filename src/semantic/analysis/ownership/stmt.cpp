@@ -5,7 +5,7 @@ import std;
 
 namespace ownership {
 
-auto BodyAnalyzer::complete_expression(const SemIRExpression& source, State state) noexcept
+auto BodyAnalyzer::complete_expression(const SemanticExpression& source, State state) noexcept
     -> Flow {
     const auto previous = full_expression;
     const auto owns = full_expression != source.lifetime
@@ -21,7 +21,8 @@ auto BodyAnalyzer::complete_expression(const SemIRExpression& source, State stat
     }
     return result;
 }
-auto BodyAnalyzer::region(const SemIRRegion& source, State state, bool release) noexcept -> Flow {
+auto BodyAnalyzer::region(const SemanticRegion& source, State state, bool release) noexcept
+    -> Flow {
     auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
@@ -42,7 +43,7 @@ auto BodyAnalyzer::region(const SemIRRegion& source, State state, bool release) 
     }
     return result;
 }
-auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept -> Flow {
+auto BodyAnalyzer::statement(const SemanticStatement& source, State state) noexcept -> Flow {
     const auto previous_full_expression = full_expression;
     const auto owns =
         body.lifetime_regions().region(source.lifetime).kind == LifetimeRegionKind::FullExpression
@@ -51,7 +52,7 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
         full_expression = source.lifetime;
     }
     auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
-    const auto evaluate = [&](const SemIRExpression& expression_source) noexcept {
+    const auto evaluate = [&](const SemanticExpression& expression_source) noexcept {
         if (result.normal.has_value()) {
             auto next = expression(expression_source, std::move(*result.normal));
             result.normal = std::move(next.normal);
@@ -73,7 +74,7 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
     };
     std::visit(
         Overloaded {
-            [&](const SemReturn<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemReturn& value) noexcept {
                 if (value.value.has_value()) {
                     evaluate(*value.value);
                 }
@@ -87,14 +88,12 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
                 }
                 result.normal.reset();
             },
-            [&](const SemThrow<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemThrow& value) noexcept {
                 evaluate(value.value);
                 transfer(ExitKind::Failure, value.failure_type);
             },
-            [&](const SemExpressionStatement<TypeID, FailureSetID>& value) noexcept {
-                evaluate(value.expression);
-            },
-            [&](const SemInitialize<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
+            [&](const SemInitialize& value) noexcept {
                 evaluate(value.initializer);
                 if (result.normal.has_value()) {
                     store(
@@ -105,7 +104,7 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
                     );
                 }
             },
-            [&](const SemAssign<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemAssign& value) noexcept {
                 const auto target = *location(value.target);
                 const auto whole = target.path.empty();
                 result = place(
@@ -127,13 +126,11 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
                     store(*result.normal, target, result.value, source.origin);
                 }
             },
-            [&](const SemLoop<TypeID, FailureSetID>& value) noexcept {
-                result = loop(value, std::move(*result.normal));
-            },
-            [&](const SemRangeLoop<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemLoop& value) noexcept { result = loop(value, std::move(*result.normal)); },
+            [&](const SemRangeLoop& value) noexcept {
                 result = range(value, std::move(*result.normal));
             },
-            [&](const SemTestReport<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemTestReport& value) noexcept {
                 if (value.condition.has_value()) {
                     evaluate(*value.condition);
                 }
@@ -147,7 +144,7 @@ auto BodyAnalyzer::statement(const SemIRStatement& source, State state) noexcept
                     result.normal.reset();
                 }
             },
-            [&](const OwnedSemanticRegion<TypeID, FailureSetID>& value) noexcept {
+            [&](const OwnedSemanticRegion& value) noexcept {
                 result = region(*value, std::move(*result.normal));
             },
         },

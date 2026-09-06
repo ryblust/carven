@@ -5,8 +5,10 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.decl.context;
+import :semantic.analysis.expr.constant;
+import :semantic.analysis.expr.scope;
+import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -226,48 +228,46 @@ private:
         return std::addressof(catalog_symbol(catalog, selected.symbol_id));
     }
 
-    auto constant_environment(ProgramModuleID module_id, ASTView syntax) noexcept
-        -> ConstantExpressionEnvironment {
-        return ConstantExpressionEnvironment {
-            .resolve_name =
-                [this, module_id](std::string_view name, Span span) noexcept {
-                    return resolve_constant_name(module_id, name, span);
-                },
-            .resolve_enum_qualifier =
-                [this, module_id, syntax](ASTExprID expression) noexcept {
-                    return resolve_enum_qualifier(module_id, syntax, expression);
-                },
-            .resolve_enum_case =
-                [this, module_id](TypeID type, std::string_view name, Span span) noexcept {
-                    return resolve_constant_enum_case(module_id, type, name, span);
-                },
-            .resolve_type = [this, module_id, syntax](
-                                ASTTypeID type
-                            ) noexcept { return resolve_type(module_id, syntax, type); },
-            .supports_equality =
-                [this](ConstructionTypeRef type) noexcept {
-                    auto visiting = std::flat_set<TypeID>();
-                    return supports_equality(type, visiting);
-                },
-            .is_numeric_enum =
-                [this](TypeID type) noexcept {
-                    const auto canonical = draft.type_copy(type);
-                    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
-                    return nominal != nullptr
-                        && nominal->enumeration.index() < enumerations.size()
-                        && enumerations[nominal->enumeration.index()].has_value()
-                        && std::holds_alternative<ConstructionNumericEnumRepresentation>(
-                               enumerations[nominal->enumeration.index()]->representation
-                        );
-                },
-        };
-    }
+    struct ConstantScope final {
+        DeclarationResolver& resolver;
+        ProgramModuleID module;
+        ASTView syntax;
+        auto resolve_name(std::string_view name, Span span) noexcept
+            -> AnalysisResult<ResolvedConstantName> {
+            return resolver.resolve_constant_name(module, name, span);
+        }
+        auto resolve_enum_qualifier(ASTExprID expression) noexcept
+            -> AnalysisResult<std::optional<TypeID>> {
+            return resolver.resolve_enum_qualifier(module, syntax, expression);
+        }
+        auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
+            -> AnalysisResult<ResolvedEnumCase> {
+            return resolver.resolve_constant_enum_case(module, type, name, span);
+        }
+        auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
+            return resolver.resolve_type(module, syntax, type);
+        }
+        auto supports_equality(ConstructionTypeRef type) noexcept -> bool {
+            auto visiting = std::flat_set<TypeID>();
+            return resolver.supports_equality(type, visiting);
+        }
+        auto is_numeric_enum(TypeID type) const noexcept -> bool {
+            const auto canonical = resolver.draft.type_copy(type);
+            const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
+            return nominal != nullptr
+                && nominal->enumeration.index() < resolver.enumerations.size()
+                && resolver.enumerations[nominal->enumeration.index()].has_value()
+                && std::holds_alternative<NumericEnumRepresentation>(
+                       resolver.enumerations[nominal->enumeration.index()]->representation
+                );
+        }
+    };
 
     auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
         -> AnalysisResult<ConstructionTypeRef> {
-        auto environment = constant_environment(module_id, syntax);
+        auto scope = ConstantScope {*this, module_id, syntax};
         const auto extent = [&](ASTExprID expression) noexcept {
-            return prove_array_extent(draft, module_id, syntax, environment, expression);
+            return evaluate_array_extent(draft, module_id, syntax, scope, expression);
         };
         return resolve_source_type(draft, catalog, import_usage, module_id, syntax, type, extent);
     }
@@ -290,9 +290,9 @@ private:
         ASTView syntax,
         const ASTThrowClause& clause
     ) noexcept -> AnalysisResult<std::vector<TypeID>> {
-        auto environment = constant_environment(module_id, syntax);
+        auto scope = ConstantScope {*this, module_id, syntax};
         const auto extent = [&](ASTExprID expression) noexcept {
-            return prove_array_extent(draft, module_id, syntax, environment, expression);
+            return evaluate_array_extent(draft, module_id, syntax, scope, expression);
         };
         return resolve_failure_types(
             draft,
@@ -339,7 +339,7 @@ private:
         ProgramModuleID module_id,
         std::string_view name,
         Span origin
-    ) noexcept -> AnalysisResult<ConstantNamedValue>;
+    ) noexcept -> AnalysisResult<ResolvedConstantName>;
     auto resolve_enum_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
@@ -350,7 +350,7 @@ private:
         TypeID type,
         std::string_view name,
         Span origin
-    ) noexcept -> AnalysisResult<ConstantEnumCase>;
+    ) noexcept -> AnalysisResult<ResolvedEnumCase>;
     auto supports_equality(ConstructionTypeRef type, std::flat_set<TypeID>& visiting) noexcept
         -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
@@ -365,9 +365,9 @@ private:
     std::vector<std::optional<ModuleDeclaration>> modules;
     std::vector<std::optional<FunctionDeclaration>> functions;
     std::vector<std::optional<ConstructionStructDeclaration>> structures;
-    std::vector<std::optional<ConstructionEnumDeclaration>> enumerations;
+    std::vector<std::optional<EnumDeclaration>> enumerations;
     std::vector<std::optional<ConstructionEnumCaseDeclaration>> enum_cases;
-    std::vector<std::optional<ConstructionModuleConstantDeclaration>> module_constants;
+    std::vector<std::optional<ModuleConstantDeclaration>> module_constants;
     std::vector<std::optional<ConstructionCallableContract>> callable_contracts;
     std::vector<std::optional<ProgramOriginID>> cpp_import_origins;
 };

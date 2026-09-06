@@ -2,6 +2,7 @@ module carven:semantic.analysis.lint.unused_imports.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.lint.unused_imports;
+import :semantic.analysis.program;
 import :source.text;
 
 auto diagnose_unused_imports(

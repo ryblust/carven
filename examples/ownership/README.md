@@ -25,7 +25,7 @@ Follow the same `stock` binding through `main.cv`:
 
 The snapshot stays at 7 after the original reaches 9. This record contains only
 an integer; copying an external C++ handle can instead preserve an alias to
-external storage. See [ownership semantics](../../docs/semantics.md#value-ownership-and-lifetime).
+external storage.
 
 Try reading `stock.units` immediately after dispatch and before reassignment;
 Carven rejects use of the transferred owner. Restore the program to run it.

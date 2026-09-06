@@ -16,6 +16,7 @@ import :frontend.literal;
 import :frontend.program.parse;
 import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.operations;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -90,13 +91,13 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
     );
     compilation.define_declaration(
         enumeration,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = compilation.intern_spelling("Number"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
             .representation =
-                ConstructionNumericEnumRepresentation {
+                NumericEnumRepresentation {
                     .underlying_type = underlying,
                 },
             .cases = {},

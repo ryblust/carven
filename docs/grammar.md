@@ -3,16 +3,9 @@
 This document defines which source characters and token sequences form a
 syntactically well-formed Carven program.
 
-The grammar owns:
-
-- source encoding, whitespace, comments, and lexical token forms;
-- syntactic productions and source-level delimiters;
-- expression precedence and associativity;
-- parser-level disambiguation that can be decided from tokens and delimiters.
-
-Lexer and parser behavior conform to the productions and disambiguation rules
-in this document. Accepted syntax may still violate semantic constraints;
-only the complete productions defined here are accepted as AST forms.
+It specifies encoding, tokens, productions, precedence, and syntactic
+disambiguation. A syntactically well-formed program may still be semantically
+invalid.
 
 ## Contents
 

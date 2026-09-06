@@ -5,11 +5,36 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-TypeContentsQuery::TypeContentsQuery(ProgramDraft& program) noexcept
-    : draft(program) {}
+namespace {
+// This query is scoped to analysis after construction types have been solved.
+class TypeContentsQuery final {
+public:
+    TypeContentsQuery(
+        const CanonicalTypeStore& types,
+        const DeclarationStore& declarations
+    ) noexcept;
+    auto contents(TypeID type) noexcept -> TypeContents;
+
+private:
+    const CanonicalTypeStore& types;
+    const DeclarationStore& declarations;
+    std::flat_map<TypeID, TypeContents> memo;
+    std::flat_set<TypeID> visiting;
+};
+
+TypeContentsQuery::TypeContentsQuery(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations
+) noexcept
+    : types(types),
+      declarations(declarations) {
+    if (types.owner() != declarations.owner()) {
+        invariant_violation("type contents inputs belong to different programs");
+    }
+}
 
 auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
-    if (type.owner() != draft.identity()) {
+    if (type.owner() != types.owner()) {
         invariant_violation("type contents query observed a foreign type");
     }
     if (const auto found = memo.find(type); found != memo.end()) {
@@ -33,21 +58,19 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
             [&](const ArrayTypeValue& value) noexcept { return contents(value.element); },
             [&](const StructTypeValue& value) noexcept {
                 auto result = TypeContents {.closure_owner = false, .callable_view = false};
-                const auto declaration =
-                    draft.construction_struct_declaration_copy(value.structure);
+                const auto& declaration = declarations.structure(value.structure);
                 for (const auto& field : declaration.fields) {
-                    merge(result, contents(draft.concrete_type(field.type)));
+                    merge(result, contents(field.type));
                 }
                 return result;
             },
             [&](const EnumTypeValue& value) noexcept {
                 auto result = TypeContents {.closure_owner = false, .callable_view = false};
-                const auto declaration =
-                    draft.construction_enum_declaration_copy(value.enumeration);
+                const auto& declaration = declarations.enumeration(value.enumeration);
                 for (const auto case_id : declaration.cases) {
-                    const auto member = draft.construction_enum_case_declaration_copy(case_id);
+                    const auto& member = declarations.enum_case(case_id);
                     for (const auto element : member.payload_types) {
-                        merge(result, contents(draft.concrete_type(element)));
+                        merge(result, contents(element));
                     }
                 }
                 return result;
@@ -68,23 +91,25 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false};
             },
         },
-        draft.canonical_type_copy(type).value
+        types.type(type).value
     );
     visiting.erase(type);
     memo.emplace(type, result);
     return result;
 }
 
-auto TypeContentsQuery::contains_owner(std::variant<TypeID, FailureSetID> type) noexcept -> bool {
-    const auto* language = std::get_if<TypeID>(&type);
-    return language != nullptr && contents(*language).closure_owner;
-}
+} // namespace
 
-auto TypeContentsQuery::contains_view(std::variant<TypeID, FailureSetID> type) noexcept -> bool {
-    const auto* language = std::get_if<TypeID>(&type);
-    return language != nullptr && contains_view(*language);
-}
-
-auto TypeContentsQuery::contains_view(TypeID type) noexcept -> bool {
-    return contents(type).callable_view;
+auto compute_type_contents(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations
+) noexcept -> std::vector<TypeContents> {
+    auto query = TypeContentsQuery(types, declarations);
+    auto facts = std::vector<TypeContents>();
+    facts.reserve(types.size());
+    for (const auto [id, type] : types.entries()) {
+        static_cast<void>(type);
+        facts.push_back(query.contents(id));
+    }
+    return facts;
 }

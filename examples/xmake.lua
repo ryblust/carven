@@ -77,7 +77,7 @@ Amount must be positive:
 
 local names = {}
 for _, case in ipairs(cases) do
-    local name = "example-" .. case.name
+    local name = "carven-example-" .. case.name
     table.insert(names, name)
     target(name)
         set_default(false)

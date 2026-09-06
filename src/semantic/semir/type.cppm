@@ -1,16 +1,12 @@
 module carven:semantic.semir.type;
 
+import :semantic.semir.delegation;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
+import :semantic.semir.operation;
 import :semantic.semir.table;
 import :support.invariant;
 import std;
-
-enum class AccessMode {
-    Read,
-    Write,
-    Take,
-};
 
 enum class BuiltinType {
     Bool,
@@ -73,116 +69,6 @@ struct ClosureTypeValue final {
 struct CallableViewTypeValue final {
     CallableSignatureID signature;
     constexpr auto operator==(const CallableViewTypeValue&) const noexcept -> bool = default;
-};
-
-enum class CppNameLookup {
-    Global,
-    ModuleScope,
-};
-
-struct CppNameReference final {
-    ModuleID context_module;
-    CppNameLookup lookup;
-    std::vector<std::string> components;
-    auto operator==(const CppNameReference&) const noexcept -> bool = default;
-};
-
-auto valid_cpp_name(const CppNameReference& name) noexcept -> bool;
-
-struct CppNamedType final {
-    CppNameReference name;
-    std::vector<TypeID> arguments;
-    auto operator==(const CppNamedType&) const noexcept -> bool = default;
-};
-
-enum class UnaryOperator {
-    LogicalNot,
-    Negate,
-    BitwiseNot,
-};
-
-enum class BinaryOperator {
-    BitwiseOr,
-    BitwiseXor,
-    BitwiseAnd,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    LeftShift,
-    RightShift,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Remainder,
-};
-
-struct CppNameOperation final {
-    CppNameReference name;
-
-    auto operator==(const CppNameOperation&) const noexcept -> bool = default;
-};
-struct CppCallOperation final {
-    auto operator==(const CppCallOperation&) const noexcept -> bool = default;
-};
-struct CppConstructOperation final {
-    auto operator==(const CppConstructOperation&) const noexcept -> bool = default;
-};
-struct CppMemberOperation final {
-    std::string name;
-    auto operator==(const CppMemberOperation&) const noexcept -> bool = default;
-};
-struct CppIndexOperation final {
-    auto operator==(const CppIndexOperation&) const noexcept -> bool = default;
-};
-struct CppConvertOperation final {
-    bool explicit_cast;
-    auto operator==(const CppConvertOperation&) const noexcept -> bool = default;
-};
-struct CppUpdateOperation final {
-    bool increment;
-    auto operator==(const CppUpdateOperation&) const noexcept -> bool = default;
-};
-struct CppBinaryOperation final {
-    BinaryOperator operation;
-    auto operator==(const CppBinaryOperation&) const noexcept -> bool = default;
-};
-struct CppUnaryOperation final {
-    UnaryOperator operation;
-    auto operator==(const CppUnaryOperation&) const noexcept -> bool = default;
-};
-using CppOperation = std::variant<
-    CppNameOperation,
-    CppCallOperation,
-    CppConstructOperation,
-    CppMemberOperation,
-    CppIndexOperation,
-    CppConvertOperation,
-    CppBinaryOperation,
-    CppUnaryOperation,
-    CppUpdateOperation>;
-
-auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept -> bool;
-
-struct CppTypeOperand final {
-    TypeID type;
-    AccessMode access;
-    auto operator==(const CppTypeOperand&) const noexcept -> bool = default;
-};
-
-struct CppDeducedType final {
-    ProgramOriginID origin;
-    CppOperation operation;
-    std::vector<CppTypeOperand> operands;
-    auto operator==(const CppDeducedType&) const noexcept -> bool = default;
-};
-
-struct CppTypeValue final {
-    std::variant<CppNamedType, CppDeducedType> form;
-    auto operator==(const CppTypeValue&) const noexcept -> bool = default;
 };
 
 using CanonicalTypeValue = std::variant<
@@ -265,6 +151,21 @@ public:
             && static_cast<std::size_t>(term.index()) < resolved_types.size();
     }
     auto type(TypeTermID term) const noexcept -> TypeID;
+    auto resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
+        return std::visit(
+            [&](auto id) noexcept -> TypeID {
+                if (id.owner() != owner()) {
+                    invariant_violation("type resolution used a foreign identity");
+                }
+                if constexpr (std::same_as<decltype(id), TypeID>) {
+                    return id;
+                } else {
+                    return type(id);
+                }
+            },
+            reference
+        );
+    }
 
 private:
     TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
@@ -444,52 +345,16 @@ public:
             invariant_violation("construction type canonicalization mixed program owners");
         }
 
-        enum class VisitState : std::uint8_t {
-            Unvisited,
-            Visiting,
-            Resolved,
+        const auto terms = std::move(rows).seal();
+        auto resolved = std::vector<TypeID>();
+        resolved.reserve(terms.size());
+        const auto resolve_ref = [&](ConstructionTypeRef ref) noexcept -> TypeID {
+            if (const auto* concrete = std::get_if<TypeID>(&ref)) {
+                return *concrete;
+            }
+            return resolved[std::get<TypeTermID>(ref).index()];
         };
-        auto states = std::vector<VisitState>(rows.size(), VisitState::Unvisited);
-        auto resolved = std::vector<std::optional<TypeID>>(rows.size());
-
-        auto resolve_term = [&](this auto&& self, TypeTermID term) noexcept -> TypeID {
-            if (term.owner() != owner() || static_cast<std::size_t>(term.index()) >= rows.size()) {
-                invariant_violation("construction type referenced a foreign or invalid term");
-            }
-            auto& state = states[term.index()];
-            if (state == VisitState::Resolved) {
-                return *resolved[term.index()];
-            }
-            if (state == VisitState::Visiting) {
-                invariant_violation("construction type terms formed a recursive structural cycle");
-            }
-            state = VisitState::Visiting;
-
-            const auto resolve_ref = [&](ConstructionTypeRef ref) noexcept -> TypeID {
-                return std::visit(
-                    [&](const auto id) noexcept -> TypeID {
-                        using ID = std::remove_cvref_t<decltype(id)>;
-                        if constexpr (std::same_as<ID, TypeID>) {
-                            if (id.owner() != owner()) {
-                                invariant_violation(
-                                    "construction type used a foreign concrete type"
-                                );
-                            }
-                            return id;
-                        } else if constexpr (std::same_as<ID, TypeTermID>) {
-                            return self(id);
-                        } else {
-                            static_assert(
-                                std::same_as<ID, void>,
-                                "unhandled construction type reference"
-                            );
-                        }
-                    },
-                    ref
-                );
-            };
-
-            const auto shape = rows.copy(term);
+        for (const auto entry : terms.entries()) {
             const auto concrete = std::visit(
                 [&](const auto& value) noexcept -> TypeID {
                     using Value = std::remove_cvref_t<decltype(value)>;
@@ -533,31 +398,13 @@ public:
                         );
                     }
                 },
-                shape.value
+                entry.value.value
             );
-            resolved[term.index()] = concrete;
-            state = VisitState::Resolved;
-            return concrete;
-        };
-
-        for (const auto term : insertion_order) {
-            static_cast<void>(resolve_term(term));
+            resolved.push_back(concrete);
         }
-        auto concrete_types = std::vector<TypeID>();
-        concrete_types.reserve(resolved.size());
-        for (const auto& type : resolved) {
-            if (!type.has_value()) {
-                invariant_violation("construction type canonicalization left an unresolved term");
-            }
-            concrete_types.push_back(*type);
-        }
-        const auto resolution_owner = owner();
-        static_cast<void>(std::move(rows).seal());
-        insertion_order.clear();
-        return TypeResolution(resolution_owner, std::move(concrete_types));
+        return TypeResolution(terms.owner(), std::move(resolved));
     }
 
 private:
     MutableProgramTable<ConstructionType, TypeTermID> rows;
-    std::vector<TypeTermID> insertion_order;
 };

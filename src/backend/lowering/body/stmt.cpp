@@ -14,34 +14,16 @@ import :support.visit;
 import std;
 
 namespace body_lowering {
-namespace {
-
-auto full_expression_block(std::vector<TargetStmt> statements) noexcept -> TargetBlockStmt {
-    const auto needs_scope = [&](this const auto& self,
-                                 std::span<const TargetStmt> statements) noexcept -> bool {
-        return std::ranges::any_of(statements, [&](const TargetStmt& statement) noexcept {
-            if (std::holds_alternative<TargetVariableStmt>(statement.value)
-                || std::holds_alternative<TargetLabelStmt>(statement.value)) {
-                return true;
-            }
-            const auto* block = std::get_if<TargetBlockStmt>(&statement.value);
-            return block != nullptr && !block->scoped && self(block->statements);
-        });
-    };
-    const auto scoped = needs_scope(statements);
-    return {.statements = std::move(statements), .scoped = scoped};
-}
-
-} // namespace
-
 auto BodyLowerer::emit_return(
     std::optional<TargetExpr> value,
-    std::vector<TargetStmt>& destination
+    StatementSequence& destination
 ) noexcept -> void {
-    if (!falls_through(destination)) {
+    if (!destination.continues()) {
         return;
     }
-    if (!returning_region) {
+    if (region_return.has_value()) {
+        *region_return = true;
+    } else {
         if (const auto* callable = std::get_if<TargetCallableBodyExit>(&inputs.exit)) {
             const auto& signature =
                 context.semantic().callable_signatures().signature(callable->signature);
@@ -60,21 +42,21 @@ auto BodyLowerer::emit_return(
             }
         }
     }
-    destination.push_back(generated_statement(TargetReturnStmt {.expression = std::move(value)}));
+    destination.terminate(generated_statement(TargetReturnStmt {.expression = std::move(value)}));
 }
 
-auto BodyLowerer::emit_failure(TargetExpr value, std::vector<TargetStmt>& destination) noexcept
-    -> void {
-    if (!falls_through(destination)) {
+auto BodyLowerer::emit_failure(TargetExpr value, StatementSequence& destination) noexcept -> void {
+    if (!destination.continues()) {
         return;
     }
     if (failure_destination.has_value()) {
-        destination.push_back(statement_expression(call_member(
+        failure_destination->used = true;
+        destination.emit(statement_expression(call_member(
             name_expression(failure_destination->storage),
             "emplace",
             target_expressions(std::move(value))
         )));
-        destination.push_back(generated_statement(
+        destination.terminate(generated_statement(
             TargetGotoStmt {
                 .label = failure_destination->label,
                 .role = TargetJumpRole::FailureTransfer
@@ -86,7 +68,7 @@ auto BodyLowerer::emit_failure(TargetExpr value, std::vector<TargetStmt>& destin
     if (callable == nullptr) {
         invariant_violation("failure escaped a test body");
     }
-    destination.push_back(generated_statement(
+    destination.terminate(generated_statement(
         TargetReturnStmt {
             .expression = call_expression(
                 static_member_expression(
@@ -102,12 +84,15 @@ auto BodyLowerer::emit_failure(TargetExpr value, std::vector<TargetStmt>& destin
 auto BodyLowerer::transfer_failure(
     const TargetIdentifier& storage,
     FailureSetID failures,
-    std::vector<TargetStmt>& destination
+    StatementSequence& destination
 ) noexcept -> void {
-    auto transfers = std::vector<TargetStmt>();
+    if (!destination.continues()) {
+        return;
+    }
+    auto transfers = StatementSequence();
     for (const auto type : context.plan().failure_abi().members(failures)) {
         const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
-        transfers.push_back(generated_statement(
+        transfers.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
@@ -122,88 +107,75 @@ auto BodyLowerer::transfer_failure(
                 )
             }
         ));
-        auto transfer = std::vector<TargetStmt>();
+        auto transfer = StatementSequence();
         emit_failure(
             transfer_expression(dereference_expression(name_expression(projection))),
             transfer
         );
         auto branches = std::vector<TargetIfBranch>();
-        branches.push_back({.condition = name_expression(projection), .body = std::move(transfer)});
-        transfers.push_back(generated_statement(
+        branches.push_back(
+            {.condition = name_expression(projection), .body = std::move(transfer).finish()}
+        );
+        transfers.emit(generated_statement(
             TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
         ));
     }
-    transfers.push_back(
+    transfers.terminate(
         generated_statement(TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof})
     );
-    destination.push_back(generated_statement(full_expression_block(std::move(transfers))));
+    destination.block(std::move(transfers));
 }
 
 auto BodyLowerer::result_expression(
-    const SemIRExpression& source,
+    const SemanticExpression& source,
     ResultDestination result,
-    std::vector<TargetStmt>& destination
+    StatementSequence& destination
 ) noexcept -> void {
-    if (const auto* sequence = std::get_if<SemSequence<TypeID, FailureSetID>>(&source.value)) {
-        for (auto index = 0uz; index < sequence->expressions.size(); ++index) {
-            const auto& item = sequence->expressions[index];
-            if (index + 1uz == sequence->expressions.size() || context.is_void(item.type)) {
-                result_expression(
-                    item,
-                    {.use = ResultUse::Discard, .storage = std::nullopt},
-                    destination
-                );
-            } else {
-                auto retained = operand(item, destination, OperandUse::Snapshot);
-                destination.push_back(
-                    generated_statement(TargetDiscardStmt {.expression = std::move(retained)})
-                );
-            }
-        }
+    if (!destination.continues()) {
         return;
     }
-    if (std::holds_alternative<SemIf<TypeID, FailureSetID>>(source.value)
-        || std::holds_alternative<SemMatch<TypeID, FailureSetID>>(source.value)
-        || std::holds_alternative<SemTry<TypeID, FailureSetID>>(source.value)) {
+    if (std::holds_alternative<SemIf>(source.value)
+        || std::holds_alternative<SemMatch>(source.value)
+        || std::holds_alternative<SemTry>(source.value)) {
         structured_expression(source, result, destination);
         return;
     }
     auto value = expression(source, destination);
-    if (!falls_through(destination)) {
+    if (!destination.continues()) {
         return;
     }
     if (result.use == ResultUse::Return) {
-        if (context.is_void(source.type)) {
-            destination.push_back(statement_expression(std::move(value)));
+        if (context.is_void(source.type.resolved())) {
+            destination.emit(statement_expression(std::move(*value)));
             emit_return(std::nullopt, destination);
         } else {
-            emit_return(std::move(value), destination);
+            emit_return(std::move(*value), destination);
         }
     } else if (result.use == ResultUse::Store) {
-        destination.push_back(statement_expression(call_member(
+        destination.emit(statement_expression(call_member(
             name_expression(*result.storage),
             "emplace",
-            target_expressions(std::move(value))
+            target_expressions(std::move(*value))
         )));
     } else {
-        destination.push_back(source_statement(
+        destination.emit(source_statement(
             context.semantic(),
             source.origin,
-            TargetDiscardStmt {.expression = std::move(value)}
+            TargetDiscardStmt {.expression = std::move(*value)}
         ));
     }
 }
 
 auto BodyLowerer::statement(
-    const SemIRStatement& source,
-    std::vector<TargetStmt>& destination
+    const SemanticStatement& source,
+    StatementSequence& destination
 ) noexcept -> void {
-    if (!falls_through(destination)) {
+    if (!destination.continues()) {
         return;
     }
     std::visit(
         Overloaded {
-            [&](const SemReturn<TypeID, FailureSetID>& value) noexcept {
+            [&](const SemReturn& value) noexcept {
                 if (value.value.has_value()) {
                     result_expression(
                         *value.value,
@@ -215,11 +187,21 @@ auto BodyLowerer::statement(
                 }
             },
             [&](const SemBreak&) noexcept {
-                destination.push_back(generated_statement(TargetBreakStmt {}));
+                loop_continuation.breaks = true;
+                destination.terminate(generated_statement(TargetBreakStmt {}));
             },
             [&](const SemContinue&) noexcept {
-                continue_label_used = true;
-                destination.push_back(generated_statement(TargetContinueStmt {}));
+                loop_continuation.used = true;
+                if (loop_continuation.step.has_value()) {
+                    destination.terminate(generated_statement(
+                        TargetGotoStmt {
+                            .label = *loop_continuation.step,
+                            .role = TargetJumpRole::ForLoopContinue
+                        }
+                    ));
+                } else {
+                    destination.terminate(generated_statement(TargetContinueStmt {}));
+                }
             },
             [&](const SemRethrow&) noexcept {
                 if (!caught_failure.has_value()) {
@@ -227,91 +209,97 @@ auto BodyLowerer::statement(
                 }
                 transfer_failure(caught_failure->storage, caught_failure->failures, destination);
             },
-            [&](const SemThrow<TypeID, FailureSetID>& value) noexcept {
-                emit_failure(expression(value.value, destination), destination);
+            [&](const SemThrow& value) noexcept {
+                auto failure = expression(value.value, destination);
+                if (failure) {
+                    emit_failure(std::move(*failure), destination);
+                }
             },
-            [&](const SemExpressionStatement<TypeID, FailureSetID>& value) noexcept {
-                auto statements = std::vector<TargetStmt>();
+            [&](const SemExpressionStatement& value) noexcept {
+                auto statements = StatementSequence();
                 result_expression(
                     value.expression,
                     {.use = ResultUse::Discard, .storage = std::nullopt},
                     statements
                 );
-                destination.push_back(source_statement(
-                    context.semantic(),
-                    source.origin,
-                    full_expression_block(std::move(statements))
-                ));
+                destination.block(
+                    std::move(statements),
+                    TargetSourceExpansionAttribution {
+                        .origin =
+                            target_source_origin(context.semantic().provenance(), source.origin)
+                    }
+                );
             },
-            [&](const SemInitialize<TypeID, FailureSetID>& value) noexcept {
-                auto initializer_statements = std::vector<TargetStmt>();
+            [&](const SemInitialize& value) noexcept {
+                auto initializer_statements = StatementSequence();
                 auto initializer = expression(value.initializer, initializer_statements);
-                if (!falls_through(initializer_statements)) {
-                    destination.push_back(generated_statement(
-                        full_expression_block(std::move(initializer_statements))
-                    ));
+                if (!initializer_statements.continues()) {
+                    destination.block(std::move(initializer_statements));
                     return;
                 }
                 if (!initializer_statements.empty()
-                    && context.plan().failure_abi().members(value.initializer.failures).empty()
+                    && context.plan()
+                           .failure_abi()
+                           .members(value.initializer.failures.resolved())
+                           .empty()
                     && !value.initializer.exits_test) {
-                    initializer_statements.push_back(
-                        generated_statement(TargetReturnStmt {.expression = std::move(initializer)})
-                    );
-                    mark_unused(initializer_statements);
+                    initializer_statements.terminate(generated_statement(
+                        TargetReturnStmt {.expression = std::move(*initializer)}
+                    ));
+
                     initializer = TargetExpr {
                         .value = TargetRegionExpr {
-                            .result = context.lower_type(value.initializer.type),
-                            .body = std::move(initializer_statements)
+                            .result = context.lower_type(value.initializer.type.resolved()),
+                            .body = std::move(initializer_statements).finish()
                         }
                     };
                 } else if (!initializer_statements.empty()) {
                     const auto id = value.binding;
                     delayed_bindings.insert(id);
-                    destination.push_back(generated_statement(
+                    destination.emit(generated_statement(
                         TargetVariableStmt {
                             .binding = TargetVariableBinding::MutableValue,
-                            .maybe_unused = false,
+                            .maybe_unused = true,
                             .name = binding_names.at(id),
                             .type =
                                 context.optional_type(context.lower_type(body.binding(id).type)),
                             .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
                         }
                     ));
-                    initializer_statements.push_back(statement_expression(call_member(
+                    initializer_statements.emit(statement_expression(call_member(
                         name_expression(binding_names.at(id)),
                         "emplace",
-                        target_expressions(std::move(initializer))
+                        target_expressions(std::move(*initializer))
                     )));
-                    destination.push_back(source_statement(
-                        context.semantic(),
-                        source.origin,
-                        full_expression_block(std::move(initializer_statements))
-                    ));
+                    destination.block(
+                        std::move(initializer_statements),
+                        TargetSourceExpansionAttribution {
+                            .origin =
+                                target_source_origin(context.semantic().provenance(), source.origin)
+                        }
+                    );
                     return;
                 }
-                declare_binding(value.binding, std::move(initializer), destination);
+                declare_binding(value.binding, std::move(*initializer), destination);
             },
-            [&](const SemAssign<TypeID, FailureSetID>& value) noexcept {
-                auto statements = std::vector<TargetStmt>();
+            [&](const SemAssign& value) noexcept {
+                auto statements = StatementSequence();
                 const auto* binding = std::get_if<SemBinding>(&value.target.value);
                 auto target = expression(value.target, statements);
                 auto stable_target = std::optional<TargetIdentifier>();
-                if (!falls_through(statements)) {
-                    destination.push_back(
-                        generated_statement(full_expression_block(std::move(statements)))
-                    );
+                if (!statements.continues()) {
+                    destination.block(std::move(statements));
                     return;
                 }
                 if (binding == nullptr) {
                     stable_target = names.fresh(TargetTemporaryNameKind::Owner);
-                    statements.push_back(generated_statement(
+                    statements.emit(generated_statement(
                         TargetVariableStmt {
                             .binding = TargetVariableBinding::RvalueReference,
                             .maybe_unused = false,
                             .name = *stable_target,
                             .type = context.intrinsic_type(TargetSymbol::Auto),
-                            .initializer = std::move(target)
+                            .initializer = std::move(*target)
                         }
                     ));
                     target = name_expression(*stable_target);
@@ -320,27 +308,27 @@ auto BodyLowerer::statement(
                     return stable_target.has_value() ? name_expression(*stable_target)
                                                      : binding_expression(binding->binding);
                 };
-                const auto external = std::holds_alternative<CppTypeValue>(
-                                          context.semantic().types().type(value.target.type).value
-                                      )
+                const auto external =
+                    std::holds_alternative<CppTypeValue>(
+                        context.semantic().types().type(value.target.type.resolved()).value
+                    )
                     || std::holds_alternative<CppTypeValue>(
-                                          context.semantic().types().type(value.value.type).value
+                        context.semantic().types().type(value.value.type.resolved()).value
                     );
                 auto previous = std::optional<TargetExpr>();
                 if (value.compound.has_value() && !external) {
-                    const auto immediate = std::holds_alternative<SemLiteral>(value.value.value)
-                        || std::holds_alternative<SemConstant>(value.value.value)
+                    const auto immediate = std::holds_alternative<SemConstant>(value.value.value)
                         || std::holds_alternative<SemBinding>(value.value.value);
                     if (immediate) {
                         previous = target_again();
                     } else {
                         const auto name = names.fresh(TargetTemporaryNameKind::Operand);
-                        statements.push_back(generated_statement(
+                        statements.emit(generated_statement(
                             TargetVariableStmt {
                                 .binding = TargetVariableBinding::MutableValue,
                                 .maybe_unused = false,
                                 .name = name,
-                                .type = context.lower_type(value.target.type),
+                                .type = context.lower_type(value.target.type.resolved()),
                                 .initializer = target_again()
                             }
                         ));
@@ -348,18 +336,16 @@ auto BodyLowerer::statement(
                     }
                 }
                 auto assigned = expression(value.value, statements);
-                if (!falls_through(statements)) {
-                    destination.push_back(
-                        generated_statement(full_expression_block(std::move(statements)))
-                    );
+                if (!statements.continues()) {
+                    destination.block(std::move(statements));
                     return;
                 }
                 if (value.compound.has_value() && !external) {
                     assigned = binary(
                         std::move(*previous),
                         *value.compound,
-                        std::move(assigned),
-                        value.target.type
+                        std::move(*assigned),
+                        value.target.type.resolved()
                     );
                 }
                 auto assignment = TargetAssignmentOperator::Assign;
@@ -396,47 +382,45 @@ auto BodyLowerer::statement(
                         default: invariant_violation("invalid external compound assignment");
                     }
                 }
-                statements.push_back(generated_statement(
+                statements.emit(generated_statement(
                     TargetAssignmentStmt {
-                        .target = std::move(target),
+                        .target = std::move(*target),
                         .op = assignment,
-                        .value = std::move(assigned)
+                        .value = std::move(*assigned)
                     }
                 ));
-                destination.push_back(source_statement(
-                    context.semantic(),
-                    source.origin,
-                    full_expression_block(std::move(statements))
-                ));
+                destination.block(
+                    std::move(statements),
+                    TargetSourceExpansionAttribution {
+                        .origin =
+                            target_source_origin(context.semantic().provenance(), source.origin)
+                    }
+                );
             },
-            [&](const SemLoop<TypeID, FailureSetID>& value) noexcept {
-                lower_loop(value, destination);
-            },
-            [&](const SemRangeLoop<TypeID, FailureSetID>& value) noexcept {
-                lower_range(value, destination);
-            },
-            [&](const SemTestReport<TypeID, FailureSetID>& value) noexcept {
-                if (!falls_through(destination)) {
+            [&](const SemLoop& value) noexcept { lower_loop(value, destination); },
+            [&](const SemRangeLoop& value) noexcept { lower_range(value, destination); },
+            [&](const SemTestReport& value) noexcept {
+                if (!destination.continues()) {
                     return;
                 }
-                auto report = std::vector<TargetStmt>();
+                auto report = StatementSequence();
                 lower_report(value, source.origin, report);
-                destination.push_back(source_statement(
-                    context.semantic(),
-                    source.origin,
-                    full_expression_block(std::move(report))
-                ));
-            },
-            [&](const OwnedSemanticRegion<TypeID, FailureSetID>& value) noexcept {
-                destination.push_back(source_statement(
-                    context.semantic(),
-                    source.origin,
-                    TargetBlockStmt {
-                        .statements =
-                            region(*value, {.use = ResultUse::Discard, .storage = std::nullopt}),
-                        .scoped = true
+                destination.block(
+                    std::move(report),
+                    TargetSourceExpansionAttribution {
+                        .origin =
+                            target_source_origin(context.semantic().provenance(), source.origin)
                     }
-                ));
+                );
+            },
+            [&](const OwnedSemanticRegion& value) noexcept {
+                destination.block(
+                    region(*value, {.use = ResultUse::Discard, .storage = std::nullopt}),
+                    TargetSourceExpansionAttribution {
+                        .origin =
+                            target_source_origin(context.semantic().provenance(), source.origin)
+                    }
+                );
             },
         },
         source.value
@@ -444,18 +428,20 @@ auto BodyLowerer::statement(
 }
 
 auto BodyLowerer::lower_report(
-    const SemTestReport<TypeID, FailureSetID>& value,
+    const SemTestReport& value,
     ProgramOriginID origin,
-    std::vector<TargetStmt>& destination
+    StatementSequence& destination
 ) noexcept -> void {
     uses_test_context = true;
-    auto should_report = value.condition.has_value()
-        ? prefix_expression(
-              TargetPrefixOperator::LogicalNot,
-              operand(*value.condition, destination, OperandUse::Snapshot)
-          )
-        : bool_expression(true);
-    auto report = std::vector<TargetStmt>();
+    auto should_report = bool_expression(true);
+    if (value.condition) {
+        auto condition = operand(*value.condition, destination, OperandUse::Snapshot);
+        if (!condition) {
+            return;
+        }
+        should_report = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(*condition));
+    }
+    auto report = StatementSequence();
     const auto source = target_source_origin(context.semantic().provenance(), origin);
     auto arguments = std::vector<TargetExpr>();
     arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
@@ -472,24 +458,33 @@ auto BodyLowerer::lower_report(
               )
             : intrinsic_expression(TargetSymbol::StdNullopt)
     );
-    arguments.push_back(
-        value.message.has_value() ? operand(*value.message, destination, OperandUse::Snapshot)
-                                  : intrinsic_expression(TargetSymbol::StdNullopt)
-    );
-    if (!falls_through(destination)) {
+    if (value.message) {
+        auto message = operand(*value.message, destination, OperandUse::Snapshot);
+        if (!message) {
+            return;
+        }
+        arguments.push_back(std::move(*message));
+    } else {
+        arguments.push_back(intrinsic_expression(TargetSymbol::StdNullopt));
+    }
+    if (!destination.continues()) {
         return;
     }
-    report.push_back(statement_expression(call_member(
+    report.emit(statement_expression(call_member(
         name_expression(TargetNameAllocator::test_context()),
         "report_failure",
         std::move(arguments)
     )));
     if (value.kind != TestReportKind::Check) {
-        report.push_back(generated_statement(TargetReturnStmt {.expression = std::nullopt}));
+        report.terminate(generated_statement(TargetReturnStmt {.expression = std::nullopt}));
+    }
+    if (!value.condition) {
+        destination.append(std::move(report));
+        return;
     }
     auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = std::move(should_report), .body = std::move(report)});
-    destination.push_back(source_statement(
+    branches.push_back({.condition = std::move(should_report), .body = std::move(report).finish()});
+    destination.emit(source_statement(
         context.semantic(),
         origin,
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}

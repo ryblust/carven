@@ -7,20 +7,17 @@ import std;
 auto BodyBuilder::add_binding(
     ProgramSpellingID name,
     ConstructionTypeRef type,
-    ScopeID scope,
     LifetimeRegionID lifetime,
     BindingStorage storage,
     ProgramOriginID origin
 ) noexcept -> BoundStorage {
-    const auto binding = bindings.add({name, type, scope, lifetime, storage, origin});
-    const auto root_place = add_place(binding);
-    return {binding, root_place};
+    const auto binding = bindings.add({name, type, lifetime, storage, origin});
+    return {.binding = binding};
 }
 
 auto BodyBuilder::add_parameter(
     ProgramSpellingID name,
     ConstructionTypeRef type,
-    ScopeID scope,
     LifetimeRegionID lifetime,
     AccessMode access,
     ProgramOriginID origin
@@ -28,8 +25,7 @@ auto BodyBuilder::add_parameter(
     if (body_kind == BodyKind::Test) {
         invariant_violation("test body cannot receive callable parameters");
     }
-    const auto result =
-        add_binding(name, type, scope, lifetime, ParameterBindingStorage {access}, origin);
+    const auto result = add_binding(name, type, lifetime, ParameterBindingStorage {access}, origin);
     body_inputs.parameters.push_back(result.binding);
     return result;
 }
@@ -37,7 +33,6 @@ auto BodyBuilder::add_parameter(
 auto BodyBuilder::add_capture(
     ProgramSpellingID name,
     ConstructionTypeRef type,
-    ScopeID scope,
     LifetimeRegionID lifetime,
     CaptureMode mode,
     ProgramOriginID origin
@@ -45,8 +40,7 @@ auto BodyBuilder::add_capture(
     if (body_kind != BodyKind::Closure) {
         invariant_violation("only closure bodies can receive capture bindings");
     }
-    const auto result =
-        add_binding(name, type, scope, lifetime, CaptureBindingStorage {mode}, origin);
+    const auto result = add_binding(name, type, lifetime, CaptureBindingStorage {mode}, origin);
     body_inputs.captures.push_back(result.binding);
     return result;
 }
@@ -54,16 +48,11 @@ auto BodyBuilder::add_capture(
 auto BodyBuilder::add_owner_binding(
     ProgramSpellingID name,
     ConstructionTypeRef type,
-    ScopeID scope,
     LifetimeRegionID lifetime,
     bool writable,
     ProgramOriginID origin
 ) noexcept -> BoundStorage {
-    return add_binding(name, type, scope, lifetime, OwnerBindingStorage {writable}, origin);
-}
-
-auto BodyBuilder::place_lifetime(PlaceHandle place) const noexcept -> LifetimeRegionID {
-    return bindings.copy(place_root(place)).lifetime;
+    return add_binding(name, type, lifetime, OwnerBindingStorage {writable}, origin);
 }
 
 auto BodyBuilder::add_pattern(ElaboratedPattern pattern) noexcept -> PatternID {
@@ -77,7 +66,7 @@ auto BodyBuilder::pattern_copy(PatternID id) const noexcept -> ElaboratedPattern
     return patterns.copy(id);
 }
 
-auto BodyBuilder::place_access(PlaceHandle place) const noexcept -> AccessMode {
+auto BodyBuilder::place_access(const PlaceExpression& place) const noexcept -> AccessMode {
     return std::visit(
         [](const auto& storage) static noexcept -> AccessMode {
             using Storage = std::remove_cvref_t<decltype(storage)>;
@@ -89,6 +78,6 @@ auto BodyBuilder::place_access(PlaceHandle place) const noexcept -> AccessMode {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
             }
         },
-        bindings.copy(place_root(place)).storage
+        bindings.copy(place.root).storage
     );
 }

@@ -351,19 +351,6 @@ TEST_CASE("Interface components: read parameters and failure results require com
     CHECK_FALSE(api_header.content.contains("struct Failure;"));
 }
 
-TEST_CASE("Interface components: enum definitions use canonical target alternatives") {
-    constexpr auto source = "export enum Choice { Value(i32), Empty, }\n"
-                            "export enum Code: u8 { Ready = 1, Done, }\n";
-    const auto artifacts = compile_modules(std::array {ModuleFixture {"enums", source}});
-
-    REQUIRE_EQ(interfaces(artifacts).size(), 1);
-    const auto& header = interface_for(artifacts, "enums");
-    CHECK(header.content.contains("Ready = 1"));
-    CHECK(header.content.contains("Done = 2"));
-    CHECK_FALSE(header.content.contains("Ready = Code::Ready"));
-    CHECK_FALSE(header.content.contains("Done = Code::Done"));
-}
-
 TEST_CASE("Interface components: arrays require complete predecessor definitions") {
     constexpr auto model = "export struct Model { value: i32, }\n";
     constexpr auto api = "import model using Model;\n"

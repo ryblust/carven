@@ -25,7 +25,6 @@ auto BodyContractVerifier::verify_rows() noexcept -> void {
     for (const auto [id, binding] : body.bindings()) {
         if (id.owner() != body.identity()
             || binding.name.owner() != body.provenance_identity()
-            || !body.scopes().contains(binding.scope)
             || !body.lifetime_regions().contains(binding.lifetime)) {
             invariant_violation("local binding contains a foreign owner");
         }
@@ -51,7 +50,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
             Overloaded {
                 [](const WildcardPattern&) static noexcept {},
                 [&](const LiteralPattern& value) noexcept {
-                    if (draft->constant_copy(value.constant).type != pattern.type) {
+                    if (draft->constants().constant(value.constant).type != pattern.type) {
                         invariant_violation("literal pattern type differs from its constant");
                     }
                 },
@@ -101,7 +100,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
                             invariant_violation("pattern payload contains a forward edge or cycle");
                         }
                         if (body.pattern(value.payload[index]).type
-                            != draft->concrete_type(enum_case.payload_types[index])) {
+                            != enum_case.payload_types[index]) {
                             invariant_violation("enum pattern payload has the wrong type");
                         }
                     }

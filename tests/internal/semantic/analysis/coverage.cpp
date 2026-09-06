@@ -9,6 +9,7 @@ import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.coverage;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -95,7 +96,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     );
     compilation.define_declaration(
         enumeration,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = compilation.intern_spelling("PairError"),
             .origin = origin,
@@ -107,7 +108,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     );
     compilation.define_declaration(
         uninhabited,
-        ConstructionEnumDeclaration {
+        EnumDeclaration {
             .module_id = module_id,
             .name = compilation.intern_spelling("Never"),
             .origin = origin,
@@ -237,7 +238,8 @@ TEST_CASE("Pattern coverage: enum payload overlap and guarded exhaustiveness sta
         PatternCoverageArm {.alternatives = {empty}, .guarded = false},
         PatternCoverageArm {.alternatives = {std::nullopt}, .guarded = false},
     };
-    auto coverage = compute_pattern_coverage(source.compilation, body, source.pair_enum, arms);
+    auto coverage =
+        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
     REQUIRE(coverage.has_value());
     CHECK((coverage->arm_usefulness == std::vector<bool> {true, true, true, true, false}));
     CHECK((coverage->exhaustive_after_arm == std::vector<bool> {false, false, false, true, true}));
@@ -258,7 +260,8 @@ TEST_CASE("Pattern coverage: redundant alternatives and finite witnesses are rep
             .guarded = true,
         },
     };
-    auto coverage = compute_pattern_coverage(source.compilation, body, source.boolean, arms);
+    auto coverage =
+        compute_pattern_coverage(source.compilation, body.pattern_table(), source.boolean, arms);
     REQUIRE(coverage.has_value());
     CHECK_FALSE(coverage->exhaustive);
     CHECK_EQ(coverage->missing_witness, "false");
@@ -299,7 +302,8 @@ TEST_CASE("Pattern coverage: an alternative covered by a union is redundant") {
             .guarded = false,
         },
     };
-    auto coverage = compute_pattern_coverage(source.compilation, body, source.pair_enum, arms);
+    auto coverage =
+        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
     REQUIRE(coverage.has_value());
     REQUIRE_EQ(coverage->redundant_alternatives.size(), 1uz);
     CHECK_EQ(coverage->redundant_alternatives.front().arm, 0uz);
@@ -325,7 +329,8 @@ TEST_CASE("Pattern coverage: witnesses retain missing nested payload constructor
         PatternCoverageArm {.alternatives = {first_row}, .guarded = false},
         PatternCoverageArm {.alternatives = {empty}, .guarded = false},
     };
-    auto coverage = compute_pattern_coverage(source.compilation, body, source.pair_enum, arms);
+    auto coverage =
+        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
     REQUIRE(coverage.has_value());
     CHECK_FALSE(coverage->exhaustive);
     CHECK_EQ(coverage->missing_witness, ".Pair(false, false)");
@@ -338,7 +343,8 @@ TEST_CASE("Pattern coverage: an enum with no constructors is exhaustive") {
     auto source = fixture(sources, diagnostics);
     const auto body = BodyBuilder(std::move(source.reservation), source.compilation);
     const auto arms = std::array<PatternCoverageArm, 0> {};
-    auto coverage = compute_pattern_coverage(source.compilation, body, source.empty_enum, arms);
+    auto coverage =
+        compute_pattern_coverage(source.compilation, body.pattern_table(), source.empty_enum, arms);
     REQUIRE(coverage.has_value());
     CHECK(coverage->exhaustive);
     CHECK(coverage->arm_usefulness.empty());

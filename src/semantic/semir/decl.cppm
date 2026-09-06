@@ -99,28 +99,12 @@ struct PayloadEnumRepresentation final {};
 
 using EnumRepresentation = std::variant<NumericEnumRepresentation, PayloadEnumRepresentation>;
 
-struct ConstructionNumericEnumRepresentation final {
-    ConstructionTypeRef underlying_type;
-};
-using ConstructionEnumRepresentation =
-    std::variant<ConstructionNumericEnumRepresentation, PayloadEnumRepresentation>;
-
 struct EnumDeclaration final {
     ModuleID module_id;
     ProgramSpellingID name;
     ProgramOriginID origin;
     DeclarationVisibility visibility;
     EnumRepresentation representation;
-    std::vector<EnumCaseID> cases;
-    NominalCapabilities capabilities;
-};
-
-struct ConstructionEnumDeclaration final {
-    ModuleID module_id;
-    ProgramSpellingID name;
-    ProgramOriginID origin;
-    DeclarationVisibility visibility;
-    ConstructionEnumRepresentation representation;
     std::vector<EnumCaseID> cases;
     NominalCapabilities capabilities;
 };
@@ -146,18 +130,9 @@ struct ModuleConstantDeclaration final {
     ProgramSpellingID name;
     ProgramOriginID origin;
     DeclarationVisibility visibility;
-    TypeID type;
     ConstantID value;
 };
 
-struct ConstructionModuleConstantDeclaration final {
-    ModuleID module_id;
-    ProgramSpellingID name;
-    ProgramOriginID origin;
-    DeclarationVisibility visibility;
-    ConstructionTypeRef type;
-    ConstantID value;
-};
 
 struct FunctionBodyImplementation final {
     BodyID body;
@@ -275,10 +250,9 @@ public:
     auto module_decl(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function(FunctionID id) const noexcept -> FunctionDeclaration;
     auto structure(StructID id) const noexcept -> ConstructionStructDeclaration;
-    auto enumeration(EnumID id) const noexcept -> ConstructionEnumDeclaration;
+    auto enumeration(EnumID id) const noexcept -> EnumDeclaration;
     auto enum_case(EnumCaseID id) const noexcept -> ConstructionEnumCaseDeclaration;
-    auto module_constant(ModuleConstantID id) const noexcept
-        -> ConstructionModuleConstantDeclaration;
+    auto module_constant(ModuleConstantID id) const noexcept -> ModuleConstantDeclaration;
     auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
@@ -332,10 +306,9 @@ public:
     auto define(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
     auto define(FunctionID id, FunctionDeclaration declaration) noexcept -> void;
     auto define(StructID id, ConstructionStructDeclaration declaration) noexcept -> void;
-    auto define(EnumID id, ConstructionEnumDeclaration declaration) noexcept -> void;
+    auto define(EnumID id, EnumDeclaration declaration) noexcept -> void;
     auto define(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept -> void;
-    auto define(ModuleConstantID id, ConstructionModuleConstantDeclaration declaration) noexcept
-        -> void;
+    auto define(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept -> void;
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
 
@@ -369,9 +342,9 @@ private:
     ReservedProgramTable<ModuleDeclaration, ModuleID> modules;
     ReservedProgramTable<FunctionDeclaration, FunctionID> functions;
     ReservedProgramTable<ConstructionStructDeclaration, StructID> structures;
-    ReservedProgramTable<ConstructionEnumDeclaration, EnumID> enumerations;
+    ReservedProgramTable<EnumDeclaration, EnumID> enumerations;
     ReservedProgramTable<ConstructionEnumCaseDeclaration, EnumCaseID> enum_cases;
-    ReservedProgramTable<ConstructionModuleConstantDeclaration, ModuleConstantID> module_constants;
+    ReservedProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constants;
     ReservedProgramTable<ConstructionCallableContract, CallableID> callable_contracts;
     ReservedProgramTable<CallableSignatureID, CallableID> callable_signature_ids;
     ReservedProgramTable<CallableImplementation, CallableID> callable_implementations;

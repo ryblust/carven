@@ -2,6 +2,7 @@ module carven:semantic.analysis.nominal.containment.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.nominal.containment;
+import :semantic.analysis.program;
 import :semantic.semir.decl;
 import :semantic.semir.type;
 import :support.graph;
@@ -107,7 +108,7 @@ auto build_containment_graph(ProgramDraft& draft) noexcept -> NominalContainment
                     }
                 },
                 [&](EnumID id) noexcept {
-                    const auto enumeration = draft.construction_enum_declaration_copy(id);
+                    const auto enumeration = draft.enum_declaration_copy(id);
                     for (const auto case_id : enumeration.cases) {
                         const auto enum_case =
                             draft.construction_enum_case_declaration_copy(case_id);
@@ -130,7 +131,7 @@ auto declaration_origin(ProgramDraft& draft, NominalDeclarationRef declaration) 
             [&](StructID id) noexcept {
                 return draft.construction_struct_declaration_copy(id).origin;
             },
-            [&](EnumID id) noexcept { return draft.construction_enum_declaration_copy(id).origin; },
+            [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).origin; },
         },
         declaration
     );

@@ -12,11 +12,13 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.body.expression_site;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.evaluate;
-import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.constant;
+import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -46,6 +48,42 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         }
         declared = *resolved;
     }
+    const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
+    if (source.kind == ASTBindingKind::Const) {
+        auto scope = BodyExpressionSite(*this);
+        auto result = evaluate_constant_expression(
+            draft(),
+            source_module_id,
+            ast,
+            scope,
+            *source.initializer,
+            declared
+        );
+        if (!result.has_value()) {
+            return std::unexpected(result.error());
+        }
+        const auto* constant = std::get_if<ConstantID>(&*result);
+        if (constant == nullptr) {
+            return std::unexpected(fail(
+                source.span,
+                DiagnosticCode::ConstInitializer,
+                "const initializer is not a proven Carven constant"
+            ));
+        }
+        if (named == nullptr) {
+            return {};
+        }
+        return bind_local(
+            named->name_span,
+            LocalStorage {
+                .storage = *constant,
+                .type = draft().constant_copy(*constant).type,
+                .takeable = false,
+                .unused_candidate = std::nullopt,
+            },
+            DiagnosticCode::NameDuplicateLocal
+        );
+    }
     auto initializer = expression(*source.initializer, declared);
     if (!initializer.has_value()) {
         return std::unexpected(initializer.error());
@@ -61,52 +99,22 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             return std::unexpected(inferred.error());
         }
     }
-    auto value = as_value(*initializer, ast.expression(*source.initializer).span, AccessMode::Read);
+    auto value =
+        consume_value(*initializer, ast.expression(*source.initializer).span, AccessMode::Read);
     if (!value.has_value()) {
         return std::unexpected(value.error());
     }
-    const auto binding_type = declared.value_or(initializer->type);
-    const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
-    if (source.kind == ASTBindingKind::Const) {
-        if (!initializer->constant.has_value()) {
-            return std::unexpected(fail(
-                source.span,
-                DiagnosticCode::ConstInitializer,
-                "const initializer is not a proven Carven constant"
-            ));
-        }
-        if (named == nullptr) {
-            return {};
-        }
-        return bind_local(
-            named->name_span,
-            LocalStorage {
-                .storage = *initializer->constant,
-                .type = binding_type,
-                .writable_owner = false,
-                .takeable = false,
-                .unused_candidate = std::nullopt,
-            },
-            DiagnosticCode::NameDuplicateLocal
-        );
-    }
+    const auto binding_type = declared.value_or(value->type.construction());
     const auto name = named == nullptr ? std::string("_") : spelling(named->name_span);
     const auto writable = source.kind == ASTBindingKind::Var;
     const auto storage = body_builder.add_owner_binding(
         draft().intern_spelling(name),
         binding_type,
-        frames.back().scope,
         frames.back().lifetime,
         writable,
         origin(binding_target_span(source.target))
     );
-    append_statement(
-        SemInitialize<ConstructionTypeRef, FailureTermID> {
-            storage.binding,
-            body_builder.take_value(*value)
-        },
-        source.span
-    );
+    append_statement(SemInitialize {storage.binding, std::move(*value)}, source.span);
     if (named == nullptr) {
         return {};
     }
@@ -115,7 +123,6 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         LocalStorage {
             .storage = storage,
             .type = binding_type,
-            .writable_owner = writable,
             .unused_candidate = std::nullopt,
         },
         DiagnosticCode::NameDuplicateLocal
@@ -128,41 +135,40 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     if (!target_expression.has_value()) {
         return std::unexpected(target_expression.error());
     }
-    auto target = as_place(*target_expression, ast.expression(source.target).span);
+    auto target = consume_place(*target_expression, ast.expression(source.target).span);
     if (!target.has_value()) {
         return std::unexpected(target.error());
     }
     if (source.op == ASTAssignmentOperator::Assign) {
-        auto right = expression(source.value, target_expression->type);
+        auto right = expression(source.value, target->expression.type.construction());
         if (!right.has_value()) {
             return std::unexpected(right.error());
         }
-        if (!is_cpp_type(target_expression->type)) {
-            auto coerced =
-                coerce_to(*right, target_expression->type, ast.expression(source.value).span);
+        if (!is_cpp_type(target->expression.type.construction())) {
+            auto coerced = coerce_to(
+                *right,
+                target->expression.type.construction(),
+                ast.expression(source.value).span
+            );
             if (!coerced.has_value()) {
                 return std::unexpected(coerced.error());
             }
         }
-        auto value = as_value(*right, ast.expression(source.value).span, AccessMode::Read);
+        auto value = consume_value(*right, ast.expression(source.value).span, AccessMode::Read);
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
         append_statement(
-            SemAssign<ConstructionTypeRef, FailureTermID> {
-                take_built(*target_expression, ast.expression(source.target).span),
-                std::nullopt,
-                body_builder.take_value(*value)
-            },
+            SemAssign {std::move(target->expression), std::nullopt, std::move(*value)},
             source.span
         );
         return {};
     }
-    auto right = expression(source.value, target_expression->type);
+    auto right = expression(source.value, target->expression.type.construction());
     if (!right.has_value()) {
         return std::unexpected(right.error());
     }
-    auto right_value = as_value(*right, ast.expression(source.value).span, AccessMode::Read);
+    auto right_value = consume_value(*right, ast.expression(source.value).span, AccessMode::Read);
     if (!right_value.has_value()) {
         return std::unexpected(right_value.error());
     }
@@ -185,13 +191,13 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     auto decision = decide_binary_operator(
         draft(),
         operation,
-        target_expression->type,
-        right->type,
-        compatible(target_expression->type, right->type),
-        type_supports_equality(draft(), target_expression->type)
+        target->expression.type.construction(),
+        right_value->type.construction(),
+        compatible(target->expression.type.construction(), right_value->type.construction()),
+        type_supports_equality(draft(), target->expression.type.construction())
     );
-    if (!is_cpp_type(target_expression->type)
-        && !is_cpp_type(right->type)
+    if (!is_cpp_type(target->expression.type.construction())
+        && !is_cpp_type(right_value->type.construction())
         && (!decision.has_value() || *decision != OperatorResult::Operand)) {
         return std::unexpected(fail(
             source.operator_span,
@@ -201,11 +207,7 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         ));
     }
     append_statement(
-        SemAssign<ConstructionTypeRef, FailureTermID> {
-            take_built(*target_expression, ast.expression(source.target).span),
-            operation,
-            body_builder.take_value(*right_value)
-        },
+        SemAssign {std::move(target->expression), operation, std::move(*right_value)},
         source.span
     );
     return {};
@@ -216,14 +218,14 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
     if (!target_expression.has_value()) {
         return std::unexpected(target_expression.error());
     }
-    auto target = as_place(*target_expression, ast.expression(source.target).span);
+    auto target = consume_place(*target_expression, ast.expression(source.target).span);
     if (!target.has_value()) {
         return std::unexpected(target.error());
     }
-    if (is_cpp_type(target_expression->type)) {
-        auto operands = std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>>();
+    if (is_cpp_type(target->expression.type.construction())) {
+        auto operands = std::vector<SemCallArgument>();
         operands.push_back(
-            {.access = AccessMode::Write, .expression = active_builder().take_place(*target)}
+            {.access = AccessMode::Write, .expression = std::move(target->expression)}
         );
         auto updated = cpp_expression(
             CppUpdateOperation {.increment = source.op == ASTUpdateOperator::Increment},
@@ -234,15 +236,10 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
         if (!updated.has_value()) {
             return std::unexpected(updated.error());
         }
-        append_statement(
-            SemExpressionStatement<ConstructionTypeRef, FailureTermID> {
-                take_built(*updated, source.span)
-            },
-            source.span
-        );
+        append_statement(SemExpressionStatement {take_built(*updated, source.span)}, source.span);
         return {};
     }
-    const auto* concrete = std::get_if<TypeID>(&target_expression->type);
+    const auto* concrete = std::get_if<TypeID>(&target->expression.type.construction());
     if (concrete == nullptr) {
         return std::unexpected(fail(
             source.span,
@@ -272,23 +269,23 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
                     .conversion = NumericConversion::Exact,
                 },
         },
-        target_expression->type
+        target->expression.type.construction()
     );
     if (!one.has_value()) {
         invariant_violation("integer update literal could not be normalized");
     }
-    const auto right = active_builder().append_value(
-        one->constant.type,
+    auto right = active_builder().make_expression(
+        one->type,
         active_builder().lifetime(),
-        SemLiteral {one->literal},
-        origin(source.operator_span)
+        origin(source.operator_span),
+        SemConstant {.constant = draft().intern_constant(*one)}
     );
     append_statement(
-        SemAssign<ConstructionTypeRef, FailureTermID> {
-            take_built(*target_expression, ast.expression(source.target).span),
+        SemAssign {
+            std::move(target->expression),
             source.op == ASTUpdateOperator::Increment ? BinaryOperator::Add
                                                       : BinaryOperator::Subtract,
-            body_builder.take_value(right)
+            std::move(right)
         },
         source.span
     );
@@ -314,8 +311,8 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
             "test operation has the wrong number of arguments"
         ));
     }
-    auto condition = std::optional<ExpressionHandle>();
-    auto message = std::optional<ExpressionHandle>();
+    auto condition = std::optional<SemanticExpression>();
+    auto message = std::optional<SemanticExpression>();
     if (!fail_operation) {
         const auto condition_id = source.arguments.front();
         auto built = expression(condition_id, draft().intern_builtin_type(BuiltinType::Bool));
@@ -326,24 +323,24 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
         const auto boolean = ConstructionTypeRef {
             draft().intern_builtin_type(BuiltinType::Bool),
         };
-        if (is_cpp_type(built->type)) {
+        if (is_cpp_type(built->type())) {
             auto converted = coerce_to(*built, boolean, condition_span);
             if (!converted.has_value()) {
                 return std::unexpected(converted.error());
             }
         }
-        if (!compatible(built->type, boolean)) {
+        if (!compatible(built->type(), boolean)) {
             return std::unexpected(fail(
                 condition_span,
                 DiagnosticCode::TestConditionType,
                 "test condition must have type bool"
             ));
         }
-        auto value = as_value(*built, condition_span, AccessMode::Read);
+        auto value = consume_value(*built, condition_span, AccessMode::Read);
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
-        condition = *value;
+        condition = std::move(*value);
     }
     if (source.arguments.size() == maximum) {
         const auto message_id = source.arguments.back();
@@ -351,18 +348,18 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
         if (!built.has_value()) {
             return std::unexpected(built.error());
         }
-        if (!compatible(built->type, draft().intern_builtin_type(BuiltinType::Str))) {
+        if (!compatible(built->type(), draft().intern_builtin_type(BuiltinType::Str))) {
             return std::unexpected(fail(
                 ast.expression(message_id).span,
                 DiagnosticCode::TestMessageType,
                 "test message must have type str"
             ));
         }
-        auto value = as_value(*built, ast.expression(message_id).span, AccessMode::Read);
+        auto value = consume_value(*built, ast.expression(message_id).span, AccessMode::Read);
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
-        message = *value;
+        message = std::move(*value);
     }
     const auto report_kind = [&]() noexcept {
         switch (source.kind) {
@@ -373,12 +370,11 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
         std::unreachable();
     }();
     append_statement(
-        SemTestReport<ConstructionTypeRef, FailureTermID> {
+        SemTestReport {
             .kind = report_kind,
-            .condition = condition.has_value() ? std::optional(body_builder.take_value(*condition))
-                                               : std::nullopt,
-            .message = message.has_value() ? std::optional(body_builder.take_value(*message))
-                                           : std::nullopt,
+            .condition =
+                condition.has_value() ? std::optional(std::move(*condition)) : std::nullopt,
+            .message = message.has_value() ? std::optional(std::move(*message)) : std::nullopt,
             .condition_source = condition.has_value()
                 ? std::optional(
                       draft().intern_spelling(
@@ -414,7 +410,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                 reachable = false;
                 return {};
             }
-            auto value = std::optional<ExpressionHandle>();
+            auto value = std::optional<SemanticExpression>();
             if (source.value.has_value()) {
                 if (result_type.has_value() && is_void_type(draft(), *result_type)) {
                     return std::unexpected(fail(
@@ -441,11 +437,11 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                     }
                 }
                 auto operand =
-                    as_value(*built, ast.expression(*source.value).span, AccessMode::Read);
+                    consume_value(*built, ast.expression(*source.value).span, AccessMode::Read);
                 if (!operand.has_value()) {
                     return std::unexpected(operand.error());
                 }
-                value = *operand;
+                value = std::move(*operand);
             } else {
                 if (!result_type.has_value()) {
                     result_type = draft().intern_builtin_type(BuiltinType::Void);
@@ -458,10 +454,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                 }
             }
             append_statement(
-                SemReturn<ConstructionTypeRef, FailureTermID> {
-                    value.has_value() ? std::optional(body_builder.take_value(*value))
-                                      : std::nullopt
-                },
+                SemReturn {value.has_value() ? std::optional(std::move(*value)) : std::nullopt},
                 source.span
             );
             reachable = false;
@@ -539,11 +532,12 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             if (!payload.has_value()) {
                 return std::unexpected(payload.error());
             }
-            auto value = as_value(*payload, ast.expression(*source.value).span, AccessMode::Read);
+            auto value =
+                consume_value(*payload, ast.expression(*source.value).span, AccessMode::Read);
             if (!value.has_value()) {
                 return std::unexpected(value.error());
             }
-            const auto* failure_type = std::get_if<TypeID>(&payload->type);
+            const auto* failure_type = std::get_if<TypeID>(&value->type.construction());
             if (failure_type == nullptr || !is_failure_payload_type(draft(), *failure_type)) {
                 return std::unexpected(fail(
                     source.span,
@@ -553,13 +547,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             }
             const auto& target = failure_context_for_current_path();
             draft().add_failure_member(target.term, *failure_type);
-            append_statement(
-                SemThrow<ConstructionTypeRef, FailureTermID> {
-                    body_builder.take_value(*value),
-                    *failure_type
-                },
-                source.span
-            );
+            append_statement(SemThrow {std::move(*value), *failure_type}, source.span);
             reachable = false;
             return {};
         }

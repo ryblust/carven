@@ -2,7 +2,6 @@ module carven:backend.lowering.context.impl;
 
 import :backend.lowering.context;
 import :support.invariant;
-import :support.visit;
 import std;
 
 ArtifactLowering::ArtifactLowering(
@@ -68,65 +67,11 @@ auto ArtifactLowering::record_provider_interface(ModuleID active, ModuleID provi
     invariant_violation("cross-module lowering dependency has no provider interface");
 }
 
-auto ArtifactLowering::require_cpp_environment(ModuleID provider, CppNameLookup lookup) noexcept
-    -> void {
-    static_cast<void>(semantic().declarations().module_decl(provider));
-    const auto [entry, inserted] = cpp_environments.try_emplace(provider, lookup);
-    if (!inserted && lookup == CppNameLookup::ModuleScope) {
-        entry->second = lookup;
-    }
-}
-
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
     auto directives = materialize_directives(plan(), artifact_id, dependencies);
-    auto imports = std::vector<TargetItem>();
-    for (const auto& [provider, lookup] : cpp_environments) {
-        auto bindings = std::vector<TargetItem>();
-        for (const auto& header : semantic().declarations().module_decl(provider).cpp_headers) {
-            const auto name = semantic().provenance().spelling(header.name);
-            directives.prefix_groups.push_back(
-                {.directives =
-                     {{.bytes = header.delimiter == CppHeaderDelimiter::AngleBrackets
-                           ? std::format("#include <{}>", name)
-                           : std::format("#include \"{}\"", name)}},
-                 .attribution = TargetRawSourceAttribution {
-                     .origin = target_source_origin(semantic().provenance(), header.origin),
-                 }}
-            );
-            if (lookup == CppNameLookup::Global) {
-                continue;
-            }
-            for (const auto& binding : header.bindings) {
-                auto components = std::vector<TargetIdentifier>();
-                for (const auto component : binding.components) {
-                    components.push_back(
-                        TargetIdentifier::from_spelling(semantic().provenance().spelling(component))
-                    );
-                }
-                bindings.push_back(source_item(
-                    semantic(),
-                    binding.origin,
-                    TargetUsing {
-                        .name = TargetName::globally_qualified(std::move(components)),
-                        .opens_namespace = binding.opens_namespace
-                    }
-                ));
-            }
-        }
-        if (!bindings.empty()) {
-            imports.push_back(namespace_item(
-                plan().names().module_names(provider).qualified_namespace_name,
-                std::move(bindings)
-            ));
-        }
-    }
-    sections.preamble.insert(
-        sections.preamble.end(),
-        std::make_move_iterator(imports.begin()),
-        std::make_move_iterator(imports.end())
-    );
+    materialize_cpp_environments(sections, directives);
     return std::move(target_builder).finish(std::move(sections), std::move(directives));
 }
 

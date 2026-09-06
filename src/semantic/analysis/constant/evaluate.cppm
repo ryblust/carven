@@ -2,6 +2,7 @@ module carven:semantic.analysis.constant.evaluate;
 
 import :diagnostics.code;
 import :frontend.ast.literal;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.ids;
@@ -31,10 +32,6 @@ enum class LiteralSign {
     Negative,
 };
 
-struct NormalizedLiteral final {
-    LiteralValue literal;
-    ConstantFact constant;
-};
 
 auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
     -> std::optional<ConstantEvaluationDiagnostic>;
@@ -104,4 +101,4 @@ auto normalize_literal(
     const ASTLiteral& literal,
     std::optional<ConstructionTypeRef> expected = std::nullopt,
     LiteralSign sign = LiteralSign::Positive
-) noexcept -> std::expected<NormalizedLiteral, ConstantEvaluationFailure>;
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

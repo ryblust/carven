@@ -126,6 +126,9 @@ auto in_scope(Visitor& visitor, TargetTraversalScope scope, Action action) noexc
 } // namespace target_traversal_detail
 
 template<typename Visitor>
+auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) noexcept -> bool;
+
+template<typename Visitor>
 auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) noexcept -> bool {
     const auto visit_types = [&](std::span<const TargetTypeID> ids) noexcept {
         return std::ranges::all_of(ids, [&](TargetTypeID id) noexcept {
@@ -135,15 +138,7 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
     return std::visit(
         Overloaded {
             [&](const TargetDeducedType& deduced) noexcept {
-                const auto visit_query = [&](this const auto& self,
-                                             const TargetTypeQuery& query) noexcept -> bool {
-                    if (const auto* type = std::get_if<TargetTypeID>(&query.operation);
-                        type != nullptr && !target_traversal_detail::visit_type(visitor, *type)) {
-                        return false;
-                    }
-                    return std::ranges::all_of(query.operands, self);
-                };
-                return visit_query(deduced.query);
+                return traverse_target_expression(deduced.expression(), visitor);
             },
             [&](const TargetNamedType& named) noexcept {
                 if (!visit_types(named.type_argument_ids)) {
@@ -173,9 +168,6 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
         value
     );
 }
-
-template<typename Visitor>
-auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) noexcept -> bool;
 
 template<typename Visitor>
 auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) noexcept -> bool;

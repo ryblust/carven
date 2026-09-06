@@ -2,6 +2,7 @@ module carven:semantic.semir.publication.impl;
 
 import :semantic.semir.constant;
 import :semantic.semir.program;
+import :semantic.semir.publication;
 import :semantic.semir.traversal;
 import :support.invariant;
 import :support.visit;
@@ -227,8 +228,8 @@ auto validate_publication_topology(
     auto closure_site_claims = std::vector<std::uint8_t>(callable_count, 0u);
     for (const auto [body_id, body] : bodies.entries()) {
         static_cast<void>(body_id);
-        visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
-            const auto* closure = std::get_if<SemClosure<TypeID, FailureSetID>>(&expression.value);
+        visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+            const auto* closure = std::get_if<SemClosure>(&expression.value);
             if (closure == nullptr) {
                 return;
             }
@@ -334,33 +335,17 @@ auto validate_publication_facts(
         std::visit(
             Overloaded {
                 [&](const CppTypeValue& value) noexcept {
-                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        if (!declarations.contains(named->name.context_module)
-                            || !valid_cpp_name(named->name)) {
-                            invariant_violation("C++ type used an invalid binding");
+                    if (!valid_cpp_type(value)) {
+                        invariant_violation("C++ type has an invalid description");
+                    }
+                    for (const auto& name : cpp_type_names(value)) {
+                        if (!declarations.contains(name.context_module)) {
+                            invariant_violation("C++ type has an unpublished environment");
                         }
-                        for (const auto argument : named->arguments) {
-                            if (!types.contains(argument)) {
-                                invariant_violation("C++ type used an unpublished type argument");
-                            }
-                        }
-                    } else {
-                        const auto& query = std::get<CppDeducedType>(value.form);
-                        if (!provenance.contains(query.origin)
-                            || !cpp_operation_accepts_arity(query.operation, query.operands.size())
-                            || std::holds_alternative<CppUpdateOperation>(query.operation)
-                            || std::holds_alternative<CppConstructOperation>(query.operation)
-                            || std::holds_alternative<CppConvertOperation>(query.operation)) {
-                            invariant_violation("C++ query has an invalid derivation");
-                        }
-                        if (const auto* name = std::get_if<CppNameOperation>(&query.operation);
-                            name != nullptr && !declarations.contains(name->name.context_module)) {
-                            invariant_violation("C++ query has an unpublished module");
-                        }
-                        for (const auto& operand : query.operands) {
-                            if (!types.contains(operand.type)) {
-                                invariant_violation("C++ query used an unpublished operand type");
-                            }
+                    }
+                    for (const auto argument : cpp_type_references(value)) {
+                        if (!types.contains(argument)) {
+                            invariant_violation("C++ type has an unpublished operand type");
                         }
                     }
                 },
@@ -543,9 +528,7 @@ auto validate_publication_facts(
     }
     for (const auto [constant_id, declaration] : declarations.module_constants()) {
         static_cast<void>(constant_id);
-        if (!types.contains(declaration.type)
-            || !constants.contains(declaration.value)
-            || constants.constant(declaration.value).type != declaration.type) {
+        if (!constants.contains(declaration.value)) {
             invariant_violation("module constant declaration has an unpublished fact");
         }
     }
@@ -559,44 +542,25 @@ auto validate_publication_facts(
 
 } // namespace
 
-auto ProgramDraft::seal() && noexcept -> SemIRProgram {
-    require_state(State::Solved, "seal semantic program");
-    if (!body_slots.all_defined() || !test_slots.all_defined()) {
-        invariant_violation("semantic program was sealed with unfinished bodies or tests");
-    }
-    auto declaration_store = std::move(declarations).seal(*resolved_types);
-    auto bodies = BodyStore(std::move(body_slots).seal());
-    auto tests = TestStore(std::move(test_slots).seal());
-    auto type_store = std::move(types).seal();
-    auto constant_store = std::move(constants).seal();
-    auto failure_set_store = std::move(failure_sets).seal();
-    auto callable_signature_store = std::move(callable_signatures).seal();
+auto validate_semantic_storage(
+    ProgramIdentity identity,
+    CompilationProvenanceReader provenance,
+    const CanonicalTypeStore& types,
+    const ConstantStore& constants,
+    const FailureSetStore& failures,
+    const CallableSignatureStore& signatures,
+    const DeclarationStore& declarations,
+    const BodyStore& bodies,
+    const TestStore& tests
+) noexcept -> void {
     validate_publication_facts(
-        program_identity,
-        provenance_appender.reader(),
-        type_store,
-        constant_store,
-        failure_set_store,
-        callable_signature_store,
-        declaration_store
+        identity,
+        provenance,
+        types,
+        constants,
+        failures,
+        signatures,
+        declarations
     );
-    validate_publication_topology(
-        program_identity,
-        provenance_appender.reader(),
-        declaration_store,
-        bodies,
-        tests
-    );
-    state = State::Sealed;
-    return SemIRProgram(
-        program_identity,
-        std::move(provenance_appender).finish(),
-        std::move(type_store),
-        std::move(constant_store),
-        std::move(failure_set_store),
-        std::move(callable_signature_store),
-        std::move(declaration_store),
-        std::move(bodies),
-        std::move(tests)
-    );
+    validate_publication_topology(identity, provenance, declarations, bodies, tests);
 }

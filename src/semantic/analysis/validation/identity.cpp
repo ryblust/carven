@@ -4,12 +4,7 @@ import std;
 
 namespace validation_detail {
 auto BodyContractVerifier::related_body(BodyID id) const noexcept -> const SemIRBody& {
-    for (const auto& body : bodies) {
-        if (body.id() == id) {
-            return body;
-        }
-    }
-    invariant_violation("cross-body validation referenced a missing semantic body");
+    return bodies.body(id);
 }
 
 auto BodyContractVerifier::require_top_level_owners() const noexcept -> void {
@@ -19,9 +14,6 @@ auto BodyContractVerifier::require_top_level_owners() const noexcept -> void {
     }
     if (body.provenance_identity() != draft->provenance_identity()) {
         invariant_violation("SemIR verifier mixed provenance identities");
-    }
-    if (body.scopes().owner() != identity || body.lifetime_regions().owner() != identity) {
-        invariant_violation("semantic body has foreign scope or lifetime ownership");
     }
 }
 
@@ -36,38 +28,38 @@ auto BodyContractVerifier::require_type(TypeID type) const noexcept -> Canonical
     if (type.owner() != draft->identity()) {
         invariant_violation("SemIR row uses a type from another semantic program");
     }
-    return draft->canonical_type_copy(type);
+    return draft->types().type(type);
 }
 
 auto BodyContractVerifier::require_failure_set(FailureSetID failures) const noexcept -> FailureSet {
     if (failures.owner() != draft->identity()) {
         invariant_violation("SemIR row uses a failure set from another semantic program");
     }
-    return draft->failure_set_copy(failures);
+    return draft->failure_sets().failure_set(failures);
 }
 
 auto BodyContractVerifier::require_structure(StructID structure) const noexcept
-    -> ConstructionStructDeclaration {
+    -> StructDeclaration {
     if (structure.owner() != draft->identity()) {
         invariant_violation("SemIR row uses a structure from another semantic program");
     }
-    return draft->construction_struct_declaration_copy(structure);
+    return draft->declarations().structure(structure);
 }
 
 auto BodyContractVerifier::require_enumeration(EnumID enumeration) const noexcept
-    -> ConstructionEnumDeclaration {
+    -> EnumDeclaration {
     if (enumeration.owner() != draft->identity()) {
         invariant_violation("SemIR row uses an enum from another semantic program");
     }
-    return draft->construction_enum_declaration_copy(enumeration);
+    return draft->declarations().enumeration(enumeration);
 }
 
 auto BodyContractVerifier::require_enum_case(EnumCaseID enum_case) const noexcept
-    -> ConstructionEnumCaseDeclaration {
+    -> EnumCaseDeclaration {
     if (enum_case.owner() != draft->identity()) {
         invariant_violation("SemIR row uses an enum case from another semantic program");
     }
-    return draft->construction_enum_case_declaration_copy(enum_case);
+    return draft->declarations().enum_case(enum_case);
 }
 
 auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noexcept -> void {
@@ -92,11 +84,6 @@ auto BodyContractVerifier::body_callable() const noexcept -> std::optional<Calla
     return callable;
 }
 
-auto BodyContractVerifier::concrete_failures(FailureTermID failures) const noexcept
-    -> FailureSetID {
-    return draft->concrete_failure_set(failures);
-}
-
 auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
     const auto callable = body_callable();
     if (!callable.has_value()) {
@@ -105,7 +92,8 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
         }
         return;
     }
-    const auto contract = draft->construction_callable_contract_copy(*callable);
+    const auto contract =
+        draft->callable_signatures().signature(draft->callable_signature(*callable));
     if (body.inputs().parameters.size() != contract.parameters.size()) {
         invariant_violation("BodyInputs parameters differ from callable contract arity");
     }
@@ -115,7 +103,7 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
         const auto& parameter = contract.parameters[index];
         if (storage == nullptr
             || storage->access != parameter.access
-            || binding.type != draft->concrete_type(parameter.type)) {
+            || binding.type != parameter.type) {
             invariant_violation("BodyInputs parameter differs from callable contract");
         }
     }
@@ -135,8 +123,9 @@ auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const
     if (!callable.has_value()) {
         invariant_violation("test body exposes a failure contract");
     }
-    const auto contract = draft->construction_callable_contract_copy(*callable);
-    const auto expected = concrete_failures(contract.failures);
+    const auto contract =
+        draft->callable_signatures().signature(draft->callable_signature(*callable));
+    const auto expected = contract.failures;
     const auto actual = require_failure_set(failures);
     const auto allowed = require_failure_set(expected);
     if (!std::ranges::includes(
@@ -158,14 +147,7 @@ auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const
     }
 }
 
-auto BodyContractVerifier::verify_trees() const noexcept -> void {
-    for (const auto [id, scope] : body.scopes().entries()) {
-        require_origin(scope.origin);
-        if (scope.parent.has_value()
-            && (!body.scopes().contains(*scope.parent) || scope.parent->index() >= id.index())) {
-            invariant_violation("lexical scope tree contains a forward edge or cycle");
-        }
-    }
+auto BodyContractVerifier::verify_lifetimes() const noexcept -> void {
     for (const auto [id, region] : body.lifetime_regions().entries()) {
         require_origin(region.origin);
         if (region.parent.has_value()

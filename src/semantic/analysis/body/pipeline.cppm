@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.pipeline;
 
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
+import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.program;
 import std;

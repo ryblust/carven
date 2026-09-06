@@ -65,8 +65,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto visit_body = std::function<void(ModuleID, BodyID, bool)>();
     visit_body = [&](ModuleID module_id, BodyID body_id, bool test) noexcept {
         const auto& body = semantic.bodies().body(body_id);
-        visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
-            const auto* closure = std::get_if<SemClosure<TypeID, FailureSetID>>(&expression.value);
+        visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+            const auto* closure = std::get_if<SemClosure>(&expression.value);
             if (closure == nullptr) {
                 return;
             }
@@ -134,15 +134,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 },
                 [](const CallableViewTypeValue&) static noexcept {},
                 [&](const CppTypeValue& value) noexcept {
-                    if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        for (const auto argument : named->arguments) {
-                            self(argument, destination, active_types);
-                        }
-                    } else {
-                        for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
-                            const auto argument = operand.type;
-                            self(argument, destination, active_types);
-                        }
+                    for (const auto argument : cpp_type_references(value)) {
+                        self(argument, destination, active_types);
                     }
                 },
             },
@@ -171,9 +164,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 active_types
             );
         }
-        visit_semantic_nodes(body.region(), [&](const SemIRExpression& expression) noexcept {
-            if (const auto* child =
-                    std::get_if<SemClosure<TypeID, FailureSetID>>(&expression.value)) {
+        visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+            if (const auto* child = std::get_if<SemClosure>(&expression.value)) {
                 dependencies[callable.index()].push_back(child->callable);
             }
         });

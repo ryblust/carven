@@ -1,7 +1,6 @@
 module carven:semantic.semir.type.impl;
 
 import :semantic.semir.type;
-import :source.cpp.identifier;
 import :support.invariant;
 import std;
 
@@ -42,31 +41,15 @@ auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexc
                     "callable view type used a foreign signature"
                 );
             } else if constexpr (std::same_as<Value, CppTypeValue>) {
-                if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
+                for (const auto& name : cpp_type_names(value)) {
                     require_owner(
-                        named->name.context_module.owner(),
+                        name.context_module.owner(),
                         owner,
                         "C++ type used a foreign module"
                     );
-                    for (const auto argument : named->arguments) {
-                        require_owner(argument.owner(), owner, "C++ type used a foreign argument");
-                    }
-                } else {
-                    const auto& query = std::get<CppDeducedType>(value.form);
-                    if (const auto* name = std::get_if<CppNameOperation>(&query.operation)) {
-                        require_owner(
-                            name->name.context_module.owner(),
-                            owner,
-                            "C++ query used a foreign module"
-                        );
-                    }
-                    for (const auto& operand : query.operands) {
-                        require_owner(
-                            operand.type.owner(),
-                            owner,
-                            "C++ query used a foreign operand type"
-                        );
-                    }
+                }
+                for (const auto argument : cpp_type_references(value)) {
+                    require_owner(argument.owner(), owner, "C++ type used a foreign argument");
                 }
             } else {
                 static_assert(std::same_as<Value, BuiltinTypeValue>);
@@ -90,36 +73,6 @@ auto validate_signature_owner(const CallableSignature& signature, ProgramIdentit
 }
 
 } // namespace
-
-auto valid_cpp_name(const CppNameReference& name) noexcept -> bool {
-    return (name.lookup == CppNameLookup::Global || name.lookup == CppNameLookup::ModuleScope)
-        && !name.components.empty()
-        && std::ranges::all_of(name.components, is_supported_cpp_identifier);
-}
-
-auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept
-    -> bool {
-    return std::visit(
-        [arity](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, CppNameOperation>) {
-                return arity == 0uz && valid_cpp_name(value.name);
-            } else if constexpr (std::same_as<Value, CppConstructOperation>) {
-                return true;
-            } else if constexpr (std::same_as<Value, CppCallOperation>) {
-                return arity >= 1uz;
-            } else if constexpr (std::same_as<Value, CppMemberOperation>) {
-                return arity == 1uz && !value.name.empty();
-            } else if constexpr (std::same_as<Value, CppIndexOperation>
-                                 || std::same_as<Value, CppBinaryOperation>) {
-                return arity == 2uz;
-            } else {
-                return arity == 1uz;
-            }
-        },
-        operation
-    );
-}
 
 auto builtin_is_integer(BuiltinType type) noexcept -> bool {
     switch (type) {
@@ -363,6 +316,11 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
                 using ID = std::remove_cvref_t<decltype(id)>;
                 static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
                 require_owner(id.owner(), rows.owner(), "construction type used a foreign child");
+                if constexpr (std::same_as<ID, TypeTermID>) {
+                    if (!rows.contains(id)) {
+                        invariant_violation("construction type requires an existing child term");
+                    }
+                }
             },
             ref
         );
@@ -388,9 +346,7 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
         },
         type.value
     );
-    const auto id = rows.add(std::move(type));
-    insertion_order.push_back(id);
-    return id;
+    return rows.add(std::move(type));
 }
 auto ConstructionTypeStore::copy(TypeTermID id) const noexcept -> ConstructionType {
     return rows.copy(id);

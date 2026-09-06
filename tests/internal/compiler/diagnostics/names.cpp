@@ -34,6 +34,18 @@ TEST_CASE("Compiler diagnostics: names failures preserve code and precise span")
             .primary_text = "value",
         },
         {
+            .name = "local name is unavailable after its frame ends",
+            .source = "fn invalid() { if true { let inner = 1; } let result = inner; }",
+            .code = "CV-NAME-UNRESOLVED",
+            .primary_text = "inner",
+        },
+        {
+            .name = "runtime names require an explicit capture",
+            .source = "fn invalid() { let local = 1; let callback = []() { return local; }; }",
+            .code = "CV-NAME-UNRESOLVED",
+            .primary_text = "local",
+        },
+        {
             .name = "duplicate parameter",
             .source = "fn invalid(value: i32, value: i32) {}",
             .code = "CV-NAME-DUPLICATE-PARAMETER",

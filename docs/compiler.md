@@ -22,19 +22,31 @@ publishes an immutable semantic program. Source errors discard the draft.
 
 ## Publication gates
 
-The analysis driver first builds the declaration catalog and completes
-signatures and required constants, then elaborates the body batch and emits
-unused-import diagnostics. Publication consumes the draft and performs these
-steps in order:
+The analysis driver builds the declaration catalog, completes signatures and
+required constants, elaborates bodies, and diagnoses unused imports. The catalog
+and import-use state end before solving.
+`analysis.program` owns `ProgramDraft` and declaration/body reservations.
+`solve_construction` checks reservation completeness, solves failures and types,
+and finalizes callable signatures, declarations, and bodies in that order.
+Body completion resolves type and failure facts in the owned operation tree in
+place, borrowing only the solutions and diagnostic sources. Completion and
+read-only checks share the structural child traversal; completion owns only fact
+updates and catch diagnostics. Binding and pattern
+tables are converted to their final records. The `SemIRBody` boundary checks that
+every operation and region contains resolved facts, including inactive source.
 
-1. Solve construction types and failure terms.
-2. Validate global semantic contracts.
-3. Resolve body drafts into typed structured bodies.
-4. Analyze the body batch, including ownership and callable relationships.
-5. Publish the bodies and seal the program.
+Structural type terms reference only previously appended terms. Canonicalization
+consumes them in storage order into one final type mapping after failure solving.
+Callable recursion and recursive failure constraints retain their own identities
+and solving rules.
 
-Failure at a gate prevents publication. Warnings accompany a successful
-`SemIRProgram`. No unresolved draft is passed to target planning.
+Construction and final storage are mutually exclusive. Successful solving closes
+interning and releases source syntax, resolved imports, and construction
+solutions. The operation tree moves into final storage without rebuilding its
+children. Global validation, body contracts, coverage, and ownership inspect the
+same final data. Publication
+validates its structure and moves it into `SemIRProgram`; it derives no new facts.
+Source errors prevent delivery; warnings accompany a successful program.
 
 ## Ownership and identity
 
@@ -43,11 +55,18 @@ Failure at a gate prevents publication. Warnings accompany a successful
 construction types, failure constraints, and body construction. Declarations
 may reserve identities for recursion and forward references.
 
-Program IDs belong to one program. Binding, pattern, scope, and lifetime IDs
-belong to one body. Owning query surfaces validate identity and range. Expression,
-statement, and region occurrences are recursively owned values.
+Program IDs belong to one program. Binding, pattern, and lifetime IDs belong
+to one body. Name frames exist only during name resolution; bound operations
+retain binding identities and lifetimes. Owning query surfaces validate identity
+and range. Expression, statement, and region occurrences are recursively owned
+values, including during construction. Each binding selection creates a new
+occurrence; projections own their receiver and index. Function names construct callable occurrences directly.
+Construction results read types and constants from their owned expressions.
+Temporary expressions have no identity table. `BodyType` and `BodyFailures`
+store construction or resolved facts; their accessors explicitly select the
+required stage. Published bodies expose only const access to the completed tree.
 
-Publication consumes construction state. `SemIRProgram` retains resolved
+Solving consumes construction state. `SemIRProgram` retains resolved
 semantic data and provenance; lowering does not query source syntax.
 
 ## Structured semantics
@@ -70,22 +89,45 @@ no executed operations or ownership transitions.
 Canonical types, callable signatures, constants, and failure sets are the
 published query surfaces. Construction types and failure terms are solved
 before publication. Failure inference computes the least fixed point of the
-program's failure constraints.
+program's failure constraints. Enum declarations already have their final
+representation: numeric underlying types must be concrete integers during
+declaration resolution. Their table seals directly; struct fields and enum-case
+payload types still require construction-type resolution.
 
-Constant evaluation, operator selection, and pattern coverage each have one
-semantic implementation. Construction and structured contract checking consume those rules.
-Operator contracts are checked on structured expressions; ownership analysis
-consumes their access and result relationships.
+`analysis.expr` interprets each expression once, with concrete constant and body
+sites. The interpreter owns contextual typing, operation selection, enum and
+text rules, and their diagnostics. Sites provide real scope lookup, receive
+judged results, and handle execution-only syntax. Children return to the same
+interpreter. Static syntax admission is a separate node-local rule; declarations
+retain lazy completion and cycle diagnostics.
+
+Constants have one normalized `ConstantFact` representation and `SemConstant`
+occurrences. Module constant declarations retain binding metadata and a
+`ConstantID`; the fact owns the type, so their declaration table seals directly.
+Floating-point identity uses bits; language equality compares
+numeric values and recursively compares aggregate contents. Known results do not
+license deleting execution. Body operations retain operands and effects even
+when their result is known. Type rules shared across stages consume concrete
+stage facts rather than reconstructing drafts from final declarations.
 
 Local construction checks its preconditions. Program validation checks owner
-and range relations, type and call contracts, scope and control legality,
+and range relations, type and call contracts, lifetime and control legality,
 binding relations, declaration topology, and cross-body callable relations.
 Each declaration and body has its required unique owner; each closure has one
 construction site and one body.
 
 ## Ownership and callable loans
 
-Ownership analysis walks resolved structured bodies. Availability belongs to an
+An ownership batch prepares local object descriptions, relative temporary
+positions, lifetime membership, and pattern acceptance once for each final body.
+Type contents are prepared once from the final type and declaration stores,
+without borrowing construction state. Coverage borrows pattern tables and stage type facts; exhaustive
+queries and full diagnostics share its algorithm. Catch acceptance describes the
+current arm, independently of coverage accumulated by earlier arms.
+
+Queries map relative local positions after their external input objects. Only
+aliases, accesses, availability, relationships, and execution state vary between
+queries. Availability belongs to an
 owner; holder relationships belong to storage positions within that owner.
 Known field and element writes replace the relationships at that position;
 unknown element writes merge possible relationships. Ordinary scalar elements
@@ -119,28 +161,31 @@ origins. Diagnostics are produced at the rule owner. Compiler-private invariant
 failures terminate at the violated boundary.
 
 Frontend facilities depend on source and syntax. Semantic construction consumes
-syntax; analysis consumes resolved operations. The backend consumes published
+syntax; SemIR owns data, storage, and structural contracts without depending on
+AST or analysis. Post-solve analysis consumes final operations. The backend consumes published
 semantics. Runtime support and build orchestration do not determine Carven
 access or ownership legality.
 
 ## External C++ delegation
 
-Scope bindings distinguish Carven declarations from explicitly imported C++ names
-and namespace lookup environments. External names do not reserve synthetic
-function or nominal declaration identities. Named external types and name
-operations share `CppNameReference`: a context module, a `Global` or
-`ModuleScope` lookup origin, and a nonempty identifier path. The context module
-supplies declarations even for global lookup. Semantic construction validates
-identifier spelling and Carven-owned contracts, not external declaration
-existence or identity. Type arguments and operation operands remain separate
-from the name. Publication verifies paths, module identities, and references.
+Type and value lookup share external name admission, identifier validation and
+import-use recording in semantic name analysis. `CppNameReference`
+combines a lookup path with its declaration environment; global paths also
+retain the context module.
 
-Published types distinguish named external type expressions from external result
-queries. Queries retain their originating operation and operand types and access
-as published delegation records. Structured external operations share ordinary
-operands, source provenance, scopes and control flow with Carven operations.
+Body construction distinguishes typed results from external name and member
+selections. A selection has no object type and may denote an overload set.
+Value, place and call consumers consume selections before publication.
+Published calls explicitly distinguish named, member and typed-value callees.
 
-Publication verifies Carven-owned contracts and the structural integrity of
-external delegation. External result queries remain in the published program
-for C++ type determination. Ownership analysis checks known callable borrows and
-Write captures at external operations before publication.
+External types are named type expressions or `CppQueryType` descriptions.
+Queries describe C++ expression shapes using operand types and access.
+Identical descriptions share a type record; this does not establish equivalence
+between different C++ type expressions. Operation occurrences own diagnostics,
+lifetimes and execution order. Query references describe type dependencies,
+not the contents or ownership relationships of a result object.
+
+Semantic construction owns result-query derivation for external operations.
+Publication checks reference integrity and Carven-owned operation contracts.
+Ownership analysis checks access, known callable borrows and Write captures;
+C++ determines the validity and results of delegated native operations.
