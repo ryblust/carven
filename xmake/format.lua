@@ -21,16 +21,18 @@ function main(check)
         "clang-format major version 23 is required; found %s (%s)", version, program)
 
     local files = {}
-    for _, root in ipairs({"src", "tests", "crafts"}) do
+    for _, root in ipairs({"src", "tests", "crafts", "examples"}) do
         for _, extension in ipairs({"cpp", "cppm", "h", "hpp"}) do
             table.join2(files, os.files(path.join(os.projectdir(), root, "**." .. extension)))
         end
     end
     table.sort(files)
+    local args = check and {"--dry-run", "--Werror"} or {"-i"}
     for _, file in ipairs(files) do
-        local args = check and {"--dry-run", "--Werror"} or {"-i"}
-        table.insert(args, file)
-        os.vrunv(program, args)
+        table.insert(args, path.relative(file, os.projectdir()))
+    end
+    if #files > 0 then
+        os.vrunv(program, args, {curdir = os.projectdir()})
     end
     print(check and "Formatting check passed." or "Formatting complete.")
 end

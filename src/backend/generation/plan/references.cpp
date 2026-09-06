@@ -134,7 +134,11 @@ private:
                 },
                 [](const BuiltinTypeValue&) static noexcept {},
                 [&](const StructTypeValue& value) noexcept {
-                    require_nominal(module_id, NominalDeclarationRef {value.structure}, completeness);
+                    require_nominal(
+                        module_id,
+                        NominalDeclarationRef {value.structure},
+                        completeness
+                    );
                 },
                 [&](const EnumTypeValue& value) noexcept {
                     require_nominal(
@@ -166,7 +170,11 @@ private:
         std::visit(
             Overloaded {
                 [&](FunctionID id) noexcept {
-                    collect_callable(module_id, semantic.declarations().function(id).callable, guard);
+                    collect_callable(
+                        module_id,
+                        semantic.declarations().function(id).callable,
+                        guard
+                    );
                 },
                 [&](StructID id) noexcept {
                     for (const auto& field : semantic.declarations().structure(id).fields) {

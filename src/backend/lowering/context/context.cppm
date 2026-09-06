@@ -30,6 +30,7 @@ public:
     auto artifact() const noexcept -> const TargetArtifactPlan&;
     auto target() noexcept -> TargetUnitBuilder&;
     auto module_context(ModuleID id) noexcept -> ModuleLowering;
+    auto require_cpp_environment(ModuleID provider, CppNameLookup lookup) noexcept -> void;
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
 
 private:
@@ -40,7 +41,7 @@ private:
     TargetArtifactID artifact_id;
     TargetUnitBuilder target_builder;
     std::flat_set<TargetArtifactID> lowering_dependencies;
-    std::flat_map<ModuleID, std::flat_set<std::string, std::less<>>> cpp_type_providers;
+    std::flat_map<ModuleID, CppNameLookup> cpp_environments;
 
     friend class ModuleLowering;
 };
@@ -77,6 +78,7 @@ public:
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
     auto outcome_type(CallableSignatureID signature) noexcept -> TargetTypeID;
     auto lower_type(TypeID id) noexcept -> TargetTypeID;
+    auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
     auto cpp_type_query(const CppDeducedType& query) noexcept -> TargetTypeQuery;
     auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
     auto lower_signature_result(CallableSignatureID signature) noexcept -> TargetTypeID;

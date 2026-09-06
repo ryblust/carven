@@ -17,7 +17,9 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                 const auto& declaration = declarations.structure(value.structure);
                 const auto& module_decl = declarations.module_decl(declaration.module_id);
                 return std::tuple {
-                    std::string(provenance.module_record(module_decl.provenance_module).path.value()),
+                    std::string(
+                        provenance.module_record(module_decl.provenance_module).path.value()
+                    ),
                     std::string(provenance.spelling(declaration.name)),
                     std::uint8_t {0},
                 };
@@ -26,7 +28,9 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                 const auto& declaration = declarations.enumeration(value.enumeration);
                 const auto& module_decl = declarations.module_decl(declaration.module_id);
                 return std::tuple {
-                    std::string(provenance.module_record(module_decl.provenance_module).path.value()),
+                    std::string(
+                        provenance.module_record(module_decl.provenance_module).path.value()
+                    ),
                     std::string(provenance.spelling(declaration.name)),
                     std::uint8_t {1},
                 };

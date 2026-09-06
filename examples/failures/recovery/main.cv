@@ -1,0 +1,29 @@
+import .settings using { ConfigError, port_or_default };
+import "console.hpp" using example::print;
+
+fn report(label: str, primary: str, backup: str) {
+    print(label);
+    try {
+        let port = port_or_default(primary, backup)?;
+        print("Port:");
+        print(port);
+    } catch {
+        ConfigError(.Missing) => { print("No port configured"); },
+        ConfigError(.Invalid(.BadDigit(position))) => {
+            print("Bad digit at byte:");
+            print(position as i32);
+        },
+        ConfigError(.Invalid(.OutOfRange)) => {
+            print("Port must be between 1 and 65535");
+        },
+    }
+}
+
+fn main() {
+    report("Primary setting", "443", "9000");
+    report("Backup setting", "", "9000");
+    report("Built-in default", "", "");
+    report("Invalid primary is not hidden", "8x", "9000");
+    report("Invalid backup propagates", "", "70000");
+    report("Zero is not a port", "0", "9000");
+}

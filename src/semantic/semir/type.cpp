@@ -1,6 +1,7 @@
 module carven:semantic.semir.type.impl;
 
 import :semantic.semir.type;
+import :source.cpp.identifier;
 import :support.invariant;
 import std;
 
@@ -43,7 +44,7 @@ auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexc
             } else if constexpr (std::same_as<Value, CppTypeValue>) {
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                     require_owner(
-                        named->module_id.owner(),
+                        named->name.context_module.owner(),
                         owner,
                         "C++ type used a foreign module"
                     );
@@ -51,7 +52,15 @@ auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexc
                         require_owner(argument.owner(), owner, "C++ type used a foreign argument");
                     }
                 } else {
-                    for (const auto& operand : std::get<CppDeducedType>(value.form).operands) {
+                    const auto& query = std::get<CppDeducedType>(value.form);
+                    if (const auto* name = std::get_if<CppNameOperation>(&query.operation)) {
+                        require_owner(
+                            name->name.context_module.owner(),
+                            owner,
+                            "C++ query used a foreign module"
+                        );
+                    }
+                    for (const auto& operand : query.operands) {
                         require_owner(
                             operand.type.owner(),
                             owner,
@@ -82,13 +91,19 @@ auto validate_signature_owner(const CallableSignature& signature, ProgramIdentit
 
 } // namespace
 
+auto valid_cpp_name(const CppNameReference& name) noexcept -> bool {
+    return (name.lookup == CppNameLookup::Global || name.lookup == CppNameLookup::ModuleScope)
+        && !name.components.empty()
+        && std::ranges::all_of(name.components, is_supported_cpp_identifier);
+}
+
 auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept
     -> bool {
     return std::visit(
         [arity](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, CppNameOperation>) {
-                return arity == 0uz && !value.name.empty();
+                return arity == 0uz && valid_cpp_name(value.name);
             } else if constexpr (std::same_as<Value, CppConstructOperation>) {
                 return true;
             } else if constexpr (std::same_as<Value, CppCallOperation>) {

@@ -1,0 +1,4 @@
+export(cpp) fn price_cents(quantity: i32) -> i32 {
+    let unit_price: i32 = if quantity >= 10 { 90 } else { 100 };
+    return quantity * unit_price;
+}

@@ -205,18 +205,6 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
         Overloaded {
             [&](const CppTypeValue& value) noexcept -> TargetType {
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                    artifact_lowering->cpp_type_providers[named->module_id].insert(
-                        named->components.front()
-                    );
-                    const auto owner =
-                        plan().names().module_names(named->module_id).qualified_namespace_name;
-                    auto components = std::vector<TargetIdentifier>(
-                        owner.components().begin(),
-                        owner.components().end()
-                    );
-                    for (const auto& component : named->components) {
-                        components.push_back(TargetIdentifier::from_spelling(component));
-                    }
                     auto arguments = std::vector<TargetTypeID>();
                     for (const auto argument : named->arguments) {
                         arguments.push_back(lower_type(argument));
@@ -224,7 +212,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                     return {
                         .value =
                             TargetNamedType {
-                                .name = TargetName::globally_qualified(std::move(components)),
+                                .name = cpp_name(named->name),
                                 .type_argument_ids = std::move(arguments),
                                 .nested = {}
                             },
@@ -318,6 +306,20 @@ auto ModuleLowering::is_integer(TypeID id) const noexcept -> bool {
     return builtin != nullptr && builtin_is_integer(builtin->kind);
 }
 
+auto ModuleLowering::cpp_name(const CppNameReference& name) noexcept -> TargetName {
+    artifact_lowering->require_cpp_environment(name.context_module, name.lookup);
+    auto components = std::vector<TargetIdentifier>();
+    if (name.lookup == CppNameLookup::ModuleScope) {
+        const auto owner =
+            plan().names().module_names(name.context_module).qualified_namespace_name;
+        components.assign(owner.components().begin(), owner.components().end());
+    }
+    for (const auto& component : name.components) {
+        components.push_back(TargetIdentifier::from_spelling(component));
+    }
+    return TargetName::globally_qualified(std::move(components));
+}
+
 auto ModuleLowering::cpp_type_query(const CppDeducedType& query) noexcept -> TargetTypeQuery {
     auto operands = std::vector<TargetTypeQuery>();
     for (const auto& input : query.operands) {
@@ -344,14 +346,7 @@ auto ModuleLowering::cpp_type_query(const CppDeducedType& query) noexcept -> Tar
     auto operation = std::visit(
         Overloaded {
             [&](const CppNameOperation& name) noexcept -> decltype(TargetTypeQuery::operation) {
-                const auto owner = plan().names().module_names(name.module_id).qualified_namespace_name;
-                auto components = std::vector<TargetIdentifier>(
-                    owner.components().begin(),
-                    owner.components().end()
-                );
-                components.push_back(TargetIdentifier::from_spelling(name.name));
-                artifact_lowering->cpp_type_providers[name.module_id].insert(name.name);
-                return TargetName::globally_qualified(std::move(components));
+                return cpp_name(name.name);
             },
             [](const CppCallOperation&) static noexcept -> decltype(TargetTypeQuery::operation) {
                 return TargetQueryCall {};

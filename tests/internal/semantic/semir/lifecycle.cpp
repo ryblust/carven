@@ -288,7 +288,10 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         active_builder.callable_declaration_ids(),
         std::vector {first_callable, second_callable}
     );
-    CHECK_EQ(active_builder.module_declaration_copy(module_id).provenance_module, provenance_module);
+    CHECK_EQ(
+        active_builder.module_declaration_copy(module_id).provenance_module,
+        provenance_module
+    );
     CHECK_EQ(active_builder.function_declaration_copy(first_function).callable, first_callable);
     CHECK_EQ(
         active_builder.construction_struct_declaration_copy(holder).fields.front().type,

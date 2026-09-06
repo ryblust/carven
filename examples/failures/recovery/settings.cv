@@ -1,0 +1,34 @@
+import .parser using { MissingSetting, InvalidPort, parse_port };
+
+enum ConfigError {
+    Missing,
+    Invalid(InvalidPort),
+}
+
+private fn select_port(primary: str, backup: str) -> i32 {
+    return try {
+        parse_port(primary)?
+    } catch {
+        // A failure in this handler propagates outward; it does not retry itself.
+        MissingSetting(_) => parse_port(backup)?,
+        InvalidPort(_) => rethrow,
+    };
+}
+
+fn configured_port(primary: str, backup: str) -> i32 throw ConfigError {
+    return try {
+        select_port(primary, backup)?
+    } catch {
+        MissingSetting(_) => { throw ConfigError::Missing; },
+        InvalidPort(error) => { throw ConfigError::Invalid(error); },
+    };
+}
+
+fn port_or_default(primary: str, backup: str) -> i32 throw ConfigError {
+    return try {
+        configured_port(primary, backup)?
+    } catch {
+        ConfigError(.Missing) => 8080,
+        ConfigError(.Invalid(_)) => rethrow,
+    };
+}

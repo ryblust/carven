@@ -55,7 +55,7 @@ target("carven")
     add_files("src/carven.cpp")
     add_installfiles("crafts/(carven/**.hpp)", {prefixdir = "include"})
 
-option("build_tests", {default = true, description = "Build the test targets"})
+option("build_tests", {default = true, description = "Enable test and example targets"})
 
 if has_config("build_tests") then
     local carven_xmake_repo_dir = os.getenv("CARVEN_XMAKE_REPO_DIR")
@@ -74,6 +74,7 @@ if has_config("build_tests") then
         configs = {rules_only = true},
     })
 
+    includes("examples")
     includes("tests/internal")
     includes("tests/language")
     includes("tests/interop")

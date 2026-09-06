@@ -2,55 +2,58 @@
 
 > **The power of C++, in the palm of your hand.**
 
-Carven is a programming language that compiles to native, inspectable C++ and
-fits into existing C++ projects, toolchains, and build systems. It gives
-program intent a coherent language surface while leaving representation choices
-to the compiler.
-
-C++ already provides the mechanisms to build fast, precise, carefully
-engineered software. The difficulty is making their guarantees compose without
-relying on expert discipline, incidental conventions, or repeated ceremony.
-Carven turns those guarantees into explicit language contracts while preserving
-C++ as its capability ceiling and optimization target.
+Carven is a programming language that generates inspectable C++ and fits into
+existing C++ projects, toolchains, and build systems. It makes ownership,
+access, and failure contracts part of the language, while the compiler selects
+the C++ representation that preserves them.
 
 ## Why Carven?
 
 ### Intent over mechanism
 
-C++ offers a rich set of mechanisms for precise control over representation and
-behavior, setting the platform's capability ceiling. Carven uses those
-mechanisms as realization choices rather than source obligations: source states
-the operation, guarantee, or cost that matters, while the compiler selects the
-C++ form that preserves the contract.
+Express whether an operation reads, mutates, or takes ownership of a value.
+Carven checks those distinctions and manages the corresponding lifetimes and
+C++ operations. Ownership transfers, mutable access, and closure captures stay
+visible in source. See the [ownership example](examples/ownership/).
+
+### Typed failure contracts
+
+Failure types are part of a function's contract, alongside its successful
+result. Combine operations and preserve their distinct failure types and
+payloads. Private helpers and lambdas can infer their failure sets; shared
+interfaces declare bounds checked by the compiler. Propagate with `?`, recover
+with patterns, or translate failures at an interface. These contracts also
+apply to callbacks. Explore the [failure-contract examples](examples/failures/README.md).
 
 ### Zero-overhead abstractions
 
-Carven follows the zero-overhead principle: unused capabilities impose no
-runtime cost, while used abstractions target the cost of skilled handwritten
-C++ preserving the same guarantees. Zero overhead does not mean zero cost:
-storage, checks, allocation, indirection, and dispatch remain when the requested
-behavior requires them, but the abstraction itself introduces no incidental
-runtime machinery. Compile-time facts disappear after the compiler has used
-them, and the resulting C++ remains direct and optimizer-visible.
+Carven follows the zero-overhead principle, targeting the cost of skilled
+handwritten C++ with the same guarantees. Compile-time distinctions need no
+runtime representation unless execution requires it. Storage, checks, and
+dispatch serve the requested behavior, and generated C++ remains available
+for inspection and optimization. The [design principles](docs/principles.md#cost-follows-behavior)
+define this cost model.
 
 ### Built-in C++ facilities
 
-Carven lifts selected mature C++ facilities into coherent language-level
-contracts. They become built-in Carven capabilities while remaining native C++
-underneath, carrying forward the ecosystem's implementations and expertise.
+Carven gives selected C++ facilities a language-level form. Arrays, iteration,
+and callable views have Carven contracts backed by native C++ implementations.
+The compiler supplies the supporting code, so these facilities fit the same
+ownership and access rules as the rest of the language.
 
 ### Seamless C++ interoperability
 
-C++ is both Carven's native realization layer and its bridge to the wider
-ecosystem. Libraries enter through explicit Carven declarations, while Carven
-functions present explicit interfaces to C++ callers. Native tools and build
-systems remain part of the same workflow, so Carven can be adopted module by
-module inside existing C++ codebases without an all-at-once rewrite.
+Import C++ types and functions from headers, and export Carven functions through
+generated public interfaces. C++ checks native declarations and operations;
+Carven checks its own language contracts. Existing native tools and build
+systems support gradual adoption inside a C++ project. Try
+[calling C++](examples/interop/importing/) or
+[using Carven from C++](examples/interop/exporting/).
 
 > [!NOTE]
-> Carven is under active development. Current language and tooling contracts
-> are documented below; the [roadmap](proposals/roadmap.md) tracks active and
-> future design work.
+> Carven is under active development, and language and tooling changes may
+> break existing code. Use the compiler, documentation, and examples from the
+> same revision. The [roadmap](proposals/roadmap.md) tracks design work.
 
 ## Build and inspect
 
@@ -87,6 +90,8 @@ according to the [CLI](docs/cli.md) and
 
 ## Documentation
 
+- **Run examples:** [Learning examples](examples/README.md) and the
+  [failure-contract series](examples/failures/README.md)
 - **Learn the language:** [Language](docs/language.md),
   [Grammar](docs/grammar.md), and [Semantics](docs/semantics.md)
 - **Use the compiler:** [CLI Reference](docs/cli.md) and

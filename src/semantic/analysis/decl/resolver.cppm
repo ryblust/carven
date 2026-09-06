@@ -294,7 +294,15 @@ private:
         const auto extent = [&](ASTExprID expression) noexcept {
             return prove_array_extent(draft, module_id, syntax, environment, expression);
         };
-        return resolve_failure_types(draft, catalog, import_usage, module_id, syntax, clause, extent);
+        return resolve_failure_types(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            syntax,
+            clause,
+            extent
+        );
     }
 
     auto resolve_function(
@@ -327,8 +335,11 @@ private:
         const ASTConstantDecl& declaration,
         Span item_span
     ) noexcept -> AnalysisResult<void>;
-    auto resolve_constant_name(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
-        -> AnalysisResult<ConstantNamedValue>;
+    auto resolve_constant_name(
+        ProgramModuleID module_id,
+        std::string_view name,
+        Span origin
+    ) noexcept -> AnalysisResult<ConstantNamedValue>;
     auto resolve_enum_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,

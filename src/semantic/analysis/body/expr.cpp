@@ -357,6 +357,9 @@ auto BodyElaborator::expression(ASTExprID id, std::optional<ConstructionTypeRef>
             [&](const ASTLiteral& value) noexcept {
                 return literal_expression(value, source.span, expected);
             },
+            [&](const ASTCppNameExpr& value) noexcept {
+                return global_cpp_expression(value, source.span);
+            },
             [&](const ASTNameExpr& value) noexcept { return name_expression(value, source.span); },
             [&](const ASTGroupExpr& value) noexcept {
                 return expression(value.expression, expected);

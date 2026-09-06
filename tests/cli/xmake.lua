@@ -5,10 +5,10 @@ local case_specs = {
         output_files = {"input.cpp", "carven/generated/input.hpp"},
         file_contains = {
             ["input.cpp"] = {"#include <cmath>"},
-            ["carven/generated/input.hpp"] = {"#include <vector>", "using ::std::vector;"},
-        },
-        file_not_contains = {
-            ["carven/generated/input.hpp"] = {"#include <cmath>", "using ::std::abs;"},
+            ["carven/generated/input.hpp"] = {
+                "#include <vector>", "#include <cmath>",
+                "using ::std::vector;", "using ::std::abs;",
+            },
         },
     },
     ["commands/dump"] = {

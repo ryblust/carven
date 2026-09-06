@@ -6,8 +6,7 @@ template<typename T>
 class UniqueIndirect final {
 public:
     template<typename Value>
-        requires std::same_as<std::remove_cvref_t<Value>, T>
-              && std::is_constructible_v<T, Value&&>
+        requires std::same_as<std::remove_cvref_t<Value>, T> && std::is_constructible_v<T, Value&&>
     explicit constexpr UniqueIndirect(Value&& value) noexcept
         : pointer(std::make_unique<T>(std::forward<Value>(value))) {}
 
@@ -23,7 +22,7 @@ public:
         return *pointer;
     }
 
-    constexpr auto operator*() const & noexcept -> const T& {
+    constexpr auto operator*() const& noexcept -> const T& {
         require_live();
         return *pointer;
     }
@@ -33,7 +32,7 @@ public:
         return std::move(*pointer);
     }
 
-    constexpr auto operator*() const && noexcept -> const T&& {
+    constexpr auto operator*() const&& noexcept -> const T&& {
         require_live();
         return std::move(*pointer);
     }

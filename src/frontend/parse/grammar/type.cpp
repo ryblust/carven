@@ -19,7 +19,7 @@ auto Parser::parse_type() noexcept -> std::optional<ASTTypeID> {
     if (!nesting) {
         return std::nullopt;
     }
-    if (check(TokenKind::Identifier)) {
+    if (check(TokenKind::Identifier) || check(TokenKind::ColonColon)) {
         return parse_named_type();
     }
     if (check(TokenKind::LeftBracket)) {
@@ -43,6 +43,7 @@ auto Parser::parse_named_type() noexcept -> std::optional<ASTTypeID> {
 }
 
 auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
+    const auto global_root = match(TokenKind::ColonColon);
     const auto start = expect(TokenKind::Identifier, "expected type name");
     auto components = std::vector<ASTTypeNameComponent> {};
     components.push_back({.name_span = start.span});
@@ -71,9 +72,13 @@ auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
         }
     }
     return ParsedTypeForm<ASTNamedType> {
-        .span = join(start.span, end),
-        .value =
-            ASTNamedType {.components = std::move(components), .arguments = std::move(arguments)},
+        .span = join(global_root.has_value() ? global_root->span : start.span, end),
+        .value = ASTNamedType {
+            .global_root =
+                global_root.has_value() ? std::optional(global_root->span) : std::nullopt,
+            .components = std::move(components),
+            .arguments = std::move(arguments)
+        },
     };
 }
 

@@ -442,3 +442,41 @@ TEST_CASE("Artifacts: input order and linkage domain produce deterministic sched
     }
     CHECK(changed_content);
 }
+
+TEST_CASE("Generated interfaces: C++ environments preserve complete ordered imports") {
+    constexpr auto modules = std::array {
+        ModuleFixture {
+            "provider",
+            "import \"first.hpp\"; import <second.hpp>; import \"first.hpp\";"
+            "import \"lookup.hpp\" using { native::Thing, native::unused };"
+            "fn global(value: ::Point) -> ::Point { return value; }"
+            "fn scoped(value: Thing) -> Thing { return value; }"
+        },
+    };
+    const auto artifacts = compile_modules(modules);
+    const auto& content = interface_for(artifacts, "provider").content;
+    const auto first = content.find("#include \"first.hpp\"");
+    const auto second = content.find("#include <second.hpp>");
+    REQUIRE(first != std::string::npos);
+    const auto repeated = content.find("#include \"first.hpp\"", first + 1uz);
+    REQUIRE(second != std::string::npos);
+    REQUIRE(repeated != std::string::npos);
+    CHECK(first < second);
+    CHECK(second < repeated);
+    CHECK(content.find("#include \"first.hpp\"", repeated + 1uz) == std::string::npos);
+    CHECK(content.contains("using ::native::unused;"));
+}
+
+TEST_CASE("Generated interfaces: global lookup carries headers without using bindings") {
+    constexpr auto modules = std::array {
+        ModuleFixture {
+            "global_only",
+            "import \"native.hpp\" using native::unused;"
+            "fn point(value: ::Point) -> ::Point { return value; }"
+        },
+    };
+    const auto artifacts = compile_modules(modules);
+    const auto& content = interface_for(artifacts, "global_only").content;
+    CHECK(content.contains("#include \"native.hpp\""));
+    CHECK(!content.contains("using ::native::unused;"));
+}

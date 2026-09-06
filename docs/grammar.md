@@ -455,7 +455,7 @@ type = named-type | array-type | function-type;
 
 named-type = qualified-type-name, [ "<", type, { ",", type }, ">" ];
 
-qualified-type-name = type-name-component,
+qualified-type-name = [ "::" ], type-name-component,
                       { "::", type-name-component };
 
 type-name-component = IDENTIFIER;
@@ -729,6 +729,7 @@ primary-expression = literal
                    | construction-expression
                    | contextual-case-expression
                    | IDENTIFIER
+                   | global-cpp-name
                    | grouped-expression
                    | array-expression
                    | lambda-expression
@@ -738,6 +739,8 @@ primary-expression = literal
 
 literal = NUMBER_LITERAL | STRING_LITERAL | CHAR_LITERAL
         | "true" | "false";
+
+global-cpp-name = "::", IDENTIFIER, { "::", IDENTIFIER };
 
 contextual-case-expression = ".", IDENTIFIER;
 

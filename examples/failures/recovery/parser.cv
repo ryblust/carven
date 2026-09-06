@@ -1,0 +1,25 @@
+struct MissingSetting {}
+
+enum InvalidPort {
+    BadDigit(usize),
+    OutOfRange,
+}
+
+fn parse_port(text: str) -> i32 throw MissingSetting + InvalidPort {
+    if text.is_empty() { throw MissingSetting {}; }
+    var value: i32 = 0;
+    var position: usize = 0;
+    for byte in text.bytes {
+        if byte < 48u8 || byte > 57u8 {
+            throw InvalidPort::BadDigit(position);
+        }
+        let digit = (byte as i32) - 48;
+        if value > (65535 - digit) / 10 {
+            throw InvalidPort::OutOfRange;
+        }
+        value = value * 10 + digit;
+        ++position;
+    }
+    if value == 0 { throw InvalidPort::OutOfRange; }
+    return value;
+}

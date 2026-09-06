@@ -1,0 +1,10 @@
+import .global using { make_global, global_rows };
+
+test "C++ global names: source environments follow cross-module results" {
+    let point = make_global();
+    check(point.y == 2);
+    let rows = global_rows();
+    check(rows.values[0][0].y == 4);
+    let capture = [point]() -> i32 { return point.x as i32; };
+    check(capture() == 1);
+}

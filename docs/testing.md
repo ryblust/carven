@@ -12,6 +12,7 @@ Use the repository wrapper. Build before testing:
 ./xmakew test -g language
 ./xmakew test -g interop
 ./xmakew test -g cli
+./xmakew test -g examples
 ```
 
 During implementation, run the relevant groups. After implementation, run the
@@ -37,6 +38,7 @@ its versioned patch.
 | `internal` | Compiler modules and runtime facilities | Semantic rules, diagnostics, representation invariants, planning, serialization, and runtime operations |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, source fragments, native calls, Unicode checks, and header self-containment |
+| `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
 Generated programs use C++20. The language corpus runs once in that target mode.
@@ -48,6 +50,11 @@ A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
 `interop`. Internal tests use doctest; generated programs use Carven's testing
 support.
+
+User-facing programs live under `examples/` and share `examples/xmake.lua`.
+Build them with `./xmakew build examples` after building the compiler. Their
+output checks are included in the full suite; diagnostic and termination
+coverage stays in the test groups above.
 
 ## Assertions
 

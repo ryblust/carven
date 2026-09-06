@@ -849,3 +849,40 @@ TEST_CASE("SemIR declaration invariant: builder rejects cross-program module ref
         );
     }));
 }
+
+TEST_CASE("SemIR publication invariant: external names require valid structured paths") {
+    const auto paths = std::vector<std::vector<std::string>> {{}, {"native", "class"}};
+    for (const auto& components : paths) {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto builder = begin_compilation(sources, diagnostics, "external");
+        const auto facts = module_facts(builder);
+        const auto module_id = builder.reserve_module_declaration();
+        builder.define_declaration(
+            module_id,
+            ModuleDeclaration {
+                .provenance_module = facts.provenance_module,
+                .origin = facts.origin,
+                .cpp_headers = {},
+                .cpp_source_fragments = {},
+                .items = {},
+            }
+        );
+        static_cast<void>(builder.intern_type(
+            {.value = CppTypeValue {
+                 .form = CppNamedType {
+                     .name =
+                         {.context_module = module_id,
+                          .lookup = CppNameLookup::Global,
+                          .components = components},
+                     .arguments = {},
+                 },
+             }}
+        ));
+        builder.finish_declarations();
+        REQUIRE(builder.solve_construction().has_value());
+        CHECK(expect_termination("semir-external-invalid-path", [&] noexcept {
+            static_cast<void>(std::move(builder).seal());
+        }));
+    }
+}

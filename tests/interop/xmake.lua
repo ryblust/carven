@@ -77,6 +77,7 @@ target("carven-test-interop")
     add_files(table.unpack(provider_form_sources))
     add_files(path.join(interop_dir, "cpp_names", "*.cv"))
     add_files(path.join(interop_dir, "cpp_names", "interface.cpp"))
+    add_files(path.join(interop_dir, "cpp_names", "global_interface.cpp"))
     after_load(use_local_carven)
     add_tests("interop", {group = "interop"})
 

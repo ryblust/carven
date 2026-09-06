@@ -1,0 +1,12 @@
+enum DeliveryError {
+    UnknownZone(i32),
+    Unavailable(i32),
+}
+
+fn delivery_fee(zone: i32) -> i32 throw DeliveryError {
+    return match zone {
+        1 => 300,
+        2 | 3 => { throw DeliveryError::Unavailable(zone); },
+        _ => { throw DeliveryError::UnknownZone(zone); },
+    };
+}

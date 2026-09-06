@@ -187,19 +187,6 @@ auto target_nominal_order(const SemIRProgram& semantic) noexcept
     return result;
 }
 
-auto cpp_header_directive(
-    CompilationProvenanceView provenance,
-    const CppHeaderDependency& dependency
-) noexcept -> TargetDirective {
-    const auto name = provenance.spelling(dependency.name);
-    switch (dependency.delimiter) {
-        case CppHeaderDelimiter::AngleBrackets:
-            return {.bytes = std::format("#include <{}>", name)};
-        case CppHeaderDelimiter::Quotes: return {.bytes = std::format("#include \"{}\"", name)};
-    }
-    std::unreachable();
-}
-
 auto published_nominal(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
     -> bool {
     return target_visibility(semantic, target_declaration_ref(nominal))
@@ -538,26 +525,13 @@ auto plan_artifacts(
             const auto component = *module_component[module_id.index()];
             interface_dependencies.push_back(*component_artifacts[component]);
         }
-        auto user_directives = std::vector<TargetDirectiveGroup>();
         const auto& declaration = declarations.module_decl(module_id);
-        for (const auto& dependency : declaration.cpp_headers) {
-            user_directives.push_back({
-                .directives =
-                    {
-                        cpp_header_directive(provenance, dependency),
-                    },
-                .attribution = TargetRawSourceAttribution {
-                    .origin = target_source_origin(provenance, dependency.origin),
-                },
-            });
-        }
         const auto& path = provenance.module_record(declaration.provenance_module).path;
         static_cast<void>(artifacts.add(
             TargetModuleImplementationArtifact {
                 .logical_path = module_implementation_logical_path(path.components()),
                 .schedule = std::move(*schedules[module_id.index()]),
                 .interface_dependencies = std::move(interface_dependencies),
-                .user_directives = std::move(user_directives),
             }
         ));
     }
@@ -628,27 +602,5 @@ auto materialize_directives(
             },
         });
     }
-    const auto append_groups = [&](std::span<const TargetDirectiveGroup> groups) noexcept {
-        for (const auto& group : groups) {
-            if (!group.directives.empty()) {
-                result.suffix_groups.push_back({
-                    .directives = group.directives,
-                    .attribution = group.attribution,
-                });
-            }
-        }
-    };
-    std::visit(
-        Overloaded {
-            [](const TargetInterfaceArtifact&) static noexcept {},
-            [](const TargetCppAPIHeaderArtifact&) static noexcept {},
-            [&](const TargetModuleImplementationArtifact& value) noexcept {
-                append_groups(value.user_directives);
-            },
-            [](const TargetTestRunnerHeaderArtifact&) static noexcept {},
-            [](const TargetTestEntryArtifact&) static noexcept {},
-        },
-        artifact
-    );
     return result;
 }

@@ -157,7 +157,6 @@ struct TargetModuleImplementationArtifact final {
     std::string logical_path;
     TargetModuleSchedule schedule;
     std::vector<TargetArtifactID> interface_dependencies;
-    std::vector<TargetDirectiveGroup> user_directives;
 };
 
 struct TargetTestRunnerHeaderArtifact final {

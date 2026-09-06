@@ -343,6 +343,8 @@ private:
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto cpp_call(BuiltExpression& callee, const ASTCallExpr& source, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
+    auto global_cpp_expression(const ASTCppNameExpr& name, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
     auto name_expression(const ASTNameExpr& name, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
     auto array_expression(

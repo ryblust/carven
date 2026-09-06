@@ -86,6 +86,13 @@ private:
         std::string_view field
     ) noexcept -> void;
     auto render_expression(
+        const ASTCppNameExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTContextualCaseExpr& value,
         ASTExprID expression,
         std::string_view prefix,

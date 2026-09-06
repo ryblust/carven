@@ -146,8 +146,11 @@ auto close_import_graph(
         imports.reserve(ast.ast_module().module_imports.size());
         for (const auto declaration : ast.ast_module().module_imports) {
             const auto& module_import = ast.module_import(declaration);
-            const auto resolved =
-                resolve_import_path(source.text(), module_record.path, module_import.module_reference);
+            const auto resolved = resolve_import_path(
+                source.text(),
+                module_record.path,
+                module_import.module_reference
+            );
             if (!resolved.has_value()) {
                 diagnostics.push_back(import_error(
                     source.manager_source_id(),

@@ -112,29 +112,35 @@ auto resolve_named(
     Span origin
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
-    if (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty()) {
+    if (named.global_root.has_value()
+        || (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty())) {
         const auto bindings = catalog.cpp_imports(module_id);
-        const auto admitted = std::ranges::any_of(bindings, [&](const auto& binding) noexcept {
-            return binding.opens_namespace || binding.components.back() == root;
-        });
+        const auto admitted =
+            named.global_root.has_value()
+            || std::ranges::any_of(bindings, [&](const auto& binding) noexcept {
+                   return binding.opens_namespace || binding.components.back() == root;
+               });
         if (admitted) {
             for (const auto& binding : bindings) {
-                if (!binding.opens_namespace && binding.components.back() == root) {
+                if (!named.global_root.has_value()
+                    && !binding.opens_namespace
+                    && binding.components.back() == root) {
                     import_usage.record_cpp(module_id, binding.origin);
                 }
             }
-            auto components = std::vector<std::string>();
+            auto components = std::vector<Span>();
             for (const auto& component : named.components) {
-                components.push_back(draft.source_slice_copy(module_id, component.name_span));
-                if (!is_supported_cpp_identifier(components.back())) {
-                    return std::unexpected(fail(
-                        draft,
-                        module_id,
-                        component.name_span,
-                        DiagnosticCode::CppIdentifier,
-                        "external type cannot be represented as a C++ identifier"
-                    ));
-                }
+                components.push_back(component.name_span);
+            }
+            auto name = resolve_cpp_name(
+                draft,
+                module_id,
+                catalog.find_module(module_id)->declaration,
+                named.global_root.has_value() ? CppNameLookup::Global : CppNameLookup::ModuleScope,
+                components
+            );
+            if (!name.has_value()) {
+                return std::unexpected(name.error());
             }
             auto arguments = std::vector<TypeID>();
             for (const auto argument : named.arguments) {
@@ -164,11 +170,8 @@ auto resolve_named(
             }
             return ConstructionTypeRef {draft.intern_type(
                 {.value = CppTypeValue {
-                     .form = CppNamedType {
-                         .module_id = catalog.find_module(module_id)->declaration,
-                         .components = std::move(components),
-                         .arguments = std::move(arguments)
-                     }
+                     .form =
+                         CppNamedType {.name = std::move(*name), .arguments = std::move(arguments)}
                  }}
             )};
         }
@@ -179,7 +182,7 @@ auto resolve_named(
             module_id,
             origin,
             DiagnosticCode::TypeUnresolved,
-            "type arguments require an imported C++ name"
+            "type arguments require an external C++ name"
         ));
     }
     if (named.components.size() != 1uz) {
@@ -387,6 +390,34 @@ auto resolve_type_value(
 
 } // namespace
 
+auto resolve_cpp_name(
+    const ProgramDraft& draft,
+    ProgramModuleID source_module,
+    ModuleID context_module,
+    CppNameLookup lookup,
+    std::span<const Span> components
+) noexcept -> AnalysisResult<CppNameReference> {
+    auto names = std::vector<std::string>();
+    for (const auto component : components) {
+        auto name = draft.source_slice_copy(source_module, component);
+        if (!is_supported_cpp_identifier(name)) {
+            return std::unexpected(fail(
+                draft,
+                source_module,
+                component,
+                DiagnosticCode::CppIdentifier,
+                "external name cannot be represented as a C++ identifier"
+            ));
+        }
+        names.push_back(std::move(name));
+    }
+    return CppNameReference {
+        .context_module = context_module,
+        .lookup = lookup,
+        .components = std::move(names)
+    };
+}
+
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode {
     switch (access.mode) {
         case ASTAccessMode::Read:  return AccessMode::Read;
@@ -477,7 +508,11 @@ auto resolve_source_constraint_type(
                     catalog,
                     import_usage,
                     module_id,
-                    ASTNamedType {.components = std::move(components), .arguments = {}},
+                    ASTNamedType {
+                        .global_root = std::nullopt,
+                        .components = std::move(components),
+                        .arguments = {}
+                    },
                     syntax,
                     resolve_extent,
                     source_type.span
@@ -593,7 +628,10 @@ auto resolve_failure_types(
                 locate(source_id(draft, module_id), syntax.type(source_failure).span),
                 "duplicate failure type"
             );
-            diagnostic.related(locate(source_id(draft, module_id), prior->second), "first occurrence");
+            diagnostic.related(
+                locate(source_id(draft, module_id), prior->second),
+                "first occurrence"
+            );
             return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
         first_seen.emplace(*concrete, syntax.type(source_failure).span);

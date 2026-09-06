@@ -75,9 +75,22 @@ struct CallableViewTypeValue final {
     constexpr auto operator==(const CallableViewTypeValue&) const noexcept -> bool = default;
 };
 
-struct CppNamedType final {
-    ModuleID module_id;
+enum class CppNameLookup {
+    Global,
+    ModuleScope,
+};
+
+struct CppNameReference final {
+    ModuleID context_module;
+    CppNameLookup lookup;
     std::vector<std::string> components;
+    auto operator==(const CppNameReference&) const noexcept -> bool = default;
+};
+
+auto valid_cpp_name(const CppNameReference& name) noexcept -> bool;
+
+struct CppNamedType final {
+    CppNameReference name;
     std::vector<TypeID> arguments;
     auto operator==(const CppNamedType&) const noexcept -> bool = default;
 };
@@ -108,8 +121,7 @@ enum class BinaryOperator {
 };
 
 struct CppNameOperation final {
-    ModuleID module_id;
-    std::string name;
+    CppNameReference name;
 
     auto operator==(const CppNameOperation&) const noexcept -> bool = default;
 };

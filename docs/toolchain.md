@@ -9,6 +9,12 @@ Compiler implementation uses C++26 with exceptions and RTTI disabled. The
 validated host is LLVM/Clang and libc++ 23.1.0. Generated programs and installed
 crafts use C++20. Host-only features stay within the compiler implementation.
 
+The native consumer build selects exception support for its sources and
+providers according to their C++ requirements. A `#[cpp]` fragment containing
+native `throw` or `try`/`catch` requires exception support in its generated
+translation unit. Generated exception specifications follow the
+[native exception boundary](semantics.md#native-exception-boundary).
+
 Carven is a source-generation step. The build system supplies source batches,
 C++ providers, libraries, include paths, and native compiler options, then
 compiles and links the artifacts. C++ validates provider declarations and
@@ -68,10 +74,15 @@ The `carven/api` header contains explicit `export(cpp)` declarations in
 `carven::api` followed by the module namespace components. Its implementation
 contains the corresponding façades. The header is self-contained.
 
-C++ header imports become ordered includes in the owning implementation. External
-types used by an interface also bring their header dependencies and module-scoped
-name bindings into that interface. Raw source fragments follow includes at
-global scope before generated namespaces.
+C++ header imports become ordered includes in the owning implementation. An
+external type or result query needed by an interface brings its context module's
+complete header import list into that interface, including imports without
+`using`. Module-scoped lookup additionally brings the complete using environment.
+Each artifact materializes a module environment once, preserving that module's
+import order, delimiter forms, and explicit repetitions. Different environments
+follow stable module order; this does not reproduce arbitrary macro configuration
+orders across modules. Raw source fragments remain implementation-only and follow
+includes at global scope before generated namespaces.
 
 Test generation emits the runner header. Default test generation also emits a
 main source; external test generation supplies the runner to a caller-provided

@@ -19,7 +19,7 @@ ArtifactLowering::ArtifactLowering(ArtifactLowering&& other) noexcept
       artifact_id(other.artifact_id),
       target_builder(std::move(other.target_builder)),
       lowering_dependencies(std::move(other.lowering_dependencies)),
-      cpp_type_providers(std::move(other.cpp_type_providers)) {}
+      cpp_environments(std::move(other.cpp_environments)) {}
 
 auto ArtifactLowering::require_compilation() const noexcept -> const PlannedCompilation& {
     if (planned_compilation == nullptr) {
@@ -68,33 +68,37 @@ auto ArtifactLowering::record_provider_interface(ModuleID active, ModuleID provi
     invariant_violation("cross-module lowering dependency has no provider interface");
 }
 
+auto ArtifactLowering::require_cpp_environment(ModuleID provider, CppNameLookup lookup) noexcept
+    -> void {
+    static_cast<void>(semantic().declarations().module_decl(provider));
+    const auto [entry, inserted] = cpp_environments.try_emplace(provider, lookup);
+    if (!inserted && lookup == CppNameLookup::ModuleScope) {
+        entry->second = lookup;
+    }
+}
+
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
     auto directives = materialize_directives(plan(), artifact_id, dependencies);
     auto imports = std::vector<TargetItem>();
-    for (const auto& [provider, names] : cpp_type_providers) {
-        const auto needed = [&](const CppUsingBinding& binding) noexcept {
-            return binding.opens_namespace
-                || names.contains(semantic().provenance().spelling(binding.components.back()));
-        };
+    for (const auto& [provider, lookup] : cpp_environments) {
         auto bindings = std::vector<TargetItem>();
         for (const auto& header : semantic().declarations().module_decl(provider).cpp_headers) {
-            if (!std::ranges::any_of(header.bindings, needed)) {
-                continue;
-            }
             const auto name = semantic().provenance().spelling(header.name);
             directives.prefix_groups.push_back(
                 {.directives =
                      {{.bytes = header.delimiter == CppHeaderDelimiter::AngleBrackets
                            ? std::format("#include <{}>", name)
                            : std::format("#include \"{}\"", name)}},
-                 .attribution = std::nullopt}
+                 .attribution = TargetRawSourceAttribution {
+                     .origin = target_source_origin(semantic().provenance(), header.origin),
+                 }}
             );
+            if (lookup == CppNameLookup::Global) {
+                continue;
+            }
             for (const auto& binding : header.bindings) {
-                if (!needed(binding)) {
-                    continue;
-                }
                 auto components = std::vector<TargetIdentifier>();
                 for (const auto component : binding.components) {
                     components.push_back(
@@ -111,13 +115,15 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
                 ));
             }
         }
-        imports.push_back(namespace_item(
-            plan().names().module_names(provider).qualified_namespace_name,
-            std::move(bindings)
-        ));
+        if (!bindings.empty()) {
+            imports.push_back(namespace_item(
+                plan().names().module_names(provider).qualified_namespace_name,
+                std::move(bindings)
+            ));
+        }
     }
     sections.preamble.insert(
-        sections.preamble.begin(),
+        sections.preamble.end(),
         std::make_move_iterator(imports.begin()),
         std::make_move_iterator(imports.end())
     );

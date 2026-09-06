@@ -1,0 +1,18 @@
+enum QuantityError {
+    NonPositive(i32),
+    TooLarge(i32),
+}
+
+struct OutOfStock {
+    requested: i32,
+    available: i32,
+}
+
+fn line_total(quantity: i32, available: i32) -> i32 throw QuantityError + OutOfStock {
+    if quantity <= 0 { throw QuantityError::NonPositive(quantity); }
+    if quantity > 100 { throw QuantityError::TooLarge(quantity); }
+    if quantity > available {
+        throw OutOfStock { requested: quantity, available: available };
+    }
+    return quantity * 250;
+}

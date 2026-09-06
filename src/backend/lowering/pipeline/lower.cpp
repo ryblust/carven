@@ -125,27 +125,7 @@ auto lower_module(
     auto module_context = context.module_context(schedule.module_id);
     auto lowered = lower_module_schedule(module_context, schedule);
     auto module_items = std::vector<TargetItem>();
-    for (const auto& header :
-         context.semantic().declarations().module_decl(schedule.module_id).cpp_headers) {
-        for (const auto& binding : header.bindings) {
-            auto components = std::vector<TargetIdentifier>();
-            for (const auto component : binding.components) {
-                components.push_back(
-                    TargetIdentifier::from_spelling(
-                        context.semantic().provenance().spelling(component)
-                    )
-                );
-            }
-            module_items.push_back(source_item(
-                context.semantic(),
-                binding.origin,
-                TargetUsing {
-                    .name = TargetName::globally_qualified(std::move(components)),
-                    .opens_namespace = binding.opens_namespace,
-                }
-            ));
-        }
-    }
+    context.require_cpp_environment(schedule.module_id, CppNameLookup::ModuleScope);
     if (!lowered.private_items.empty()) {
         module_items.push_back(namespace_item(std::nullopt, std::move(lowered.private_items)));
     }

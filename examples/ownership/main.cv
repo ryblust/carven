@@ -1,0 +1,26 @@
+import "console.hpp" using example::print;
+
+struct Stock { units: i32 }
+
+fn restock(&stock: Stock, units: i32) {
+    stock.units += units;
+}
+
+fn dispatch(&&stock: Stock) -> i32 {
+    return stock.units;
+}
+
+fn main() {
+    var stock = Stock { units: 4 };
+    restock(&stock, 3);
+    let snapshot = stock;
+    restock(&stock, 2);
+    print("Snapshot:");
+    print(snapshot.units);
+    print("Dispatched:");
+    print(dispatch(&&stock));
+    // Take transfers the owner; stock is unavailable until assigned again.
+    stock = Stock { units: 1 };
+    print("Replacement stock:");
+    print(stock.units);
+}

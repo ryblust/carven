@@ -121,8 +121,9 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
                 switch (value.kind) {
                     case TargetStringLiteralKind::String: break;
                     case TargetStringLiteralKind::StringView:
-                        result =
-                            std::format("std::string_view{{{}, {}}}", result, value.bytes.size());
+                        result = value.bytes.empty()
+                            ? std::format("std::string_view{{{}}}", result)
+                            : std::format("std::string_view{{{}, {}}}", result, value.bytes.size());
                         break;
                 }
                 return result;

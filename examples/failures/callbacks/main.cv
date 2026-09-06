@@ -1,0 +1,55 @@
+import "console.hpp" using example::print;
+
+struct InvalidAmount { amount: i32 }
+struct LimitExceeded { amount: i32, limit: i32 }
+
+fn positive(amount: i32) -> i32 throw InvalidAmount {
+    if amount <= 0 { throw InvalidAmount { amount: amount }; }
+    return amount;
+}
+
+fn process(amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded)
+    -> i32 throw InvalidAmount + LimitExceeded {
+    return policy(amount)?;
+}
+
+fn report(label: str, amount: i32,
+    policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded) {
+    print(label);
+    try {
+        let accepted = process(amount, policy)?;
+        print("Accepted:");
+        print(accepted);
+    } catch {
+        InvalidAmount(error) => {
+            print("Amount must be positive:");
+            print(error.amount);
+        },
+        LimitExceeded(error) => {
+            print("Requested:");
+            print(error.amount);
+            print("Policy limit:");
+            print(error.limit);
+        },
+    }
+}
+
+fn main() {
+    // The function's smaller failure set fits the wider policy contract.
+    report("Basic policy", 8, positive);
+    report("Rejected by basic policy", 0, positive);
+
+    let limit = 5;
+    let bounded = [limit](amount: i32) {
+        let accepted = positive(amount)?;
+        if accepted > limit {
+            throw LimitExceeded { amount: accepted, limit: limit };
+        }
+        return accepted;
+    };
+    // The view borrows bounded; its owner remains alive for all three calls.
+    let policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded = bounded;
+    report("Captured policy", 4, policy);
+    report("Rejected by captured policy", 8, policy);
+    report("Invalid input through captured policy", -2, policy);
+}

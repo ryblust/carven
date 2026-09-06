@@ -4,9 +4,9 @@ import :diagnostics.code;
 import :frontend.ast.expr;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.types;
 import :semantic.semir.structured;
 import :semantic.semir.type;
-import :source.cpp.identifier;
 import std;
 
 namespace body_elaboration {
@@ -17,20 +17,27 @@ auto BodyElaborator::is_cpp_type(ConstructionTypeRef type) const noexcept -> boo
         && std::holds_alternative<CppTypeValue>(draft().type_copy(*concrete).value);
 }
 
+auto BodyElaborator::global_cpp_expression(const ASTCppNameExpr& name, Span span) noexcept
+    -> AnalysisResult<BuiltExpression> {
+    auto reference = resolve_cpp_name(
+        draft(),
+        source_module_id,
+        semantic_module_id,
+        CppNameLookup::Global,
+        name.components
+    );
+    if (!reference.has_value()) {
+        return std::unexpected(reference.error());
+    }
+    return cpp_expression(CppNameOperation {.name = std::move(*reference)}, {}, span);
+}
+
 auto BodyElaborator::cpp_expression(
     CppOperation operation,
     std::vector<SemCallArgument<ConstructionTypeRef, FailureTermID>> operands,
     Span span,
     std::optional<ConstructionTypeRef> type
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    if (const auto* name = std::get_if<CppNameOperation>(&operation);
-        name != nullptr && !is_supported_cpp_identifier(name->name)) {
-        return std::unexpected(fail(
-            span,
-            DiagnosticCode::CppIdentifier,
-            "external name cannot be represented as a C++ identifier"
-        ));
-    }
     if (type.has_value() && std::holds_alternative<CppConvertOperation>(operation)) {
         const auto* concrete = std::get_if<TypeID>(&*type);
         const auto borrowed = concrete != nullptr

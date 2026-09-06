@@ -69,7 +69,8 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                        )
                     ? ContextualOperandKind::EnumCase
                     : ContextualOperandKind::None;
-            } else if constexpr (std::same_as<Form, ASTNameExpr>
+            } else if constexpr (std::same_as<Form, ASTCppNameExpr>
+                                 || std::same_as<Form, ASTNameExpr>
                                  || std::same_as<Form, ASTGroupExpr>
                                  || std::same_as<Form, ASTArrayExpr>
                                  || std::same_as<Form, ASTConstructionExpr>

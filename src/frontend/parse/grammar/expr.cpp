@@ -357,6 +357,30 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
+    if (check(TokenKind::ColonColon)) {
+        if (construction_allowed_here()) {
+            if (const auto construction = try_parse_construction()) {
+                return *construction;
+            }
+        }
+        const auto root = consume();
+        auto components = std::vector<Span>();
+        auto end = root.span;
+        do {
+            end = expect(TokenKind::Identifier, "expected C++ name after '::'").span;
+            components.push_back(end);
+        } while (!failed && match(TokenKind::ColonColon));
+        if (failed) {
+            return std::nullopt;
+        }
+        return builder.append_expression(
+            ASTExpr {
+                .span = join(root.span, end),
+                .value =
+                    ASTCppNameExpr {.global_root = root.span, .components = std::move(components)}
+            }
+        );
+    }
     if (check(TokenKind::Identifier)) {
         if (construction_allowed_here()) {
             if (const auto construction = try_parse_construction()) {
@@ -611,7 +635,7 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
     const auto checkpoint = begin_speculation();
     const auto start = current().span;
     auto construction_type = std::optional<ASTConstructionType> {};
-    if (check(TokenKind::Identifier)) {
+    if (check(TokenKind::Identifier) || check(TokenKind::ColonColon)) {
         auto parsed = parse_named_type_form();
         construction_type = ASTConstructionType {
             .span = parsed.span,

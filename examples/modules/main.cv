@@ -1,0 +1,7 @@
+import .rates using shipping_cents;
+import "console.hpp" using example::print;
+
+fn main() {
+    print("Shipping in cents:");
+    print(shipping_cents(4));
+}

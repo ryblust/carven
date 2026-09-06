@@ -127,7 +127,13 @@ access or ownership legality.
 
 Scope bindings distinguish Carven declarations from explicitly imported C++ names
 and namespace lookup environments. External names do not reserve synthetic
-function or nominal declaration identities.
+function or nominal declaration identities. Named external types and name
+operations share `CppNameReference`: a context module, a `Global` or
+`ModuleScope` lookup origin, and a nonempty identifier path. The context module
+supplies declarations even for global lookup. Semantic construction validates
+identifier spelling and Carven-owned contracts, not external declaration
+existence or identity. Type arguments and operation operands remain separate
+from the name. Publication verifies paths, module identities, and references.
 
 Published types distinguish named external type expressions from external result
 queries. Queries retain their originating operation and operand types and access

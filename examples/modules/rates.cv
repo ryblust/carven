@@ -1,0 +1,5 @@
+private const base_cents: i32 = 300;
+
+fn shipping_cents(weight_kg: i32) -> i32 {
+    return base_cents + weight_kg * 50;
+}

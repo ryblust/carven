@@ -20,6 +20,7 @@ struct ASTTypeNameComponent final {
 };
 
 struct ASTNamedType final {
+    std::optional<Span> global_root;
     std::vector<ASTTypeNameComponent> components;
     std::vector<ASTTypeID> arguments;
 };

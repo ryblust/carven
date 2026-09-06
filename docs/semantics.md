@@ -224,11 +224,20 @@ context is invalid; spell the type or enum owner explicitly.
 
 ## C++ interoperation
 
-The grammar defines four C++ forms. `import <...>` and `import "..."` are C++
-header imports, top-level `#[cpp]` contributes an implementation source
-fragment, `import(cpp)` declares a C++-implemented Carven function, and
-`export(cpp)` publishes a Carven function to C++ consumers. A source fragment
-has no public API placement.
+`import <...>` and `import "..."` include C++ headers. Top-level `#[cpp]`
+contributes an implementation source fragment. `import(cpp)` declares a
+C++-implemented Carven function; `export(cpp)` publishes a Carven function to
+C++ consumers. Source fragments are implementation-only.
+
+A header import makes its header available through C++ inclusion; Carven does
+not read its contents or associate declarations with individual headers.
+A name with a leading `::` delegates lookup directly to the global C++ namespace:
+`::calculate`, `::vendor::calculate`, and the type `::Point` bypass Carven local,
+module, and builtin name lookup. Global paths work in expressions, type
+annotations, casts, and construction, including external type applications such
+as `::std::vector<i32>`. No header import is required for
+Carven to admit such a reference; C++ checks whether the declaration is available.
+Global references do not mark explicit `using` selections as used.
 
 A header import without `using` creates no Carven names. A `using` selection
 introduces external names or a namespace lookup environment in the importing
@@ -237,22 +246,25 @@ module:
 ```carven
 import <vector> using std::vector;
 import "provider.hpp" using { vendor::Widget, vendor::create };
+import "legacy.hpp" using { Point, calculate };
 import <vector> using std::*;
 ```
 
-Explicit selections bind their final name component. Namespace selections open
-a C++ lookup environment without enumerating declarations. Carven does not read
-or parse the header.
+Explicit selections bind their final name component. Selection paths are rooted
+in the global C++ namespace: a single-component selection such as `calculate`
+selects `::calculate`, while `vendor::Widget` selects `::vendor::Widget`.
+Namespace selections open a C++ lookup environment without enumerating
+declarations.
 
 Local bindings and resolved Carven declarations retain their ordinary lookup
 rules. Explicit external imports cannot collide with local module declarations.
-Otherwise unresolved names can use a module's explicitly opened C++ namespaces.
-External declarations, overloads, template arguments, members and conversions are
-checked by C++. External imports are module-local and are not re-exported through
-Carven module imports. Explicit selections have unused-import diagnostics;
+Otherwise unresolved ordinary names can use a module's explicitly opened C++
+namespaces. External declarations, overloads, template arguments, members and
+conversions are checked by C++. External imports are module-local and are not
+re-exported through Carven module imports. Explicit selections have unused-import diagnostics;
 namespace selections do not.
 
-Type arguments are accepted only for imported C++ names and must be types;
+Type arguments are accepted only for external C++ names and must be types;
 nested external type applications are supported. External construction uses
 `T { ... }` with positional initializers, which may be empty. External types in
 function signatures and field declarations must be named explicitly; local
@@ -266,8 +278,8 @@ their storage's access. Local bindings remain owners: initializing one from a
 C++ reference result initializes an owned value, subject to C++ construction
 rules. External member and index places inherit the root's access; external
 indexing has the provider's bounds behavior, not Carven array bounds checks.
-External calls do not expose typed failures; exceptions escaping generated
-`noexcept` boundaries terminate.
+External calls do not expose typed failures and obey the
+[native exception boundary](#native-exception-boundary).
 
 Carven checks its own storage availability and explicit access conflicts but
 does not infer C++ reference retention, pointer validity or iterator invalidation.
@@ -331,13 +343,34 @@ The closed boundary type mapping is:
 views are unsupported. An inbound `char32_t` is validated before it becomes a
 Carven `char`; violation terminates with
 `carven runtime contract error: invalid Unicode scalar at C++ boundary`.
-Generated import bridges and export façades are `noexcept`. Carven does not
-catch a provider exception or map it to a Carven failure; an exception escaping
-an import bridge terminates under ordinary C++ rules.
 
 Module components and public function names must be supported C++ identifiers.
 A function/namespace prefix collision anywhere in the compilation's public API
 tree is invalid.
+
+### Native exception boundary
+
+C++ exceptions are outside Carven failure sets. Carven does not translate them
+into failures or catch them with `try`.
+
+Generated Carven functions, closure call operators, import bridges, and export
+façades establish `noexcept` boundaries. External operations need not declare
+`noexcept`. An exception escaping one of these boundaries invokes
+`std::terminate` under C++ rules. This applies to explicit `import(cpp)` calls
+and to header-imported operations, including construction, member and operator
+calls, and object lifetime operations.
+
+The integration author owns native exception recovery. To continue Carven
+execution after a native exception, C++ code must handle it before it escapes a
+`noexcept` boundary. The handler may recover internally or communicate an
+application-defined result through the chosen interface. An `import(cpp)`
+adapter obeys the scalar, infallible signature restrictions above.
+
+Native handlers may be defined in headers, linked C++ sources, or top-level
+`#[cpp]` fragments under their C++ contracts. Fragments retain their
+implementation-only placement and do not enclose generated Carven bodies.
+Native build requirements are defined in
+[toolchain.md](toolchain.md#compiler-and-target).
 
 ## Bindings, access, and mutation
 
@@ -685,11 +718,8 @@ evaluation path carries pending failures. Applying `?` to an infallible operand
 is invalid. `throw` transfers the supplied failure and does not complete
 normally.
 
-Carven failures are independent of C++ exceptions. Generated C++ bridges and
-runtime invocation and outcome protocols are `noexcept` boundaries. They do not
-require every wrapped operation to declare `noexcept`; an escaping C++ exception
-terminates and is not translated into a Carven failure. Explicit native exception
-code belongs in `#[cpp]` fragments under its C++ contract.
+Carven failures are independent of C++ exceptions. External exception handling
+and recovery obey the [native exception boundary](#native-exception-boundary).
 
 `try` handles failures produced by its protected body. Catch arms may select a
 failure type, wildcard, alternatives, payload patterns, and guards; they must

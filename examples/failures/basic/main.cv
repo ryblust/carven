@@ -1,0 +1,28 @@
+import "console.hpp" using example::print;
+
+struct SoldOut { requested: i32 }
+
+fn reserve(requested: i32, available: i32) -> i32 throw SoldOut {
+    if requested > available {
+        throw SoldOut { requested: requested };
+    }
+    return available - requested;
+}
+
+fn report(requested: i32, available: i32) {
+    try {
+        let remaining = reserve(requested, available)?;
+        print("Seats remaining:");
+        print(remaining);
+    } catch {
+        SoldOut(error) => {
+            print("Not enough seats for:");
+            print(error.requested);
+        },
+    }
+}
+
+fn main() {
+    report(2, 5);
+    report(6, 5);
+}

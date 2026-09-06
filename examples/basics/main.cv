@@ -1,0 +1,23 @@
+import "console.hpp" using example::print;
+
+struct Item {
+    price_cents: i32,
+    quantity: i32,
+}
+
+fn subtotal(item: Item) -> i32 {
+    return item.price_cents * item.quantity;
+}
+
+fn main() {
+    let items = [
+        Item { price_cents: 250, quantity: 2 },
+        Item { price_cents: 120, quantity: 3 },
+    ];
+    var total: i32 = 0;
+    for item in items {
+        total += subtotal(item);
+    }
+    print("Total in cents:");
+    print(total);
+}

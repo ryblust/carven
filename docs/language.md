@@ -326,10 +326,17 @@ them.
 
 ## C++ interoperation
 
-Carven code reaches a C++ provider only through an explicit `import(cpp)`
-function. A C++ header import makes a declaration available to the generated
-module, while the definition may be inline in that header or supplied by a
-linked C++ source:
+Carven can name C++ types and functions with a leading `::` or through a
+header import's `using` clause. For example, `import "parser.hpp";` supplies
+the header for `::parse_port(text)`. The selection
+`import "parser.hpp" using parse_port;` introduces the short name `parse_port`.
+The runnable [C++ parser example](../examples/interop/importing/) shows the
+provider header and its Carven caller together.
+
+An explicit `import(cpp)` declares a scalar function capability backed by a
+global C++ provider. A C++ header import makes a declaration available to
+the generated module, while the definition may be inline in that header or
+supplied by a linked C++ source:
 
 ```carven
 import "native/provider.hpp";
@@ -363,10 +370,17 @@ longer fence when those bytes are needed. Carven does not parse the payload.
 Fragments are implementation-only and do not contribute to a public C++
 header.
 
-The boundary supports concrete, infallible scalar functions. The provider has
-the same unqualified name at global C++ scope; `export(cpp)` declarations use a
-self-contained `carven/api/<module>.hpp` header. Exact validity, type mapping,
-Unicode checks, and C++ responsibilities are defined by
+The `import(cpp)` / `export(cpp)` boundary supports concrete, infallible scalar
+functions. The provider has the same unqualified name at global C++ scope;
+`export(cpp)` declarations use a self-contained `carven/api/<module>.hpp`
+header. Exact validity, type mapping, Unicode checks, and C++ responsibilities
+are defined by
 [semantics.md](semantics.md#c-interoperation). Generated paths and public-output
 roles are defined by
 [toolchain.md](toolchain.md#artifact-paths).
+
+C++ adapters handle native exceptions before returning to Carven. They may
+recover internally or return an application-defined result for Carven to
+interpret. An adapter can live in a header, a linked source file, or a `#[cpp]`
+fragment. The [native exception boundary](semantics.md#native-exception-boundary)
+defines exception behavior for both imported operations and exported functions.

@@ -153,6 +153,7 @@ private:
     auto visit(const ASTAccessSyntax& value) noexcept -> void { visit(value.marker); }
     auto visit(const ASTTypeNameComponent& value) noexcept -> void { visit(value.name_span); }
     auto visit(const ASTNamedType& value) noexcept -> void {
+        visit(value.global_root);
         visit_fields(value.components, value.arguments);
     }
     auto visit(const ASTArrayType& value) noexcept -> void {
@@ -315,6 +316,12 @@ private:
     }
     auto visit(const ASTItem& value) noexcept -> void { visit_fields(value.span, value.value); }
 
+    auto visit(const ASTCppNameExpr& value) noexcept -> void {
+        visit(value.global_root);
+        for (const auto component : value.components) {
+            visit(component);
+        }
+    }
     auto visit(const ASTNameExpr& value) noexcept -> void { visit(value.name_span); }
     auto visit(const ASTContextualCaseExpr& value) noexcept -> void {
         visit_fields(value.dot_span, value.name_span);

@@ -3,6 +3,31 @@ enum State {
     Running = 4,
 }
 
+test "Text: empty and embedded NUL literals preserve their contents" {
+    let empty: str = "";
+    check(empty.is_empty());
+    check(empty.len() == 0usize);
+    var empty_count = 0usize;
+    for scalar in empty.chars {
+        let _ = scalar;
+        empty_count += 1usize;
+    }
+    check(empty_count == 0usize);
+
+    let text: str = "\0a\0";
+    check(text.len() == 3usize);
+    var byte_count = 0usize;
+    var nul_count = 0usize;
+    for byte in text.bytes {
+        byte_count += 1usize;
+        if byte == 0u8 {
+            nul_count += 1usize;
+        }
+    }
+    check(byte_count == 3usize);
+    check(nul_count == 2usize);
+}
+
 fn bump(&value: i32) {
     ++value;
 }

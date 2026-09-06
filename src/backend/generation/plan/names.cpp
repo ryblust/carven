@@ -196,7 +196,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         state[callable.index()] = 1;
         const auto module_id = *owners[callable.index()];
         for (const auto dependency : dependencies[callable.index()]) {
-            if (!owners[dependency.index()].has_value() || *owners[dependency.index()] != module_id) {
+            if (!owners[dependency.index()].has_value()
+                || *owners[dependency.index()] != module_id) {
                 invariant_violation("closure target type depends on a foreign or unowned closure");
             }
             if (production[dependency.index()] != 0 || (test && tests[dependency.index()] != 0)) {
@@ -204,7 +205,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             }
         }
         state[callable.index()] = 2;
-        auto& destination = test ? test_order[module_id.index()] : production_order[module_id.index()];
+        auto& destination =
+            test ? test_order[module_id.index()] : production_order[module_id.index()];
         destination.push_back(callable);
     };
     for (const auto callable : discovery) {

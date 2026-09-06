@@ -188,3 +188,35 @@ TEST_CASE("Parser: contextual and qualified enum cases are structural expression
 
     check_invalid("fn f() { let value = .; }");
 }
+
+TEST_CASE("Parser: global C++ paths preserve their root and components") {
+    constexpr auto text =
+        std::string_view("fn f() { ::vendor::calculate(1); let point = ::Point { 1, 2 }; }");
+    const auto tree = parse_valid(text);
+    const auto ast = tree.view();
+    const auto& call = get<ASTCallExpr>(expression_statement(tree, 0uz));
+    const auto& name = get<ASTCppNameExpr>(ast.expression(call.callee));
+    CHECK_EQ(slice(text, name.global_root), "::");
+    REQUIRE_EQ(name.components.size(), 2uz);
+    CHECK_EQ(slice(text, name.components[0]), "vendor");
+    CHECK_EQ(slice(text, name.components[1]), "calculate");
+    CHECK_EQ(slice(text, ast.expression(call.callee).span), "::vendor::calculate");
+    const auto& construction = get<ASTConstructionExpr>(initializer(tree, 1uz));
+    const auto& type = get<ASTNamedType>(construction.type);
+    REQUIRE(type.global_root.has_value());
+    CHECK_EQ(slice(text, *type.global_root), "::");
+}
+
+TEST_CASE("Parser: incomplete global C++ paths are rejected") {
+    constexpr auto cases = std::array {
+        "fn f() { ::; }",
+        "fn f() { ::vendor::(); }",
+        "fn f(value: ::) {}",
+        "fn f() { let x = :: {}; }",
+        "fn f() { ::*(); }",
+        "fn f() { ::foo::::bar(); }",
+    };
+    for (const auto* source : cases) {
+        check_rejected(source);
+    }
+}

@@ -174,7 +174,7 @@ public:
         std::visit(
             Overloaded {
                 [&](const ASTNamedType& named) noexcept {
-                    if (named.components.size() != 1uz) {
+                    if (named.global_root.has_value() || named.components.size() != 1uz) {
                         return;
                     }
                     const auto name =

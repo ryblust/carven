@@ -54,6 +54,27 @@ auto ASTDumper::render_expression(
 }
 
 auto ASTDumper::render_expression(
+    const ASTCppNameExpr& name,
+    ASTExprID,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(prefix, is_last, std::format("{}CppNameExpression", field));
+    const auto nested = child_prefix(prefix, is_last);
+    render_span_field(nested, false, "global_root", name.global_root);
+    render_list(
+        nested,
+        true,
+        "components",
+        name.components,
+        [&](Span component, std::string_view item_prefix, bool item_last) noexcept {
+            render_span_field(item_prefix, item_last, "name", component);
+        }
+    );
+}
+
+auto ASTDumper::render_expression(
     const ASTContextualCaseExpr& contextual,
     ASTExprID expression,
     std::string_view prefix,

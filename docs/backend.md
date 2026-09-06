@@ -49,12 +49,16 @@ their referents through `.get()`. Capture fields permit the generated default
 C++ assignment operation to copy values and rebind reference targets.
 Callable borrows use non-owning `FunctionRef` target descriptions.
 
-`Outcome`, `FunctionRef`, and generated C++ bridges establish `noexcept`
-boundaries. They require the constructions and invocations they perform, without
-requiring those operations to declare `noexcept`. A C++ exception that escapes
-such an operation terminates at the boundary; it is not converted into a Carven
-failure. Outcome remains move-constructible when its alternatives permit it,
-with no copy, assignment, or default construction. Function-pointer thunks
+Generated function bodies, closure call operators, evaluation lambdas, import
+bridges, and export façades use `noexcept` to realize the
+[native exception boundary](semantics.md#native-exception-boundary). These
+specifications are unconditional.
+
+`FunctionRef` invocation and `Outcome` payload construction and movement also
+establish `noexcept` boundaries. Their constraints require the constructions
+and invocations they perform, without requiring those operations to declare
+`noexcept`. Outcome remains move-constructible when its alternatives permit
+it, with no copy, assignment, or default construction. Function-pointer thunks
 restore the original pointer type before invocation.
 
 Bindings initialize in their natural scopes. Assignment uses C++ assignment;
@@ -152,10 +156,19 @@ omitted; unused local owners retain their initialization and lifetime.
 
 ## External names and operations
 
-External imports lower to includes and module-scoped using declarations or
-namespace directives. References preserve their binding's module identity.
-External types used in interfaces carry their header and name-environment
-dependencies into those artifacts.
+External names lower through one shared path for values, named types, and type
+queries. Global lookup produces a root-qualified C++ path. Module lookup prefixes
+the path with the context module's generated namespace. Both record a declaration
+environment requirement; module lookup additionally requires the using environment.
+
+Each artifact materializes a required module environment once. Declaration
+environments contain all of that module's explicit header imports, preserving
+order, delimiter form, and repeated imports. Module lookup environments contain
+all of its using declarations and namespace directives. Includes are outside
+namespaces; using items are inside the owning generated module namespace.
+Dependencies are not inferred by matching symbol names to header selections.
+Nested external types and result queries recursively bring their environments
+into consuming artifacts. Environment traversal follows stable module order.
 
 External result queries lower to structured unevaluated C++ expressions and
 `std::remove_cvref_t<decltype(...)>` owner types. Executed calls use the ordinary

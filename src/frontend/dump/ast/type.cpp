@@ -142,6 +142,9 @@ auto ASTDumper::render_named_type_children(
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
+    if (named.global_root.has_value()) {
+        render_span_field(prefix, false, "global_root", *named.global_root);
+    }
     render_list(
         prefix,
         is_last,

@@ -156,7 +156,10 @@ TEST_CASE("Parser: module and C++ header imports keep independent ownership") {
         "import .second using Second;"
     );
     CHECK_EQ(slice(text, module_syntax.cpp_header_imports[0].span), "import <native/first.hpp>;");
-    CHECK_EQ(slice(text, module_syntax.cpp_header_imports[1].span), "import \"native/second.hpp\";");
+    CHECK_EQ(
+        slice(text, module_syntax.cpp_header_imports[1].span),
+        "import \"native/second.hpp\";"
+    );
 }
 
 TEST_CASE("Parser: C++ source fragments remain independent module-owned spans") {
@@ -176,7 +179,10 @@ TEST_CASE("Parser: C++ source fragments remain independent module-owned spans") 
     REQUIRE_EQ(module_syntax.items.size(), 1u);
     REQUIRE_EQ(module_syntax.cpp_source_fragments.size(), 3u);
     CHECK_EQ(slice(text, module_syntax.cpp_source_fragments[0].payload_span), "first();\n");
-    CHECK_EQ(slice(text, module_syntax.cpp_source_fragments[1].payload_span), "auto raw = R\"(---)\";\n");
+    CHECK_EQ(
+        slice(text, module_syntax.cpp_source_fragments[1].payload_span),
+        "auto raw = R\"(---)\";\n"
+    );
     CHECK(module_syntax.cpp_source_fragments[2].payload_span.empty());
 
     check_invalid("#[cpp] ---\n---\n;");

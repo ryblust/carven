@@ -313,3 +313,16 @@ TEST_CASE("Dump: sum type syntax exposes payload, contextual cases, patterns, an
     CHECK(output.contains("guard BinaryExpression"));
     CHECK(output.contains("ContextualCaseExpression"));
 }
+
+TEST_CASE("Dump: global C++ names expose the root and complete path") {
+    const auto owned = dump_source("main.cv", "fn f(value: ::Point) { ::vendor::call(value); }");
+    const auto lexical = lex(owned.sources.view(owned.source_id));
+    REQUIRE(lexical.diagnostics.empty());
+    const auto parsed = parse(owned.sources, lexical.value);
+    REQUIRE(parsed.has_value());
+    const auto output = render_ast_dump(owned.sources, *parsed);
+    CHECK(output.contains("CppNameExpression"));
+    CHECK(output.contains("global_root [12, 14) \"::\""));
+    CHECK(output.contains("global_root [23, 25) \"::\""));
+    CHECK(output.contains("name [25, 31) \"vendor\""));
+}

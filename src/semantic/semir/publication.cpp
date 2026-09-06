@@ -335,7 +335,8 @@ auto validate_publication_facts(
             Overloaded {
                 [&](const CppTypeValue& value) noexcept {
                     if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
-                        if (!declarations.contains(named->module_id) || named->components.empty()) {
+                        if (!declarations.contains(named->name.context_module)
+                            || !valid_cpp_name(named->name)) {
                             invariant_violation("C++ type used an invalid binding");
                         }
                         for (const auto argument : named->arguments) {
@@ -353,7 +354,7 @@ auto validate_publication_facts(
                             invariant_violation("C++ query has an invalid derivation");
                         }
                         if (const auto* name = std::get_if<CppNameOperation>(&query.operation);
-                            name != nullptr && !declarations.contains(name->module_id)) {
+                            name != nullptr && !declarations.contains(name->name.context_module)) {
                             invariant_violation("C++ query has an unpublished module");
                         }
                         for (const auto& operand : query.operands) {

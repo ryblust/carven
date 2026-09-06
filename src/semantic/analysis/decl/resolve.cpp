@@ -145,9 +145,9 @@ auto DeclarationResolver::publish() noexcept -> void {
             for (const auto& binding : header.bindings) {
                 auto components = std::vector<ProgramSpellingID>();
                 for (const auto component : binding.components) {
-                    components.push_back(
-                        draft.intern_spelling(draft.source_slice_copy(module_record.module_id, component))
-                    );
+                    components.push_back(draft.intern_spelling(
+                        draft.source_slice_copy(module_record.module_id, component)
+                    ));
                 }
                 declaration.cpp_headers.back().bindings.push_back({
                     .components = std::move(components),

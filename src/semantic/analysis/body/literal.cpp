@@ -19,6 +19,7 @@ import :semantic.analysis.constant.proof;
 import :semantic.analysis.coverage;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
+import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
@@ -129,11 +130,17 @@ auto BodyElaborator::name_expression(const ASTNameExpr& name, Span span) noexcep
             }
         }
         if (admitted) {
-            return cpp_expression(
-                CppNameOperation {.module_id = semantic_module_id, .name = text},
-                {},
-                span
+            auto reference = resolve_cpp_name(
+                draft(),
+                source_module_id,
+                semantic_module_id,
+                CppNameLookup::ModuleScope,
+                std::span(&name.name_span, 1uz)
             );
+            if (!reference.has_value()) {
+                return std::unexpected(reference.error());
+            }
+            return cpp_expression(CppNameOperation {.name = std::move(*reference)}, {}, span);
         }
     }
     auto selected = find_global(text, name.name_span);

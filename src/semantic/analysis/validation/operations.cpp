@@ -136,7 +136,7 @@ auto BodyContractVerifier::verify_expression(const SemIRExpression& source) cons
                     invariant_violation("invalid C++ operation operands");
                 }
                 if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
-                    static_cast<void>(draft->module_declaration_copy(name->module_id));
+                    static_cast<void>(draft->module_declaration_copy(name->name.context_module));
                 }
                 if (source.category == SemanticValueCategory::Place
                     && !(

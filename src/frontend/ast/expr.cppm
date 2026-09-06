@@ -44,6 +44,11 @@ struct ASTNameExpr final {
     Span name_span;
 };
 
+struct ASTCppNameExpr final {
+    Span global_root;
+    std::vector<Span> components;
+};
+
 struct ASTContextualCaseExpr final {
     Span dot_span;
     Span name_span;
@@ -152,6 +157,7 @@ struct ASTExpr final {
     std::variant<
         ASTLiteral,
         ASTNameExpr,
+        ASTCppNameExpr,
         ASTContextualCaseExpr,
         ASTGroupExpr,
         ASTArrayExpr,

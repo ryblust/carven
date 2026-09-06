@@ -109,14 +109,7 @@ auto BodyLowerer::expression(
             },
             [&](const SemCpp<TypeID, FailureSetID>& value) noexcept -> TargetExpr {
                 if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
-                    const auto owner =
-                        context.plan().names().module_names(name->module_id).qualified_namespace_name;
-                    auto components = std::vector<TargetIdentifier>(
-                        owner.components().begin(),
-                        owner.components().end()
-                    );
-                    components.push_back(TargetIdentifier::from_spelling(name->name));
-                    return name_expression(TargetName::globally_qualified(std::move(components)));
+                    return name_expression(context.cpp_name(name->name));
                 }
                 if (std::holds_alternative<CppConvertOperation>(value.operation)
                     && source.category == SemanticValueCategory::Place) {

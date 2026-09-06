@@ -386,7 +386,8 @@ auto prove_binary(
         case BinaryOperandPlan::Independent:
             left = prove_constant_expression(draft, module_id, syntax, environment, binary.left);
             if (left.has_value() && left->has_value()) {
-                right = prove_constant_expression(draft, module_id, syntax, environment, binary.right);
+                right =
+                    prove_constant_expression(draft, module_id, syntax, environment, binary.right);
             }
             break;
     }
@@ -510,7 +511,13 @@ auto prove_form(
         if (!named_type.has_value() || *named_type != fact.type) {
             invariant_violation("constant name resolution returned a mismatched type and value");
         }
-        return adopt_expected(draft, module_id, source.span, expected, std::optional(std::move(fact)));
+        return adopt_expected(
+            draft,
+            module_id,
+            source.span,
+            expected,
+            std::optional(std::move(fact))
+        );
     } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
         auto type = expected_enum_type(draft, module_id, form.name_span, expected);
         if (!type.has_value()) {
@@ -723,7 +730,8 @@ auto prove_form(
             return std::unexpected(result.error());
         }
         return adopt_expected(draft, module_id, source.span, expected, std::move(*result));
-    } else if constexpr (std::same_as<Form, ASTArrayExpr>
+    } else if constexpr (std::same_as<Form, ASTCppNameExpr>
+                         || std::same_as<Form, ASTArrayExpr>
                          || std::same_as<Form, ASTConstructionExpr>
                          || std::same_as<Form, ASTAccessExpr>
                          || std::same_as<Form, ASTIndexExpr>

@@ -15,10 +15,8 @@ inline constexpr bool trivially_copied_and_destroyed =
 } // namespace detail
 
 template<typename Value>
-using ReadArg = std::conditional_t<
-    detail::trivially_copied_and_destroyed<Value>,
-    const Value,
-    const Value&>;
+using ReadArg =
+    std::conditional_t<detail::trivially_copied_and_destroyed<Value>, const Value, const Value&>;
 
 // The caller supplies a live owner; this expression does not extend its lifetime.
 template<typename Value>

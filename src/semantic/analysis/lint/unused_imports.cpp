@@ -11,7 +11,8 @@ auto diagnose_unused_imports(
 ) noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
         for (const auto& binding : catalog.cpp_imports(module_record.module_id)) {
-            if (!binding.opens_namespace && !usage.cpp_was_used(module_record.module_id, binding.origin)) {
+            if (!binding.opens_namespace
+                && !usage.cpp_was_used(module_record.module_id, binding.origin)) {
                 draft.diagnostics().warning(
                     DiagnosticBuilder(DiagnosticCode::LintUnusedImport, "unused C++ import")
                         .primary(locate(

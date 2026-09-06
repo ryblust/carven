@@ -58,3 +58,26 @@ TEST_CASE("Compiler diagnostics: successful compilation retains warning location
     REQUIRE(parameter->attachment.primary.has_value());
     CHECK_EQ(sources.slice(parameter->attachment.primary->span), "parameter");
 }
+
+TEST_CASE("Compiler diagnostics: global references do not consume explicit C++ imports") {
+    auto sources = SourceManager();
+    const auto source_id =
+        *sources.append_virtual("global.cv", "import <native> using value; fn f() { ::value(); }");
+    const auto input = CompilationModuleInput {
+        .source_id = source_id,
+        .module_path = *CanonicalModulePath::from_value("global"),
+    };
+    const auto result = compile(
+        sources,
+        CompilationRequest {.modules = std::span(&input, 1uz)},
+        TargetPlanningRequest {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = LinkageDomain::explicit_value("test:global-unused").value(),
+        }
+    );
+    REQUIRE(result.has_value());
+    const auto* unused = find_diagnostic(result->diagnostics, "CV-LINT-UNUSED-IMPORT");
+    REQUIRE(unused != nullptr);
+    REQUIRE(unused->attachment.primary.has_value());
+    CHECK_EQ(sources.slice(unused->attachment.primary->span), "value");
+}

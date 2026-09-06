@@ -1,0 +1,21 @@
+import .catalog using { QuantityError, OutOfStock, line_total };
+import .delivery using { DeliveryError, delivery_fee };
+
+// Private composition infers the union of both providers' failure sets.
+private fn primary_quote(quantity: i32, available: i32, zone: i32) -> i32 {
+    return (line_total(quantity, available) + delivery_fee(zone))?;
+}
+
+// This shared module interface states every failure its callers must handle.
+fn quote(quantity: i32, available: i32, zone: i32) -> i32
+    throw QuantityError + OutOfStock + DeliveryError {
+    return try {
+        primary_quote(quantity, available, zone)?
+    } catch {
+        // The alternate carrier serves zone 2 only.
+        DeliveryError(.Unavailable(failed_zone)) if failed_zone == 2 => {
+            line_total(quantity, available)? + 700
+        },
+        QuantityError(_) | OutOfStock(_) | DeliveryError(_) => rethrow,
+    };
+}

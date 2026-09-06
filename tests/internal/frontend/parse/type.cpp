@@ -42,3 +42,22 @@ TEST_CASE("Parser: recursive types retain grammar structure") {
     CHECK_EQ(slice(text, *callback.parameters[1].access.marker), "&");
     CHECK(is<ASTNamedType>(ast.type(callback.result_type)));
 }
+
+TEST_CASE("Parser: global external type roots survive nested arguments and casts") {
+    constexpr auto text = std::string_view(
+        "fn f(value: ::std::vector<::std::vector<i32>>) -> ::Point {"
+        " return value as ::Point; }"
+    );
+    const auto tree = parse_valid(text);
+    const auto ast = tree.view();
+    const auto& declaration = function(tree);
+    const auto& outer = get<ASTNamedType>(ast.type(*declaration.parameters[0].type));
+    REQUIRE(outer.global_root.has_value());
+    CHECK_EQ(slice(text, *outer.global_root), "::");
+    REQUIRE_EQ(outer.arguments.size(), 1uz);
+    const auto& inner = get<ASTNamedType>(ast.type(outer.arguments[0]));
+    REQUIRE(inner.global_root.has_value());
+    REQUIRE_EQ(inner.arguments.size(), 1uz);
+    const auto& builtin = get<ASTNamedType>(ast.type(inner.arguments[0]));
+    CHECK(!builtin.global_root.has_value());
+}
