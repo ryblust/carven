@@ -43,6 +43,6 @@ TEST_CASE("Compiler integration: C++ target validity remains downstream-owned") 
         }
     }
     REQUIRE(result.has_value());
-    REQUIRE_EQ(result->value.artifacts().size(), 2u);
-    CHECK(result->value.artifacts()[1].content.contains("auto invalid = object.virtual;"));
+    REQUIRE_EQ(result->value.entries().size(), 2u);
+    CHECK(result->value.entries()[1].content.contains("auto invalid = object.virtual;"));
 }

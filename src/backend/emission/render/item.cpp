@@ -51,7 +51,7 @@ auto TargetRenderer::render_trailing_return(SyntaxLayouts result, bool const_qua
     -> LayoutNodeID {
     const auto qualifiers = text(const_qualified ? " const noexcept" : " noexcept");
     return choice(
-        {concat({qualifiers, text(" -> "), result.inline_qualified}),
+        {builder.flatten(concat({qualifiers, text(" -> "), result.inline_qualified})),
          concat(
              {qualifiers,
               builder.indent(indent_width, concat({builder.line(), text("-> "), result.wrapping}))}
@@ -77,7 +77,9 @@ auto TargetRenderer::render_function_declarator(
     const auto flat_parameters = builder.flatten(parameter_list);
     const auto qualifiers = text(const_qualified ? " const noexcept" : " noexcept");
     return choice(
-        {concat({head, flat_parameters, qualifiers, text(" -> "), result.inline_qualified}),
+        {builder.flatten(
+             concat({head, flat_parameters, qualifiers, text(" -> "), result.inline_qualified})
+         ),
          concat(
              {head,
               flat_parameters,
@@ -346,38 +348,46 @@ auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeI
         Overloaded {
             [&](const TargetDecl& value) noexcept { return render_declaration(value); },
             [&](const TargetNamespace& value) noexcept {
+                const auto closing = !value.closing_comment ? text("}")
+                    : value.name.has_value()
+                    ? concat({text("} // namespace "), render_name(*value.name)})
+                    : text("} // namespace");
                 if (value.items.empty()) {
                     if (value.name.has_value()) {
                         return concat(
-                            {text("namespace "),
-                             render_name(*value.name),
-                             text(" {} // namespace "),
-                             render_name(*value.name)}
+                            {text("namespace "), render_name(*value.name), text(" {"), closing}
                         );
                     }
-                    return text("namespace {} // namespace");
+                    return concat({text("namespace {"), closing});
                 }
                 const auto nested = render_items(value.items, TargetContainerKind::Namespace);
+                const auto opening_separator =
+                    std::holds_alternative<TargetNamespace>(value.items.front().value)
+                    ? builder.line()
+                    : concat({builder.line(), builder.line(), builder.line()});
+                const auto closing_separator =
+                    std::holds_alternative<TargetNamespace>(value.items.back().value)
+                    ? builder.line()
+                    : concat({builder.line(), builder.line(), builder.line()});
                 if (value.name.has_value()) {
                     return concat(
                         {text("namespace "),
                          render_name(*value.name),
                          text(" {"),
-                         builder.line(),
+                         opening_separator,
                          nested,
-                         builder.line(),
+                         closing_separator,
                          generated_transition(),
-                         text("} // namespace "),
-                         render_name(*value.name)}
+                         closing}
                     );
                 }
                 return concat(
                     {text("namespace {"),
-                     builder.line(),
+                     opening_separator,
                      nested,
-                     builder.line(),
+                     closing_separator,
                      generated_transition(),
-                     text("} // namespace")}
+                     closing}
                 );
             },
             [&](const TargetUsing& value) noexcept {

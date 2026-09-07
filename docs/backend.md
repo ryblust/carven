@@ -26,8 +26,11 @@ output and native compilation are separate consumers.
 ## Representation
 
 The backend expresses resolved operations using C++ types, constructors,
-references, scopes, calls, and control flow. C++ supplies object layout, template
-instantiation, special-member selection, ABI, and native optimization.
+references, scopes, calls, and control flow. Carven determines source evaluation
+order, access, lifetimes, and exit destinations. C++ performs overload resolution,
+object construction, copy elision, scope cleanup, layout, and native optimization.
+Lowering preserves the types, value categories, and initialization syntax supplied
+to those C++ operations.
 
 Read parameters, Read argument temporaries, and Read array-range bindings use
 `runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
@@ -62,14 +65,21 @@ restore the original pointer type before invocation.
 Bindings initialize in their natural scopes. Assignment uses C++ assignment;
 the backend does not reconstruct unassignable values. Delayed construction uses
 local result storage only where direct initialization cannot preserve control
-flow and temporary lifetimes.
+flow and temporary lifetimes. `runtime::DeferredStorage<T>` owns such storage;
+a generated placement-new expression constructs `T` directly, and the storage
+destroys the object at scope exit.
 
 ## Evaluation and values
 
-Lowering distinguishes saved read values, owned values to deliver, and located
-places. Saved values establish evaluation order; located places retain storage
-identity. Only owned value delivery requests transfer. Observations do not
-consume their operands.
+Function-body lowering composes `Lowered<T>` results containing target statements,
+a normal result, and owned control exits. Normal void and absence of a normal
+successor are distinct. Consumers specify observation, transfer, or discard;
+locations preserve storage identity.
+
+Scope construction owns auxiliary storage and preserves semantic lifetimes.
+Initialization stays at its execution point, including conditional paths. Native
+bodies provide scopes; independent regions with declarations require a block.
+Statement composition and source attribution do not create scopes.
 
 Locals that require writes, delayed initialization, or Take remain mutable C++ storage.
 Other local owners are const. Read range bindings use the Read parameter policy;
@@ -85,20 +95,26 @@ before argument evaluation;
 callable views retain a target description. Neither choice copies capture contents.
 Source and full-expression scopes preserve lifetimes.
 
+Operand composition uses semantic execution and storage-read facts together with
+C++ sequencing guarantees. Recursive consumers compose evaluation and result
+delivery; operation construction only consumes evaluated operands. Branches can
+receive the remaining computation directly, keeping temporary objects in native
+scopes. Expression-position lexical regions retain their cleanup boundary.
+Known or discarded results retain required execution.
+Result demand determines whether a call checks success, observes its payload, or
+transfers ownership. Numeric operations preserve their resolved type across
+promotion, overload, and deduction boundaries; the renderer does not infer types.
+
 ## Control
 
 Conditionals, returns, and scopes lower directly. Ordinary loops use an
 initializer scope and a while loop; condition sequencing executes on every
 test. A loop with steps gives continue a local step target during construction.
-A value region may initialize a destination directly or use an immediately
-invoked lambda when its exits stay within that region. `StatementSequence` owns
-statements and their normal continuation. Sequential composition propagates
-termination; branches, loops, and evaluation lambdas supply their own completion
-facts. Expression results distinguish a normal target expression, including
-void, from termination. Ordered operand construction stops at termination.
-Loops record reachable break and continue uses while constructing their bodies;
-inactive source still receives semantic contract checks. Loops
-without steps and range loops use native `continue`.
+Known consumers receive results directly, including returns from selected branches.
+Expression-position regions use value lambdas when their exits are local;
+otherwise they use deferred initialization. Function return applies the failure
+ABI independently of lambda yield. Loops and handlers receive only exits belonging
+to their own construct. Loops without steps and range loops use native `continue`.
 
 Match locates its subject once and keeps it alive and stable through selection.
 Pattern owners initialize before guards. A single selection path declares its
@@ -141,8 +157,9 @@ that same runner. Explicit C++ fragments preserve their bytes and source order.
 
 ## Target syntax and emission
 
-Expressions, statements, and items are move-only recursive values. Only types
-are interned. Target type IDs belong to one unit. Source attribution and
+Expressions, statements, and items are move-only recursive values.
+`TargetBlockStmt` always denotes an actual C++ block; plain sequences are
+composed before publication. Only types are interned. Target type IDs belong to one unit. Source attribution and
 function forms use exact variants.
 
 Type construction accepts only children already present in the same unit;

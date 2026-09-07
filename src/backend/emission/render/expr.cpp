@@ -140,6 +140,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
             [](const TargetConditionalExpr&) static noexcept {
                 return TargetPrecedence::Conditional;
             },
+            [](const TargetPlacementNewExpr&) static noexcept { return TargetPrecedence::Prefix; },
             [](const TargetPrefixExpr&) static noexcept { return TargetPrecedence::Prefix; },
             [](const TargetCallExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetIndexExpr&) static noexcept { return TargetPrecedence::Postfix; },
@@ -154,7 +155,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
                         || std::same_as<Value, TargetLiteralExpr>
                         || std::same_as<Value, TargetArrayExpr>
                         || std::same_as<Value, TargetConstructionExpr>
-                        || std::same_as<Value, TargetRegionExpr>,
+                        || std::same_as<Value, TargetLambdaExpr>,
                     "unhandled target expression precedence"
                 );
                 return TargetPrecedence::Primary;
@@ -336,13 +337,32 @@ auto TargetRenderer::render_expression(
                      delimited_list(operand, "(", ")")}
                 );
             },
-            [&](const TargetRegionExpr& region) noexcept {
+            [&](const TargetPlacementNewExpr& construction) noexcept {
+                const auto address = std::array {render_expression(*construction.address)};
+                const auto initializer = std::array {render_expression(*construction.initializer)};
+                return concat(
+                    {text("::new "),
+                     delimited_list(address, "(", ")"),
+                     text(" "),
+                     render_type(construction.type),
+                     delimited_list(initializer, "(", ")")}
+                );
+            },
+            [&](const TargetLambdaExpr& region) noexcept {
+                auto parameters = std::vector<LayoutNodeID>();
+                for (const auto& parameter : region.parameters) {
+                    parameters.push_back(concat(
+                        {render_type(parameter.type), text(" "), render_identifier(parameter.name)}
+                    ));
+                }
                 return concat({
-                    text("([&]() noexcept -> "),
+                    text("([&]"),
+                    delimited_list(parameters, "(", ")"),
+                    text(" noexcept -> "),
                     render_type(region.result),
                     text(" "),
                     render_statement_block(region.body),
-                    text("())"),
+                    text(")"),
                 });
             },
 

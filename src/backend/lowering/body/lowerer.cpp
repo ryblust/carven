@@ -4,6 +4,7 @@ import :backend.generation.names;
 import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
 import :backend.target.stmt;
+import :backend.target.origin;
 import :backend.target.symbol;
 import :semantic.semir.traversal;
 import :semantic.semir;
@@ -61,8 +62,17 @@ BodyLowerer::BodyLowerer(
 }
 
 auto BodyLowerer::finish() noexcept -> LoweredBody {
-    auto statements = region(body.region(), {.use = ResultUse::Discard, .storage = std::nullopt});
+    auto statements = region(body.region(), DiscardResult {});
 
+    for (const auto exit : statements.exits().targets) {
+        if (exit.identity != 0
+            || (exit.kind != ExitKind::FunctionReturn
+                && exit.kind != ExitKind::Failure
+                && exit.kind != ExitKind::Test
+                && exit.kind != ExitKind::Unreachable)) {
+            invariant_violation("body contains an unreceived control exit");
+        }
+    }
     auto used_parameters = std::vector<bool>();
     for (const auto binding : parameter_bindings) {
         used_parameters.push_back(used_bindings.contains(binding));
@@ -75,14 +85,51 @@ auto BodyLowerer::finish() noexcept -> LoweredBody {
 }
 
 auto BodyLowerer::region(const SemanticRegion& source, ResultDestination result) noexcept
-    -> StatementSequence {
-    auto statements = StatementSequence();
-    for (const auto& item : source.statements) {
-        statement(item, statements);
-    }
-    if (source.result.has_value() && statements.continues()) {
-        result_expression(*source.result, std::move(result), statements);
-    }
+    -> StatementBuilder {
+    auto statements = StatementBuilder();
+    const auto append_from = [&](this const auto& self,
+                                 std::size_t index,
+                                 StatementBuilder& destination) noexcept -> void {
+        for (; index < source.statements.size() && destination.continues(); ++index) {
+            const auto& item = source.statements[index];
+            if (const auto* initialization = std::get_if<SemInitialize>(&item.value);
+                initialization != nullptr
+                && can_extend_branch_scope(initialization->initializer)
+                && external_exits(initialization->initializer)) {
+                structured_expression(
+                    initialization->initializer,
+                    ConsumeResult {
+                        .consume =
+                            [&](Evaluated value, StatementBuilder& branch) noexcept {
+                                auto binding = StatementBuilder();
+                                declare_binding(
+                                    initialization->binding,
+                                    value_expression(std::move(value)),
+                                    binding
+                                );
+                                binding.attribute(
+                                    TargetSourceExpansionAttribution {
+                                        .origin = target_source_origin(
+                                            context.semantic().provenance(),
+                                            item.origin
+                                        )
+                                    }
+                                );
+                                branch.append(std::move(binding));
+                                self(index + 1uz, branch);
+                            }
+                    },
+                    destination
+                );
+                return;
+            }
+            static_cast<void>(destination.accept(statement(item)));
+        }
+        if (source.result.has_value() && destination.continues()) {
+            result_expression(*source.result, result, destination);
+        }
+    };
+    append_from(0uz, statements);
     return statements;
 }
 

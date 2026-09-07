@@ -164,7 +164,6 @@ TEST_CASE("Target jump verifier: entering an empty nested scope is legal") {
                         .attribution = attribution(),
                     }
                 ),
-                .scoped = true,
             },
         .attribution = attribution(),
     });
@@ -246,7 +245,6 @@ TEST_CASE("Target jump verifier: entering past initialization is rejected") {
         .value =
             TargetBlockStmt {
                 .statements = std::move(nested),
-                .scoped = true,
             },
         .attribution = attribution(),
     });

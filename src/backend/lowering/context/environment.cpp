@@ -55,7 +55,9 @@ auto ArtifactLowering::materialize_cpp_environments(
         if (!bindings.empty()) {
             imports.push_back(namespace_item(
                 plan().names().module_names(provider).qualified_namespace_name,
-                std::move(bindings)
+                std::move(bindings),
+                TargetCompilerReason::ArtifactScaffolding,
+                false
             ));
         }
     }

@@ -152,5 +152,6 @@ auto target_items(TargetItem item) noexcept -> std::vector<TargetItem>;
 auto namespace_item(
     std::optional<TargetName> name,
     std::vector<TargetItem> items,
-    TargetCompilerReason reason = TargetCompilerReason::ArtifactScaffolding
+    TargetCompilerReason reason = TargetCompilerReason::ArtifactScaffolding,
+    bool closing_comment = true
 ) noexcept -> TargetItem;

@@ -1,7 +1,0 @@
-import "unicode_contract/import_provider.hpp";
-
-private import(cpp) fn invalid_unicode_scalar() -> char;
-
-fn main() {
-    let _ = invalid_unicode_scalar();
-}

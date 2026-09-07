@@ -58,7 +58,7 @@ auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
 }
 
 auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
-    for (const auto& artifact : artifacts.artifacts()) {
+    for (const auto& artifact : artifacts.entries()) {
         std::println("==> {} <==", artifact.logical_path);
         std::print("{}", artifact.content);
         if (!artifact.content.ends_with('\n')) {

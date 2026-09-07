@@ -276,8 +276,19 @@ auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) 
                 return target_traversal_detail::visit_type(visitor, value.type)
                     && traverse_target_expression(*value.operand, visitor);
             },
-            [&](const TargetRegionExpr& value) noexcept {
-                return target_traversal_detail::visit_type(visitor, value.result)
+            [&](const TargetPlacementNewExpr& value) noexcept {
+                return target_traversal_detail::visit_type(visitor, value.type)
+                    && traverse_target_expression(*value.address, visitor)
+                    && traverse_target_expression(*value.initializer, visitor);
+            },
+            [&](const TargetLambdaExpr& value) noexcept {
+                return std::ranges::all_of(
+                           value.parameters,
+                           [&](const auto& parameter) noexcept {
+                               return target_traversal_detail::visit_type(visitor, parameter.type);
+                           }
+                       )
+                    && target_traversal_detail::visit_type(visitor, value.result)
                     && traverse_target_callable_body(value.body, visitor);
             },
         },
@@ -326,9 +337,6 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                     && traverse_target_expression(value.initializer, visitor);
             },
             [&](const TargetBlockStmt& value) noexcept {
-                if (!value.scoped) {
-                    return traverse_target_statements(value.statements, visitor);
-                }
                 return target_traversal_detail::in_scope(
                     visitor,
                     TargetTraversalScope {

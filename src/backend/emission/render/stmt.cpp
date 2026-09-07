@@ -83,14 +83,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 );
             },
             [&](const TargetBlockStmt& value) noexcept {
-                if (value.scoped) {
-                    return render_statement_block(value.statements);
-                }
-                auto children = std::vector<LayoutNodeID> {};
-                for (const auto& child : value.statements) {
-                    children.push_back(render_statement(child));
-                }
-                return stack(children);
+                return render_statement_block(value.statements);
             },
             [&](const TargetAssignmentStmt& value) noexcept {
                 const auto left = render_expression(value.target);

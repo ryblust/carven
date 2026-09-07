@@ -14,16 +14,22 @@ import std;
 
 namespace body_lowering {
 namespace {
-
-auto immediate_operand(const SemanticExpression& expression) noexcept -> bool {
-    return std::holds_alternative<SemConstant>(expression.value)
-        || std::holds_alternative<SemBinding>(expression.value)
-        || std::holds_alternative<SemCallable>(expression.value)
-        || std::holds_alternative<SemEnumConstructor>(expression.value);
+auto restore_integer_type(ModuleLowering& context, TargetExpr expression, TypeID type) noexcept
+    -> TargetExpr {
+    const auto* builtin =
+        std::get_if<BuiltinTypeValue>(&context.semantic().types().type(type).value);
+    if (builtin != nullptr
+        && builtin_integer_width(builtin->kind) < std::numeric_limits<unsigned int>::digits) {
+        return {
+            .value = TargetStaticCastExpr {
+                .type = context.lower_type(type),
+                .operand = target_child(std::move(expression))
+            }
+        };
+    }
+    return expression;
 }
-
 } // namespace
-
 
 auto BodyLowerer::binary(
     TargetExpr left,
@@ -47,8 +53,9 @@ auto BodyLowerer::binary(
         }
     }
     if (runtime.has_value()) {
-        return call_expression(
+        return template_call_expression(
             intrinsic_expression(*runtime),
+            {context.lower_type(type)},
             target_expressions(std::move(left), std::move(right))
         );
     }
@@ -73,23 +80,30 @@ auto BodyLowerer::binary(
         }
         std::unreachable();
     }();
-    return binary_expression(std::move(left), target, std::move(right));
+    auto result = binary_expression(std::move(left), target, std::move(right));
+    if (context.is_integer(type)
+        && (operation == BinaryOperator::BitwiseAnd
+            || operation == BinaryOperator::BitwiseOr
+            || operation == BinaryOperator::BitwiseXor)) {
+        return restore_integer_type(context, std::move(result), type);
+    }
+    return result;
 }
 
-auto BodyLowerer::expression(
+auto BodyLowerer::construct_operation(
     const SemanticExpression& source,
-    StatementSequence& destination
-) noexcept -> std::optional<TargetExpr> {
-    if (!destination.continues()) {
-        return std::nullopt;
-    }
-    return std::visit(
+    std::vector<TargetExpr> operands,
+    ResultDemand demand
+) noexcept -> Lowered<Evaluated> {
+    auto destination = StatementBuilder();
+    auto owned_result = false;
+    auto result = std::visit(
         Overloaded {
             [&](const SemCppCall& call) noexcept -> std::optional<TargetExpr> {
-                return cpp_call(call, destination);
+                return cpp_call(call, std::move(operands));
             },
             [&](const SemCpp& value) noexcept -> std::optional<TargetExpr> {
-                return cpp_operation(source, value, destination);
+                return cpp_operation(source, value, std::move(operands));
             },
             [&](const SemConstant& value) noexcept -> std::optional<TargetExpr> {
                 return constant_expression(context, value.constant);
@@ -160,57 +174,32 @@ auto BodyLowerer::expression(
                         }
                     };
                 };
-                auto input = expression(*value.source, destination);
-                if (!input) {
-                    return std::nullopt;
-                }
                 return adopt(
-                    std::move(*input),
+                    std::move(operands[0]),
                     value.source->type.resolved(),
                     source.type.resolved()
                 );
             },
-            [&](const SemArray& value) noexcept -> std::optional<TargetExpr> {
+            [&](const SemArray&) noexcept -> std::optional<TargetExpr> {
                 const auto& array = std::get<ArrayTypeValue>(
                     context.semantic().types().type(source.type.resolved()).value
                 );
-                auto sources = std::vector<const SemanticExpression*>();
-                for (const auto& element : value.elements) {
-                    sources.push_back(&element);
-                }
-                auto elements = initializers(sources, true, destination);
-                if (!destination.continues()) {
-                    return std::nullopt;
-                }
                 return TargetExpr {
                     .value = TargetArrayExpr {
                         .element_type_id = context.lower_type(array.element),
                         .extent = target_child(integer_expression(array.extent)),
-                        .elements = std::move(*elements)
+                        .elements = std::move(operands)
                     }
                 };
             },
             [&](const SemStruct& value) noexcept -> std::optional<TargetExpr> {
-                auto sources = std::vector<const SemanticExpression*>();
-                for (const auto& field : value.fields) {
-                    sources.push_back(&field.value);
-                }
-                const auto in_order = std::ranges::is_sorted(
-                    value.fields,
-                    {},
-                    &SemFieldInitializer::declaration_index
-                );
-                auto values = initializers(sources, in_order, destination);
-                if (!destination.continues()) {
-                    return std::nullopt;
-                }
                 auto fields = std::vector<std::pair<std::uint32_t, TargetFieldInitializer>>();
                 for (auto index = 0uz; index < value.fields.size(); ++index) {
                     const auto& field = value.fields[index];
                     fields.push_back(
                         {field.declaration_index,
                          {.name = field_identifier(value.structure, field.declaration_index),
-                          .value = target_child(std::move((*values)[index]))}}
+                          .value = target_child(std::move(operands[index]))}}
                     );
                 }
                 std::ranges::sort(fields, {}, [](const auto& field) static noexcept {
@@ -229,126 +218,41 @@ auto BodyLowerer::expression(
                 };
             },
             [&](const SemEnumCase& value) noexcept -> std::optional<TargetExpr> {
-                const auto direct = value.payload.size() <= 1uz
-                    || std::ranges::all_of(value.payload, immediate_operand);
-                auto sources = std::vector<Operand>();
-                for (const auto& element : value.payload) {
-                    sources.push_back({element, direct ? OperandUse::Direct : OperandUse::Own});
-                }
-                auto payload = operands(sources, destination);
-                if (!payload) {
-                    return std::nullopt;
-                }
-                return enum_case_expression(context, value.enum_case, std::move(*payload));
+                return enum_case_expression(context, value.enum_case, std::move(operands));
             },
             [&](const SemUnary& value) noexcept -> std::optional<TargetExpr> {
-                auto argument = expression(*value.operand, destination);
-                if (!argument) {
-                    return std::nullopt;
-                }
                 if (value.operation == UnaryOperator::Negate
                     && context.is_integer(source.type.resolved())) {
-                    return call_expression(
+                    return template_call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeIntegerNegate),
-                        target_expressions(std::move(*argument))
+                        {context.lower_type(source.type.resolved())},
+                        target_expressions(std::move(operands[0]))
                     );
                 }
                 const auto operation = value.operation == UnaryOperator::LogicalNot
                     ? TargetPrefixOperator::LogicalNot
                     : value.operation == UnaryOperator::Negate ? TargetPrefixOperator::Negate
                                                                : TargetPrefixOperator::BitwiseNot;
-                return prefix_expression(operation, std::move(*argument));
+                auto result = prefix_expression(operation, std::move(operands[0]));
+                if (value.operation == UnaryOperator::BitwiseNot) {
+                    return restore_integer_type(context, std::move(result), source.type.resolved());
+                }
+                return result;
             },
             [&](const SemBinary& value) noexcept -> std::optional<TargetExpr> {
-                const auto fixed = [](const SemanticExpression& expression) static noexcept {
-                    return std::holds_alternative<SemConstant>(expression.value);
-                };
-                const auto direct =
-                    (immediate_operand(*value.left) && immediate_operand(*value.right))
-                    || fixed(*value.left)
-                    || fixed(*value.right);
-                const auto use = direct ? OperandUse::Direct : OperandUse::Snapshot;
-                auto arguments = operands(
-                    std::array {Operand {*value.left, use}, Operand {*value.right, use}},
-                    destination
-                );
-                if (!arguments) {
-                    return std::nullopt;
-                }
                 return binary(
-                    std::move((*arguments)[0]),
+                    std::move(operands[0]),
                     value.operation,
-                    std::move((*arguments)[1]),
+                    std::move(operands[1]),
                     source.type.resolved()
                 );
             },
-            [&](const SemShortCircuit& value) noexcept -> std::optional<TargetExpr> {
-                auto left = expression(*value.left, destination);
-                if (!left) {
-                    return std::nullopt;
-                }
-                if (const auto known = known_boolean(*value.left)) {
-                    destination.emit(
-                        generated_statement(TargetDiscardStmt {.expression = std::move(*left)})
-                    );
-                    if ((*known && value.operation == ShortCircuitOperator::Or)
-                        || (!*known && value.operation == ShortCircuitOperator::And)) {
-                        return bool_expression(*known);
-                    }
-                    return expression(*value.right, destination);
-                }
-                auto right_statements = StatementSequence();
-                auto right = expression(*value.right, right_statements);
-                if (right_statements.empty()) {
-                    return binary_expression(
-                        std::move(*left),
-                        value.operation == ShortCircuitOperator::And
-                            ? TargetBinaryOperator::LogicalAnd
-                            : TargetBinaryOperator::LogicalOr,
-                        std::move(*right)
-                    );
-                }
-                const auto name = names.fresh(TargetTemporaryNameKind::Operand);
-                destination.emit(generated_statement(
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::MutableValue,
-                        .maybe_unused = false,
-                        .name = name,
-                        .type = context.lower_type(source.type.resolved()),
-                        .initializer = std::move(*left)
-                    }
-                ));
-                if (right_statements.continues()) {
-                    right_statements.emit(generated_statement(
-                        TargetAssignmentStmt {
-                            .target = name_expression(name),
-                            .op = TargetAssignmentOperator::Assign,
-                            .value = std::move(*right)
-                        }
-                    ));
-                }
-                auto condition = name_expression(name);
-                if (value.operation == ShortCircuitOperator::Or) {
-                    condition =
-                        prefix_expression(TargetPrefixOperator::LogicalNot, std::move(condition));
-                }
-                auto branches = std::vector<TargetIfBranch>();
-                branches.push_back(
-                    {.condition = std::move(condition),
-                     .body = std::move(right_statements).finish()}
-                );
-                destination.emit(generated_statement(
-                    TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-                ));
-                return name_expression(name);
+            [](const SemShortCircuit&) static noexcept -> std::optional<TargetExpr> {
+                invariant_violation("short circuit is composed by evaluation");
             },
             [&](const SemCast& value) noexcept -> std::optional<TargetExpr> {
-                auto argument = expression(*value.operand, destination);
-                if (!argument) {
-                    return std::nullopt;
-                }
                 if (value.kind == CastKind::Identity) {
-                    return argument;
+                    return std::move(operands[0]);
                 }
                 if (const auto* builtin = std::get_if<BuiltinTypeValue>(
                         &context.semantic().types().type(source.type.resolved()).value
@@ -356,156 +260,81 @@ auto BodyLowerer::expression(
                     builtin != nullptr && builtin->kind == BuiltinType::Char) {
                     return call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-                        target_expressions(std::move(*argument))
+                        target_expressions(std::move(operands[0]))
                     );
                 }
                 return TargetExpr {
                     .value = TargetStaticCastExpr {
                         .type = context.lower_type(source.type.resolved()),
-                        .operand = target_child(std::move(*argument))
+                        .operand = target_child(std::move(operands[0]))
                     }
                 };
             },
             [&](const SemField& value) noexcept -> std::optional<TargetExpr> {
-                return expression(*value.source, destination)
-                    .transform([&](TargetExpr owner) noexcept {
-                        return member_expression(
-                            std::move(owner),
-                            field_identifier(value.field.owner, value.field.field_index)
-                        );
-                    });
+                return member_expression(
+                    std::move(operands[0]),
+                    field_identifier(value.field.owner, value.field.field_index)
+                );
             },
             [&](const SemIndex& value) noexcept -> std::optional<TargetExpr> {
-                auto arguments = operands(
-                    std::array {
-                        Operand {*value.source, OperandUse::Place},
-                        Operand {*value.index, OperandUse::Snapshot}
-                    },
-                    destination
-                );
-                if (!arguments) {
-                    return std::nullopt;
-                }
                 if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)) {
                     return call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeCheckedArrayIndex),
-                        target_expressions(std::move((*arguments)[0]), std::move((*arguments)[1]))
+                        target_expressions(std::move(operands[0]), std::move(operands[1]))
                     );
                 }
                 return TargetExpr {
                     .value = TargetIndexExpr {
-                        .operand = target_child(std::move((*arguments)[0])),
-                        .index = target_child(std::move((*arguments)[1]))
+                        .operand = target_child(std::move(operands[0])),
+                        .index = target_child(std::move(operands[1]))
                     }
                 };
             },
             [&](const SemTextIntrinsic& value) noexcept -> std::optional<TargetExpr> {
-                auto owner = expression(*value.source, destination);
-                if (!owner) {
-                    return std::nullopt;
-                }
                 switch (value.intrinsic) {
-                    case TextIntrinsic::Len:     return call_member(std::move(*owner), "size", {});
-                    case TextIntrinsic::IsEmpty: return call_member(std::move(*owner), "empty", {});
+                    case TextIntrinsic::Len: return call_member(std::move(operands[0]), "size", {});
+                    case TextIntrinsic::IsEmpty:
+                        return call_member(std::move(operands[0]), "empty", {});
                     case TextIntrinsic::Bytes:
                         return call_expression(
                             intrinsic_expression(TargetSymbol::RuntimeStrBytes),
-                            target_expressions(std::move(*owner))
+                            target_expressions(std::move(operands[0]))
                         );
                     case TextIntrinsic::Chars:
                         return call_expression(
                             intrinsic_expression(TargetSymbol::RuntimeStrChars),
-                            target_expressions(std::move(*owner))
+                            target_expressions(std::move(operands[0]))
                         );
                 }
                 std::unreachable();
             },
-            [&](const SemClosure& value) noexcept -> std::optional<TargetExpr> {
-                const auto direct = value.captures.size() <= 1uz
-                    || std::ranges::all_of(value.captures, [](const auto& capture) static noexcept {
-                                        return immediate_operand(capture.expression);
-                                    });
-                auto sources = std::vector<Operand>();
-                for (const auto& capture : value.captures) {
-                    sources.push_back(
-                        {capture.expression,
-                         direct                                   ? OperandUse::Direct
-                             : capture.mode == CaptureMode::Write ? OperandUse::Place
-                                                                  : OperandUse::Own}
-                    );
-                }
-                auto captures = operands(sources, destination);
-                if (!captures) {
-                    return std::nullopt;
-                }
+            [&](const SemClosure&) noexcept -> std::optional<TargetExpr> {
                 return TargetExpr {
                     .value = TargetConstructionExpr {
                         .type = context.lower_type(source.type.resolved()),
-                        .initializer = std::move(*captures)
+                        .initializer = std::move(operands)
                     }
                 };
             },
-            [&](const SemBorrowCallable& value) noexcept -> std::optional<TargetExpr> {
-                auto backing = immediate_operand(*value.source)
-                    ? expression(*value.source, destination)
-                    : operand(*value.source, destination, OperandUse::Place);
-                if (!backing) {
-                    return std::nullopt;
-                }
+            [&](const SemBorrowCallable&) noexcept -> std::optional<TargetExpr> {
                 return TargetExpr {
                     .value = TargetConstructionExpr {
                         .type = context.lower_type(source.type.resolved()),
-                        .initializer = target_expressions(std::move(*backing))
+                        .initializer = std::move(operands)
                     }
                 };
             },
-            [&](const SemTake& value) noexcept -> std::optional<TargetExpr> {
-                return expression(*value.place, destination)
-                    .transform([](TargetExpr place) static noexcept {
-                        return transfer_expression(std::move(place));
-                    });
+            [&](const SemTake&) noexcept -> std::optional<TargetExpr> {
+                owned_result = true;
+                return std::move(operands[0]);
             },
-            [&](const SemPropagate& value) noexcept -> std::optional<TargetExpr> {
-                return expression(*value.operand, destination);
+            [](const SemPropagate&) static noexcept -> std::optional<TargetExpr> {
+                invariant_violation("propagation is forwarded by evaluation");
             },
             [&](const SemCall& value) noexcept -> std::optional<TargetExpr> {
-                const auto fixed_callee = std::holds_alternative<SemCallable>(value.callee->value)
-                    || std::holds_alternative<SemEnumConstructor>(value.callee->value);
-                const auto direct = (fixed_callee && value.arguments.size() <= 1uz)
-                    || (immediate_operand(*value.callee)
-                        && std::ranges::all_of(
-                            value.arguments,
-                            [](const auto& argument) static noexcept {
-                                return argument.access != AccessMode::Take
-                                    && immediate_operand(argument.expression);
-                            }
-                        ));
-                const auto closure = std::holds_alternative<ClosureTypeValue>(
-                    context.semantic().types().type(value.callee->type.resolved()).value
-                );
-                auto sources = std::vector<Operand>();
-                sources.push_back(
-                    {*value.callee,
-                     direct        ? OperandUse::Direct
-                         : closure ? OperandUse::ConstPlace
-                                   : OperandUse::Snapshot}
-                );
-                for (const auto& argument : value.arguments) {
-                    sources.push_back(
-                        {argument.expression,
-                         direct                                     ? OperandUse::Direct
-                             : argument.access == AccessMode::Write ? OperandUse::Place
-                             : argument.access == AccessMode::Take  ? OperandUse::Own
-                                                                    : OperandUse::Read}
-                    );
-                }
-                auto values = operands(sources, destination);
-                if (!values) {
-                    return std::nullopt;
-                }
-                auto callee = std::move(values->front());
-                values->erase(values->begin());
-                auto call = call_expression(std::move(callee), std::move(*values));
+                auto callee = std::move(operands.front());
+                operands.erase(operands.begin());
+                auto call = call_expression(std::move(callee), std::move(operands));
                 const auto failures =
                     context.plan().failure_abi().members(value.callee_failures.resolved());
                 if (failures.empty()) {
@@ -523,20 +352,31 @@ auto BodyLowerer::expression(
                         .initializer = std::move(call)
                     }
                 ));
-                const auto success = names.fresh(TargetTemporaryNameKind::SuccessProjection);
-                destination.emit(generated_statement(
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::MutableValue,
-                        .maybe_unused = false,
-                        .name = success,
-                        .type = context.pointer_type(context.intrinsic_type(
-                            TargetSymbol::Auto,
-                            context.is_void(source.type.resolved())
-                        )),
-                        .initializer = call_member(name_expression(outcome), "success_if", {})
-                    }
-                ));
-                auto failure_body = StatementSequence();
+                const auto needs_value =
+                    demand != ResultDemand::Discard && !context.is_void(source.type.resolved());
+                auto success_test = call_member(name_expression(outcome), "success_if", {});
+                auto success_value = std::optional<TargetExpr>();
+                if (needs_value) {
+                    const auto success = names.fresh(TargetTemporaryNameKind::SuccessProjection);
+                    destination.emit(generated_statement(
+                        TargetVariableStmt {
+                            .binding = TargetVariableBinding::MutableValue,
+                            .maybe_unused = false,
+                            .name = success,
+                            .type = context.pointer_type(context.intrinsic_type(
+                                TargetSymbol::Auto,
+                                demand == ResultDemand::Observe
+                            )),
+                            .initializer = std::move(success_test)
+                        }
+                    ));
+                    success_test = name_expression(success);
+                    success_value = member_expression(
+                        dereference_expression(name_expression(success)),
+                        TargetIdentifier::from_spelling("value")
+                    );
+                }
+                auto failure_body = StatementBuilder();
                 for (const auto failure : failures) {
                     const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
                     failure_body.emit(generated_statement(
@@ -556,11 +396,12 @@ auto BodyLowerer::expression(
                             )
                         }
                     ));
-                    auto transfer = StatementSequence();
+                    auto transfer = StatementBuilder();
                     emit_failure(
                         transfer_expression(dereference_expression(name_expression(projection))),
                         transfer
                     );
+                    failure_body.record_exits(transfer.exits());
                     auto branches = std::vector<TargetIfBranch>();
                     branches.push_back(
                         {.condition = name_expression(projection),
@@ -570,101 +411,58 @@ auto BodyLowerer::expression(
                         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
                     ));
                 }
-                failure_body.terminate(generated_statement(
-                    TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
-                ));
+                failure_body.terminate(
+                    generated_statement(
+                        TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
+                    ),
+                    ExitTarget {ExitKind::Unreachable, 0}
+                );
+                destination.record_exits(failure_body.exits());
                 auto branches = std::vector<TargetIfBranch>();
                 branches.push_back(
                     {.condition = prefix_expression(
                          TargetPrefixOperator::LogicalNot,
-                         name_expression(success)
+                         std::move(success_test)
                      ),
                      .body = std::move(failure_body).finish()}
                 );
                 destination.emit(generated_statement(
                     TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
                 ));
-                if (context.is_void(source.type.resolved())) {
-                    if (!destination.continues()) {
-                        return std::nullopt;
-                    }
-                    return TargetExpr {
-                        .value = TargetConstructionExpr {
-                            .type = context.intrinsic_type(TargetSymbol::Void),
-                            .initializer = std::monostate {}
-                        }
-                    };
-                }
-                return transfer_expression(member_expression(
-                    dereference_expression(name_expression(success)),
-                    TargetIdentifier::from_spelling("value")
-                ));
+                owned_result = needs_value;
+                return success_value;
             },
-            [&](const auto&) noexcept -> std::optional<TargetExpr> {
-                if (context.is_void(source.type.resolved())) {
-                    structured_expression(
-                        source,
-                        {.use = ResultUse::Discard, .storage = std::nullopt},
-                        destination
-                    );
-                    if (!destination.continues()) {
-                        return std::nullopt;
-                    }
-                    return TargetExpr {
-                        .value = TargetConstructionExpr {
-                            .type = context.intrinsic_type(TargetSymbol::Void),
-                            .initializer = std::monostate {}
-                        }
-                    };
-                }
-                if (context.plan().failure_abi().members(source.failures.resolved()).empty()
-                    && !source.exits_test) {
-                    auto statements = StatementSequence();
-                    const auto previous = std::exchange(region_return, false);
-                    structured_expression(
-                        source,
-                        {.use = ResultUse::Return, .storage = std::nullopt},
-                        statements
-                    );
-                    const auto returns = *std::exchange(region_return, previous);
-                    auto expression = TargetExpr {
-                        .value = TargetRegionExpr {
-                            .result = context.lower_type(source.type.resolved()),
-                            .body = std::move(statements).finish()
-                        }
-                    };
-                    if (!returns) {
-                        destination.terminate(statement_expression(std::move(expression)));
-                        return std::nullopt;
-                    }
-                    return expression;
-                }
-                const auto storage = names.fresh(TargetTemporaryNameKind::Operand);
-                auto statements = StatementSequence();
-                structured_expression(
-                    source,
-                    {.use = ResultUse::Store, .storage = storage},
-                    statements
-                );
-                if (!statements.continues()) {
-                    destination.append(std::move(statements));
-                    return std::nullopt;
-                }
-                destination.emit(generated_statement(
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::MutableValue,
-                        .maybe_unused = false,
-                        .name = storage,
-                        .type = context.optional_type(context.lower_type(source.type.resolved())),
-                        .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
-                    }
-                ));
-                destination.append(std::move(statements));
-                return transfer_expression(dereference_expression(name_expression(storage)));
+            [](const auto&) static noexcept -> std::optional<TargetExpr> {
+                invariant_violation("structured operation is composed by evaluation");
             },
         },
         source.value
     );
+    if (!destination.continues()) {
+        return std::move(destination).complete<Evaluated>(std::nullopt);
+    }
+    if (context.is_void(source.type.resolved())) {
+        if (result) {
+            destination.emit(statement_expression(std::move(*result)));
+        }
+        return std::move(destination).complete<Evaluated>(VoidResult {});
+    }
+    if (demand == ResultDemand::Discard) {
+        if (result) {
+            destination.emit(
+                generated_statement(TargetDiscardStmt {.expression = std::move(*result)})
+            );
+        }
+        return std::move(destination).complete<Evaluated>(VoidResult {});
+    }
+    if (!result) {
+        invariant_violation("normal value evaluation produced no value");
+    }
+    auto value = owned_result ? (std::holds_alternative<SemTake>(source.value)
+                                     ? Evaluated(OwnedValue {.storage = std::move(*result)})
+                                     : Evaluated(TemporaryValue {.storage = std::move(*result)}))
+                              : Evaluated(DirectValue {.expression = std::move(*result)});
+    return std::move(destination).complete<Evaluated>(std::move(value));
 }
 
 } // namespace body_lowering

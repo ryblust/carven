@@ -3,6 +3,7 @@ module carven:backend.lowering.body.lowerer;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
+import :backend.lowering.body.composition;
 import :backend.lowering.context;
 import :backend.target.expr;
 import :backend.target.ids;
@@ -13,62 +14,6 @@ import :semantic.semir;
 import std;
 
 namespace body_lowering {
-
-class StatementSequence final {
-public:
-    auto continues() const noexcept -> bool { return open; }
-    auto empty() const noexcept -> bool { return statements.empty(); }
-    auto emit(TargetStmt statement, bool continues = true) noexcept -> void {
-        if (!open) {
-            return;
-        }
-        statements.push_back(std::move(statement));
-        open = continues;
-    }
-    auto terminate(TargetStmt statement) noexcept -> void { emit(std::move(statement), false); }
-    auto append(StatementSequence source) noexcept -> void {
-        if (!open) {
-            return;
-        }
-        statements.insert(
-            statements.end(),
-            std::make_move_iterator(source.statements.begin()),
-            std::make_move_iterator(source.statements.end())
-        );
-        open = source.open;
-    }
-    auto block(
-        StatementSequence source,
-        TargetAttribution attribution = TargetGeneratedExpansionAttribution {
-            .reason = TargetExpansionReason::LoweringSupport
-        }
-    ) noexcept -> void {
-        const auto continues = source.open;
-        emit(
-            TargetStmt {
-                .value = TargetBlockStmt {.statements = std::move(source).finish(), .scoped = true},
-                .attribution = std::move(attribution)
-            },
-            continues
-        );
-    }
-    auto resume(TargetIdentifier label, TargetJumpRole role) noexcept -> void {
-        open = true;
-        emit(
-            TargetStmt {
-                .value = TargetLabelStmt {.label = std::move(label), .role = role},
-                .attribution = TargetGeneratedExpansionAttribution {
-                    .reason = TargetExpansionReason::LoweringSupport
-                }
-            }
-        );
-    }
-    auto finish() && noexcept -> std::vector<TargetStmt> { return std::move(statements); }
-
-private:
-    std::vector<TargetStmt> statements;
-    bool open = true;
-};
 
 
 auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetExpr right) noexcept
@@ -90,13 +35,20 @@ auto call_member(
 
 auto statement_expression(TargetExpr expression) noexcept -> TargetStmt;
 
-auto constant_expression(ModuleLowering& context, ConstantID constant) noexcept -> TargetExpr;
+enum class LiteralContext { Exact, TargetTyped };
+
+auto constant_expression(
+    ModuleLowering& context,
+    ConstantID constant,
+    LiteralContext use = LiteralContext::Exact
+) noexcept -> TargetExpr;
 
 
 auto typed_integer_expression(
     ModuleLowering& context,
     const IntegerConstant& value,
-    TypeID type
+    TypeID type,
+    LiteralContext use = LiteralContext::Exact
 ) noexcept -> TargetExpr;
 
 auto enum_case_index(const SemIRProgram& semantic, EnumCaseID case_id) noexcept -> std::size_t;
@@ -151,15 +103,10 @@ private:
         TargetIdentifier name;
     };
 
-    enum class ResultUse { Discard, Return, Store };
-    struct ResultDestination final {
-        ResultUse use;
-        std::optional<TargetIdentifier> storage;
-    };
     struct FailureDestination final {
         TargetIdentifier storage;
         TargetIdentifier label;
-        bool used = false;
+        ExitTarget target;
     };
     struct CaughtFailure final {
         TargetIdentifier storage;
@@ -168,7 +115,7 @@ private:
 
     struct RegionExit final {
         TargetIdentifier label;
-        bool used = false;
+        ExitTarget target;
     };
 
     auto lower_arm(
@@ -178,87 +125,144 @@ private:
         const std::optional<SemanticExpression>& guard,
         const ResultDestination& result,
         RegionExit& done
-    ) noexcept -> StatementSequence;
+    ) noexcept -> StatementBuilder;
 
-    auto known_boolean(const SemanticExpression& source) const noexcept -> std::optional<bool>;
-    auto condition(const SemanticExpression& source, StatementSequence& destination) noexcept
-        -> std::optional<TargetExpr>;
-    auto cpp_call(const SemCppCall& call, StatementSequence& destination) noexcept
-        -> std::optional<TargetExpr>;
+    auto retain_evaluation(const SemanticExpression& source) noexcept -> Lowered<Unit>;
+    auto read_value(
+        Lowered<Evaluated> evaluation,
+        StatementBuilder& destination,
+        ValueUse use = ValueUse::Transfer
+    ) noexcept -> std::optional<TargetExpr>;
+    enum class ResultDemand { Value, Observe, Discard };
+    auto construct_operation(
+        const SemanticExpression& source,
+        std::vector<TargetExpr> operands,
+        ResultDemand demand
+    ) noexcept -> Lowered<Evaluated>;
+    auto consume_expression(
+        const SemanticExpression& source,
+        LiteralContext literal,
+        ResultDemand demand,
+        const ValueConsumer& consume,
+        StatementBuilder& destination,
+        bool materializing = false
+    ) noexcept -> void;
+    auto can_extend_branch_scope(const SemanticExpression& source) const noexcept -> bool;
+    enum class EvaluationForm { Expression, Statements, Branches };
+    auto evaluation_form(const SemanticExpression& source) const noexcept -> EvaluationForm;
+    auto external_exits(const SemanticExpression& source) const noexcept -> bool;
+    auto value_region(
+        const SemanticExpression& source,
+        const std::function<void(ResultDestination, StatementBuilder&)>& build
+    ) noexcept -> Lowered<Evaluated>;
+    auto deliver_result(
+        Evaluated value,
+        const ResultDestination& result,
+        StatementBuilder& destination
+    ) noexcept -> void;
+    auto initialize_deferred(
+        const DeferredStorage& storage,
+        TargetExpr initializer,
+        StatementBuilder& destination
+    ) noexcept -> void;
+    auto full_expression(
+        const SemanticExpression& source,
+        LiteralContext use = LiteralContext::Exact
+    ) noexcept -> Lowered<Evaluated>;
+    auto condition(const SemanticExpression& source) noexcept -> Lowered<Predicate>;
+    auto cpp_call(const SemCppCall& call, std::vector<TargetExpr> operands) noexcept -> TargetExpr;
     auto cpp_operation(
         const SemanticExpression& source,
         const SemCpp& operation,
-        StatementSequence& destination
-    ) noexcept -> std::optional<TargetExpr>;
-    auto expression(const SemanticExpression& expression, StatementSequence& destination) noexcept
-        -> std::optional<TargetExpr>;
-    enum class OperandUse { Direct, Snapshot, Read, Own, Place, ConstPlace };
-    auto initializers(
-        std::span<const SemanticExpression* const> sources,
-        bool ordered,
-        StatementSequence& destination
-    ) noexcept -> std::optional<std::vector<TargetExpr>>;
+        std::vector<TargetExpr> operands
+    ) noexcept -> TargetExpr;
+    auto expression(
+        const SemanticExpression& expression,
+        LiteralContext use = LiteralContext::Exact,
+        ResultDemand demand = ResultDemand::Value
+    ) noexcept -> Lowered<Evaluated>;
+    enum class OperandUse { Snapshot, Read, Own, Place, ConstPlace };
+    enum class OperandOrder { Unspecified, LeftToRight, Reordered, Postfix };
+    auto materialize_operand(
+        const SemanticExpression& source,
+        TargetExpr value,
+        OperandUse use,
+        StatementBuilder& destination
+    ) noexcept -> TargetExpr;
     auto operand(
         const SemanticExpression& expression,
-        StatementSequence& destination,
-        OperandUse use
-    ) noexcept -> std::optional<TargetExpr>;
+        OperandUse use,
+        LiteralContext literal = LiteralContext::Exact
+    ) noexcept -> Lowered<TargetExpr>;
     struct Operand final {
         const SemanticExpression& expression;
         OperandUse use;
     };
-    auto operands(std::span<const Operand> sources, StatementSequence& destination) noexcept
-        -> std::optional<std::vector<TargetExpr>>;
-    auto statement(const SemanticStatement& statement, StatementSequence& destination) noexcept
-        -> void;
+    struct OperandGroup final {
+        std::vector<Operand> values;
+        OperandOrder order;
+    };
+    auto operation_operands(const SemanticExpression& source) const noexcept -> OperandGroup;
+    auto requires_materialization(const OperandGroup& group, bool prefix) const noexcept -> bool;
+    auto consume_operands(
+        const OperandGroup& group,
+        LiteralContext literal,
+        bool materializing,
+        const std::function<void(std::vector<TargetExpr>, StatementBuilder&)>& consume,
+        StatementBuilder& destination
+    ) noexcept -> void;
+    auto statement(const SemanticStatement& statement) noexcept -> Lowered<Unit>;
     auto region(const SemanticRegion& region, ResultDestination result) noexcept
-        -> StatementSequence;
+        -> StatementBuilder;
     auto result_expression(
         const SemanticExpression& expression,
         ResultDestination result,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
     auto structured_expression(
         const SemanticExpression& expression,
         ResultDestination result,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
     auto guarded_region(
         const SemanticRegion& source,
         const std::optional<SemanticExpression>& guard,
         const ResultDestination& result,
         RegionExit& done
-    ) noexcept -> StatementSequence;
+    ) noexcept -> StatementBuilder;
     auto lower_if(
         const SemIf& value,
         ResultDestination result,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
     auto lower_match(
         const SemMatch& value,
         const ResultDestination& result,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
     auto lower_try(
         const SemTry& value,
         const ResultDestination& result,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
-    auto lower_loop(const SemLoop& value, StatementSequence& destination) noexcept -> void;
-    auto lower_range(const SemRangeLoop& value, StatementSequence& destination) noexcept -> void;
+    auto lower_loop(const SemLoop& value, StatementBuilder& destination) noexcept -> void;
+    auto lower_range(const SemRangeLoop& value, StatementBuilder& destination) noexcept -> void;
     auto lower_report(
         const SemTestReport& value,
         ProgramOriginID origin,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
-    auto emit_failure(TargetExpr value, StatementSequence& destination) noexcept -> void;
+    auto emit_failure(TargetExpr value, StatementBuilder& destination) noexcept -> void;
     auto transfer_failure(
         const TargetIdentifier& storage,
         FailureSetID failures,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
-    auto emit_return(std::optional<TargetExpr> value, StatementSequence& destination) noexcept
-        -> void;
+    auto emit_return(
+        std::optional<TargetExpr> value,
+        StatementBuilder& destination,
+        ResultDestination result = ReturnResult {}
+    ) noexcept -> void;
     auto binary(TargetExpr left, BinaryOperator operation, TargetExpr right, TypeID type) noexcept
         -> TargetExpr;
     auto field_identifier(StructID owner, std::uint32_t index) noexcept -> TargetIdentifier;
@@ -266,7 +270,12 @@ private:
     auto declare_binding(
         LocalBindingID id,
         TargetExpr initializer,
-        StatementSequence& destination
+        StatementBuilder& destination
+    ) noexcept -> void;
+    auto declare_deferred(
+        const DeferredStorage& storage,
+        bool maybe_unused,
+        StatementBuilder& destination
     ) noexcept -> void;
 
     auto subject_expression(const PatternSubject& subject) noexcept -> TargetExpr;
@@ -275,7 +284,7 @@ private:
     auto cache_pattern_projections(
         std::vector<PatternSelection>& selections,
         std::vector<PatternProjection>& projections,
-        StatementSequence& destination
+        StatementBuilder& destination
     ) noexcept -> void;
     auto pattern_condition(const PatternSelection& selection) noexcept -> std::optional<TargetExpr>;
     auto pattern_binding_expression(
@@ -291,17 +300,18 @@ private:
     std::flat_map<LocalBindingID, TargetIdentifier> binding_names;
     std::flat_set<LocalBindingID> used_bindings;
     std::flat_set<LocalBindingID> taken_bindings;
-    std::flat_set<LocalBindingID> delayed_bindings;
+    std::flat_map<LocalBindingID, DeferredStorage> delayed_bindings;
     std::optional<FailureDestination> failure_destination;
     std::optional<CaughtFailure> caught_failure;
     struct LoopContinuation final {
         std::optional<TargetIdentifier> step;
-        bool used = false;
-        bool breaks = false;
+        ExitTarget target;
+        ExitTarget break_target;
     };
-    LoopContinuation loop_continuation;
+    std::optional<LoopContinuation> loop_continuation;
     bool uses_test_context = false;
-    std::optional<bool> region_return;
+    std::size_t next_exit = 1;
+    auto exit_target(ExitKind kind) noexcept -> ExitTarget { return {kind, next_exit++}; }
 };
 
 } // namespace body_lowering

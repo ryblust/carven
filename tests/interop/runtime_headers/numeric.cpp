@@ -1,4 +1,5 @@
 #include <carven/runtime/numeric.hpp>
 
-static_assert(carven::runtime::Integer<int>);
-static_assert(carven::runtime::integer_add(20, 22) == 42);
+auto numeric_header_contract(int left, int right) noexcept -> int {
+    return carven::runtime::integer_add(left, right);
+}

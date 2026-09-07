@@ -28,7 +28,7 @@ auto write_artifacts(
     if (const auto created = establish_directory(output_root); !created) {
         return std::unexpected(created.error());
     }
-    for (const auto& artifact : artifacts.artifacts()) {
+    for (const auto& artifact : artifacts.entries()) {
         const auto destination = output_root / std::filesystem::path(artifact.logical_path);
         if (const auto created = establish_directory(destination.parent_path()); !created) {
             return std::unexpected(created.error());

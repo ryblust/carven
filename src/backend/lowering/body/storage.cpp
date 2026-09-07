@@ -3,10 +3,13 @@ module carven:backend.lowering.body.storage.impl;
 import :backend.generation.plan;
 import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
+import :backend.target.builder;
 import :backend.target.expr;
+import :backend.target.type;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -19,37 +22,56 @@ auto BodyLowerer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
         capture != nullptr && capture->mode == CaptureMode::Write) {
         return call_member(std::move(result), "get", {});
     }
-    return delayed_bindings.contains(id) ? dereference_expression(std::move(result))
-                                         : std::move(result);
+    if (const auto found = delayed_bindings.find(id); found != delayed_bindings.end()) {
+        return dereference_expression(name_expression(found->second.name));
+    }
+    return result;
 }
 
 auto BodyLowerer::declare_binding(
     LocalBindingID id,
     TargetExpr initializer,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
     const auto& binding = body.binding(id);
     const auto& owner = std::get<OwnerBindingStorage>(binding.storage);
-    auto type = context.lower_type(binding.type);
-    if (delayed_bindings.contains(id)) {
-        type = context.optional_type(type);
-        initializer = TargetExpr {
-            .value = TargetConstructionExpr {
-                .type = type,
-                .initializer = target_expressions(std::move(initializer))
-            }
-        };
-    }
+    const auto type = context.lower_type(binding.type);
     destination.emit(generated_statement(
         TargetVariableStmt {
-            .binding =
-                delayed_bindings.contains(id) || owner.writable || taken_bindings.contains(id)
+            .binding = owner.writable || taken_bindings.contains(id)
                 ? TargetVariableBinding::MutableValue
                 : TargetVariableBinding::ConstValue,
             .maybe_unused = true,
             .name = binding_names.at(id),
             .type = type,
             .initializer = std::move(initializer),
+        }
+    ));
+}
+
+auto BodyLowerer::declare_deferred(
+    const DeferredStorage& storage,
+    bool maybe_unused,
+    StatementBuilder& destination
+) noexcept -> void {
+    const auto type = context.target().intern_type(
+        {.value =
+             TargetIntrinsicType {
+                 .symbol = TargetSymbol::RuntimeDeferredStorage,
+                 .type_argument_ids = {storage.value_type}
+             },
+         .const_qualified = false}
+    );
+    destination.emit(generated_statement(
+        TargetVariableStmt {
+            .binding = TargetVariableBinding::MutableValue,
+            .maybe_unused = maybe_unused,
+            .name = storage.name,
+            .type = type,
+            .initializer = TargetExpr {
+                .value =
+                    TargetConstructionExpr {.type = type, .initializer = std::vector<TargetExpr>()}
+            }
         }
     ));
 }
@@ -63,119 +85,96 @@ auto BodyLowerer::field_identifier(StructID owner, std::uint32_t index) noexcept
     );
 }
 
-auto BodyLowerer::known_boolean(const SemanticExpression& source) const noexcept
-    -> std::optional<bool> {
-    if (!source.constant.has_value()) {
-        return std::nullopt;
-    }
-    const auto& fact = context.semantic().constants().constant(*source.constant);
-    const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
-    return boolean == nullptr ? std::nullopt : std::optional {boolean->value};
-}
-
-auto BodyLowerer::condition(
-    const SemanticExpression& source,
-    StatementSequence& destination
-) noexcept -> std::optional<TargetExpr> {
-    auto statements = StatementSequence();
-    auto value = expression(source, statements);
-    if (!statements.continues()) {
-        destination.append(std::move(statements));
-        return std::nullopt;
-    }
-    if (statements.empty()) {
-        return value;
-    }
-    if (context.plan().failure_abi().members(source.failures.resolved()).empty()
-        && !source.exits_test) {
-        statements.terminate(
-            generated_statement(TargetReturnStmt {.expression = std::move(*value)})
-        );
-
-        return TargetExpr {
-            .value = TargetRegionExpr {
-                .result = context.lower_type(source.type.resolved()),
-                .body = std::move(statements).finish()
+auto BodyLowerer::condition(const SemanticExpression& source) noexcept -> Lowered<Predicate> {
+    auto destination = StatementBuilder();
+    auto result = [&]() noexcept -> std::optional<Predicate> {
+        auto statements = StatementBuilder();
+        if (const auto known = ::known_boolean(context.semantic(), source)) {
+            static_cast<void>(statements.accept(retain_evaluation(source)));
+            if (!statements.empty()) {
+                destination.scope(std::move(statements));
             }
-        };
-    }
-    const auto result = names.fresh(TargetTemporaryNameKind::Logic);
-    destination.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
-            .name = result,
-            .type = context.lower_type(source.type.resolved()),
-            .initializer = bool_expression(false)
+            if (!destination.continues()) {
+                return std::nullopt;
+            }
+            return KnownBool {*known};
         }
-    ));
-    statements.emit(generated_statement(
-        TargetAssignmentStmt {
-            .target = name_expression(result),
-            .op = TargetAssignmentOperator::Assign,
-            .value = std::move(*value)
+        if (evaluation_form(source) == EvaluationForm::Branches) {
+            const auto result = names.fresh(TargetTemporaryNameKind::Logic);
+            consume_expression(
+                source,
+                LiteralContext::Exact,
+                ResultDemand::Observe,
+                [&](Evaluated value, StatementBuilder& branch) noexcept {
+                    branch.emit(generated_statement(
+                        TargetAssignmentStmt {
+                            .target = name_expression(result),
+                            .op = TargetAssignmentOperator::Assign,
+                            .value = value_expression(std::move(value), ValueUse::Observe)
+                        }
+                    ));
+                },
+                statements
+            );
+            if (!statements.continues()) {
+                destination.scope(std::move(statements));
+                return std::nullopt;
+            }
+            destination.emit(generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .name = result,
+                    .type = context.lower_type(source.type.resolved()),
+                    .initializer = bool_expression(false)
+                }
+            ));
+            destination.scope(std::move(statements));
+            return destination.continues()
+                ? std::optional<Predicate>(DynamicBool {name_expression(result)})
+                : std::nullopt;
         }
-    ));
-    destination.block(std::move(statements));
-    return name_expression(result);
-}
-
-auto BodyLowerer::initializers(
-    std::span<const SemanticExpression* const> sources,
-    bool ordered,
-    StatementSequence& destination
-) noexcept -> std::optional<std::vector<TargetExpr>> {
-    auto statements = std::vector<StatementSequence>(sources.size());
-    auto values = std::vector<TargetExpr>();
-    for (auto index = 0uz; index < sources.size(); ++index) {
-        auto value = expression(*sources[index], statements[index]);
-        if (!value) {
-            break;
-        }
-        values.push_back(std::move(*value));
-    }
-
-    if (ordered && std::ranges::all_of(statements, [](const auto& value) static noexcept {
-            return value.empty();
-        })) {
-        return values;
-    }
-    for (auto index = 0uz; index < statements.size(); ++index) {
-        auto& prefix = statements[index];
-        destination.append(std::move(prefix));
-        if (!destination.continues()) {
+        auto value = read_value(full_expression(source), statements);
+        if (!statements.continues()) {
+            destination.append(std::move(statements));
             return std::nullopt;
         }
-        const auto name = names.fresh(TargetTemporaryNameKind::Operand);
-        destination.emit(source_statement(
-            context.semantic(),
-            sources[index]->origin,
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
-                .maybe_unused = false,
-                .name = name,
-                .type = context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = std::move(values[index]),
-            }
-        ));
-        values[index] = transfer_expression(name_expression(name));
-    }
-    return values;
+        if (!statements.empty()
+            && evaluation_preserves_full_expression(context.semantic(), source)) {
+            const auto result = names.fresh(TargetTemporaryNameKind::Logic);
+            destination.emit(generated_statement(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .name = result,
+                    .type = context.lower_type(source.type.resolved()),
+                    .initializer = bool_expression(false)
+                }
+            ));
+            statements.emit(generated_statement(
+                TargetAssignmentStmt {
+                    .target = name_expression(result),
+                    .op = TargetAssignmentOperator::Assign,
+                    .value = std::move(*value)
+                }
+            ));
+            destination.scope(std::move(statements));
+            return DynamicBool {name_expression(result)};
+        }
+        destination.append(std::move(statements));
+        return DynamicBool {std::move(*value)};
+    }();
+    return std::move(destination).complete<Predicate>(std::move(result));
 }
 
-auto BodyLowerer::operand(
+auto BodyLowerer::materialize_operand(
     const SemanticExpression& source,
-    StatementSequence& destination,
-    OperandUse use
-) noexcept -> std::optional<TargetExpr> {
-    auto value = expression(source, destination);
-    if (!value) {
-        return value;
-    }
-    if (use == OperandUse::Direct
-        || std::holds_alternative<SemConstant>(source.value)
-        || std::holds_alternative<SemCallable>(source.value)
-        || std::holds_alternative<SemEnumConstructor>(source.value)) {
+    TargetExpr value,
+    OperandUse use,
+    StatementBuilder& destination
+) noexcept -> TargetExpr {
+    if (!evaluation_requires_execution(context.semantic(), source)
+        && !evaluation_reads_storage(context.semantic(), source)) {
         return value;
     }
     const auto name = names.fresh(TargetTemporaryNameKind::Operand);
@@ -194,27 +193,34 @@ auto BodyLowerer::operand(
                       CallableParameter {.access = AccessMode::Read, .type = source.type.resolved()}
                   )
                 : context.intrinsic_type(TargetSymbol::Auto),
-            .initializer = std::move(*value),
+            .initializer = std::move(value)
         }
     ));
     auto result = name_expression(name);
     return use == OperandUse::Own ? transfer_expression(std::move(result)) : std::move(result);
 }
 
-
-auto BodyLowerer::operands(
-    std::span<const Operand> sources,
-    StatementSequence& destination
-) noexcept -> std::optional<std::vector<TargetExpr>> {
-    auto values = std::vector<TargetExpr>();
-    for (const auto& source : sources) {
-        auto value = operand(source.expression, destination, source.use);
-        if (!value) {
-            return std::nullopt;
-        }
-        values.push_back(std::move(*value));
+auto BodyLowerer::operand(
+    const SemanticExpression& source,
+    OperandUse use,
+    LiteralContext literal
+) noexcept -> Lowered<TargetExpr> {
+    auto destination = StatementBuilder();
+    auto value = read_value(
+        expression(
+            source,
+            use == OperandUse::Read ? literal : LiteralContext::Exact,
+            use == OperandUse::Read || use == OperandUse::ConstPlace ? ResultDemand::Observe
+                                                                     : ResultDemand::Value
+        ),
+        destination,
+        use == OperandUse::Own || use == OperandUse::Snapshot ? ValueUse::Transfer
+                                                              : ValueUse::Observe
+    );
+    if (value) {
+        value = materialize_operand(source, std::move(*value), use, destination);
     }
-    return values;
+    return std::move(destination).complete<TargetExpr>(std::move(value));
 }
 
 } // namespace body_lowering

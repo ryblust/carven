@@ -36,7 +36,6 @@ struct TargetVariableStmt final {
 
 struct TargetBlockStmt final {
     std::vector<TargetStmt> statements;
-    bool scoped;
 };
 
 enum class TargetAssignmentOperator {

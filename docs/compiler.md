@@ -105,9 +105,20 @@ Constants have one normalized `ConstantFact` representation and `SemConstant`
 occurrences. Module constant declarations retain binding metadata and a
 `ConstantID`; the fact owns the type, so their declaration table seals directly.
 Floating-point identity uses bits; language equality compares
-numeric values and recursively compares aggregate contents. Known results do not
-license deleting execution. Body operations retain operands and effects even
-when their result is known. Type rules shared across stages consume concrete
+numeric values and recursively compares aggregate contents. An expression’s
+constant fact describes its value on normal completion; it does
+not establish static syntax admission or permission to delete execution. Body
+operations retain operands and effects even when their result is known.
+
+The read-only SemIR evaluation contract classifies an operation as requiring
+execution, requiring only its executed operands, selecting short-circuit
+operands, or requiring no execution when discarded. It consumes resolved
+operations, types, and constant facts. Storage reads are separate from execution
+requirements, so a removable read can still require a snapshot before a later
+mutation. Calls and native operations are conservative; checks, ownership
+operations, and floating computations retain execution. Full-expression lifetime
+queries identify expressions requiring object-lifetime preservation. Queries
+borrow the published tree. Type rules shared across stages consume concrete
 stage facts rather than reconstructing drafts from final declarations.
 
 Local construction checks its preconditions. Program validation checks owner

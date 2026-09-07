@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace scalar_boundary_detail {
 
@@ -66,4 +67,42 @@ inline auto native_f32(float value) noexcept -> float {
 
 inline auto native_f64(double value) noexcept -> double {
     return scalar_boundary_detail::echo(value);
+}
+
+template<typename Type>
+inline auto native_exact_i8(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::int8_t>;
+}
+
+template<typename Type>
+inline auto native_exact_u8(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::uint8_t>;
+}
+
+template<typename Type>
+inline auto native_exact_i64(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::int64_t>;
+}
+
+template<typename Type>
+inline auto native_exact_u64(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::uint64_t>;
+}
+
+template<typename Type>
+inline auto native_exact_isize(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::ptrdiff_t>;
+}
+
+template<typename Type>
+inline auto native_exact_usize(Type) noexcept -> bool {
+    return std::is_same_v<Type, std::size_t>;
+}
+
+inline auto native_overload_i8(std::int8_t) noexcept -> bool {
+    return true;
+}
+template<typename Type>
+inline auto native_overload_i8(Type) noexcept -> bool {
+    return false;
 }

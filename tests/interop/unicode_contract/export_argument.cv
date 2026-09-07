@@ -1,6 +1,2 @@
 export(cpp) fn accept_unicode_scalar(value: char) {
 }
-
-test "export(cpp) Unicode fixture provides the generated runner" {
-    check(true);
-}

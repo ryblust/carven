@@ -1,0 +1,117 @@
+fn composed_i8(a: i8, b: i8) -> i8 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_i8(a: i8) -> bool {
+    return ~a == -1i8;
+}
+
+fn composed_i16(a: i16, b: i16) -> i16 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_i16(a: i16) -> bool {
+    return ~a == -1i16;
+}
+
+fn composed_i32(a: i32, b: i32) -> i32 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_i32(a: i32) -> bool {
+    return ~a == -1i32;
+}
+
+fn composed_i64(a: i64, b: i64) -> i64 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_i64(a: i64) -> bool {
+    return ~a == -1i64;
+}
+
+fn composed_isize(a: isize, b: isize) -> isize {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_isize(a: isize) -> bool {
+    return ~a == -1isize;
+}
+
+fn composed_u8(a: u8, b: u8) -> u8 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_u8(a: u8) -> bool {
+    return ~a == 255u8;
+}
+
+fn composed_u16(a: u16, b: u16) -> u16 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_u16(a: u16) -> bool {
+    return ~a == 65535u16;
+}
+
+fn composed_u32(a: u32, b: u32) -> u32 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_u32(a: u32) -> bool {
+    return ~a == 4294967295u32;
+}
+
+fn composed_u64(a: u64, b: u64) -> u64 {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_u64(a: u64) -> bool {
+    return ~a == 18446744073709551615u64;
+}
+
+fn composed_usize(a: usize, b: usize) -> usize {
+    return ((a & b) + 1) ^ ((a | b) - 1);
+}
+fn complemented_usize(a: usize) -> bool {
+    return ~a == (~0usize);
+}
+
+test "Numeric types: compositions preserve width before consumption" {
+    check(composed_i8(6i8, 3i8) == 5i8);
+    check(complemented_i8(0i8));
+    check(composed_i16(6i16, 3i16) == 5i16);
+    check(complemented_i16(0i16));
+    check(composed_i32(6i32, 3i32) == 5i32);
+    check(complemented_i32(0i32));
+    check(composed_i64(6i64, 3i64) == 5i64);
+    check(complemented_i64(0i64));
+    check(composed_isize(6isize, 3isize) == 5isize);
+    check(complemented_isize(0isize));
+    check(composed_u8(6u8, 3u8) == 5u8);
+    check(complemented_u8(0u8));
+    check(composed_u16(6u16, 3u16) == 5u16);
+    check(complemented_u16(0u16));
+    check(composed_u32(6u32, 3u32) == 5u32);
+    check(complemented_u32(0u32));
+    check(composed_u64(6u64, 3u64) == 5u64);
+    check(complemented_u64(0u64));
+    check(composed_usize(6usize, 3usize) == 5usize);
+    check(complemented_usize(0usize));
+}
+
+fn evaluation_touch(&n: i32) -> bool { n += 1; return true; }
+fn evaluation_write(&n: i32) -> i32 { n = 9; return 2; }
+fn evaluation_pair(a: i32, b: i32) -> i32 { return a * 10 + b; }
+
+test "Evaluation: known results preserve executed operands" {
+    var n = 0;
+    if false && evaluation_touch(&n) { check(false); }
+    check(n == 0);
+    if evaluation_touch(&n) && false { check(false); }
+    check(n == 1);
+    if evaluation_touch(&n) || true { check(n == 2); }
+    if (1 < 2) && evaluation_touch(&n) { check(n == 3); }
+    for ; evaluation_touch(&n) && false; { check(false); }
+    check(n == 4);
+}
+
+test "Evaluation: snapshots precede later mutations" {
+    var n = 1;
+    let value = (n + 1) + evaluation_write(&n);
+    check(value == 4);
+    n = 1;
+    check(evaluation_pair(n + 1, evaluation_write(&n)) == 22);
+    check(n == 9);
+}

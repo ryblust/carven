@@ -23,6 +23,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdSize:                  return "std::size_t";
         case TargetSymbol::Float:                    return "float";
         case TargetSymbol::Double:                   return "double";
+        case TargetSymbol::RuntimeDeferredStorage:   return "carven::runtime::DeferredStorage";
         case TargetSymbol::RuntimeReadArg:           return "carven::runtime::ReadArg";
         case TargetSymbol::RuntimeTransfer:          return "carven::runtime::transfer";
         case TargetSymbol::RuntimeOutcome:           return "carven::runtime::Outcome";

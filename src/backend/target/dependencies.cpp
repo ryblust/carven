@@ -86,7 +86,8 @@ public:
                 [](const TargetScopeMemberExpr&) static noexcept {},
                 [](const TargetStaticMemberExpr&) static noexcept {},
                 [](const TargetStaticCastExpr&) static noexcept {},
-                [](const TargetRegionExpr&) static noexcept {},
+                [&](const TargetPlacementNewExpr&) noexcept { include("new"); },
+                [](const TargetLambdaExpr&) static noexcept {},
             },
             expression.value
         );
@@ -126,7 +127,10 @@ private:
             case TargetSymbol::RuntimeCheckedUnicodeScalar:
                 include("carven/runtime/text.hpp");
                 break;
-            case TargetSymbol::RuntimeEntryArgs:     include("carven/runtime/entry.hpp"); break;
+            case TargetSymbol::RuntimeEntryArgs: include("carven/runtime/entry.hpp"); break;
+            case TargetSymbol::RuntimeDeferredStorage:
+                include("carven/runtime/lifetime.hpp");
+                break;
             case TargetSymbol::RuntimeReadArg:
             case TargetSymbol::RuntimeTransfer:      include("carven/runtime/passing.hpp"); break;
             case TargetSymbol::RuntimeFunctionRef:   include("carven/runtime/callable.hpp"); break;

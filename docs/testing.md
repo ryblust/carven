@@ -23,9 +23,13 @@ whole suite and static analysis:
 ./xmakew check clang.tidy
 ```
 
-Clang-tidy checks registered compiler, test, and generated C++ translation units,
-including crafts headers they use. Unexpected module or dependency failures
-must be reproduced after `./xmakew clean` and `./xmakew build`.
+Clang-tidy checks registered handwritten and generated C++ translation units,
+including crafts headers they use. Generated-code findings are addressed in the
+generator and verified after regeneration. Static analysis is read-only; fixes
+are made in the owning source.
+
+Unexpected module or dependency failures must be reproduced after
+`./xmakew clean` and `./xmakew build`.
 
 For local build-rule development, set `CARVEN_XMAKE_REPO_DIR` to the rule checkout
 when building. Stock Xmake is the fallback only when the wrapper cannot apply
@@ -71,8 +75,8 @@ their owning boundary.
 
 Give each rule one primary responsibility test. Different syntax entry points
 need separate cases only for distinct contracts. Do not add compatibility or
-historical regression tests. Delete a malformed-state test when the new
-representation cannot express that state.
+historical regression tests. Delete a malformed-state test when the representation
+cannot express that state.
 
 Language-behavior tests identify the owning semantic section through their
 case name or a focused comment. Cover acceptance, rejection, and relevant
@@ -85,6 +89,12 @@ Generated-code correctness is checked by compiling and executing it. Text
 assertions are appropriate for serialized syntax, source attribution, raw
 payload preservation, and artifact paths. Temporary names, helper spellings,
 old representations, and complete generated bodies are not contracts.
+
+Generation-quality tests inspect target structure. Language tests establish
+semantic results; C++ interop tests establish deduction, access, and lifetime
+behavior at native boundaries. Lifetime providers record construction, transfer,
+execution, and destruction events in order. Terminating runtime checks run in
+isolated processes with a specific expected outcome.
 
 Diagnostic tests compare identity, severity, and relevant source location.
 Presentation tests may check diagnostic transport or wording where that is
@@ -104,8 +114,13 @@ with stdout and stderr logs for every step. Successful cases remove their
 temporary directories; multi-step reports retain each step's output.
 Generated target configuration directly expresses the boundary under test.
 Interop cases with compatible build and execution requirements share a target.
+The main interop executable runs ordinary generated tests without arguments;
+its harness selects terminating contract checks by argument in separate processes.
+Process isolation does not require a separate build target.
 Cases initialize their own observable state. Header self-containment checks use
-one translation unit per header, including generated interfaces.
+one translation unit per header, including generated interfaces, within the
+consumer target. These units instantiate interfaces; behavioral assertions belong
+in the corresponding runtime or generated-program tests.
 
 Runtime exception boundaries are tested in isolated C++ consumer processes.
 The throwing operation itself must execute, and the process must reach the

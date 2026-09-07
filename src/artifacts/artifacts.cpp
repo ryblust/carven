@@ -71,11 +71,11 @@ auto validate_artifact_logical_path(std::string_view path) noexcept
     return check_artifact_logical_path(path);
 }
 
-GeneratedArtifactSet::GeneratedArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept
-    : artifacts_(std::move(artifacts)) {
-    std::ranges::sort(artifacts_, {}, &GeneratedArtifact::logical_path);
+GeneratedArtifactSet::GeneratedArtifactSet(std::vector<GeneratedArtifact> values) noexcept
+    : artifacts(std::move(values)) {
+    std::ranges::sort(artifacts, {}, &GeneratedArtifact::logical_path);
     auto logical_paths = std::flat_set<std::string_view> {};
-    for (const auto& artifact : artifacts_) {
+    for (const auto& artifact : artifacts) {
         if (!validate_artifact_logical_path(artifact.logical_path)) {
             invariant_violation("artifact has an invalid logical path");
         }
@@ -94,6 +94,6 @@ GeneratedArtifactSet::GeneratedArtifactSet(std::vector<GeneratedArtifact> artifa
     }
 }
 
-auto GeneratedArtifactSet::artifacts() const noexcept -> std::span<const GeneratedArtifact> {
-    return artifacts_;
+auto GeneratedArtifactSet::entries() const noexcept -> std::span<const GeneratedArtifact> {
+    return artifacts;
 }

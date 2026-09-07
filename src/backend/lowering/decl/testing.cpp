@@ -194,7 +194,8 @@ auto lower_test_runner_header(
         declarations.push_back(namespace_item(
             artifact.plan().names().module_names(module_id).qualified_namespace_name,
             std::move(module_items),
-            TargetCompilerReason::TestHarness
+            TargetCompilerReason::TestHarness,
+            false
         ));
     }
     const auto reporter = TargetIdentifier::from_spelling("reporter");

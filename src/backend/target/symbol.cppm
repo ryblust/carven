@@ -23,6 +23,7 @@ enum class TargetSymbol {
     Double,
     RuntimeReadArg,
     RuntimeTransfer,
+    RuntimeDeferredStorage,
     RuntimeOutcome,
     RuntimeStrBytesView,
     RuntimeStrCharsView,

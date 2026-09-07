@@ -16,7 +16,7 @@ namespace body_lowering {
 auto BodyLowerer::structured_expression(
     const SemanticExpression& source,
     ResultDestination result,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
     std::visit(
         Overloaded {
@@ -36,18 +36,15 @@ auto BodyLowerer::guarded_region(
     const std::optional<SemanticExpression>& guard,
     const ResultDestination& result,
     RegionExit& done
-) noexcept -> StatementSequence {
-    auto guarded = StatementSequence();
-    auto test = std::optional<TargetExpr>();
-    auto known = std::optional<bool>();
+) noexcept -> StatementBuilder {
+    auto guarded = StatementBuilder();
+    auto test = std::optional<Predicate>(KnownBool {true});
     if (guard.has_value()) {
-        test = condition(*guard, guarded);
+        test = guarded.accept(condition(*guard));
         if (!test) {
             return guarded;
         }
-        known = known_boolean(*guard);
-        if (known == false) {
-            guarded.emit(generated_statement(TargetDiscardStmt {.expression = std::move(*test)}));
+        if (known_predicate(test) == false) {
             return guarded;
         }
     }
@@ -55,22 +52,25 @@ auto BodyLowerer::guarded_region(
         return guarded;
     }
     auto selected = region(source, result);
-    if (result.use != ResultUse::Return && selected.continues()) {
-        done.used = true;
-        selected.terminate(generated_statement(
-            TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
-        ));
+    if (!returns_result(result) && selected.continues()) {
+        selected.terminate(
+            generated_statement(
+                TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
+            ),
+            done.target
+        );
     }
-    if (test.has_value() && !known.has_value()) {
+    if (!known_predicate(test).has_value()) {
         auto branches = std::vector<TargetIfBranch>();
-        branches.push_back({.condition = std::move(*test), .body = std::move(selected).finish()});
+        guarded.record_exits(selected.exits());
+        branches.push_back(
+            {.condition = predicate_expression(std::move(*test)),
+             .body = std::move(selected).finish()}
+        );
         guarded.emit(generated_statement(
             TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
         ));
     } else {
-        if (test.has_value()) {
-            guarded.emit(generated_statement(TargetDiscardStmt {.expression = std::move(*test)}));
-        }
         guarded.append(std::move(selected));
     }
     return guarded;
@@ -79,32 +79,38 @@ auto BodyLowerer::guarded_region(
 auto BodyLowerer::lower_if(
     const SemIf& value,
     ResultDestination result,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
     const auto lower_branch = [&](this const auto& self,
-                                  std::size_t index) noexcept -> StatementSequence {
+                                  std::size_t index) noexcept -> StatementBuilder {
         if (index == value.branches.size()) {
             return value.otherwise.has_value() ? region(**value.otherwise, result)
-                                               : StatementSequence();
+                                               : StatementBuilder();
         }
         const auto& branch = value.branches[index];
-        auto statements = StatementSequence();
-        auto test = condition(branch.condition, statements);
+        auto statements = StatementBuilder();
+        auto test = statements.accept(condition(branch.condition));
         if (!statements.continues()) {
             return statements;
         }
-        if (const auto known = known_boolean(branch.condition)) {
-            statements.emit(
-                generated_statement(TargetDiscardStmt {.expression = std::move(*test)})
-            );
-            statements.append(*known ? region(branch.body, result) : self(index + 1uz));
+        if (const auto known = known_predicate(test)) {
+            if (*known) {
+                statements.scope(region(branch.body, result));
+            } else {
+                statements.append(self(index + 1uz));
+            }
             return statements;
         }
         auto branches = std::vector<TargetIfBranch>();
         auto selected = region(branch.body, result);
         auto alternative = self(index + 1uz);
         const auto continues = selected.continues() || alternative.continues();
-        branches.push_back({.condition = std::move(*test), .body = std::move(selected).finish()});
+        statements.record_exits(selected.exits());
+        statements.record_exits(alternative.exits());
+        branches.push_back(
+            {.condition = predicate_expression(std::move(*test)),
+             .body = std::move(selected).finish()}
+        );
         statements.emit(
             generated_statement(
                 TargetIfStmt {
@@ -128,13 +134,13 @@ auto BodyLowerer::lower_arm(
     const std::optional<SemanticExpression>& guard,
     const ResultDestination& result,
     RegionExit& done
-) noexcept -> StatementSequence {
-    auto statements = StatementSequence();
+) noexcept -> StatementBuilder {
+    auto statements = StatementBuilder();
     auto projections = std::vector<PatternProjection>();
     cache_pattern_projections(selections, projections, statements);
     if (selections.size() == 1uz) {
         const auto& selection = selections.front();
-        auto chosen = StatementSequence();
+        auto chosen = StatementBuilder();
         for (const auto binding : bindings) {
             chosen.emit(generated_statement(
                 TargetVariableStmt {
@@ -149,6 +155,7 @@ auto BodyLowerer::lower_arm(
         chosen.append(guarded_region(source, guard, result, done));
         auto condition = pattern_condition(selection);
         if (condition.has_value()) {
+            statements.record_exits(chosen.exits());
             auto branches = std::vector<TargetIfBranch>();
             branches.push_back(
                 {.condition = std::move(*condition), .body = std::move(chosen).finish()}
@@ -172,27 +179,25 @@ auto BodyLowerer::lower_arm(
         }
     ));
     for (const auto binding : bindings) {
-        delayed_bindings.insert(binding);
-        statements.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
-                .maybe_unused = true,
+        delayed_bindings.emplace(
+            binding,
+            DeferredStorage {
                 .name = binding_names.at(binding),
-                .type = context.optional_type(context.lower_type(body.binding(binding).type)),
-                .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
+                .value_type = context.lower_type(body.binding(binding).type)
             }
-        ));
+        );
+        declare_deferred(delayed_bindings.at(binding), true, statements);
     }
     auto alternatives = std::vector<TargetIfBranch>();
     auto fallback = std::optional<std::vector<TargetStmt>>();
     for (const auto& selection : selections) {
-        auto chosen = StatementSequence();
+        auto chosen = StatementBuilder();
         for (const auto binding : bindings) {
-            chosen.emit(statement_expression(call_member(
-                name_expression(binding_names.at(binding)),
-                "emplace",
-                target_expressions(pattern_binding_expression(selection, binding))
-            )));
+            initialize_deferred(
+                delayed_bindings.at(binding),
+                pattern_binding_expression(selection, binding),
+                chosen
+            );
         }
         chosen.emit(generated_statement(
             TargetAssignmentStmt {
@@ -222,10 +227,11 @@ auto BodyLowerer::lower_arm(
             TargetIfStmt {.branches = std::move(alternatives), .else_body = std::move(fallback)}
         ));
     }
+    auto guarded = guarded_region(source, guard, result, done);
+    statements.record_exits(guarded.exits());
     auto branches = std::vector<TargetIfBranch>();
     branches.push_back(
-        {.condition = name_expression(selected),
-         .body = guarded_region(source, guard, result, done).finish()}
+        {.condition = name_expression(selected), .body = std::move(guarded).finish()}
     );
     statements.emit(generated_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
@@ -239,12 +245,15 @@ auto BodyLowerer::lower_arm(
 auto BodyLowerer::lower_match(
     const SemMatch& value,
     const ResultDestination& result,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
-    auto done = RegionExit {.label = names.fresh(TargetTemporaryNameKind::MatchDone)};
-    auto scope = StatementSequence();
+    auto done = RegionExit {
+        .label = names.fresh(TargetTemporaryNameKind::MatchDone),
+        .target = exit_target(ExitKind::Value)
+    };
+    auto scope = StatementBuilder();
     const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
-    auto subject_value = expression(*value.subject, scope);
+    auto subject_value = read_value(expression(*value.subject), scope);
     if (!scope.continues()) {
         destination.append(std::move(scope));
         return;
@@ -266,30 +275,33 @@ auto BodyLowerer::lower_match(
         if (!arm.reachable) {
             continue;
         }
-        auto statements = StatementSequence();
+        auto statements = StatementBuilder();
         auto selections = lower_pattern(
             arm.pattern,
             {.root = subject, .dereference_root = false, .payload_path = {}}
         );
         statements =
             lower_arm(std::move(selections), arm.bindings, arm.body, arm.guard, result, done);
-        scope.block(std::move(statements));
+        scope.scope(std::move(statements));
     }
     if (scope.continues()) {
-        scope.terminate(generated_statement(
-            TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
-        ));
+        scope.terminate(
+            generated_statement(
+                TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
+            ),
+            ExitTarget {ExitKind::Unreachable, 0}
+        );
     }
-    destination.block(std::move(scope));
-    if (done.used) {
-        destination.resume(done.label, TargetJumpRole::RegionExit);
+    destination.scope(std::move(scope));
+    if (destination.exits().contains(done.target)) {
+        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
 }
 
 auto BodyLowerer::lower_try(
     const SemTry& value,
     const ResultDestination& result,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
     if (context.plan().failure_abi().members(value.protected_failures.resolved()).empty()) {
         destination.append(region(*value.body, result));
@@ -297,7 +309,10 @@ auto BodyLowerer::lower_try(
     }
     const auto storage = names.fresh(TargetTemporaryNameKind::Try);
     const auto handler = names.fresh(TargetTemporaryNameKind::Try);
-    auto done = RegionExit {.label = names.fresh(TargetTemporaryNameKind::CatchDone)};
+    auto done = RegionExit {
+        .label = names.fresh(TargetTemporaryNameKind::CatchDone),
+        .target = exit_target(ExitKind::Value)
+    };
     const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
     destination.emit(generated_statement(
         TargetVariableStmt {
@@ -309,24 +324,31 @@ auto BodyLowerer::lower_try(
         }
     ));
     const auto outer = failure_destination;
-    failure_destination = FailureDestination {.storage = storage, .label = handler};
+    failure_destination = FailureDestination {
+        .storage = storage,
+        .label = handler,
+        .target = exit_target(ExitKind::Failure)
+    };
     auto protected_body = region(*value.body, result);
-    if (result.use != ResultUse::Return && protected_body.continues()) {
-        done.used = true;
-        protected_body.terminate(generated_statement(
-            TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
-        ));
+    if (!returns_result(result) && protected_body.continues()) {
+        protected_body.terminate(
+            generated_statement(
+                TargetGotoStmt {.label = done.label, .role = TargetJumpRole::RegionExit}
+            ),
+            done.target
+        );
     }
-    destination.block(std::move(protected_body));
-    const auto handler_used = failure_destination->used;
+    destination.scope(std::move(protected_body));
+    const auto handler_target = failure_destination->target;
+    const auto handler_used = destination.exits().contains(handler_target);
     failure_destination = outer;
     if (!handler_used) {
-        if (done.used) {
-            destination.resume(done.label, TargetJumpRole::RegionExit);
+        if (destination.exits().contains(done.target)) {
+            destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
         }
         return;
     }
-    destination.resume(handler, TargetJumpRole::FailureTransfer);
+    destination.resume(handler, TargetJumpRole::FailureTransfer, handler_target);
     for (const auto& arm : value.arms) {
         if (!destination.continues()) {
             break;
@@ -334,7 +356,7 @@ auto BodyLowerer::lower_try(
         if (context.plan().failure_abi().members(arm.accepted_failures.resolved()).empty()) {
             continue;
         }
-        auto statements = StatementSequence();
+        auto statements = StatementBuilder();
         auto selections = std::vector<PatternSelection>();
         const auto add = [&](TypeID type, std::optional<PatternID> pattern) noexcept {
             const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
@@ -387,11 +409,11 @@ auto BodyLowerer::lower_try(
             lower_arm(std::move(selections), arm.bindings, arm.body, arm.guard, result, done)
         );
         caught_failure = previous_caught;
-        destination.block(std::move(statements));
+        destination.scope(std::move(statements));
     }
     transfer_failure(storage, value.residual_failures.resolved(), destination);
-    if (done.used) {
-        destination.resume(done.label, TargetJumpRole::RegionExit);
+    if (destination.exits().contains(done.target)) {
+        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
 }
 

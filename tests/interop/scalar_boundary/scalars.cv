@@ -87,3 +87,32 @@ test "C++ scalar boundary crosses import and export directions" {
     check(native_f32(1.25f32) == 1.25f32);
     check(native_f64(2.5f64) == 2.5f64);
 }
+
+test "C++ deduction: scalar expressions preserve canonical types" {
+    let value_i8: i8 = 3;
+    check(::native_exact_i8(1i8));
+    check(::native_exact_i8(~value_i8));
+    check(::native_exact_i8((value_i8 & 1i8) + 1i8));
+    let value_u8: u8 = 3;
+    check(::native_exact_u8(1u8));
+    check(::native_exact_u8(~value_u8));
+    check(::native_exact_u8((value_u8 & 1u8) + 1u8));
+    let value_i64: i64 = 3;
+    check(::native_exact_i64(1i64));
+    check(::native_exact_i64(~value_i64));
+    check(::native_exact_i64((value_i64 & 1i64) + 1i64));
+    let value_u64: u64 = 3;
+    check(::native_exact_u64(1u64));
+    check(::native_exact_u64(~value_u64));
+    check(::native_exact_u64((value_u64 & 1u64) + 1u64));
+    let value_isize: isize = 3;
+    check(::native_exact_isize(1isize));
+    check(::native_exact_isize(~value_isize));
+    check(::native_exact_isize((value_isize & 1isize) + 1isize));
+    let value_usize: usize = 3;
+    check(::native_exact_usize(1usize));
+    check(::native_exact_usize(~value_usize));
+    check(::native_exact_usize((value_usize & 1usize) + 1usize));
+    check(::native_overload_i8(1i8));
+    check(::native_overload_i8(~value_i8));
+}

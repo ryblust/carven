@@ -183,7 +183,7 @@ auto BodyLowerer::lower_pattern(PatternID pattern_id, PatternSubject subject) no
 auto BodyLowerer::cache_pattern_projections(
     std::vector<PatternSelection>& selections,
     std::vector<PatternProjection>& projections,
-    StatementSequence& destination
+    StatementBuilder& destination
 ) noexcept -> void {
     const auto same_subject = [](const PatternSubject& left, const PatternSubject& right) noexcept {
         if (left.root != right.root

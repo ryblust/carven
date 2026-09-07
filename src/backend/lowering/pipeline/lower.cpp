@@ -31,7 +31,12 @@ auto wrap_linkage_namespaces(
     if (items.empty()) {
         return {};
     }
-    auto domain = namespace_item(context.plan().names().domain_namespace(), std::move(items));
+    auto domain = namespace_item(
+        context.plan().names().domain_namespace(),
+        std::move(items),
+        TargetCompilerReason::ArtifactScaffolding,
+        false
+    );
     auto generated = namespace_item(
         context.plan().names().generated_namespace(),
         target_items(std::move(domain))
@@ -63,7 +68,9 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
         }
         root.push_back(namespace_item(
             context.plan().names().module_names(*active).module_namespace_name,
-            std::move(module_items)
+            std::move(module_items),
+            TargetCompilerReason::ArtifactScaffolding,
+            false
         ));
         module_items.clear();
     };
@@ -134,7 +141,9 @@ auto lower_module(
     if (!module_items.empty()) {
         root.push_back(namespace_item(
             context.plan().names().module_names(schedule.module_id).module_namespace_name,
-            std::move(module_items)
+            std::move(module_items),
+            TargetCompilerReason::ArtifactScaffolding,
+            false
         ));
     }
     auto epilogue = std::vector<TargetItem>();

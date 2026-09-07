@@ -27,7 +27,7 @@ auto validate_artifact_logical_path(std::string_view path) noexcept
 
 class GeneratedArtifactSet final {
 public:
-    explicit GeneratedArtifactSet(std::vector<GeneratedArtifact> artifacts) noexcept;
+    explicit GeneratedArtifactSet(std::vector<GeneratedArtifact> values) noexcept;
 
     GeneratedArtifactSet(const GeneratedArtifactSet&) = default;
     GeneratedArtifactSet(GeneratedArtifactSet&&) = default;
@@ -35,8 +35,8 @@ public:
     auto operator=(const GeneratedArtifactSet&) -> GeneratedArtifactSet& = delete;
     auto operator=(GeneratedArtifactSet&&) -> GeneratedArtifactSet& = delete;
 
-    auto artifacts() const noexcept -> std::span<const GeneratedArtifact>;
+    auto entries() const noexcept -> std::span<const GeneratedArtifact>;
 
 private:
-    std::vector<GeneratedArtifact> artifacts_;
+    std::vector<GeneratedArtifact> artifacts;
 };

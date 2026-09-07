@@ -334,9 +334,9 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
 auto artifact_content(const GeneratedArtifactSet& artifacts, std::string_view path) noexcept
     -> std::string_view {
     const auto found =
-        std::ranges::find(artifacts.artifacts(), path, &GeneratedArtifact::logical_path);
-    REQUIRE(found != artifacts.artifacts().end());
-    if (found == artifacts.artifacts().end()) {
+        std::ranges::find(artifacts.entries(), path, &GeneratedArtifact::logical_path);
+    REQUIRE(found != artifacts.entries().end());
+    if (found == artifacts.entries().end()) {
         return {};
     }
     return found->content;

@@ -65,10 +65,10 @@ TEST_CASE("Artifacts: GeneratedArtifactSet establishes one canonical order") {
         generated("api.hpp", "interface"),
     });
 
-    REQUIRE_EQ(artifacts.artifacts().size(), 3u);
-    CHECK_EQ(artifacts.artifacts()[0].logical_path, "api.cpp");
-    CHECK_EQ(artifacts.artifacts()[1].logical_path, "api.hpp");
-    CHECK_EQ(artifacts.artifacts()[2].logical_path, "nested/api.hpp");
+    REQUIRE_EQ(artifacts.entries().size(), 3u);
+    CHECK_EQ(artifacts.entries()[0].logical_path, "api.cpp");
+    CHECK_EQ(artifacts.entries()[1].logical_path, "api.hpp");
+    CHECK_EQ(artifacts.entries()[2].logical_path, "nested/api.hpp");
 }
 
 TEST_CASE("Artifacts: logical paths are normalized relative paths") {

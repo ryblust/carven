@@ -17,7 +17,7 @@ auto emit(
     const auto source_mapping = std::holds_alternative<StableInterfaceEmission>(policy)
         ? ArtifactSourceMappingPolicy::StableInterface
         : ArtifactSourceMappingPolicy::SourceAttributed;
-    auto content = render_layout(TargetRenderer(unit, policy).render_unit(), 100uz);
+    auto content = render_layout(TargetRenderer(unit, policy).render_unit(), 80uz);
     return GeneratedArtifact {
         .logical_path = std::move(logical_path),
         .role = role,

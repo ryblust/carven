@@ -12,6 +12,7 @@ struct TargetItem;
 struct TargetNamespace final {
     std::optional<TargetName> name;
     std::vector<TargetItem> items;
+    bool closing_comment;
 };
 
 struct TargetUsing final {

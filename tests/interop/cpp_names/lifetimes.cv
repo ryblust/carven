@@ -1,0 +1,228 @@
+import "cpp_names/lifetimes.hpp" using {
+    lifetime_probe::Owner,
+    lifetime_probe::consume_owner,
+    lifetime_probe::mark,
+    lifetime_probe::reset,
+    lifetime_probe::matches,
+    lifetime_probe::FixedOwner,
+    lifetime_probe::ResultMaker,
+    lifetime_probe::CopyOwner,
+    lifetime_probe::event,
+};
+
+enum Failure { Stop, }
+
+fn returning() -> i32 {
+    let owner = Owner { 1 };
+    return 7;
+}
+
+fn failing() -> i32 throw Failure {
+    let owner = Owner { 2 };
+    throw Failure::Stop;
+}
+
+test "Lifetimes: selected lexical regions destroy in reverse construction order" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = Owner { 2 };
+        mark(9);
+    }
+    mark(8);
+    check(matches("1 2 9 -2 -1 8 "));
+}
+
+test "Lifetimes: condition evaluation ends before branch execution" {
+    reset();
+    if (Owner { 1 }.probe() as bool) {
+        mark(9);
+    }
+    check(matches("1 11 -1 9 "));
+    reset();
+    if (Owner { 2 }.probe() as bool) && false { mark(9); }
+    check(matches("2 12 -2 "));
+}
+
+test "Lifetimes: return and failure leave their owning lexical region" {
+    reset();
+    check(returning() == 7);
+    mark(9);
+    check(matches("1 -1 9 "));
+    reset();
+    try { let _ = failing()?; } catch { Failure(_) => { mark(9); }, }
+    check(matches("2 -2 9 "));
+}
+
+fn short_circuit(flag: bool) -> bool {
+    return (flag && (Owner { 1 }.probe() as bool)) && (matches("1 11 ") as bool);
+}
+
+test "Lifetimes: short circuit temporaries live through the full expression" {
+    reset();
+    check(short_circuit(true));
+    check(matches("1 11 -1 "));
+    reset();
+    check(!short_circuit(false));
+    check(matches(""));
+}
+
+fn step(&n: i32) {
+    mark(9);
+    n += 1;
+}
+
+test "Lifetimes: loop bodies finish before continue steps and break" {
+    reset();
+    for var n = 0; n < 2; step(&n) {
+        let owner = Owner { 1 };
+        if n == 0 { continue; }
+        break;
+    }
+    check(matches("1 -1 9 1 -1 "));
+}
+
+fn selected(flag: bool) -> Owner {
+    return if flag { Owner { 1 } } else { Owner { 2 } };
+}
+
+test "Lifetimes: branch return constructs nonassignable owners directly" {
+    reset();
+    if true {
+        let owner = selected(true);
+        check(matches("1 "));
+    }
+    check(matches("1 -1 "));
+    reset();
+    if true {
+        let owner = selected(false);
+        check(matches("2 "));
+    }
+    check(matches("2 -2 "));
+}
+
+test "Lifetimes: moving a local owner occurs once at its consumer" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = &&first;
+        check(matches("1 101 "));
+    }
+    check(matches("1 101 -1 -1 "));
+}
+
+test "Lifetimes: Take completes before later call operands" {
+    reset();
+    if true {
+        let owner = Owner { 1 };
+        consume_owner(&&owner, event(2));
+        check(matches("1 101 2 9 -1 "));
+    }
+    check(matches("1 101 2 9 -1 -1 "));
+}
+
+test "Lifetimes: handler owners finish before the following statement" {
+    reset();
+    try {
+        let protected = Owner { 1 };
+        let _ = failing()?;
+    } catch {
+        Failure(_) => {
+            let handler = Owner { 3 };
+            mark(9);
+        },
+    }
+    mark(8);
+    check(matches("1 2 -2 -1 3 9 -3 8 "));
+}
+
+fn ordered_short_circuit(flag: bool) -> bool {
+    return (flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool))
+        && (matches("1 2 3 9 ") as bool);
+}
+
+test "Lifetimes: conditional construction survives ordered full expression operands" {
+    reset();
+    check(ordered_short_circuit(true));
+    check(matches("1 2 3 9 -1 "));
+    reset();
+    check(!ordered_short_circuit(false));
+    check(matches(""));
+    if ordered_short_circuit(true) { mark(8); }
+    check(matches("1 2 3 9 -1 8 "));
+}
+
+fn observed(value: bool) -> bool {
+    mark(8);
+    return value;
+}
+
+fn nested_owners(flag: bool) -> bool {
+    return observed((Owner { 1 }.probe() as bool)
+        && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool)));
+}
+
+test "Lifetimes: nested conditional operands destroy owners in reverse construction order" {
+    reset();
+    check(nested_owners(true));
+    check(matches("1 11 2 3 4 9 8 -2 -1 "));
+    reset();
+    check(!nested_owners(false));
+    check(matches("1 11 8 -1 "));
+}
+
+fn initialization_argument(succeeds: bool) -> i32 throw Failure {
+    mark(2);
+    if !succeeds { throw Failure::Stop; }
+    return 4;
+}
+
+fn initialize_fixed(succeeds: bool) throw Failure {
+    let value = ResultMaker { 1 }.make(initialization_argument(succeeds)?);
+    mark(8);
+    let _ = value.probe(0, 0);
+}
+
+test "Lifetimes: initialization temporaries finish before an immovable binding is used" {
+    reset();
+    try { initialize_fixed(true)?; } catch { Failure(_) => { mark(7); }, }
+    check(matches("1 2 4 -1 8 9 -4 "));
+    reset();
+    try { initialize_fixed(false)?; } catch { Failure(_) => { mark(7); }, }
+    check(matches("1 2 -1 7 "));
+}
+
+fn owned_outcome(flag: bool) -> Owner throw Failure {
+    if flag { return Owner { 1 }; }
+    throw Failure::Stop;
+}
+
+test "Lifetimes: discarded outcomes destroy success owners and propagate failures" {
+    reset();
+    try { owned_outcome(true)?; } catch { Failure(_) => { mark(8); }, }
+    mark(9);
+    check(matches("1 101 -1 -1 9 "));
+    reset();
+    try { owned_outcome(false)?; } catch { Failure(_) => { mark(8); }, }
+    mark(9);
+    check(matches("8 9 "));
+}
+
+fn copy_initialized(flag: bool) throw Failure {
+    var original = CopyOwner { 1 };
+    let copied = if flag {
+        let branch_owner = Owner { 3 };
+        initialization_argument(true)?;
+        original
+    } else {
+        initialization_argument(false)?;
+        original
+    };
+    mark(8);
+}
+
+test "Lifetimes: deferred copies preserve native constructor selection" {
+    reset();
+    try { copy_initialized(true)?; } catch { Failure(_) => { mark(7); }, }
+    check(matches("1 3 2 101 -3 8 -1 -1 "));
+}

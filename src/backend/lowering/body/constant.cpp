@@ -2,8 +2,8 @@ module carven:backend.lowering.body.constant.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body.lowerer;
 import :backend.lowering.body;
+import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
 import :backend.target.builder;
 import :backend.target.expr;
@@ -101,7 +101,8 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
 auto typed_integer_expression(
     ModuleLowering& context,
     const IntegerConstant& value,
-    TypeID type
+    TypeID type,
+    LiteralContext use
 ) noexcept -> TargetExpr {
     auto result = TargetExpr {
         .value = TargetLiteralExpr {
@@ -112,10 +113,13 @@ auto typed_integer_expression(
             },
         },
     };
+    if (use == LiteralContext::TargetTyped) {
+        return result;
+    }
     return {
-        .value = TargetStaticCastExpr {
+        .value = TargetConstructionExpr {
             .type = context.lower_type(type),
-            .operand = target_child(std::move(result)),
+            .initializer = target_expressions(std::move(result)),
         },
     };
 }
@@ -150,12 +154,13 @@ auto enum_case_expression(
     return member;
 }
 
-auto constant_expression(ModuleLowering& context, ConstantID id) noexcept -> TargetExpr {
+auto constant_expression(ModuleLowering& context, ConstantID id, LiteralContext use) noexcept
+    -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
     return std::visit(
         Overloaded {
             [&](const IntegerConstant& value) noexcept {
-                return typed_integer_expression(context, value, fact.type);
+                return typed_integer_expression(context, value, fact.type, use);
             },
             [](const BooleanConstant& value) noexcept { return bool_expression(value.value); },
             [&](const StringConstant& value) noexcept {
@@ -233,6 +238,7 @@ auto lower_numeric_enum_case_value_expression(
     return body_lowering::typed_integer_expression(
         context,
         numeric->value,
-        representation->underlying_type
+        representation->underlying_type,
+        body_lowering::LiteralContext::TargetTyped
     );
 }

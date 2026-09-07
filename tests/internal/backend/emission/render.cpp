@@ -18,6 +18,7 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
 import :test.internal.backend.target.fixture;
+import :support.unique_indirect;
 import std;
 
 namespace {
@@ -148,7 +149,20 @@ TEST_CASE("Emission: value regions retain explicit result types and selective un
                     .name = TargetIdentifier::from_spelling("value"),
                     .type = type,
                     .initializer = TargetExpr {
-                        .value = TargetRegionExpr {.result = type, .body = std::move(body)}
+                        .value = TargetCallExpr {
+                            .callee = UniqueIndirect(
+                                TargetExpr {
+                                    .value =
+                                        TargetLambdaExpr {
+                                            .parameters = {},
+                                            .result = type,
+                                            .body = std::move(body)
+                                        }
+                                }
+                            ),
+                            .template_argument_type_ids = {},
+                            .arguments = {}
+                        }
                     },
                 };
             });

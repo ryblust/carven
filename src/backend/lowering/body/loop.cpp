@@ -10,65 +10,71 @@ import :semantic.semir;
 import std;
 
 namespace body_lowering {
-auto BodyLowerer::lower_loop(const SemLoop& value, StatementSequence& destination) noexcept
-    -> void {
-    auto initializer =
-        region(*value.initializer, {.use = ResultUse::Discard, .storage = std::nullopt});
+auto BodyLowerer::lower_loop(const SemLoop& value, StatementBuilder& destination) noexcept -> void {
+    auto initializer = region(*value.initializer, DiscardResult {});
     if (!initializer.continues()) {
-        destination.block(std::move(initializer));
+        destination.scope(std::move(initializer));
         return;
     }
-    auto condition_statements = StatementSequence();
+    auto condition_statements = StatementBuilder();
     auto condition = value.condition.has_value()
-        ? this->condition(*value.condition, condition_statements)
-        : bool_expression(true);
+        ? condition_statements.accept(this->condition(*value.condition))
+        : std::optional<Predicate>(KnownBool {true});
     if (!condition_statements.continues()) {
         initializer.append(std::move(condition_statements));
-        destination.block(std::move(initializer));
+        destination.scope(std::move(initializer));
         return;
     }
-    if (value.condition.has_value() && known_boolean(*value.condition) == false) {
+    if (known_predicate(condition) == false) {
         initializer.append(std::move(condition_statements));
-        initializer.emit(
-            generated_statement(TargetDiscardStmt {.expression = std::move(*condition)})
-        );
-        destination.block(std::move(initializer));
+        destination.scope(std::move(initializer));
         return;
     }
     const auto step = value.steps->statements.empty()
         ? std::nullopt
         : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
-    const auto previous = std::exchange(loop_continuation, {.step = step});
-    auto body_statements =
-        region(*value.body, {.use = ResultUse::Discard, .storage = std::nullopt});
-    const auto continuation = std::exchange(loop_continuation, previous);
-    const auto run_steps = body_statements.continues() || continuation.used;
-    auto steps = run_steps
-        ? region(*value.steps, {.use = ResultUse::Discard, .storage = std::nullopt})
-        : StatementSequence();
+    const auto previous = std::exchange(
+        loop_continuation,
+        LoopContinuation {
+            .step = step,
+            .target = exit_target(ExitKind::Continue),
+            .break_target = exit_target(ExitKind::Break)
+        }
+    );
+    auto body_statements = region(*value.body, DiscardResult {});
+    const auto continuation = *std::exchange(loop_continuation, previous);
+    const auto continued = body_statements.exits().contains(continuation.target);
+    const auto breaks = body_statements.exits().contains(continuation.break_target);
+    const auto run_steps = body_statements.continues() || continued;
+    auto steps = run_steps ? region(*value.steps, DiscardResult {}) : StatementBuilder();
     auto iteration = std::move(condition_statements);
-    if (value.condition.has_value() && known_boolean(*value.condition) != true) {
-        auto exit_body = StatementSequence();
-        exit_body.terminate(generated_statement(TargetBreakStmt {}));
+    if (known_predicate(condition) != true) {
+        auto exit_body = StatementBuilder();
+        exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
         auto branches = std::vector<TargetIfBranch>();
         branches.push_back(
-            {.condition =
-                 prefix_expression(TargetPrefixOperator::LogicalNot, std::move(*condition)),
+            {.condition = prefix_expression(
+                 TargetPrefixOperator::LogicalNot,
+                 predicate_expression(std::move(*condition))
+             ),
              .body = std::move(exit_body).finish()}
         );
         iteration.emit(generated_statement(
             TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
         ));
-    } else if (value.condition.has_value()) {
-        iteration.emit(
-            generated_statement(TargetDiscardStmt {.expression = std::move(*condition)})
-        );
     }
-    iteration.block(std::move(body_statements));
-    if (continuation.used && step.has_value()) {
-        iteration.resume(*step, TargetJumpRole::ForLoopContinue);
+    if (step.has_value()) {
+        iteration.scope(std::move(body_statements));
+    } else {
+        iteration.append(std::move(body_statements));
+    }
+    if (continued && step.has_value()) {
+        iteration.resume(*step, TargetJumpRole::ForLoopContinue, continuation.target);
     }
     iteration.append(std::move(steps));
+    static_cast<void>(iteration.consume_exit(continuation.target));
+    static_cast<void>(iteration.consume_exit(continuation.break_target));
+    initializer.record_exits(iteration.exits());
     initializer.emit(
         generated_statement(
             TargetWhileStmt {
@@ -76,22 +82,21 @@ auto BodyLowerer::lower_loop(const SemLoop& value, StatementSequence& destinatio
                 .body = std::move(iteration).finish()
             }
         ),
-        continuation.breaks
-            || (value.condition.has_value() && known_boolean(*value.condition) != true)
+        breaks || (known_predicate(condition) != true)
     );
-    destination.block(std::move(initializer));
+    destination.scope(std::move(initializer));
 }
 
-auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& destination) noexcept
+auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& destination) noexcept
     -> void {
-    auto scope = StatementSequence();
+    auto scope = StatementBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
     const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
-    auto begin = value.end.has_value() ? operand(value.begin, scope, OperandUse::Snapshot)
-                                       : expression(value.begin, scope);
+    auto begin = value.end.has_value() ? scope.accept(operand(value.begin, OperandUse::Snapshot))
+                                       : read_value(expression(value.begin), scope);
     if (!scope.continues()) {
-        destination.block(std::move(scope));
+        destination.scope(std::move(scope));
         return;
     }
     if (!value.end.has_value()) {
@@ -104,9 +109,19 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& dest
                 .initializer = std::move(*begin)
             }
         ));
-        const auto previous = std::exchange(loop_continuation, {});
-        auto iteration = region(*value.body, {.use = ResultUse::Discard, .storage = std::nullopt});
-        loop_continuation = previous;
+        const auto previous = std::exchange(
+            loop_continuation,
+            LoopContinuation {
+                .step = std::nullopt,
+                .target = exit_target(ExitKind::Continue),
+                .break_target = exit_target(ExitKind::Break)
+            }
+        );
+        auto iteration = region(*value.body, DiscardResult {});
+        const auto continuation = *std::exchange(loop_continuation, previous);
+        static_cast<void>(iteration.consume_exit(continuation.target));
+        static_cast<void>(iteration.consume_exit(continuation.break_target));
+        scope.record_exits(iteration.exits());
         scope.emit(generated_statement(
             TargetRangeForStmt {
                 .binding = value.access == AccessMode::Write
@@ -129,14 +144,14 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& dest
                 .body = std::move(iteration).finish()
             }
         ));
-        destination.block(std::move(scope));
+        destination.scope(std::move(scope));
         return;
     }
     auto initial = std::move(*begin);
     const auto index_type = context.lower_type(value.begin.type.resolved());
-    auto upper = expression(*value.end, scope);
+    auto upper = read_value(expression(*value.end), scope);
     if (!scope.continues()) {
-        destination.block(std::move(scope));
+        destination.scope(std::move(scope));
         return;
     }
     auto element = name_expression(index);
@@ -149,8 +164,15 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& dest
             .initializer = std::move(*upper)
         }
     ));
-    const auto previous = std::exchange(loop_continuation, {});
-    auto iteration = StatementSequence();
+    const auto previous = std::exchange(
+        loop_continuation,
+        LoopContinuation {
+            .step = std::nullopt,
+            .target = exit_target(ExitKind::Continue),
+            .break_target = exit_target(ExitKind::Break)
+        }
+    );
+    auto iteration = StatementBuilder();
     if (value.binding.has_value()) {
         const auto id = *value.binding;
         iteration.emit(generated_statement(
@@ -165,8 +187,11 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& dest
             }
         ));
     }
-    iteration.append(region(*value.body, {.use = ResultUse::Discard, .storage = std::nullopt}));
-    loop_continuation = previous;
+    iteration.append(region(*value.body, DiscardResult {}));
+    const auto continuation = *std::exchange(loop_continuation, previous);
+    static_cast<void>(iteration.consume_exit(continuation.target));
+    static_cast<void>(iteration.consume_exit(continuation.break_target));
+    scope.record_exits(iteration.exits());
     auto steps = std::vector<TargetForStep>();
     steps.push_back(
         {.value = TargetUpdateStmt {
@@ -196,7 +221,7 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementSequence& dest
             .body = std::move(iteration).finish(),
         }
     ));
-    destination.block(std::move(scope));
+    destination.scope(std::move(scope));
 }
 
 } // namespace body_lowering

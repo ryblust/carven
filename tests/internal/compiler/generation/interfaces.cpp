@@ -58,7 +58,7 @@ auto compile_modules(
 auto interfaces(const GeneratedArtifactSet& artifacts) noexcept
     -> std::vector<const GeneratedArtifact*> {
     auto result = std::vector<const GeneratedArtifact*>();
-    for (const auto& artifact : artifacts.artifacts()) {
+    for (const auto& artifact : artifacts.entries()) {
         if (artifact.logical_path.starts_with("carven/generated/")
             && artifact.logical_path.ends_with(".hpp")) {
             result.push_back(&artifact);
@@ -74,9 +74,9 @@ auto interface_for(const GeneratedArtifactSet& artifacts, std::string_view modul
     std::ranges::replace(logical_path, '.', '/');
     logical_path += ".hpp";
     const auto found =
-        std::ranges::find(artifacts.artifacts(), logical_path, &GeneratedArtifact::logical_path);
-    REQUIRE(found != artifacts.artifacts().end());
-    if (found == artifacts.artifacts().end()) {
+        std::ranges::find(artifacts.entries(), logical_path, &GeneratedArtifact::logical_path);
+    REQUIRE(found != artifacts.entries().end());
+    if (found == artifacts.entries().end()) {
         static const auto missing = GeneratedArtifact {
             .logical_path = "missing-interface.hpp",
             .role = GeneratedArtifactRole::Interface,
@@ -91,9 +91,9 @@ auto interface_for(const GeneratedArtifactSet& artifacts, std::string_view modul
 auto artifact(const GeneratedArtifactSet& artifacts, std::string_view logical_path) noexcept
     -> const GeneratedArtifact& {
     const auto found =
-        std::ranges::find(artifacts.artifacts(), logical_path, &GeneratedArtifact::logical_path);
-    REQUIRE(found != artifacts.artifacts().end());
-    if (found == artifacts.artifacts().end()) {
+        std::ranges::find(artifacts.entries(), logical_path, &GeneratedArtifact::logical_path);
+    REQUIRE(found != artifacts.entries().end());
+    if (found == artifacts.entries().end()) {
         static const auto missing = GeneratedArtifact {
             .logical_path = "missing-artifact.cpp",
             .role = GeneratedArtifactRole::ModuleImplementation,
@@ -160,10 +160,10 @@ TEST_CASE("Interface components: a private implementation edit changes only its 
         }
     );
 
-    REQUIRE_EQ(before.artifacts().size(), after.artifacts().size());
+    REQUIRE_EQ(before.entries().size(), after.entries().size());
     auto changed = std::vector<std::string_view>();
     for (const auto& [before_artifact, after_artifact] :
-         std::views::zip(before.artifacts(), after.artifacts())) {
+         std::views::zip(before.entries(), after.entries())) {
         REQUIRE_EQ(before_artifact.logical_path, after_artifact.logical_path);
         if (before_artifact.content != after_artifact.content) {
             changed.push_back(before_artifact.logical_path);
@@ -411,8 +411,8 @@ TEST_CASE("Artifacts: input order and linkage domain produce deterministic sched
 
     const auto first = compile_modules(forward, "test:determinism:first");
     const auto repeated = compile_modules(reverse, "test:determinism:first");
-    REQUIRE_EQ(first.artifacts().size(), repeated.artifacts().size());
-    for (const auto& [left, right] : std::views::zip(first.artifacts(), repeated.artifacts())) {
+    REQUIRE_EQ(first.entries().size(), repeated.entries().size());
+    for (const auto& [left, right] : std::views::zip(first.entries(), repeated.entries())) {
         CHECK_EQ(left.logical_path, right.logical_path);
         CHECK_EQ(left.role, right.role);
         CHECK_EQ(left.source_mapping, right.source_mapping);
@@ -420,9 +420,9 @@ TEST_CASE("Artifacts: input order and linkage domain produce deterministic sched
     }
 
     const auto other_domain = compile_modules(reverse, "test:determinism:second");
-    REQUIRE_EQ(first.artifacts().size(), other_domain.artifacts().size());
+    REQUIRE_EQ(first.entries().size(), other_domain.entries().size());
     auto changed_content = false;
-    for (const auto& [left, right] : std::views::zip(first.artifacts(), other_domain.artifacts())) {
+    for (const auto& [left, right] : std::views::zip(first.entries(), other_domain.entries())) {
         CHECK_EQ(left.logical_path, right.logical_path);
         CHECK_EQ(left.role, right.role);
         changed_content |= left.content != right.content;

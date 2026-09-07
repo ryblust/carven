@@ -192,6 +192,7 @@ struct SemanticExpression final {
     BodyType type;
     LifetimeRegionID lifetime;
     ProgramOriginID origin;
+    // Known value on normal completion; execution and const admission are separate.
     std::optional<ConstantID> constant;
     BodyFailures failures;
     bool exits_test;
