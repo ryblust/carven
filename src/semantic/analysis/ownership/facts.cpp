@@ -4,14 +4,12 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
-
-auto prepare_body_facts(
+auto prepare_ownership_body_facts(
     const SemIRBody& body,
     const ProgramDraft& draft,
     std::span<const TypeContents> types
-) noexcept -> BodyFacts {
-    auto facts = BodyFacts {};
+) noexcept -> OwnershipBodyFacts {
+    auto facts = OwnershipBodyFacts {};
     const auto add = [&](TypeID type, ProgramOriginID origin, LifetimeRegionID lifetime) noexcept {
         const auto index = facts.locals.size();
         facts.locals.push_back({type, origin, lifetime});
@@ -62,7 +60,7 @@ auto prepare_body_facts(
         const auto& failures =
             draft.failure_sets().failure_set(attempt->protected_failures.resolved());
         for (const auto& arm : attempt->arms) {
-            auto accepted = std::flat_map<TypeID, CatchAcceptance>();
+            auto accepted = std::flat_map<TypeID, OwnershipCatchAcceptance>();
             for (const auto type : failures.members) {
                 auto alternatives = std::vector<std::optional<PatternID>>();
                 for (const auto& alternative : arm.alternatives) {
@@ -90,7 +88,7 @@ auto prepare_body_facts(
                 }
                 accepted.emplace(
                     type,
-                    CatchAcceptance {
+                    OwnershipCatchAcceptance {
                         .alternatives = std::move(alternatives),
                         .exhaustive = *complete
                     }
@@ -101,5 +99,3 @@ auto prepare_body_facts(
     });
     return facts;
 }
-
-} // namespace ownership

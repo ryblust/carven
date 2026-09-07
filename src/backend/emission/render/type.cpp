@@ -5,11 +5,11 @@ import :backend.target.symbol;
 import :support.visit;
 import std;
 
-auto TargetRenderer::render_type(TargetTypeID id) noexcept -> LayoutNodeID {
-    return render_type_layouts(id).wrapping;
+auto TargetRenderer::render_type(TargetTypeID id, bool constant) noexcept -> LayoutNodeID {
+    return render_type_layouts(id, constant).wrapping;
 }
 
-auto TargetRenderer::render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayouts {
+auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcept -> SyntaxLayouts {
     const auto& value = unit.type(id);
     auto rendered = std::visit(
         Overloaded {
@@ -97,18 +97,18 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayo
                 };
             },
             [&](const TargetReferenceType& reference) noexcept -> SyntaxLayouts {
-                const auto referent = render_type_layouts(reference.referent);
-                const auto prefix = text(reference.const_qualified ? "const " : "");
+                const auto referent =
+                    render_type_layouts(reference.referent, reference.const_qualified);
                 const auto suffix = text(reference.rvalue ? "&&" : "&");
                 return {
-                    .inline_qualified = concat({prefix, referent.inline_qualified, suffix}),
-                    .wrapping = concat({prefix, referent.wrapping, suffix}),
+                    .inline_qualified = concat({referent.inline_qualified, suffix}),
+                    .wrapping = concat({referent.wrapping, suffix}),
                 };
             },
         },
         value.value
     );
-    if (value.const_qualified) {
+    if (value.const_qualified || constant) {
         if (std::holds_alternative<TargetPointerType>(value.value)) {
             rendered.inline_qualified = concat({rendered.inline_qualified, text(" const")});
             rendered.wrapping = concat({rendered.wrapping, text(" const")});

@@ -19,15 +19,8 @@ import :source.module_path;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-using semantic_analysis_test::analyze_errors;
-using semantic_analysis_test::analyze_program;
-using semantic_analysis_test::contains_code;
-using semantic_analysis_test::function_callables;
-using semantic_analysis_test::signature;
-using semantic_analysis_test::failures;
-
 TEST_CASE("Semantic effects: constant-dead paths do not contribute outward failures") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct DeadFailure {}\n"
         "private fn fail() -> bool throw DeadFailure { throw DeadFailure {}; }\n"
         "private fn valid() -> bool {\n"
@@ -37,35 +30,35 @@ TEST_CASE("Semantic effects: constant-dead paths do not contribute outward failu
         "    return if true { short } else { fail()? };\n"
         "}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 2uz);
-    CHECK_FALSE(failures(program, callables[0]).members.empty());
-    CHECK(failures(program, callables[1]).members.empty());
+    CHECK_FALSE(test_callable_failures(program, callables[0]).members.empty());
+    CHECK(test_callable_failures(program, callables[1]).members.empty());
 
-    const auto diagnostics = analyze_errors(
+    const auto diagnostics = analyze_test_errors(
         "private fn invalid() {\n"
         "    if false { let value: bool = 1; }\n"
         "}\n"
     );
-    CHECK(contains_code(diagnostics, DiagnosticCode::TypeMismatch));
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::TypeMismatch));
 }
 
 TEST_CASE("Semantic control: callable final signatures own their effective failures") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "private fn inferred() {}\n"
         "fn published() {}\n"
         "struct Failure {}\n"
         "fn declared() throw Failure {}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 3uz);
-    CHECK(failures(program, callables[0]).members.empty());
-    CHECK(failures(program, callables[1]).members.empty());
-    CHECK_EQ(failures(program, callables[2]).members.size(), 1uz);
+    CHECK(test_callable_failures(program, callables[0]).members.empty());
+    CHECK(test_callable_failures(program, callables[1]).members.empty());
+    CHECK_EQ(test_callable_failures(program, callables[2]).members.size(), 1uz);
 }
 
 TEST_CASE("Semantic failures: canonical set identity is independent of declaration order") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct AlphaFailure {}\n"
         "struct BetaFailure {}\n"
         "private fn alpha_first() throw AlphaFailure + BetaFailure {}\n"
@@ -74,15 +67,18 @@ TEST_CASE("Semantic failures: canonical set identity is independent of declarati
         "    try { alpha_first()?; } catch { AlphaFailure(_) => {}, BetaFailure(_) => {}, }\n"
         "}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_GE(callables.size(), 2uz);
-    CHECK_EQ(signature(program, callables[0]).failures, signature(program, callables[1]).failures);
+    CHECK_EQ(
+        test_callable_signature(program, callables[0]).failures,
+        test_callable_signature(program, callables[1]).failures
+    );
 
-    CHECK(failures(program, callables.back()).members.empty());
+    CHECK(test_callable_failures(program, callables.back()).members.empty());
 }
 
 TEST_CASE("Semantic control: direct and mutually recursive inference reach one fixed point") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct Failure {}\n"
         "private fn direct() { throw Failure {}; }\n"
         "private fn left(stop: bool) {\n"
@@ -96,18 +92,24 @@ TEST_CASE("Semantic control: direct and mutually recursive inference reach one f
         "    try { direct()?; left(false)?; } catch { Failure(_) => {}, }\n"
         "}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 4uz);
     for (auto index = 0uz; index < 3; ++index) {
-        CHECK_EQ(failures(program, callables[index]).members.size(), 1uz);
+        CHECK_EQ(test_callable_failures(program, callables[index]).members.size(), 1uz);
     }
-    CHECK_EQ(signature(program, callables[0]).failures, signature(program, callables[1]).failures);
-    CHECK_EQ(signature(program, callables[1]).failures, signature(program, callables[2]).failures);
-    CHECK(failures(program, callables[3]).members.empty());
+    CHECK_EQ(
+        test_callable_signature(program, callables[0]).failures,
+        test_callable_signature(program, callables[1]).failures
+    );
+    CHECK_EQ(
+        test_callable_signature(program, callables[1]).failures,
+        test_callable_signature(program, callables[2]).failures
+    );
+    CHECK(test_callable_failures(program, callables[3]).members.empty());
 }
 
 TEST_CASE("Semantic control: fixed contracts are dependency boundaries") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct DeclaredFailure {}\n"
         "struct BodyFailure {}\n"
         "private fn source() { throw BodyFailure {}; }\n"
@@ -117,16 +119,16 @@ TEST_CASE("Semantic control: fixed contracts are dependency boundaries") {
         "}\n"
         "private fn caller() { fixed(true)?; }\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 3uz);
-    const auto fixed_failures = failures(program, callables[1]).members;
-    const auto caller_failures = failures(program, callables[2]).members;
+    const auto fixed_failures = test_callable_failures(program, callables[1]).members;
+    const auto caller_failures = test_callable_failures(program, callables[2]).members;
     REQUIRE_EQ(fixed_failures.size(), 1);
     CHECK_EQ(caller_failures, fixed_failures);
 }
 
 TEST_CASE("Semantic failures: composite expressions retain every pending invocation") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct FirstFailure {}\n"
         "struct SecondFailure {}\n"
         "struct Pair { left: i32, right: i32 }\n"
@@ -140,8 +142,8 @@ TEST_CASE("Semantic failures: composite expressions retain every pending invocat
         "    return sum(Pair { left: first(), right: second() })?;\n"
         "}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 5uz);
-    CHECK_EQ(failures(program, callables[3]).members.size(), 2uz);
-    CHECK_EQ(failures(program, callables[4]).members.size(), 2uz);
+    CHECK_EQ(test_callable_failures(program, callables[3]).members.size(), 2uz);
+    CHECK_EQ(test_callable_failures(program, callables[4]).members.size(), 2uz);
 }

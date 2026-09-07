@@ -205,7 +205,7 @@ auto run_child(std::string_view test_case) noexcept -> ChildResult {
 
 auto expect_windows_termination(
     std::string_view scenario,
-    death_test_detail::Action action,
+    DeathTestAction action,
     void* context
 ) noexcept -> bool {
     const auto* selected_scenario = std::getenv(scenario_environment);
@@ -264,7 +264,7 @@ auto expect_windows_termination(
 
 #else
 
-auto expect_posix_termination(death_test_detail::Action action, void* context) noexcept -> bool {
+auto expect_posix_termination(DeathTestAction action, void* context) noexcept -> bool {
     std::fflush(nullptr);
     auto readiness = std::array<int, 2> {};
     if (pipe(readiness.data()) != 0) {
@@ -317,9 +317,7 @@ auto expect_posix_termination(death_test_detail::Action action, void* context) n
 
 } // namespace
 
-namespace death_test_detail {
-
-auto expect_termination_impl(std::string_view scenario, Action action, void* context) noexcept
+auto run_death_test(std::string_view scenario, DeathTestAction action, void* context) noexcept
     -> bool {
     if (scenario.empty()) {
         return false;
@@ -330,5 +328,3 @@ auto expect_termination_impl(std::string_view scenario, Action action, void* con
     return expect_posix_termination(action, context);
 #endif
 }
-
-} // namespace death_test_detail

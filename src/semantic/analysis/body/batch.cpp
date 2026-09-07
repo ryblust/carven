@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisResult<void> {
     for (const auto statement_id : ast.block(id).statements) {
         auto built = statement(statement_id);
@@ -69,7 +67,7 @@ auto BodyElaborator::run(ASTBlockID source_body) noexcept -> AnalysisResult<Stru
     return std::move(body_builder).finish(std::move(regions.front()));
 }
 
-auto BatchElaborator::run() noexcept -> AnalysisResult<void> {
+auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
     for (const auto& source_module : catalog_data.modules()) {
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
@@ -174,6 +172,3 @@ auto BatchElaborator::run() noexcept -> AnalysisResult<void> {
     }
     return {};
 }
-
-
-} // namespace body_elaboration

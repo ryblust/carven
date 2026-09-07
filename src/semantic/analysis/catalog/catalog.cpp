@@ -324,6 +324,17 @@ auto AnalysisCatalogView::lookup(ProgramModuleID module_id, std::string_view nam
                                      : std::span<const CatalogLookupCandidate>(named->second);
 }
 
+auto AnalysisCatalogView::cpp_selection(
+    ProgramModuleID module_id,
+    std::string_view name
+) const noexcept -> std::span<const std::size_t> {
+    static_cast<void>(cpp_imports(module_id));
+    const auto& selections = catalog->cpp_selections[module_id.index()];
+    const auto found = selections.find(name);
+    return found == selections.end() ? std::span<const std::size_t>()
+                                     : std::span<const std::size_t>(found->second);
+}
+
 auto AnalysisCatalogView::cpp_imports(ProgramModuleID module_id) const noexcept
     -> std::span<const CatalogCppBinding> {
     if (module_id.index() >= catalog->modules.size()
@@ -576,37 +587,77 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             }
         }
         auto cpp_bindings = std::vector<CatalogCppBinding>();
-        for (const auto& header : ast_module.cpp_header_imports) {
-            for (const auto& binding : header.bindings) {
-                auto components = std::vector<std::string>();
-                for (const auto component : binding.components) {
-                    components.push_back(draft.source_slice_copy(module_id, component));
-                    if (!is_supported_cpp_identifier(components.back())) {
-                        diagnostics.push_back(
-                            DiagnosticBuilder(
-                                DiagnosticCode::CppIdentifier,
-                                "external name cannot be represented as a C++ identifier"
-                            )
-                                .primary(locate(source_id, component))
-                                .build()
-                        );
-                    }
+        auto cpp_selections = std::flat_map<std::string, std::vector<std::size_t>, std::less<>>();
+        for (const auto [header_index, header] :
+             std::views::enumerate(ast_module.cpp_header_imports)) {
+            if (!header.using_clause) {
+                continue;
+            }
+            const auto& clause = *header.using_clause;
+            auto prefix = std::vector<std::string>();
+            const auto spelling = [&](Span span) noexcept {
+                auto name = draft.source_slice_copy(module_id, span);
+                if (!is_supported_cpp_identifier(name)) {
+                    diagnostics.push_back(
+                        DiagnosticBuilder(
+                            DiagnosticCode::CppIdentifier,
+                            "external name cannot be represented as a C++ identifier"
+                        )
+                            .primary(locate(source_id, span))
+                            .build()
+                    );
                 }
-                if (!binding.opens_namespace && names.contains(components.back())) {
-                    diagnostics.push_back(catalog_error(
-                        source_id,
-                        "a C++ import conflicts with a Carven declaration",
-                        binding.span
-                    ));
+                return name;
+            };
+            for (const auto component : clause.prefix) {
+                prefix.push_back(spelling(component));
+            }
+            const auto append = [&](Span leaf, bool opens_namespace) noexcept {
+                auto components = prefix;
+                if (!opens_namespace) {
+                    components.push_back(spelling(leaf));
+                    if (names.contains(components.back())) {
+                        diagnostics.push_back(catalog_error(
+                            source_id,
+                            "a C++ import conflicts with a Carven declaration",
+                            leaf
+                        ));
+                    }
+                    auto& selections = cpp_selections[components.back()];
+                    if (!selections.empty()
+                        && cpp_bindings[selections.front()].components != components) {
+                        diagnostics.push_back(catalog_error(
+                            source_id,
+                            "explicit C++ imports bind one name to different paths",
+                            leaf
+                        ));
+                    }
+                    selections.push_back(cpp_bindings.size());
                 }
                 cpp_bindings.push_back({
+                    .header_index = static_cast<std::size_t>(header_index),
                     .components = std::move(components),
-                    .opens_namespace = binding.opens_namespace,
-                    .origin = binding.span,
+                    .opens_namespace = opens_namespace,
+                    .origin = leaf,
                 });
-            }
+            };
+            std::visit(
+                Overloaded {
+                    [&](const ASTCppSingleSelection& value) noexcept { append(value.name, false); },
+                    [&](const ASTCppListSelection& value) noexcept {
+                        for (const auto name : value.names) {
+                            append(name, false);
+                        }
+                    },
+                    [&](const ASTCppNamespaceSelection& value) noexcept {
+                        append(value.star, true);
+                    },
+                },
+                clause.selection
+            );
         }
         result.cpp_bindings.push_back(std::move(cpp_bindings));
+        result.cpp_selections.push_back(std::move(cpp_selections));
         result.modules.push_back(std::move(catalog_module));
         result.visible_candidates.push_back(std::move(local_candidates));
     }
@@ -623,10 +674,12 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
         const auto& ast_module = ast.ast_module();
         const auto& local_module = result.modules[module_index];
         auto& candidates = result.visible_candidates[module_index];
+
         struct ExplicitSelection final {
             CatalogSymbolID symbol;
             Span origin;
         };
+
         auto explicit_names = std::flat_map<std::string, ExplicitSelection, std::less<>>();
         auto wildcard_targets = std::flat_map<ProgramModuleID, ImportBindingID>();
 

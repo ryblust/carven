@@ -44,8 +44,6 @@ auto parameter_identifier(
 
 } // namespace
 
-namespace decl_lowering {
-
 auto lower_closure_definition(ModuleLowering& context, CallableID callable_id) noexcept
     -> TargetItem {
     const auto& callable = context.semantic().declarations().callable(callable_id);
@@ -142,6 +140,3 @@ auto lower_closure_definition(ModuleLowering& context, CallableID callable_id) n
         }}
     );
 }
-
-
-} // namespace decl_lowering

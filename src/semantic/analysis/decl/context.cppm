@@ -10,9 +10,7 @@ import :source.text;
 import :support.invariant;
 import std;
 
-namespace decl_resolution {
-
-auto catalog_symbol(AnalysisCatalogView catalog, CatalogSymbolID id) noexcept
+auto require_catalog_symbol(AnalysisCatalogView catalog, CatalogSymbolID id) noexcept
     -> const CatalogSymbol& {
     const auto* result = catalog.symbol(id);
     if (result == nullptr) {
@@ -21,25 +19,28 @@ auto catalog_symbol(AnalysisCatalogView catalog, CatalogSymbolID id) noexcept
     return *result;
 }
 
-auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
+auto declaration_source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept
+    -> SourceID {
     return draft.syntax_tree(module_id).view().source_id();
 }
 
-auto declaration_origin(ProgramDraft& draft, ProgramModuleID module_id, Span span) noexcept
+auto declaration_source_origin(ProgramDraft& draft, ProgramModuleID module_id, Span span) noexcept
     -> ProgramOriginID {
     return draft.append_source_origin(draft.module_source(module_id), span);
 }
 
-auto fail(
+auto declaration_failure(
     const ProgramDraft& draft,
     ProgramModuleID module_id,
     Span span,
     DiagnosticCode code,
     std::string message
 ) noexcept -> AnalysisFailure {
-    return draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
-                                         .primary(locate(source_id(draft, module_id), span))
-                                         .build());
+    return draft.diagnostics().error(
+        DiagnosticBuilder(code, std::move(message))
+            .primary(locate(declaration_source_id(draft, module_id), span))
+            .build()
+    );
 }
 
 auto resolve_declarations(
@@ -50,5 +51,3 @@ auto resolve_declarations(
 
 auto validate_declaration_surfaces(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept
     -> AnalysisResult<void>;
-
-} // namespace decl_resolution

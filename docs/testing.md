@@ -103,7 +103,8 @@ harness and an explicit invariant scenario.
 
 Runtime cost and compilation time are measured separately. The manual workload
 in `benchmarks/build_pulse.py` measures fresh build throughput, module scaling,
-and private-edit locality; its contract is in `benchmarks/README.md`.
+and private-edit locality. `benchmarks/analysis_pulse.py` measures call-chain
+ordering and structured loop depth. Their contracts are in `benchmarks/README.md`.
 
 ## Organization
 

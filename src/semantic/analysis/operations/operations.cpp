@@ -21,7 +21,6 @@ auto builtin_type(const CanonicalTypeStore& types, TypeID type) noexcept
     return value == nullptr ? std::nullopt : std::optional(value->kind);
 }
 
-
 auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<BuiltinType> {
     const auto* concrete = std::get_if<TypeID>(&type);
@@ -54,6 +53,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                                       || std::same_as<Value, FloatingLiteralValue>) {
                             return value.suffix == NumericSuffix::None;
                         } else if constexpr (std::same_as<Value, StringLiteralValue>
+                                             || std::same_as<Value, CStringLiteralValue>
                                              || std::same_as<Value, CharacterLiteralValue>
                                              || std::same_as<Value, BooleanLiteralValue>) {
                             return false;
@@ -568,6 +568,7 @@ auto decide_unary_operator(
 ) noexcept -> OperatorDecision {
     return decide_unary_builtin(op, builtin_type(facts, operand));
 }
+
 auto decide_binary_operator(
     const ProgramDraft& facts,
     BinaryOperator op,
@@ -584,6 +585,7 @@ auto decide_binary_operator(
         equality
     );
 }
+
 auto decide_cast(
     const ProgramDraft& facts,
     ConstructionTypeRef source,
@@ -597,6 +599,7 @@ auto decide_cast(
         numeric_enum
     );
 }
+
 auto decide_unary_operator(
     const CanonicalTypeStore& facts,
     UnaryOperator op,
@@ -604,6 +607,7 @@ auto decide_unary_operator(
 ) noexcept -> OperatorDecision {
     return decide_unary_builtin(op, builtin_type(facts, operand));
 }
+
 auto decide_binary_operator(
     const CanonicalTypeStore& facts,
     BinaryOperator op,
@@ -620,6 +624,7 @@ auto decide_binary_operator(
         equality
     );
 }
+
 auto decide_cast(
     const CanonicalTypeStore& facts,
     TypeID source,
@@ -633,6 +638,7 @@ auto decide_cast(
         numeric_enum
     );
 }
+
 auto decide_binary_operator(
     const ProgramDraft& draft,
     ASTBinaryOperator op,

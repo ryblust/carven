@@ -8,7 +8,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace validation_detail {
 class BodyContractVerifier final {
 public:
     BodyContractVerifier(
@@ -19,6 +18,7 @@ public:
         : body(source),
           draft(&builder),
           bodies(all_bodies) {}
+
     auto verify() noexcept -> void;
 
 private:
@@ -47,4 +47,3 @@ private:
     ProgramDraft* draft;
     const BodyStore& bodies;
 };
-}

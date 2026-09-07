@@ -3,11 +3,12 @@ module carven:semantic.analysis.ownership.expr.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
-
-auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool read) noexcept
-    -> Flow {
-    auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
+auto OwnershipBodyAnalyzer::place(
+    const SemanticExpression& source,
+    OwnershipState state,
+    bool read
+) noexcept -> OwnershipFlow {
+    auto result = OwnershipFlow {.normal = std::move(state), .value = {}, .exits = {}};
     if (const auto* foreign = std::get_if<SemCpp>(&source.value)) {
         result = place(foreign->operands.front().expression, std::move(*result.normal));
         for (const auto& operand : std::span(foreign->operands).subspan(1)) {
@@ -19,7 +20,7 @@ auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool rea
             auto next = expression(operand.expression, std::move(*result.normal));
             accesses.resize(previous);
             result.normal = std::move(next.normal);
-            append_exits(result, next);
+            append_ownership_exits(result, next);
         }
     } else if (const auto* field = std::get_if<SemField>(&source.value)) {
         result = place(*field->source, std::move(*result.normal));
@@ -31,7 +32,7 @@ auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool rea
             auto constant_index = expression(*index->index, std::move(*result.normal));
             accesses.resize(previous);
             result.normal = std::move(constant_index.normal);
-            append_exits(result, constant_index);
+            append_ownership_exits(result, constant_index);
         }
     }
     if (result.normal.has_value()) {
@@ -42,7 +43,10 @@ auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool rea
         if (read) {
             require_available(*result.normal, *target, source.origin);
         }
-        result.value = project(result.normal->objects[target->object].relationships, target->path);
+        result.value = project_relationships(
+            result.normal->objects[target->object].relationships,
+            target->path
+        );
         if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
             const auto* parameter =
                 std::get_if<ParameterBindingStorage>(&body.binding(binding->binding).storage);
@@ -59,22 +63,26 @@ auto BodyAnalyzer::place(const SemanticExpression& source, State state, bool rea
     }
     return result;
 }
-auto BodyAnalyzer::expression(const SemanticExpression& source, State state, bool direct) noexcept
-    -> Flow {
-    auto flow = Flow {.normal = std::move(state), .value = {}, .exits = {}};
+
+auto OwnershipBodyAnalyzer::expression(
+    const SemanticExpression& source,
+    OwnershipState state,
+    bool direct
+) noexcept -> OwnershipFlow {
+    auto flow = OwnershipFlow {.normal = std::move(state), .value = {}, .exits = {}};
     const auto evaluate = [&](const SemanticExpression& child,
-                              bool argument = false) noexcept -> Relationships {
+                              bool argument = false) noexcept -> OwnershipRelationships {
         if (!flow.normal.has_value()) {
             return {};
         }
         auto next = expression(child, std::move(*flow.normal), argument);
         flow.normal = std::move(next.normal);
-        append_exits(flow, next);
+        append_ownership_exits(flow, next);
         return std::move(next.value);
     };
     const auto aggregate = [&](const SemanticExpression& child,
-                               const ProjectionPath& path = {}) noexcept {
-        merge_relationships(flow.value, nested(evaluate(child), path));
+                               const OwnershipProjectionPath& path = {}) noexcept {
+        merge_relationships(flow.value, nest_relationships(evaluate(child), path));
     };
     const auto callable_for = [&](TypeID type) noexcept -> std::optional<CallableID> {
         const auto value = draft.types().type(type).value;
@@ -136,17 +144,17 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                 [](const SemEnumConstructor&) static noexcept {},
                 [&](const SemArray& value) noexcept {
                     for (const auto [index, child] : std::views::enumerate(value.elements)) {
-                        aggregate(child, ProjectionPath {index});
+                        aggregate(child, OwnershipProjectionPath {index});
                     }
                 },
                 [&](const SemStruct& value) noexcept {
                     for (const auto& field : value.fields) {
-                        aggregate(field.value, ProjectionPath {field.declaration_index});
+                        aggregate(field.value, OwnershipProjectionPath {field.declaration_index});
                     }
                 },
                 [&](const SemEnumCase& value) noexcept {
                     for (const auto [index, child] : std::views::enumerate(value.payload)) {
-                        aggregate(child, ProjectionPath {index});
+                        aggregate(child, OwnershipProjectionPath {index});
                     }
                 },
                 [&](const SemUnary& value) noexcept {
@@ -170,18 +178,22 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     const auto skipped = flow.normal;
                     static_cast<void>(evaluate(*value.right));
                     if (!known.has_value()) {
-                        join_normal(flow.normal, skipped);
+                        join_normal_ownership_state(flow.normal, skipped);
                     }
                 },
                 [&](const SemField& value) noexcept {
-                    flow.value =
-                        project(evaluate(*value.source), ProjectionPath {value.field.field_index});
+                    flow.value = project_relationships(
+                        evaluate(*value.source),
+                        OwnershipProjectionPath {value.field.field_index}
+                    );
                 },
                 [&](const SemIndex& value) noexcept {
                     const auto relationships = evaluate(*value.source);
                     static_cast<void>(evaluate(*value.index));
-                    flow.value =
-                        project(relationships, ProjectionPath {constant_index(*value.index)});
+                    flow.value = project_relationships(
+                        relationships,
+                        OwnershipProjectionPath {constant_index(*value.index)}
+                    );
                 },
                 [&](const SemTextIntrinsic& value) noexcept {
                     static_cast<void>(evaluate(*value.source));
@@ -194,13 +206,16 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     const auto source_place = location(*value.source);
                     const auto backing = source_place.has_value()
                         ? *source_place
-                        : Place {temporary(*value.source), {}};
+                        : OwnershipPlace {temporary(*value.source), {}};
                     const auto adopt = [&](this const auto& self,
                                            TypeID from,
                                            TypeID to,
-                                           const ProjectionPath& path) noexcept -> void {
+                                           const OwnershipProjectionPath& path) noexcept -> void {
                         if (from == to) {
-                            merge_relationships(flow.value, nested(project(original, path), path));
+                            merge_relationships(
+                                flow.value,
+                                nest_relationships(project_relationships(original, path), path)
+                            );
                             return;
                         }
                         const auto target = draft.types().type(to).value;
@@ -245,6 +260,11 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     if (!flow.normal.has_value()) {
                         return;
                     }
+                    // Equal view types copy the target description. They do not
+                    // borrow the intermediate view's storage.
+                    if (value.source->type.resolved() == source.type.resolved()) {
+                        return;
+                    }
                     if (const auto* function = std::get_if<SemCallable>(&value.source->value)) {
                         flow.value = {
                             .loans = {{{}, std::nullopt, function->callable, source.origin, false}},
@@ -253,7 +273,7 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     } else {
                         const auto backing = source_place.has_value()
                             ? *source_place
-                            : Place {temporary(*value.source), {}};
+                            : OwnershipPlace {temporary(*value.source), {}};
                         flow.value = {
                             .loans =
                                 {{{},
@@ -322,17 +342,17 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                         if (capture.mode == CaptureMode::Write) {
                             auto selected = place(capture.expression, std::move(*flow.normal));
                             flow.normal = std::move(selected.normal);
-                            append_exits(flow, selected);
+                            append_ownership_exits(flow, selected);
                             if (!flow.normal.has_value()) {
                                 break;
                             }
                             const auto target = *location(capture.expression);
                             write_access(target, capture.expression.origin);
                             flow.value.captures.push_back(
-                                {ProjectionPath {index}, target, source.origin}
+                                {OwnershipProjectionPath {index}, target, source.origin}
                             );
                         } else {
-                            aggregate(capture.expression, ProjectionPath {index});
+                            aggregate(capture.expression, OwnershipProjectionPath {index});
                         }
                     }
                 },
@@ -342,11 +362,11 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     const auto previous = accesses.size();
                     const auto concrete = callable_for(value.callee->type.resolved());
                     const auto selected = location(*value.callee);
-                    auto callee = Relationships {};
+                    auto callee = OwnershipRelationships {};
                     if (concrete.has_value() && selected.has_value()) {
                         auto located = place(*value.callee, std::move(*flow.normal));
                         flow.normal = std::move(located.normal);
-                        append_exits(flow, located);
+                        append_ownership_exits(flow, located);
                         callee = std::move(located.value);
                     } else {
                         callee = evaluate(*value.callee);
@@ -354,7 +374,7 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                     if (selected.has_value() && concrete.has_value()) {
                         accesses.push_back({*selected, false});
                     }
-                    const auto protect = [&](const Relationships& relationships) noexcept {
+                    const auto protect = [&](const OwnershipRelationships& relationships) noexcept {
                         for (const auto& loan : relationships.loans) {
                             if (loan.backing.has_value()) {
                                 accesses.push_back({*loan.backing, false});
@@ -362,7 +382,7 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                         }
                     };
                     protect(callee);
-                    auto parameters = std::vector<CallArgument>();
+                    auto parameters = std::vector<OwnershipCallArgument>();
                     for (const auto& argument : value.arguments) {
                         auto relationships = evaluate(argument.expression, true);
                         if (!flow.normal.has_value()) {
@@ -381,10 +401,10 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                         parameters.push_back({std::move(alias), std::move(relationships)});
                     }
                     if (flow.normal.has_value()) {
-                        auto invoked = Flow {};
+                        auto invoked = OwnershipFlow {};
                         const auto invoke =
                             [&](this const auto& self,
-                                const Relationships& target,
+                                const OwnershipRelationships& target,
                                 std::optional<CallableID> function) noexcept -> void {
                             use(target, *flow.normal, source.origin, true);
                             if (function.has_value()) {
@@ -395,14 +415,19 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                                     *flow.normal,
                                     source.origin
                                 );
-                                join_normal(invoked.normal, next.normal);
+                                join_normal_ownership_state(invoked.normal, next.normal);
                                 merge_relationships(invoked.value, next.value);
-                                append_exits(invoked, next);
+                                append_ownership_exits(invoked, next);
                                 return;
                             }
                             for (const auto& loan : target.loans) {
                                 if (loan.backing.has_value()) {
-                                    const auto backing = project(
+                                    if (!flow.normal->objects[loan.backing->object].available) {
+                                        // use() diagnoses the expired backing. There is
+                                        // no live callable state to interpret here.
+                                        continue;
+                                    }
+                                    const auto backing = project_relationships(
                                         flow.normal->objects[loan.backing->object].relationships,
                                         loan.backing->path
                                     );
@@ -410,20 +435,20 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                                 } else if (loan.callable.has_value()) {
                                     self({}, loan.callable);
                                 } else {
-                                    join_normal(invoked.normal, flow.normal);
+                                    join_normal_ownership_state(invoked.normal, flow.normal);
                                     for (const auto type :
                                          draft.failure_sets()
                                              .failure_set(value.callee_failures.resolved())
                                              .members) {
                                         invoked.exits.push_back(
-                                            {ExitKind::Failure, type, *flow.normal, {}}
+                                            {OwnershipExitKind::Failure, type, *flow.normal, {}}
                                         );
                                     }
                                 }
                             }
                         };
                         if (concrete.has_value() && selected.has_value()) {
-                            callee = project(
+                            callee = project_relationships(
                                 flow.normal->objects[selected->object].relationships,
                                 selected->path
                             );
@@ -434,7 +459,10 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                                  std::views::enumerate(parameters)) {
                                 merge_relationships(
                                     invoked.value,
-                                    nested(parameter.value, ProjectionPath {index})
+                                    nest_relationships(
+                                        parameter.value,
+                                        OwnershipProjectionPath {index}
+                                    )
                                 );
                             }
                         } else {
@@ -442,7 +470,7 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
                         }
                         flow.normal = std::move(invoked.normal);
                         flow.value = std::move(invoked.value);
-                        append_exits(flow, invoked);
+                        append_ownership_exits(flow, invoked);
                     }
                     accesses.resize(previous);
                 },
@@ -470,5 +498,3 @@ auto BodyAnalyzer::expression(const SemanticExpression& source, State state, boo
     }
     return flow;
 }
-
-} // namespace ownership

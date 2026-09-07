@@ -57,7 +57,9 @@ public:
     {
         return std::span {self.storage};
     }
+
     auto size() const noexcept -> std::size_t { return storage.size(); }
+
     auto empty() const noexcept -> bool { return storage.empty(); }
 
     auto checkpoint() const noexcept -> Checkpoint { return storage.size(); }
@@ -112,6 +114,7 @@ public:
     }
 
     auto size() const noexcept -> std::size_t { return storage.size(); }
+
     auto empty() const noexcept -> bool { return storage.empty(); }
 
     auto is_defined(ID id) const noexcept -> bool {

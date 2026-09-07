@@ -14,11 +14,10 @@ import :source.module_path;
 import :source.text;
 import std;
 
-namespace compiler_diagnostics_test {
-
-
-auto find_diagnostic(std::span<const Diagnostic> diagnostics, std::string_view code) noexcept
-    -> const Diagnostic* {
+auto find_compiler_diagnostic(
+    std::span<const Diagnostic> diagnostics,
+    std::string_view code
+) noexcept -> const Diagnostic* {
     const auto found =
         std::ranges::find_if(diagnostics, [&](const Diagnostic& diagnostic) noexcept {
             return diagnostic.finding.code == code;
@@ -26,14 +25,14 @@ auto find_diagnostic(std::span<const Diagnostic> diagnostics, std::string_view c
     return found == diagnostics.end() ? nullptr : &*found;
 }
 
-struct ErrorExpectation final {
+struct CompilerErrorExpectation final {
     std::string_view name;
     std::string_view source;
     std::string_view code;
     std::string_view primary_text;
 };
 
-auto check_errors(std::span<const ErrorExpectation> cases) noexcept -> void {
+auto check_compiler_errors(std::span<const CompilerErrorExpectation> cases) noexcept -> void {
     for (const auto& expectation : cases) {
         CAPTURE(expectation.name);
         auto sources = SourceManager();
@@ -57,7 +56,7 @@ auto check_errors(std::span<const ErrorExpectation> cases) noexcept -> void {
         if (result.has_value()) {
             continue;
         }
-        const auto* diagnostic = find_diagnostic(result.error(), expectation.code);
+        const auto* diagnostic = find_compiler_diagnostic(result.error(), expectation.code);
         CHECK(diagnostic != nullptr);
         if (diagnostic == nullptr) {
             continue;
@@ -69,5 +68,3 @@ auto check_errors(std::span<const ErrorExpectation> cases) noexcept -> void {
         CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);
     }
 }
-
-} // namespace compiler_diagnostics_test

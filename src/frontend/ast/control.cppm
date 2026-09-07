@@ -21,11 +21,13 @@ struct ASTControlTransfer final {
 
 struct ASTIfForm final {
     Span span;
+
     struct Branch final {
         Span keyword_span;
         ASTExprID condition;
         ASTBranchBlockID body;
     };
+
     std::vector<Branch> branches;
     std::optional<ASTBranchBlockID> else_branch;
 };

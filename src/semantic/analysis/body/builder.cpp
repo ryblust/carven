@@ -8,6 +8,7 @@ import std;
 
 BodyBuilder::BodyBuilder(BodyReservation&& reservation, ProgramDraft& draft) noexcept
     : BodyBuilder(reservation.consume(), draft) {}
+
 BodyBuilder::BodyBuilder(BodyReservation::Consumed reservation, ProgramDraft& draft) noexcept
     : draft(draft),
       body_identity(reservation.id.owner(), reservation.id.index()),
@@ -196,6 +197,7 @@ auto BodyBuilder::make_expression(
         .value = std::move(value)
     };
 }
+
 auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpression {
     const auto binding = bindings.copy(id);
     auto expression =
@@ -203,6 +205,7 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
     expression.category = SemanticValueCategory::Place;
     return {.root = id, .expression = std::move(expression)};
 }
+
 auto BodyBuilder::make_place(
     LocalBindingID root,
     ConstructionTypeRef type,
@@ -213,12 +216,14 @@ auto BodyBuilder::make_place(
     expression.category = SemanticValueCategory::Place;
     return {.root = root, .expression = std::move(expression)};
 }
+
 auto BodyBuilder::callable_expression(CallableID callable, ProgramOriginID origin) noexcept
     -> SemanticExpression {
     const auto type =
         draft.intern_type(CanonicalType {.value = FunctionTypeValue {.callable = callable}});
     return make_expression(type, lifetime(), origin, SemCallable {.callable = callable});
 }
+
 auto BodyBuilder::finish(SemanticRegion region) && noexcept -> StructuredBodyDraft {
     return {
         .id = body_id,

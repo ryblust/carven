@@ -6,15 +6,14 @@ import std;
 
 // Visits stored regions, statements and expressions, including constant-inactive source.
 // Execution selection belongs to analyses and lowering; this traversal only follows children.
-namespace semantic_traversal_detail {
 
 template<bool ReadOnly, typename Visitor>
-class Traversal final {
+class SemanticTraversal final {
     template<typename T>
     using Node = std::conditional_t<ReadOnly, const T, T>;
 
 public:
-    explicit Traversal(Visitor& visitor) noexcept
+    explicit SemanticTraversal(Visitor& visitor) noexcept
         : visitor(visitor) {}
 
     auto operator()(Node<SemanticExpression>& expression) const noexcept -> void {
@@ -195,13 +194,10 @@ private:
     Visitor& visitor;
 };
 
-} // namespace semantic_traversal_detail
-
 template<typename Node, typename Visitor>
     requires std::same_as<std::remove_const_t<Node>, SemanticExpression>
     || std::same_as<std::remove_const_t<Node>, SemanticRegion>
 auto visit_semantic_nodes(Node& node, Visitor visitor) noexcept -> void {
-    const auto traverse =
-        semantic_traversal_detail::Traversal<std::is_const_v<Node>, Visitor>(visitor);
+    const auto traverse = SemanticTraversal<std::is_const_v<Node>, Visitor>(visitor);
     traverse(node);
 }

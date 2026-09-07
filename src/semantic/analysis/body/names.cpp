@@ -28,9 +28,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
-
 auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     -> AnalysisResult<SelectedExpression> {
     const auto text = spelling(name.name_span);
@@ -50,7 +47,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             };
         }
         const auto& runtime = std::get<BoundStorage>(local->storage);
-        if (local->role == LocalRole::RangeRead) {
+        if (local->role == BodyLocalRole::RangeRead) {
             auto value = active_builder().binding_expression(runtime.binding).expression;
             value.category = SemanticValueCategory::Value;
             value.lifetime = active_builder().lifetime();
@@ -137,5 +134,3 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         (*selected)->form
     );
 }
-
-} // namespace body_elaboration

@@ -27,12 +27,10 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::build_pattern(
     ASTPatternID source_id,
     ConstructionTypeRef type,
-    std::flat_map<std::string, PatternBindingStorage, std::less<>>& bindings,
+    std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
     bool allow_new_bindings,
     std::flat_set<std::string, std::less<>>& used_bindings
 ) noexcept -> AnalysisResult<BuiltPattern> {
@@ -136,7 +134,7 @@ auto BodyElaborator::build_pattern(
                     );
                     auto published = bind_local(
                         binding.name_span,
-                        LocalStorage {
+                        BodyLocalStorage {
                             .storage = storage,
                             .type = type,
                             .unused_candidate = std::nullopt,
@@ -146,10 +144,12 @@ auto BodyElaborator::build_pattern(
                     if (!published.has_value()) {
                         return std::unexpected(published.error());
                     }
-                    found =
-                        bindings
-                            .emplace(name, PatternBindingStorage {.storage = storage, .type = type})
-                            .first;
+                    found = bindings
+                                .emplace(
+                                    name,
+                                    BodyPatternBindingStorage {.storage = storage, .type = type}
+                                )
+                                .first;
                 } else if (!compatible(found->second.type, type)) {
                     return std::unexpected(fail(
                         binding.name_span,
@@ -358,7 +358,7 @@ auto BodyElaborator::build_match(
     if (!subject.has_value()) {
         return std::unexpected(subject.error());
     }
-    auto pending = PendingFailureTerms();
+    auto pending = BodyPendingFailureTerms();
     auto result_type = expected;
     if (value_form) {
         collect_pending(pending, *subject);
@@ -384,16 +384,17 @@ auto BodyElaborator::build_match(
 
     struct ArmPlan final {
         const ASTMatchArm* source;
-        LocalFrame frame;
+        BodyLocalFrame frame;
         BuiltPattern pattern;
         bool useful;
     };
+
     auto plans = std::vector<ArmPlan>();
     plans.reserve(source.arms.size());
 
     for (const auto& arm : source.arms) {
         push_frame(arm.span);
-        auto bindings = std::flat_map<std::string, PatternBindingStorage, std::less<>>();
+        auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto used = std::flat_set<std::string, std::less<>>();
         auto pattern = build_pattern(arm.pattern, subject_type, bindings, true, used);
         if (!pattern.has_value()) {
@@ -496,9 +497,10 @@ auto BodyElaborator::build_match(
     auto remaining = selection_reachable;
     for (auto& plan : plans) {
         const auto useful = remaining && plan.useful;
-        [[maybe_unused]] const auto path = ReferencePathGuard(reference_path_reachable, useful);
+        [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, useful);
         frames.push_back(std::move(plan.frame));
-        [[maybe_unused]] const auto suspended = FullExpressionSuspension(active_full_expression);
+        [[maybe_unused]] const auto suspended =
+            BodyFullExpressionSuspension(active_full_expression);
         reachable = true;
         auto guard_tree = std::optional<SemanticExpression>();
         auto body_reachable = true;
@@ -526,7 +528,7 @@ auto BodyElaborator::build_match(
         }
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
-                ReferencePathGuard(reference_path_reachable, body_reachable);
+                BodyReferencePathGuard(reference_path_reachable, body_reachable);
             return build_arm(plan.source->body, value_form, result_type, pending);
         }();
         if (!body.has_value()) {
@@ -579,6 +581,3 @@ auto BodyElaborator::match_statement(const ASTMatchForm& source, Span span) noex
     }
     return {};
 }
-
-
-} // namespace body_elaboration

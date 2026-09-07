@@ -21,6 +21,8 @@ struct TargetEntityName final {
 struct TargetModuleNames final {
     TargetName qualified_namespace_name;
     TargetName module_namespace_name;
+    TargetName public_namespace_name;
+    std::flat_map<FunctionID, TargetIdentifier> public_functions;
     std::flat_set<std::string> reserved_identifiers;
 };
 

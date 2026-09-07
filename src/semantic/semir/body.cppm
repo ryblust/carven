@@ -31,6 +31,7 @@ class LifetimeRegionTree final {
 public:
     explicit LifetimeRegionTree(ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> rows) noexcept
         : region_rows(std::move(rows)) {}
+
     LifetimeRegionTree(const LifetimeRegionTree&) = delete;
     LifetimeRegionTree(LifetimeRegionTree&&) = default;
     ~LifetimeRegionTree() = default;
@@ -39,10 +40,13 @@ public:
     auto operator=(LifetimeRegionTree&&) -> LifetimeRegionTree& = default;
 
     auto owner() const noexcept -> BodyIdentity { return region_rows.owner(); }
+
     auto contains(LifetimeRegionID id) const noexcept -> bool { return region_rows.contains(id); }
+
     auto region(LifetimeRegionID id) const noexcept -> const LifetimeRegion& {
         return region_rows.get(id);
     }
+
     auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool {
         if (!contains(outer) || !contains(inner)) {
             invariant_violation("lifetime relation received a foreign region");
@@ -56,6 +60,7 @@ public:
         }
         return false;
     }
+
     auto entries() const noexcept
         -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity> {
         return region_rows.entries();
@@ -73,9 +78,11 @@ enum class CaptureMode {
 struct OwnerBindingStorage final {
     bool writable;
 };
+
 struct ParameterBindingStorage final {
     AccessMode access;
 };
+
 struct CaptureBindingStorage final {
     CaptureMode mode;
 };
@@ -100,18 +107,23 @@ struct ElaboratedLocalBinding final {
 };
 
 struct WildcardPattern final {};
+
 struct LiteralPattern final {
     ConstantID constant;
 };
+
 struct OrPattern final {
     std::vector<PatternID> alternatives;
 };
+
 struct TypeConstraintPattern final {
     TypeID type;
 };
+
 struct BindingPattern final {
     LocalBindingID binding;
 };
+
 struct EnumCasePattern final {
     EnumCaseID enum_case;
     std::vector<PatternID> payload;
@@ -134,6 +146,7 @@ struct Pattern final {
 struct ElaboratedTypeConstraintPattern final {
     ConstructionTypeRef type;
 };
+
 using ElaboratedPatternValue = std::variant<
     WildcardPattern,
     LiteralPattern,
@@ -141,6 +154,7 @@ using ElaboratedPatternValue = std::variant<
     ElaboratedTypeConstraintPattern,
     BindingPattern,
     EnumCasePattern>;
+
 struct ElaboratedPattern final {
     ConstructionTypeRef type;
     ElaboratedPatternValue value;
@@ -148,7 +162,9 @@ struct ElaboratedPattern final {
 };
 
 struct ProvenInBounds final {};
+
 struct RuntimeCheckedBounds final {};
+
 using ArrayBoundsPolicy = std::variant<ProvenInBounds, RuntimeCheckedBounds>;
 
 struct FieldProjection final {

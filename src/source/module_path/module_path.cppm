@@ -6,7 +6,6 @@ enum class CanonicalModulePathErrorKind {
     Empty,
     EmptyComponent,
     InvalidIdentifier,
-    Keyword,
     IncompleteCraftPath,
 };
 

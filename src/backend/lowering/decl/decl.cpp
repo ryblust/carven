@@ -20,18 +20,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-using decl_lowering::first_module;
-using decl_lowering::is_char_type;
-using decl_lowering::lower_closure_definition;
-using decl_lowering::lower_enumeration;
-using decl_lowering::lower_function;
-using decl_lowering::lower_module_test_runner;
-using decl_lowering::lower_structure;
-using decl_lowering::lower_test;
-using decl_lowering::process_entry;
-
 namespace {
-
 
 auto append_items(std::vector<TargetItem>& destination, std::vector<TargetItem> source) noexcept
     -> void {
@@ -68,7 +57,6 @@ auto exported_signature(const ModuleLowering& context, FunctionID id) noexcept
     }
     return signature;
 }
-
 
 } // namespace
 
@@ -156,9 +144,9 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
         context.semantic(),
         *source.cpp_export_origin,
         TargetDecl {TargetFunctionDecl {
-            .name = TargetName {TargetIdentifier::from_spelling(
-                context.semantic().provenance().spelling(source.name)
-            )},
+            .name = TargetName {context.names()
+                                    .module_names(context.names().callable_owner(source.callable))
+                                    .public_functions.at(function)},
             .parameters = std::move(parameters),
             .result = context.lower_type(signature.result),
             .form = TargetFreeFunctionDeclaration {},
@@ -214,9 +202,9 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
         context.semantic(),
         *source.cpp_export_origin,
         TargetDecl {TargetFunctionDecl {
-            .name = TargetName {TargetIdentifier::from_spelling(
-                context.semantic().provenance().spelling(source.name)
-            )},
+            .name = TargetName {context.names()
+                                    .module_names(context.names().callable_owner(source.callable))
+                                    .public_functions.at(function)},
             .parameters = std::move(parameters),
             .result = context.lower_type(signature.result),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
@@ -348,5 +336,5 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
             .expression = integer_expression(0),
         }
     ));
-    return process_entry(context, with_arguments, std::move(body));
+    return lower_process_entry(context, with_arguments, std::move(body));
 }

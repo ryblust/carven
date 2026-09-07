@@ -29,8 +29,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
     const auto& built = (callee);
@@ -118,7 +116,7 @@ auto BodyElaborator::build_call_argument(
     if (!built.has_value()) {
         return std::unexpected(built.error());
     }
-    auto pending_failures = take_pending(*built);
+    auto pending_failures = take_pending_failures(*built);
     if (parameter.access == AccessMode::Write) {
         auto compatible_storage =
             require_writable_storage_type(built->type(), parameter.type, source.span);
@@ -166,15 +164,7 @@ auto BodyElaborator::enum_case_reference(
     Span case_span
 ) noexcept -> AnalysisResult<BuiltExpression> {
     auto site = BodyExpressionSite(*this);
-    return expression_analysis::enum_case(
-        site,
-        enumeration_type,
-        case_name,
-        case_span,
-        {},
-        span,
-        false
-    );
+    return interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false);
 }
 
 auto BodyElaborator::call_expression(
@@ -197,7 +187,7 @@ auto BodyElaborator::call_expression(
                     }
                 );
                 auto site = BodyExpressionSite(*this);
-                return expression_analysis::enum_case(
+                return interpret_enum_case(
                     site,
                     type,
                     text,
@@ -224,7 +214,7 @@ auto BodyElaborator::call_expression(
     }
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
-    auto pending_failures = take_pending(*callee);
+    auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(*callee, ast.expression(source.callee).span);
     if (!contract.has_value()) {
         return std::unexpected(contract.error());
@@ -259,12 +249,12 @@ auto BodyElaborator::call_expression(
         if (!argument.has_value()) {
             return std::unexpected(argument.error());
         }
-        append_pending(pending_failures, argument->pending_failures);
+        append_pending_failures(pending_failures, argument->pending_failures);
         completes &= argument->completes;
         arguments.push_back(std::move(argument->argument));
     }
     const auto failures = contract->failures;
-    append_pending(pending_failures, PendingFailureTerms {failures});
+    append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
     auto result = active_builder().make_expression(
         contract->result,
         active_builder().lifetime(),
@@ -282,6 +272,3 @@ auto BodyElaborator::call_expression(
         .completes = completes,
     };
 }
-
-
-} // namespace body_elaboration

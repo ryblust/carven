@@ -193,6 +193,7 @@ local case_specs = {
             "nested/worker.cv",
             "nested/local.cv",
             "__internal.cv",
+            "import/export.cv",
         },
         output_files = {
             "emit/main.cpp",
@@ -200,6 +201,8 @@ local case_specs = {
             "emit/nested/worker.cpp",
             "emit/nested/local.cpp",
             "emit/__internal.cpp",
+            "emit/import/export.cpp",
+            "emit/carven/generated/import/export.hpp",
             "emit/carven/generated/main.hpp",
             "emit/carven/generated/sibling.hpp",
             "emit/carven/generated/nested/worker.hpp",

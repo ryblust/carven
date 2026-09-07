@@ -22,6 +22,7 @@ IntegerConstant::IntegerConstant(std::uint64_t magnitude, bool negative) noexcep
 auto IntegerConstant::zero() noexcept -> IntegerConstant {
     return IntegerConstant(0u, false);
 }
+
 auto IntegerConstant::from_signed(std::int64_t source) noexcept -> IntegerConstant {
     if (source >= 0) {
         return IntegerConstant(static_cast<std::uint64_t>(source), false);
@@ -29,16 +30,20 @@ auto IntegerConstant::from_signed(std::int64_t source) noexcept -> IntegerConsta
     const auto adjusted = static_cast<std::uint64_t>(-(source + 1));
     return IntegerConstant(adjusted + 1u, true);
 }
+
 auto IntegerConstant::from_parts(std::uint64_t magnitude, bool negative) noexcept
     -> IntegerConstant {
     return IntegerConstant(magnitude, negative);
 }
+
 auto IntegerConstant::magnitude() const noexcept -> std::uint64_t {
     return stored_magnitude;
 }
+
 auto IntegerConstant::negative() const noexcept -> bool {
     return stored_negative;
 }
+
 auto IntegerConstant::as_signed() const noexcept -> std::optional<std::int64_t> {
     constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     if (!stored_negative) {
@@ -55,6 +60,7 @@ auto IntegerConstant::as_signed() const noexcept -> std::optional<std::int64_t> 
     }
     return -static_cast<std::int64_t>(stored_magnitude);
 }
+
 auto IntegerConstant::as_unsigned() const noexcept -> std::optional<std::uint64_t> {
     return stored_negative ? std::nullopt : std::optional<std::uint64_t>(stored_magnitude);
 }
@@ -106,16 +112,20 @@ ConstantStore::ConstantStore(ImmutableProgramTable<ConstantFact, ConstantID> val
 auto ConstantStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto ConstantStore::contains(ConstantID id) const noexcept -> bool {
     return rows.contains(id);
 }
+
 auto ConstantStore::constant(ConstantID id) const noexcept -> const ConstantFact& {
     return rows.get(id);
 }
+
 auto ConstantStore::entries() const noexcept
     -> IDTableEntries<ConstantID, ConstantFact, ProgramIdentity> {
     return rows.entries();
 }
+
 auto ConstantStore::size() const noexcept -> std::size_t {
     return rows.size();
 }
@@ -169,12 +179,15 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
     );
     return rows.intern(std::move(fact));
 }
+
 auto ConstantStoreBuilder::copy(ConstantID id) const noexcept -> ConstantFact {
     return rows.copy(id);
 }
+
 auto ConstantStoreBuilder::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto ConstantStoreBuilder::seal() && noexcept -> ConstantStore {
     return ConstantStore(std::move(rows).seal());
 }

@@ -7,13 +7,13 @@ module carven:test.internal.source.module_path;
 import :source.module_path;
 import std;
 
-TEST_CASE("Module path: factory enforces identifier and keyword invariants") {
+TEST_CASE("Module path: factory enforces component structure") {
     CHECK(CanonicalModulePath::from_value("app.main").has_value());
     CHECK(CanonicalModulePath::from_value("App._entry2").has_value());
     CHECK(!CanonicalModulePath::from_value("").has_value());
     CHECK(!CanonicalModulePath::from_value("app..main").has_value());
     CHECK(!CanonicalModulePath::from_value("app.2main").has_value());
-    CHECK(!CanonicalModulePath::from_value("app.for").has_value());
+    CHECK(CanonicalModulePath::from_value("app.for").has_value());
     CHECK(!CanonicalModulePath::from_value("app.模块").has_value());
     CHECK(!CanonicalModulePath::from_value("crafts").has_value());
     CHECK(!CanonicalModulePath::from_value("crafts.json").has_value());

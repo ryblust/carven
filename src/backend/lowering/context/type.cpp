@@ -204,6 +204,15 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
     auto lowered = std::visit(
         Overloaded {
             [&](const CppTypeValue& value) noexcept -> TargetType {
+                if (std::holds_alternative<CppConstCharPointerType>(value.form)) {
+                    return {
+                        .value =
+                            TargetPointerType {
+                                .pointee = intrinsic_type(TargetSymbol::CChar, true)
+                            },
+                        .const_qualified = false,
+                    };
+                }
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                     auto arguments = std::vector<TargetTypeID>();
                     for (const auto argument : named->arguments) {

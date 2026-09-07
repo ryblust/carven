@@ -9,17 +9,17 @@ import :backend.target.symbol;
 import :semantic.semir;
 import std;
 
-namespace body_lowering {
-auto BodyLowerer::lower_loop(const SemLoop& value, StatementBuilder& destination) noexcept -> void {
-    auto initializer = region(*value.initializer, DiscardResult {});
+auto BodyLowerer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
+    -> void {
+    auto initializer = region(*value.initializer, LoweringDiscardResult {});
     if (!initializer.continues()) {
         destination.scope(std::move(initializer));
         return;
     }
-    auto condition_statements = StatementBuilder();
+    auto condition_statements = LoweringStmtBuilder();
     auto condition = value.condition.has_value()
         ? condition_statements.accept(this->condition(*value.condition))
-        : std::optional<Predicate>(KnownBool {true});
+        : std::optional<LoweringPredicate>(LoweringKnownBool {true});
     if (!condition_statements.continues()) {
         initializer.append(std::move(condition_statements));
         destination.scope(std::move(initializer));
@@ -37,19 +37,19 @@ auto BodyLowerer::lower_loop(const SemLoop& value, StatementBuilder& destination
         loop_continuation,
         LoopContinuation {
             .step = step,
-            .target = exit_target(ExitKind::Continue),
-            .break_target = exit_target(ExitKind::Break)
+            .target = exit_target(LoweringExitKind::Continue),
+            .break_target = exit_target(LoweringExitKind::Break)
         }
     );
-    auto body_statements = region(*value.body, DiscardResult {});
+    auto body_statements = region(*value.body, LoweringDiscardResult {});
     const auto continuation = *std::exchange(loop_continuation, previous);
     const auto continued = body_statements.exits().contains(continuation.target);
     const auto breaks = body_statements.exits().contains(continuation.break_target);
     const auto run_steps = body_statements.continues() || continued;
-    auto steps = run_steps ? region(*value.steps, DiscardResult {}) : StatementBuilder();
+    auto steps = run_steps ? region(*value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
     auto iteration = std::move(condition_statements);
     if (known_predicate(condition) != true) {
-        auto exit_body = StatementBuilder();
+        auto exit_body = LoweringStmtBuilder();
         exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
         auto branches = std::vector<TargetIfBranch>();
         branches.push_back(
@@ -87,9 +87,9 @@ auto BodyLowerer::lower_loop(const SemLoop& value, StatementBuilder& destination
     destination.scope(std::move(initializer));
 }
 
-auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& destination) noexcept
+auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
     -> void {
-    auto scope = StatementBuilder();
+    auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
     const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
@@ -113,11 +113,11 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& desti
             loop_continuation,
             LoopContinuation {
                 .step = std::nullopt,
-                .target = exit_target(ExitKind::Continue),
-                .break_target = exit_target(ExitKind::Break)
+                .target = exit_target(LoweringExitKind::Continue),
+                .break_target = exit_target(LoweringExitKind::Break)
             }
         );
-        auto iteration = region(*value.body, DiscardResult {});
+        auto iteration = region(*value.body, LoweringDiscardResult {});
         const auto continuation = *std::exchange(loop_continuation, previous);
         static_cast<void>(iteration.consume_exit(continuation.target));
         static_cast<void>(iteration.consume_exit(continuation.break_target));
@@ -168,11 +168,11 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& desti
         loop_continuation,
         LoopContinuation {
             .step = std::nullopt,
-            .target = exit_target(ExitKind::Continue),
-            .break_target = exit_target(ExitKind::Break)
+            .target = exit_target(LoweringExitKind::Continue),
+            .break_target = exit_target(LoweringExitKind::Break)
         }
     );
-    auto iteration = StatementBuilder();
+    auto iteration = LoweringStmtBuilder();
     if (value.binding.has_value()) {
         const auto id = *value.binding;
         iteration.emit(generated_statement(
@@ -187,7 +187,7 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& desti
             }
         ));
     }
-    iteration.append(region(*value.body, DiscardResult {}));
+    iteration.append(region(*value.body, LoweringDiscardResult {}));
     const auto continuation = *std::exchange(loop_continuation, previous);
     static_cast<void>(iteration.consume_exit(continuation.target));
     static_cast<void>(iteration.consume_exit(continuation.break_target));
@@ -223,5 +223,3 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, StatementBuilder& desti
     ));
     destination.scope(std::move(scope));
 }
-
-} // namespace body_lowering

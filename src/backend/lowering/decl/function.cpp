@@ -20,16 +20,10 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_lowering {
-
 auto is_char_type(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
     const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic.types().type(type).value);
     return builtin != nullptr && builtin->kind == BuiltinType::Char;
 }
-
-} // namespace decl_lowering
-
-using decl_lowering::is_char_type;
 
 namespace {
 
@@ -208,8 +202,6 @@ auto lower_carven_function(
 
 } // namespace
 
-namespace decl_lowering {
-
 auto lower_function(ModuleLowering& context, FunctionID function, bool declaration_only) noexcept
     -> TargetDecl {
     const auto& callable = context.semantic().declarations().callable(
@@ -219,6 +211,3 @@ auto lower_function(ModuleLowering& context, FunctionID function, bool declarati
         ? lower_cpp_import(context, function, declaration_only)
         : lower_carven_function(context, function, declaration_only);
 }
-
-
-} // namespace decl_lowering

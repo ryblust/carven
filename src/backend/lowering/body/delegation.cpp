@@ -4,8 +4,6 @@ import :backend.lowering.body.lowerer;
 import :support.visit;
 import std;
 
-namespace body_lowering {
-
 auto BodyLowerer::cpp_call(const SemCppCall& call, std::vector<TargetExpr> values) noexcept
     -> TargetExpr {
     auto callee = std::visit(
@@ -37,6 +35,16 @@ auto BodyLowerer::cpp_operation(
     const SemCpp& value,
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr {
+    if (const auto* literal = std::get_if<CppCStringOperation>(&value.operation)) {
+        return {
+            .value = TargetStaticCastExpr {
+                .type = context.lower_type(source.type.resolved()),
+                .operand = UniqueIndirect(
+                    string_expression(literal->bytes, TargetStringLiteralKind::String)
+                ),
+            }
+        };
+    }
     if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
         return name_expression(context.cpp_name(name->name));
     }
@@ -96,5 +104,3 @@ auto BodyLowerer::cpp_operation(
         }
     };
 }
-
-} // namespace body_lowering

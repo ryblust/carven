@@ -46,6 +46,7 @@ public:
     }
 
     auto ready() const noexcept -> bool { return ready_state; }
+
     auto path() const noexcept -> std::string_view { return encoded_path; }
 
 private:

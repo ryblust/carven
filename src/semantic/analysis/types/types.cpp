@@ -46,7 +46,7 @@ auto builtin_kind(std::string_view name) noexcept -> std::optional<BuiltinType> 
         std::pair {std::string_view("f64"), BuiltinType::F64},
         std::pair {std::string_view("void"), BuiltinType::Void},
     };
-    const auto* const found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
+    const auto* found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
         return entry.first;
     });
     return found == names.end() ? std::nullopt : std::optional(found->second);

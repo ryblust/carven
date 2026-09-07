@@ -185,6 +185,11 @@ private:
         token_start = position;
         const auto value = advance();
 
+        if (value == 'c' && current() == '"') {
+            scan_string(true);
+            return;
+        }
+
         if (is_identifier_start(value)) {
             scan_identifier();
             return;
@@ -307,12 +312,31 @@ private:
         }
     }
 
-    auto scan_string() noexcept -> void {
-        auto scanned = scan_string_literal(source.substr(token_start));
+    auto scan_string(bool c_string = false) noexcept -> void {
+        const auto prefix = c_string ? 1u : 0u;
+        auto scanned = scan_string_literal(source.substr(token_start + prefix), c_string);
         const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
-        position = token_start + static_cast<std::uint32_t>(consumed);
+        position = token_start + prefix + static_cast<std::uint32_t>(consumed);
         if (scanned.has_value()) {
-            append_literal_token(std::move(scanned->value));
+            if (c_string) {
+                append_literal_token(
+                    CStringLiteralValue {.bytes = std::move(scanned->value.bytes)}
+                );
+            } else {
+                append_literal_token(std::move(scanned->value));
+            }
+        } else if (c_string) {
+            append_token(TokenKind::Invalid);
+            const auto start =
+                token_start + prefix + static_cast<std::uint32_t>(scanned.error().error_offset);
+            const auto end = std::min(
+                position,
+                start + static_cast<std::uint32_t>(scanned.error().error_length)
+            );
+            diagnose(
+                "invalid C string literal: expected valid text without NUL",
+                Span::from_bounds(start, end)
+            );
         } else {
             diagnose_invalid("malformed string literal");
         }

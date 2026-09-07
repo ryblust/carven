@@ -20,8 +20,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_lowering {
-
 auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDecl {
     const auto& declaration = context.semantic().declarations().structure(id);
     auto members = std::vector<TargetRecordMember>();
@@ -61,6 +59,8 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
     };
 }
 
+namespace {
+
 auto lower_numeric_enumeration(
     ModuleLowering& context,
     EnumID id,
@@ -94,6 +94,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         TargetIdentifier name;
         std::vector<TargetTypeID> payload_types;
     };
+
     const auto& declaration = context.semantic().declarations().enumeration(id);
     const auto& representation = context.payload_enum(id);
     const auto enum_name = context.names().enumeration_identifier(id);
@@ -354,6 +355,8 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
     return result;
 }
 
+} // namespace
+
 auto lower_enumeration(ModuleLowering& context, EnumID id) noexcept -> std::vector<TargetItem> {
     const auto& declaration = context.semantic().declarations().enumeration(id);
     if (const auto* numeric = std::get_if<NumericEnumRepresentation>(&declaration.representation)) {
@@ -361,6 +364,3 @@ auto lower_enumeration(ModuleLowering& context, EnumID id) noexcept -> std::vect
     }
     return lower_payload_enumeration(context, id);
 }
-
-
-} // namespace decl_lowering

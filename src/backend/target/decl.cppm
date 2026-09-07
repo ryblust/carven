@@ -74,6 +74,7 @@ enum class TargetOperatorName {
 using TargetMemberFunctionName = std::variant<TargetIdentifier, TargetOperatorName>;
 
 struct TargetMemberFunctionDeclaration final {};
+
 struct TargetMemberFunctionDefaulted final {};
 
 struct TargetMemberFunctionDefinition final {

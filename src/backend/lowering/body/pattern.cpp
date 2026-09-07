@@ -14,8 +14,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
-
 auto BodyLowerer::subject_expression(const PatternSubject& subject) noexcept -> TargetExpr {
     auto result = std::optional<TargetExpr>();
     auto path_begin = 0uz;
@@ -183,7 +181,7 @@ auto BodyLowerer::lower_pattern(PatternID pattern_id, PatternSubject subject) no
 auto BodyLowerer::cache_pattern_projections(
     std::vector<PatternSelection>& selections,
     std::vector<PatternProjection>& projections,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto same_subject = [](const PatternSubject& left, const PatternSubject& right) noexcept {
         if (left.root != right.root
@@ -360,5 +358,3 @@ auto BodyLowerer::pattern_binding_expression(
     }
     return subject_expression(found->subject);
 }
-
-} // namespace body_lowering

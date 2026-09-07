@@ -15,12 +15,8 @@ import :source.text;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-using compiler_diagnostics_test::ErrorExpectation;
-using compiler_diagnostics_test::check_errors;
-using compiler_diagnostics_test::find_diagnostic;
-
 TEST_CASE("Compiler diagnostics: names failures preserve code and precise span") {
-    static constexpr auto cases = std::to_array<ErrorExpectation>({
+    static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {
             .name = "unresolved value",
             .source = "fn invalid() { missing(); }",
@@ -70,5 +66,5 @@ TEST_CASE("Compiler diagnostics: names failures preserve code and precise span")
             .primary_text = "check",
         },
     });
-    check_errors(cases);
+    check_compiler_errors(cases);
 }

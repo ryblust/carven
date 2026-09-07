@@ -244,6 +244,23 @@ auto TargetNameAllocator::claim(std::string_view preferred, TargetScopeID scope)
     return TargetIdentifier::from_spelling(candidate);
 }
 
+auto TargetNameAllocator::public_identifier(std::string_view spelling) noexcept
+    -> TargetIdentifier {
+    if (TargetIdentifier::accepts_spelling(spelling)
+        && !implementation_reserved(spelling)
+        && !spelling.starts_with("cv_escaped_")) {
+        return fixed(spelling);
+    }
+    static constexpr auto digits = std::string_view("0123456789abcdef");
+    auto result = std::string("cv_escaped_");
+    for (const auto byte : spelling) {
+        const auto value = static_cast<unsigned char>(byte);
+        result += digits[value >> 4u];
+        result += digits[value & 0x0fu];
+    }
+    return fixed(result);
+}
+
 auto TargetNameAllocator::fixed(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
 }

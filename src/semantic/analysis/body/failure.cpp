@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::build_try(
     const ASTTryForm& source,
     Span span,
@@ -40,6 +38,7 @@ auto BodyElaborator::build_try(
         std::optional<PatternID> pattern;
         std::optional<ASTPatternID> source_pattern;
     };
+
     struct CatchCoverageSourceArm final {
         std::vector<CatchCoverageAlternative> alternatives;
         bool guarded;
@@ -48,7 +47,7 @@ auto BodyElaborator::build_try(
     const auto try_origin = origin(span);
     const auto outer_failure = failure_context_for_current_path();
     const auto protected_failures = draft().add_empty_failure_term();
-    auto pending = PendingFailureTerms();
+    auto pending = BodyPendingFailureTerms();
     auto result_type = expected;
     push_frame(ast.branch_block(source.body).span);
     reachable = true;
@@ -69,7 +68,7 @@ auto BodyElaborator::build_try(
     auto incoming_failures = protected_failures;
     for (const auto& arm : source.arms) {
         push_frame(arm.span);
-        auto bindings = std::flat_map<std::string, PatternBindingStorage, std::less<>>();
+        auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
         auto alternatives = std::vector<SemCatchAlternative>();
         auto coverage_alternatives = std::vector<CatchCoverageAlternative>();
@@ -160,6 +159,7 @@ auto BodyElaborator::build_try(
                 std::size_t catch_alternative;
                 std::optional<std::size_t> inner_alternative;
             };
+
             auto coverage_arms = std::vector<PatternCoverageArm>();
             auto source_arms = std::vector<std::size_t>();
             auto source_alternatives = std::vector<std::vector<CoverageSourceAlternative>>();
@@ -312,18 +312,20 @@ auto BodyElaborator::build_try(
             produced_bindings.push_back(binding.storage.binding);
         }
         std::ranges::sort(produced_bindings, {}, &LocalBindingID::index);
-        [[maybe_unused]] const auto path = ReferencePathGuard(reference_path_reachable, arm_useful);
+        [[maybe_unused]] const auto path =
+            BodyReferencePathGuard(reference_path_reachable, arm_useful);
         reachable = true;
-        [[maybe_unused]] const auto suspension = FullExpressionSuspension(active_full_expression);
+        [[maybe_unused]] const auto suspension =
+            BodyFullExpressionSuspension(active_full_expression);
         const auto local_failures = draft().add_empty_failure_term();
         if (reference_path_reachable) {
             draft().add_guarded_failure_contribution(outer_failure.term, accepted, local_failures);
         }
         const auto local_failure =
-            FailureContext {local_failures, outer_failure.accepts_catch_residual};
+            BodyFailureContext {local_failures, outer_failure.accepts_catch_residual};
         failure_contexts.push_back(local_failure);
         catches.push_back({accepted, local_failure});
-        auto arm_pending = PendingFailureTerms();
+        auto arm_pending = BodyPendingFailureTerms();
         auto guard_tree = std::optional<SemanticExpression>();
         auto body_reachable = true;
         auto guard_may_reject = false;
@@ -347,7 +349,7 @@ auto BodyElaborator::build_try(
         }
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
-                ReferencePathGuard(reference_path_reachable, body_reachable);
+                BodyReferencePathGuard(reference_path_reachable, body_reachable);
             return build_arm(arm.body, value_form, result_type, arm_pending);
         }();
         if (!body.has_value()) {
@@ -356,7 +358,7 @@ auto BodyElaborator::build_try(
         for (const auto term : arm_pending) {
             const auto gated = draft().add_empty_failure_term();
             draft().add_guarded_failure_contribution(gated, accepted, term);
-            append_pending(pending, {gated});
+            append_pending_failures(pending, {gated});
         }
         normal = normal || (arm_useful && body_reachable && reachable);
         catches.pop_back();
@@ -426,6 +428,3 @@ auto BodyElaborator::try_statement(const ASTTryForm& source, Span span) noexcept
     }
     return {};
 }
-
-
-} // namespace body_elaboration

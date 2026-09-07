@@ -101,7 +101,10 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             [&](const SemArrayAdopt&) noexcept { return required; },
             [&](const SemStruct&) noexcept { return required; },
             [&](const SemEnumCase&) noexcept { return required; },
-            [&](const SemCpp&) noexcept { return required; },
+            [&](const SemCpp& value) noexcept {
+                return std::holds_alternative<CppCStringOperation>(value.operation) ? none
+                                                                                    : required;
+            },
             [&](const SemCppCall&) noexcept { return required; },
             [&](const SemCall&) noexcept { return required; },
             [&](const SemClosure&) noexcept { return required; },

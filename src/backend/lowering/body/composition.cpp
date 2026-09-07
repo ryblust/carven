@@ -9,9 +9,7 @@ import :support.invariant;
 import :support.unique_indirect;
 import std;
 
-namespace body_lowering {
-
-auto StatementBuilder::emit(TargetStmt statement, bool continues) noexcept -> void {
+auto LoweringStmtBuilder::emit(TargetStmt statement, bool continues) noexcept -> void {
     if (!this->continues()) {
         return;
     }
@@ -22,7 +20,8 @@ auto StatementBuilder::emit(TargetStmt statement, bool continues) noexcept -> vo
     }
 }
 
-auto StatementBuilder::terminate(TargetStmt statement, ExitTarget target) noexcept -> void {
+auto LoweringStmtBuilder::terminate(TargetStmt statement, LoweringExitTarget target) noexcept
+    -> void {
     if (!continues()) {
         return;
     }
@@ -30,7 +29,7 @@ auto StatementBuilder::terminate(TargetStmt statement, ExitTarget target) noexce
     lowered.exits.add(target);
 }
 
-auto StatementBuilder::append(StatementBuilder source) noexcept -> void {
+auto LoweringStmtBuilder::append(LoweringStmtBuilder source) noexcept -> void {
     if (!continues()) {
         return;
     }
@@ -44,7 +43,7 @@ auto StatementBuilder::append(StatementBuilder source) noexcept -> void {
     lowered.has_declarations |= source.lowered.has_declarations;
 }
 
-auto StatementBuilder::attribute(const TargetAttribution& attribution) noexcept -> void {
+auto LoweringStmtBuilder::attribute(const TargetAttribution& attribution) noexcept -> void {
     for (auto& statement : lowered.statements) {
         if (std::holds_alternative<TargetGeneratedExpansionAttribution>(statement.attribution)) {
             statement.attribution = attribution;
@@ -52,7 +51,7 @@ auto StatementBuilder::attribute(const TargetAttribution& attribution) noexcept 
     }
 }
 
-auto StatementBuilder::scope(StatementBuilder source, TargetAttribution attribution) noexcept
+auto LoweringStmtBuilder::scope(LoweringStmtBuilder source, TargetAttribution attribution) noexcept
     -> void {
     if (!continues()) {
         return;
@@ -73,15 +72,15 @@ auto StatementBuilder::scope(StatementBuilder source, TargetAttribution attribut
     );
 }
 
-auto StatementBuilder::resume(
+auto LoweringStmtBuilder::resume(
     TargetIdentifier label,
     TargetJumpRole role,
-    ExitTarget target
+    LoweringExitTarget target
 ) noexcept -> void {
     if (!consume_exit(target)) {
         invariant_violation("continuation does not own a pending exit");
     }
-    lowered.normal = Unit {};
+    lowered.normal = LoweringUnit {};
     emit(
         TargetStmt {
             .value = TargetLabelStmt {.label = std::move(label), .role = role},
@@ -92,13 +91,13 @@ auto StatementBuilder::resume(
     );
 }
 
-auto StatementBuilder::result_region(TargetTypeID type, ExitTarget yield) && noexcept
+auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept
     -> TargetExpr {
     if (continues()) {
         invariant_violation("value region has an undelivered normal result");
     }
     for (const auto target : exits().targets) {
-        if (target != yield && target.kind != ExitKind::Unreachable) {
+        if (target != yield && target.kind != LoweringExitKind::Unreachable) {
             invariant_violation("value region contains an external control exit");
         }
     }
@@ -119,5 +118,3 @@ auto StatementBuilder::result_region(TargetTypeID type, ExitTarget yield) && noe
         }
     };
 }
-
-} // namespace body_lowering

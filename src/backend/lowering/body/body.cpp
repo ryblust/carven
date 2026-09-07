@@ -9,5 +9,5 @@ import std;
 
 auto lower_body(ModuleLowering& context, BodyID body, TargetBodyInputs inputs) noexcept
     -> LoweredBody {
-    return body_lowering::BodyLowerer(context, body, std::move(inputs)).finish();
+    return BodyLowerer(context, body, std::move(inputs)).finish();
 }

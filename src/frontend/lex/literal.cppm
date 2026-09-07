@@ -31,9 +31,10 @@ struct CharacterLiteralScan final {
 struct QuotedLiteralScanError final {
     std::size_t consumed;
     std::size_t error_offset;
+    std::size_t error_length;
 };
 
-auto scan_string_literal(std::string_view text) noexcept
+auto scan_string_literal(std::string_view text, bool reject_nul = false) noexcept
     -> std::expected<StringLiteralScan, QuotedLiteralScanError>;
 auto scan_character_literal(std::string_view text) noexcept
     -> std::expected<CharacterLiteralScan, QuotedLiteralScanError>;

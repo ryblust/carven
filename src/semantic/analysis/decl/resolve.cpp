@@ -28,9 +28,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
-auto DeclarationResolver::supports_equality(
+auto DeclResolver::supports_equality(
     ConstructionTypeRef type,
     std::flat_set<TypeID>& visiting
 ) noexcept -> bool {
@@ -94,7 +92,7 @@ auto DeclarationResolver::supports_equality(
     return result;
 }
 
-auto DeclarationResolver::finish_capabilities() noexcept -> void {
+auto DeclResolver::finish_capabilities() noexcept -> void {
     for (const auto& symbol : catalog.symbols()) {
         if (const auto* form = std::get_if<CatalogStructForm>(&symbol.form)) {
             auto visiting = std::flat_set<TypeID>();
@@ -118,13 +116,13 @@ auto DeclarationResolver::finish_capabilities() noexcept -> void {
     }
 }
 
-auto DeclarationResolver::publish() noexcept -> void {
+auto DeclResolver::publish() noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
         const auto syntax = draft.syntax_tree(module_record.module_id).view();
         const auto& source = syntax.ast_module();
         auto declaration = ModuleDeclaration {
             .provenance_module = module_record.module_id,
-            .origin = declaration_origin(draft, module_record.module_id, source.span),
+            .origin = declaration_source_origin(draft, module_record.module_id, source.span),
             .cpp_headers = {},
             .cpp_source_fragments = {},
             .items = {},
@@ -138,28 +136,33 @@ auto DeclarationResolver::publish() noexcept -> void {
                 .name = draft.intern_spelling(
                     draft.source_slice_copy(module_record.module_id, header.name_span)
                 ),
-                .origin = declaration_origin(draft, module_record.module_id, header.span),
-                .bindings = {},
+                .origin = declaration_source_origin(draft, module_record.module_id, header.span),
+                .namespace_opening = std::nullopt,
             });
-            for (const auto& binding : header.bindings) {
-                auto components = std::vector<ProgramSpellingID>();
-                for (const auto component : binding.components) {
-                    components.push_back(draft.intern_spelling(
-                        draft.source_slice_copy(module_record.module_id, component)
-                    ));
-                }
-                declaration.cpp_headers.back().bindings.push_back({
-                    .components = std::move(components),
-                    .opens_namespace = binding.opens_namespace,
-                    .origin = declaration_origin(draft, module_record.module_id, binding.span),
-                });
+        }
+        for (const auto& binding : catalog.cpp_imports(module_record.module_id)) {
+            if (!binding.opens_namespace) {
+                continue;
             }
+            auto components = std::vector<ProgramSpellingID>();
+            for (const auto& component : binding.components) {
+                components.push_back(draft.intern_spelling(component));
+            }
+            declaration.cpp_headers.at(binding.header_index).namespace_opening =
+                CppNamespaceOpening {
+                    .components = std::move(components),
+                    .origin =
+                        declaration_source_origin(draft, module_record.module_id, binding.origin),
+            };
         }
         declaration.cpp_source_fragments.reserve(source.cpp_source_fragments.size());
         for (const auto& fragment : source.cpp_source_fragments) {
             declaration.cpp_source_fragments.push_back({
-                .payload_origin =
-                    declaration_origin(draft, module_record.module_id, fragment.payload_span),
+                .payload_origin = declaration_source_origin(
+                    draft,
+                    module_record.module_id,
+                    fragment.payload_span
+                ),
             });
         }
         declaration.items.reserve(module_record.items.size());
@@ -268,7 +271,5 @@ auto resolve_declarations(
     AnalysisCatalogView catalog,
     ImportUsage& import_usage
 ) noexcept -> AnalysisResult<void> {
-    return DeclarationResolver(draft, catalog, import_usage).run();
+    return DeclResolver(draft, catalog, import_usage).run();
 }
-
-} // namespace decl_resolution

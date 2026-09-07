@@ -27,35 +27,33 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
-enum class LocalRole {
+enum class BodyLocalRole {
     Local,
     Parameter,
     Capture,
     RangeRead,
 };
 
-struct LocalStorage final {
+struct BodyLocalStorage final {
     std::variant<BoundStorage, ConstantID> storage;
     ConstructionTypeRef type;
     bool used = false;
     bool takeable = true;
-    LocalRole role = LocalRole::Local;
+    BodyLocalRole role = BodyLocalRole::Local;
     std::optional<Span> unused_candidate;
 };
 
-struct LocalFrame final {
+struct BodyLocalFrame final {
     LifetimeRegionID lifetime;
-    std::flat_map<std::string, LocalStorage, std::less<>> names;
+    std::flat_map<std::string, BodyLocalStorage, std::less<>> names;
 };
 
-using ExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
-using PendingFailureTerms = std::vector<FailureTermID>;
+using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
+using BodyPendingFailureTerms = std::vector<FailureTermID>;
 
 struct BuiltExpression final {
-    ExpressionStorage storage;
-    PendingFailureTerms pending_failures;
+    BodyExpressionStorage storage;
+    BodyPendingFailureTerms pending_failures;
     bool takeable = true;
     bool completes = true;
 
@@ -70,9 +68,11 @@ struct BuiltExpression final {
         }
         return std::get<PlaceExpression>(storage).expression;
     }
+
     auto type() const noexcept -> const ConstructionTypeRef& {
         return expression().type.construction();
     }
+
     auto constant() const noexcept -> std::optional<ConstantID> { return expression().constant; }
 };
 
@@ -80,15 +80,17 @@ struct CppMemberSelection final {
     BuiltExpression receiver;
     std::string member;
 };
+
 struct CppSelection final {
     std::variant<CppNameReference, CppMemberSelection> target;
     Span span;
 };
+
 using SelectedExpression = std::variant<BuiltExpression, CppSelection>;
 
 struct BuiltCallArgument final {
     SemCallArgument argument;
-    PendingFailureTerms pending_failures;
+    BodyPendingFailureTerms pending_failures;
     bool completes;
 };
 
@@ -96,12 +98,14 @@ auto does_not_complete(const BuiltExpression& expression) noexcept -> bool {
     return !expression.completes;
 }
 
-auto take_pending(BuiltExpression& expression) noexcept -> PendingFailureTerms {
+auto take_pending_failures(BuiltExpression& expression) noexcept -> BodyPendingFailureTerms {
     return std::exchange(expression.pending_failures, {});
 }
 
-auto append_pending(PendingFailureTerms& destination, const PendingFailureTerms& source) noexcept
-    -> void {
+auto append_pending_failures(
+    BodyPendingFailureTerms& destination,
+    const BodyPendingFailureTerms& source
+) noexcept -> void {
     for (const auto failure_term_id : source) {
         if (std::ranges::contains(destination, failure_term_id)) {
             continue;
@@ -110,17 +114,19 @@ auto append_pending(PendingFailureTerms& destination, const PendingFailureTerms&
     }
 }
 
-struct FailureContext final {
+struct BodyFailureContext final {
     FailureTermID term;
     bool accepts_catch_residual;
 };
-struct LoopContext final {
+
+struct BodyLoopContext final {
     bool has_break = false;
     bool has_continue = false;
 };
-struct CatchContext final {
+
+struct BodyCatchContext final {
     FailureTermID failures;
-    FailureContext outward;
+    BodyFailureContext outward;
 };
 
 struct BuiltPattern final {
@@ -129,37 +135,41 @@ struct BuiltPattern final {
     bool irrefutable;
 };
 
-struct PatternBindingStorage final {
+struct BodyPatternBindingStorage final {
     BoundStorage storage;
     ConstructionTypeRef type;
 };
 
-class FullExpressionSuspension final {
+class BodyFullExpressionSuspension final {
 public:
-    explicit FullExpressionSuspension(std::optional<LifetimeRegionID>& active) noexcept
+    explicit BodyFullExpressionSuspension(std::optional<LifetimeRegionID>& active) noexcept
         : slot(std::addressof(active)),
           saved(std::exchange(active, std::nullopt)) {}
-    FullExpressionSuspension(const FullExpressionSuspension&) = delete;
-    FullExpressionSuspension(FullExpressionSuspension&&) = delete;
-    auto operator=(const FullExpressionSuspension&) -> FullExpressionSuspension& = delete;
-    auto operator=(FullExpressionSuspension&&) -> FullExpressionSuspension& = delete;
-    ~FullExpressionSuspension() noexcept { *slot = saved; }
+
+    BodyFullExpressionSuspension(const BodyFullExpressionSuspension&) = delete;
+    BodyFullExpressionSuspension(BodyFullExpressionSuspension&&) = delete;
+    auto operator=(const BodyFullExpressionSuspension&) -> BodyFullExpressionSuspension& = delete;
+    auto operator=(BodyFullExpressionSuspension&&) -> BodyFullExpressionSuspension& = delete;
+
+    ~BodyFullExpressionSuspension() noexcept { *slot = saved; }
 
 private:
     std::optional<LifetimeRegionID>* slot;
     std::optional<LifetimeRegionID> saved;
 };
 
-class ReferencePathGuard final {
+class BodyReferencePathGuard final {
 public:
-    ReferencePathGuard(bool& active, bool path_is_reachable) noexcept
+    BodyReferencePathGuard(bool& active, bool path_is_reachable) noexcept
         : slot(std::addressof(active)),
           saved(std::exchange(active, active && path_is_reachable)) {}
-    ReferencePathGuard(const ReferencePathGuard&) = delete;
-    ReferencePathGuard(ReferencePathGuard&&) = delete;
-    auto operator=(const ReferencePathGuard&) -> ReferencePathGuard& = delete;
-    auto operator=(ReferencePathGuard&&) -> ReferencePathGuard& = delete;
-    ~ReferencePathGuard() noexcept { *slot = saved; }
+
+    BodyReferencePathGuard(const BodyReferencePathGuard&) = delete;
+    BodyReferencePathGuard(BodyReferencePathGuard&&) = delete;
+    auto operator=(const BodyReferencePathGuard&) -> BodyReferencePathGuard& = delete;
+    auto operator=(BodyReferencePathGuard&&) -> BodyReferencePathGuard& = delete;
+
+    ~BodyReferencePathGuard() noexcept { *slot = saved; }
 
 private:
     bool* slot;
@@ -219,14 +229,14 @@ auto create_body_failure_term(
     return actual;
 }
 
-class BatchElaborator;
+class BodyBatchElaborator;
 
 class BodyElaborator final {
     friend class BodyExpressionSite;
 
 public:
     BodyElaborator(
-        BatchElaborator& owner,
+        BodyBatchElaborator& owner,
         ProgramModuleID source_module_id,
         ModuleID semantic_module_id,
         ASTView source,
@@ -286,7 +296,7 @@ private:
         ConstructionTypeRef type,
         SemanticExpressionValue value,
         Span span,
-        PendingFailureTerms pending = {},
+        BodyPendingFailureTerms pending = {},
         std::optional<ConstantID> constant = std::nullopt
     ) noexcept -> BuiltExpression;
 
@@ -297,13 +307,13 @@ private:
         ASTBranchBlockID id,
         bool value_form,
         std::optional<ConstructionTypeRef>& result_type,
-        PendingFailureTerms& pending
+        BodyPendingFailureTerms& pending
     ) noexcept -> AnalysisResult<SemanticRegion>;
     auto build_arm(
         const ASTMatchArmBody& source,
         bool value_form,
         std::optional<ConstructionTypeRef>& type,
-        PendingFailureTerms& pending
+        BodyPendingFailureTerms& pending
     ) noexcept -> AnalysisResult<SemanticRegion>;
     auto build_if(
         const ASTIfForm& source,
@@ -314,11 +324,11 @@ private:
 
     auto push_frame(Span span) noexcept -> void;
     auto pop_frame(bool diagnose = true) noexcept -> void;
-    auto diagnose_unused(const LocalFrame& frame) noexcept -> void;
-    auto bind_local(Span name, LocalStorage storage, DiagnosticCode duplicate_code) noexcept
+    auto diagnose_unused(const BodyLocalFrame& frame) noexcept -> void;
+    auto bind_local(Span name, BodyLocalStorage storage, DiagnosticCode duplicate_code) noexcept
         -> AnalysisResult<void>;
-    auto find_local(std::string_view name) const noexcept -> const LocalStorage*;
-    auto use_local(std::string_view name) noexcept -> LocalStorage*;
+    auto find_local(std::string_view name) const noexcept -> const BodyLocalStorage*;
+    auto use_local(std::string_view name) noexcept -> BodyLocalStorage*;
     auto find_global(std::string_view name, Span span) noexcept
         -> AnalysisResult<const CatalogSymbol*>;
 
@@ -332,15 +342,15 @@ private:
         -> AnalysisResult<ConstructionTypeRef>;
     auto consume_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
     auto propagate_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
-    auto collect_pending(PendingFailureTerms& destination, BuiltExpression& expression) noexcept
+    auto collect_pending(BodyPendingFailureTerms& destination, BuiltExpression& expression) noexcept
         -> void;
     auto discard_pending(BuiltExpression& expression) noexcept -> void;
     auto route_pending(
-        PendingFailureTerms failure_term_ids,
-        const FailureContext& target,
+        BodyPendingFailureTerms failure_term_ids,
+        const BodyFailureContext& target,
         std::optional<Span> propagation_span
     ) noexcept -> void;
-    auto failure_context_for_current_path() const noexcept -> const FailureContext&;
+    auto failure_context_for_current_path() const noexcept -> const BodyFailureContext&;
 
     auto expression(
         ASTExprID id,
@@ -427,7 +437,7 @@ private:
     auto build_pattern(
         ASTPatternID source,
         ConstructionTypeRef type,
-        std::flat_map<std::string, PatternBindingStorage, std::less<>>& bindings,
+        std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
         bool allow_new_bindings,
         std::flat_set<std::string, std::less<>>& used_bindings
     ) noexcept -> AnalysisResult<BuiltPattern>;
@@ -479,7 +489,7 @@ private:
         const ConstructionCallableParameter& parameter
     ) noexcept -> AnalysisResult<BuiltCallArgument>;
 
-    BatchElaborator* batch;
+    BodyBatchElaborator* batch;
     ProgramModuleID source_module_id;
     ModuleID semantic_module_id;
     ASTView ast;
@@ -487,12 +497,12 @@ private:
     std::optional<ConstructionTypeRef> result_type;
     FailureTermID outward_failure_term_id;
     bool is_test;
-    std::vector<LocalFrame> frames;
+    std::vector<BodyLocalFrame> frames;
     std::vector<SemanticRegion> regions;
-    FailureContext dead_failure_context;
-    std::vector<FailureContext> failure_contexts;
-    std::vector<CatchContext> catches;
-    std::vector<LoopContext> loops;
+    BodyFailureContext dead_failure_context;
+    std::vector<BodyFailureContext> failure_contexts;
+    std::vector<BodyCatchContext> catches;
+    std::vector<BodyLoopContext> loops;
     std::vector<std::size_t> value_boundary_loop_depths;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;
@@ -500,9 +510,9 @@ private:
     bool reported_unreachable;
 };
 
-class BatchElaborator final {
+class BodyBatchElaborator final {
 public:
-    BatchElaborator(
+    BodyBatchElaborator(
         ProgramDraft& builder,
         AnalysisCatalogView catalog_view,
         ImportUsage& usage
@@ -517,5 +527,3 @@ public:
     AnalysisCatalogView catalog_data;
     ImportUsage* imports;
 };
-
-} // namespace body_elaboration

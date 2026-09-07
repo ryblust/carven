@@ -72,11 +72,11 @@ TEST_CASE("Artifacts: GeneratedArtifactSet establishes one canonical order") {
 }
 
 TEST_CASE("Artifacts: logical paths are normalized relative paths") {
-    for (const auto* const valid : {"api.hpp", "carven/api/example.hpp", ".carven-artifacts"}) {
+    for (const auto* valid : {"api.hpp", "carven/api/example.hpp", ".carven-artifacts"}) {
         CAPTURE(valid);
         CHECK(validate_artifact_logical_path(valid).has_value());
     }
-    for (const auto* const invalid : {
+    for (const auto* invalid : {
              "",
              "/api.hpp",
              "api.hpp/",

@@ -31,8 +31,8 @@ src/main.cv       -> src.main
 crafts/json/io.cv -> crafts.json.io
 ```
 
-Every derived component must be a valid Carven identifier and cannot be a
-language keyword. Input paths cannot lexically escape the invoking working
+Every derived component must match `[A-Za-z_][A-Za-z0-9_]*`; language keywords
+are permitted as module components. Input paths cannot lexically escape the invoking working
 directory. Symbolic links are resolved by the host filesystem; the compiler
 does not require their targets to remain within that directory. CLI inputs in
 the `crafts.std` module domain are rejected because that domain is reserved for

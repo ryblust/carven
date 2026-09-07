@@ -119,27 +119,35 @@ private:
     }
 
     auto claim(Span) noexcept -> void {}
+
     auto claim(ASTExprID id) noexcept -> void {
         claim_node(id, claimed_expressions, syntax.expressions(), "expression");
     }
+
     auto claim(ASTTypeID id) noexcept -> void {
         claim_node(id, claimed_types, syntax.types(), "type");
     }
+
     auto claim(ASTStmtID id) noexcept -> void {
         claim_node(id, claimed_statements, syntax.statements(), "statement");
     }
+
     auto claim(ASTPatternID id) noexcept -> void {
         claim_node(id, claimed_patterns, syntax.patterns(), "pattern");
     }
+
     auto claim(ASTBlockID id) noexcept -> void {
         claim_node(id, claimed_blocks, syntax.blocks(), "block");
     }
+
     auto claim(ASTBranchBlockID id) noexcept -> void {
         claim_node(id, claimed_branch_blocks, syntax.branch_blocks(), "branch block");
     }
+
     auto claim(ASTItemID id) noexcept -> void {
         claim_node(id, claimed_items, syntax.items(), "item");
     }
+
     auto claim(ASTModuleImportID id) noexcept -> void {
         claim_node(id, claimed_module_imports, syntax.module_imports(), "module import");
     }

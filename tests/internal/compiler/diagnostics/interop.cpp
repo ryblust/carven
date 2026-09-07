@@ -15,12 +15,8 @@ import :source.text;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-using compiler_diagnostics_test::ErrorExpectation;
-using compiler_diagnostics_test::check_errors;
-using compiler_diagnostics_test::find_diagnostic;
-
 TEST_CASE("Compiler diagnostics: interop failures preserve code and precise span") {
-    static constexpr auto cases = std::to_array<ErrorExpectation>({
+    static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {
             .name = "unsupported import(cpp) boundary type",
             .source = "private import(cpp) fn invalid(value: str);",
@@ -63,14 +59,8 @@ TEST_CASE("Compiler diagnostics: interop failures preserve code and precise span
             .code = "CV-CPP-IDENTIFIER",
             .primary_text = "main",
         },
-        {
-            .name = "C++ keyword API name",
-            .source = "export(cpp) fn class() -> i32 { return 1; }",
-            .code = "CV-CPP-IDENTIFIER",
-            .primary_text = "class",
-        },
     });
-    check_errors(cases);
+    check_compiler_errors(cases);
 }
 
 TEST_CASE("Compiler diagnostics: C++ API namespace collisions are Carven-owned") {
@@ -100,49 +90,14 @@ TEST_CASE("Compiler diagnostics: C++ API namespace collisions are Carven-owned")
     );
 
     REQUIRE(!result.has_value());
-    const auto* collision = find_diagnostic(result.error(), "CV-CPP-API-PATH-COLLISION");
+    const auto* collision = find_compiler_diagnostic(result.error(), "CV-CPP-API-PATH-COLLISION");
     REQUIRE(collision != nullptr);
     REQUIRE(collision->attachment.primary.has_value());
     CHECK_EQ(sources.slice(collision->attachment.primary->span), "export(cpp)");
 }
 
-
-TEST_CASE("Compiler diagnostics: an exported module path is validated once") {
-    auto sources = SourceManager();
-    const auto source_id = *sources.append_virtual(
-        "class.cv",
-        "export(cpp) fn first() -> i32 { return 1; }\n"
-        "export(cpp) fn second() -> i32 { return 2; }\n"
-    );
-    const auto module_path = CanonicalModulePath::from_value("class");
-    REQUIRE(module_path.has_value());
-    const auto input = CompilationModuleInput {
-        .source_id = source_id,
-        .module_path = *module_path,
-    };
-
-    const auto result = compile(
-        sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
-        TargetPlanningRequest {
-            .test_mode = TestGenerationMode::None,
-            .linkage_domain = LinkageDomain::explicit_value("test:cpp-module-path").value(),
-        }
-    );
-
-    REQUIRE(!result.has_value());
-    const auto count = std::ranges::count_if(result.error(), [](const Diagnostic& diagnostic) {
-        return diagnostic.finding.code == "CV-CPP-IDENTIFIER";
-    });
-    CHECK_EQ(count, 1);
-    const auto* diagnostic = find_diagnostic(result.error(), "CV-CPP-IDENTIFIER");
-    REQUIRE(diagnostic != nullptr);
-    REQUIRE(diagnostic->attachment.primary.has_value());
-    CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), "export(cpp)");
-}
-
 TEST_CASE("Compiler diagnostics: external delegation retains Carven access rules") {
-    constexpr auto cases = std::to_array<ErrorExpectation>({
+    constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "global keyword expression",
          .source = "fn f() { ::native::class(); }",
          .code = "CV-CPP-IDENTIFIER",
@@ -178,13 +133,13 @@ TEST_CASE("Compiler diagnostics: external delegation retains Carven access rules
         {.name = "external import conflicts with declaration",
          .source = "import <native> using vendor::f; fn f() {}",
          .code = "CV-CATALOG",
-         .primary_text = "vendor::f"},
+         .primary_text = "f"},
         {.name = "known Carven names do not fall back to C++",
          .source = "import <native> using vendor::*; fn f() { let x = 1; x(); }",
          .code = "CV-TYPE-NOT-CALLABLE",
          .primary_text = "x"},
     });
-    check_errors(cases);
+    check_compiler_errors(cases);
 }
 
 TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module") {
@@ -192,6 +147,7 @@ TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module
         std::string_view consumer;
         std::string_view code;
     };
+
     constexpr auto cases = std::to_array<Case>({
         {"fn f() { unknown(); }", "CV-NAME-UNRESOLVED"},
         {"import .provider using external; fn f() {}", "CV-IMPORT-RESOLUTION"},
@@ -202,7 +158,7 @@ TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module
         auto sources = SourceManager();
         const auto provider = *sources.append_virtual(
             "provider.cv",
-            "import <native> using { native::external }; import <native> using native::*; fn known() {}"
+            "import <native> using native::{ external }; import <native> using native::*; fn known() {}"
         );
         const auto consumer = *sources.append_virtual("consumer.cv", std::string(test.consumer));
         const auto inputs = std::array {
@@ -224,7 +180,7 @@ TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module
             }
         );
         REQUIRE(!result.has_value());
-        CHECK(find_diagnostic(result.error(), test.code) != nullptr);
+        CHECK(find_compiler_diagnostic(result.error(), test.code) != nullptr);
     }
 }
 
@@ -233,6 +189,7 @@ TEST_CASE("Compiler: external validity is delegated to C++") {
         std::string_view name;
         std::string_view source;
     };
+
     constexpr auto cases = std::to_array<Case>({
         {.name = "bad_argument",
          .source =
@@ -277,4 +234,21 @@ TEST_CASE("Compiler: external validity is delegated to C++") {
         );
         CHECK(result.has_value());
     }
+}
+
+TEST_CASE("Compiler diagnostics: explicit selections and C strings enforce their contracts") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {"different paths",
+         "import <a> using first::f; import <b> using second::f; fn main() {}",
+         "CV-CATALOG",
+         "f"},
+        {"C string NUL", R"(fn main() { let p = c"a\0b"; })", "CV-LEXICAL", R"(\0)"},
+        {"C string Unicode NUL", R"(fn main() { let p = c"a\u{0}b"; })", "CV-LEXICAL", R"(\u{0})"},
+        {"C string pattern",
+         R"(fn f() { match 1 { c"abc" => {}, _ => {} } })",
+         "CV-TYPE-MATCH-PATTERN",
+         R"(c"abc")"},
+        {"C string constant", R"(const p = c"abc";)", "CV-CONST-INITIALIZER", R"(c"abc")"},
+    });
+    check_compiler_errors(cases);
 }

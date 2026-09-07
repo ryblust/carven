@@ -19,46 +19,41 @@ import :source.module_path;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-using semantic_analysis_test::analyze_errors;
-using semantic_analysis_test::analyze_program;
-using semantic_analysis_test::contains_code;
-using semantic_analysis_test::payload_prelude;
-
 TEST_CASE("Semantic availability: Write capture and Take conflict across a callable") {
-    const auto diagnostics = analyze_errors(
-        std::string(payload_prelude)
+    const auto diagnostics = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn invalid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    let callback = [&payload]() { payload.value = 2; };\n"
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK(contains_code(diagnostics, DiagnosticCode::AccessCaptureConflict));
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessCaptureConflict));
 }
 
 TEST_CASE("Semantic availability: aggregate and branch results retain Write captures") {
-    const auto aggregate = analyze_errors(
-        std::string(payload_prelude)
+    const auto aggregate = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn invalid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    let callbacks = [ [&payload]() { payload.value = 2; } ];\n"
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK(contains_code(aggregate, DiagnosticCode::AccessCaptureConflict));
+    CHECK(contains_diagnostic_code(aggregate, DiagnosticCode::AccessCaptureConflict));
 
-    const auto projection = analyze_errors(
-        std::string(payload_prelude)
+    const auto projection = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn invalid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    let callback = [ [&payload]() { payload.value = 2; } ][0];\n"
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK(contains_code(projection, DiagnosticCode::AccessCaptureConflict));
+    CHECK(contains_diagnostic_code(projection, DiagnosticCode::AccessCaptureConflict));
 
-    const auto place_read = analyze_errors(
-        std::string(payload_prelude)
+    const auto place_read = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn invalid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    let callbacks = [ [&payload]() { payload.value = 2; } ];\n"
@@ -67,10 +62,10 @@ TEST_CASE("Semantic availability: aggregate and branch results retain Write capt
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK(contains_code(place_read, DiagnosticCode::AccessCaptureConflict));
+    CHECK(contains_diagnostic_code(place_read, DiagnosticCode::AccessCaptureConflict));
 
-    const auto forwarded = analyze_errors(
-        std::string(payload_prelude)
+    const auto forwarded = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn invalid(flag: bool) {\n"
           "    var payload = Payload { value: 1 };\n"
           "    let callback = [&payload]() { payload.value = 2; };\n"
@@ -78,43 +73,43 @@ TEST_CASE("Semantic availability: aggregate and branch results retain Write capt
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK(contains_code(forwarded, DiagnosticCode::AccessCaptureConflict));
+    CHECK(contains_diagnostic_code(forwarded, DiagnosticCode::AccessCaptureConflict));
 }
 
 TEST_CASE("Semantic availability: discarded owners retain Write captures until scope exit") {
-    for (const auto* const keyword : {"let", "var"}) {
+    for (const auto* keyword : {"let", "var"}) {
         CAPTURE(keyword);
-        const auto retained = analyze_errors(
-            std::string(payload_prelude) + "fn invalid() { var payload = Payload { value: 1 }; "
-            + keyword
+        const auto retained = analyze_test_errors(
+            std::string(semantic_test_payload_prelude)
+            + "fn invalid() { var payload = Payload { value: 1 }; " + keyword
             + " _ = [&payload]() { payload.value = 2; }; "
               "consume(&&payload); }"
         );
-        CHECK(contains_code(retained, DiagnosticCode::AccessCaptureConflict));
+        CHECK(contains_diagnostic_code(retained, DiagnosticCode::AccessCaptureConflict));
 
-        const auto released = analyze_errors(
-            std::string(payload_prelude)
+        const auto released = analyze_test_errors(
+            std::string(semantic_test_payload_prelude)
             + "fn valid() { var payload = Payload { value: 1 }; if true { " + keyword
             + " _ = [&payload]() { payload.value = 2; }; } "
               "consume(&&payload); }"
         );
-        CHECK_FALSE(contains_code(released, DiagnosticCode::AccessCaptureConflict));
+        CHECK_FALSE(contains_diagnostic_code(released, DiagnosticCode::AccessCaptureConflict));
     }
 }
 
 TEST_CASE("Semantic availability: Write capture ends with its actual holder") {
-    const auto temporary = analyze_errors(
-        std::string(payload_prelude)
+    const auto temporary = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    [&payload]() { payload.value = 2; }();\n"
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK_FALSE(contains_code(temporary, DiagnosticCode::AccessCaptureConflict));
+    CHECK_FALSE(contains_diagnostic_code(temporary, DiagnosticCode::AccessCaptureConflict));
 
-    const auto lexical = analyze_errors(
-        std::string(payload_prelude)
+    const auto lexical = analyze_test_errors(
+        std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    if true {\n"
@@ -123,11 +118,11 @@ TEST_CASE("Semantic availability: Write capture ends with its actual holder") {
           "    consume(&&payload);\n"
           "}\n"
     );
-    CHECK_FALSE(contains_code(lexical, DiagnosticCode::AccessCaptureConflict));
+    CHECK_FALSE(contains_diagnostic_code(lexical, DiagnosticCode::AccessCaptureConflict));
 }
 
 TEST_CASE("Semantic availability: control-result callable loans end with borrower scope") {
-    const auto diagnostics = analyze_errors(
+    const auto diagnostics = analyze_test_errors(
         "fn fallback(value: i32) -> i32 { return value; }\n"
         "fn valid(flag: bool) {\n"
         "    let offset = 1;\n"
@@ -139,25 +134,25 @@ TEST_CASE("Semantic availability: control-result callable loans end with borrowe
         "    let moved = &&owner;\n"
         "}\n"
     );
-    CHECK_FALSE(contains_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
-    CHECK_FALSE(contains_code(diagnostics, DiagnosticCode::TypeCallableViewEscape));
+    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::TypeCallableViewEscape));
 }
 
 TEST_CASE("Semantic loans: callee retains its backing during nested arguments") {
-    const auto nested = analyze_errors(
+    const auto nested = analyze_test_errors(
         "fn invalid() { let offset = 1; let owner = [offset](x: i32) { return x + offset; }; "
         "let view: fn(i32) -> i32 = owner; "
         "let result = view(if true { let moved = &&owner; 0 } else { 0 }); }"
     );
-    CHECK(contains_code(nested, DiagnosticCode::AccessBorrowConflict));
+    CHECK(contains_diagnostic_code(nested, DiagnosticCode::AccessBorrowConflict));
 }
 
 TEST_CASE("Semantic captures: returned closure cannot retain a local Write target") {
-    const auto diagnostics = analyze_errors(
+    const auto diagnostics = analyze_test_errors(
         "fn invalid() { let factory = []() { var local = 1; "
         "return [&local]() { local += 1; }; }; }"
     );
-    CHECK(contains_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
 }
 
 TEST_CASE("Semantic relationships: completed calls deliver only retained captures") {
@@ -185,7 +180,7 @@ TEST_CASE("Semantic relationships: completed calls deliver only retained capture
     };
     for (const auto& source : valid) {
         CAPTURE(source);
-        static_cast<void>(analyze_program(source));
+        static_cast<void>(analyze_test_program(source));
     }
     const auto invalid = std::array {
         std::string("fn invalid() {") + factory
@@ -202,10 +197,10 @@ TEST_CASE("Semantic relationships: completed calls deliver only retained capture
     };
     for (const auto& source : invalid) {
         CAPTURE(source);
-        const auto diagnostics = analyze_errors(source);
+        const auto diagnostics = analyze_test_errors(source);
         CHECK(
-            (contains_code(diagnostics, DiagnosticCode::AccessBorrowConflict)
-             || contains_code(diagnostics, DiagnosticCode::AccessCaptureConflict))
+            (contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict)
+             || contains_diagnostic_code(diagnostics, DiagnosticCode::AccessCaptureConflict))
         );
     }
 }
@@ -222,15 +217,33 @@ TEST_CASE("Semantic stable selection: guard access follows actual storage aliase
     };
     for (const auto* source : invalid) {
         CAPTURE(source);
-        const auto diagnostics = analyze_errors(source);
+        const auto diagnostics = analyze_test_errors(source);
         CHECK(
-            (contains_code(diagnostics, DiagnosticCode::AccessOperationConflict)
-             || contains_code(diagnostics, DiagnosticCode::AccessUnavailable))
+            (contains_diagnostic_code(diagnostics, DiagnosticCode::AccessOperationConflict)
+             || contains_diagnostic_code(diagnostics, DiagnosticCode::AccessUnavailable))
         );
     }
-    static_cast<void>(analyze_program(
+    static_cast<void>(analyze_test_program(
         "fn set(&x: i32) -> bool { x = 2; return true; } "
         "fn valid() { var x = 1; var y = 1; match x { _ if set(&y) => { x = 3; }, _ => {}, } "
         "var a = [1]; for &e in a { e = 0; } let moved = &&a; }"
     ));
+}
+
+TEST_CASE("Semantic callable views: copies retain the target instead of intermediate storage") {
+    static_cast<void>(analyze_test_program(
+        "fn one() -> i32 { return 1; } "
+        "fn valid() { var x = 1; let owner = [&x]() { x += 1; return x; }; "
+        "var selected: fn() -> i32 = one; "
+        "if true { let intermediate: fn() -> i32 = owner; selected = intermediate; } "
+        "let result = selected(); }"
+    ));
+    const auto diagnostics = analyze_test_errors(
+        "fn one() -> i32 { return 1; } "
+        "fn invalid() { var selected: fn() -> i32 = one; "
+        "if true { var x = 1; let owner = [&x]() { x += 1; return x; }; "
+        "let intermediate: fn() -> i32 = owner; selected = intermediate; } "
+        "let result = selected(); }"
+    );
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::TypeCallableViewEscape));
 }

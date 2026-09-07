@@ -28,8 +28,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noexcept
     -> AnalysisResult<BuiltExpression> {
     auto operand = expression(source.operand_id);
@@ -40,8 +38,8 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
     if (!index.has_value()) {
         return std::unexpected(index.error());
     }
-    auto pending_failures = take_pending(*operand);
-    append_pending(pending_failures, take_pending(*index));
+    auto pending_failures = take_pending_failures(*operand);
+    append_pending_failures(pending_failures, take_pending_failures(*index));
     auto index_value = consume_value(*index, ast.expression(source.index).span, AccessMode::Read);
     if (!index_value.has_value()) {
         return std::unexpected(index_value.error());
@@ -149,7 +147,7 @@ auto BodyElaborator::select_member(
             .span = span
         };
     }
-    auto pending_failures = take_pending(operand);
+    auto pending_failures = take_pending_failures(operand);
     if (const auto* concrete = std::get_if<TypeID>(&operand.type())) {
         const auto canonical = draft().type_copy(*concrete);
         if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
@@ -232,6 +230,3 @@ auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Sp
     result.completes = operand->completes;
     return result;
 }
-
-
-} // namespace body_elaboration

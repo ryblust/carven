@@ -11,8 +11,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::is_cpp_type(ConstructionTypeRef type) const noexcept -> bool {
     const auto* concrete = std::get_if<TypeID>(&type);
     return concrete != nullptr
@@ -105,7 +103,7 @@ auto BodyElaborator::cpp_projection(
             .completes = receiver.completes
         };
     }
-    auto pending = take_pending(receiver);
+    auto pending = take_pending_failures(receiver);
     auto value = consume_value(receiver, span, AccessMode::Read);
     if (!value.has_value()) {
         return std::unexpected(value.error());
@@ -286,4 +284,3 @@ auto BodyElaborator::cpp_call(
         .completes = completes
     };
 }
-} // namespace body_elaboration

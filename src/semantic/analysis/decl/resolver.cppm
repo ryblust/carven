@@ -18,11 +18,9 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
-class DeclarationResolver final {
+class DeclResolver final {
 public:
-    DeclarationResolver(
+    DeclResolver(
         ProgramDraft& target,
         AnalysisCatalogView source_catalog,
         ImportUsage& usage
@@ -73,11 +71,15 @@ public:
 
 private:
     struct Unvisited final {};
+
     struct Resolving final {};
+
     struct Resolved final {};
+
     struct Failed final {
         AnalysisFailure failure;
     };
+
     using State = std::variant<Unvisited, Resolving, Resolved, Failed>;
 
     auto module_declaration(ProgramModuleID module_id) const noexcept -> ModuleID {
@@ -100,13 +102,16 @@ private:
         auto diagnostic =
             DiagnosticBuilder(DiagnosticCode::ConstCycle, "declaration dependency cycle");
         diagnostic.primary(
-            locate(source_id(draft, requester), origin),
+            locate(declaration_source_id(draft, requester), origin),
             "this dependency closes the cycle"
         );
         for (auto edge = first; edge != active_path.end(); ++edge) {
-            const auto& declaration = catalog_symbol(catalog, *edge);
+            const auto& declaration = require_catalog_symbol(catalog, *edge);
             diagnostic.related(
-                locate(source_id(draft, declaration.module_id), declaration.declaration_span),
+                locate(
+                    declaration_source_id(draft, declaration.module_id),
+                    declaration.declaration_span
+                ),
                 edge == first
                     ? std::format("cycle starts at declaration '{}'", declaration.name)
                     : std::format("cycle passes through declaration '{}'", declaration.name)
@@ -117,7 +122,7 @@ private:
 
     auto resolve(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
         -> AnalysisResult<void> {
-        const auto& symbol = catalog_symbol(catalog, id);
+        const auto& symbol = require_catalog_symbol(catalog, id);
         auto& state = states[id.index()];
         if (std::holds_alternative<Resolved>(state)) {
             return {};
@@ -195,7 +200,7 @@ private:
         -> AnalysisResult<const CatalogSymbol*> {
         const auto candidates = catalog.lookup(module_id, name);
         if (candidates.empty()) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 module_id,
                 origin,
@@ -208,11 +213,17 @@ private:
                 DiagnosticCode::NameAmbiguous,
                 std::format("name '{}' is provided by more than one wildcard import", name)
             );
-            diagnostic.primary(locate(source_id(draft, module_id), origin), "ambiguous reference");
+            diagnostic.primary(
+                locate(declaration_source_id(draft, module_id), origin),
+                "ambiguous reference"
+            );
             for (const auto& candidate : candidates) {
-                const auto& selected = catalog_symbol(catalog, candidate.symbol_id);
+                const auto& selected = require_catalog_symbol(catalog, candidate.symbol_id);
                 diagnostic.related(
-                    locate(source_id(draft, selected.module_id), selected.declaration_span),
+                    locate(
+                        declaration_source_id(draft, selected.module_id),
+                        selected.declaration_span
+                    ),
                     std::format(
                         "candidate from '{}'",
                         draft.module_path_copy(selected.module_id).value()
@@ -225,32 +236,38 @@ private:
         if (selected.import_binding.has_value()) {
             import_usage.record(*selected.import_binding);
         }
-        return std::addressof(catalog_symbol(catalog, selected.symbol_id));
+        return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
     }
 
     struct ConstantScope final {
-        DeclarationResolver& resolver;
+        DeclResolver& resolver;
         ProgramModuleID module;
         ASTView syntax;
+
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisResult<ResolvedConstantName> {
             return resolver.resolve_constant_name(module, name, span);
         }
+
         auto resolve_enum_qualifier(ASTExprID expression) noexcept
             -> AnalysisResult<std::optional<TypeID>> {
             return resolver.resolve_enum_qualifier(module, syntax, expression);
         }
+
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
             -> AnalysisResult<ResolvedEnumCase> {
             return resolver.resolve_constant_enum_case(module, type, name, span);
         }
+
         auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
             return resolver.resolve_type(module, syntax, type);
         }
+
         auto supports_equality(ConstructionTypeRef type) noexcept -> bool {
             auto visiting = std::flat_set<TypeID>();
             return resolver.supports_equality(type, visiting);
         }
+
         auto is_numeric_enum(TypeID type) const noexcept -> bool {
             const auto canonical = resolver.draft.type_copy(type);
             const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
@@ -371,5 +388,3 @@ private:
     std::vector<std::optional<ConstructionCallableContract>> callable_contracts;
     std::vector<std::optional<ProgramOriginID>> cpp_import_origins;
 };
-
-} // namespace decl_resolution

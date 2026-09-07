@@ -158,6 +158,7 @@ struct QuotedWalk final {
     std::size_t scalar_count;
     char32_t scalar;
     std::size_t error_offset;
+    std::size_t error_length;
     bool valid;
 };
 
@@ -166,13 +167,18 @@ enum class QuotedLiteralKind {
     Character,
 };
 
-auto walk_quoted_literal(std::string_view spelling, QuotedLiteralKind kind) noexcept -> QuotedWalk {
+auto walk_quoted_literal(
+    std::string_view spelling,
+    QuotedLiteralKind kind,
+    bool reject_nul = false
+) noexcept -> QuotedWalk {
     auto result = QuotedWalk {
         .bytes = {},
         .consumed = 0uz,
         .scalar_count = 0uz,
         .scalar = 0,
         .error_offset = 0uz,
+        .error_length = 1uz,
         .valid = false,
     };
     result.bytes.reserve(spelling.size());
@@ -199,6 +205,7 @@ auto walk_quoted_literal(std::string_view spelling, QuotedLiteralKind kind) noex
             return fail(offset);
         }
 
+        const auto scalar_start = offset;
         auto scalar = char32_t();
         if (spelling[offset] == '\\') {
             const auto escape_offset = offset++;
@@ -254,6 +261,10 @@ auto walk_quoted_literal(std::string_view spelling, QuotedLiteralKind kind) noex
             }
             scalar = sequence.scalar;
             offset += sequence.width;
+        }
+        if (reject_nul && scalar == 0) {
+            result.error_length = offset - scalar_start;
+            return fail(scalar_start);
         }
         append_utf8(result.bytes, scalar);
         ++result.scalar_count;
@@ -413,16 +424,18 @@ auto scan_numeric_literal(std::string_view text, std::uint32_t source_offset) no
     };
 }
 
-auto scan_string_literal(std::string_view text) noexcept
+auto scan_string_literal(std::string_view text, bool reject_nul) noexcept
     -> std::expected<StringLiteralScan, QuotedLiteralScanError> {
     const auto extent = quoted_extent(text, '"');
-    auto decoded = walk_quoted_literal(text.substr(0, extent), QuotedLiteralKind::String);
+    auto decoded =
+        walk_quoted_literal(text.substr(0, extent), QuotedLiteralKind::String, reject_nul);
     const auto valid = decoded.valid && decoded.consumed == extent;
     if (!valid) {
         return std::unexpected(
             QuotedLiteralScanError {
                 .consumed = extent,
                 .error_offset = decoded.error_offset,
+                .error_length = decoded.error_length,
             }
         );
     }
@@ -442,6 +455,7 @@ auto scan_character_literal(std::string_view text) noexcept
             QuotedLiteralScanError {
                 .consumed = extent,
                 .error_offset = decoded.error_offset,
+                .error_length = decoded.error_length,
             }
         );
     }

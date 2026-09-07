@@ -85,6 +85,7 @@ TargetDeducedType::TargetDeducedType(TargetExpr expression) noexcept
 auto TargetDeducedType::expression() const noexcept -> const TargetExpr& {
     return queried_expression;
 }
+
 auto TargetDeducedType::operator==(const TargetDeducedType& other) const noexcept -> bool {
     return equal_query(queried_expression, other.queried_expression);
 }

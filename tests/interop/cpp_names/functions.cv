@@ -1,17 +1,17 @@
-import "cpp_names/provider.hpp" using {
-    native::record,
-    native::observed,
-    native::reset,
-    native::pair,
-    native::argument_access,
-    native::AccessProbe,
-    native::identity,
-    native::Owner,
-    native::consume,
-    native::live,
-    native::copies,
-    native::moves,
-    native::reset_owner_counts,
+import "cpp_names/provider.hpp" using native::{
+    record,
+    observed,
+    reset,
+    pair,
+    argument_access,
+    AccessProbe,
+    identity,
+    Owner,
+    consume,
+    live,
+    copies,
+    moves,
+    reset_owner_counts,
 };
 
 import "cpp_names/provider.hpp" using plain;

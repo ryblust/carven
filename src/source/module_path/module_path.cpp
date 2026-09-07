@@ -48,20 +48,10 @@ auto CanonicalModulePath::from_components(std::span<const std::string_view> comp
                 }
             );
         }
-        const auto classification = classify_identifier(component);
-        if (std::holds_alternative<InvalidIdentifier>(classification)) {
+        if (!is_identifier_spelling(component)) {
             return std::unexpected(
                 CanonicalModulePathError {
                     .kind = CanonicalModulePathErrorKind::InvalidIdentifier,
-                    .component_index = index,
-                    .component = std::string(component),
-                }
-            );
-        }
-        if (std::holds_alternative<KeywordIdentifier>(classification)) {
-            return std::unexpected(
-                CanonicalModulePathError {
-                    .kind = CanonicalModulePathErrorKind::Keyword,
                     .component_index = index,
                     .component = std::string(component),
                 }

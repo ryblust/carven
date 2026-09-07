@@ -9,7 +9,8 @@ namespace {
 auto requires_literal_value(TokenKind kind) noexcept -> bool {
     return kind == TokenKind::NumberLiteral
         || kind == TokenKind::CharLiteral
-        || kind == TokenKind::StringLiteral;
+        || kind == TokenKind::StringLiteral
+        || kind == TokenKind::CStringLiteral;
 }
 
 auto require_token_capacity(std::size_t token_count) noexcept -> void {
@@ -26,6 +27,8 @@ auto literal_token_kind(const TokenLiteralValue& value) noexcept -> TokenKind {
                 return TokenKind::NumberLiteral;
             } else if constexpr (std::same_as<Value, StringLiteralValue>) {
                 return TokenKind::StringLiteral;
+            } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
+                return TokenKind::CStringLiteral;
             } else {
                 return TokenKind::CharLiteral;
             }
@@ -104,6 +107,7 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case Identifier:         return "Identifier";
         case NumberLiteral:      return "NumberLiteral";
         case CharLiteral:        return "CharLiteral";
+        case CStringLiteral:     return "CStringLiteral";
         case StringLiteral:      return "StringLiteral";
         case CppAngleHeaderName: return "CppAngleHeaderName";
         case CppQuoteHeaderName: return "CppQuoteHeaderName";

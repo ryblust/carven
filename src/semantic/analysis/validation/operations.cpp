@@ -2,7 +2,6 @@ module carven:semantic.analysis.validation.operations.impl;
 import :semantic.analysis.validation.context;
 import std;
 
-namespace validation_detail {
 auto BodyContractVerifier::verify_computations() const noexcept -> void {
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& source) noexcept {
         const auto check_result = [&](const OperatorDecision& decision, TypeID operand) noexcept {
@@ -98,7 +97,13 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
                     static_cast<void>(draft->declarations().module_decl(name->name.context_module));
                 }
+                if (std::holds_alternative<CppCStringOperation>(value.operation)
+                    && require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {CppTypeValue {.form = CppConstCharPointerType {}}}) {
+                    invariant_violation("C string literal does not have const char pointer type");
+                }
                 if (!std::holds_alternative<CppConstructOperation>(value.operation)
+                    && !std::holds_alternative<CppCStringOperation>(value.operation)
                     && !std::holds_alternative<CppConvertOperation>(value.operation)
                     && !std::holds_alternative<CppUpdateOperation>(value.operation)) {
                     auto operands = std::vector<CppTypeOperand>();
@@ -315,4 +320,3 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
         source.value
     );
 }
-} // namespace validation_detail

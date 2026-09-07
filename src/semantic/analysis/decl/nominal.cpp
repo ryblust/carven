@@ -28,9 +28,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
-auto DeclarationResolver::resolve_struct(
+auto DeclResolver::resolve_struct(
     const CatalogSymbol& symbol,
     const CatalogStructForm& form,
     ASTView syntax,
@@ -49,11 +47,11 @@ auto DeclarationResolver::resolve_struct(
                 "a structure field is declared more than once"
             );
             diagnostic.primary(
-                locate(source_id(draft, symbol.module_id), field.name_span),
+                locate(declaration_source_id(draft, symbol.module_id), field.name_span),
                 "duplicate field"
             );
             diagnostic.related(
-                locate(source_id(draft, symbol.module_id), prior->second),
+                locate(declaration_source_id(draft, symbol.module_id), prior->second),
                 "first declaration"
             );
             return std::unexpected(draft.diagnostics().error(diagnostic.build()));
@@ -65,7 +63,7 @@ auto DeclarationResolver::resolve_struct(
         fields.push_back({
             .name = draft.intern_spelling(name),
             .type = *type,
-            .origin = declaration_origin(draft, symbol.module_id, field.span),
+            .origin = declaration_source_origin(draft, symbol.module_id, field.span),
         });
     }
     if (form.structure.index() >= structures.size()) {
@@ -74,7 +72,7 @@ auto DeclarationResolver::resolve_struct(
     structures[form.structure.index()] = ConstructionStructDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
-        .origin = declaration_origin(draft, symbol.module_id, item_span),
+        .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
         .fields = std::move(fields),
         .capabilities = {.equality = false},
@@ -82,7 +80,7 @@ auto DeclarationResolver::resolve_struct(
     return {};
 }
 
-auto DeclarationResolver::resolve_enum(
+auto DeclResolver::resolve_enum(
     const CatalogSymbol& symbol,
     const CatalogEnumForm& form,
     ASTView syntax,
@@ -90,7 +88,7 @@ auto DeclarationResolver::resolve_enum(
     Span item_span
 ) noexcept -> AnalysisResult<void> {
     if (enumeration.cases.empty()) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             enumeration.name_span,
@@ -106,7 +104,7 @@ auto DeclarationResolver::resolve_enum(
             return !value.payload_types.empty();
         });
     if (payload_representation && enumeration.underlying_type.has_value()) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.type(*enumeration.underlying_type).span,
@@ -126,17 +124,18 @@ auto DeclarationResolver::resolve_enum(
                 "an enum case is declared more than once"
             );
             diagnostic.primary(
-                locate(source_id(draft, symbol.module_id), source_case.name_span),
+                locate(declaration_source_id(draft, symbol.module_id), source_case.name_span),
                 "duplicate case"
             );
             diagnostic.related(
-                locate(source_id(draft, symbol.module_id), prior->second),
+                locate(declaration_source_id(draft, symbol.module_id), prior->second),
                 "first declaration"
             );
             return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
         const auto case_id = form.cases[index];
-        const auto& case_symbol = catalog_symbol(catalog, catalog.enum_case_symbol(case_id));
+        const auto& case_symbol =
+            require_catalog_symbol(catalog, catalog.enum_case_symbol(case_id));
         const auto* case_form = std::get_if<CatalogEnumCaseForm>(&case_symbol.form);
         if (case_form == nullptr
             || case_form->owner != form.enumeration
@@ -156,7 +155,7 @@ auto DeclarationResolver::resolve_enum(
         enum_cases[case_id.index()] = ConstructionEnumCaseDeclaration {
             .owner = form.enumeration,
             .name = draft.intern_spelling(name),
-            .origin = declaration_origin(draft, symbol.module_id, source_case.span),
+            .origin = declaration_source_origin(draft, symbol.module_id, source_case.span),
             .payload_types = std::move(payload),
             .constant = std::nullopt,
         };
@@ -180,7 +179,7 @@ auto DeclarationResolver::resolve_enum(
         const auto* builtin =
             canonical.has_value() ? std::get_if<BuiltinTypeValue>(&canonical->value) : nullptr;
         if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 enumeration.underlying_type.has_value()
@@ -197,7 +196,7 @@ auto DeclarationResolver::resolve_enum(
     enumerations[form.enumeration.index()] = EnumDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
-        .origin = declaration_origin(draft, symbol.module_id, item_span),
+        .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
         .representation = representation,
         .cases = form.cases,
@@ -206,7 +205,7 @@ auto DeclarationResolver::resolve_enum(
     return {};
 }
 
-auto DeclarationResolver::resolve_enum_case(
+auto DeclResolver::resolve_enum_case(
     const CatalogSymbol& symbol,
     const CatalogEnumCaseForm& form
 ) noexcept -> AnalysisResult<void> {
@@ -223,7 +222,7 @@ auto DeclarationResolver::resolve_enum_case(
     }
     auto& declaration = *enum_cases[form.enum_case.index()];
     const auto& owner = *enumerations[form.owner.index()];
-    const auto& owner_symbol = catalog_symbol(catalog, owner_symbol_id);
+    const auto& owner_symbol = require_catalog_symbol(catalog, owner_symbol_id);
     const auto syntax = draft.syntax_tree(symbol.module_id).view();
     const auto* source_enum = std::get_if<ASTEnumDecl>(&syntax.item(owner_symbol.item_id).value);
     if (source_enum == nullptr || form.index >= source_enum->cases.size()) {
@@ -239,7 +238,7 @@ auto DeclarationResolver::resolve_enum_case(
     const auto* numeric = std::get_if<NumericEnumRepresentation>(&owner.representation);
     if (numeric == nullptr) {
         if (source_case.initializer.has_value()) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 syntax.expression(*source_case.initializer).span,
@@ -281,7 +280,7 @@ auto DeclarationResolver::resolve_enum_case(
         const auto* selected =
             fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
         if (selected == nullptr) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 syntax.expression(*source_case.initializer).span,
@@ -311,7 +310,7 @@ auto DeclarationResolver::resolve_enum_case(
             const auto signed_value = previous->value.as_signed();
             if (!signed_value.has_value()
                 || *signed_value == std::numeric_limits<std::int64_t>::max()) {
-                return std::unexpected(fail(
+                return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     source_case.name_span,
@@ -322,7 +321,7 @@ auto DeclarationResolver::resolve_enum_case(
             value = IntegerConstant::from_signed(*signed_value + 1);
         } else {
             if (previous->value.magnitude() == std::numeric_limits<std::uint64_t>::max()) {
-                return std::unexpected(fail(
+                return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     source_case.name_span,
@@ -336,7 +335,7 @@ auto DeclarationResolver::resolve_enum_case(
     const auto canonical = draft.type_copy(numeric->underlying_type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
     if (builtin == nullptr || !integer_constant_fits(value, builtin->kind)) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             source_case.initializer.has_value() ? syntax.expression(*source_case.initializer).span
@@ -354,7 +353,7 @@ auto DeclarationResolver::resolve_enum_case(
     return {};
 }
 
-auto DeclarationResolver::validate_enum_codes(const CatalogSymbol& symbol) noexcept
+auto DeclResolver::validate_enum_codes(const CatalogSymbol& symbol) noexcept
     -> AnalysisResult<void> {
     const auto& form = std::get<CatalogEnumForm>(symbol.form);
     const auto& declaration = enumerations[form.enumeration.index()];
@@ -394,5 +393,3 @@ auto DeclarationResolver::validate_enum_codes(const CatalogSymbol& symbol) noexc
     }
     return {};
 }
-
-} // namespace decl_resolution

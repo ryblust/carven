@@ -61,5 +61,5 @@ The program invokes the borrowed callback synchronously while its closure
 owner remains in scope.
 
 Return to the [failure-contract series](../README.md), or examine the
-[native C++ adapter](../../interop/importing/) to see the separate native
+[native C++ adapter](../../interop/import/) to see the separate native
 exception boundary.

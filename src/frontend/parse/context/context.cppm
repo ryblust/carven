@@ -76,6 +76,7 @@ private:
     bool test_statements_enabled = false;
 
     static constexpr std::uint32_t maximum_syntax_nesting = 512;
+
     class DepthGuard final {
     public:
         DepthGuard(const DepthGuard&) = delete;

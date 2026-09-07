@@ -2,7 +2,6 @@ module carven:semantic.analysis.validation.structure.impl;
 import :semantic.analysis.validation.context;
 import std;
 
-namespace validation_detail {
 auto BodyContractVerifier::verify_rows() noexcept -> void {
     verify_body_inputs();
     auto inputs = std::vector<std::uint8_t>(body.bindings().size(), 0u);
@@ -185,5 +184,3 @@ auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> Cal
         require_type(type).value
     );
 }
-
-} // namespace validation_detail

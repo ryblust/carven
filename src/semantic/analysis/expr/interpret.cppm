@@ -15,6 +15,7 @@ import :source.text;
 import std;
 
 struct NotConstant final {};
+
 using ConstantExpressionResult = std::variant<ConstantID, NotConstant>;
 
 template<typename Site>
@@ -24,10 +25,8 @@ auto interpret_expression(
     std::optional<ConstructionTypeRef> expected = std::nullopt
 ) noexcept -> AnalysisResult<typename Site::Result>;
 
-namespace expression_analysis {
-
 template<typename Site>
-auto fold(
+auto fold_expression_constant(
     Site& site,
     std::expected<ConstantFact, ConstantEvaluationFailure> fact,
     Span span
@@ -42,13 +41,16 @@ auto fold(
 }
 
 template<typename Site>
-auto literal(
+auto interpret_literal(
     Site& site,
     const ASTLiteral& source,
     Span span,
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign = LiteralSign::Positive
 ) noexcept -> AnalysisResult<typename Site::Value> {
+    if (const auto* value = std::get_if<CStringLiteralValue>(&source.value)) {
+        return site.c_string(value->bytes, span);
+    }
     auto fact = normalize_literal(site.draft(), source, expected, sign);
     if (!fact.has_value()) {
         const auto diagnostic = constant_evaluation_diagnostic(fact.error());
@@ -62,7 +64,7 @@ auto literal(
 }
 
 template<typename Site>
-auto unary(
+auto interpret_unary(
     Site& site,
     const ASTPrefixExpr& source,
     Span span,
@@ -79,7 +81,7 @@ auto unary(
         && number != nullptr
         && (std::holds_alternative<IntegerLiteralValue>(number->value)
             || std::holds_alternative<FloatingLiteralValue>(number->value))) {
-        return literal(site, *number, span, expected, LiteralSign::Negative);
+        return interpret_literal(site, *number, span, expected, LiteralSign::Negative);
     }
     auto operand = site.read(
         source.operand_id,
@@ -113,7 +115,7 @@ auto unary(
         : site.type(*operand);
     auto known = std::optional<ConstantID>();
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        auto value = fold(
+        auto value = fold_expression_constant(
             site,
             fold_unary_constant(site.draft(), operation, site.known(*operand), *concrete),
             source.operator_span
@@ -127,7 +129,7 @@ auto unary(
 }
 
 template<typename Site>
-auto require_boolean(Site& site, typename Site::Value& value, Span span) noexcept
+auto require_expression_boolean(Site& site, typename Site::Value& value, Span span) noexcept
     -> AnalysisResult<void> {
     const auto boolean = ConstructionTypeRef {site.draft().intern_builtin_type(BuiltinType::Bool)};
     if (site.external(site.type(value))) {
@@ -145,7 +147,7 @@ auto require_boolean(Site& site, typename Site::Value& value, Span span) noexcep
 }
 
 template<typename Site>
-auto binary(
+auto interpret_binary(
     Site& site,
     const ASTBinaryExpr& source,
     Span span,
@@ -161,7 +163,8 @@ auto binary(
         if (!site.present(*left)) {
             return site.unavailable();
         }
-        auto checked = require_boolean(site, *left, site.syntax().expression(source.left).span);
+        auto checked =
+            require_expression_boolean(site, *left, site.syntax().expression(source.left).span);
         if (!checked.has_value()) {
             return std::unexpected(checked.error());
         }
@@ -185,7 +188,8 @@ auto binary(
         if (!site.present(*right)) {
             return site.unavailable();
         }
-        checked = require_boolean(site, *right, site.syntax().expression(source.right).span);
+        checked =
+            require_expression_boolean(site, *right, site.syntax().expression(source.right).span);
         if (!checked.has_value()) {
             return std::unexpected(checked.error());
         }
@@ -273,7 +277,7 @@ auto binary(
         : site.type(*left);
     auto known = std::optional<ConstantID>();
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        auto value = fold(
+        auto value = fold_expression_constant(
             site,
             fold_binary_constant(
                 site.draft(),
@@ -293,7 +297,7 @@ auto binary(
 }
 
 template<typename Site>
-auto cast(Site& site, const ASTCastExpr& source, Span span) noexcept
+auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     -> AnalysisResult<typename Site::Value> {
     auto operand = site.read(source.operand_id, std::nullopt);
     if (!operand.has_value()) {
@@ -324,7 +328,7 @@ auto cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     }
     auto known = std::optional<ConstantID>();
     if (const auto* concrete = std::get_if<TypeID>(&*target)) {
-        auto value = fold(
+        auto value = fold_expression_constant(
             site,
             fold_cast_constant(site.draft(), *decision, site.known(*operand), *concrete),
             source.operator_span
@@ -338,8 +342,11 @@ auto cast(Site& site, const ASTCastExpr& source, Span span) noexcept
 }
 
 template<typename Site>
-auto expected_enum(Site& site, std::optional<ConstructionTypeRef> expected, Span span) noexcept
-    -> AnalysisResult<TypeID> {
+auto expected_expression_enum(
+    Site& site,
+    std::optional<ConstructionTypeRef> expected,
+    Span span
+) noexcept -> AnalysisResult<TypeID> {
     const auto* type = expected.has_value() ? std::get_if<TypeID>(&*expected) : nullptr;
     if (type == nullptr
         || !std::holds_alternative<EnumTypeValue>(site.draft().type_copy(*type).value)) {
@@ -353,7 +360,7 @@ auto expected_enum(Site& site, std::optional<ConstructionTypeRef> expected, Span
 }
 
 template<typename Site>
-auto enum_case(
+auto interpret_enum_case(
     Site& site,
     TypeID type,
     std::string_view name,
@@ -418,10 +425,14 @@ auto enum_case(
 }
 
 template<typename Site>
-auto text(Site& site, TextIntrinsic intrinsic, typename Site::Value operand, Span span) noexcept
-    -> AnalysisResult<typename Site::Value> {
+auto interpret_text(
+    Site& site,
+    TextIntrinsic intrinsic,
+    typename Site::Value operand,
+    Span span
+) noexcept -> AnalysisResult<typename Site::Value> {
     const auto type = site.draft().intern_builtin_type(text_intrinsic_result(intrinsic));
-    auto known = fold(
+    auto known = fold_expression_constant(
         site,
         fold_text_intrinsic_constant(site.draft(), intrinsic, site.known(operand), type),
         span
@@ -433,7 +444,7 @@ auto text(Site& site, TextIntrinsic intrinsic, typename Site::Value operand, Spa
 }
 
 template<typename Site>
-auto member(Site& site, const ASTMemberExpr& source, Span span) noexcept
+auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
     -> AnalysisResult<typename Site::Result> {
     if (source.op == ASTMemberOperator::Scope) {
         auto type = site.resolve_enum_qualifier(source.operand_id);
@@ -443,7 +454,7 @@ auto member(Site& site, const ASTMemberExpr& source, Span span) noexcept
         if (!type->has_value()) {
             return site.invalid_enum_qualifier(site.syntax().expression(source.operand_id).span);
         }
-        return enum_case(
+        return interpret_enum_case(
             site,
             **type,
             site.spelling(source.name_span),
@@ -473,13 +484,13 @@ auto member(Site& site, const ASTMemberExpr& source, Span span) noexcept
                 std::string(decision.error().message)
             ));
         }
-        return text(site, *decision, std::move(*operand), span);
+        return interpret_text(site, *decision, std::move(*operand), span);
     }
     return site.member(source, std::move(*operand), span);
 }
 
 template<typename Site>
-auto call(
+auto interpret_call(
     Site& site,
     const ASTCallExpr& source,
     Span span,
@@ -487,11 +498,11 @@ auto call(
 ) noexcept -> AnalysisResult<typename Site::Value> {
     const auto& callee = site.syntax().expression(source.callee);
     if (const auto* contextual = std::get_if<ASTContextualCaseExpr>(&callee.value)) {
-        auto type = expected_enum(site, expected, contextual->name_span);
+        auto type = expected_expression_enum(site, expected, contextual->name_span);
         if (!type.has_value()) {
             return std::unexpected(type.error());
         }
-        return enum_case(
+        return interpret_enum_case(
             site,
             *type,
             site.spelling(contextual->name_span),
@@ -512,7 +523,7 @@ auto call(
                     site.syntax().expression(member->operand_id).span
                 );
             }
-            return enum_case(
+            return interpret_enum_case(
                 site,
                 **type,
                 site.spelling(member->name_span),
@@ -544,14 +555,12 @@ auto call(
             ));
         }
         if (decision->has_value()) {
-            return text(site, **decision, std::move(*operand), span);
+            return interpret_text(site, **decision, std::move(*operand), span);
         }
         return site.member_call(source, *member, std::move(*operand), span);
     }
     return site.call(source, span);
 }
-
-} // namespace expression_analysis
 
 template<typename Site>
 auto interpret_expression(
@@ -567,21 +576,21 @@ auto interpret_expression(
         [&](const auto& form) noexcept -> AnalysisResult<typename Site::Result> {
             using Form = std::remove_cvref_t<decltype(form)>;
             if constexpr (std::same_as<Form, ASTLiteral>) {
-                return expression_analysis::literal(site, form, source.span, expected);
+                return interpret_literal(site, form, source.span, expected);
             } else if constexpr (std::same_as<Form, ASTGroupExpr>) {
                 return interpret_expression(site, form.expression, expected);
             } else if constexpr (std::same_as<Form, ASTPrefixExpr>) {
-                return expression_analysis::unary(site, form, source.span, expected);
+                return interpret_unary(site, form, source.span, expected);
             } else if constexpr (std::same_as<Form, ASTBinaryExpr>) {
-                return expression_analysis::binary(site, form, source.span, expected);
+                return interpret_binary(site, form, source.span, expected);
             } else if constexpr (std::same_as<Form, ASTCastExpr>) {
-                return expression_analysis::cast(site, form, source.span);
+                return interpret_cast(site, form, source.span);
             } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
-                auto type = expression_analysis::expected_enum(site, expected, form.name_span);
+                auto type = expected_expression_enum(site, expected, form.name_span);
                 if (!type.has_value()) {
                     return std::unexpected(type.error());
                 }
-                return expression_analysis::enum_case(
+                return interpret_enum_case(
                     site,
                     *type,
                     site.spelling(form.name_span),
@@ -591,9 +600,9 @@ auto interpret_expression(
                     false
                 );
             } else if constexpr (std::same_as<Form, ASTMemberExpr>) {
-                return expression_analysis::member(site, form, source.span);
+                return interpret_member(site, form, source.span);
             } else if constexpr (std::same_as<Form, ASTCallExpr>) {
-                return expression_analysis::call(site, form, source.span, expected);
+                return interpret_call(site, form, source.span, expected);
             } else {
                 return site.extension(form, source.span, expected);
             }

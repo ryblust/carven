@@ -410,25 +410,43 @@ TEST_CASE("Parser: callable parameters retain Read Write and Take access") {
 TEST_CASE("Parser: C++ selections retain qualified names and explicit namespaces") {
     constexpr auto text = std::string_view(
         "import <vector> using std::vector;\n"
-        "import \"provider.hpp\" using { vendor::Widget, vendor::create, };\n"
+        "import \"provider.hpp\" using vendor::{ Widget, create, };\n"
         "import <utility> using std::*;\n"
     );
     const auto tree = parse_valid(text);
     const auto& imports = root(tree).cpp_header_imports;
     REQUIRE_EQ(imports.size(), 3uz);
-    REQUIRE_EQ(imports[0].bindings.size(), 1uz);
-    CHECK_FALSE(imports[0].bindings[0].opens_namespace);
-    REQUIRE_EQ(imports[0].bindings[0].components.size(), 2uz);
-    CHECK_EQ(slice(text, imports[0].bindings[0].components.back()), "vector");
-    CHECK_EQ(imports[1].bindings.size(), 2uz);
-    CHECK(imports[2].bindings[0].opens_namespace);
+    REQUIRE(imports[0].using_clause.has_value());
+    const auto& first = *imports[0].using_clause;
+    REQUIRE_EQ(first.prefix.size(), 1uz);
+    CHECK_EQ(slice(text, first.prefix.front()), "std");
+    CHECK_EQ(slice(text, std::get<ASTCppSingleSelection>(first.selection).name), "vector");
+    CHECK_EQ(std::get<ASTCppListSelection>(imports[1].using_clause->selection).names.size(), 2uz);
+    CHECK(std::holds_alternative<ASTCppNamespaceSelection>(imports[2].using_clause->selection));
     const auto invalid = std::array {
         "import <vector> using *;",
         "import <vector> using {};",
         "import <vector> using std::;",
         "import <vector> using {std::*,};",
+        "import <vector> using {std::vector};",
+        "import <vector> using std::{nested::vector};",
+        "import <vector> using std::{nested::{vector}};",
+        "import <vector> using std::{vector, *};",
+        "import <vector> using std::vector as v;",
     };
-    for (const auto* const source : invalid) {
+    for (const auto* source : invalid) {
         check_invalid(source);
+    }
+}
+
+TEST_CASE("Parser: module components accept keyword spellings in every reference form") {
+    const auto cases = std::to_array<std::string_view>({
+        "import using using *;",
+        "import .import.export using value;",
+        "import match::using.true using {value};",
+    });
+    for (const auto text : cases) {
+        const auto tree = parse_valid(text);
+        CHECK_EQ(root(tree).module_imports.size(), 1uz);
     }
 }

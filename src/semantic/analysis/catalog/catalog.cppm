@@ -13,9 +13,11 @@ import :support.typed_id;
 import std;
 
 struct CatalogSymbolIDTag final {};
+
 using CatalogSymbolID = TypedID<CatalogSymbolIDTag>;
 
 struct ImportBindingIDTag final {};
+
 using ImportBindingID = TypedID<ImportBindingIDTag>;
 
 struct CatalogFunctionForm final {
@@ -103,6 +105,7 @@ struct CatalogImportBinding final {
 };
 
 struct CatalogCppBinding final {
+    std::size_t header_index;
     std::vector<std::string> components;
     bool opens_namespace;
     Span origin;
@@ -139,6 +142,7 @@ private:
         visible_candidates;
     std::vector<CatalogImportBinding> import_bindings;
     std::vector<std::vector<CatalogCppBinding>> cpp_bindings;
+    std::vector<std::flat_map<std::string, std::vector<std::size_t>, std::less<>>> cpp_selections;
 
     friend class AnalysisCatalogView;
     friend auto build_analysis_catalog(ProgramDraft&) noexcept
@@ -161,6 +165,8 @@ public:
     auto struct_count() const noexcept -> std::size_t;
     auto enum_count() const noexcept -> std::size_t;
     auto enum_case_count() const noexcept -> std::size_t;
+    auto cpp_selection(ProgramModuleID module_id, std::string_view name) const noexcept
+        -> std::span<const std::size_t>;
     auto cpp_imports(ProgramModuleID module_id) const noexcept
         -> std::span<const CatalogCppBinding>;
     auto lookup(ProgramModuleID module_id, std::string_view name) const noexcept

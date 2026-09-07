@@ -86,6 +86,7 @@ private:
 
         constexpr explicit Entity(const void* value) noexcept
             : object(value) {}
+
         constexpr explicit Entity(ErasedFunctionPointer value) noexcept
             : function(value) {}
     };

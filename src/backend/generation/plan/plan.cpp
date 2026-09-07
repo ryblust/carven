@@ -538,27 +538,33 @@ auto TargetPlan::semantic_identity() const noexcept -> ProgramIdentity {
     require_active();
     return source_identity;
 }
+
 auto TargetPlan::identity() const noexcept -> TargetPlanIdentity {
     require_active();
     return plan_identity;
 }
+
 auto TargetPlan::names() const noexcept -> const TargetNamePlan& {
     require_active();
     return name_plan;
 }
+
 auto TargetPlan::failure_abi() const noexcept -> const FailureABI& {
     require_active();
     return failure_abi_plan;
 }
+
 auto TargetPlan::artifacts() const noexcept
     -> TargetPlanTableEntries<TargetArtifactPlan, TargetArtifactID> {
     require_active();
     return artifact_plans.entries();
 }
+
 auto TargetPlan::artifact_count() const noexcept -> std::size_t {
     require_active();
     return artifact_plans.size();
 }
+
 auto TargetPlan::artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan& {
     require_active();
     return artifact_plans.get(id);

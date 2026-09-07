@@ -12,6 +12,7 @@ import :frontend.ast.type;
 import :frontend.lex.token;
 import :frontend.parse.builder;
 import :frontend.parse.context;
+import :source.identifier;
 import :source.text;
 import std;
 
@@ -26,7 +27,7 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     const auto finish_module_path =
         [&](std::vector<Span> components) noexcept -> std::optional<std::vector<Span>> {
         while (match(TokenKind::Dot)) {
-            if (!check(TokenKind::Identifier)) {
+            if (!is_identifier_spelling(slice(source, current().span))) {
                 fail_here("expected a module name after '.'");
                 return std::nullopt;
             }
@@ -49,7 +50,7 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
     }
 
     if (const auto dot = match(TokenKind::Dot)) {
-        if (!check(TokenKind::Identifier)) {
+        if (!is_identifier_spelling(slice(source, current().span))) {
             fail_here("expected a module name after '.'");
             return failed_reference();
         }
@@ -66,14 +67,14 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
         };
     }
 
-    if (!check(TokenKind::Identifier)) {
+    if (!is_identifier_spelling(slice(source, current().span))) {
         fail_here("expected a module reference after 'import'");
         return failed_reference();
     }
 
     const auto first = consume();
     if (const auto separator = match(TokenKind::ColonColon)) {
-        if (!check(TokenKind::Identifier)) {
+        if (!is_identifier_spelling(slice(source, current().span))) {
             fail_here("expected a module name after '::'");
             return failed_reference();
         }
@@ -106,35 +107,44 @@ auto Parser::parse_module_reference() noexcept -> ASTModuleReference {
 auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
     const auto start = expect(TokenKind::Import, "expected 'import'").span;
     const auto header = consume();
-    auto bindings = std::vector<ASTCppUsing>();
-    if (match(TokenKind::Using)) {
-        const auto list = match(TokenKind::LeftBrace).has_value();
-        do {
-            const auto first = expect(TokenKind::Identifier, "expected a C++ name after 'using'");
-            auto components = std::vector<Span> {first.span};
-            auto end = first.span;
-            auto opens_namespace = false;
+    auto using_clause = std::optional<ASTCppUsing>();
+    if (const auto using_token = match(TokenKind::Using)) {
+        auto prefix = std::vector<Span>();
+        auto end = using_token->span;
+        const auto list = [&]() noexcept -> ASTCppListSelection {
+            expect(TokenKind::LeftBrace, "expected '{' in C++ selection");
+            auto names = std::vector<Span>();
+            do {
+                names.push_back(expect(TokenKind::Identifier, "expected a simple C++ name").span);
+            } while (!failed && match(TokenKind::Comma) && !check(TokenKind::RightBrace));
+            end = expect(TokenKind::RightBrace, "expected '}' after C++ selection").span;
+            return {.names = std::move(names)};
+        };
+        auto selection = [&]() noexcept
+            -> std::variant<ASTCppSingleSelection, ASTCppListSelection, ASTCppNamespaceSelection> {
+            if (check(TokenKind::LeftBrace)) {
+                return list();
+            }
+            auto name = expect(TokenKind::Identifier, "expected a C++ name after 'using'").span;
             while (!failed && match(TokenKind::ColonColon)) {
-                if (!list && check(TokenKind::Star)) {
-                    end = consume().span;
-                    opens_namespace = true;
-                    break;
+                prefix.push_back(name);
+                if (check(TokenKind::LeftBrace)) {
+                    return list();
                 }
-                end = expect(TokenKind::Identifier, "expected a C++ name after '::'").span;
-                components.push_back(end);
+                if (const auto star = match(TokenKind::Star)) {
+                    end = star->span;
+                    return ASTCppNamespaceSelection {.star = star->span};
+                }
+                name = expect(TokenKind::Identifier, "expected a C++ name after '::'").span;
             }
-            bindings.push_back({
-                .span = join(first.span, end),
-                .components = std::move(components),
-                .opens_namespace = opens_namespace,
-            });
-            if (failed || !list || !match(TokenKind::Comma) || check(TokenKind::RightBrace)) {
-                break;
-            }
-        } while (!failed);
-        if (list) {
-            expect(TokenKind::RightBrace, "expected '}' after C++ import list");
-        }
+            end = name;
+            return ASTCppSingleSelection {.name = name};
+        }();
+        using_clause = ASTCppUsing {
+            .span = join(using_token->span, end),
+            .prefix = std::move(prefix),
+            .selection = std::move(selection),
+        };
     }
     const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after C++ header import");
     return {
@@ -143,7 +153,7 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
             ? ASTCppHeaderDelimiter::AngleBrackets
             : ASTCppHeaderDelimiter::Quotes,
         .name_span = Span::from_bounds(header.span.start() + 1, header.span.end() - 1),
-        .bindings = std::move(bindings),
+        .using_clause = std::move(using_clause),
     };
 }
 

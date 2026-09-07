@@ -2,7 +2,6 @@ module carven:semantic.analysis.validation.control.impl;
 import :semantic.analysis.validation.context;
 import std;
 
-namespace validation_detail {
 auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noexcept -> void {
     const auto callable = body_callable();
     const auto result = callable.has_value()
@@ -73,6 +72,7 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noe
         check_return(source.result);
     }
 }
+
 auto BodyContractVerifier::verify() noexcept -> void {
     require_top_level_owners();
     verify_lifetimes();
@@ -83,4 +83,3 @@ auto BodyContractVerifier::verify() noexcept -> void {
         require_body_failure_set(body.region().failures.resolved());
     }
 }
-} // namespace validation_detail

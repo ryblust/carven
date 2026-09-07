@@ -2,7 +2,6 @@ module carven:semantic.analysis.validation.identity.impl;
 import :semantic.analysis.validation.context;
 import std;
 
-namespace validation_detail {
 auto BodyContractVerifier::related_body(BodyID id) const noexcept -> const SemIRBody& {
     return bodies.body(id);
 }
@@ -157,5 +156,3 @@ auto BodyContractVerifier::verify_lifetimes() const noexcept -> void {
         }
     }
 }
-
-} // namespace validation_detail

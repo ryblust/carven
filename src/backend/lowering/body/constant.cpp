@@ -15,8 +15,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
-
 auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetExpr right) noexcept
     -> TargetExpr {
     return {
@@ -69,6 +67,9 @@ auto statement_expression(TargetExpr expression) noexcept -> TargetStmt {
         }
     );
 }
+
+namespace {
+
 auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> TargetIntegerSuffix {
     const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic.types().type(type).value);
     if (builtin == nullptr) {
@@ -98,11 +99,13 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
     std::unreachable();
 }
 
+} // namespace
+
 auto typed_integer_expression(
     ModuleLowering& context,
     const IntegerConstant& value,
     TypeID type,
-    LiteralContext use
+    LoweringLiteralContext use
 ) noexcept -> TargetExpr {
     auto result = TargetExpr {
         .value = TargetLiteralExpr {
@@ -113,7 +116,7 @@ auto typed_integer_expression(
             },
         },
     };
-    if (use == LiteralContext::TargetTyped) {
+    if (use == LoweringLiteralContext::TargetTyped) {
         return result;
     }
     return {
@@ -154,8 +157,11 @@ auto enum_case_expression(
     return member;
 }
 
-auto constant_expression(ModuleLowering& context, ConstantID id, LiteralContext use) noexcept
-    -> TargetExpr {
+auto constant_expression(
+    ModuleLowering& context,
+    ConstantID id,
+    LoweringLiteralContext use
+) noexcept -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
     return std::visit(
         Overloaded {
@@ -208,12 +214,9 @@ auto constant_expression(ModuleLowering& context, ConstantID id, LiteralContext 
     );
 }
 
-
-} // namespace body_lowering
-
 auto lower_constant_expression(ModuleLowering& context, ConstantID constant) noexcept
     -> TargetExpr {
-    return body_lowering::constant_expression(context, constant);
+    return constant_expression(context, constant);
 }
 
 auto lower_numeric_enum_case_value_expression(
@@ -235,10 +238,10 @@ auto lower_numeric_enum_case_value_expression(
     if (representation == nullptr) {
         invariant_violation("numeric enum case belongs to a payload enum");
     }
-    return body_lowering::typed_integer_expression(
+    return typed_integer_expression(
         context,
         numeric->value,
         representation->underlying_type,
-        body_lowering::LiteralContext::TargetTyped
+        LoweringLiteralContext::TargetTyped
     );
 }

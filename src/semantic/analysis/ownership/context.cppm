@@ -10,148 +10,190 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace ownership {
-
 // A missing component denotes an unknown array element. Paths describe storage,
 // not the computations that selected it.
-using ProjectionPath = std::vector<std::optional<std::uint64_t>>;
-struct Place final {
+using OwnershipProjectionPath = std::vector<std::optional<std::uint64_t>>;
+
+struct OwnershipPlace final {
     std::size_t object;
-    ProjectionPath path;
-    auto operator<=>(const Place&) const noexcept = default;
+    OwnershipProjectionPath path;
+    auto operator<=>(const OwnershipPlace&) const noexcept = default;
 };
-struct Loan final {
-    ProjectionPath holder;
-    std::optional<Place> backing;
+
+struct OwnershipLoan final {
+    OwnershipProjectionPath holder;
+    std::optional<OwnershipPlace> backing;
     std::optional<CallableID> callable;
     ProgramOriginID origin;
     bool direct_only;
-    auto operator<=>(const Loan& other) const noexcept {
+
+    auto operator<=>(const OwnershipLoan& other) const noexcept {
         return std::tie(holder, backing, callable, direct_only)
             <=> std::tie(other.holder, other.backing, other.callable, other.direct_only);
     }
-    auto operator==(const Loan& other) const noexcept -> bool { return (*this <=> other) == 0; }
+
+    auto operator==(const OwnershipLoan& other) const noexcept -> bool {
+        return (*this <=> other) == 0;
+    }
 };
-struct Capture final {
-    ProjectionPath holder;
-    Place target;
+
+struct OwnershipCapture final {
+    OwnershipProjectionPath holder;
+    OwnershipPlace target;
     ProgramOriginID origin;
-    auto operator<=>(const Capture& other) const noexcept {
+
+    auto operator<=>(const OwnershipCapture& other) const noexcept {
         return std::tie(holder, target) <=> std::tie(other.holder, other.target);
     }
-    auto operator==(const Capture& other) const noexcept -> bool { return (*this <=> other) == 0; }
+
+    auto operator==(const OwnershipCapture& other) const noexcept -> bool {
+        return (*this <=> other) == 0;
+    }
 };
-struct Relationships final {
-    std::vector<Loan> loans;
-    std::vector<Capture> captures;
-    auto operator==(const Relationships&) const noexcept -> bool = default;
+
+struct OwnershipRelationships final {
+    std::vector<OwnershipLoan> loans;
+    std::vector<OwnershipCapture> captures;
+    auto operator==(const OwnershipRelationships&) const noexcept -> bool = default;
 };
-struct ObjectState final {
+
+struct OwnershipObjectState final {
     bool available = false;
     std::optional<ProgramOriginID> taken;
-    Relationships relationships;
-    auto operator==(const ObjectState& other) const noexcept -> bool {
+    OwnershipRelationships relationships;
+
+    auto operator==(const OwnershipObjectState& other) const noexcept -> bool {
         return available == other.available && relationships == other.relationships;
     }
 };
-struct State final {
-    std::vector<ObjectState> objects;
-    auto operator==(const State&) const noexcept -> bool = default;
+
+struct OwnershipState final {
+    std::vector<OwnershipObjectState> objects;
+    auto operator==(const OwnershipState&) const noexcept -> bool = default;
 };
-enum class ExitKind { Return, Break, Continue, Failure };
-struct Exit final {
-    ExitKind kind;
+enum class OwnershipExitKind { Return, Break, Continue, Failure };
+
+struct OwnershipExit final {
+    OwnershipExitKind kind;
     std::optional<TypeID> failure;
-    State state;
-    Relationships value;
+    OwnershipState state;
+    OwnershipRelationships value;
 };
-struct Flow final {
-    std::optional<State> normal;
-    Relationships value;
-    std::vector<Exit> exits;
+
+struct OwnershipFlow final {
+    std::optional<OwnershipState> normal;
+    OwnershipRelationships value;
+    std::vector<OwnershipExit> exits;
 };
-struct Access final {
-    Place place;
+
+struct OwnershipAccess final {
+    OwnershipPlace place;
     bool stable;
-    auto operator<=>(const Access&) const noexcept = default;
+    auto operator<=>(const OwnershipAccess&) const noexcept = default;
 };
-struct CallArgument final {
-    std::optional<Place> alias;
-    Relationships value;
-    auto operator==(const CallArgument&) const noexcept -> bool = default;
+
+struct OwnershipCallArgument final {
+    std::optional<OwnershipPlace> alias;
+    OwnershipRelationships value;
+    auto operator==(const OwnershipCallArgument&) const noexcept -> bool = default;
 };
-struct ExternalObject final {
+
+struct OwnershipExternalObject final {
     TypeID type;
     ProgramOriginID origin;
-    ObjectState state;
-    auto operator==(const ExternalObject& other) const noexcept -> bool {
+    OwnershipObjectState state;
+
+    auto operator==(const OwnershipExternalObject& other) const noexcept -> bool {
         return type == other.type && state == other.state;
     }
 };
+
 // Call queries retain only objects reachable from their inputs, with object
 // numbers normalized at the boundary. Locals and execution history never enter
 // a query key or an answer.
-struct CallInput final {
+struct OwnershipCallInput final {
     BodyID body_id;
-    std::vector<CallArgument> parameters;
-    std::vector<CallArgument> captures;
-    std::vector<ExternalObject> objects;
+    std::vector<OwnershipCallArgument> parameters;
+    std::vector<OwnershipCallArgument> captures;
+    std::vector<OwnershipExternalObject> objects;
     std::vector<std::vector<bool>> outlives;
-    std::vector<Access> accesses;
-    auto operator==(const CallInput&) const noexcept -> bool = default;
+    std::vector<OwnershipAccess> accesses;
+    auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
-struct CallCompletion final {
+
+struct OwnershipCallCompletion final {
     std::optional<TypeID> failure;
-    State state;
-    Relationships value;
-    auto operator==(const CallCompletion&) const noexcept -> bool = default;
+    OwnershipState state;
+    OwnershipRelationships value;
+    auto operator==(const OwnershipCallCompletion&) const noexcept -> bool = default;
 };
-struct CallQuery final {
-    CallInput input;
-    std::vector<CallCompletion> answer;
+
+struct OwnershipCallQuery final {
+    OwnershipCallInput input;
+    std::vector<OwnershipCallCompletion> answer;
+    std::flat_set<std::size_t> consumers;
+    bool queued = false;
 };
-struct LocalObject final {
+
+struct OwnershipLocalObject final {
     TypeID type;
     ProgramOriginID origin;
     LifetimeRegionID lifetime;
 };
 
-struct CatchAcceptance final {
+struct OwnershipCatchAcceptance final {
     std::vector<std::optional<PatternID>> alternatives;
     bool exhaustive;
 };
-struct BodyFacts final {
-    std::vector<LocalObject> locals;
+
+struct OwnershipBodyFacts final {
+    std::vector<OwnershipLocalObject> locals;
     std::flat_map<const SemanticExpression*, std::size_t> temporaries;
     std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
     std::flat_set<PatternID> irrefutable_patterns;
-    std::flat_map<const SemCatchArm*, std::flat_map<TypeID, CatchAcceptance>> catches;
+    std::flat_map<const SemCatchArm*, std::flat_map<TypeID, OwnershipCatchAcceptance>> catches;
 };
 
-auto prepare_body_facts(
+auto prepare_ownership_body_facts(
     const SemIRBody& body,
     const ProgramDraft& draft,
     std::span<const TypeContents> types
-) noexcept -> BodyFacts;
+) noexcept -> OwnershipBodyFacts;
 
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
-auto overlaps(const Place& left, const Place& right) noexcept -> bool;
-auto merge_relationships(Relationships& destination, const Relationships& source) noexcept -> void;
-auto project(const Relationships& source, const ProjectionPath& path) noexcept -> Relationships;
-auto nested(Relationships source, const ProjectionPath& path) noexcept -> Relationships;
-auto join(State& destination, const State& source) noexcept -> void;
-auto join_normal(std::optional<State>& destination, const std::optional<State>& source) noexcept
+auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
+auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
+auto merge_relationships(
+    OwnershipRelationships& destination,
+    const OwnershipRelationships& source
+) noexcept -> void;
+auto project_relationships(
+    const OwnershipRelationships& source,
+    const OwnershipProjectionPath& path
+) noexcept -> OwnershipRelationships;
+auto nest_relationships(OwnershipRelationships source, const OwnershipProjectionPath& path) noexcept
+    -> OwnershipRelationships;
+auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
     -> void;
-auto append_exits(Flow& destination, Flow& source) noexcept -> void;
+auto join_normal_ownership_state(
+    std::optional<OwnershipState>& destination,
+    const std::optional<OwnershipState>& source
+) noexcept -> void;
+auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void;
 
-class BatchAnalyzer;
-class BodyAnalyzer final {
+class OwnershipBatchAnalyzer;
+
+class OwnershipBodyAnalyzer final {
 public:
-    BodyAnalyzer(BatchAnalyzer& analysis, const CallInput& input, bool diagnosing) noexcept;
-    auto run() noexcept -> std::vector<CallCompletion>;
+    OwnershipBodyAnalyzer(
+        OwnershipBatchAnalyzer& analysis,
+        const OwnershipCallInput& input,
+        bool diagnosing
+    ) noexcept;
+    auto run() noexcept -> std::vector<OwnershipCallCompletion>;
     auto check_contracts() noexcept -> void;
 
 private:
@@ -162,84 +204,98 @@ private:
         std::optional<ProgramOriginID> related = std::nullopt
     ) noexcept -> void;
     auto outlives(std::size_t source, std::size_t destination) const noexcept -> bool;
-    auto leave(Flow& flow, LifetimeRegionID lifetime) const noexcept -> void;
+    auto leave(OwnershipFlow& flow, LifetimeRegionID lifetime) const noexcept -> void;
     auto retain(
-        State& state,
-        const Relationships& relationships,
+        OwnershipState& state,
+        const OwnershipRelationships& relationships,
         const SemanticExpression& source
     ) const noexcept -> void;
     auto use(
-        const Relationships& relationships,
-        const State& state,
+        const OwnershipRelationships& relationships,
+        const OwnershipState& state,
         ProgramOriginID origin,
         bool direct = false
     ) noexcept -> void;
     auto store(
-        State& state,
-        const Place& target,
-        const Relationships& relationships,
+        OwnershipState& state,
+        const OwnershipPlace& target,
+        const OwnershipRelationships& relationships,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto references(const Relationships& relationships, const State& state) const noexcept
-        -> std::vector<Capture>;
-    auto location(const SemanticExpression& source) const noexcept -> std::optional<Place>;
-    auto binding_place(LocalBindingID binding) const noexcept -> Place;
+    auto references(
+        const OwnershipRelationships& relationships,
+        const OwnershipState& state
+    ) const noexcept -> std::vector<OwnershipCapture>;
+    auto location(const SemanticExpression& source) const noexcept -> std::optional<OwnershipPlace>;
+    auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;
     auto is_writable(LocalBindingID binding) const noexcept -> bool;
-    auto write_access(const Place& target, ProgramOriginID origin) noexcept -> void;
-    auto require_available(const State& state, const Place& place, ProgramOriginID origin) noexcept
-        -> void;
+    auto write_access(const OwnershipPlace& target, ProgramOriginID origin) noexcept -> void;
+    auto require_available(
+        const OwnershipState& state,
+        const OwnershipPlace& place,
+        ProgramOriginID origin
+    ) noexcept -> void;
     auto constant_truth(const SemanticExpression& source) const noexcept -> std::optional<bool>;
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
-    auto place(const SemanticExpression& source, State state, bool read = true) noexcept -> Flow;
-    auto expression(const SemanticExpression& source, State state, bool direct = false) noexcept
-        -> Flow;
-    auto complete_expression(const SemanticExpression& source, State state) noexcept -> Flow;
-    auto region(const SemanticRegion& source, State state, bool release = true) noexcept -> Flow;
-    auto statement(const SemanticStatement& source, State state) noexcept -> Flow;
-    auto conditional(const SemIf& value, State state) noexcept -> Flow;
-    auto match(const SemMatch& value, State state) noexcept -> Flow;
-    auto attempt(const SemTry& value, State state) noexcept -> Flow;
-    auto loop(const SemLoop& value, State state) noexcept -> Flow;
-    auto range(const SemRangeLoop& value, State state) noexcept -> Flow;
+    auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
+        -> OwnershipFlow;
+    auto expression(
+        const SemanticExpression& source,
+        OwnershipState state,
+        bool direct = false
+    ) noexcept -> OwnershipFlow;
+    auto complete_expression(const SemanticExpression& source, OwnershipState state) noexcept
+        -> OwnershipFlow;
+    auto region(const SemanticRegion& source, OwnershipState state, bool release = true) noexcept
+        -> OwnershipFlow;
+    auto statement(const SemanticStatement& source, OwnershipState state) noexcept -> OwnershipFlow;
+    auto conditional(const SemIf& value, OwnershipState state) noexcept -> OwnershipFlow;
+    auto match(const SemMatch& value, OwnershipState state) noexcept -> OwnershipFlow;
+    auto attempt(const SemTry& value, OwnershipState state) noexcept -> OwnershipFlow;
+    auto loop(const SemLoop& value, OwnershipState state) noexcept -> OwnershipFlow;
+    auto range(const SemRangeLoop& value, OwnershipState state) noexcept -> OwnershipFlow;
     auto call(
         CallableID callable,
-        const Relationships& captures,
-        std::span<const CallArgument> parameters,
-        State state,
+        const OwnershipRelationships& captures,
+        std::span<const OwnershipCallArgument> parameters,
+        OwnershipState state,
         ProgramOriginID origin
-    ) noexcept -> Flow;
-    auto bind_pattern(State& state, PatternID pattern, const Relationships& relationships) noexcept
-        -> void;
+    ) noexcept -> OwnershipFlow;
+    auto bind_pattern(
+        OwnershipState& state,
+        PatternID pattern,
+        const OwnershipRelationships& relationships
+    ) noexcept -> void;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto object_type(std::size_t object) const noexcept -> TypeID;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;
     auto temporary(const SemanticExpression& expression) const noexcept -> std::size_t;
 
-    BatchAnalyzer& analysis;
-    const CallInput& input;
+    OwnershipBatchAnalyzer& analysis;
+    const OwnershipCallInput& input;
     const SemIRBody& body;
     ProgramDraft& draft;
-    const BodyFacts& facts;
+    const OwnershipBodyFacts& facts;
     bool diagnosing;
-    std::flat_map<LocalBindingID, Place> aliases;
-    std::vector<Access> accesses;
+    std::flat_map<LocalBindingID, OwnershipPlace> aliases;
+    std::vector<OwnershipAccess> accesses;
     std::vector<TypeID> caught;
     std::optional<LifetimeRegionID> full_expression;
 };
 
-class BatchAnalyzer final {
+class OwnershipBatchAnalyzer final {
 public:
-    BatchAnalyzer(
+    OwnershipBatchAnalyzer(
         const BodyStore& bodies,
         ProgramDraft& draft,
         std::span<const TypeContents> types
     ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
     auto body(BodyID id) const noexcept -> const SemIRBody&;
-    auto facts_for_body(BodyID id) const noexcept -> const BodyFacts&;
+    auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(TypeID type) const noexcept -> TypeContents;
-    auto query(CallInput input) noexcept -> std::vector<CallCompletion>;
+    auto query(OwnershipCallInput input) noexcept -> std::vector<OwnershipCallCompletion>;
     auto diagnose(
         DiagnosticCode code,
         std::string message,
@@ -250,12 +306,15 @@ public:
     ProgramDraft& draft;
 
 private:
-    auto root_input(const SemIRBody& body) const noexcept -> CallInput;
+    auto root_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
+    auto enqueue(std::size_t query) noexcept -> void;
     const BodyStore& bodies;
     std::span<const TypeContents> type_contents;
-    std::flat_map<BodyID, BodyFacts> body_facts;
-    std::vector<std::unique_ptr<CallQuery>> queries;
+    std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
+    std::vector<std::unique_ptr<OwnershipCallQuery>> queries;
+    std::flat_map<BodyID, std::vector<std::size_t>> body_queries;
+    std::deque<std::size_t> pending_queries;
+    std::optional<std::size_t> active_query;
+    bool queries_sealed = false;
     std::optional<AnalysisFailure> failure;
 };
-
-} // namespace ownership

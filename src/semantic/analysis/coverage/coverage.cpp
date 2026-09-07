@@ -16,15 +16,18 @@ struct CoveragePattern;
 struct CoverageAny final {
     ConstructionTypeRef type;
 };
+
 struct CoverageAtom final {
     ConstructionTypeRef type;
     std::variant<ConstantID, bool> value;
 };
+
 struct CoverageCase final {
     ConstructionTypeRef type;
     EnumCaseID enum_case;
     std::vector<CoveragePattern> payload;
 };
+
 struct CoverageOr final {
     ConstructionTypeRef type;
     std::vector<CoveragePattern> alternatives;
@@ -665,6 +668,7 @@ private:
             return draft.types().type(id);
         }
     }
+
     auto constant(ConstantID id) const noexcept -> ConstantFact {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
             return draft.constant_copy(id);
@@ -672,6 +676,7 @@ private:
             return draft.constants().constant(id);
         }
     }
+
     auto enumeration(EnumID id) const noexcept {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
             return draft.enum_declaration_copy(id);
@@ -679,6 +684,7 @@ private:
             return draft.declarations().enumeration(id);
         }
     }
+
     auto enum_case(EnumCaseID id) const noexcept {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
             return draft.construction_enum_case_declaration_copy(id);
@@ -686,6 +692,7 @@ private:
             return draft.declarations().enum_case(id);
         }
     }
+
     const ProgramDraft& draft;
     const PatternTable& patterns;
 };

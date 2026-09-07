@@ -30,10 +30,8 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 BodyElaborator::BodyElaborator(
-    BatchElaborator& owner,
+    BodyBatchElaborator& owner,
     ProgramModuleID source_module_id,
     ModuleID semantic_module_id,
     ASTView source,
@@ -59,7 +57,7 @@ BodyElaborator::BodyElaborator(
     const auto root_lifetime =
         body_builder.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, root_origin);
     frames.push_back(
-        LocalFrame {
+        BodyLocalFrame {
             .lifetime = root_lifetime,
             .names = {},
         }
@@ -276,15 +274,18 @@ auto BodyElaborator::require_writable_storage_type(
     if (is_cpp_type(source) || is_cpp_type(target)) {
         return {};
     }
+
     struct ArrayShape final {
         ConstructionTypeRef element;
         std::uint64_t extent;
     };
+
     struct CallableViewShape final {
         std::vector<ConstructionCallableParameter> parameters;
         ConstructionTypeRef result;
         FailureTermID failures;
     };
+
     const auto array_shape = [&](ConstructionTypeRef type) noexcept -> std::optional<ArrayShape> {
         if (const auto* concrete = std::get_if<TypeID>(&type)) {
             const auto canonical = draft().type_copy(*concrete);
@@ -373,6 +374,3 @@ auto BodyElaborator::require_writable_storage_type(
     }
     return {};
 }
-
-
-} // namespace body_elaboration

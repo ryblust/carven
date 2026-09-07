@@ -58,6 +58,7 @@ public:
     auto fresh(TargetTemporaryNameKind kind) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind, TargetScopeID scope) noexcept -> TargetIdentifier;
 
+    static auto public_identifier(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto fixed(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto generated_namespace() noexcept -> TargetName;
     static auto domain_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;

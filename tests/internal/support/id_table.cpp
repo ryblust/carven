@@ -11,6 +11,7 @@ import std;
 namespace {
 
 struct TestIDTag final {};
+
 using TestID = TypedID<TestIDTag>;
 using TestTable = IDTable<std::string, TestID>;
 using TestReservedTable = ReservedTable<std::string, TestID>;

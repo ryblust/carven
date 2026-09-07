@@ -159,6 +159,7 @@ TEST_CASE("Runtime: FunctionRef preserves constness and exact void results") {
 TEST_CASE("Runtime: FunctionRef copies views without copying their target") {
     auto copies = 0;
     auto moves = 0;
+
     struct TrackedCallable final {
         int* copies;
         int* moves;
@@ -166,11 +167,13 @@ TEST_CASE("Runtime: FunctionRef copies views without copying their target") {
         TrackedCallable(int& copy_count, int& move_count) noexcept
             : copies(&copy_count),
               moves(&move_count) {}
+
         TrackedCallable(const TrackedCallable& other) noexcept
             : copies(other.copies),
               moves(other.moves) {
             ++*copies;
         }
+
         TrackedCallable(TrackedCallable&& other) noexcept
             : copies(other.copies),
               moves(other.moves) {

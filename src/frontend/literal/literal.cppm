@@ -50,6 +50,10 @@ struct StringLiteralValue final {
     std::string bytes;
 };
 
+struct CStringLiteralValue final {
+    std::string bytes;
+};
+
 struct CharacterLiteralValue final {
     char32_t scalar;
 };

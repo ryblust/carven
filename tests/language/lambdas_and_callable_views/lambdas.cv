@@ -64,6 +64,18 @@ test "Callable loans: owner can move after nested borrower scope exits" {
     check(moved(2) == 6);
 }
 
+test "Callable views: copies retain their target after intermediate scope exit" {
+    var source = 4;
+    let owner = [&source](delta: i32) { source += delta; return source; };
+    var selected: fn(i32) -> i32 = first;
+    if true {
+        let intermediate: fn(i32) -> i32 = owner;
+        selected = intermediate;
+    }
+    check(selected(3) == 7);
+    check(source == 7);
+}
+
 test "Callable views: mutable storage follows branch and loop replacement" {
     var callback: fn(i32) -> i32 = first;
     if true {

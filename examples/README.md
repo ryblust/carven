@@ -42,8 +42,8 @@ For a focused tour of failure contracts, start with the
 | Composition | [Order quote](failures/composition/) | `example-order-quote` | Multiple failure types, guards and rethrow |
 | Recovery | [Configuration](failures/recovery/) | `example-configuration` | Fallible recovery, translation and nested patterns |
 | Callbacks | [Policies](failures/callbacks/) | `example-policies` | Inferred closure failures and callable widening |
-| C++ calls | [Native parser](interop/importing/) | `example-native-parser` | Header imports and native exception recovery |
-| C++ host | [Pricing library](interop/exporting/) | `example-cpp-host` | Exported functions and generated public headers |
+| C++ calls | [Native parser](interop/import/) | `example-native-parser` | Header imports and native exception recovery |
+| C++ host | [Pricing library](interop/export/) | `example-cpp-host` | Exported functions and generated public headers |
 
 Start with each directory's `main.cv` (or `main.cpp` in the C++ host).
 Change the small inputs in `main` and run the target again after rebuilding it.

@@ -10,11 +10,13 @@ import std;
 struct TargetNamedType final {
     TargetName name;
     std::vector<TargetTypeID> type_argument_ids;
+
     struct Segment final {
         TargetIdentifier name;
         std::vector<TargetTypeID> type_argument_ids;
         auto operator==(const Segment&) const noexcept -> bool = default;
     };
+
     std::vector<Segment> nested;
     auto operator==(const TargetNamedType&) const noexcept -> bool = default;
 };

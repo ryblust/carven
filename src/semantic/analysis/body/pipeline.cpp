@@ -4,12 +4,10 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.pipeline;
 import :semantic.analysis.program;
 
-using body_elaboration::BatchElaborator;
-
 auto elaborate_body_batch(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage
 ) noexcept -> AnalysisResult<void> {
-    return BatchElaborator(draft, catalog, import_usage).run();
+    return BodyBatchElaborator(draft, catalog, import_usage).run();
 }

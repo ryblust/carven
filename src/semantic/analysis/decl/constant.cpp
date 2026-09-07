@@ -28,9 +28,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
-auto DeclarationResolver::resolve_module_constant(
+auto DeclResolver::resolve_module_constant(
     const CatalogSymbol& symbol,
     const CatalogConstantForm& form,
     ASTView syntax,
@@ -38,7 +36,7 @@ auto DeclarationResolver::resolve_module_constant(
     Span item_span
 ) noexcept -> AnalysisResult<void> {
     if (symbol.visibility == DeclarationVisibility::Compilation && !declaration.type.has_value()) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             declaration.name_span,
@@ -67,7 +65,7 @@ auto DeclarationResolver::resolve_module_constant(
         return std::unexpected(result.error());
     }
     if (!std::holds_alternative<ConstantID>(*result)) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.expression(declaration.initializer).span,
@@ -90,7 +88,7 @@ auto DeclarationResolver::resolve_module_constant(
     }
     const auto* concrete = std::get_if<TypeID>(&*value_type);
     if (concrete == nullptr) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.expression(declaration.initializer).span,
@@ -105,14 +103,14 @@ auto DeclarationResolver::resolve_module_constant(
     module_constants[form.constant.index()] = ModuleConstantDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
-        .origin = declaration_origin(draft, symbol.module_id, item_span),
+        .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
         .value = draft.intern_constant(std::move(fact)),
     };
     return {};
 }
 
-auto DeclarationResolver::resolve_constant_name(
+auto DeclResolver::resolve_constant_name(
     ProgramModuleID module_id,
     std::string_view name,
     Span origin
@@ -141,7 +139,7 @@ auto DeclarationResolver::resolve_constant_name(
     };
 }
 
-auto DeclarationResolver::resolve_enum_qualifier(
+auto DeclResolver::resolve_enum_qualifier(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTExprID expression
@@ -170,7 +168,7 @@ auto DeclarationResolver::resolve_enum_qualifier(
     ));
 }
 
-auto DeclarationResolver::resolve_constant_enum_case(
+auto DeclResolver::resolve_constant_enum_case(
     ProgramModuleID module_id,
     TypeID type,
     std::string_view name,
@@ -179,7 +177,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
     const auto canonical = draft.type_copy(type);
     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
     if (nominal == nullptr) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             module_id,
             origin,
@@ -192,10 +190,10 @@ auto DeclarationResolver::resolve_constant_enum_case(
     if (!owner_result.has_value()) {
         return std::unexpected(owner_result.error());
     }
-    const auto& owner_symbol = catalog_symbol(catalog, owner_symbol_id);
+    const auto& owner_symbol = require_catalog_symbol(catalog, owner_symbol_id);
     const auto& owner_form = std::get<CatalogEnumForm>(owner_symbol.form);
     for (const auto case_id : owner_form.cases) {
-        const auto& candidate = catalog_symbol(catalog, catalog.enum_case_symbol(case_id));
+        const auto& candidate = require_catalog_symbol(catalog, catalog.enum_case_symbol(case_id));
         if (candidate.name != name) {
             continue;
         }
@@ -214,7 +212,7 @@ auto DeclarationResolver::resolve_constant_enum_case(
             .constant = declaration->constant,
         };
     }
-    return std::unexpected(fail(
+    return std::unexpected(declaration_failure(
         draft,
         module_id,
         origin,
@@ -222,5 +220,3 @@ auto DeclarationResolver::resolve_constant_enum_case(
         std::format("enum has no case named '{}'", name)
     ));
 }
-
-} // namespace decl_resolution

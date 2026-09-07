@@ -44,4 +44,6 @@ struct KeywordIdentifier final {
 using IdentifierClassification =
     std::variant<InvalidIdentifier, OrdinaryIdentifier, KeywordIdentifier>;
 
+auto is_identifier_spelling(std::string_view spelling) noexcept -> bool;
+
 auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassification;

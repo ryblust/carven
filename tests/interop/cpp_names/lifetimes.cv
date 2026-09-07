@@ -1,13 +1,13 @@
-import "cpp_names/lifetimes.hpp" using {
-    lifetime_probe::Owner,
-    lifetime_probe::consume_owner,
-    lifetime_probe::mark,
-    lifetime_probe::reset,
-    lifetime_probe::matches,
-    lifetime_probe::FixedOwner,
-    lifetime_probe::ResultMaker,
-    lifetime_probe::CopyOwner,
-    lifetime_probe::event,
+import "cpp_names/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    consume_owner,
+    mark,
+    reset,
+    matches,
+    FixedOwner,
+    ResultMaker,
+    CopyOwner,
+    event,
 };
 
 enum Failure { Stop, }

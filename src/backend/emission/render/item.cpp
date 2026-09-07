@@ -154,8 +154,7 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
             [&](const TargetMemberVariable& member) noexcept {
                 return concat(
                     {text(member.static_specifier ? "static " : ""),
-                     text(member.const_specifier ? "const " : ""),
-                     render_type(member.type),
+                     render_type(member.type, member.const_specifier),
                      text(" "),
                      render_identifier(member.name),
                      text(";")}

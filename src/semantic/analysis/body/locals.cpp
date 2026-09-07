@@ -9,13 +9,11 @@ import :semantic.semir.decl;
 import :support.invariant;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::push_frame(Span span) noexcept -> void {
     const auto frame_origin = origin(span);
     const auto parent_lifetime = active_full_expression.value_or(frames.back().lifetime);
     frames.push_back(
-        LocalFrame {
+        BodyLocalFrame {
             .lifetime = body_builder.add_lifetime_region(
                 parent_lifetime,
                 LifetimeRegionKind::Lexical,
@@ -36,21 +34,21 @@ auto BodyElaborator::pop_frame(bool diagnose) noexcept -> void {
     frames.pop_back();
 }
 
-auto BodyElaborator::diagnose_unused(const LocalFrame& frame) noexcept -> void {
-    auto candidates = std::vector<const LocalStorage*>();
+auto BodyElaborator::diagnose_unused(const BodyLocalFrame& frame) noexcept -> void {
+    auto candidates = std::vector<const BodyLocalStorage*>();
     for (const auto& [name, storage] : frame.names) {
         static_cast<void>(name);
         if (!storage.used
             && storage.unused_candidate.has_value()
-            && storage.role != LocalRole::Capture) {
+            && storage.role != BodyLocalRole::Capture) {
             candidates.push_back(std::addressof(storage));
         }
     }
-    std::ranges::sort(candidates, {}, [](const LocalStorage* storage) noexcept {
+    std::ranges::sort(candidates, {}, [](const BodyLocalStorage* storage) noexcept {
         return storage->unused_candidate->start();
     });
     for (const auto* storage : candidates) {
-        const auto parameter = storage->role == LocalRole::Parameter;
+        const auto parameter = storage->role == BodyLocalRole::Parameter;
         warn(
             *storage->unused_candidate,
             parameter ? DiagnosticCode::LintUnusedParameter : DiagnosticCode::LintUnusedLocal,
@@ -61,7 +59,7 @@ auto BodyElaborator::diagnose_unused(const LocalFrame& frame) noexcept -> void {
 
 auto BodyElaborator::bind_local(
     Span name_span,
-    LocalStorage storage,
+    BodyLocalStorage storage,
     DiagnosticCode duplicate_code
 ) noexcept -> AnalysisResult<void> {
     auto name = spelling(name_span);
@@ -78,7 +76,7 @@ auto BodyElaborator::bind_local(
     return {};
 }
 
-auto BodyElaborator::find_local(std::string_view name) const noexcept -> const LocalStorage* {
+auto BodyElaborator::find_local(std::string_view name) const noexcept -> const BodyLocalStorage* {
     for (auto iterator = frames.rbegin(); iterator != frames.rend(); ++iterator) {
         if (const auto found = iterator->names.find(name); found != iterator->names.end()) {
             return std::addressof(found->second);
@@ -87,7 +85,7 @@ auto BodyElaborator::find_local(std::string_view name) const noexcept -> const L
     return nullptr;
 }
 
-auto BodyElaborator::use_local(std::string_view name) noexcept -> LocalStorage* {
+auto BodyElaborator::use_local(std::string_view name) noexcept -> BodyLocalStorage* {
     for (auto iterator = frames.rbegin(); iterator != frames.rend(); ++iterator) {
         if (const auto found = iterator->names.find(name); found != iterator->names.end()) {
             found->second.used |= reachable && reference_path_reachable;
@@ -146,11 +144,11 @@ auto BodyElaborator::add_parameter(
     }
     return bind_local(
         named->name_span,
-        LocalStorage {
+        BodyLocalStorage {
             .storage = storage,
             .type = contract.type,
             .takeable = contract.access == AccessMode::Take,
-            .role = LocalRole::Parameter,
+            .role = BodyLocalRole::Parameter,
             .unused_candidate = std::nullopt,
         },
         DiagnosticCode::NameDuplicateParameter
@@ -172,15 +170,13 @@ auto BodyElaborator::add_capture(
     );
     return bind_local(
         name_span,
-        LocalStorage {
+        BodyLocalStorage {
             .storage = storage,
             .type = type,
             .takeable = false,
-            .role = LocalRole::Capture,
+            .role = BodyLocalRole::Capture,
             .unused_candidate = std::nullopt,
         },
         DiagnosticCode::LambdaCaptureDuplicate
     );
 }
-
-} // namespace body_elaboration

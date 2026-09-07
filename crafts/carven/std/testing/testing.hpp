@@ -22,7 +22,9 @@ public:
     }
 
     static auto exit() noexcept -> TestControl { return TestControl(std::nullopt); }
+
     auto has_value() const noexcept -> bool { return result.has_value(); }
+
     auto value() && noexcept(std::is_nothrow_move_constructible_v<Result>) -> Result {
         return std::move(*result);
     }
@@ -30,6 +32,7 @@ public:
 private:
     explicit TestControl(Result value) noexcept(std::is_nothrow_move_constructible_v<Result>)
         : result(std::move(value)) {}
+
     explicit TestControl(std::nullopt_t) noexcept
         : result(std::nullopt) {}
 
@@ -40,13 +43,17 @@ template<>
 class TestControl<void> final {
 public:
     static auto success() noexcept -> TestControl { return TestControl(true); }
+
     static auto exit() noexcept -> TestControl { return TestControl(false); }
+
     auto has_value() const noexcept -> bool { return normal; }
+
     auto value() const noexcept -> void {}
 
 private:
     explicit TestControl(bool value) noexcept
         : normal(value) {}
+
     bool normal;
 };
 

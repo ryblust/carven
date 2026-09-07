@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::branch_block(
     ASTBranchBlockID id,
     bool consume_result,
@@ -69,7 +67,7 @@ auto BodyElaborator::build_branch(
     ASTBranchBlockID id,
     bool value_form,
     std::optional<ConstructionTypeRef>& merged_type,
-    PendingFailureTerms& pending
+    BodyPendingFailureTerms& pending
 ) noexcept -> AnalysisResult<SemanticRegion> {
     const auto span = ast.branch_block(id).span;
     regions.push_back(empty_region(span));
@@ -129,7 +127,7 @@ auto BodyElaborator::build_arm(
     const ASTMatchArmBody& source,
     bool value_form,
     std::optional<ConstructionTypeRef>& type,
-    PendingFailureTerms& pending
+    BodyPendingFailureTerms& pending
 ) noexcept -> AnalysisResult<SemanticRegion> {
     if (const auto* branch = std::get_if<ASTBranchBlockID>(&source.value)) {
         return build_branch(*branch, value_form, type, pending);
@@ -195,7 +193,7 @@ auto BodyElaborator::build_if(
     bool value_form
 ) noexcept -> AnalysisResult<BuiltExpression> {
     auto branches = std::vector<SemConditionalBranch>();
-    auto pending = PendingFailureTerms();
+    auto pending = BodyPendingFailureTerms();
     auto merged_type = expected;
     auto remaining = reachable && reference_path_reachable;
     auto normal = false;
@@ -206,7 +204,7 @@ auto BodyElaborator::build_if(
         }
         auto condition = [&]() noexcept -> AnalysisResult<BuiltExpression> {
             [[maybe_unused]] const auto path =
-                ReferencePathGuard(reference_path_reachable, remaining);
+                BodyReferencePathGuard(reference_path_reachable, remaining);
             return expression(branch.condition, draft().intern_builtin_type(BuiltinType::Bool));
         }();
         if (!condition.has_value()) {
@@ -229,7 +227,7 @@ auto BodyElaborator::build_if(
         reachable = true;
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto path =
-                ReferencePathGuard(reference_path_reachable, selected);
+                BodyReferencePathGuard(reference_path_reachable, selected);
             return build_branch(branch.body, value_form, merged_type, pending);
         }();
         if (!body.has_value()) {
@@ -248,7 +246,7 @@ auto BodyElaborator::build_if(
         reachable = true;
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto path =
-                ReferencePathGuard(reference_path_reachable, remaining);
+                BodyReferencePathGuard(reference_path_reachable, remaining);
             return build_branch(id, value_form, merged_type, pending);
         }();
         if (!body.has_value()) {
@@ -303,7 +301,7 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
     loops.push_back({});
     reachable = true;
     auto result = [&]() noexcept {
-        [[maybe_unused]] const auto path = ReferencePathGuard(
+        [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
             outer_reachable && condition->completes && (!known.has_value() || *known)
         );
@@ -330,5 +328,3 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
     );
     return {};
 }
-
-} // namespace body_elaboration

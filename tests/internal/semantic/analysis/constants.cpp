@@ -19,12 +19,8 @@ import :source.module_path;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-using semantic_analysis_test::analyze_errors;
-using semantic_analysis_test::analyze_program;
-using semantic_analysis_test::contains_code;
-
 TEST_CASE("Semantic constants: declarations publish values without executable bodies") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "enum Choice { Value(i32), Empty, }\n"
         "enum State: u8 { Ready = 4, Done, }\n"
         "const arithmetic: i64 = -2i64 + 5;\n"
@@ -53,9 +49,9 @@ TEST_CASE("Semantic constants: declarations publish values without executable bo
 }
 
 TEST_CASE("Semantic constants: known results do not broaden static syntax") {
-    const auto diagnostics = analyze_errors(
+    const auto diagnostics = analyze_test_errors(
         "fn source() -> i32 { return 1; } "
         "fn invalid() { const _ = (source() == 1) && false; }"
     );
-    CHECK(contains_code(diagnostics, DiagnosticCode::ConstInitializer));
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstInitializer));
 }

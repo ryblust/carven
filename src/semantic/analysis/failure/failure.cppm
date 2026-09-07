@@ -23,12 +23,14 @@ enum class FailureSubsetRequirementKind {
 struct FailureTerm final {
     std::vector<TypeID> direct_members;
     std::vector<FailureTermID> inputs;
+
     struct GuardedContribution final {
         FailureTermID gate;
         FailureTermID source;
 
         auto operator==(const GuardedContribution&) const noexcept -> bool = default;
     };
+
     std::vector<GuardedContribution> guarded_inputs;
     std::vector<TypeID> excluded_members;
     std::optional<std::vector<TypeID>> retained_members;

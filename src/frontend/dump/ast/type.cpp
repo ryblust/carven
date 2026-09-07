@@ -32,6 +32,10 @@ auto literal_kind_name(const FloatingLiteralValue&) noexcept -> std::string_view
     return "DecimalFloating";
 }
 
+auto literal_kind_name(const CStringLiteralValue&) noexcept -> std::string_view {
+    return "CString";
+}
+
 auto literal_kind_name(const StringLiteralValue&) noexcept -> std::string_view {
     return "String";
 }

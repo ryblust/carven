@@ -76,19 +76,6 @@ TEST_CASE("Input path: invalid module names identify the first offending compone
             std::string_view("input 'math/bad-name.cv' has invalid module file stem 'bad-name'"),
         },
         std::pair {
-            std::string_view("match/value.cv"),
-            std::string_view(
-                "input 'match/value.cv' uses language keyword 'match' as a module directory "
-                "component"
-            ),
-        },
-        std::pair {
-            std::string_view("math/match.cv"),
-            std::string_view(
-                "input 'math/match.cv' uses language keyword 'match' as a module file stem"
-            ),
-        },
-        std::pair {
             std::string_view("42/value.cv"),
             std::string_view("input '42/value.cv' has invalid module directory component '42'"),
         },
@@ -185,3 +172,9 @@ TEST_CASE("Input path: drive-relative paths cannot escape the working directory"
     CHECK_EQ(result.error(), "input 'C:escape.cv' must be relative");
 }
 #endif
+
+TEST_CASE("Input path: keyword components preserve exact module identity") {
+    const auto result = derive_input_module_path("crafts/import/using/match.cv");
+    REQUIRE(result.has_value());
+    CHECK_EQ(result->value(), "crafts.import.using.match");
+}

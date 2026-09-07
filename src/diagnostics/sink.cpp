@@ -14,6 +14,7 @@ auto DiagnosticSink::emit(std::span<const Diagnostic> diagnostics) noexcept -> v
 auto DiagnosticSink::empty() const noexcept -> bool {
     return diagnostics.empty();
 }
+
 auto DiagnosticSink::size() const noexcept -> std::size_t {
     return diagnostics.size();
 }

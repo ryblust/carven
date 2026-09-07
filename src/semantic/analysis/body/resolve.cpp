@@ -23,21 +23,26 @@ public:
           failure_sets(failure_sets),
           provenance(provenance),
           diagnostics(diagnostics) {}
+
     auto warning(DiagnosticCode code, std::string message, ProgramOriginID origin) const noexcept
         -> void {
         diagnostics.warning(DiagnosticBuilder(code, std::move(message))
                                 .primary(provenance.source_span(origin))
                                 .build());
     }
+
     auto operator()(ConstructionTypeRef type) const noexcept -> TypeID {
         return types.resolve(type);
     }
+
     auto operator()(BodyType& type) const noexcept -> void {
         type = BodyType(types.resolve(type.construction()));
     }
+
     auto operator()(BodyFailures& term) const noexcept -> void {
         term = BodyFailures(failures.failure_set(term.term()));
     }
+
     auto operator()(SemanticExpression& value) const noexcept -> void {
         (*this)(value.type);
         (*this)(value.failures);
@@ -48,7 +53,9 @@ public:
             (*this)(*attempt);
         }
     }
+
     auto operator()(SemanticRegion& value) const noexcept -> void { (*this)(value.failures); }
+
     auto operator()(SemTry& value) const noexcept -> void {
         const auto protected_failures = failures.failure_set(value.protected_failures.term());
         if (!failure_sets.failure_set(protected_failures).members.empty()) {
@@ -102,6 +109,7 @@ public:
             }
         }
     }
+
     auto operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding {
         return {
             .name = value.name,
@@ -111,6 +119,7 @@ public:
             .origin = value.origin,
         };
     }
+
     auto operator()(ElaboratedPattern&& value) const noexcept -> Pattern {
         return {
             .type = (*this)(value.type),

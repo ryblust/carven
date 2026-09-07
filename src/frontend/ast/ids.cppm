@@ -3,12 +3,19 @@ module carven:frontend.ast.ids;
 import :support.typed_id;
 
 struct ASTExprIDTag final {};
+
 struct ASTTypeIDTag final {};
+
 struct ASTStmtIDTag final {};
+
 struct ASTPatternIDTag final {};
+
 struct ASTBlockIDTag final {};
+
 struct ASTBranchBlockIDTag final {};
+
 struct ASTItemIDTag final {};
+
 struct ASTModuleImportIDTag final {};
 
 using ASTExprID = TypedID<ASTExprIDTag>;

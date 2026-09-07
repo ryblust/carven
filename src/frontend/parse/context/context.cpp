@@ -278,6 +278,7 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
         TokenKind kind;
         Span span;
     };
+
     auto delimiters = std::vector<OpenDelimiter> {};
     delimiters.reserve(maximum_syntax_nesting);
     const auto spelling = [](TokenKind kind) static noexcept -> std::string_view {

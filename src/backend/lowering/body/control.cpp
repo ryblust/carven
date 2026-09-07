@@ -12,11 +12,10 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
 auto BodyLowerer::structured_expression(
     const SemanticExpression& source,
-    ResultDestination result,
-    StatementBuilder& destination
+    LoweringResultDestination result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     std::visit(
         Overloaded {
@@ -34,11 +33,11 @@ auto BodyLowerer::structured_expression(
 auto BodyLowerer::guarded_region(
     const SemanticRegion& source,
     const std::optional<SemanticExpression>& guard,
-    const ResultDestination& result,
+    const LoweringResultDestination& result,
     RegionExit& done
-) noexcept -> StatementBuilder {
-    auto guarded = StatementBuilder();
-    auto test = std::optional<Predicate>(KnownBool {true});
+) noexcept -> LoweringStmtBuilder {
+    auto guarded = LoweringStmtBuilder();
+    auto test = std::optional<LoweringPredicate>(LoweringKnownBool {true});
     if (guard.has_value()) {
         test = guarded.accept(condition(*guard));
         if (!test) {
@@ -78,17 +77,17 @@ auto BodyLowerer::guarded_region(
 
 auto BodyLowerer::lower_if(
     const SemIf& value,
-    ResultDestination result,
-    StatementBuilder& destination
+    LoweringResultDestination result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto lower_branch = [&](this const auto& self,
-                                  std::size_t index) noexcept -> StatementBuilder {
+                                  std::size_t index) noexcept -> LoweringStmtBuilder {
         if (index == value.branches.size()) {
             return value.otherwise.has_value() ? region(**value.otherwise, result)
-                                               : StatementBuilder();
+                                               : LoweringStmtBuilder();
         }
         const auto& branch = value.branches[index];
-        auto statements = StatementBuilder();
+        auto statements = LoweringStmtBuilder();
         auto test = statements.accept(condition(branch.condition));
         if (!statements.continues()) {
             return statements;
@@ -132,15 +131,15 @@ auto BodyLowerer::lower_arm(
     std::span<const LocalBindingID> bindings,
     const SemanticRegion& source,
     const std::optional<SemanticExpression>& guard,
-    const ResultDestination& result,
+    const LoweringResultDestination& result,
     RegionExit& done
-) noexcept -> StatementBuilder {
-    auto statements = StatementBuilder();
+) noexcept -> LoweringStmtBuilder {
+    auto statements = LoweringStmtBuilder();
     auto projections = std::vector<PatternProjection>();
     cache_pattern_projections(selections, projections, statements);
     if (selections.size() == 1uz) {
         const auto& selection = selections.front();
-        auto chosen = StatementBuilder();
+        auto chosen = LoweringStmtBuilder();
         for (const auto binding : bindings) {
             chosen.emit(generated_statement(
                 TargetVariableStmt {
@@ -181,7 +180,7 @@ auto BodyLowerer::lower_arm(
     for (const auto binding : bindings) {
         delayed_bindings.emplace(
             binding,
-            DeferredStorage {
+            LoweringDeferredStorage {
                 .name = binding_names.at(binding),
                 .value_type = context.lower_type(body.binding(binding).type)
             }
@@ -191,7 +190,7 @@ auto BodyLowerer::lower_arm(
     auto alternatives = std::vector<TargetIfBranch>();
     auto fallback = std::optional<std::vector<TargetStmt>>();
     for (const auto& selection : selections) {
-        auto chosen = StatementBuilder();
+        auto chosen = LoweringStmtBuilder();
         for (const auto binding : bindings) {
             initialize_deferred(
                 delayed_bindings.at(binding),
@@ -244,14 +243,14 @@ auto BodyLowerer::lower_arm(
 
 auto BodyLowerer::lower_match(
     const SemMatch& value,
-    const ResultDestination& result,
-    StatementBuilder& destination
+    const LoweringResultDestination& result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     auto done = RegionExit {
         .label = names.fresh(TargetTemporaryNameKind::MatchDone),
-        .target = exit_target(ExitKind::Value)
+        .target = exit_target(LoweringExitKind::Value)
     };
-    auto scope = StatementBuilder();
+    auto scope = LoweringStmtBuilder();
     const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
     auto subject_value = read_value(expression(*value.subject), scope);
     if (!scope.continues()) {
@@ -275,7 +274,7 @@ auto BodyLowerer::lower_match(
         if (!arm.reachable) {
             continue;
         }
-        auto statements = StatementBuilder();
+        auto statements = LoweringStmtBuilder();
         auto selections = lower_pattern(
             arm.pattern,
             {.root = subject, .dereference_root = false, .payload_path = {}}
@@ -289,7 +288,7 @@ auto BodyLowerer::lower_match(
             generated_statement(
                 TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
             ),
-            ExitTarget {ExitKind::Unreachable, 0}
+            LoweringExitTarget {LoweringExitKind::Unreachable, 0}
         );
     }
     destination.scope(std::move(scope));
@@ -300,8 +299,8 @@ auto BodyLowerer::lower_match(
 
 auto BodyLowerer::lower_try(
     const SemTry& value,
-    const ResultDestination& result,
-    StatementBuilder& destination
+    const LoweringResultDestination& result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (context.plan().failure_abi().members(value.protected_failures.resolved()).empty()) {
         destination.append(region(*value.body, result));
@@ -311,7 +310,7 @@ auto BodyLowerer::lower_try(
     const auto handler = names.fresh(TargetTemporaryNameKind::Try);
     auto done = RegionExit {
         .label = names.fresh(TargetTemporaryNameKind::CatchDone),
-        .target = exit_target(ExitKind::Value)
+        .target = exit_target(LoweringExitKind::Value)
     };
     const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
     destination.emit(generated_statement(
@@ -327,7 +326,7 @@ auto BodyLowerer::lower_try(
     failure_destination = FailureDestination {
         .storage = storage,
         .label = handler,
-        .target = exit_target(ExitKind::Failure)
+        .target = exit_target(LoweringExitKind::Failure)
     };
     auto protected_body = region(*value.body, result);
     if (!returns_result(result) && protected_body.continues()) {
@@ -356,7 +355,7 @@ auto BodyLowerer::lower_try(
         if (context.plan().failure_abi().members(arm.accepted_failures.resolved()).empty()) {
             continue;
         }
-        auto statements = StatementBuilder();
+        auto statements = LoweringStmtBuilder();
         auto selections = std::vector<PatternSelection>();
         const auto add = [&](TypeID type, std::optional<PatternID> pattern) noexcept {
             const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
@@ -416,5 +415,3 @@ auto BodyLowerer::lower_try(
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
 }
-
-} // namespace body_lowering

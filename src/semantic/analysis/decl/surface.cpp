@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
 namespace {
 
 auto surface_allows(
@@ -177,7 +175,8 @@ public:
                     if (candidates.size() != 1uz) {
                         return;
                     }
-                    const auto& selected = catalog_symbol(catalog, candidates.front().symbol_id);
+                    const auto& selected =
+                        require_catalog_symbol(catalog, candidates.front().symbol_id);
                     if (const auto* structure = std::get_if<CatalogStructForm>(&selected.form)) {
                         validate_nominal(NominalDeclarationRef {structure->structure});
                     } else if (const auto* enumeration =
@@ -234,7 +233,7 @@ private:
             },
             nominal
         );
-        const auto& referenced = catalog_symbol(catalog, symbol_id);
+        const auto& referenced = require_catalog_symbol(catalog, symbol_id);
         if (surface_allows(draft, surface_visibility, surface_module, referenced)) {
             return;
         }
@@ -244,7 +243,7 @@ private:
         );
         diagnostic.primary(primary_span);
         diagnostic.related(
-            locate(source_id(draft, referenced.module_id), referenced.declaration_span),
+            locate(declaration_source_id(draft, referenced.module_id), referenced.declaration_span),
             "referenced declaration"
         );
         failure = draft.diagnostics().error(diagnostic.build());
@@ -277,7 +276,7 @@ auto validate_source_surface(
         catalog,
         declaration.visibility,
         declaration.module_id,
-        locate(source_id(draft, declaration.module_id), primary),
+        locate(declaration_source_id(draft, declaration.module_id), primary),
         description,
         failure
     );
@@ -300,7 +299,7 @@ auto validate_module_constant_surface(
         symbol.visibility,
         symbol.module_id,
         locate(
-            source_id(draft, symbol.module_id),
+            declaration_source_id(draft, symbol.module_id),
             source.type.has_value() ? syntax.type(*source.type).span : source.name_span
         ),
         "module constant",
@@ -441,5 +440,3 @@ auto validate_declaration_surfaces(ProgramDraft& draft, AnalysisCatalogView cata
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
                                : AnalysisResult<void>();
 }
-
-} // namespace decl_resolution

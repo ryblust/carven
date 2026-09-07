@@ -28,9 +28,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
-
 auto BodyElaborator::array_expression(
     const ASTArrayExpr& array,
     Span span,
@@ -73,7 +70,7 @@ auto BodyElaborator::array_expression(
         ));
     }
     auto elements = std::vector<SemanticExpression>();
-    auto pending_failures = PendingFailureTerms();
+    auto pending_failures = BodyPendingFailureTerms();
     auto element_type = expected_element;
     auto completes = true;
     for (const auto element_id : array.element_ids) {
@@ -82,7 +79,7 @@ auto BodyElaborator::array_expression(
             return std::unexpected(element.error());
         }
         completes &= element->completes;
-        append_pending(pending_failures, take_pending(*element));
+        append_pending_failures(pending_failures, take_pending_failures(*element));
         if (!element_type.has_value()) {
             auto inferred = infer_value_type(*element, ast.expression(element_id).span);
             if (!inferred.has_value()) {
@@ -193,7 +190,7 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
     }
     const auto declaration = draft().construction_struct_declaration_copy(structure->structure);
     auto fields = std::vector<SemFieldInitializer>();
-    auto pending_failures = PendingFailureTerms();
+    auto pending_failures = BodyPendingFailureTerms();
     auto completes = true;
     const auto append_field = [&](std::size_t index,
                                   ASTExprID value_id) noexcept -> AnalysisResult<void> {
@@ -209,7 +206,7 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
             return std::unexpected(value.error());
         }
         completes &= value->completes;
-        append_pending(pending_failures, take_pending(*value));
+        append_pending_failures(pending_failures, take_pending_failures(*value));
         if (!compatible(value->type(), declaration.fields[index].type)) {
             return std::unexpected(fail(
                 ast.expression(value_id).span,
@@ -318,6 +315,3 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
         .completes = completes,
     };
 }
-
-
-} // namespace body_elaboration

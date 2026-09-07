@@ -11,8 +11,6 @@ import :semantic.semir;
 import :support.invariant;
 import std;
 
-namespace body_lowering {
-
 BodyLowerer::BodyLowerer(
     ModuleLowering& source_context,
     BodyID id,
@@ -62,14 +60,14 @@ BodyLowerer::BodyLowerer(
 }
 
 auto BodyLowerer::finish() noexcept -> LoweredBody {
-    auto statements = region(body.region(), DiscardResult {});
+    auto statements = region(body.region(), LoweringDiscardResult {});
 
     for (const auto exit : statements.exits().targets) {
         if (exit.identity != 0
-            || (exit.kind != ExitKind::FunctionReturn
-                && exit.kind != ExitKind::Failure
-                && exit.kind != ExitKind::Test
-                && exit.kind != ExitKind::Unreachable)) {
+            || (exit.kind != LoweringExitKind::FunctionReturn
+                && exit.kind != LoweringExitKind::Failure
+                && exit.kind != LoweringExitKind::Test
+                && exit.kind != LoweringExitKind::Unreachable)) {
             invariant_violation("body contains an unreceived control exit");
         }
     }
@@ -84,12 +82,12 @@ auto BodyLowerer::finish() noexcept -> LoweredBody {
     };
 }
 
-auto BodyLowerer::region(const SemanticRegion& source, ResultDestination result) noexcept
-    -> StatementBuilder {
-    auto statements = StatementBuilder();
+auto BodyLowerer::region(const SemanticRegion& source, LoweringResultDestination result) noexcept
+    -> LoweringStmtBuilder {
+    auto statements = LoweringStmtBuilder();
     const auto append_from = [&](this const auto& self,
                                  std::size_t index,
-                                 StatementBuilder& destination) noexcept -> void {
+                                 LoweringStmtBuilder& destination) noexcept -> void {
         for (; index < source.statements.size() && destination.continues(); ++index) {
             const auto& item = source.statements[index];
             if (const auto* initialization = std::get_if<SemInitialize>(&item.value);
@@ -98,10 +96,10 @@ auto BodyLowerer::region(const SemanticRegion& source, ResultDestination result)
                 && external_exits(initialization->initializer)) {
                 structured_expression(
                     initialization->initializer,
-                    ConsumeResult {
+                    LoweringConsumeResult {
                         .consume =
-                            [&](Evaluated value, StatementBuilder& branch) noexcept {
-                                auto binding = StatementBuilder();
+                            [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
+                                auto binding = LoweringStmtBuilder();
                                 declare_binding(
                                     initialization->binding,
                                     value_expression(std::move(value)),
@@ -132,5 +130,3 @@ auto BodyLowerer::region(const SemanticRegion& source, ResultDestination result)
     append_from(0uz, statements);
     return statements;
 }
-
-} // namespace body_lowering

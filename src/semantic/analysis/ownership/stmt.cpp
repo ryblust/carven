@@ -3,10 +3,10 @@ module carven:semantic.analysis.ownership.stmt.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
-
-auto BodyAnalyzer::complete_expression(const SemanticExpression& source, State state) noexcept
-    -> Flow {
+auto OwnershipBodyAnalyzer::complete_expression(
+    const SemanticExpression& source,
+    OwnershipState state
+) noexcept -> OwnershipFlow {
     const auto previous = full_expression;
     const auto owns = full_expression != source.lifetime
         && body.lifetime_regions().region(source.lifetime).kind
@@ -21,29 +21,37 @@ auto BodyAnalyzer::complete_expression(const SemanticExpression& source, State s
     }
     return result;
 }
-auto BodyAnalyzer::region(const SemanticRegion& source, State state, bool release) noexcept
-    -> Flow {
-    auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
+
+auto OwnershipBodyAnalyzer::region(
+    const SemanticRegion& source,
+    OwnershipState state,
+    bool release
+) noexcept -> OwnershipFlow {
+    auto result = OwnershipFlow {.normal = std::move(state), .value = {}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
             break;
         }
         auto next = statement(item, std::move(*result.normal));
         result.normal = std::move(next.normal);
-        append_exits(result, next);
+        append_ownership_exits(result, next);
     }
     if (result.normal.has_value() && source.result.has_value()) {
         auto next = expression(*source.result, std::move(*result.normal));
         result.normal = std::move(next.normal);
         result.value = std::move(next.value);
-        append_exits(result, next);
+        append_ownership_exits(result, next);
     }
     if (release) {
         leave(result, source.lifetime);
     }
     return result;
 }
-auto BodyAnalyzer::statement(const SemanticStatement& source, State state) noexcept -> Flow {
+
+auto OwnershipBodyAnalyzer::statement(
+    const SemanticStatement& source,
+    OwnershipState state
+) noexcept -> OwnershipFlow {
     const auto previous_full_expression = full_expression;
     const auto owns =
         body.lifetime_regions().region(source.lifetime).kind == LifetimeRegionKind::FullExpression
@@ -51,23 +59,24 @@ auto BodyAnalyzer::statement(const SemanticStatement& source, State state) noexc
     if (owns) {
         full_expression = source.lifetime;
     }
-    auto result = Flow {.normal = std::move(state), .value = {}, .exits = {}};
+    auto result = OwnershipFlow {.normal = std::move(state), .value = {}, .exits = {}};
     const auto evaluate = [&](const SemanticExpression& expression_source) noexcept {
         if (result.normal.has_value()) {
             auto next = expression(expression_source, std::move(*result.normal));
             result.normal = std::move(next.normal);
             result.value = std::move(next.value);
-            append_exits(result, next);
+            append_ownership_exits(result, next);
         }
     };
-    const auto transfer = [&](ExitKind kind,
+    const auto transfer = [&](OwnershipExitKind kind,
                               std::optional<TypeID> failure = std::nullopt) noexcept {
         if (result.normal.has_value()) {
             result.exits.push_back(
                 {kind,
                  failure,
                  std::move(*result.normal),
-                 kind == ExitKind::Return ? std::move(result.value) : Relationships {}}
+                 kind == OwnershipExitKind::Return ? std::move(result.value)
+                                                   : OwnershipRelationships {}}
             );
             result.normal.reset();
         }
@@ -78,19 +87,19 @@ auto BodyAnalyzer::statement(const SemanticStatement& source, State state) noexc
                 if (value.value.has_value()) {
                     evaluate(*value.value);
                 }
-                transfer(ExitKind::Return);
+                transfer(OwnershipExitKind::Return);
             },
-            [&](const SemBreak&) noexcept { transfer(ExitKind::Break); },
-            [&](const SemContinue&) noexcept { transfer(ExitKind::Continue); },
+            [&](const SemBreak&) noexcept { transfer(OwnershipExitKind::Break); },
+            [&](const SemContinue&) noexcept { transfer(OwnershipExitKind::Continue); },
             [&](const SemRethrow&) noexcept {
                 for (const auto type : caught) {
-                    result.exits.push_back({ExitKind::Failure, type, *result.normal, {}});
+                    result.exits.push_back({OwnershipExitKind::Failure, type, *result.normal, {}});
                 }
                 result.normal.reset();
             },
             [&](const SemThrow& value) noexcept {
                 evaluate(value.value);
-                transfer(ExitKind::Failure, value.failure_type);
+                transfer(OwnershipExitKind::Failure, value.failure_type);
             },
             [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
             [&](const SemInitialize& value) noexcept {
@@ -156,5 +165,3 @@ auto BodyAnalyzer::statement(const SemanticStatement& source, State state) noexc
     }
     return result;
 }
-
-} // namespace ownership

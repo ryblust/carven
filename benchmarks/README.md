@@ -51,3 +51,22 @@ The pulse reuses that exact compiler and the Carven rule package already selecte
 by Xmake, including a local rule package installed by a dual-repository checkout.
 The default timing uses one warmup and five measured runs. Pass `--verbose` to
 display raw samples and recompiled object paths.
+
+## Structured analysis pulse
+
+`analysis_pulse.py` measures independent functions, forward/reverse declaration
+orders of call chains, and nested loops with no backedge. It launches an already
+built compiler against temporary source files and discards generated C++ output.
+Timings include parsing, analysis and generation; they do not isolate solver
+CPU time. There are no timing assertions or stored baselines. Use the same build
+mode and machine for comparisons; independent functions provide a breadth
+baseline for the call chains.
+
+```shell
+./xmakew build
+python3 benchmarks/analysis_pulse.py build/macosx/arm64/debug/carven
+```
+
+Pass the actual executable path for other platforms or build modes. Optional
+`--samples` and `--warmups` control repetition. Semantic acceptance, rejection,
+relationship identity and diagnostic checks belong in the internal tests.

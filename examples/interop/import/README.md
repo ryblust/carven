@@ -46,4 +46,4 @@ Try `"65536"`, `"0"`, or `"443"`. The adapter could also be implemented in a
 linked C++ source or a top-level `#[cpp]` fragment; a header keeps both sides
 visible in this example.
 
-Next: [C++ host](../exporting/).
+Next: [C++ host](../export/).

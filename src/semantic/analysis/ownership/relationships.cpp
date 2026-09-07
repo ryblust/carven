@@ -3,17 +3,23 @@ module carven:semantic.analysis.ownership.relationships.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
 namespace {
 
 template<typename T>
+auto normalize_rows(std::vector<T>& rows) noexcept -> void {
+    std::ranges::sort(rows, [](const T& left, const T& right) static noexcept {
+        const auto order = left <=> right;
+        return order < 0 || (order == 0 && left.origin < right.origin);
+    });
+    rows.erase(std::ranges::unique(rows).begin(), rows.end());
+}
+
+template<typename T>
 auto merge_rows(std::vector<T>& destination, const std::vector<T>& source) noexcept -> void {
-    for (const auto& item : source) {
-        if (!std::ranges::contains(destination, item)) {
-            destination.push_back(item);
-        }
+    if (std::addressof(destination) != std::addressof(source)) {
+        destination.insert(destination.end(), source.begin(), source.end());
     }
-    std::ranges::sort(destination);
+    normalize_rows(destination);
 }
 
 } // namespace
@@ -29,15 +35,29 @@ auto overlaps(
     }
     return true;
 }
-auto overlaps(const Place& left, const Place& right) noexcept -> bool {
+
+auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool {
     return left.object == right.object && overlaps(left.path, right.path);
 }
-auto merge_relationships(Relationships& destination, const Relationships& source) noexcept -> void {
+
+auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void {
+    normalize_rows(relationships.loans);
+    normalize_rows(relationships.captures);
+}
+
+auto merge_relationships(
+    OwnershipRelationships& destination,
+    const OwnershipRelationships& source
+) noexcept -> void {
     merge_rows(destination.loans, source.loans);
     merge_rows(destination.captures, source.captures);
 }
-auto project(const Relationships& source, const ProjectionPath& path) noexcept -> Relationships {
-    auto result = Relationships {};
+
+auto project_relationships(
+    const OwnershipRelationships& source,
+    const OwnershipProjectionPath& path
+) noexcept -> OwnershipRelationships {
+    auto result = OwnershipRelationships {};
     const auto select = [&](const auto& rows, auto& destination) noexcept {
         for (auto row : rows) {
             if (row.holder.size() < path.size() || !overlaps(row.holder, path)) {
@@ -52,9 +72,12 @@ auto project(const Relationships& source, const ProjectionPath& path) noexcept -
     };
     select(source.loans, result.loans);
     select(source.captures, result.captures);
+    normalize_relationships(result);
     return result;
 }
-auto nested(Relationships source, const ProjectionPath& path) noexcept -> Relationships {
+
+auto nest_relationships(OwnershipRelationships source, const OwnershipProjectionPath& path) noexcept
+    -> OwnershipRelationships {
     for (auto& loan : source.loans) {
         loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
     }
@@ -63,7 +86,9 @@ auto nested(Relationships source, const ProjectionPath& path) noexcept -> Relati
     }
     return source;
 }
-auto join(State& destination, const State& source) noexcept -> void {
+
+auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
+    -> void {
     if (destination.objects.size() != source.objects.size()) {
         invariant_violation("ownership join has different storage domains");
     }
@@ -76,29 +101,32 @@ auto join(State& destination, const State& source) noexcept -> void {
         merge_relationships(target.relationships, incoming.relationships);
     }
 }
-auto join_normal(std::optional<State>& destination, const std::optional<State>& source) noexcept
-    -> void {
+
+auto join_normal_ownership_state(
+    std::optional<OwnershipState>& destination,
+    const std::optional<OwnershipState>& source
+) noexcept -> void {
     if (!source.has_value()) {
         return;
     }
     if (!destination.has_value()) {
         destination = source;
     } else {
-        join(*destination, *source);
+        join_ownership_state(*destination, *source);
     }
 }
-auto append_exits(Flow& destination, Flow& source) noexcept -> void {
+
+auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void {
     for (auto& exit : source.exits) {
-        const auto found = std::ranges::find_if(destination.exits, [&](const Exit& other) noexcept {
-            return exit.kind == other.kind && exit.failure == other.failure;
-        });
+        const auto found =
+            std::ranges::find_if(destination.exits, [&](const OwnershipExit& other) noexcept {
+                return exit.kind == other.kind && exit.failure == other.failure;
+            });
         if (found == destination.exits.end()) {
             destination.exits.push_back(std::move(exit));
         } else {
-            join(found->state, exit.state);
+            join_ownership_state(found->state, exit.state);
             merge_relationships(found->value, exit.value);
         }
     }
 }
-
-} // namespace ownership

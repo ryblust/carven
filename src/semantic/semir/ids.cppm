@@ -18,7 +18,9 @@ template<typename Tag>
 class ProgramID final {
 public:
     constexpr auto owner() const noexcept -> ProgramIdentity { return program_identity; }
+
     constexpr auto index() const noexcept -> std::uint32_t { return row_index; }
+
     constexpr auto operator<=>(const ProgramID&) const noexcept = default;
 
 private:
@@ -41,7 +43,9 @@ template<typename Tag>
 class BodyLocalID final {
 public:
     constexpr auto owner() const noexcept -> BodyIdentity { return body_identity; }
+
     constexpr auto index() const noexcept -> std::uint32_t { return row_index; }
+
     constexpr auto operator<=>(const BodyLocalID&) const noexcept = default;
 
 private:
@@ -63,19 +67,33 @@ private:
 };
 
 struct ModuleIDTag final {};
+
 struct FunctionIDTag final {};
+
 struct StructIDTag final {};
+
 struct EnumIDTag final {};
+
 struct EnumCaseIDTag final {};
+
 struct ModuleConstantIDTag final {};
+
 struct CallableIDTag final {};
+
 struct BodyIDTag final {};
+
 struct TestIDTag final {};
+
 struct TypeIDTag final {};
+
 struct ConstantIDTag final {};
+
 struct FailureSetIDTag final {};
+
 struct CallableSignatureIDTag final {};
+
 struct TypeTermIDTag final {};
+
 struct FailureTermIDTag final {};
 
 using ModuleID = ProgramID<ModuleIDTag>;
@@ -95,7 +113,9 @@ using TypeTermID = ProgramID<TypeTermIDTag>;
 using FailureTermID = ProgramID<FailureTermIDTag>;
 
 struct LifetimeRegionIDTag final {};
+
 struct LocalBindingIDTag final {};
+
 struct PatternIDTag final {};
 
 using LifetimeRegionID = BodyLocalID<LifetimeRegionIDTag>;

@@ -435,7 +435,7 @@ TEST_CASE("Generated interfaces: C++ environments preserve complete ordered impo
         ModuleFixture {
             "provider",
             "import \"first.hpp\"; import <second.hpp>; import \"first.hpp\";"
-            "import \"lookup.hpp\" using { native::Thing, native::unused };"
+            "import \"lookup.hpp\" using native::{ Thing, unused };"
             "fn global(value: ::Point) -> ::Point { return value; }"
             "fn scoped(value: Thing) -> Thing { return value; }"
         },
@@ -451,7 +451,6 @@ TEST_CASE("Generated interfaces: C++ environments preserve complete ordered impo
     CHECK(first < second);
     CHECK(second < repeated);
     CHECK(content.find("#include \"first.hpp\"", repeated + 1uz) == std::string::npos);
-    CHECK(content.contains("using ::native::unused;"));
 }
 
 TEST_CASE("Generated interfaces: global lookup carries headers without using bindings") {

@@ -13,8 +13,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
-
 auto BodyLowerer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
     used_bindings.insert(id);
     auto result = name_expression(binding_names.at(id));
@@ -31,7 +29,7 @@ auto BodyLowerer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
 auto BodyLowerer::declare_binding(
     LocalBindingID id,
     TargetExpr initializer,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto& binding = body.binding(id);
     const auto& owner = std::get<OwnerBindingStorage>(binding.storage);
@@ -50,9 +48,9 @@ auto BodyLowerer::declare_binding(
 }
 
 auto BodyLowerer::declare_deferred(
-    const DeferredStorage& storage,
+    const LoweringDeferredStorage& storage,
     bool maybe_unused,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto type = context.target().intern_type(
         {.value =
@@ -85,10 +83,11 @@ auto BodyLowerer::field_identifier(StructID owner, std::uint32_t index) noexcept
     );
 }
 
-auto BodyLowerer::condition(const SemanticExpression& source) noexcept -> Lowered<Predicate> {
-    auto destination = StatementBuilder();
-    auto result = [&]() noexcept -> std::optional<Predicate> {
-        auto statements = StatementBuilder();
+auto BodyLowerer::condition(const SemanticExpression& source) noexcept
+    -> Lowered<LoweringPredicate> {
+    auto destination = LoweringStmtBuilder();
+    auto result = [&]() noexcept -> std::optional<LoweringPredicate> {
+        auto statements = LoweringStmtBuilder();
         if (const auto known = ::known_boolean(context.semantic(), source)) {
             static_cast<void>(statements.accept(retain_evaluation(source)));
             if (!statements.empty()) {
@@ -97,20 +96,20 @@ auto BodyLowerer::condition(const SemanticExpression& source) noexcept -> Lowere
             if (!destination.continues()) {
                 return std::nullopt;
             }
-            return KnownBool {*known};
+            return LoweringKnownBool {*known};
         }
         if (evaluation_form(source) == EvaluationForm::Branches) {
             const auto result = names.fresh(TargetTemporaryNameKind::Logic);
             consume_expression(
                 source,
-                LiteralContext::Exact,
+                LoweringLiteralContext::Exact,
                 ResultDemand::Observe,
-                [&](Evaluated value, StatementBuilder& branch) noexcept {
+                [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
                     branch.emit(generated_statement(
                         TargetAssignmentStmt {
                             .target = name_expression(result),
                             .op = TargetAssignmentOperator::Assign,
-                            .value = value_expression(std::move(value), ValueUse::Observe)
+                            .value = value_expression(std::move(value), LoweringValueUse::Observe)
                         }
                     ));
                 },
@@ -131,7 +130,7 @@ auto BodyLowerer::condition(const SemanticExpression& source) noexcept -> Lowere
             ));
             destination.scope(std::move(statements));
             return destination.continues()
-                ? std::optional<Predicate>(DynamicBool {name_expression(result)})
+                ? std::optional<LoweringPredicate>(LoweringDynamicBool {name_expression(result)})
                 : std::nullopt;
         }
         auto value = read_value(full_expression(source), statements);
@@ -159,19 +158,19 @@ auto BodyLowerer::condition(const SemanticExpression& source) noexcept -> Lowere
                 }
             ));
             destination.scope(std::move(statements));
-            return DynamicBool {name_expression(result)};
+            return LoweringDynamicBool {name_expression(result)};
         }
         destination.append(std::move(statements));
-        return DynamicBool {std::move(*value)};
+        return LoweringDynamicBool {std::move(*value)};
     }();
-    return std::move(destination).complete<Predicate>(std::move(result));
+    return std::move(destination).complete<LoweringPredicate>(std::move(result));
 }
 
 auto BodyLowerer::materialize_operand(
     const SemanticExpression& source,
     TargetExpr value,
     OperandUse use,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> TargetExpr {
     if (!evaluation_requires_execution(context.semantic(), source)
         && !evaluation_reads_storage(context.semantic(), source)) {
@@ -203,24 +202,22 @@ auto BodyLowerer::materialize_operand(
 auto BodyLowerer::operand(
     const SemanticExpression& source,
     OperandUse use,
-    LiteralContext literal
+    LoweringLiteralContext literal
 ) noexcept -> Lowered<TargetExpr> {
-    auto destination = StatementBuilder();
+    auto destination = LoweringStmtBuilder();
     auto value = read_value(
         expression(
             source,
-            use == OperandUse::Read ? literal : LiteralContext::Exact,
+            use == OperandUse::Read ? literal : LoweringLiteralContext::Exact,
             use == OperandUse::Read || use == OperandUse::ConstPlace ? ResultDemand::Observe
                                                                      : ResultDemand::Value
         ),
         destination,
-        use == OperandUse::Own || use == OperandUse::Snapshot ? ValueUse::Transfer
-                                                              : ValueUse::Observe
+        use == OperandUse::Own || use == OperandUse::Snapshot ? LoweringValueUse::Transfer
+                                                              : LoweringValueUse::Observe
     );
     if (value) {
         value = materialize_operand(source, std::move(*value), use, destination);
     }
     return std::move(destination).complete<TargetExpr>(std::move(value));
 }
-
-} // namespace body_lowering

@@ -26,9 +26,11 @@ auto TargetUnitBuilder::identity() const noexcept -> TargetUnitIdentity {
 
 auto TargetUnitBuilder::intern_type(TargetType type) noexcept -> TargetTypeID {
     const auto identity = require_identity();
+
     struct Children final {
         TargetUnitIdentity identity;
         std::size_t count;
+
         auto visit_type(TargetTypeID child) const noexcept -> bool {
             if (child.owner() != identity || child.index() >= count) {
                 invariant_violation("target type child is foreign or has not been constructed");
@@ -36,6 +38,7 @@ auto TargetUnitBuilder::intern_type(TargetType type) noexcept -> TargetTypeID {
             return true;
         }
     };
+
     auto children = Children {.identity = identity, .count = types.size()};
     static_cast<void>(visit_target_type_children(type.value, children));
     for (auto index = 0uz; index < types.size(); ++index) {

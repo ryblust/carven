@@ -370,9 +370,30 @@ auto plan_names(
         );
         auto qualified = namespace_prefix;
         qualified.push_back(module_namespace);
+        auto public_components = std::vector<TargetIdentifier> {
+            TargetNameAllocator::fixed("carven"),
+            TargetNameAllocator::fixed("api")
+        };
+        for (const auto& component : path.components()) {
+            public_components.push_back(TargetNameAllocator::public_identifier(component));
+        }
+        auto public_functions = std::flat_map<FunctionID, TargetIdentifier>();
+        for (const auto item : module_record.value.items) {
+            if (const auto* id = std::get_if<FunctionID>(&item)) {
+                const auto& function = declarations.function(*id);
+                if (function.cpp_export_origin.has_value()) {
+                    public_functions.emplace(
+                        *id,
+                        TargetNameAllocator::public_identifier(provenance.spelling(function.name))
+                    );
+                }
+            }
+        }
         modules[module_record.id.index()] = TargetModuleNames {
             .qualified_namespace_name = TargetName::from_components(std::move(qualified)),
             .module_namespace_name = TargetName {module_namespace},
+            .public_namespace_name = TargetName::from_components(std::move(public_components)),
+            .public_functions = std::move(public_functions),
             .reserved_identifiers = std::move(module_occupied[module_record.id.index()]),
         };
     }

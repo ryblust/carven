@@ -26,8 +26,11 @@ public:
     }
 
     constexpr auto start() const noexcept -> std::uint32_t { return span_start; }
+
     constexpr auto end() const noexcept -> std::uint32_t { return span_end; }
+
     constexpr auto size() const noexcept -> std::uint32_t { return span_end - span_start; }
+
     constexpr auto empty() const noexcept -> bool { return span_start == span_end; }
 
     constexpr auto operator<=>(const Span&) const noexcept = default;

@@ -840,6 +840,8 @@ auto normalize_literal(
                     .type = type,
                     .value = CharacterConstant {.scalar = value.scalar},
                 };
+            } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
+                return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
             } else if constexpr (std::same_as<Value, StringLiteralValue>) {
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);

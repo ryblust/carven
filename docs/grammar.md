@@ -100,6 +100,12 @@ ordinary identifiers.
 Canonical naming conventions are style guidance only. They do not change the
 set of syntactically valid identifiers.
 
+The adjacent prefix `c"` starts a `CStringLiteral` token. Its quoted payload
+uses ordinary string decoding, but decoded NUL is rejected at the originating
+character or escape. `c` by itself remains an identifier; `c "text"` is not
+one literal. C strings admit neither raw forms nor implicit concatenation.
+They are expression literals with an external pointer type, not `str` literals.
+
 ### 2.3 Numeric Literals
 
 ```ebnf
@@ -165,6 +171,8 @@ unicode-escape = "\\u{", HEX_DIGIT, { HEX_DIGIT }, "}"
 CHAR_LITERAL = "'",
                ( character-scalar | simple-escape | unicode-escape ),
                "'";
+
+C_STRING_LITERAL = "c", STRING_LITERAL;  (* adjacent prefix; decoded NUL forbidden *)
 
 STRING_LITERAL = "\"",
                  { string-scalar | simple-escape | unicode-escape },
@@ -309,14 +317,15 @@ cpp-header-import-declaration = "import",
                                 [ "using", cpp-import-selection ], ";";
 
 cpp-name = IDENTIFIER, { "::", IDENTIFIER };
-cpp-import-selection = cpp-name, [ "::", "*" ]
-                     | "{", cpp-name, { ",", cpp-name }, [ "," ], "}";
+cpp-import-selection = using-list
+                     | cpp-name, [ "::", ( using-list | "*" ) ];
 
 module-reference = module-path
                  | ".", module-path
-                 | IDENTIFIER, "::", module-path;
+                 | module-component, "::", module-path;
 
-module-path = IDENTIFIER, { ".", IDENTIFIER };
+module-component = IDENTIFIER | reserved-keyword;
+module-path = module-component, { ".", module-component };
 
 using-clause = "using", import-selection;
 
@@ -324,6 +333,11 @@ import-selection = IDENTIFIER | "*" | using-list;
 
 using-list = "{", IDENTIFIER, { ",", IDENTIFIER }, [ "," ], "}";
 ```
+
+Module components accept every identifier-shaped spelling, including keywords.
+C++ selection lists contain only simple identifiers; qualified names, nested
+lists, aliases, and wildcards are not list items. A shared C++ path precedes
+the list: `import <print> using std::{print, println};`.
 
 The semicolon terminates the complete import declaration. A closing brace ends
 only the nested `using-list`.
@@ -730,7 +744,7 @@ primary-expression = literal
                    | match-form
                    | try-form;
 
-literal = NUMBER_LITERAL | STRING_LITERAL | CHAR_LITERAL
+literal = NUMBER_LITERAL | STRING_LITERAL | C_STRING_LITERAL | CHAR_LITERAL
         | "true" | "false";
 
 global-cpp-name = "::", IDENTIFIER, { "::", IDENTIFIER };
@@ -834,7 +848,7 @@ atomic-pattern = wildcard-pattern
 
 wildcard-pattern = "_";
 
-literal-pattern = NUMBER_LITERAL | STRING_LITERAL | CHAR_LITERAL
+literal-pattern = NUMBER_LITERAL | STRING_LITERAL | C_STRING_LITERAL | CHAR_LITERAL
                 | "true" | "false";
 
 negative-number-pattern = "-", NUMBER_LITERAL;

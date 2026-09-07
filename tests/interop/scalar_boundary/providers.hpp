@@ -102,6 +102,7 @@ inline auto native_exact_usize(Type) noexcept -> bool {
 inline auto native_overload_i8(std::int8_t) noexcept -> bool {
     return true;
 }
+
 template<typename Type>
 inline auto native_overload_i8(Type) noexcept -> bool {
     return false;

@@ -1,8 +1,11 @@
 #include <carven/runtime/outcome.hpp>
 
 namespace {
+
 struct Failure final {};
+
 struct OtherFailure final {};
+
 } // namespace
 
 auto outcome_header_contract() noexcept -> bool {

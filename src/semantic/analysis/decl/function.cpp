@@ -27,9 +27,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_resolution {
-
-auto DeclarationResolver::resolve_function(
+auto DeclResolver::resolve_function(
     const CatalogSymbol& symbol,
     const CatalogFunctionForm& form,
     ASTView syntax,
@@ -39,7 +37,7 @@ auto DeclarationResolver::resolve_function(
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto entry = symbol.name == "main" && !cpp_import;
     if (entry && function.parameters.size() > 1uz) {
-        return std::unexpected(fail(
+        return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             function.name_span,
@@ -64,11 +62,11 @@ auto DeclarationResolver::resolve_function(
             "a function parameter name is declared more than once"
         );
         diagnostic.primary(
-            locate(source_id(draft, symbol.module_id), named->name_span),
+            locate(declaration_source_id(draft, symbol.module_id), named->name_span),
             "duplicate parameter"
         );
         diagnostic.related(
-            locate(source_id(draft, symbol.module_id), prior->second),
+            locate(declaration_source_id(draft, symbol.module_id), prior->second),
             "first declaration"
         );
         return std::unexpected(draft.diagnostics().error(diagnostic.build()));
@@ -79,7 +77,7 @@ auto DeclarationResolver::resolve_function(
     for (const auto& parameter : function.parameters) {
         const auto access = semantic_access_mode(parameter.access);
         if (entry && access != AccessMode::Read) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 parameter.access.marker.value_or(parameter.span),
@@ -88,7 +86,7 @@ auto DeclarationResolver::resolve_function(
             ));
         }
         if (entry && parameter.type.has_value()) {
-            return std::unexpected(fail(
+            return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 parameter.span,
@@ -98,7 +96,7 @@ auto DeclarationResolver::resolve_function(
         }
         if (!parameter.type.has_value()) {
             if (!entry) {
-                return std::unexpected(fail(
+                return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     parameter.span,
@@ -164,7 +162,7 @@ auto DeclarationResolver::resolve_function(
     functions[form.function.index()] = FunctionDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
-        .origin = declaration_origin(draft, symbol.module_id, item_span),
+        .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
         .callable = form.callable,
         .entry_point = entry ? std::optional(
@@ -173,7 +171,9 @@ auto DeclarationResolver::resolve_function(
                                )
                              : std::nullopt,
         .cpp_export_origin = function.cpp_export.has_value()
-            ? std::optional(declaration_origin(draft, symbol.module_id, function.cpp_export->span))
+            ? std::optional(
+                  declaration_source_origin(draft, symbol.module_id, function.cpp_export->span)
+              )
             : std::nullopt,
     };
     callable_contracts[form.callable.index()] = ConstructionCallableContract {
@@ -183,7 +183,7 @@ auto DeclarationResolver::resolve_function(
         .policy = policy,
     };
     if (cpp_import) {
-        cpp_import_origins[form.callable.index()] = declaration_origin(
+        cpp_import_origins[form.callable.index()] = declaration_source_origin(
             draft,
             symbol.module_id,
             std::get<ASTCppImportForm>(function.implementation).span
@@ -191,5 +191,3 @@ auto DeclarationResolver::resolve_function(
     }
     return {};
 }
-
-} // namespace decl_resolution

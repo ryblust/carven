@@ -137,11 +137,10 @@ auto validate_cpp_boundary_declaration(
         );
     }
     const auto name = draft.source_slice_copy(module_id, function.name_span);
-    if (!is_supported_cpp_identifier(name)) {
+    if (cpp_import && !is_supported_cpp_identifier(name)) {
         diagnose(
             function.name_span,
-            cpp_import ? "C++ provider name must be a supported C++ identifier"
-                       : "C++ API function name must be a supported C++ identifier",
+            "C++ provider name must be a supported C++ identifier",
             DiagnosticCode::CppIdentifier
         );
     } else if (cpp_import && is_unrepresentable_cpp_provider_name(name)) {
@@ -165,8 +164,6 @@ auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) 
         }
     };
     auto functions = std::vector<CppExportPath>();
-    auto exported_module_origins =
-        std::vector<std::optional<ProgramOriginID>>(draft.module_count());
     for (const auto& symbol : catalog.symbols()) {
         const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
         if (form == nullptr) {
@@ -176,12 +173,6 @@ auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) 
         if (!function.cpp_export_origin.has_value()) {
             continue;
         }
-        if (symbol.module_id.index() >= exported_module_origins.size()) {
-            invariant_violation("C++ API function references an unknown module");
-        }
-        if (!exported_module_origins[symbol.module_id.index()].has_value()) {
-            exported_module_origins[symbol.module_id.index()] = function.cpp_export_origin;
-        }
         auto path = draft.module_path_copy(symbol.module_id).components()
             | std::views::transform([](std::string_view value) { return std::string(value); })
             | std::ranges::to<std::vector>();
@@ -190,30 +181,6 @@ auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) 
             .path = std::move(path),
             .origin = *function.cpp_export_origin,
         });
-    }
-    for (auto index = 0uz; index < exported_module_origins.size(); ++index) {
-        const auto origin = exported_module_origins[index];
-        if (!origin.has_value()) {
-            continue;
-        }
-        const auto module_id = draft.provenance_module_at(index);
-        const auto module_path = draft.module_path_copy(module_id);
-        for (const auto& component : module_path.components()) {
-            if (is_supported_cpp_identifier(component)) {
-                continue;
-            }
-            diagnose(
-                DiagnosticBuilder(
-                    DiagnosticCode::CppIdentifier,
-                    std::format(
-                        "module-path component '{}' is not a supported C++ namespace identifier",
-                        component
-                    )
-                )
-                    .primary(draft.source_span(*origin))
-                    .build()
-            );
-        }
     }
     for (auto left = 0uz; left < functions.size(); ++left) {
         for (auto right = left + 1; right < functions.size(); ++right) {

@@ -396,6 +396,7 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
     }
     if (check(TokenKind::NumberLiteral)
         || check(TokenKind::StringLiteral)
+        || check(TokenKind::CStringLiteral)
         || check(TokenKind::CharLiteral)
         || check(TokenKind::True)
         || check(TokenKind::False)) {

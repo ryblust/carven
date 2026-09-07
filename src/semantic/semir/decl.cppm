@@ -13,9 +13,8 @@ enum class CppHeaderDelimiter {
     Quotes,
 };
 
-struct CppUsingBinding final {
+struct CppNamespaceOpening final {
     std::vector<ProgramSpellingID> components;
-    bool opens_namespace;
     ProgramOriginID origin;
 };
 
@@ -23,7 +22,7 @@ struct CppHeaderDependency final {
     CppHeaderDelimiter delimiter;
     ProgramSpellingID name;
     ProgramOriginID origin;
-    std::vector<CppUsingBinding> bindings;
+    std::optional<CppNamespaceOpening> namespace_opening;
 };
 
 struct CppSourceFragment final {
@@ -132,7 +131,6 @@ struct ModuleConstantDeclaration final {
     DeclarationVisibility visibility;
     ConstantID value;
 };
-
 
 struct FunctionBodyImplementation final {
     BodyID body;

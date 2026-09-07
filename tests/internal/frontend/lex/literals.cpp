@@ -294,3 +294,26 @@ TEST_CASE("Lexer: stored literal value associations follow token positions") {
     CHECK_EQ(string.bytes, "text");
     CHECK_EQ(character.scalar, U'x');
 }
+
+TEST_CASE("Lexer: C strings share decoding and reject NUL at its source") {
+    const auto valid = std::to_array<std::string_view>({R"(c"")", R"(c"hello\n")", R"(c"你好")"});
+    for (const auto text : valid) {
+        check_token(text, TokenKind::CStringLiteral);
+    }
+    const auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
+    for (const auto text : zeros) {
+        const auto result = scan_string_literal(text, true);
+        REQUIRE_FALSE(result.has_value());
+        CHECK_EQ(result.error().error_offset, 2uz);
+        CHECK_EQ(result.error().error_length, text.size() - 4uz);
+    }
+    const auto invalid = std::to_array<std::string_view>({R"(c"\q")", R"(c"unterminated)"});
+    for (const auto text : invalid) {
+        check_lexical_error(text);
+    }
+    const auto separated = std::array {
+        TokenCase {"c", TokenKind::Identifier},
+        TokenCase {R"("x")", TokenKind::StringLiteral}
+    };
+    check_token_sequence(R"(c "x")", separated);
+}

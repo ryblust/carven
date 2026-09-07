@@ -16,7 +16,7 @@ import :test.internal.semantic.analysis.fixture;
 import std;
 
 TEST_CASE("Evaluation: known results retain source operations and execution obligations") {
-    const auto semantic = semantic_analysis_test::analyze_program(
+    const auto semantic = analyze_test_program(
         "fn touch(&n: i32) -> bool { n += 1; return true; }\n"
         "fn probe(&n: i32) {\n"
         "  let _ = 1 < 2;\n"
@@ -74,7 +74,7 @@ TEST_CASE("Evaluation: known results retain source operations and execution obli
 
 TEST_CASE("Generation: proven scalar results require no computation or discard scaffolding") {
     const auto compilation = PlannedCompilation::build(
-        semantic_analysis_test::analyze_program(
+        analyze_test_program(
             "enum Error { E1, E2, }\n"
             "fn foo(a: i32) -> i32 throw Error {\n"
             "  if 1 < 2 { return 3 + a; } else { throw Error::E1; }\n"
@@ -87,8 +87,10 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("evaluation")}
     );
+
     struct Query final {
         std::size_t calls = 0;
+
         auto enter_expression(const TargetExpr& expression) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetStaticCastExpr>(expression.value));
             CHECK_FALSE(std::holds_alternative<TargetBinaryExpr>(expression.value));
@@ -97,6 +99,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
             calls += std::holds_alternative<TargetCallExpr>(expression.value);
             return true;
         }
+
         auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetBlockStmt>(statement.value));
             CHECK_FALSE(std::holds_alternative<TargetDiscardStmt>(statement.value));
@@ -105,6 +108,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
             return true;
         }
     };
+
     auto query = Query();
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
@@ -115,7 +119,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
 
 TEST_CASE("Generation: native branches and calls need no enclosing artificial block") {
     const auto compilation = PlannedCompilation::build(
-        semantic_analysis_test::analyze_program(
+        analyze_test_program(
             "fn identity(n: i32) -> i32 { return n; }\n"
             "fn branch(flag: bool, n: i32) -> i32 {\n"
             "  if flag { return identity(n); } else { return 0; }\n"
@@ -126,21 +130,25 @@ TEST_CASE("Generation: native branches and calls need no enclosing artificial bl
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("native_structure")}
     );
+
     struct Query final {
         std::size_t branches = 0;
         std::size_t calls = 0;
+
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetBlockStmt>(statement.value));
             CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
             branches += std::holds_alternative<TargetIfStmt>(statement.value);
             return true;
         }
+
         auto enter_expression(const TargetExpr& expression) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
             calls += std::holds_alternative<TargetCallExpr>(expression.value);
             return true;
         }
     };
+
     auto query = Query {};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
@@ -152,7 +160,7 @@ TEST_CASE("Generation: native branches and calls need no enclosing artificial bl
 
 TEST_CASE("Generation: discarded failing calls check success without projecting a payload") {
     const auto compilation = PlannedCompilation::build(
-        semantic_analysis_test::analyze_program(
+        analyze_test_program(
             "enum Error { Failed, }\n"
             "fn produce(flag: bool) -> i32 throw Error {\n"
             "  if flag { return 7; } else { throw Error::Failed; }\n"
@@ -163,10 +171,12 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("result_consumption")}
     );
+
     struct Query final {
         std::size_t payloads = 0;
         std::size_t success_checks = 0;
         std::size_t saved_successes = 0;
+
         static auto is_success(const TargetExpr& expression) noexcept -> bool {
             const auto* call = std::get_if<TargetCallExpr>(&expression.value);
             if (call == nullptr) {
@@ -179,6 +189,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             const auto* name = std::get_if<TargetIdentifier>(&member->name);
             return name != nullptr && name->spelling() == "success_if";
         }
+
         auto enter_expression(const TargetExpr& expression) noexcept -> bool {
             success_checks += is_success(expression);
             if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
@@ -187,6 +198,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             }
             return true;
         }
+
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetDiscardStmt>(statement.value));
             if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
@@ -195,6 +207,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             return true;
         }
     };
+
     auto query = Query {};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
@@ -207,7 +220,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
 
 TEST_CASE("Generation: consumers use native branches and direct delivery") {
     const auto compilation = PlannedCompilation::build(
-        semantic_analysis_test::analyze_program(
+        analyze_test_program(
             "enum Failure { Stop, }\n"
             "fn checked(n: i32) -> i32 throw Failure {\n"
             "  if n < 0 { throw Failure::Stop; } return n;\n"
@@ -227,6 +240,7 @@ TEST_CASE("Generation: consumers use native branches and direct delivery") {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("consumer_delivery")}
     );
+
     struct Query final {
         auto enter_expression(const TargetExpr& expression) const noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
@@ -234,6 +248,7 @@ TEST_CASE("Generation: consumers use native branches and direct delivery") {
             return true;
         }
     };
+
     auto query = Query {};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);

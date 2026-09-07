@@ -33,6 +33,7 @@ private:
           body_kind(kind),
           provenance_identity(provenance),
           active(true) {}
+
     auto consume() noexcept -> Consumed;
 
     BodyID body_id;
@@ -59,10 +60,12 @@ public:
         require_not_failed("read program identity");
         return program_identity;
     }
+
     auto provenance_identity() const noexcept -> ProvenanceIdentity {
         require_not_failed("read provenance identity");
         return provenance_appender.reader().identity();
     }
+
     auto diagnostics() const noexcept -> AnalysisDiagnostics {
         require_not_failed("read diagnostics");
         return analysis_diagnostics;
@@ -253,6 +256,7 @@ private:
               failure_constraints(identity, provenance),
               body_slots(identity),
               test_slots(identity) {}
+
         std::vector<SyntaxTree> syntax_by_module;
         ResolvedModuleImportGraph resolved_import_graph;
         CanonicalTypeStoreBuilder types;
@@ -268,6 +272,7 @@ private:
         std::vector<BodyKind> reserved_body_kinds;
         std::vector<std::optional<TestID>> test_by_body;
     };
+
     struct FinalStorage final {
         CanonicalTypeStore types;
         ConstantStore constants;
@@ -277,6 +282,7 @@ private:
         BodyStore bodies;
         TestStore tests;
     };
+
     auto construction() noexcept -> ConstructionStorage&;
     auto construction() const noexcept -> const ConstructionStorage&;
     auto final() const noexcept -> const FinalStorage&;

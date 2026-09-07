@@ -346,6 +346,7 @@ auto Parser::parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID> {
 auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
     if (check(TokenKind::NumberLiteral)
         || check(TokenKind::StringLiteral)
+        || check(TokenKind::CStringLiteral)
         || check(TokenKind::CharLiteral)
         || check(TokenKind::True)
         || check(TokenKind::False)) {

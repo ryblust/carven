@@ -23,7 +23,9 @@ struct TargetSealViolation final {
 class TargetVerificationInput final {
 public:
     auto identity() const noexcept -> TargetUnitIdentity { return unit_identity; }
+
     auto types() const noexcept -> std::span<const TargetType> { return type_rows; }
+
     auto sections() const noexcept -> const TargetUnitSections& { return *unit_sections; }
 
 private:

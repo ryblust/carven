@@ -66,6 +66,7 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
         std::string_view code;
         std::string_view primary_text;
     };
+
     const auto cases = std::array {
         WarningExpectation {
             .source = "struct Alpha {} struct Beta {} "

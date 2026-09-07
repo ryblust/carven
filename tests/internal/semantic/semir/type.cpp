@@ -12,13 +12,9 @@ import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-using semantic_analysis_test::analyze_program;
-using semantic_analysis_test::function_callables;
-using semantic_analysis_test::signature;
-
 TEST_CASE("Construction types: children must already exist in the owning store") {
-    const auto program = analyze_program("");
-    const auto foreign = analyze_program("");
+    const auto program = analyze_test_program("");
+    const auto foreign = analyze_test_program("");
     auto types = ConstructionTypeStore(program.identity());
     auto references = MutableProgramTable<int, TypeTermID>(program.identity());
     const auto self = references.add(0);
@@ -57,15 +53,15 @@ TEST_CASE("Construction types: children must already exist in the owning store")
 }
 
 TEST_CASE("Construction types: nested callable shapes retain canonical contracts") {
-    const auto program = analyze_program(
+    const auto program = analyze_test_program(
         "struct Failure {}\n"
         "fn first(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
         "fn second(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
     );
-    const auto callables = function_callables(program);
+    const auto callables = test_function_callables(program);
     REQUIRE_EQ(callables.size(), 2uz);
-    const auto first = signature(program, callables[0]);
-    const auto second = signature(program, callables[1]);
+    const auto first = test_callable_signature(program, callables[0]);
+    const auto second = test_callable_signature(program, callables[1]);
     REQUIRE_EQ(first.parameters.size(), 1uz);
     REQUIRE_EQ(second.parameters.size(), 1uz);
     CHECK_EQ(first.parameters.front().type, second.parameters.front().type);
@@ -85,4 +81,17 @@ TEST_CASE("Construction types: nested callable shapes retain canonical contracts
         CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I32}}
     );
     CHECK_EQ(program.failure_sets().failure_set(contract.failures).members.size(), 1uz);
+}
+
+TEST_CASE("External types: C string storage has a closed operand and type contract") {
+    const auto type = CppTypeValue {.form = CppConstCharPointerType {}};
+    CHECK(valid_cpp_type(type));
+    CHECK(cpp_type_references(type).empty());
+    CHECK(cpp_type_names(type).empty());
+    CHECK(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 0uz));
+    CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 1uz));
+    CHECK_FALSE(
+        cpp_operation_accepts_arity(CppCStringOperation {.bytes = std::string("a\0b", 3)}, 0uz)
+    );
+    CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "\xff"}, 0uz));
 }

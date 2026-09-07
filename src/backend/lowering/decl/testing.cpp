@@ -20,9 +20,9 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace decl_lowering {
+namespace {
 
-auto context_member_call(std::string_view member, std::vector<TargetExpr> arguments) noexcept
+auto test_context_member_call(std::string_view member, std::vector<TargetExpr> arguments) noexcept
     -> TargetExpr {
     return call_expression(
         member_expression(
@@ -32,6 +32,8 @@ auto context_member_call(std::string_view member, std::vector<TargetExpr> argume
         std::move(arguments)
     );
 }
+
+} // namespace
 
 auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     const auto& test = context.semantic().tests().test(id);
@@ -83,7 +85,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         const auto& test = context.semantic().tests().test(id);
         body.push_back(generated_statement(
             TargetExprStmt {
-                .expression = context_member_call(
+                .expression = test_context_member_call(
                     "begin_case",
                     target_expressions(
                         string_expression(module_name, TargetStringLiteralKind::String),
@@ -105,7 +107,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         ));
         body.push_back(generated_statement(
             TargetExprStmt {
-                .expression = context_member_call("end_case", {}),
+                .expression = test_context_member_call("end_case", {}),
             }
         ));
     }
@@ -126,14 +128,14 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
     );
 }
 
-auto first_module(const SemIRProgram& semantic) noexcept -> ModuleID {
+auto first_program_module(const SemIRProgram& semantic) noexcept -> ModuleID {
     for (const auto module_record : semantic.declarations().modules()) {
         return module_record.id;
     }
     invariant_violation("target artifact lowering requires at least one semantic module");
 }
 
-auto process_entry(
+auto lower_process_entry(
     ModuleLowering& context,
     bool accepts_arguments,
     std::vector<TargetStmt> body
@@ -162,17 +164,11 @@ auto process_entry(
     );
 }
 
-} // namespace decl_lowering
-
-using decl_lowering::context_member_call;
-using decl_lowering::first_module;
-using decl_lowering::process_entry;
-
 auto lower_test_runner_header(
     ArtifactLowering& artifact,
     const TargetTestRunnerHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
-    auto context = artifact.module_context(first_module(artifact.semantic()));
+    auto context = artifact.module_context(first_program_module(artifact.semantic()));
     const auto testing_context = context.intrinsic_type(TargetSymbol::TestingContext);
     auto declarations = std::vector<TargetItem>();
     for (const auto module_id : schedule.module_runners) {
@@ -228,7 +224,7 @@ auto lower_test_runner_header(
     }
     body.push_back(generated_statement(
         TargetReturnStmt {
-            .expression = context_member_call("result", {}),
+            .expression = test_context_member_call("result", {}),
         }
     ));
     auto testing_items = std::vector<TargetItem>();
@@ -263,7 +259,7 @@ auto lower_test_runner_header(
 }
 
 auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections {
-    auto context = artifact.module_context(first_module(artifact.semantic()));
+    auto context = artifact.module_context(first_program_module(artifact.semantic()));
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetReturnStmt {
@@ -281,7 +277,7 @@ auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections
     ));
     return {
         .preamble = {},
-        .body = target_items(process_entry(context, false, std::move(body))),
+        .body = target_items(lower_process_entry(context, false, std::move(body))),
         .epilogue = {},
     };
 }

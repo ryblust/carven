@@ -7,37 +7,47 @@ import :semantic.semir.structured;
 import :support.invariant;
 import std;
 
-namespace body_elaboration {
-
 class BodyExpressionSite final {
 public:
     using Value = BuiltExpression;
     using Result = SelectedExpression;
+
     explicit BodyExpressionSite(BodyElaborator& body) noexcept
         : body(body) {}
+
     auto draft() noexcept -> ProgramDraft& { return body.draft(); }
+
     auto syntax() const noexcept -> ASTView { return body.ast; }
+
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure {
         return body.fail(span, code, std::move(message));
     }
+
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> AnalysisResult<Value> {
         return body.expression(id, expected);
     }
+
     auto present(const Value&) const noexcept -> bool { return true; }
+
     auto unavailable() const noexcept -> Value {
         invariant_violation("body expression became unavailable");
     }
+
     auto type(const Value& value) const noexcept -> ConstructionTypeRef { return value.type(); }
+
     auto known(const Value& value) const noexcept -> std::optional<ConstantID> {
         return value.constant();
     }
+
     auto external(ConstructionTypeRef type) const noexcept -> bool {
         return body.is_cpp_type(type);
     }
+
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool {
         return type_supports_equality(draft(), type);
     }
+
     auto numeric_enum(ConstructionTypeRef type) noexcept -> bool {
         const auto* concrete = std::get_if<TypeID>(&type);
         if (concrete == nullptr) {
@@ -50,9 +60,24 @@ public:
                    draft().enum_declaration_copy(enumeration->enumeration).representation
             );
     }
+
     auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
         return body.resolve_type(type);
     }
+
+    auto c_string(std::string_view bytes, Span span) noexcept -> Value {
+        const auto type =
+            draft().intern_type({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
+        return body.make_built(
+            type,
+            SemCpp {
+                .operation = CppCStringOperation {.bytes = std::string(bytes)},
+                .operands = {},
+            },
+            span
+        );
+    }
+
     auto constant(ConstantID constant, Span span) noexcept -> Value {
         return body.make_built(
             draft().constant_copy(constant).type,
@@ -60,8 +85,9 @@ public:
             span
         );
     }
-    auto enter_operand_execution(bool executed) noexcept -> ReferencePathGuard {
-        return ReferencePathGuard(body.reference_path_reachable, executed);
+
+    auto enter_operand_execution(bool executed) noexcept -> BodyReferencePathGuard {
+        return BodyReferencePathGuard(body.reference_path_reachable, executed);
     }
 
     auto finish_unary(
@@ -71,7 +97,7 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(operand);
+        auto pending = take_pending_failures(operand);
         auto expression = body.consume_value(operand, span, AccessMode::Read);
         if (!expression.has_value()) {
             return std::unexpected(expression.error());
@@ -85,6 +111,7 @@ public:
             operand.completes
         );
     }
+
     auto finish_binary(
         BinaryOperator operation,
         ConstructionTypeRef type,
@@ -93,8 +120,8 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(left);
-        append_pending(pending, take_pending(right));
+        auto pending = take_pending_failures(left);
+        append_pending_failures(pending, take_pending_failures(right));
         auto first = body.consume_value(left, span, AccessMode::Read);
         if (!first.has_value()) {
             return std::unexpected(first.error());
@@ -116,6 +143,7 @@ public:
             left.completes && right.completes
         );
     }
+
     auto finish_cast(
         CastKind kind,
         ConstructionTypeRef target,
@@ -123,7 +151,7 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(operand);
+        auto pending = take_pending_failures(operand);
         auto expression = body.consume_value(operand, span, AccessMode::Read);
         if (!expression.has_value()) {
             return std::unexpected(expression.error());
@@ -137,6 +165,7 @@ public:
             operand.completes
         );
     }
+
     auto finish_short_circuit(
         bool conjunction,
         Value left,
@@ -144,8 +173,8 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(left);
-        append_pending(pending, take_pending(right));
+        auto pending = take_pending_failures(left);
+        append_pending_failures(pending, take_pending_failures(right));
         const auto truth = known_boolean_constant(draft(), left.constant());
         const auto completes = left.completes && (truth == !conjunction || right.completes);
         auto first = body.consume_value(left, span, AccessMode::Read);
@@ -169,6 +198,7 @@ public:
             completes
         );
     }
+
     auto external_unary(UnaryOperator operation, Value operand, Span span) noexcept
         -> AnalysisResult<Value> {
         return external_operation(
@@ -178,6 +208,7 @@ public:
             span
         );
     }
+
     auto external_cast(ConstructionTypeRef type, Value operand, Span span) noexcept
         -> AnalysisResult<Value> {
         return external_operation(
@@ -187,10 +218,11 @@ public:
             span
         );
     }
+
     auto external_binary(BinaryOperator operation, Value left, Value right, Span span) noexcept
         -> AnalysisResult<Value> {
-        auto pending = take_pending(left);
-        append_pending(pending, take_pending(right));
+        auto pending = take_pending_failures(left);
+        append_pending_failures(pending, take_pending_failures(right));
         auto first = body.consume_value(left, span, AccessMode::Read);
         if (!first.has_value()) {
             return std::unexpected(first.error());
@@ -213,6 +245,7 @@ public:
         }
         return result;
     }
+
     auto extension(
         const ASTCppNameExpr& value,
         Span span,
@@ -220,6 +253,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.select_cpp_name(value, span);
     }
+
     auto extension(
         const ASTNameExpr& value,
         Span span,
@@ -227,6 +261,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.select_name(value, span);
     }
+
     auto extension(
         const ASTArrayExpr& value,
         Span span,
@@ -234,6 +269,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.array_expression(value, span, expected);
     }
+
     auto extension(
         const ASTConstructionExpr& value,
         Span span,
@@ -241,6 +277,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.construction_expression(value, span);
     }
+
     auto extension(
         const ASTAccessExpr& value,
         Span span,
@@ -248,6 +285,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.access_expression(value, span);
     }
+
     auto extension(
         const ASTIndexExpr& value,
         Span span,
@@ -255,6 +293,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.index_expression(value, span);
     }
+
     auto extension(
         const ASTPropagationExpr& value,
         Span span,
@@ -262,6 +301,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.propagation_expression(value, span);
     }
+
     auto extension(
         const ASTIfForm& value,
         Span span,
@@ -269,6 +309,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.conditional_expression(value, span, expected);
     }
+
     auto extension(
         const ASTLambdaExpr& value,
         Span span,
@@ -276,6 +317,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.lambda_expression(value, span, expected);
     }
+
     auto extension(
         const ASTMatchForm& value,
         Span span,
@@ -283,6 +325,7 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.match_expression(value, span, expected);
     }
+
     auto extension(
         const ASTTryForm& value,
         Span span,
@@ -290,20 +333,27 @@ public:
     ) noexcept -> AnalysisResult<Result> {
         return this->body.try_expression(value, span, expected);
     }
+
     auto resolve_name(std::string_view name, Span span) noexcept
         -> AnalysisResult<ResolvedConstantName> {
         return body.resolve_constant_name(name, span);
     }
+
     auto resolve_enum_qualifier(ASTExprID id) noexcept -> AnalysisResult<std::optional<TypeID>> {
         return body.resolve_enum_qualifier(id);
     }
+
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisResult<ResolvedEnumCase> {
         return body.resolve_constant_enum_case(type, name, span);
     }
+
     auto is_numeric_enum(TypeID type) noexcept -> bool { return numeric_enum(type); }
+
     auto admits(const ASTExpr&) const noexcept -> bool { return true; }
+
     auto spelling(Span span) const noexcept -> std::string { return body.spelling(span); }
+
     auto invalid_enum_qualifier(Span span) noexcept -> AnalysisResult<Value> {
         return std::unexpected(fail(
             span,
@@ -311,13 +361,15 @@ public:
             "enum case qualifier does not name an enum type"
         ));
     }
+
     auto convert_argument(Value& value, ConstructionTypeRef type, Span span) noexcept
         -> AnalysisResult<void> {
-        const auto pending = take_pending(value);
+        const auto pending = take_pending_failures(value);
         auto converted = body.coerce_to(value, type, span);
-        append_pending(value.pending_failures, pending);
+        append_pending_failures(value.pending_failures, pending);
         return converted;
     }
+
     auto enum_constructor(
         TypeID enumeration_type,
         const ResolvedEnumCase& selected,
@@ -355,6 +407,7 @@ public:
             .takeable = false,
         };
     }
+
     auto finish_enum_case(
         TypeID type,
         EnumCaseID selected,
@@ -362,11 +415,11 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = PendingFailureTerms();
+        auto pending = BodyPendingFailureTerms();
         auto payload = std::vector<SemanticExpression>();
         auto completes = true;
         for (auto& argument : arguments) {
-            append_pending(pending, take_pending(argument));
+            append_pending_failures(pending, take_pending_failures(argument));
             completes &= argument.completes;
             auto value = body.consume_value(argument, span, AccessMode::Read);
             if (!value.has_value()) {
@@ -383,6 +436,7 @@ public:
             completes
         );
     }
+
     auto finish_text(
         TextIntrinsic intrinsic,
         TypeID type,
@@ -390,7 +444,7 @@ public:
         std::optional<ConstantID> known,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(operand);
+        auto pending = take_pending_failures(operand);
         auto value = body.consume_value(operand, span, AccessMode::Read);
         if (!value.has_value()) {
             return std::unexpected(value.error());
@@ -404,10 +458,12 @@ public:
             operand.completes
         );
     }
+
     auto member(const ASTMemberExpr& source, Value operand, Span span) noexcept
         -> AnalysisResult<Result> {
         return body.select_member(source, span, std::move(operand));
     }
+
     auto member_call(
         const ASTCallExpr& source,
         const ASTMemberExpr& member,
@@ -421,6 +477,7 @@ public:
         }
         return body.call_expression(source, span, std::move(*callee));
     }
+
     auto call(const ASTCallExpr& source, Span span) noexcept -> AnalysisResult<Value> {
         return body.call_expression(source, span);
     }
@@ -431,20 +488,21 @@ private:
         SemanticExpressionValue value,
         std::optional<ConstantID> known,
         Span span,
-        PendingFailureTerms pending,
+        BodyPendingFailureTerms pending,
         bool completes
     ) noexcept -> Value {
         auto result = body.make_built(type, std::move(value), span, std::move(pending), known);
         result.completes = completes;
         return result;
     }
+
     auto external_operation(
         CppOperation operation,
         Value operand,
         std::optional<ConstructionTypeRef> type,
         Span span
     ) noexcept -> AnalysisResult<Value> {
-        auto pending = take_pending(operand);
+        auto pending = take_pending_failures(operand);
         auto expression = body.consume_value(operand, span, AccessMode::Read);
         if (!expression.has_value()) {
             return std::unexpected(expression.error());
@@ -458,7 +516,6 @@ private:
         }
         return result;
     }
+
     BodyElaborator& body;
 };
-
-}

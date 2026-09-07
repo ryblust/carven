@@ -1,0 +1,5 @@
+import .using using answer;
+
+test "Modules: keyword components select exact modules" {
+    check(answer() == 42);
+}

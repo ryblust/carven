@@ -18,7 +18,7 @@ auto verify_semantic_body(
     ProgramDraft& draft,
     const BodyStore& bodies
 ) noexcept -> void {
-    validation_detail::BodyContractVerifier(body, draft, bodies).verify();
+    BodyContractVerifier(body, draft, bodies).verify();
 }
 
 auto validate_global_semantic_contracts(

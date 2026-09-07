@@ -146,11 +146,14 @@ public:
     auto operator=(TypeResolution&&) -> TypeResolution& = default;
 
     auto owner() const noexcept -> ProgramIdentity { return program_identity; }
+
     auto contains(TypeTermID term) const noexcept -> bool {
         return term.owner() == program_identity
             && static_cast<std::size_t>(term.index()) < resolved_types.size();
     }
+
     auto type(TypeTermID term) const noexcept -> TypeID;
+
     auto resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
         return std::visit(
             [&](auto id) noexcept -> TypeID {

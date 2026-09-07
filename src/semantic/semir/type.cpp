@@ -159,16 +159,20 @@ CanonicalTypeStore::CanonicalTypeStore(ImmutableProgramTable<CanonicalType, Type
 auto CanonicalTypeStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto CanonicalTypeStore::contains(TypeID id) const noexcept -> bool {
     return rows.contains(id);
 }
+
 auto CanonicalTypeStore::type(TypeID id) const noexcept -> const CanonicalType& {
     return rows.get(id);
 }
+
 auto CanonicalTypeStore::entries() const noexcept
     -> IDTableEntries<TypeID, CanonicalType, ProgramIdentity> {
     return rows.entries();
 }
+
 auto CanonicalTypeStore::size() const noexcept -> std::size_t {
     return rows.size();
 }
@@ -185,15 +189,19 @@ auto CanonicalTypeStoreBuilder::intern(const CanonicalType& type) noexcept -> Ty
     }
     return rows.intern(type);
 }
+
 auto CanonicalTypeStoreBuilder::intern_builtin(BuiltinType type) noexcept -> TypeID {
     return intern(CanonicalType {.value = BuiltinTypeValue {.kind = type}});
 }
+
 auto CanonicalTypeStoreBuilder::copy(TypeID id) const noexcept -> CanonicalType {
     return rows.copy(id);
 }
+
 auto CanonicalTypeStoreBuilder::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto CanonicalTypeStoreBuilder::intern_resolved_callable_view(
     CallableSignatureID signature,
     const CallableSignatureStoreBuilder& signatures
@@ -208,6 +216,7 @@ auto CanonicalTypeStoreBuilder::intern_resolved_callable_view(
         }
     );
 }
+
 auto CanonicalTypeStoreBuilder::seal() && noexcept -> CanonicalTypeStore {
     return CanonicalTypeStore(std::move(rows).seal());
 }
@@ -218,16 +227,20 @@ FailureSetStore::FailureSetStore(ImmutableProgramTable<FailureSet, FailureSetID>
 auto FailureSetStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto FailureSetStore::contains(FailureSetID id) const noexcept -> bool {
     return rows.contains(id);
 }
+
 auto FailureSetStore::failure_set(FailureSetID id) const noexcept -> const FailureSet& {
     return rows.get(id);
 }
+
 auto FailureSetStore::entries() const noexcept
     -> IDTableEntries<FailureSetID, FailureSet, ProgramIdentity> {
     return rows.entries();
 }
+
 auto FailureSetStore::size() const noexcept -> std::size_t {
     return rows.size();
 }
@@ -244,15 +257,19 @@ auto FailureSetStoreBuilder::intern(std::vector<TypeID> members) noexcept -> Fai
     members.erase(duplicates.begin(), duplicates.end());
     return rows.intern(FailureSet {.members = std::move(members)});
 }
+
 auto FailureSetStoreBuilder::empty_set() noexcept -> FailureSetID {
     return intern({});
 }
+
 auto FailureSetStoreBuilder::copy(FailureSetID id) const noexcept -> FailureSet {
     return rows.copy(id);
 }
+
 auto FailureSetStoreBuilder::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto FailureSetStoreBuilder::seal() && noexcept -> FailureSetStore {
     return FailureSetStore(std::move(rows).seal());
 }
@@ -265,17 +282,21 @@ CallableSignatureStore::CallableSignatureStore(
 auto CallableSignatureStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto CallableSignatureStore::contains(CallableSignatureID id) const noexcept -> bool {
     return rows.contains(id);
 }
+
 auto CallableSignatureStore::signature(CallableSignatureID id) const noexcept
     -> const CallableSignature& {
     return rows.get(id);
 }
+
 auto CallableSignatureStore::entries() const noexcept
     -> IDTableEntries<CallableSignatureID, CallableSignature, ProgramIdentity> {
     return rows.entries();
 }
+
 auto CallableSignatureStore::size() const noexcept -> std::size_t {
     return rows.size();
 }
@@ -288,13 +309,16 @@ auto CallableSignatureStoreBuilder::intern(CallableSignature signature) noexcept
     validate_signature_owner(signature, rows.owner());
     return rows.intern(std::move(signature));
 }
+
 auto CallableSignatureStoreBuilder::copy(CallableSignatureID id) const noexcept
     -> CallableSignature {
     return rows.copy(id);
 }
+
 auto CallableSignatureStoreBuilder::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto CallableSignatureStoreBuilder::seal() && noexcept -> CallableSignatureStore {
     return CallableSignatureStore(std::move(rows).seal());
 }
@@ -348,12 +372,15 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
     );
     return rows.add(std::move(type));
 }
+
 auto ConstructionTypeStore::copy(TypeTermID id) const noexcept -> ConstructionType {
     return rows.copy(id);
 }
+
 auto ConstructionTypeStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
 }
+
 auto ConstructionTypeStore::size() const noexcept -> std::size_t {
     return rows.size();
 }

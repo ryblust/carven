@@ -9,8 +9,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
-
 auto BodyLowerer::operation_operands(const SemanticExpression& source) const noexcept
     -> OperandGroup {
     auto group = OperandGroup {.values = {}, .order = OperandOrder::Unspecified};
@@ -315,10 +313,10 @@ auto copy_operand(const TargetExpr& source) noexcept -> TargetExpr {
 
 auto BodyLowerer::consume_operands(
     const OperandGroup& group,
-    LiteralContext literal,
+    LoweringLiteralContext literal,
     bool materializing,
-    const std::function<void(std::vector<TargetExpr>, StatementBuilder&)>& consume,
-    StatementBuilder& destination
+    const std::function<void(std::vector<TargetExpr>, LoweringStmtBuilder&)>& consume,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     auto children = EvaluationForm::Expression;
     for (const auto& operand : group.values) {
@@ -329,7 +327,7 @@ auto BodyLowerer::consume_operands(
     auto values = std::vector<TargetExpr>();
     const auto next = [&](this const auto& self,
                           std::size_t index,
-                          StatementBuilder& statements) noexcept -> void {
+                          LoweringStmtBuilder& statements) noexcept -> void {
         if (index == group.values.size()) {
             auto arguments = std::vector<TargetExpr>();
             for (auto& value : values) {
@@ -345,13 +343,13 @@ auto BodyLowerer::consume_operands(
             input.use == OperandUse::Read || input.use == OperandUse::ConstPlace
                 ? ResultDemand::Observe
                 : ResultDemand::Value,
-            [&](Evaluated evaluated, StatementBuilder& branch) noexcept {
-                const auto temporary = std::holds_alternative<TemporaryValue>(evaluated);
+            [&](LoweringValue evaluated, LoweringStmtBuilder& branch) noexcept {
+                const auto temporary = std::holds_alternative<LoweringTemporaryValue>(evaluated);
                 auto value = value_expression(
                     std::move(evaluated),
                     input.use == OperandUse::Own || input.use == OperandUse::Snapshot
-                        ? ValueUse::Transfer
-                        : ValueUse::Observe
+                        ? LoweringValueUse::Transfer
+                        : LoweringValueUse::Observe
                 );
                 if (stabilize && (!temporary || input.use == OperandUse::Own)) {
                     value =
@@ -379,5 +377,3 @@ auto BodyLowerer::consume_operands(
     };
     next(0uz, destination);
 }
-
-} // namespace body_lowering

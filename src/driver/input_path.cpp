@@ -88,17 +88,6 @@ auto derive_input_module_path(std::string_view input_path) noexcept
 
     const auto& error = module_path.error();
     const auto is_file_stem = error.component_index + 1 == components.size();
-    if (error.kind == CanonicalModulePathErrorKind::Keyword) {
-        return std::unexpected(
-            std::format(
-                "input '{}' uses language keyword '{}' as a module {}",
-                input_path,
-                error.component,
-                is_file_stem ? "file stem" : "directory component"
-            )
-        );
-    }
-
     return std::unexpected(
         std::format(
             "input '{}' has invalid module {} '{}'",

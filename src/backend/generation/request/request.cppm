@@ -35,6 +35,7 @@ public:
     }
 
     auto kind() const noexcept -> LinkageDomainKind { return domain_kind; }
+
     auto value() const noexcept -> std::string_view { return domain_value; }
 
 private:

@@ -1,6 +1,7 @@
 module carven:source.cpp.identifier.impl;
 
 import :source.cpp.identifier;
+import :source.identifier;
 import std;
 
 namespace {
@@ -102,24 +103,8 @@ constexpr auto cpp_keywords = std::to_array<std::string_view>({
     "xor_eq",
 });
 
-constexpr auto ascii_alpha(char value) noexcept -> bool {
-    return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
-}
-
-constexpr auto ascii_digit(char value) noexcept -> bool {
-    return value >= '0' && value <= '9';
-}
-
 } // namespace
 
 auto is_supported_cpp_identifier(std::string_view spelling) noexcept -> bool {
-    if (spelling.empty() || !(ascii_alpha(spelling.front()) || spelling.front() == '_')) {
-        return false;
-    }
-    if (std::ranges::any_of(spelling.substr(1), [](char value) static noexcept {
-            return !(ascii_alpha(value) || ascii_digit(value) || value == '_');
-        })) {
-        return false;
-    }
-    return !std::ranges::contains(cpp_keywords, spelling);
+    return is_identifier_spelling(spelling) && !std::ranges::contains(cpp_keywords, spelling);
 }

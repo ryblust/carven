@@ -137,7 +137,9 @@ entry; lowering never recovers continuation by scanning generated statements.
 
 `TargetNamePlan` owns linkage-domain namespaces, module names, nominal names,
 closure names, enum payload names, and generated test names. A callable-local
-allocator reserves source names and allocates temporaries and labels.
+allocator reserves source names and allocates temporaries and labels. The plan
+owns encoded public namespace and function names shared by API headers and
+export façades. Artifact paths retain canonical source names.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
@@ -178,10 +180,12 @@ retain initialization and lifetime. Semantic unused diagnostics remain in analys
 
 ## External names and operations
 
-External names lower through one shared path for values, named types, and type
-queries. Global lookup produces a root-qualified C++ path. Module lookup prefixes
-the path with the context module's generated namespace. Both record a declaration
-environment requirement; module lookup additionally requires the using environment.
+Semantic name resolution expands explicit C++ selections into globally rooted
+paths while retaining the provider module's header environment. External names
+lower through one shared path for values, named types, and type queries. Global
+lookup produces a root-qualified C++ path. Opened namespace lookup prefixes the
+path with the context module's generated namespace. Both record a declaration
+environment requirement; opened namespace lookup also requires the using environment.
 
 Environment requirements are independent of semantic lookup modes and merge
 idempotently, with using requirements including declarations. Lowering owns
@@ -197,3 +201,8 @@ consume the explicit semantic callee and operand access. Executed calls use
 ordinary argument sequencing and access lowering. Receiver access is preserved
 independently of storage made mutable to realize a later Take. Discarded external
 calls need no result storage, so void-returning providers remain usable.
+
+C string literal operations have an intrinsic external `const char*` type.
+Lowering emits byte-escaped narrow literal storage with `static_cast<const char*>`,
+preserving pointer semantics for overload resolution and deduction. Ordinary
+string literals retain `std::string_view` realization.

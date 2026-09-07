@@ -29,8 +29,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::conditional_expression(
     const ASTIfForm& source,
     Span span,
@@ -159,6 +157,7 @@ auto BodyElaborator::lambda_expression(
         CaptureMode mode;
         SemCapture operand;
     };
+
     auto captures = std::vector<CaptureSource>();
     auto capture_names = std::flat_set<std::string, std::less<>>();
     captures.reserve(source.captures.size());
@@ -188,10 +187,10 @@ auto BodyElaborator::lambda_expression(
         }
         auto storage = std::visit(
             Overloaded {
-                [&](const BoundStorage& value) noexcept -> ExpressionStorage {
+                [&](const BoundStorage& value) noexcept -> BodyExpressionStorage {
                     return active_builder().binding_expression(value.binding);
                 },
-                [](ConstantID) noexcept -> ExpressionStorage {
+                [](ConstantID) noexcept -> BodyExpressionStorage {
                     invariant_violation("compile-time constant reached runtime capture");
                 },
             },
@@ -255,12 +254,12 @@ auto BodyElaborator::lambda_expression(
             }
             child.frames.front().names.emplace(
                 name,
-                LocalStorage {
+                BodyLocalStorage {
                     .storage = *constant,
                     .type = local.type,
                     .used = false,
                     .takeable = false,
-                    .role = LocalRole::Local,
+                    .role = BodyLocalRole::Local,
                     .unused_candidate = std::nullopt,
                 }
             );
@@ -349,7 +348,8 @@ auto BodyElaborator::select_expression(
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisResult<SelectedExpression> {
     const auto was_reachable = reachable;
-    [[maybe_unused]] const auto path = ReferencePathGuard(reference_path_reachable, was_reachable);
+    [[maybe_unused]] const auto path =
+        BodyReferencePathGuard(reference_path_reachable, was_reachable);
     auto site = BodyExpressionSite(*this);
     return interpret_expression(site, id, expected);
 }
@@ -376,5 +376,3 @@ auto BodyElaborator::expression(ASTExprID id, std::optional<ConstructionTypeRef>
     }
     return result;
 }
-
-} // namespace body_elaboration

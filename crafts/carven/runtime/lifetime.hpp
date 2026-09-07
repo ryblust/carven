@@ -11,6 +11,7 @@ template<typename Value>
 class DeferredStorage final {
 public:
     constexpr DeferredStorage() noexcept {}
+
     constexpr ~DeferredStorage() noexcept {
         if (value != nullptr) {
             std::destroy_at(value);
@@ -30,6 +31,7 @@ public:
     }
 
     constexpr auto operator*() noexcept -> Value& { return *value; }
+
     constexpr auto operator*() const noexcept -> const Value& { return *value; }
 
 private:

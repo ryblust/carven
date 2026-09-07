@@ -38,6 +38,7 @@ struct StringConstant final {
 
 struct F32Constant final {
     float value;
+
     constexpr auto operator==(const F32Constant& other) const noexcept -> bool {
         return std::bit_cast<std::uint32_t>(value) == std::bit_cast<std::uint32_t>(other.value);
     }
@@ -45,6 +46,7 @@ struct F32Constant final {
 
 struct F64Constant final {
     double value;
+
     constexpr auto operator==(const F64Constant& other) const noexcept -> bool {
         return std::bit_cast<std::uint64_t>(value) == std::bit_cast<std::uint64_t>(other.value);
     }

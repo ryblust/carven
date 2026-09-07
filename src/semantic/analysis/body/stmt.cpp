@@ -29,8 +29,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     -> AnalysisResult<void> {
     if (!source.initializer.has_value()) {
@@ -75,7 +73,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         }
         return bind_local(
             named->name_span,
-            LocalStorage {
+            BodyLocalStorage {
                 .storage = *constant,
                 .type = draft().constant_copy(*constant).type,
                 .takeable = false,
@@ -120,7 +118,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     }
     return bind_local(
         named->name_span,
-        LocalStorage {
+        BodyLocalStorage {
             .storage = storage,
             .type = binding_type,
             .unused_candidate = std::nullopt,
@@ -576,6 +574,3 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
     }
     std::unreachable();
 }
-
-
-} // namespace body_elaboration

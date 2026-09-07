@@ -7,6 +7,7 @@ class CompilationProvenanceStorage;
 class ProvenanceIdentity final {
 public:
     constexpr auto value() const noexcept -> std::uint64_t { return identity_value; }
+
     constexpr auto operator<=>(const ProvenanceIdentity&) const noexcept = default;
 
 private:
@@ -24,7 +25,9 @@ template<typename Tag>
 class ProvenanceID final {
 public:
     constexpr auto owner() const noexcept -> ProvenanceIdentity { return provenance_identity; }
+
     constexpr auto index() const noexcept -> std::uint32_t { return row_index; }
+
     constexpr auto operator<=>(const ProvenanceID&) const noexcept = default;
 
 private:
@@ -39,8 +42,11 @@ private:
 };
 
 struct ProgramSourceIDTag final {};
+
 struct ProgramModuleIDTag final {};
+
 struct ProgramSpellingIDTag final {};
+
 struct ProgramOriginIDTag final {};
 
 using ProgramSourceID = ProvenanceID<ProgramSourceIDTag>;

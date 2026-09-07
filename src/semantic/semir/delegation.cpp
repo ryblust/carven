@@ -3,6 +3,7 @@ module carven:semantic.semir.delegation.impl;
 import :semantic.semir.delegation;
 import :source.cpp.identifier;
 import :support.invariant;
+import :support.utf8;
 import :support.visit;
 import std;
 
@@ -19,6 +20,10 @@ auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arit
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, CppNameOperation>) {
                 return arity == 0uz && valid_cpp_name(value.name);
+            } else if constexpr (std::same_as<Value, CppCStringOperation>) {
+                return arity == 0uz
+                    && !value.bytes.contains('\0')
+                    && UTF8Decoder::is_valid(value.bytes);
             } else if constexpr (std::same_as<Value, CppConstructOperation>) {
                 return true;
             } else if constexpr (std::same_as<Value, CppMemberOperation>) {
@@ -112,6 +117,9 @@ auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeI
         return named->arguments;
     }
     auto result = std::vector<TypeID>();
+    if (std::holds_alternative<CppConstCharPointerType>(type.form)) {
+        return result;
+    }
     visit_query_operands(
         std::get<CppQueryType>(type.form),
         [&](const CppTypeOperand& operand) noexcept { result.push_back(operand.type); }
@@ -122,6 +130,9 @@ auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeI
 auto cpp_type_names(const CppTypeValue& type) noexcept -> std::vector<CppNameReference> {
     if (const auto* named = std::get_if<CppNamedType>(&type.form)) {
         return {named->name};
+    }
+    if (std::holds_alternative<CppConstCharPointerType>(type.form)) {
+        return {};
     }
     const auto& query = std::get<CppQueryType>(type.form);
     if (const auto* name = std::get_if<CppNameReference>(&query.expression)) {

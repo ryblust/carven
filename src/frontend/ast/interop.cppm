@@ -8,17 +8,29 @@ enum class ASTCppHeaderDelimiter {
     Quotes,
 };
 
+struct ASTCppSingleSelection final {
+    Span name;
+};
+
+struct ASTCppListSelection final {
+    std::vector<Span> names;
+};
+
+struct ASTCppNamespaceSelection final {
+    Span star;
+};
+
 struct ASTCppUsing final {
     Span span;
-    std::vector<Span> components;
-    bool opens_namespace;
+    std::vector<Span> prefix;
+    std::variant<ASTCppSingleSelection, ASTCppListSelection, ASTCppNamespaceSelection> selection;
 };
 
 struct ASTCppHeaderImport final {
     Span span;
     ASTCppHeaderDelimiter delimiter;
     Span name_span;
-    std::vector<ASTCppUsing> bindings;
+    std::optional<ASTCppUsing> using_clause;
 };
 
 struct ASTCppExportForm final {

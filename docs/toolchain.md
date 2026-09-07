@@ -49,7 +49,8 @@ published semantic surface have no component of their own. Implementations use
 canonical module paths.
 
 The `carven/api` header contains explicit `export(cpp)` declarations in
-`carven::api` followed by the module namespace components. Its implementation
+`carven::api` followed by the encoded module namespace components described in
+[the C++ API naming rules](semantics.md#c-interoperation). Its implementation
 contains the corresponding façades. The header is self-contained.
 
 C++ header imports become ordered includes in the owning implementation. An

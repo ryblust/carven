@@ -3,11 +3,9 @@ module carven:semantic.analysis.ownership.state.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
-
-BodyAnalyzer::BodyAnalyzer(
-    BatchAnalyzer& analysis,
-    const CallInput& input,
+OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
+    OwnershipBatchAnalyzer& analysis,
+    const OwnershipCallInput& input,
     bool diagnosing
 ) noexcept
     : analysis(analysis),
@@ -18,7 +16,7 @@ BodyAnalyzer::BodyAnalyzer(
       diagnosing(diagnosing),
       accesses(input.accesses) {
     const auto bind = [&](std::span<const LocalBindingID> bindings,
-                          std::span<const CallArgument> values) noexcept {
+                          std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
             if (value.alias.has_value()) {
                 aliases.emplace(id, *value.alias);
@@ -28,18 +26,23 @@ BodyAnalyzer::BodyAnalyzer(
     bind(body.inputs().parameters, input.parameters);
     bind(body.inputs().captures, input.captures);
 }
-auto BodyAnalyzer::object_type(std::size_t object) const noexcept -> TypeID {
+
+auto OwnershipBodyAnalyzer::object_type(std::size_t object) const noexcept -> TypeID {
     return object < input.objects.size() ? input.objects[object].type
                                          : facts.locals[object - input.objects.size()].type;
 }
-auto BodyAnalyzer::object_origin(std::size_t object) const noexcept -> ProgramOriginID {
+
+auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> ProgramOriginID {
     return object < input.objects.size() ? input.objects[object].origin
                                          : facts.locals[object - input.objects.size()].origin;
 }
-auto BodyAnalyzer::temporary(const SemanticExpression& expression) const noexcept -> std::size_t {
+
+auto OwnershipBodyAnalyzer::temporary(const SemanticExpression& expression) const noexcept
+    -> std::size_t {
     return input.objects.size() + facts.temporaries.at(std::addressof(expression));
 }
-auto BodyAnalyzer::diagnose(
+
+auto OwnershipBodyAnalyzer::diagnose(
     DiagnosticCode code,
     std::string message,
     ProgramOriginID origin,
@@ -49,7 +52,9 @@ auto BodyAnalyzer::diagnose(
         analysis.diagnose(code, std::move(message), origin, related);
     }
 }
-auto BodyAnalyzer::outlives(std::size_t source, std::size_t destination) const noexcept -> bool {
+
+auto OwnershipBodyAnalyzer::outlives(std::size_t source, std::size_t destination) const noexcept
+    -> bool {
     if (source < input.objects.size()) {
         return destination >= input.objects.size() || input.outlives[source][destination];
     }
@@ -59,12 +64,14 @@ auto BodyAnalyzer::outlives(std::size_t source, std::size_t destination) const n
             facts.locals[destination - input.objects.size()].lifetime
         );
 }
-auto BodyAnalyzer::leave(Flow& flow, LifetimeRegionID lifetime) const noexcept -> void {
+
+auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime) const noexcept
+    -> void {
     const auto found = facts.lifetime_objects.find(lifetime);
     if (found == facts.lifetime_objects.end()) {
         return;
     }
-    const auto release = [&](State& state) noexcept {
+    const auto release = [&](OwnershipState& state) noexcept {
         for (const auto object : found->second) {
             state.objects[input.objects.size() + object] = {};
         }
@@ -76,9 +83,10 @@ auto BodyAnalyzer::leave(Flow& flow, LifetimeRegionID lifetime) const noexcept -
         release(exit.state);
     }
 }
-auto BodyAnalyzer::retain(
-    State& state,
-    const Relationships& relationships,
+
+auto OwnershipBodyAnalyzer::retain(
+    OwnershipState& state,
+    const OwnershipRelationships& relationships,
     const SemanticExpression& source
 ) const noexcept -> void {
     const auto found = facts.temporaries.find(std::addressof(source));
@@ -87,14 +95,20 @@ auto BodyAnalyzer::retain(
             {.available = true, .taken = std::nullopt, .relationships = relationships};
     }
 }
-auto BodyAnalyzer::references(const Relationships& relationships, const State& state) const noexcept
-    -> std::vector<Capture> {
-    auto result = std::vector<Capture>();
-    auto visited = std::flat_set<Place>();
-    const auto inspect = [&](this const auto& self, const Relationships& value) noexcept -> void {
-        const auto follow = [&](const Place& target) noexcept {
+
+auto OwnershipBodyAnalyzer::references(
+    const OwnershipRelationships& relationships,
+    const OwnershipState& state
+) const noexcept -> std::vector<OwnershipCapture> {
+    auto result = std::vector<OwnershipCapture>();
+    auto visited = std::flat_set<OwnershipPlace>();
+    const auto inspect = [&](this const auto& self,
+                             const OwnershipRelationships& value) noexcept -> void {
+        const auto follow = [&](const OwnershipPlace& target) noexcept {
             if (visited.insert(target).second) {
-                self(project(state.objects[target.object].relationships, target.path));
+                self(
+                    project_relationships(state.objects[target.object].relationships, target.path)
+                );
             }
         };
         for (const auto& capture : value.captures) {
@@ -112,9 +126,10 @@ auto BodyAnalyzer::references(const Relationships& relationships, const State& s
     inspect(relationships);
     return result;
 }
-auto BodyAnalyzer::use(
-    const Relationships& relationships,
-    const State& state,
+
+auto OwnershipBodyAnalyzer::use(
+    const OwnershipRelationships& relationships,
+    const OwnershipState& state,
     ProgramOriginID origin,
     bool direct
 ) noexcept -> void {
@@ -146,10 +161,11 @@ auto BodyAnalyzer::use(
         }
     }
 }
-auto BodyAnalyzer::store(
-    State& state,
-    const Place& target,
-    const Relationships& relationships,
+
+auto OwnershipBodyAnalyzer::store(
+    OwnershipState& state,
+    const OwnershipPlace& target,
+    const OwnershipRelationships& relationships,
     ProgramOriginID origin
 ) noexcept -> void {
     use(relationships, state, origin);
@@ -188,15 +204,17 @@ auto BodyAnalyzer::store(
         std::erase_if(destination.relationships.loans, replaced);
         std::erase_if(destination.relationships.captures, replaced);
     }
-    merge_relationships(destination.relationships, nested(relationships, target.path));
+    merge_relationships(destination.relationships, nest_relationships(relationships, target.path));
 }
-auto BodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> Place {
+
+auto OwnershipBodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace {
     const auto found = aliases.find(binding);
-    return found == aliases.end() ? Place {input.objects.size() + binding.index(), {}}
+    return found == aliases.end() ? OwnershipPlace {input.objects.size() + binding.index(), {}}
                                   : found->second;
 }
-auto BodyAnalyzer::location(const SemanticExpression& source) const noexcept
-    -> std::optional<Place> {
+
+auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noexcept
+    -> std::optional<OwnershipPlace> {
     if (const auto* foreign = std::get_if<SemCpp>(&source.value);
         foreign != nullptr && source.category == SemanticValueCategory::Place) {
         return location(foreign->operands.front().expression);
@@ -220,7 +238,8 @@ auto BodyAnalyzer::location(const SemanticExpression& source) const noexcept
     }
     return std::nullopt;
 }
-auto BodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {
+
+auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {
     return std::visit(
         Overloaded {
             [](const OwnerBindingStorage& value) static noexcept { return value.writable; },
@@ -234,7 +253,11 @@ auto BodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {
         body.binding(id).storage
     );
 }
-auto BodyAnalyzer::write_access(const Place& target, ProgramOriginID origin) noexcept -> void {
+
+auto OwnershipBodyAnalyzer::write_access(
+    const OwnershipPlace& target,
+    ProgramOriginID origin
+) noexcept -> void {
     for (const auto& access : accesses) {
         if (access.stable && overlaps(access.place, target)) {
             diagnose(
@@ -246,9 +269,10 @@ auto BodyAnalyzer::write_access(const Place& target, ProgramOriginID origin) noe
         }
     }
 }
-auto BodyAnalyzer::require_available(
-    const State& state,
-    const Place& target,
+
+auto OwnershipBodyAnalyzer::require_available(
+    const OwnershipState& state,
+    const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
     if (!state.objects[target.object].available) {
@@ -260,7 +284,8 @@ auto BodyAnalyzer::require_available(
         );
     }
 }
-auto BodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
+
+auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
     if (source.constant.has_value()) {
         const auto constant = draft.constants().constant(*source.constant);
@@ -270,7 +295,8 @@ auto BodyAnalyzer::constant_truth(const SemanticExpression& source) const noexce
     }
     return std::nullopt;
 }
-auto BodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept
+
+auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept
     -> std::optional<std::uint64_t> {
     if (source.constant.has_value()) {
         const auto constant = draft.constants().constant(*source.constant);
@@ -280,5 +306,3 @@ auto BodyAnalyzer::constant_index(const SemanticExpression& source) const noexce
     }
     return std::nullopt;
 }
-
-} // namespace ownership

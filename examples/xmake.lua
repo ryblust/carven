@@ -70,9 +70,9 @@ Invalid input through captured policy
 Amount must be positive:
 -2
 ]]},
-    {name = "native-parser", dir = "interop/importing", exceptions = true,
+    {name = "native-parser", dir = "interop/import", exceptions = true,
         output = "Port:\n8080\nInvalid port\nInvalid port\nInvalid port\n"},
-    {name = "cpp-host", dir = "interop/exporting", output = "Price in cents:\n1080\n"},
+    {name = "cpp-host", dir = "interop/export", output = "Price in cents:\n1080\n"},
 }
 
 local names = {}

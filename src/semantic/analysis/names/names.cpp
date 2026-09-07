@@ -20,16 +20,21 @@ auto lookup_cpp_name(
         invariant_violation("C++ lookup requires a name");
     }
     const auto root = draft.source_slice_copy(source_module, components.front());
+    auto selected = std::optional<std::vector<std::string>>();
     if (lookup == CppNameLookup::ModuleScope) {
-        auto admitted = false;
-        for (const auto& binding : catalog.cpp_imports(source_module)) {
-            admitted |= binding.opens_namespace;
-            if (!binding.opens_namespace && binding.components.back() == root) {
-                admitted = true;
-                usage.record_cpp(source_module, binding.origin);
+        const auto imports = catalog.cpp_imports(source_module);
+        const auto selections = catalog.cpp_selection(source_module, root);
+        if (!selections.empty()) {
+            selected = imports[selections.front()].components;
+            for (const auto index : selections) {
+                usage.record_cpp(source_module, imports[index].origin);
             }
-        }
-        if (!admitted) {
+        } else if (!std::ranges::any_of(
+                       imports,
+                       [](const CatalogCppBinding& binding) static noexcept {
+                           return binding.opens_namespace;
+                       }
+                   )) {
             return std::nullopt;
         }
     }
@@ -47,6 +52,11 @@ auto lookup_cpp_name(
             ));
         }
         names.push_back(std::move(name));
+    }
+    if (selected) {
+        selected->insert(selected->end(), names.begin() + 1, names.end());
+        names = std::move(*selected);
+        lookup = CppNameLookup::Global;
     }
     return CppNameReference {
         .context_module = catalog.find_module(source_module)->declaration,

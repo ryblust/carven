@@ -39,7 +39,8 @@ This document defines the validity and observable behavior of Carven programs.
 A compilation is one closed compiler boundary supplied by the driver or build
 system. Its module catalog is exactly the explicit source-input batch;
 compilation does not discover files while resolving imports. Every source input
-has one canonical module path, a nonempty sequence of identifier components.
+has one canonical module path, a nonempty sequence of components matching
+`[A-Za-z_][A-Za-z0-9_]*`, including keyword spellings.
 Path derivation from host filenames is driver policy rather than language
 semantics.
 
@@ -323,7 +324,9 @@ operations, including their handling of zero divisors.
 inequality, and matching, but not numeric arithmetic, ordering, truthiness, or
 numeric conversion.
 
-`str` is an immutable, copyable, value-passed UTF-8 view. It has no owning
+`str` is an immutable, copyable, value-passed UTF-8 view represented by a pointer
+and byte length. Length defines its contents, including internal NUL bytes;
+the view does not promise a trailing NUL. It has no owning
 storage, `&str` type, or source lifetime syntax. Its ordinary safe backing is
 static literal storage and copies of such views. C++ boundary support and
 Unicode validation are defined under
@@ -847,7 +850,7 @@ module:
 
 ```carven
 import <vector> using std::vector;
-import "provider.hpp" using { vendor::Widget, vendor::create };
+import "provider.hpp" using vendor::{ Widget, create };
 import "legacy.hpp" using { Point, calculate };
 import <vector> using std::*;
 ```
@@ -855,6 +858,13 @@ import <vector> using std::*;
 Explicit selections bind their final name component. Selection paths are rooted
 in the global C++ namespace: a single-component selection such as `calculate`
 selects `::calculate`, while `vendor::Widget` selects `::vendor::Widget`.
+A local explicit name selects one complete external path. Repeated selections
+of that same path are allowed; different paths with the same final component
+are a catalog error. An explicit selection takes precedence over opened
+namespaces. All equivalent selection origins are marked used together.
+Further qualified components append to the selected path. Overloads at that
+one path remain C++'s responsibility. Cross-path overload merging is not supported;
+use explicit global references when selecting different same-named providers.
 Namespace selections open a C++ lookup environment without enumerating
 declarations.
 
@@ -875,6 +885,24 @@ function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
 not Carven compile-time constants and do not participate in pattern coverage or
 failure-set construction.
+
+### C string literals
+
+`c"text"` produces an external `const char*` value pointing to immutable static
+storage containing the decoded UTF-8 bytes and a trailing NUL. Empty text is
+valid. Internal NUL, including `\0` and `\u{0}`, is rejected. Its type is always
+a pointer, including direct native calls and template deduction; it is not a
+character array or a Carven `str`. Copies retain access to static storage.
+
+C strings support runtime type inference and external operations. They are
+excluded from Carven constant declarations and literal patterns. Contextual
+typing preserves their fixed external pointer type; conversions follow the
+external conversion rules below.
+
+```carven
+import <cstdio> using std::printf;
+fn main() { printf(c"Hello World\n"); }
+```
 
 ### External operations and conversions
 
@@ -993,7 +1021,14 @@ views are unsupported. An inbound `char32_t` is validated before it becomes a
 Carven `char`; violation terminates with
 `carven runtime contract error: invalid Unicode scalar at C++ boundary`.
 
-Module components and public function names must be supported C++ identifiers.
+Public module components and exported function names use one deterministic
+encoding. Safe C++ identifiers retain their spelling unless they start with
+`cv_escaped_`. Other spellings become `cv_escaped_` followed by the lowercase
+hexadecimal encoding of their original bytes. Safety excludes the project's
+C++ keyword set, double underscores, and an initial underscore followed by an
+uppercase letter. Encoding introduces no source-name reservation and depends
+on neither compilation order nor other names. Native `import(cpp)` provider
+names still denote existing C++ names and are validated without encoding.
 A function/namespace prefix collision anywhere in the compilation's public API
 tree is invalid.
 

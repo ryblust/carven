@@ -29,16 +29,13 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
-
 auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) noexcept
     -> AnalysisResult<BuiltExpression> {
     auto operand = expression(source.operand_id);
     if (!operand.has_value()) {
         return std::unexpected(operand.error());
     }
-    auto pending_failures = take_pending(*operand);
+    auto pending_failures = take_pending_failures(*operand);
     const auto access = [&]() noexcept {
         switch (source.mode) {
             case ASTAccessMode::Read:  return AccessMode::Read;
@@ -65,6 +62,3 @@ auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) n
     operand->pending_failures = std::move(pending_failures);
     return std::move(*operand);
 }
-
-
-} // namespace body_elaboration

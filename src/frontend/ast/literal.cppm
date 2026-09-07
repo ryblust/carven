@@ -8,6 +8,7 @@ using ASTLiteralValue = std::variant<
     IntegerLiteralValue,
     FloatingLiteralValue,
     StringLiteralValue,
+    CStringLiteralValue,
     CharacterLiteralValue,
     BooleanLiteralValue>;
 

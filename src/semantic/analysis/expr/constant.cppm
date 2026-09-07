@@ -17,6 +17,7 @@ class ConstantExpressionSite final {
 public:
     using Value = ConstantExpressionResult;
     using Result = Value;
+
     ConstantExpressionSite(
         ProgramDraft& program,
         ProgramModuleID module,
@@ -31,45 +32,62 @@ public:
             invariant_violation("constant expression mixed a module with another syntax tree");
         }
     }
+
     auto draft() noexcept -> ProgramDraft& { return program; }
+
     auto syntax() const noexcept -> ASTView { return ast; }
+
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure {
         return program.diagnostics().error(DiagnosticBuilder(code, std::move(message))
                                                .primary(locate(ast.source_id(), span))
                                                .build());
     }
+
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> AnalysisResult<Value> {
         return interpret_expression(*this, id, expected);
     }
+
     auto present(const Value& value) const noexcept -> bool {
         return std::holds_alternative<ConstantID>(value);
     }
+
     auto unavailable() const noexcept -> Value { return NotConstant {}; }
+
     auto type(const Value& value) const noexcept -> ConstructionTypeRef {
         return program.constant_copy(std::get<ConstantID>(value)).type;
     }
+
     auto known(const Value& value) const noexcept -> std::optional<ConstantID> {
         const auto* constant = std::get_if<ConstantID>(&value);
         return constant == nullptr ? std::nullopt : std::optional(*constant);
     }
+
     auto external(ConstructionTypeRef type) const noexcept -> bool {
         const auto* concrete = std::get_if<TypeID>(&type);
         return concrete != nullptr
             && std::holds_alternative<CppTypeValue>(program.type_copy(*concrete).value);
     }
+
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool {
         return scope.supports_equality(type);
     }
+
     auto numeric_enum(ConstructionTypeRef type) noexcept -> bool {
         const auto* concrete = std::get_if<TypeID>(&type);
         return concrete != nullptr && scope.is_numeric_enum(*concrete);
     }
+
     auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
         return scope.resolve_type(type);
     }
+
+    auto c_string(std::string_view, Span) const noexcept -> Value { return unavailable(); }
+
     auto constant(ConstantID value, Span) const noexcept -> Value { return value; }
+
     struct OperandExecution final {};
+
     auto enter_operand_execution(bool) const noexcept -> OperandExecution { return {}; }
 
     auto finish_unary(
@@ -81,6 +99,7 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto finish_binary(
         BinaryOperator,
         ConstructionTypeRef,
@@ -91,6 +110,7 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto finish_cast(
         CastKind,
         ConstructionTypeRef,
@@ -100,6 +120,7 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto finish_short_circuit(
         bool,
         Value,
@@ -109,15 +130,19 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto external_unary(UnaryOperator, Value, Span) const noexcept -> Value {
         return unavailable();
     }
+
     auto external_binary(BinaryOperator, Value, Value, Span) const noexcept -> Value {
         return unavailable();
     }
+
     auto external_cast(ConstructionTypeRef, Value, Span) const noexcept -> Value {
         return unavailable();
     }
+
     auto extension(const ASTNameExpr& name, Span, std::optional<ConstructionTypeRef>) noexcept
         -> AnalysisResult<Value> {
         auto resolved =
@@ -134,6 +159,7 @@ public:
         }
         return *resolved->constant;
     }
+
     template<typename Form>
     auto extension(const Form&, Span, std::optional<ConstructionTypeRef>) const noexcept
         -> AnalysisResult<Value> {
@@ -151,17 +177,22 @@ public:
         );
         return unavailable();
     }
+
     auto spelling(Span span) const noexcept -> std::string {
         return program.source_slice_copy(module, span);
     }
+
     auto resolve_enum_qualifier(ASTExprID id) noexcept -> AnalysisResult<std::optional<TypeID>> {
         return scope.resolve_enum_qualifier(id);
     }
+
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisResult<ResolvedEnumCase> {
         return scope.resolve_enum_case(type, name, span);
     }
+
     auto invalid_enum_qualifier(Span) const noexcept -> Value { return unavailable(); }
+
     auto convert_argument(Value& value, ConstructionTypeRef expected, Span span) noexcept
         -> AnalysisResult<void> {
         if (!type_shapes_compatible(program, type(value), expected)) {
@@ -171,6 +202,7 @@ public:
         }
         return {};
     }
+
     auto enum_constructor(TypeID, const ResolvedEnumCase&, Span span) noexcept
         -> AnalysisResult<Value> {
         return std::unexpected(fail(
@@ -179,6 +211,7 @@ public:
             "payload enum case must be called with its payload"
         ));
     }
+
     auto finish_enum_case(
         TypeID,
         EnumCaseID,
@@ -188,6 +221,7 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto finish_text(
         TextIntrinsic,
         TypeID,
@@ -197,12 +231,16 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
     auto member(const ASTMemberExpr&, Value, Span) const noexcept -> Value { return unavailable(); }
+
     auto member_call(const ASTCallExpr&, const ASTMemberExpr&, Value, Span) const noexcept
         -> Value {
         return unavailable();
     }
+
     auto call(const ASTCallExpr&, Span) const noexcept -> Value { return unavailable(); }
+
     auto admits(const ASTExpr& expression) const noexcept -> bool {
         return std::visit(
             [&](const auto& form) noexcept {
@@ -233,6 +271,7 @@ private:
     auto result(std::optional<ConstantID> known) const noexcept -> Value {
         return known.has_value() ? Value {*known} : unavailable();
     }
+
     ProgramDraft& program;
     ProgramModuleID module;
     ASTView ast;

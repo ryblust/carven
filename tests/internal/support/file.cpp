@@ -38,6 +38,7 @@ public:
     }
 
     auto path() const noexcept -> const std::filesystem::path& { return value; }
+
     auto ready() const noexcept -> bool { return !value.empty(); }
 
 private:

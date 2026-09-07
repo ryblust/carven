@@ -3,7 +3,7 @@ module carven:source.identifier.impl;
 import :source.identifier;
 import std;
 
-auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassification {
+auto is_identifier_spelling(std::string_view spelling) noexcept -> bool {
     const auto is_ascii_letter = [](char value) static noexcept {
         return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
     };
@@ -15,12 +15,20 @@ auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassi
     };
 
     if (spelling.empty() || !is_identifier_start(spelling.front())) {
-        return InvalidIdentifier {};
+        return false;
     }
     for (const auto value : spelling.substr(1)) {
         if (!is_identifier_continue(value)) {
-            return InvalidIdentifier {};
+            return false;
         }
+    }
+
+    return true;
+}
+
+auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassification {
+    if (!is_identifier_spelling(spelling)) {
+        return InvalidIdentifier {};
     }
 
     static constexpr auto keywords = std::to_array<std::pair<std::string_view, SourceKeyword>>({

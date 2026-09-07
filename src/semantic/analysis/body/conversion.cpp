@@ -11,8 +11,6 @@ import :semantic.semir.type;
 import :support.invariant;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::consume_place(BuiltExpression& expression, Span span) noexcept
     -> AnalysisResult<PlaceExpression> {
     auto consumed = consume_pending(expression, span);
@@ -131,10 +129,12 @@ auto BodyElaborator::coerce_to(
             fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
         );
     }
+
     struct ArrayShape final {
         ConstructionTypeRef element;
         std::uint64_t extent;
     };
+
     const auto array_shape = [&](ConstructionTypeRef type) noexcept -> std::optional<ArrayShape> {
         if (const auto* concrete = std::get_if<TypeID>(&type)) {
             const auto canonical = draft().type_copy(*concrete);
@@ -237,11 +237,9 @@ auto BodyElaborator::infer_value_type(BuiltExpression& expression, Span span) no
 auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     -> AnalysisResult<SemanticExpression> {
     auto site = BodyExpressionSite(*this);
-    auto checked = expression_analysis::require_boolean(site, value, span);
+    auto checked = require_expression_boolean(site, value, span);
     if (!checked.has_value()) {
         return std::unexpected(checked.error());
     }
     return consume_value(value, span, AccessMode::Read);
 }
-
-} // namespace body_elaboration

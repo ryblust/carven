@@ -5,7 +5,6 @@ import :semantic.semir.program;
 import :support.invariant;
 import std;
 
-
 SemIRProgram::SemIRProgram(
     ProgramIdentity identity,
     CompilationProvenance provenance,
@@ -77,6 +76,7 @@ auto SemIRProgram::body_for_callable(CallableID callable) const noexcept -> std:
     }
     return body;
 }
+
 auto SemIRProgram::callable_for_body(BodyID body) const noexcept -> std::optional<CallableID> {
     require_active();
     if (!body_store.contains(body)) {

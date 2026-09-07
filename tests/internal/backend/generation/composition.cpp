@@ -15,11 +15,11 @@ import :test.internal.harness.death;
 import std;
 
 namespace {
-using namespace body_lowering;
 
 auto return_statement() noexcept -> TargetStmt {
     return target_lowering_statement(TargetReturnStmt {.expression = std::nullopt});
 }
+
 auto unit_type(TargetUnitBuilder& target) noexcept -> TargetTypeID {
     return target.intern_type({
         .value = TargetIntrinsicType {.symbol = TargetSymbol::Bool, .type_argument_ids = {}},
@@ -29,14 +29,16 @@ auto unit_type(TargetUnitBuilder& target) noexcept -> TargetTypeID {
 } // namespace
 
 TEST_CASE("Composition: normal void remains composable while termination stops successors") {
-    auto sequence = StatementBuilder {};
-    auto evaluated = StatementBuilder {};
-    REQUIRE(sequence.accept(std::move(evaluated).complete<VoidResult>(VoidResult {})));
+    auto sequence = LoweringStmtBuilder {};
+    auto evaluated = LoweringStmtBuilder {};
+    REQUIRE(
+        sequence.accept(std::move(evaluated).complete<LoweringVoidResult>(LoweringVoidResult {}))
+    );
     CHECK(sequence.continues());
-    const auto exit = ExitTarget {.kind = ExitKind::FunctionReturn, .identity = 0};
-    auto terminal = StatementBuilder {};
+    const auto exit = LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0};
+    auto terminal = LoweringStmtBuilder {};
     terminal.terminate(return_statement(), exit);
-    CHECK_FALSE(sequence.accept(std::move(terminal).complete<Unit>(std::nullopt)));
+    CHECK_FALSE(sequence.accept(std::move(terminal).complete<LoweringUnit>(std::nullopt)));
     CHECK_FALSE(sequence.continues());
     CHECK(sequence.exits().contains(exit));
     sequence.emit(return_statement());
@@ -44,16 +46,16 @@ TEST_CASE("Composition: normal void remains composable while termination stops s
 }
 
 TEST_CASE("Composition: region exits resume only at their own destination") {
-    const auto first = ExitTarget {.kind = ExitKind::Value, .identity = 1};
-    const auto second = ExitTarget {.kind = ExitKind::Value, .identity = 2};
-    auto sequence = StatementBuilder {};
+    const auto first = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
+    const auto second = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 2};
+    auto sequence = LoweringStmtBuilder {};
     sequence.terminate(return_statement(), first);
     CHECK_FALSE(sequence.consume_exit(second));
     sequence.resume(TargetIdentifier::from_spelling("done"), TargetJumpRole::RegionExit, first);
     CHECK(sequence.continues());
     CHECK(sequence.exits().targets.empty());
     CHECK(expect_termination("composition.foreign-exit", [=]() noexcept {
-        auto foreign = StatementBuilder {};
+        auto foreign = LoweringStmtBuilder {};
         foreign.terminate(return_statement(), first);
         foreign.resume(TargetIdentifier::from_spelling("done"), TargetJumpRole::RegionExit, second);
     }));
@@ -62,15 +64,18 @@ TEST_CASE("Composition: region exits resume only at their own destination") {
 TEST_CASE("Composition: value lambdas reject external exits") {
     CHECK(expect_termination("composition.external-lambda-exit", []() static noexcept {
         auto target = TargetUnitBuilder {};
-        auto sequence = StatementBuilder {};
-        sequence.terminate(return_statement(), {.kind = ExitKind::FunctionReturn, .identity = 0});
+        auto sequence = LoweringStmtBuilder {};
+        sequence.terminate(
+            return_statement(),
+            {.kind = LoweringExitKind::FunctionReturn, .identity = 0}
+        );
         static_cast<void>(std::move(sequence).result_region(
             unit_type(target),
-            {.kind = ExitKind::Value, .identity = 1}
+            {.kind = LoweringExitKind::Value, .identity = 1}
         ));
     }));
     CHECK(expect_termination("composition.missing-normal-result", []() static noexcept {
-        auto sequence = StatementBuilder {};
-        static_cast<void>(std::move(sequence).complete<Unit>(std::nullopt));
+        auto sequence = LoweringStmtBuilder {};
+        static_cast<void>(std::move(sequence).complete<LoweringUnit>(std::nullopt));
     }));
 }

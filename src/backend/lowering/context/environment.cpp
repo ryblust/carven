@@ -35,7 +35,8 @@ auto ArtifactLowering::materialize_cpp_environments(
             if (requirement == CppEnvironmentRequirement::Declarations) {
                 continue;
             }
-            for (const auto& binding : header.bindings) {
+            if (header.namespace_opening) {
+                const auto& binding = *header.namespace_opening;
                 auto components = std::vector<TargetIdentifier>();
                 for (const auto component : binding.components) {
                     components.push_back(
@@ -47,7 +48,7 @@ auto ArtifactLowering::materialize_cpp_environments(
                     binding.origin,
                     TargetUsing {
                         .name = TargetName::globally_qualified(std::move(components)),
-                        .opens_namespace = binding.opens_namespace
+                        .opens_namespace = true
                     }
                 ));
             }

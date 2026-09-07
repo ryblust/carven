@@ -9,6 +9,7 @@ enum class TokenKind {
     NumberLiteral,
     CharLiteral,
     StringLiteral,
+    CStringLiteral,
     CppAngleHeaderName,
     CppQuoteHeaderName,
     CppSourceFragment,
@@ -99,8 +100,12 @@ struct Token final {
     Span span;
 };
 
-using TokenLiteralValue = std::
-    variant<IntegerLiteralValue, FloatingLiteralValue, StringLiteralValue, CharacterLiteralValue>;
+using TokenLiteralValue = std::variant<
+    IntegerLiteralValue,
+    FloatingLiteralValue,
+    StringLiteralValue,
+    CStringLiteralValue,
+    CharacterLiteralValue>;
 
 class TokenBuffer final {
 public:

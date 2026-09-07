@@ -24,11 +24,15 @@ public:
     auto operator=(BodyStore&&) -> BodyStore& = default;
 
     auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
+
     auto contains(BodyID id) const noexcept -> bool { return rows.contains(id); }
+
     auto body(BodyID id) const noexcept -> const SemIRBody& { return rows.get(id); }
+
     auto entries() const noexcept -> IDTableEntries<BodyID, SemIRBody, ProgramIdentity> {
         return rows.entries();
     }
+
     auto size() const noexcept -> std::size_t { return rows.size(); }
 
 private:
@@ -50,11 +54,15 @@ public:
     auto operator=(TestStore&&) -> TestStore& = default;
 
     auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
+
     auto contains(TestID id) const noexcept -> bool { return rows.contains(id); }
+
     auto test(TestID id) const noexcept -> const TestDeclaration& { return rows.get(id); }
+
     auto entries() const noexcept -> IDTableEntries<TestID, TestDeclaration, ProgramIdentity> {
         return rows.entries();
     }
+
     auto size() const noexcept -> std::size_t { return rows.size(); }
 
 private:
@@ -79,38 +87,47 @@ public:
         require_active();
         return program_identity;
     }
+
     auto provenance() const noexcept -> CompilationProvenanceView {
         require_active();
         return compilation_provenance.view();
     }
+
     auto types() const noexcept -> const CanonicalTypeStore& {
         require_active();
         return type_store;
     }
+
     auto constants() const noexcept -> const ConstantStore& {
         require_active();
         return constant_store;
     }
+
     auto failure_sets() const noexcept -> const FailureSetStore& {
         require_active();
         return failure_set_store;
     }
+
     auto callable_signatures() const noexcept -> const CallableSignatureStore& {
         require_active();
         return callable_signature_store;
     }
+
     auto declarations() const noexcept -> const DeclarationStore& {
         require_active();
         return declaration_store;
     }
+
     auto bodies() const noexcept -> const BodyStore& {
         require_active();
         return body_store;
     }
+
     auto tests() const noexcept -> const TestStore& {
         require_active();
         return test_store;
     }
+
     auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
     auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
 

@@ -12,7 +12,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
 namespace {
 auto restore_integer_type(ModuleLowering& context, TargetExpr expression, TypeID type) noexcept
     -> TargetExpr {
@@ -94,8 +93,8 @@ auto BodyLowerer::construct_operation(
     const SemanticExpression& source,
     std::vector<TargetExpr> operands,
     ResultDemand demand
-) noexcept -> Lowered<Evaluated> {
-    auto destination = StatementBuilder();
+) noexcept -> Lowered<LoweringValue> {
+    auto destination = LoweringStmtBuilder();
     auto owned_result = false;
     auto result = std::visit(
         Overloaded {
@@ -376,7 +375,7 @@ auto BodyLowerer::construct_operation(
                         TargetIdentifier::from_spelling("value")
                     );
                 }
-                auto failure_body = StatementBuilder();
+                auto failure_body = LoweringStmtBuilder();
                 for (const auto failure : failures) {
                     const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
                     failure_body.emit(generated_statement(
@@ -396,7 +395,7 @@ auto BodyLowerer::construct_operation(
                             )
                         }
                     ));
-                    auto transfer = StatementBuilder();
+                    auto transfer = LoweringStmtBuilder();
                     emit_failure(
                         transfer_expression(dereference_expression(name_expression(projection))),
                         transfer
@@ -415,7 +414,7 @@ auto BodyLowerer::construct_operation(
                     generated_statement(
                         TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
                     ),
-                    ExitTarget {ExitKind::Unreachable, 0}
+                    LoweringExitTarget {LoweringExitKind::Unreachable, 0}
                 );
                 destination.record_exits(failure_body.exits());
                 auto branches = std::vector<TargetIfBranch>();
@@ -439,13 +438,13 @@ auto BodyLowerer::construct_operation(
         source.value
     );
     if (!destination.continues()) {
-        return std::move(destination).complete<Evaluated>(std::nullopt);
+        return std::move(destination).complete<LoweringValue>(std::nullopt);
     }
     if (context.is_void(source.type.resolved())) {
         if (result) {
             destination.emit(statement_expression(std::move(*result)));
         }
-        return std::move(destination).complete<Evaluated>(VoidResult {});
+        return std::move(destination).complete<LoweringValue>(LoweringVoidResult {});
     }
     if (demand == ResultDemand::Discard) {
         if (result) {
@@ -453,16 +452,15 @@ auto BodyLowerer::construct_operation(
                 generated_statement(TargetDiscardStmt {.expression = std::move(*result)})
             );
         }
-        return std::move(destination).complete<Evaluated>(VoidResult {});
+        return std::move(destination).complete<LoweringValue>(LoweringVoidResult {});
     }
     if (!result) {
         invariant_violation("normal value evaluation produced no value");
     }
-    auto value = owned_result ? (std::holds_alternative<SemTake>(source.value)
-                                     ? Evaluated(OwnedValue {.storage = std::move(*result)})
-                                     : Evaluated(TemporaryValue {.storage = std::move(*result)}))
-                              : Evaluated(DirectValue {.expression = std::move(*result)});
-    return std::move(destination).complete<Evaluated>(std::move(value));
+    auto value = owned_result
+        ? (std::holds_alternative<SemTake>(source.value)
+               ? LoweringValue(LoweringOwnedValue {.storage = std::move(*result)})
+               : LoweringValue(LoweringTemporaryValue {.storage = std::move(*result)}))
+        : LoweringValue(LoweringDirectValue {.expression = std::move(*result)});
+    return std::move(destination).complete<LoweringValue>(std::move(value));
 }
-
-} // namespace body_lowering

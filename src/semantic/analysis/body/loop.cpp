@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::c_style_for_statement(
     const ASTForStmt& source,
     const ASTCStyleForHeader& header,
@@ -88,7 +86,7 @@ auto BodyElaborator::c_style_for_statement(
     loops.push_back({});
     reachable = true;
     auto body_result = [&]() noexcept {
-        [[maybe_unused]] const auto path = ReferencePathGuard(
+        [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
             condition_reachable && (!known.has_value() || *known)
         );
@@ -106,7 +104,7 @@ auto BodyElaborator::c_style_for_statement(
     reachable = true;
     regions.push_back(empty_region(source.header.span));
     for (const auto& step : header.steps) {
-        [[maybe_unused]] const auto path = ReferencePathGuard(
+        [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
             condition_reachable && step_reachable && (!known.has_value() || *known)
         );
@@ -315,11 +313,12 @@ auto BodyElaborator::range_for_statement(
         binding = storage.binding;
         auto bound = bind_local(
             named->name_span,
-            LocalStorage {
+            BodyLocalStorage {
                 .storage = storage,
                 .type = type,
                 .takeable = false,
-                .role = header.write_marker.has_value() ? LocalRole::Local : LocalRole::RangeRead,
+                .role = header.write_marker.has_value() ? BodyLocalRole::Local
+                                                        : BodyLocalRole::RangeRead,
                 .unused_candidate = std::nullopt
             },
             DiagnosticCode::NameDuplicateLocal
@@ -333,7 +332,7 @@ auto BodyElaborator::range_for_statement(
     reachable = true;
     auto result = [&]() noexcept {
         [[maybe_unused]] const auto path =
-            ReferencePathGuard(reference_path_reachable, header_reachable);
+            BodyReferencePathGuard(reference_path_reachable, header_reachable);
         return block(source.body);
     }();
     if (!result.has_value()) {
@@ -381,7 +380,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
     const auto previous_test_exit = regions.back().exits_test;
     ensure_reachable_diagnostics(source.span);
     [[maybe_unused]] const auto reference_path =
-        ReferencePathGuard(reference_path_reachable, reachable);
+        BodyReferencePathGuard(reference_path_reachable, reachable);
     const auto owns_full_expression = std::visit(
         Overloaded {
             [](const ASTVariableDecl&) static noexcept { return true; },
@@ -450,6 +449,3 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
     }
     return result;
 }
-
-
-} // namespace body_elaboration

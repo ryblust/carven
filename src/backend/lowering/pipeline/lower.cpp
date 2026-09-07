@@ -44,19 +44,6 @@ auto wrap_linkage_namespaces(
     return target_items(std::move(generated));
 }
 
-auto cpp_api_namespace(const SemIRProgram& semantic, ModuleID module_id) noexcept -> TargetName {
-    auto components = std::vector<TargetIdentifier> {
-        TargetIdentifier::from_spelling("carven"),
-        TargetIdentifier::from_spelling("api"),
-    };
-    const auto provenance_module = semantic.declarations().module_decl(module_id).provenance_module;
-    for (const auto& component :
-         semantic.provenance().module_record(provenance_module).path.components()) {
-        components.push_back(TargetIdentifier::from_spelling(component));
-    }
-    return TargetName::from_components(std::move(components));
-}
-
 auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& schedule) noexcept
     -> TargetUnitSections {
     auto root = std::vector<TargetItem>();
@@ -117,7 +104,7 @@ auto lower_cpp_api_header(
     return {
         .preamble = {},
         .body = target_items(namespace_item(
-            cpp_api_namespace(context.semantic(), schedule.module_id),
+            context.plan().names().module_names(schedule.module_id).public_namespace_name,
             std::move(declarations)
         )),
         .epilogue = {},
@@ -152,7 +139,7 @@ auto lower_module(
     }
     if (!lowered.cpp_export_facades.empty()) {
         epilogue.push_back(namespace_item(
-            cpp_api_namespace(context.semantic(), schedule.module_id),
+            context.plan().names().module_names(schedule.module_id).public_namespace_name,
             std::move(lowered.cpp_export_facades)
         ));
     }

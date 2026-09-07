@@ -27,8 +27,6 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_elaboration {
-
 auto BodyElaborator::active_builder() noexcept -> BodyBuilder& {
     body_builder.set_lifetime(active_full_expression.value_or(frames.back().lifetime));
     return body_builder;
@@ -82,7 +80,7 @@ auto BodyElaborator::make_built(
     ConstructionTypeRef type,
     SemanticExpressionValue value,
     Span span,
-    PendingFailureTerms pending,
+    BodyPendingFailureTerms pending,
     std::optional<ConstantID> constant
 ) noexcept -> BuiltExpression {
     auto expression = active_builder().make_expression(
@@ -212,6 +210,3 @@ auto BodyElaborator::ensure_reachable_diagnostics(Span span) noexcept -> void {
         reported_unreachable = true;
     }
 }
-
-
-} // namespace body_elaboration

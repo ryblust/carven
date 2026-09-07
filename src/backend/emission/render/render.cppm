@@ -96,8 +96,8 @@ private:
     auto render_trailing_return(SyntaxLayouts result, bool const_qualified) noexcept
         -> LayoutNodeID;
 
-    auto render_type_layouts(TargetTypeID id) noexcept -> SyntaxLayouts;
-    auto render_type(TargetTypeID id) noexcept -> LayoutNodeID;
+    auto render_type_layouts(TargetTypeID id, bool constant = false) noexcept -> SyntaxLayouts;
+    auto render_type(TargetTypeID id, bool constant = false) noexcept -> LayoutNodeID;
     auto render_expression(
         const TargetExpr& expression,
         TargetPrecedence parent = TargetPrecedence::Lowest

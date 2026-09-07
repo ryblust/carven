@@ -153,8 +153,19 @@ Calls map parameters and captures to actual storage. Aliases share one state,
 including the order of external writes. Call answers contain returned
 relationships and external state for normal and typed failure completion;
 completed locals are discarded. Queries normalize reachable input storage,
-aliases, active accesses, and relative lifetimes. Recursive dependencies reach a
-fixed point over these relationships. Query state remains private to semantic
+aliases, active accesses, and relative lifetimes. Relationship sets are sorted
+and unique after projection and remapping; equivalent facts retain
+a deterministic diagnostic witness without making provenance part of semantic
+identity. Queries are indexed by body and reuse equal inputs.
+
+A private dependency queue evaluates new queries and reevaluates consumers only
+when an answer changes. Dependencies include reads of unfinished answers and
+retain previously observed consumers when call contexts change. Recursive calls
+read the current answer rather than recursively executing analysis. New contexts
+can temporarily remove an exit, so the solver does not assume that each answer
+only grows. Quiescence requires an empty queue after all new queries and answer
+changes have propagated. Diagnosis then reads the sealed query set in discovery
+order; it cannot create new queries or change solved answers. Query state remains private to semantic
 analysis and never enters generation or runtime.
 
 Unfinished calls retain direct place and borrowed-target accesses. Array
@@ -162,6 +173,11 @@ iteration retains its source owner. Match guards additionally require stable
 subject storage. Branches merge only real successors; loops include entry,
 backedges, and exits. Diagnostic witnesses do not distinguish execution states.
 Return and failure states have caller consumers; test termination has none.
+Equal callable-view copies retain their target relationships rather than borrowing
+the intermediate view storage. Expired callable backing is diagnosed before any
+attempt to interpret its former capture state.
+Loop solving reuses its final stable result; only diagnosis replays the body
+with the converged loop-entry state.
 All source operations receive contract checks independently of execution-state
 analysis, including unreachable source.
 
@@ -182,15 +198,17 @@ access or ownership legality.
 Type and value lookup share external name admission, identifier validation and
 import-use recording in semantic name analysis. `CppNameReference`
 combines a lookup path with its declaration environment; global paths also
-retain the context module.
+retain the context module. Explicit import selections end after name resolution
+and import-use diagnostics. Published header dependencies retain namespace openings.
 
 Body construction distinguishes typed results from external name and member
 selections. A selection has no object type and may denote an overload set.
 Value, place and call consumers consume selections before publication.
 Published calls explicitly distinguish named, member and typed-value callees.
 
-External types are named type expressions or `CppQueryType` descriptions.
-Queries describe C++ expression shapes using operand types and access.
+External types are named type expressions, intrinsic types, or `CppQueryType`
+descriptions. Queries describe C++ expression shapes using operand types and
+access.
 Identical descriptions share a type record; this does not establish equivalence
 between different C++ type expressions. Operation occurrences own diagnostics,
 lifetimes and execution order. Query references describe type dependencies,

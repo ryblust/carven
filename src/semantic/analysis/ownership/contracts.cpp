@@ -3,9 +3,7 @@ module carven:semantic.analysis.ownership.contracts.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-namespace ownership {
-
-auto BodyAnalyzer::check_contracts() noexcept -> void {
+auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
     const auto root =
         [&](this const auto& self,
             const SemanticExpression& source) noexcept -> std::optional<LocalBindingID> {
@@ -126,5 +124,3 @@ auto BodyAnalyzer::check_contracts() noexcept -> void {
         }
     );
 }
-
-} // namespace ownership

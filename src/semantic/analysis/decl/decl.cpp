@@ -7,9 +7,6 @@ import :semantic.analysis.nominal.containment;
 import :semantic.analysis.program;
 import std;
 
-using decl_resolution::resolve_declarations;
-using decl_resolution::validate_declaration_surfaces;
-
 auto complete_declarations(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,

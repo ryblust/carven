@@ -15,15 +15,19 @@ namespace {
 
 struct Foreign final {
     bool fail;
+
     explicit Foreign(bool source) noexcept
         : fail(source) {}
+
     Foreign(const Foreign&) { throw 1; }
+
     Foreign(Foreign&& source) noexcept(false)
         : fail(source.fail) {
         if (fail) {
             throw 2;
         }
     }
+
     auto operator=(const Foreign&) -> Foreign& = delete;
     auto operator=(Foreign&&) -> Foreign& = delete;
 };

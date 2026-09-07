@@ -5,15 +5,14 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.failure;
 import std;
 
-namespace body_elaboration {
-
-auto BodyElaborator::failure_context_for_current_path() const noexcept -> const FailureContext& {
+auto BodyElaborator::failure_context_for_current_path() const noexcept
+    -> const BodyFailureContext& {
     return reachable && reference_path_reachable ? failure_contexts.back() : dead_failure_context;
 }
 
 auto BodyElaborator::route_pending(
-    PendingFailureTerms terms,
-    const FailureContext& target,
+    BodyPendingFailureTerms terms,
+    const BodyFailureContext& target,
     std::optional<Span> propagation_span
 ) noexcept -> void {
     const auto combined = draft().add_union_failure_term(std::move(terms));
@@ -28,17 +27,17 @@ auto BodyElaborator::discard_pending(BuiltExpression& expression) noexcept -> vo
 }
 
 auto BodyElaborator::collect_pending(
-    PendingFailureTerms& destination,
+    BodyPendingFailureTerms& destination,
     BuiltExpression& expression
 ) noexcept -> void {
-    append_pending(destination, take_pending(expression));
+    append_pending_failures(destination, take_pending_failures(expression));
 }
 
 auto BodyElaborator::consume_pending(BuiltExpression& expression, Span span) noexcept
     -> AnalysisResult<void> {
     if (!expression.pending_failures.empty()) {
         draft().require_empty_failures(
-            draft().add_union_failure_term(take_pending(expression)),
+            draft().add_union_failure_term(take_pending_failures(expression)),
             origin(span),
             EmptyFailureRequirementKind::OrdinaryConsumption
         );
@@ -57,8 +56,6 @@ auto BodyElaborator::propagate_pending(BuiltExpression& expression, Span span) n
             "postfix '?' requires a fallible expression"
         ));
     }
-    route_pending(take_pending(expression), failure_context_for_current_path(), span);
+    route_pending(take_pending_failures(expression), failure_context_for_current_path(), span);
     return {};
 }
-
-} // namespace body_elaboration

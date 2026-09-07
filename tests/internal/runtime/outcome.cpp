@@ -172,25 +172,30 @@ TEST_CASE("Runtime Outcome: admission requires only the performed construction")
         int* copies;
         int* moves;
         int value;
+
         Observed(int& copy_count, int& move_count, int source) noexcept
             : copies(&copy_count),
               moves(&move_count),
               value(source) {}
+
         Observed(const Observed& source)
             : copies(source.copies),
               moves(source.moves),
               value(source.value) {
             ++*copies;
         }
+
         Observed(Observed&& source)
             : copies(source.copies),
               moves(source.moves),
               value(source.value) {
             ++*moves;
         }
+
         auto operator=(const Observed&) -> Observed& = delete;
         auto operator=(Observed&&) -> Observed& = delete;
     };
+
     auto copies = 0;
     auto moves = 0;
     const auto source = Observed(copies, moves, 42);

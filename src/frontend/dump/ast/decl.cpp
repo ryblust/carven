@@ -134,27 +134,44 @@ auto ASTDumper::render_cpp_header_import(
     const auto nested_prefix = child_prefix(prefix, is_last);
     append_line(
         nested_prefix,
-        header.bindings.empty(),
+        !header.using_clause.has_value(),
         header.delimiter == ASTCppHeaderDelimiter::AngleBrackets ? "cpp_header Angle"
                                                                  : "cpp_header Quote"
     );
     render_span_field(
-        child_prefix(nested_prefix, header.bindings.empty()),
+        child_prefix(nested_prefix, !header.using_clause.has_value()),
         true,
         "name",
         header.name_span
     );
-    for (const auto [index, binding] : std::views::enumerate(header.bindings)) {
-        const auto last = index + 1uz == header.bindings.size();
-        append_line(nested_prefix, last, binding.opens_namespace ? "using namespace" : "using");
-        for (const auto [component_index, component] : std::views::enumerate(binding.components)) {
-            render_span_field(
-                child_prefix(nested_prefix, last),
-                component_index + 1uz == binding.components.size(),
-                "component",
-                component
-            );
+    if (header.using_clause) {
+        const auto& clause = *header.using_clause;
+        append_line(nested_prefix, true, "using");
+        const auto using_prefix = child_prefix(nested_prefix, true);
+        for (const auto component : clause.prefix) {
+            render_span_field(using_prefix, false, "prefix", component);
         }
+        std::visit(
+            Overloaded {
+                [&](const ASTCppSingleSelection& value) noexcept {
+                    render_span_field(using_prefix, true, "name", value.name);
+                },
+                [&](const ASTCppListSelection& value) noexcept {
+                    for (const auto [index, name] : std::views::enumerate(value.names)) {
+                        render_span_field(
+                            using_prefix,
+                            index + 1uz == value.names.size(),
+                            "name",
+                            name
+                        );
+                    }
+                },
+                [&](const ASTCppNamespaceSelection& value) noexcept {
+                    render_span_field(using_prefix, true, "namespace", value.star);
+                },
+            },
+            clause.selection
+        );
     }
 }
 

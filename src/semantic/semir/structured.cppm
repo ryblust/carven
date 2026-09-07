@@ -11,11 +11,15 @@ class BodyType final {
 public:
     explicit BodyType(ConstructionTypeRef value) noexcept
         : value(value) {}
+
     explicit BodyType(TypeID value) noexcept
         : value(value) {}
+
     explicit BodyType(TypeTermID value) noexcept
         : value(value) {}
+
     auto construction() const noexcept -> const ConstructionTypeRef& { return value; }
+
     auto resolved() const noexcept -> TypeID {
         if (const auto* type = std::get_if<TypeID>(&value)) {
             return *type;
@@ -26,18 +30,22 @@ public:
 private:
     ConstructionTypeRef value;
 };
+
 class BodyFailures final {
 public:
     explicit BodyFailures(FailureTermID value) noexcept
         : value(value) {}
+
     explicit BodyFailures(FailureSetID value) noexcept
         : value(value) {}
+
     auto term() const noexcept -> FailureTermID {
         if (const auto* term = std::get_if<FailureTermID>(&value)) {
             return *term;
         }
         invariant_violation("resolved body failures have no construction term");
     }
+
     auto resolved() const noexcept -> FailureSetID {
         if (const auto* failures = std::get_if<FailureSetID>(&value)) {
             return *failures;
@@ -66,12 +74,15 @@ using OwnedSemanticRegion = UniqueIndirect<SemanticRegion>;
 struct SemConstant final {
     ConstantID constant;
 };
+
 struct SemBinding final {
     LocalBindingID binding;
 };
+
 struct SemCallable final {
     CallableID callable;
 };
+
 struct SemEnumConstructor final {
     EnumCaseID enum_case;
 };
@@ -79,6 +90,7 @@ struct SemEnumConstructor final {
 struct SemArray final {
     std::vector<SemanticExpression> elements;
 };
+
 struct SemArrayAdopt final {
     OwnedSemanticExpression source;
 };
@@ -87,38 +99,46 @@ struct SemStruct final {
     StructID structure;
     std::vector<SemFieldInitializer> fields;
 };
+
 struct SemEnumCase final {
     EnumCaseID enum_case;
     std::vector<SemanticExpression> payload;
 };
+
 struct SemUnary final {
     UnaryOperator operation;
     OwnedSemanticExpression operand;
 };
+
 struct SemBinary final {
     OwnedSemanticExpression left;
     BinaryOperator operation;
     OwnedSemanticExpression right;
 };
 enum class ShortCircuitOperator { And, Or };
+
 struct SemShortCircuit final {
     OwnedSemanticExpression left;
     ShortCircuitOperator operation;
     OwnedSemanticExpression right;
 };
+
 struct SemCast final {
     OwnedSemanticExpression operand;
     CastKind kind;
 };
+
 struct SemField final {
     OwnedSemanticExpression source;
     FieldProjection field;
 };
+
 struct SemIndex final {
     OwnedSemanticExpression source;
     OwnedSemanticExpression index;
     ArrayBoundsPolicy bounds;
 };
+
 struct SemTextIntrinsic final {
     OwnedSemanticExpression source;
     TextIntrinsic intrinsic;
@@ -133,6 +153,7 @@ struct SemCppOperand final {
     AccessMode access;
     OwnedSemanticExpression expression;
 };
+
 struct SemCppCall final {
     CppCallee<SemCppOperand> callee;
     std::vector<SemCallArgument> arguments;
@@ -148,16 +169,18 @@ struct SemClosure final {
     CallableID callable;
     std::vector<SemCapture> captures;
 };
+
 struct SemBorrowCallable final {
     OwnedSemanticExpression source;
 };
+
 struct SemTake final {
     OwnedSemanticExpression place;
 };
+
 struct SemPropagate final {
     OwnedSemanticExpression operand;
 };
-
 
 struct SemIf final {
     std::vector<SemConditionalBranch> branches;
@@ -170,10 +193,12 @@ struct SemMatch final {
     bool subject_is_place;
     std::vector<SemMatchArm> arms;
 };
+
 struct SemTypedCatchPattern final {
     BodyType type;
     PatternID inner;
 };
+
 struct SemCatchAlternative final {
     ProgramOriginID origin;
     std::variant<CatchAllPattern, SemTypedCatchPattern> pattern;
@@ -188,6 +213,7 @@ struct SemTry final {
 };
 
 enum class SemanticValueCategory { Value, Place };
+
 struct SemanticExpression final {
     BodyType type;
     LifetimeRegionID lifetime;
@@ -275,31 +301,40 @@ struct SemCatchArm final {
 struct SemReturn final {
     std::optional<SemanticExpression> value;
 };
+
 struct SemBreak final {};
+
 struct SemContinue final {};
+
 struct SemRethrow final {};
+
 struct SemThrow final {
     SemanticExpression value;
     TypeID failure_type;
 };
+
 struct SemExpressionStatement final {
     SemanticExpression expression;
 };
+
 struct SemInitialize final {
     LocalBindingID binding;
     SemanticExpression initializer;
 };
+
 struct SemAssign final {
     SemanticExpression target;
     std::optional<BinaryOperator> compound;
     SemanticExpression value;
 };
+
 struct SemLoop final {
     OwnedSemanticRegion initializer;
     std::optional<SemanticExpression> condition;
     OwnedSemanticRegion body;
     OwnedSemanticRegion steps;
 };
+
 struct SemRangeLoop final {
     LifetimeRegionID lifetime;
     AccessMode access;
@@ -309,12 +344,14 @@ struct SemRangeLoop final {
     std::optional<SemanticExpression> end;
     OwnedSemanticRegion body;
 };
+
 struct SemTestReport final {
     TestReportKind kind;
     std::optional<SemanticExpression> condition;
     std::optional<SemanticExpression> message;
     std::optional<ProgramSpellingID> condition_source;
 };
+
 struct SemanticStatement final {
     ProgramOriginID origin;
     LifetimeRegionID lifetime;
@@ -334,13 +371,13 @@ struct SemanticStatement final {
         value;
 };
 
-
 template<typename Visitor>
 auto visit_cpp_operands(const SemCpp& operation, Visitor visit) noexcept -> void {
     for (const auto& operand : operation.operands) {
         visit(operand.access, operand.expression);
     }
 }
+
 template<typename Visitor>
 auto visit_cpp_operands(const SemCppCall& call, Visitor visit) noexcept -> void {
     visit_cpp_callee_operand(call.callee, [&](const SemCppOperand& operand) noexcept {
@@ -386,7 +423,6 @@ auto cpp_call_query(const SemCppCall& call, TypeReader type) noexcept -> CppQuer
     };
 }
 
-
 using SemanticExpressionValue = decltype(SemanticExpression::value);
 
 struct SemIRBodyData final {
@@ -403,25 +439,37 @@ struct SemIRBodyData final {
 class SemIRBody final {
 public:
     explicit SemIRBody(SemIRBodyData data) noexcept;
+
     auto id() const noexcept -> BodyID { return data.id; }
+
     auto kind() const noexcept -> BodyKind { return data.kind; }
+
     auto identity() const noexcept -> BodyIdentity { return data.lifetime_regions.owner(); }
+
     auto provenance_identity() const noexcept -> ProvenanceIdentity {
         return data.provenance_identity;
     }
+
     auto inputs() const noexcept -> const BodyInputs& { return data.inputs; }
+
     auto lifetime_regions() const noexcept -> const LifetimeRegionTree& {
         return data.lifetime_regions;
     }
+
     auto bindings() const noexcept { return data.bindings.entries(); }
+
     auto patterns() const noexcept { return data.patterns.entries(); }
+
     auto pattern_table() const noexcept -> const ImmutableBodyTable<Pattern, PatternID>& {
         return data.patterns;
     }
+
     auto binding(LocalBindingID id) const noexcept -> const LocalBinding& {
         return data.bindings.get(id);
     }
+
     auto pattern(PatternID id) const noexcept -> const Pattern& { return data.patterns.get(id); }
+
     auto region() const noexcept -> const SemanticRegion& { return data.region; }
 
 private:

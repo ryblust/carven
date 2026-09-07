@@ -13,16 +13,15 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace body_lowering {
 auto BodyLowerer::emit_return(
     std::optional<TargetExpr> value,
-    StatementBuilder& destination,
-    ResultDestination result
+    LoweringStmtBuilder& destination,
+    LoweringResultDestination result
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
     }
-    if (std::holds_alternative<ReturnResult>(result)) {
+    if (std::holds_alternative<LoweringReturnResult>(result)) {
         if (const auto* callable = std::get_if<TargetCallableBodyExit>(&inputs.exit)) {
             const auto& signature =
                 context.semantic().callable_signatures().signature(callable->signature);
@@ -43,12 +42,14 @@ auto BodyLowerer::emit_return(
     }
     destination.terminate(
         generated_statement(TargetReturnStmt {.expression = std::move(value)}),
-        std::holds_alternative<YieldResult>(result) ? std::get<YieldResult>(result).target
-                                                    : ExitTarget {ExitKind::FunctionReturn, 0}
+        std::holds_alternative<LoweringYieldResult>(result)
+            ? std::get<LoweringYieldResult>(result).target
+            : LoweringExitTarget {LoweringExitKind::FunctionReturn, 0}
     );
 }
 
-auto BodyLowerer::emit_failure(TargetExpr value, StatementBuilder& destination) noexcept -> void {
+auto BodyLowerer::emit_failure(TargetExpr value, LoweringStmtBuilder& destination) noexcept
+    -> void {
     if (!destination.continues()) {
         return;
     }
@@ -85,19 +86,19 @@ auto BodyLowerer::emit_failure(TargetExpr value, StatementBuilder& destination) 
                 )
             }
         ),
-        ExitTarget {ExitKind::Failure, 0}
+        LoweringExitTarget {LoweringExitKind::Failure, 0}
     );
 }
 
 auto BodyLowerer::transfer_failure(
     const TargetIdentifier& storage,
     FailureSetID failures,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
     }
-    auto transfers = StatementBuilder();
+    auto transfers = LoweringStmtBuilder();
     for (const auto type : context.plan().failure_abi().members(failures)) {
         const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
         transfers.emit(generated_statement(
@@ -115,7 +116,7 @@ auto BodyLowerer::transfer_failure(
                 )
             }
         ));
-        auto transfer = StatementBuilder();
+        auto transfer = LoweringStmtBuilder();
         emit_failure(
             transfer_expression(dereference_expression(name_expression(projection))),
             transfer
@@ -131,35 +132,35 @@ auto BodyLowerer::transfer_failure(
     }
     transfers.terminate(
         generated_statement(TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}),
-        ExitTarget {ExitKind::Unreachable, 0}
+        LoweringExitTarget {LoweringExitKind::Unreachable, 0}
     );
     destination.scope(std::move(transfers));
 }
 
 auto BodyLowerer::deliver_result(
-    Evaluated value,
-    const ResultDestination& result,
-    StatementBuilder& destination
+    LoweringValue value,
+    const LoweringResultDestination& result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (returns_result(result)) {
         emit_return(
-            std::holds_alternative<VoidResult>(value)
+            std::holds_alternative<LoweringVoidResult>(value)
                 ? std::nullopt
                 : std::optional(value_expression(std::move(value))),
             destination,
             result
         );
-    } else if (const auto* initialize = std::get_if<InitializeResult>(&result)) {
+    } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
         initialize_deferred(initialize->storage, value_expression(std::move(value)), destination);
-    } else if (const auto* consumer = std::get_if<ConsumeResult>(&result)) {
+    } else if (const auto* consumer = std::get_if<LoweringConsumeResult>(&result)) {
         consumer->consume(std::move(value), destination);
     }
 }
 
 auto BodyLowerer::result_expression(
     const SemanticExpression& source,
-    ResultDestination result,
-    StatementBuilder& destination
+    LoweringResultDestination result,
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
@@ -170,14 +171,14 @@ auto BodyLowerer::result_expression(
         structured_expression(source, result, destination);
         return;
     }
-    if (std::holds_alternative<DiscardResult>(result)) {
+    if (std::holds_alternative<LoweringDiscardResult>(result)) {
         static_cast<void>(destination.accept(retain_evaluation(source)));
         return;
     }
-    auto literal = LiteralContext::Exact;
+    auto literal = LoweringLiteralContext::Exact;
     if (returns_result(result)) {
         if (const auto* callable = std::get_if<TargetCallableBodyExit>(&inputs.exit);
-            std::holds_alternative<YieldResult>(result)
+            std::holds_alternative<LoweringYieldResult>(result)
             || (callable != nullptr
                 && context.plan()
                        .failure_abi()
@@ -186,27 +187,27 @@ auto BodyLowerer::result_expression(
                                     .signature(callable->signature)
                                     .failures)
                        .empty())) {
-            literal = LiteralContext::TargetTyped;
+            literal = LoweringLiteralContext::TargetTyped;
         }
     }
     consume_expression(
         source,
         literal,
         ResultDemand::Value,
-        [&](Evaluated value, StatementBuilder& branch) noexcept {
+        [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
             deliver_result(std::move(value), result, branch);
         },
         destination
     );
 }
 
-auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered<Unit> {
-    auto destination = StatementBuilder();
+auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered<LoweringUnit> {
+    auto destination = LoweringStmtBuilder();
     std::visit(
         Overloaded {
             [&](const SemReturn& value) noexcept {
                 if (value.value.has_value()) {
-                    result_expression(*value.value, ReturnResult {}, destination);
+                    result_expression(*value.value, LoweringReturnResult {}, destination);
                 } else {
                     emit_return(std::nullopt, destination);
                 }
@@ -254,8 +255,8 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                 }
             },
             [&](const SemExpressionStatement& value) noexcept {
-                auto statements = StatementBuilder();
-                result_expression(value.expression, DiscardResult {}, statements);
+                auto statements = LoweringStmtBuilder();
+                result_expression(value.expression, LoweringDiscardResult {}, statements);
                 destination.scope(
                     std::move(statements),
                     TargetSourceExpansionAttribution {
@@ -271,15 +272,15 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                         context.semantic(),
                         value.initializer
                     )) {
-                    const auto storage = DeferredStorage {
+                    const auto storage = LoweringDeferredStorage {
                         .name = binding_names.at(value.binding),
                         .value_type = context.lower_type(body.binding(value.binding).type)
                     };
                     delayed_bindings.emplace(value.binding, storage);
-                    auto initialization = StatementBuilder();
+                    auto initialization = LoweringStmtBuilder();
                     result_expression(
                         value.initializer,
-                        InitializeResult {.storage = storage},
+                        LoweringInitializeResult {.storage = storage},
                         initialization
                     );
                     if (initialization.continues()) {
@@ -288,9 +289,9 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                     destination.scope(std::move(initialization));
                     return;
                 }
-                auto initializer_statements = StatementBuilder();
+                auto initializer_statements = LoweringStmtBuilder();
                 auto initializer = read_value(
-                    full_expression(value.initializer, LiteralContext::TargetTyped),
+                    full_expression(value.initializer, LoweringLiteralContext::TargetTyped),
                     initializer_statements
                 );
                 if (!initializer_statements.continues()) {
@@ -303,7 +304,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                     const auto id = value.binding;
                     delayed_bindings.emplace(
                         id,
-                        DeferredStorage {
+                        LoweringDeferredStorage {
                             .name = binding_names.at(id),
                             .value_type = context.lower_type(body.binding(id).type)
                         }
@@ -326,7 +327,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                 declare_binding(value.binding, std::move(*initializer), destination);
             },
             [&](const SemAssign& value) noexcept {
-                auto statements = StatementBuilder();
+                auto statements = LoweringStmtBuilder();
                 const auto* binding = std::get_if<SemBinding>(&value.target.value);
                 auto target = read_value(expression(value.target), statements);
                 auto stable_target = std::optional<TargetIdentifier>();
@@ -411,9 +412,9 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                 }
                 consume_expression(
                     value.value,
-                    LiteralContext::Exact,
+                    LoweringLiteralContext::Exact,
                     ResultDemand::Value,
-                    [&](Evaluated result, StatementBuilder& branch) noexcept {
+                    [&](LoweringValue result, LoweringStmtBuilder& branch) noexcept {
                         auto assigned = value_expression(std::move(result));
                         if (value.compound.has_value() && !external) {
                             assigned = binary(
@@ -447,7 +448,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                 if (!destination.continues()) {
                     return;
                 }
-                auto report = StatementBuilder();
+                auto report = LoweringStmtBuilder();
                 lower_report(value, source.origin, report);
                 destination.scope(
                     std::move(report),
@@ -459,7 +460,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
             },
             [&](const OwnedSemanticRegion& value) noexcept {
                 destination.scope(
-                    region(*value, DiscardResult {}),
+                    region(*value, LoweringDiscardResult {}),
                     TargetSourceExpansionAttribution {
                         .origin =
                             target_source_origin(context.semantic().provenance(), source.origin)
@@ -475,13 +476,15 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
         }
     );
     return std::move(destination)
-        .complete<Unit>(destination.continues() ? std::optional(Unit {}) : std::nullopt);
+        .complete<LoweringUnit>(
+            destination.continues() ? std::optional(LoweringUnit {}) : std::nullopt
+        );
 }
 
 auto BodyLowerer::lower_report(
     const SemTestReport& value,
     ProgramOriginID origin,
-    StatementBuilder& destination
+    LoweringStmtBuilder& destination
 ) noexcept -> void {
     uses_test_context = true;
     auto should_report = bool_expression(true);
@@ -492,14 +495,14 @@ auto BodyLowerer::lower_report(
         }
         should_report = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(*condition));
     }
-    auto report = StatementBuilder();
+    auto report = LoweringStmtBuilder();
     const auto source = target_source_origin(context.semantic().provenance(), origin);
     auto arguments = std::vector<TargetExpr>();
     arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
     arguments.push_back(integer_expression(source.line));
-    const auto* const operation = value.kind == TestReportKind::Check ? "check"
-        : value.kind == TestReportKind::Require                       ? "require"
-                                                                      : "fail";
+    const auto* operation = value.kind == TestReportKind::Check ? "check"
+        : value.kind == TestReportKind::Require                 ? "require"
+                                                                : "fail";
     arguments.push_back(string_expression(operation, TargetStringLiteralKind::String));
     arguments.push_back(
         value.condition_source.has_value()
@@ -529,7 +532,7 @@ auto BodyLowerer::lower_report(
     if (value.kind != TestReportKind::Check) {
         report.terminate(
             generated_statement(TargetReturnStmt {.expression = std::nullopt}),
-            ExitTarget {ExitKind::Test, 0}
+            LoweringExitTarget {LoweringExitKind::Test, 0}
         );
     }
     if (!value.condition) {
@@ -545,5 +548,3 @@ auto BodyLowerer::lower_report(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
 }
-
-} // namespace body_lowering

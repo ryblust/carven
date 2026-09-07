@@ -52,11 +52,10 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
-                if (value.binding == TargetVariableBinding::ConstValue
-                    || value.binding == TargetVariableBinding::ConstReference) {
-                    prefix += "const ";
-                }
+                const auto prefix =
+                    value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
+                const auto constant = value.binding == TargetVariableBinding::ConstValue
+                    || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string {};
                 if (value.binding == TargetVariableBinding::ConstReference
                     || value.binding == TargetVariableBinding::MutableReference) {
@@ -66,7 +65,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 }
                 const auto left = concat(
                     {text(prefix),
-                     render_type(value.type),
+                     render_type(value.type, constant),
                      text(suffix),
                      text(" "),
                      render_identifier(value.name)}
@@ -155,8 +154,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 return concat(
                     {text("for ("),
                      text(value.maybe_unused ? "[[maybe_unused]] " : ""),
-                     text(value.binding == TargetVariableBinding::ConstValue ? "const " : ""),
-                     render_type(value.type),
+                     render_type(value.type, value.binding == TargetVariableBinding::ConstValue),
                      text(value.binding == TargetVariableBinding::MutableReference ? "& " : " "),
                      text(value.name.spelling()),
                      text(" : "),
@@ -228,11 +226,10 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
-                if (value.binding == TargetVariableBinding::ConstValue
-                    || value.binding == TargetVariableBinding::ConstReference) {
-                    prefix += "const ";
-                }
+                const auto prefix =
+                    value.maybe_unused ? std::string("[[maybe_unused]] ") : std::string();
+                const auto constant = value.binding == TargetVariableBinding::ConstValue
+                    || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string();
                 if (value.binding == TargetVariableBinding::ConstReference
                     || value.binding == TargetVariableBinding::MutableReference) {
@@ -242,7 +239,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 }
                 return concat(
                     {text(prefix),
-                     render_type(value.type),
+                     render_type(value.type, constant),
                      text(suffix),
                      text(" "),
                      render_identifier(value.name),
