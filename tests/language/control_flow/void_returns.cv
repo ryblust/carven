@@ -1,0 +1,91 @@
+struct Stop {}
+
+fn record(&count: i32, value: i32) {
+    count += value;
+}
+
+fn argument(&count: i32) -> i32 {
+    count += 1; return 2;
+}
+
+fn implicit(&count: i32) {
+    let value = argument(&count);
+    return record(&count, value);
+}
+
+fn explicit(&count: i32) -> void {
+    return implicit(&count);
+}
+
+fn invoke(callback: fn() -> void) {
+    return callback();
+}
+
+fn fallible(&count: i32, stop: bool) throw Stop {
+    count += 1;
+    if stop { throw Stop {}; }
+    return record(&count, 10);
+}
+
+fn forward(&count: i32, stop: bool) throw Stop {
+    return fallible(&count, stop)?;
+}
+
+fn terminal(&count: i32) throw Stop {
+    return fallible(
+        &count,
+        if true { throw Stop {}; } else { throw Stop {}; }
+    )?;
+}
+
+test "Functions: void returns forward evaluation and lambda results" {
+    var count = 0;
+    explicit(&count);
+    check(count == 3);
+    let inferred = [&count]() { return record(&count, 4); };
+    inferred();
+    invoke([&count]() { return record(&count, 5); });
+    let annotated = [&count]() -> void { return record(&count, 6); };
+    annotated();
+    check(count == 18);
+}
+
+test "Functions: void forwarding preserves explicit failure and termination" {
+    var count = 0;
+    var caught = 0;
+    try { forward(&count, false)?; } catch { Stop(_) => { caught += 1; } }
+    check(count == 11);
+    check(caught == 0);
+    try { forward(&count, true)?; } catch { Stop(_) => { caught += 1; } }
+    check(count == 12);
+    check(caught == 1);
+    try { terminal(&count)?; } catch { Stop(_) => { caught += 1; } }
+    check(count == 12);
+    check(caught == 2);
+}
+
+fn verify_void_result() {}
+
+test "Functions: test bodies accept a void return operand" {
+    return verify_void_result();
+}
+
+fn empty_paths(&count: i32, flag: bool) {
+    if flag {} else {}
+    count += 1;
+    if flag { record(&count, 2); }
+    count += 4;
+    match flag { true => {}, false => {}, }
+    count += 8;
+    try { fallible(&count, flag)?; } catch { Stop(_) => {} }
+    count += 16;
+}
+
+test "Control flow: empty normal paths continue once" {
+    var count = 0;
+    empty_paths(&count, false);
+    check(count == 40);
+    count = 0;
+    empty_paths(&count, true);
+    check(count == 32);
+}

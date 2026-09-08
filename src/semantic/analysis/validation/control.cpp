@@ -13,8 +13,11 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noe
         const auto is_void = !result.has_value()
             || require_type(*result).value
                 == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}};
-        if ((value.has_value() && (!result.has_value() || value->type.resolved() != *result))
-            || (!value.has_value() && !is_void)) {
+        const auto operand_matches = !value.has_value()
+            || (result.has_value() ? value->type.resolved() == *result
+                                   : require_type(value->type.resolved()).value
+                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}});
+        if (!operand_matches || (!value.has_value() && !is_void)) {
             invariant_violation("return differs from callable contract");
         }
     };

@@ -93,7 +93,7 @@ auto BodyLowerer::construct_operation(
     const SemanticExpression& source,
     std::vector<TargetExpr> operands,
     ResultDemand demand
-) noexcept -> Lowered<LoweringValue> {
+) noexcept -> Lowered<LoweringResult> {
     auto destination = LoweringStmtBuilder();
     auto owned_result = false;
     auto result = std::visit(
@@ -438,29 +438,15 @@ auto BodyLowerer::construct_operation(
         source.value
     );
     if (!destination.continues()) {
-        return std::move(destination).complete<LoweringValue>(std::nullopt);
-    }
-    if (context.is_void(source.type.resolved())) {
-        if (result) {
-            destination.emit(statement_expression(std::move(*result)));
-        }
-        return std::move(destination).complete<LoweringValue>(LoweringVoidResult {});
-    }
-    if (demand == ResultDemand::Discard) {
-        if (result) {
-            destination.emit(
-                generated_statement(TargetDiscardStmt {.expression = std::move(*result)})
-            );
-        }
-        return std::move(destination).complete<LoweringValue>(LoweringVoidResult {});
+        return std::move(destination).complete<LoweringResult>(std::nullopt);
     }
     if (!result) {
-        invariant_violation("normal value evaluation produced no value");
+        return std::move(destination).complete<LoweringResult>(LoweringCompleted {});
     }
     auto value = owned_result
         ? (std::holds_alternative<SemTake>(source.value)
-               ? LoweringValue(LoweringOwnedValue {.storage = std::move(*result)})
-               : LoweringValue(LoweringTemporaryValue {.storage = std::move(*result)}))
-        : LoweringValue(LoweringDirectValue {.expression = std::move(*result)});
-    return std::move(destination).complete<LoweringValue>(std::move(value));
+               ? LoweringResult(LoweringOwnedValue {.storage = std::move(*result)})
+               : LoweringResult(LoweringTemporaryValue {.storage = std::move(*result)}))
+        : LoweringResult(LoweringDirectExpression {.expression = std::move(*result)});
+    return std::move(destination).complete<LoweringResult>(std::move(value));
 }

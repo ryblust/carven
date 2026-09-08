@@ -80,7 +80,7 @@ auto LoweringStmtBuilder::resume(
     if (!consume_exit(target)) {
         invariant_violation("continuation does not own a pending exit");
     }
-    lowered.normal = LoweringUnit {};
+    lowered.normal = LoweringCompleted {};
     emit(
         TargetStmt {
             .value = TargetLabelStmt {.label = std::move(label), .role = role},

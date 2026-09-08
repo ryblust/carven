@@ -1,6 +1,7 @@
 module carven:backend.lowering.body.lowerer.impl;
 
 import :backend.generation.names;
+import :backend.lowering.body.decl;
 import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
 import :backend.target.stmt;
@@ -71,13 +72,12 @@ auto BodyLowerer::finish() noexcept -> LoweredBody {
             invariant_violation("body contains an unreceived control exit");
         }
     }
-    auto used_parameters = std::vector<bool>();
-    for (const auto binding : parameter_bindings) {
-        used_parameters.push_back(used_bindings.contains(binding));
-    }
+    auto completed = std::move(statements).finish();
+    auto referenced_parameters =
+        finish_body_declarations(completed, inputs.parameters, inputs.captures);
     return {
-        .statements = std::move(statements).finish(),
-        .used_parameters = std::move(used_parameters),
+        .statements = std::move(completed),
+        .referenced_parameters = std::move(referenced_parameters),
         .uses_test_context = uses_test_context
     };
 }
@@ -98,11 +98,11 @@ auto BodyLowerer::region(const SemanticRegion& source, LoweringResultDestination
                     initialization->initializer,
                     LoweringConsumeResult {
                         .consume =
-                            [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
+                            [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
                                 auto binding = LoweringStmtBuilder();
                                 declare_binding(
                                     initialization->binding,
-                                    value_expression(std::move(value)),
+                                    require_expression(std::move(value)),
                                     binding
                                 );
                                 binding.attribute(
@@ -123,8 +123,12 @@ auto BodyLowerer::region(const SemanticRegion& source, LoweringResultDestination
             }
             static_cast<void>(destination.accept(statement(item)));
         }
-        if (source.result.has_value() && destination.continues()) {
-            result_expression(*source.result, result, destination);
+        if (destination.continues()) {
+            if (source.result.has_value()) {
+                result_expression(*source.result, result, destination);
+            } else {
+                deliver_result(LoweringCompleted {}, result, destination);
+            }
         }
     };
     append_from(0uz, statements);

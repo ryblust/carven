@@ -105,11 +105,11 @@ auto lower_closure_definition(ModuleLowering& context, CallableID callable_id) n
         });
     }
     auto lowered = lower_body(context, implementation->body, std::move(inputs));
-    if (lowered.used_parameters.size() != parameters.size()) {
-        invariant_violation("lowered closure parameter use facts are incomplete");
+    if (lowered.referenced_parameters.size() != parameters.size()) {
+        invariant_violation("lowered closure parameter reference facts are incomplete");
     }
     for (auto index = 0uz; index < parameters.size(); ++index) {
-        if (!lowered.used_parameters[index]) {
+        if (!lowered.referenced_parameters[index]) {
             parameters[index].name.reset();
         }
     }

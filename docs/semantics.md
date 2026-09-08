@@ -484,10 +484,13 @@ right. A concrete closure selects its object identity; a callable view selects
 its target description. Invocation reads that target's current captures after
 argument evaluation. An explicit closure copy requests a capture-value snapshot.
 
-A `return` without a value is valid only for `void`; a value return is required
-for every other ordinary result type and must be compatible with it. Every
-reachable path of a non-`void` function or lambda must return a
-value. Violation is identified by `CV-FLOW-MISSING-RETURN`; the explanatory
+A bare `return;` is valid only for `void`. A return operand must have a successful
+result compatible with the callable result, including `void`: `return action();`
+evaluates a void expression and returns on normal completion. Return operands
+follow ordinary failure-consumption rules; explicit propagation uses
+`return action()?;`. A value return is required for every other ordinary result
+type. Every reachable path of a non-`void` function or lambda must return a value.
+Violation is identified by `CV-FLOW-MISSING-RETURN`; the explanatory
 message is not part of the language contract.
 
 Function declarations may refer to later declarations because signatures are
@@ -551,9 +554,8 @@ A lambda parameter may omit its type only when an expected callable view
 supplies the parameter type at that position. Without such an expected view,
 every parameter requires an explicit type. An explicit lambda result type fixes
 the result. Otherwise an expected callable view supplies it; with no expected
-view, the result is inferred from the lambda's reachable value returns. The
-inferred or expected signature is checked against the body before the closure
-type is completed.
+view, return operands determine the result, including `void`. The inferred or
+expected signature is checked against the body before the closure type is completed.
 
 Source `fn(...) -> R throw E + F` denotes a non-owning callable view. Parameter
 access, parameter types, and success result match exactly. A source callable

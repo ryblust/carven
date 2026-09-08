@@ -28,7 +28,11 @@ auto BodyLowerer::emit_return(
             if (!context.plan().failure_abi().members(signature.failures).empty()) {
                 auto arguments = std::vector<TargetExpr>();
                 if (value.has_value()) {
-                    arguments.push_back(std::move(*value));
+                    if (context.is_void(signature.result)) {
+                        destination.emit(statement_expression(std::move(*value)));
+                    } else {
+                        arguments.push_back(std::move(*value));
+                    }
                 }
                 value = call_expression(
                     static_member_expression(
@@ -138,22 +142,21 @@ auto BodyLowerer::transfer_failure(
 }
 
 auto BodyLowerer::deliver_result(
-    LoweringValue value,
+    LoweringResult value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (returns_result(result)) {
-        emit_return(
-            std::holds_alternative<LoweringVoidResult>(value)
-                ? std::nullopt
-                : std::optional(value_expression(std::move(value))),
-            destination,
-            result
-        );
+        emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
-        initialize_deferred(initialize->storage, value_expression(std::move(value)), destination);
+        initialize_deferred(initialize->storage, require_expression(std::move(value)), destination);
     } else if (const auto* consumer = std::get_if<LoweringConsumeResult>(&result)) {
         consumer->consume(std::move(value), destination);
+    } else if (auto expression =
+                   remaining_expression(std::move(value), LoweringResultUse::Observe)) {
+        destination.emit(
+            generated_statement(TargetDiscardStmt {.expression = std::move(*expression)})
+        );
     }
 }
 
@@ -194,14 +197,15 @@ auto BodyLowerer::result_expression(
         source,
         literal,
         ResultDemand::Value,
-        [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
+        [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
             deliver_result(std::move(value), result, branch);
         },
         destination
     );
 }
 
-auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered<LoweringUnit> {
+auto BodyLowerer::statement(const SemanticStatement& source) noexcept
+    -> Lowered<LoweringCompleted> {
     auto destination = LoweringStmtBuilder();
     std::visit(
         Overloaded {
@@ -414,8 +418,8 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
                     value.value,
                     LoweringLiteralContext::Exact,
                     ResultDemand::Value,
-                    [&](LoweringValue result, LoweringStmtBuilder& branch) noexcept {
-                        auto assigned = value_expression(std::move(result));
+                    [&](LoweringResult result, LoweringStmtBuilder& branch) noexcept {
+                        auto assigned = require_expression(std::move(result));
                         if (value.compound.has_value() && !external) {
                             assigned = binary(
                                 previous ? name_expression(*previous) : target_again(),
@@ -476,8 +480,8 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept -> Lowered
         }
     );
     return std::move(destination)
-        .complete<LoweringUnit>(
-            destination.continues() ? std::optional(LoweringUnit {}) : std::nullopt
+        .complete<LoweringCompleted>(
+            destination.continues() ? std::optional(LoweringCompleted {}) : std::nullopt
         );
 }
 

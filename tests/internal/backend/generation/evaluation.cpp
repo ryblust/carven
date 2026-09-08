@@ -91,7 +91,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
     struct Query final {
         std::size_t calls = 0;
 
-        auto enter_expression(const TargetExpr& expression) noexcept -> bool {
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetStaticCastExpr>(expression.value));
             CHECK_FALSE(std::holds_alternative<TargetBinaryExpr>(expression.value));
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
@@ -142,7 +142,7 @@ TEST_CASE("Generation: native branches and calls need no enclosing artificial bl
             return true;
         }
 
-        auto enter_expression(const TargetExpr& expression) noexcept -> bool {
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
             calls += std::holds_alternative<TargetCallExpr>(expression.value);
             return true;
@@ -190,7 +190,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             return name != nullptr && name->spelling() == "success_if";
         }
 
-        auto enter_expression(const TargetExpr& expression) noexcept -> bool {
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             success_checks += is_success(expression);
             if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
                 const auto* name = std::get_if<TargetIdentifier>(&member->name);
@@ -242,7 +242,8 @@ TEST_CASE("Generation: consumers use native branches and direct delivery") {
     );
 
     struct Query final {
-        auto enter_expression(const TargetExpr& expression) const noexcept -> bool {
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) const noexcept
+            -> bool {
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
             CHECK_FALSE(std::holds_alternative<TargetPlacementNewExpr>(expression.value));
             return true;
@@ -254,4 +255,42 @@ TEST_CASE("Generation: consumers use native branches and direct delivery") {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
     }
+}
+
+TEST_CASE("Generation: void calls remain return expressions") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn action() {}\n"
+            "fn forward() { return action(); }\n"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("void_expression_delivery")}
+    );
+
+    struct Query final {
+        std::size_t returned_calls = 0;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
+                returned != nullptr && returned->expression) {
+                returned_calls +=
+                    std::holds_alternative<TargetCallExpr>(returned->expression->value);
+            }
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) const noexcept
+            -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
+            CHECK_FALSE(std::holds_alternative<TargetPlacementNewExpr>(expression.value));
+            return true;
+        }
+    };
+
+    auto query = Query {};
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.returned_calls == 1uz);
 }

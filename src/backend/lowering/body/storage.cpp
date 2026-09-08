@@ -14,7 +14,6 @@ import :support.visit;
 import std;
 
 auto BodyLowerer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
-    used_bindings.insert(id);
     auto result = name_expression(binding_names.at(id));
     if (const auto* capture = std::get_if<CaptureBindingStorage>(&body.binding(id).storage);
         capture != nullptr && capture->mode == CaptureMode::Write) {
@@ -104,12 +103,13 @@ auto BodyLowerer::condition(const SemanticExpression& source) noexcept
                 source,
                 LoweringLiteralContext::Exact,
                 ResultDemand::Observe,
-                [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
+                [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
                     branch.emit(generated_statement(
                         TargetAssignmentStmt {
                             .target = name_expression(result),
                             .op = TargetAssignmentOperator::Assign,
-                            .value = value_expression(std::move(value), LoweringValueUse::Observe)
+                            .value =
+                                require_expression(std::move(value), LoweringResultUse::Observe)
                         }
                     ));
                 },
@@ -185,7 +185,7 @@ auto BodyLowerer::materialize_operand(
                 : use == OperandUse::ConstPlace ? TargetVariableBinding::ConstReference
                 : use == OperandUse::Snapshot   ? TargetVariableBinding::ConstValue
                                                 : TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
+            .maybe_unused = true,
             .name = name,
             .type = use == OperandUse::Read
                 ? context.lower_parameter(
@@ -213,8 +213,8 @@ auto BodyLowerer::operand(
                                                                      : ResultDemand::Value
         ),
         destination,
-        use == OperandUse::Own || use == OperandUse::Snapshot ? LoweringValueUse::Transfer
-                                                              : LoweringValueUse::Observe
+        use == OperandUse::Own || use == OperandUse::Snapshot ? LoweringResultUse::Transfer
+                                                              : LoweringResultUse::Observe
     );
     if (value) {
         value = materialize_operand(source, std::move(*value), use, destination);

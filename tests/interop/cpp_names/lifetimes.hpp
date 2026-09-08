@@ -46,6 +46,10 @@ struct Owner final {
     }
 };
 
+inline auto observe_owner(const Owner&, std::int32_t) noexcept -> void {
+    mark(9);
+}
+
 inline auto consume_owner(Owner&&, std::int32_t) noexcept -> void {
     mark(9);
 }

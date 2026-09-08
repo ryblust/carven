@@ -343,13 +343,13 @@ auto BodyLowerer::consume_operands(
             input.use == OperandUse::Read || input.use == OperandUse::ConstPlace
                 ? ResultDemand::Observe
                 : ResultDemand::Value,
-            [&](LoweringValue evaluated, LoweringStmtBuilder& branch) noexcept {
+            [&](LoweringResult evaluated, LoweringStmtBuilder& branch) noexcept {
                 const auto temporary = std::holds_alternative<LoweringTemporaryValue>(evaluated);
-                auto value = value_expression(
+                auto value = require_expression(
                     std::move(evaluated),
                     input.use == OperandUse::Own || input.use == OperandUse::Snapshot
-                        ? LoweringValueUse::Transfer
-                        : LoweringValueUse::Observe
+                        ? LoweringResultUse::Transfer
+                        : LoweringResultUse::Observe
                 );
                 if (stabilize && (!temporary || input.use == OperandUse::Own)) {
                     value =

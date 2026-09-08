@@ -28,17 +28,19 @@ auto unit_type(TargetUnitBuilder& target) noexcept -> TargetTypeID {
 }
 } // namespace
 
-TEST_CASE("Composition: normal void remains composable while termination stops successors") {
+TEST_CASE(
+    "Composition: completed evaluation remains composable while termination stops successors"
+) {
     auto sequence = LoweringStmtBuilder {};
     auto evaluated = LoweringStmtBuilder {};
     REQUIRE(
-        sequence.accept(std::move(evaluated).complete<LoweringVoidResult>(LoweringVoidResult {}))
+        sequence.accept(std::move(evaluated).complete<LoweringCompleted>(LoweringCompleted {}))
     );
     CHECK(sequence.continues());
     const auto exit = LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0};
     auto terminal = LoweringStmtBuilder {};
     terminal.terminate(return_statement(), exit);
-    CHECK_FALSE(sequence.accept(std::move(terminal).complete<LoweringUnit>(std::nullopt)));
+    CHECK_FALSE(sequence.accept(std::move(terminal).complete<LoweringCompleted>(std::nullopt)));
     CHECK_FALSE(sequence.continues());
     CHECK(sequence.exits().contains(exit));
     sequence.emit(return_statement());
@@ -76,6 +78,6 @@ TEST_CASE("Composition: value lambdas reject external exits") {
     }));
     CHECK(expect_termination("composition.missing-normal-result", []() static noexcept {
         auto sequence = LoweringStmtBuilder {};
-        static_cast<void>(std::move(sequence).complete<LoweringUnit>(std::nullopt));
+        static_cast<void>(std::move(sequence).complete<LoweringCompleted>(std::nullopt));
     }));
 }

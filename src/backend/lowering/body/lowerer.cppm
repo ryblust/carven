@@ -124,23 +124,23 @@ private:
         RegionExit& done
     ) noexcept -> LoweringStmtBuilder;
 
-    auto retain_evaluation(const SemanticExpression& source) noexcept -> Lowered<LoweringUnit>;
+    auto retain_evaluation(const SemanticExpression& source) noexcept -> Lowered<LoweringCompleted>;
     auto read_value(
-        Lowered<LoweringValue> evaluation,
+        Lowered<LoweringResult> evaluation,
         LoweringStmtBuilder& destination,
-        LoweringValueUse use = LoweringValueUse::Transfer
+        LoweringResultUse use = LoweringResultUse::Transfer
     ) noexcept -> std::optional<TargetExpr>;
     enum class ResultDemand { Value, Observe, Discard };
     auto construct_operation(
         const SemanticExpression& source,
         std::vector<TargetExpr> operands,
         ResultDemand demand
-    ) noexcept -> Lowered<LoweringValue>;
+    ) noexcept -> Lowered<LoweringResult>;
     auto consume_expression(
         const SemanticExpression& source,
         LoweringLiteralContext literal,
         ResultDemand demand,
-        const LoweringValueConsumer& consume,
+        const LoweringResultConsumer& consume,
         LoweringStmtBuilder& destination,
         bool materializing = false
     ) noexcept -> void;
@@ -148,12 +148,13 @@ private:
     enum class EvaluationForm { Expression, Statements, Branches };
     auto evaluation_form(const SemanticExpression& source) const noexcept -> EvaluationForm;
     auto external_exits(const SemanticExpression& source) const noexcept -> bool;
-    auto value_region(
+    auto expression_region(
         const SemanticExpression& source,
+        ResultDemand demand,
         const std::function<void(LoweringResultDestination, LoweringStmtBuilder&)>& build
-    ) noexcept -> Lowered<LoweringValue>;
+    ) noexcept -> Lowered<LoweringResult>;
     auto deliver_result(
-        LoweringValue value,
+        LoweringResult value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
@@ -165,7 +166,7 @@ private:
     auto full_expression(
         const SemanticExpression& source,
         LoweringLiteralContext use = LoweringLiteralContext::Exact
-    ) noexcept -> Lowered<LoweringValue>;
+    ) noexcept -> Lowered<LoweringResult>;
     auto condition(const SemanticExpression& source) noexcept -> Lowered<LoweringPredicate>;
     auto cpp_call(const SemCppCall& call, std::vector<TargetExpr> operands) noexcept -> TargetExpr;
     auto cpp_operation(
@@ -177,7 +178,7 @@ private:
         const SemanticExpression& expression,
         LoweringLiteralContext use = LoweringLiteralContext::Exact,
         ResultDemand demand = ResultDemand::Value
-    ) noexcept -> Lowered<LoweringValue>;
+    ) noexcept -> Lowered<LoweringResult>;
     enum class OperandUse { Snapshot, Read, Own, Place, ConstPlace };
     enum class OperandOrder { Unspecified, LeftToRight, Reordered, Postfix };
     auto materialize_operand(
@@ -211,7 +212,7 @@ private:
         const std::function<void(std::vector<TargetExpr>, LoweringStmtBuilder&)>& consume,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
-    auto statement(const SemanticStatement& statement) noexcept -> Lowered<LoweringUnit>;
+    auto statement(const SemanticStatement& statement) noexcept -> Lowered<LoweringCompleted>;
     auto region(const SemanticRegion& region, LoweringResultDestination result) noexcept
         -> LoweringStmtBuilder;
     auto result_expression(
@@ -298,7 +299,6 @@ private:
     std::vector<LocalBindingID> parameter_bindings;
     std::vector<LocalBindingID> capture_bindings;
     std::flat_map<LocalBindingID, TargetIdentifier> binding_names;
-    std::flat_set<LocalBindingID> used_bindings;
     std::flat_set<LocalBindingID> taken_bindings;
     std::flat_map<LocalBindingID, LoweringDeferredStorage> delayed_bindings;
     std::optional<FailureDestination> failure_destination;

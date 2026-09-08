@@ -128,6 +128,31 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
 TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semantic contracts") {
     static constexpr auto cases = std::to_array<ErrorExpectation>({
         {
+            .name = "void return rejects a data result",
+            .source = "fn invalid() { return 42; }",
+            .code = "CV-TYPE-RETURN-VALUE",
+            .primary_text = {},
+        },
+        {
+            .name = "value return rejects void",
+            .source = "fn action() {} fn invalid() -> i32 { return action(); }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "void cannot initialize a binding",
+            .source = "fn action() {} fn invalid() { let value = action(); }",
+            .code = "CV-TYPE-VALUE-REQUIRED",
+            .primary_text = {},
+        },
+        {
+            .name = "void forwarding requires failure consumption",
+            .source =
+                "struct Failure {} fn action() throw Failure { throw Failure {}; } fn invalid() throw Failure { return action(); }",
+            .code = "CV-EFFECT-UNMARKED",
+            .primary_text = {},
+        },
+        {
             .name = "missing return",
             .source = "fn value() -> i32 {}",
             .code = "CV-FLOW-MISSING-RETURN",

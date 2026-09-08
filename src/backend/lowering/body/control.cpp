@@ -83,8 +83,12 @@ auto BodyLowerer::lower_if(
     const auto lower_branch = [&](this const auto& self,
                                   std::size_t index) noexcept -> LoweringStmtBuilder {
         if (index == value.branches.size()) {
-            return value.otherwise.has_value() ? region(**value.otherwise, result)
-                                               : LoweringStmtBuilder();
+            if (value.otherwise.has_value()) {
+                return region(**value.otherwise, result);
+            }
+            auto completed = LoweringStmtBuilder();
+            deliver_result(LoweringCompleted {}, result, completed);
+            return completed;
         }
         const auto& branch = value.branches[index];
         auto statements = LoweringStmtBuilder();

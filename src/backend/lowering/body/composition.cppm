@@ -8,7 +8,7 @@ import :backend.target.stmt;
 import :support.invariant;
 import std;
 
-struct LoweringUnit final {};
+struct LoweringCompleted final {};
 
 enum class LoweringExitKind { FunctionReturn, Failure, Break, Continue, Test, Value, Unreachable };
 
@@ -54,13 +54,11 @@ struct LoweringKnownBool final {
     bool value;
 };
 
-struct LoweringVoidResult final {};
-
-struct LoweringDirectValue final {
+struct LoweringDirectExpression final {
     TargetExpr expression;
 };
 
-enum class LoweringValueUse { Observe, Transfer };
+enum class LoweringResultUse { Observe, Transfer };
 
 struct LoweringOwnedValue final {
     TargetExpr storage;
@@ -70,16 +68,21 @@ struct LoweringTemporaryValue final {
     TargetExpr storage;
 };
 
-using LoweringValue = std::variant<
-    LoweringVoidResult,
+using LoweringResult = std::variant<
+    LoweringCompleted,
     LoweringKnownBool,
-    LoweringDirectValue,
+    LoweringDirectExpression,
     LoweringOwnedValue,
     LoweringTemporaryValue>;
 
-auto value_expression(
-    LoweringValue value,
-    LoweringValueUse use = LoweringValueUse::Transfer
+auto remaining_expression(
+    LoweringResult result,
+    LoweringResultUse use = LoweringResultUse::Transfer
+) noexcept -> std::optional<TargetExpr>;
+
+auto require_expression(
+    LoweringResult value,
+    LoweringResultUse use = LoweringResultUse::Transfer
 ) noexcept -> TargetExpr;
 
 struct LoweringDynamicBool final {
@@ -101,10 +104,10 @@ auto known_predicate(const std::optional<LoweringPredicate>& predicate) noexcept
 auto predicate_expression(LoweringPredicate predicate) noexcept -> TargetExpr;
 
 class LoweringStmtBuilder;
-using LoweringValueConsumer = std::function<void(LoweringValue, LoweringStmtBuilder&)>;
+using LoweringResultConsumer = std::function<void(LoweringResult, LoweringStmtBuilder&)>;
 
 struct LoweringConsumeResult final {
-    LoweringValueConsumer consume;
+    LoweringResultConsumer consume;
 };
 
 struct LoweringDiscardResult final {};
@@ -141,7 +144,7 @@ public:
     LoweringStmtBuilder() noexcept
         : lowered {
               .statements = {},
-              .normal = LoweringUnit {},
+              .normal = LoweringCompleted {},
               .exits = {},
               .has_declarations = false
           } {}
@@ -195,7 +198,8 @@ public:
         }
         auto statements = LoweringStmtBuilder();
         statements.lowered.statements = std::move(source.statements);
-        statements.lowered.normal = source.normal ? std::optional(LoweringUnit {}) : std::nullopt;
+        statements.lowered.normal =
+            source.normal ? std::optional(LoweringCompleted {}) : std::nullopt;
         statements.lowered.exits = std::move(source.exits);
         statements.lowered.has_declarations = source.has_declarations;
         append(std::move(statements));
@@ -207,5 +211,5 @@ public:
     auto finish() && noexcept -> std::vector<TargetStmt> { return std::move(lowered.statements); }
 
 private:
-    Lowered<LoweringUnit> lowered;
+    Lowered<LoweringCompleted> lowered;
 };

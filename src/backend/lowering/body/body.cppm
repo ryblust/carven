@@ -24,7 +24,7 @@ struct TargetBodyInputs final {
 
 struct LoweredBody final {
     std::vector<TargetStmt> statements;
-    std::vector<bool> used_parameters;
+    std::vector<bool> referenced_parameters;
     bool uses_test_context;
 };
 

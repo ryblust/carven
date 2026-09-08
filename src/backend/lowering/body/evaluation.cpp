@@ -19,25 +19,26 @@ auto predicate_expression(LoweringPredicate predicate) noexcept -> TargetExpr {
     return std::move(std::get<LoweringDynamicBool>(predicate).expression);
 }
 
-auto value_expression(LoweringValue value, LoweringValueUse use) noexcept -> TargetExpr {
+auto remaining_expression(LoweringResult value, LoweringResultUse use) noexcept
+    -> std::optional<TargetExpr> {
     return std::visit(
         Overloaded {
-            [](LoweringVoidResult) static noexcept -> TargetExpr {
-                invariant_violation("void result reached a value consumer");
+            [](LoweringCompleted) static noexcept -> std::optional<TargetExpr> {
+                return std::nullopt;
             },
-            [](LoweringKnownBool value) static noexcept -> TargetExpr {
+            [](LoweringKnownBool value) static noexcept -> std::optional<TargetExpr> {
                 return bool_expression(value.value);
             },
-            [](LoweringDirectValue value) static noexcept -> TargetExpr {
+            [](LoweringDirectExpression value) static noexcept -> std::optional<TargetExpr> {
                 return std::move(value.expression);
             },
-            [&](LoweringTemporaryValue value) noexcept -> TargetExpr {
-                return use == LoweringValueUse::Transfer
+            [&](LoweringTemporaryValue value) noexcept -> std::optional<TargetExpr> {
+                return use == LoweringResultUse::Transfer
                     ? transfer_expression(std::move(value.storage))
                     : std::move(value.storage);
             },
-            [&](LoweringOwnedValue value) noexcept -> TargetExpr {
-                return use == LoweringValueUse::Transfer
+            [&](LoweringOwnedValue value) noexcept -> std::optional<TargetExpr> {
+                return use == LoweringResultUse::Transfer
                     ? transfer_expression(std::move(value.storage))
                     : std::move(value.storage);
             }
@@ -46,22 +47,30 @@ auto value_expression(LoweringValue value, LoweringValueUse use) noexcept -> Tar
     );
 }
 
+auto require_expression(LoweringResult result, LoweringResultUse use) noexcept -> TargetExpr {
+    auto expression = remaining_expression(std::move(result), use);
+    if (!expression) {
+        invariant_violation("completed evaluation reached an expression consumer");
+    }
+    return std::move(*expression);
+}
+
 auto BodyLowerer::read_value(
-    Lowered<LoweringValue> evaluation,
+    Lowered<LoweringResult> evaluation,
     LoweringStmtBuilder& destination,
-    LoweringValueUse use
+    LoweringResultUse use
 ) noexcept -> std::optional<TargetExpr> {
     auto result = destination.accept(std::move(evaluation));
     if (!result) {
         return std::nullopt;
     }
-    return value_expression(std::move(*result), use);
+    return require_expression(std::move(*result), use);
 }
 
 auto BodyLowerer::full_expression(
     const SemanticExpression& source,
     LoweringLiteralContext use
-) noexcept -> Lowered<LoweringValue> {
+) noexcept -> Lowered<LoweringResult> {
     auto lowered = expression(source, use);
     if (!lowered.normal
         || lowered.statements.empty()
@@ -77,15 +86,11 @@ auto BodyLowerer::full_expression(
     auto statements = LoweringStmtBuilder();
     auto value = statements.accept(std::move(lowered));
     const auto yield = exit_target(LoweringExitKind::Value);
-    emit_return(
-        value_expression(std::move(*value)),
-        statements,
-        LoweringYieldResult {.target = yield}
-    );
+    deliver_result(std::move(*value), LoweringYieldResult {.target = yield}, statements);
     auto expression =
         std::move(statements).result_region(context.lower_type(source.type.resolved()), yield);
     return std::move(LoweringStmtBuilder())
-        .complete<LoweringValue>(LoweringDirectValue {std::move(expression)});
+        .complete<LoweringResult>(LoweringDirectExpression {std::move(expression)});
 }
 
 auto BodyLowerer::initialize_deferred(
@@ -176,16 +181,17 @@ auto BodyLowerer::can_extend_branch_scope(const SemanticExpression& source) cons
         && (!conditional->otherwise || direct(**conditional->otherwise));
 }
 
-auto BodyLowerer::value_region(
+auto BodyLowerer::expression_region(
     const SemanticExpression& source,
+    ResultDemand demand,
     const std::function<void(LoweringResultDestination, LoweringStmtBuilder&)>& build
-) noexcept -> Lowered<LoweringValue> {
+) noexcept -> Lowered<LoweringResult> {
     auto statements = LoweringStmtBuilder();
-    if (context.is_void(source.type.resolved())) {
+    if (demand == ResultDemand::Discard || context.is_void(source.type.resolved())) {
         build(LoweringDiscardResult {}, statements);
         return std::move(statements)
-            .complete<LoweringValue>(
-                statements.continues() ? std::optional<LoweringValue>(LoweringVoidResult {})
+            .complete<LoweringResult>(
+                statements.continues() ? std::optional<LoweringResult>(LoweringCompleted {})
                                        : std::nullopt
             );
     }
@@ -201,10 +207,10 @@ auto BodyLowerer::value_region(
                 statement_expression(std::move(value)),
                 LoweringExitTarget {LoweringExitKind::Unreachable, 0}
             );
-            return std::move(destination).complete<LoweringValue>(std::nullopt);
+            return std::move(destination).complete<LoweringResult>(std::nullopt);
         }
         return std::move(destination)
-            .complete<LoweringValue>(LoweringDirectValue {std::move(value)});
+            .complete<LoweringResult>(LoweringDirectExpression {std::move(value)});
     }
     const auto storage = LoweringDeferredStorage {
         .name = names.fresh(TargetTemporaryNameKind::Owner),
@@ -217,8 +223,8 @@ auto BodyLowerer::value_region(
     }
     destination.append(std::move(statements));
     return std::move(destination)
-        .complete<LoweringValue>(
-            destination.continues() ? std::optional<LoweringValue>(LoweringTemporaryValue {
+        .complete<LoweringResult>(
+            destination.continues() ? std::optional<LoweringResult>(LoweringTemporaryValue {
                                           dereference_expression(name_expression(storage.name))
                                       })
                                     : std::nullopt
@@ -229,16 +235,17 @@ auto BodyLowerer::expression(
     const SemanticExpression& source,
     LoweringLiteralContext literal,
     ResultDemand demand
-) noexcept -> Lowered<LoweringValue> {
-    if (evaluation_form(source) == EvaluationForm::Branches && demand != ResultDemand::Discard) {
-        return value_region(
+) noexcept -> Lowered<LoweringResult> {
+    if (evaluation_form(source) == EvaluationForm::Branches) {
+        return expression_region(
             source,
+            demand,
             [&](LoweringResultDestination result, LoweringStmtBuilder& destination) noexcept {
                 consume_expression(
                     source,
                     literal,
                     demand,
-                    [&](LoweringValue value, LoweringStmtBuilder& branch) noexcept {
+                    [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
                         deliver_result(std::move(value), result, branch);
                     },
                     destination
@@ -247,22 +254,22 @@ auto BodyLowerer::expression(
         );
     }
     auto destination = LoweringStmtBuilder();
-    auto result = std::optional<LoweringValue>();
+    auto result = std::optional<LoweringResult>();
     consume_expression(
         source,
         literal,
         demand,
-        [&](LoweringValue value, LoweringStmtBuilder&) noexcept { result = std::move(value); },
+        [&](LoweringResult value, LoweringStmtBuilder&) noexcept { result = std::move(value); },
         destination
     );
-    return std::move(destination).complete<LoweringValue>(std::move(result));
+    return std::move(destination).complete<LoweringResult>(std::move(result));
 }
 
 auto BodyLowerer::consume_expression(
     const SemanticExpression& source,
     LoweringLiteralContext literal,
     ResultDemand demand,
-    const LoweringValueConsumer& consume,
+    const LoweringResultConsumer& consume,
     LoweringStmtBuilder& destination,
     bool materializing
 ) noexcept -> void {
@@ -287,7 +294,7 @@ auto BodyLowerer::consume_expression(
         static_cast<void>(destination.accept(retain_evaluation(source)));
         if (destination.continues()) {
             consume(
-                LoweringDirectValue {constant_expression(context, *source.constant, literal)},
+                LoweringDirectExpression {constant_expression(context, *source.constant, literal)},
                 destination
             );
         }
@@ -311,8 +318,8 @@ auto BodyLowerer::consume_expression(
                 );
             } else {
                 consume(
-                    demand == ResultDemand::Discard ? LoweringValue(LoweringVoidResult {})
-                                                    : LoweringValue(LoweringKnownBool {*known}),
+                    demand == ResultDemand::Discard ? LoweringResult(LoweringCompleted {})
+                                                    : LoweringResult(LoweringKnownBool {*known}),
                     destination
                 );
             }
@@ -323,7 +330,7 @@ auto BodyLowerer::consume_expression(
             *logic->left,
             LoweringLiteralContext::Exact,
             ResultDemand::Observe,
-            [&](LoweringValue left, LoweringStmtBuilder& branch) noexcept {
+            [&](LoweringResult left, LoweringStmtBuilder& branch) noexcept {
                 if (const auto* known = std::get_if<LoweringKnownBool>(&left)) {
                     if (known->value == (logic->operation == ShortCircuitOperator::And)) {
                         consume_expression(
@@ -336,7 +343,7 @@ auto BodyLowerer::consume_expression(
                         );
                     } else {
                         consume(
-                            demand == ResultDemand::Discard ? LoweringValue(LoweringVoidResult {})
+                            demand == ResultDemand::Discard ? LoweringResult(LoweringCompleted {})
                                                             : std::move(left),
                             branch
                         );
@@ -348,20 +355,13 @@ auto BodyLowerer::consume_expression(
                     auto value = branch.accept(std::move(right));
                     if (value) {
                         auto combined = binary_expression(
-                            value_expression(std::move(left)),
+                            require_expression(std::move(left)),
                             logic->operation == ShortCircuitOperator::And
                                 ? TargetBinaryOperator::LogicalAnd
                                 : TargetBinaryOperator::LogicalOr,
-                            value_expression(std::move(*value))
+                            require_expression(std::move(*value))
                         );
-                        if (demand == ResultDemand::Discard) {
-                            branch.emit(generated_statement(
-                                TargetDiscardStmt {.expression = std::move(combined)}
-                            ));
-                            consume(LoweringVoidResult {}, branch);
-                        } else {
-                            consume(LoweringDirectValue {std::move(combined)}, branch);
-                        }
+                        consume(LoweringDirectExpression {std::move(combined)}, branch);
                     }
                     return;
                 }
@@ -377,13 +377,13 @@ auto BodyLowerer::consume_expression(
                 );
                 consume(
                     demand == ResultDemand::Discard
-                        ? LoweringValue(LoweringVoidResult {})
-                        : LoweringValue(
+                        ? LoweringResult(LoweringCompleted {})
+                        : LoweringResult(
                               LoweringKnownBool {logic->operation == ShortCircuitOperator::Or}
                           ),
                     skipped
                 );
-                auto condition = value_expression(std::move(left), LoweringValueUse::Observe);
+                auto condition = require_expression(std::move(left), LoweringResultUse::Observe);
                 if (logic->operation == ShortCircuitOperator::Or) {
                     condition =
                         prefix_expression(TargetPrefixOperator::LogicalNot, std::move(condition));
@@ -415,19 +415,13 @@ auto BodyLowerer::consume_expression(
     if (std::holds_alternative<SemIf>(source.value)
         || std::holds_alternative<SemMatch>(source.value)
         || std::holds_alternative<SemTry>(source.value)) {
-        if (demand == ResultDemand::Discard || context.is_void(source.type.resolved())) {
-            structured_expression(source, LoweringDiscardResult {}, destination);
-            if (destination.continues()) {
-                consume(LoweringVoidResult {}, destination);
-            }
-            return;
-        }
-        if (can_extend_branch_scope(source)) {
+        if (demand != ResultDemand::Discard && can_extend_branch_scope(source)) {
             structured_expression(source, LoweringConsumeResult {.consume = consume}, destination);
             return;
         }
-        auto value = destination.accept(value_region(
+        auto value = destination.accept(expression_region(
             source,
+            demand,
             [&](LoweringResultDestination result, LoweringStmtBuilder& statements) noexcept {
                 structured_expression(source, std::move(result), statements);
             }
@@ -471,8 +465,9 @@ auto BodyLowerer::consume_expression(
                 && !std::holds_alternative<SemCallable>(source.value)
                 && !std::holds_alternative<SemEnumConstructor>(source.value);
             if (materializing
+                && demand != ResultDemand::Discard
                 && producer
-                && std::holds_alternative<LoweringDirectValue>(*result)
+                && std::holds_alternative<LoweringDirectExpression>(*result)
                 && !std::holds_alternative<BuiltinTypeValue>(
                     context.semantic().types().type(source.type.resolved()).value
                 )) {
@@ -483,7 +478,7 @@ auto BodyLowerer::consume_expression(
                         .maybe_unused = false,
                         .name = owner,
                         .type = context.intrinsic_type(TargetSymbol::Auto),
-                        .initializer = value_expression(std::move(*result))
+                        .initializer = require_expression(std::move(*result))
                     }
                 ));
                 result = LoweringTemporaryValue {name_expression(owner)};
@@ -495,7 +490,7 @@ auto BodyLowerer::consume_expression(
 }
 
 auto BodyLowerer::retain_evaluation(const SemanticExpression& source) noexcept
-    -> Lowered<LoweringUnit> {
+    -> Lowered<LoweringCompleted> {
     auto destination = LoweringStmtBuilder();
     [&]() noexcept -> void {
         if (!destination.continues()) {
@@ -544,12 +539,18 @@ auto BodyLowerer::retain_evaluation(const SemanticExpression& source) noexcept
             ));
             return;
         }
-        static_cast<void>(destination.accept(
-            expression(source, LoweringLiteralContext::Exact, ResultDemand::Discard)
-        ));
+        consume_expression(
+            source,
+            LoweringLiteralContext::Exact,
+            ResultDemand::Discard,
+            [&](LoweringResult result, LoweringStmtBuilder& branch) noexcept {
+                deliver_result(std::move(result), LoweringDiscardResult {}, branch);
+            },
+            destination
+        );
     }();
     return std::move(destination)
-        .complete<LoweringUnit>(
-            destination.continues() ? std::optional(LoweringUnit {}) : std::nullopt
+        .complete<LoweringCompleted>(
+            destination.continues() ? std::optional(LoweringCompleted {}) : std::nullopt
         );
 }

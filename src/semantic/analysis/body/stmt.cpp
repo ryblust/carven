@@ -410,16 +410,19 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             }
             auto value = std::optional<SemanticExpression>();
             if (source.value.has_value()) {
-                if (result_type.has_value() && is_void_type(draft(), *result_type)) {
-                    return std::unexpected(fail(
-                        source.span,
-                        DiagnosticCode::TypeReturnValue,
-                        "void callable cannot return a value"
-                    ));
-                }
                 auto built = expression(*source.value, result_type);
                 if (!built.has_value()) {
                     return std::unexpected(built.error());
+                }
+                if (result_type.has_value()
+                    && is_void_type(draft(), *result_type)
+                    && !is_void_type(draft(), built->type())
+                    && !does_not_complete(*built)) {
+                    return std::unexpected(fail(
+                        source.span,
+                        DiagnosticCode::TypeReturnValue,
+                        "void callable requires a void return operand"
+                    ));
                 }
                 if (!result_type.has_value()) {
                     auto inferred = infer_value_type(*built, ast.expression(*source.value).span);
@@ -434,12 +437,20 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                         return std::unexpected(coerced.error());
                     }
                 }
-                auto operand =
-                    consume_value(*built, ast.expression(*source.value).span, AccessMode::Read);
-                if (!operand.has_value()) {
-                    return std::unexpected(operand.error());
+                if (is_void_type(draft(), built->type())) {
+                    auto consumed = consume_pending(*built, ast.expression(*source.value).span);
+                    if (!consumed.has_value()) {
+                        return std::unexpected(consumed.error());
+                    }
+                    value = take_built(*built, ast.expression(*source.value).span);
+                } else {
+                    auto operand =
+                        consume_value(*built, ast.expression(*source.value).span, AccessMode::Read);
+                    if (!operand.has_value()) {
+                        return std::unexpected(operand.error());
+                    }
+                    value = std::move(*operand);
                 }
-                value = std::move(*operand);
             } else {
                 if (!result_type.has_value()) {
                     result_type = draft().intern_builtin_type(BuiltinType::Void);

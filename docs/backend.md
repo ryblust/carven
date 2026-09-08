@@ -72,9 +72,21 @@ destroys the object at scope exit.
 ## Evaluation and values
 
 Function-body lowering composes `Lowered<T>` results containing target statements,
-a normal result, and owned control exits. Normal void and absence of a normal
-successor are distinct. Consumers specify observation, transfer, or discard;
-locations preserve storage identity.
+a normal result, and owned control exits. A normal result retains an expression
+or records that evaluation is complete. Retained expressions may have void type;
+completed evaluation is distinct from absence of a normal successor. Regions
+deliver a result on each normal path, including paths without a tail expression.
+Result destinations return, initialize, consume, or discard the result. Discard
+executes any retained expression. Owned and temporary results preserve storage
+identity and observation or transfer behavior.
+
+Function-body completion finalizes parameter names and local declaration attributes
+from references in the retained target tree. Lexical scopes distinguish declaration
+occurrences; evaluation lambdas can reference outer declarations. Unreferenced
+parameters lose their names. Source bindings and operand temporaries start marked
+`maybe_unused`; references outside direct assignment and update targets clear the
+attribute. Completion preserves initialization and lifetime. Source unused
+diagnostics belong to semantic analysis.
 
 Scope construction owns auxiliary storage and preserves semantic lifetimes.
 Initialization stays at its execution point, including conditional paths. Native
@@ -113,8 +125,11 @@ test. A loop with steps gives continue a local step target during construction.
 Known consumers receive results directly, including returns from selected branches.
 Expression-position regions use value lambdas when their exits are local;
 otherwise they use deferred initialization. Function return applies the failure
-ABI independently of lambda yield. Loops and handlers receive only exits belonging
-to their own construct. Loops without steps and range loops use native `continue`.
+ABI independently of lambda yield. A retained void expression can be returned
+directly; an Outcome return executes it before constructing success without a
+payload. Void and discarded regions need no result storage. Loops and handlers
+receive only exits belonging to their own construct. Loops without steps and
+range loops use native `continue`.
 
 Match locates its subject once and keeps it alive and stable through selection.
 Pattern owners initialize before guards. A single selection path declares its
@@ -180,9 +195,7 @@ headers.
 
 The renderer serializes nodes, directives, source mapping, and whitespace. It
 does not infer language meaning or repair target syntax. Artifact collection
-checks logical paths, uniqueness, and prefix safety. Unused parameter names are
-omitted; semantic local declarations carry `maybe_unused` at construction and
-retain initialization and lifetime. Semantic unused diagnostics remain in analysis.
+checks logical paths, uniqueness, and prefix safety.
 
 ## External names and operations
 

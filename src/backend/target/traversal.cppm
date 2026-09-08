@@ -22,6 +22,27 @@ struct TargetTraversalScope final {
     bool initialization_barrier;
 };
 
+enum class TargetExpressionRole { Operand, MutationTarget };
+
+template<typename Source, typename Value>
+using TargetTraversalNode = std::conditional_t<std::is_const_v<Source>, const Value, Value>;
+
+template<typename Visitor, typename Variable>
+auto visit_target_variable(Visitor& visitor, Variable& variable) noexcept -> bool {
+    if constexpr (requires { visitor.visit_variable(variable); }) {
+        return visitor.visit_variable(variable);
+    }
+    return true;
+}
+
+template<typename Visitor>
+auto visit_target_local_parameter(Visitor& visitor, const TargetIdentifier& name) noexcept -> bool {
+    if constexpr (requires { visitor.visit_local_parameter(name); }) {
+        return visitor.visit_local_parameter(name);
+    }
+    return true;
+}
+
 template<typename Visitor>
 auto visit_target_type(Visitor& visitor, TargetTypeID id) noexcept -> bool {
     if constexpr (requires { visitor.visit_type(id); }) {
@@ -30,32 +51,37 @@ auto visit_target_type(Visitor& visitor, TargetTypeID id) noexcept -> bool {
     return true;
 }
 
-template<typename Visitor>
-auto enter_target_expression(Visitor& visitor, const TargetExpr& expression) noexcept -> bool {
-    if constexpr (requires { visitor.enter_expression(expression); }) {
-        return visitor.enter_expression(expression);
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetExpr>
+auto enter_target_expression(Visitor& visitor, Node& expression, TargetExpressionRole role) noexcept
+    -> bool {
+    if constexpr (requires { visitor.enter_expression(expression, role); }) {
+        return visitor.enter_expression(expression, role);
     }
     return true;
 }
 
-template<typename Visitor>
-auto leave_target_expression(Visitor& visitor, const TargetExpr& expression) noexcept -> bool {
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetExpr>
+auto leave_target_expression(Visitor& visitor, Node& expression) noexcept -> bool {
     if constexpr (requires { visitor.leave_expression(expression); }) {
         return visitor.leave_expression(expression);
     }
     return true;
 }
 
-template<typename Visitor>
-auto enter_target_statement(Visitor& visitor, const TargetStmt& statement) noexcept -> bool {
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetStmt>
+auto enter_target_statement(Visitor& visitor, Node& statement) noexcept -> bool {
     if constexpr (requires { visitor.enter_statement(statement); }) {
         return visitor.enter_statement(statement);
     }
     return true;
 }
 
-template<typename Visitor>
-auto leave_target_statement(Visitor& visitor, const TargetStmt& statement) noexcept -> bool {
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetStmt>
+auto leave_target_statement(Visitor& visitor, Node& statement) noexcept -> bool {
     if constexpr (requires { visitor.leave_statement(statement); }) {
         return visitor.leave_statement(statement);
     }
@@ -122,8 +148,13 @@ auto with_target_scope(Visitor& visitor, TargetTraversalScope scope, Action acti
     return leave_target_scope(visitor, scope);
 }
 
-template<typename Visitor>
-auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) noexcept -> bool;
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetExpr>
+auto traverse_target_expression(
+    Node& expression,
+    Visitor& visitor,
+    TargetExpressionRole role = TargetExpressionRole::Operand
+) noexcept -> bool;
 
 template<typename Visitor>
 auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) noexcept -> bool {
@@ -166,30 +197,26 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
     );
 }
 
-template<typename Visitor>
-auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) noexcept -> bool;
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetStmt>
+auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bool;
 
-template<typename Visitor>
-auto traverse_target_statements(std::span<const TargetStmt> statements, Visitor& visitor) noexcept
-    -> bool {
-    return std::ranges::all_of(statements, [&](const TargetStmt& statement) noexcept {
+template<typename Visitor, typename Range>
+auto traverse_target_statements(Range& statements, Visitor& visitor) noexcept -> bool {
+    return std::ranges::all_of(statements, [&](auto& statement) noexcept {
         return traverse_target_statement(statement, visitor);
     });
 }
 
-template<typename Visitor>
-auto traverse_target_expressions(std::span<const TargetExpr> expressions, Visitor& visitor) noexcept
-    -> bool {
-    return std::ranges::all_of(expressions, [&](const TargetExpr& expression) noexcept {
+template<typename Visitor, typename Range>
+auto traverse_target_expressions(Range& expressions, Visitor& visitor) noexcept -> bool {
+    return std::ranges::all_of(expressions, [&](auto& expression) noexcept {
         return traverse_target_expression(expression, visitor);
     });
 }
 
-template<typename Visitor>
-auto traverse_target_callable_body(
-    std::span<const TargetStmt> statements,
-    Visitor& visitor
-) noexcept -> bool {
+template<typename Visitor, typename Range>
+auto traverse_target_callable_body(Range& statements, Visitor& visitor) noexcept -> bool {
     return with_target_scope(
         visitor,
         TargetTraversalScope {
@@ -200,29 +227,43 @@ auto traverse_target_callable_body(
     );
 }
 
-template<typename Visitor>
-auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) noexcept -> bool {
-    if (!enter_target_expression(visitor, expression)) {
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetExpr>
+auto traverse_target_expression(
+    Node& expression,
+    Visitor& visitor,
+    TargetExpressionRole role
+) noexcept -> bool {
+    if (!enter_target_expression(visitor, expression, role)) {
         return false;
     }
     const auto children = std::visit(
         Overloaded {
-            [](const TargetNameExpr&) static noexcept { return true; },
-            [](const TargetIntrinsicNameExpr&) static noexcept { return true; },
-            [](const TargetLiteralExpr&) static noexcept { return true; },
-            [&](const TargetPrefixExpr& value) noexcept {
-                return traverse_target_expression(*value.operand, visitor);
+            [](TargetTraversalNode<Node, TargetNameExpr>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetIntrinsicNameExpr>&) static noexcept {
+                return true;
             },
-            [&](const TargetBinaryExpr& value) noexcept {
+            [](TargetTraversalNode<Node, TargetLiteralExpr>&) static noexcept { return true; },
+            [&](TargetTraversalNode<Node, TargetPrefixExpr>& value) noexcept {
+                return traverse_target_expression(
+                    *value.operand,
+                    visitor,
+                    value.op == TargetPrefixOperator::Increment
+                            || value.op == TargetPrefixOperator::Decrement
+                        ? TargetExpressionRole::MutationTarget
+                        : TargetExpressionRole::Operand
+                );
+            },
+            [&](TargetTraversalNode<Node, TargetBinaryExpr>& value) noexcept {
                 return traverse_target_expression(*value.left, visitor)
                     && traverse_target_expression(*value.right, visitor);
             },
-            [&](const TargetConditionalExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetConditionalExpr>& value) noexcept {
                 return traverse_target_expression(*value.condition, visitor)
                     && traverse_target_expression(*value.true_value, visitor)
                     && traverse_target_expression(*value.false_value, visitor);
             },
-            [&](const TargetCallExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetCallExpr>& value) noexcept {
                 return traverse_target_expression(*value.callee, visitor)
                     && std::ranges::all_of(
                            value.template_argument_type_ids,
@@ -230,23 +271,25 @@ auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) 
                     )
                     && traverse_target_expressions(value.arguments, visitor);
             },
-            [&](const TargetArrayExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetArrayExpr>& value) noexcept {
                 return visit_target_type(visitor, value.element_type_id)
                     && traverse_target_expression(*value.extent, visitor)
                     && traverse_target_expressions(value.elements, visitor);
             },
-            [&](const TargetConstructionExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetConstructionExpr>& value) noexcept {
                 if (!visit_target_type(visitor, value.type)) {
                     return false;
                 }
                 return std::visit(
                     Overloaded {
                         [](const std::monostate&) static noexcept { return true; },
-                        [&](const std::vector<TargetExpr>& values) noexcept {
+                        [&](TargetTraversalNode<Node, std::vector<TargetExpr>>& values) noexcept {
                             return traverse_target_expressions(values, visitor);
                         },
-                        [&](const std::vector<TargetFieldInitializer>& fields) noexcept {
-                            return std::ranges::all_of(fields, [&](const auto& field) noexcept {
+                        [&](
+                            TargetTraversalNode<Node, std::vector<TargetFieldInitializer>>& fields
+                        ) noexcept {
+                            return std::ranges::all_of(fields, [&](auto& field) noexcept {
                                 return traverse_target_expression(*field.value, visitor);
                             });
                         },
@@ -254,29 +297,29 @@ auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) 
                     value.initializer
                 );
             },
-            [&](const TargetIndexExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetIndexExpr>& value) noexcept {
                 return traverse_target_expression(*value.operand, visitor)
                     && traverse_target_expression(*value.index, visitor);
             },
-            [&](const TargetMemberExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetMemberExpr>& value) noexcept {
                 return traverse_target_expression(*value.operand, visitor);
             },
-            [&](const TargetScopeMemberExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetScopeMemberExpr>& value) noexcept {
                 return traverse_target_expression(*value.operand, visitor);
             },
-            [&](const TargetStaticMemberExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetStaticMemberExpr>& value) noexcept {
                 return visit_target_type(visitor, value.owner);
             },
-            [&](const TargetStaticCastExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetStaticCastExpr>& value) noexcept {
                 return visit_target_type(visitor, value.type)
                     && traverse_target_expression(*value.operand, visitor);
             },
-            [&](const TargetPlacementNewExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetPlacementNewExpr>& value) noexcept {
                 return visit_target_type(visitor, value.type)
                     && traverse_target_expression(*value.address, visitor)
                     && traverse_target_expression(*value.initializer, visitor);
             },
-            [&](const TargetLambdaExpr& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetLambdaExpr>& value) noexcept {
                 return std::ranges::all_of(
                            value.parameters,
                            [&](const auto& parameter) noexcept {
@@ -284,7 +327,18 @@ auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) 
                            }
                        )
                     && visit_target_type(visitor, value.result)
-                    && traverse_target_callable_body(value.body, visitor);
+                    && with_target_scope(
+                           visitor,
+                           {TargetTraversalScopeKind::Callable, false},
+                           [&]() noexcept {
+                               for (const auto& parameter : value.parameters) {
+                                   if (!visit_target_local_parameter(visitor, parameter.name)) {
+                                       return false;
+                                   }
+                               }
+                               return traverse_target_statements(value.body, visitor);
+                           }
+                    );
             },
         },
         expression.value
@@ -293,45 +347,56 @@ auto traverse_target_expression(const TargetExpr& expression, Visitor& visitor) 
 }
 
 template<typename Visitor, typename Value>
-auto traverse_target_for_clause(const Value& value, Visitor& visitor) noexcept -> bool {
+auto traverse_target_for_clause(Value& value, Visitor& visitor) noexcept -> bool {
     using Clause = std::remove_cvref_t<Value>;
     if constexpr (std::same_as<Clause, TargetExprStmt> || std::same_as<Clause, TargetDiscardStmt>) {
         return traverse_target_expression(value.expression, visitor);
     } else if constexpr (std::same_as<Clause, TargetVariableStmt>) {
-        return visit_target_type(visitor, value.type)
+        return visit_target_variable(visitor, value)
+            && visit_target_type(visitor, value.type)
             && traverse_target_expression(value.initializer, visitor);
     } else if constexpr (std::same_as<Clause, TargetAssignmentStmt>) {
-        return traverse_target_expression(value.target, visitor)
+        return traverse_target_expression(
+                   value.target,
+                   visitor,
+                   TargetExpressionRole::MutationTarget
+               )
             && traverse_target_expression(value.value, visitor);
     } else if constexpr (std::same_as<Clause, TargetUpdateStmt>) {
-        return traverse_target_expression(value.target, visitor);
+        return traverse_target_expression(
+            value.target,
+            visitor,
+            TargetExpressionRole::MutationTarget
+        );
     } else {
         static_assert(std::same_as<Clause, void>, "unhandled target for-clause child");
     }
 }
 
-template<typename Visitor>
-auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) noexcept -> bool {
+template<typename Visitor, typename Node>
+    requires std::same_as<std::remove_const_t<Node>, TargetStmt>
+auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bool {
     if (!enter_target_statement(visitor, statement)) {
         return false;
     }
     const auto children = std::visit(
         Overloaded {
-            [&](const TargetExprStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetExprStmt>& value) noexcept {
                 return traverse_target_expression(value.expression, visitor);
             },
-            [&](const TargetDiscardStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetDiscardStmt>& value) noexcept {
                 return traverse_target_expression(value.expression, visitor);
             },
-            [&](const TargetReturnStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetReturnStmt>& value) noexcept {
                 return !value.expression.has_value()
                     || traverse_target_expression(*value.expression, visitor);
             },
-            [&](const TargetVariableStmt& value) noexcept {
-                return visit_target_type(visitor, value.type)
+            [&](TargetTraversalNode<Node, TargetVariableStmt>& value) noexcept {
+                return visit_target_variable(visitor, value)
+                    && visit_target_type(visitor, value.type)
                     && traverse_target_expression(value.initializer, visitor);
             },
-            [&](const TargetBlockStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetBlockStmt>& value) noexcept {
                 return with_target_scope(
                     visitor,
                     TargetTraversalScope {
@@ -341,21 +406,29 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                     [&]() noexcept { return traverse_target_statements(value.statements, visitor); }
                 );
             },
-            [&](const TargetAssignmentStmt& value) noexcept {
-                return traverse_target_expression(value.target, visitor)
+            [&](TargetTraversalNode<Node, TargetAssignmentStmt>& value) noexcept {
+                return traverse_target_expression(
+                           value.target,
+                           visitor,
+                           TargetExpressionRole::MutationTarget
+                       )
                     && traverse_target_expression(value.value, visitor);
             },
-            [&](const TargetUpdateStmt& value) noexcept {
-                return traverse_target_expression(value.target, visitor);
+            [&](TargetTraversalNode<Node, TargetUpdateStmt>& value) noexcept {
+                return traverse_target_expression(
+                    value.target,
+                    visitor,
+                    TargetExpressionRole::MutationTarget
+                );
             },
-            [](const TargetBreakStmt&) static noexcept { return true; },
-            [](const TargetContinueStmt&) static noexcept { return true; },
-            [](const TargetUnreachableStmt&) static noexcept { return true; },
-            [](const TargetRuntimeTrapStmt&) static noexcept { return true; },
-            [](const TargetGotoStmt&) static noexcept { return true; },
-            [](const TargetLabelStmt&) static noexcept { return true; },
-            [&](const TargetIfStmt& value) noexcept {
-                for (const auto& branch : value.branches) {
+            [](TargetTraversalNode<Node, TargetBreakStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetContinueStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetUnreachableStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetRuntimeTrapStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetGotoStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetLabelStmt>&) static noexcept { return true; },
+            [&](TargetTraversalNode<Node, TargetIfStmt>& value) noexcept {
+                for (auto& branch : value.branches) {
                     if (!traverse_target_expression(branch.condition, visitor)
                         || !with_target_scope(
                             visitor,
@@ -382,7 +455,7 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                         }
                     );
             },
-            [&](const TargetWhileStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetWhileStmt>& value) noexcept {
                 return traverse_target_expression(value.condition, visitor)
                     && with_target_scope(
                            visitor,
@@ -395,7 +468,7 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                            }
                     );
             },
-            [&](const TargetRangeForStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetRangeForStmt>& value) noexcept {
                 return visit_target_type(visitor, value.type)
                     && traverse_target_expression(value.range, visitor)
                     && with_target_scope(
@@ -405,11 +478,12 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                                .initialization_barrier = true,
                            },
                            [&]() noexcept {
-                               return traverse_target_statements(value.body, visitor);
+                               return visit_target_variable(visitor, value)
+                                   && traverse_target_statements(value.body, visitor);
                            }
                     );
             },
-            [&](const TargetForStmt& value) noexcept {
+            [&](TargetTraversalNode<Node, TargetForStmt>& value) noexcept {
                 const auto initialized = value.initializer.has_value()
                     && std::holds_alternative<TargetVariableStmt>(value.initializer->value);
                 return with_target_scope(
@@ -421,7 +495,7 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                     [&]() noexcept {
                         if (value.initializer.has_value()
                             && !std::visit(
-                                [&](const auto& clause) noexcept {
+                                [&](auto& clause) noexcept {
                                     return traverse_target_for_clause(clause, visitor);
                                 },
                                 value.initializer->value
@@ -432,9 +506,9 @@ auto traverse_target_statement(const TargetStmt& statement, Visitor& visitor) no
                             && !traverse_target_expression(*value.condition, visitor)) {
                             return false;
                         }
-                        for (const auto& step : value.steps) {
+                        for (auto& step : value.steps) {
                             if (!std::visit(
-                                    [&](const auto& clause) noexcept {
+                                    [&](auto& clause) noexcept {
                                         return traverse_target_for_clause(clause, visitor);
                                     },
                                     step.value

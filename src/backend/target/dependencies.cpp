@@ -62,7 +62,7 @@ public:
         return visit_target_type_children(value, *this);
     }
 
-    auto enter_expression(const TargetExpr& expression) noexcept -> bool {
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
         std::visit(
             Overloaded {
                 [](const TargetNameExpr&) static noexcept {},

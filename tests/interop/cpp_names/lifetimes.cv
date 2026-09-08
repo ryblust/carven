@@ -1,6 +1,7 @@
 import "cpp_names/lifetimes.hpp" using lifetime_probe::{
     Owner,
     consume_owner,
+    observe_owner,
     mark,
     reset,
     matches,
@@ -225,4 +226,50 @@ test "Lifetimes: deferred copies preserve native constructor selection" {
     reset();
     try { copy_initialized(true)?; } catch { Failure(_) => { mark(7); }, }
     check(matches("1 3 2 101 -3 8 -1 -1 "));
+}
+
+fn void_consumer(owner: Owner, value: i32) { observe_owner(owner, value); }
+
+fn forward_void_lifetime() {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+fn forward_void_failure() throw Failure {
+    let local = Owner { 4 };
+    return void_consumer(Owner { 5 }, if true { throw Failure::Stop; } else { throw Failure::Stop; });
+}
+
+test "Lifetimes: void return operands clean up before returning locals" {
+    reset();
+    forward_void_lifetime();
+    check(matches("1 2 3 9 -2 -1 "));
+    reset();
+    try { forward_void_failure()?; } catch { Failure(_) => { mark(8); } }
+    check(matches("4 5 -5 -4 8 "));
+}
+
+fn forward_void_outcome() throw Failure {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+test "Lifetimes: void forwarding into Outcome preserves operand cleanup" {
+    reset();
+    try { forward_void_outcome()?; } catch { Failure(_) => { mark(8); } }
+    check(matches("1 2 3 9 -2 -1 "));
+}
+
+fn discard_short_circuit(flag: bool) {
+    let _ = flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool);
+    mark(8);
+}
+
+test "Lifetimes: discarded short circuit operands execute once and finish before successors" {
+    reset();
+    discard_short_circuit(false);
+    check(matches("8 "));
+    reset();
+    discard_short_circuit(true);
+    check(matches("1 2 3 9 -1 8 "));
 }
