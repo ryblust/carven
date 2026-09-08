@@ -1,5 +1,7 @@
 #pragma once
 
+#include "entry_lifetime.hpp"
+
 #include <cstdint>
 
 inline auto cv_test_reporting_flags = std::uint32_t {0};
@@ -16,3 +18,5 @@ inline auto cv_test_reporting_condition(std::int32_t bit, bool value) noexcept -
 extern "C" auto cv_test_reporting_observed_flags() noexcept -> std::uint32_t {
     return cv_test_reporting_flags;
 }
+
+auto cv_test_reporting_verify() noexcept -> void;

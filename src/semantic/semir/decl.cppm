@@ -166,7 +166,7 @@ struct TestDeclaration final {
 enum class FailureContractPolicy {
     Declared,
     Inferred,
-    UndeclaredPublished,
+    UndeclaredExplicit,
 };
 
 struct ConstructionCallableContract final {

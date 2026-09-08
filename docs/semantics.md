@@ -788,13 +788,14 @@ structures or enums. A failure contract denotes one exact closed mathematical
 set: member spelling order and declaration order are not observable. An
 explicit clause may name each failure type only once; `throw E + E` is invalid,
 not a request to deduplicate entries. An explicit `throw` clause is an upper bound on a callable body. Module-private
-functions and lambdas that omit it infer the least fixed-point failure set
+non-entry functions and lambdas that omit it infer the least fixed-point failure set
 across forward calls, direct recursion, and mutual recursion. A published
 function—bare or exported—with a nonempty actual set must state an explicit
 `throw` contract; omitting it produces
-`CV-EFFECT-THROW-PUBLISHED`. Entry functions and tests must handle every failure
-and cannot expose a failure contract. Failure types in a published contract
-also obey the declaration-audience closure.
+`CV-EFFECT-THROW-PUBLISHED`. Entry functions also require an explicit `throw`
+contract for outward failures, regardless of declaration visibility. Tests must
+handle every failure and cannot expose a failure contract. Failure types in a
+published contract also obey the declaration-audience closure.
 
 A value with pending failures cannot be consumed where an ordinary completed
 value is required. Postfix `?` consumes the pending failures of its operand at
@@ -816,8 +817,10 @@ handler propagate to the enclosing failure target and are never caught again by
 the same `try`. Alternatives in one arm form one or-pattern. The first matching
 alternative establishes its bindings, then the arm guard runs once. A false
 guard continues with the next arm. Catch-arm order remains observable even
-though failure-set member order does not. A `try` around an infallible body is
-valid and produces no diagnostic.
+though failure-set member order does not. A non-exhaustive catch diagnostic
+identifies each failure type that is not fully covered, including partial payload
+patterns and guards that may reject. A `try` around an infallible body is valid
+and produces no diagnostic.
 
 `rethrow` is valid only within a catch handler and transfers the caught failure
 identity selected for that handler. Closure bodies are separate callable
@@ -1062,9 +1065,24 @@ implementation-only placement and do not enclose generated Carven bodies.
 At most one function named `main` may exist in a compilation. Its module path,
 module domain, and declaration visibility do not affect entry selection. It
 accepts no parameters or one untyped Read parameter representing command-line
-arguments; ordinary function parameter rules apply elsewhere. `main` must
-handle every failure. Normal completion produces process status zero; a
-declared Carven result, if present, is not a process exit status.
+arguments; ordinary function parameter rules apply elsewhere. An entry with
+outward failures must declare an explicit `throw` contract, including a
+`private` entry. Its body must stay within that declared failure set.
+
+Normal completion produces process status zero; a declared Carven result, if
+present, is not a process exit status. A typed failure that escapes `main`
+produces the host C++ `EXIT_FAILURE` status. The entry wrapper neither prints the
+failure payload nor converts it to a C++ exception. Locals, returned values, and
+failure payloads follow their ordinary cleanup rules before process completion.
+Catching a failure and completing normally still produces status zero.
+
+```carven
+struct ConfigError {}
+fn load_config() throw ConfigError { throw ConfigError {}; }
+fn main() throw ConfigError { load_config()?; }
+```
+
+This program completes with a failure process status and no automatic output.
 
 The command-line parameter is an opaque entry-only value. Its C++
 runtime representation is not a Carven sequence contract and does not make the
@@ -1129,7 +1147,7 @@ The following table names semantic diagnostic identities covered by this contrac
 | `CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE` | Warning | A catch alternative cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-ARM-UNREACHABLE` | Warning | A catch arm cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-NON-EXHAUSTIVE` | Error | A catch leaves a protected failure unhandled |
-| `CV-EFFECT-THROW-PUBLISHED` | Error | A published callable has failures without an explicit `throw` contract |
+| `CV-EFFECT-THROW-PUBLISHED` | Error | An entry or published callable has failures without an explicit `throw` contract |
 | `CV-FLOW-MISSING-RETURN` | Error | A reachable path of a value-returning callable omits its result |
 | `CV-FLOW-TRANSFER-VALUE-BRANCH` | Error | `return`, `break`, or `continue` crosses a value-control boundary |
 | `CV-FLOW-UNREACHABLE-MATCH-ARM` | Warning | A match arm pattern is fully covered by preceding unguarded arms; the primary location is that pattern span |

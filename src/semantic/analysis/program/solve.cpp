@@ -58,6 +58,11 @@ auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
         std::move(input.failure_constraints).finish(),
         input.failure_sets,
         provenance_appender.reader(),
+        FailureTypeDiagnosticNames(
+            input.types,
+            input.declarations.resolved_view(),
+            provenance_appender.reader()
+        ),
         analysis_diagnostics
     );
     if (!failures.has_value()) {

@@ -98,13 +98,6 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
                 );
                 const auto actual_failures =
                     create_body_failure_term(*draft, contract, function_origin);
-                if (declaration.entry_point.has_value()) {
-                    draft->require_empty_failures(
-                        actual_failures,
-                        function_origin,
-                        EmptyFailureRequirementKind::RootBoundary
-                    );
-                }
                 auto elaborator = BodyElaborator(
                     *this,
                     source_module.module_id,
@@ -113,7 +106,7 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
                     std::move(reservation),
                     contract.result,
                     actual_failures,
-                    contract.policy != FailureContractPolicy::UndeclaredPublished,
+                    contract.policy != FailureContractPolicy::UndeclaredExplicit,
                     false
                 );
                 for (auto index = 0uz; index < function.parameters.size(); ++index) {

@@ -1,6 +1,6 @@
 import <print> using std::print;
 
-fn main() {
+test "C++23 calls: print emits literal and formatted text" {
     print("Literal\n");
     let text = "{123}";
     print("Value: {}\n", text);

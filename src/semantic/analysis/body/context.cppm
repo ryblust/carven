@@ -218,9 +218,9 @@ auto create_body_failure_term(
             break;
         }
         case FailureContractPolicy::Inferred:
-        case FailureContractPolicy::UndeclaredPublished: {
+        case FailureContractPolicy::UndeclaredExplicit: {
             draft.equate_failures(actual, contract.failures);
-            if (contract.policy == FailureContractPolicy::UndeclaredPublished) {
+            if (contract.policy == FailureContractPolicy::UndeclaredExplicit) {
                 draft.require_declared_failure_contract(actual, origin);
             }
             break;

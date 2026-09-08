@@ -264,3 +264,59 @@ TEST_CASE("Target generation: repeated artifact lowering owns independent target
         CHECK_EQ(render(first), render(second));
     }
 }
+
+TEST_CASE("Target generation: declared entry failures retain the ABI and argument forwarding") {
+    auto sources = SourceManager();
+    const auto source =
+        *sources.append_virtual("entry.cv", "struct E {} private fn main(args) throw E {}");
+    const auto input = CompilationModuleInput {
+        .source_id = source,
+        .module_path = *CanonicalModulePath::from_value("entry"),
+    };
+    auto syntax = parse_program(sources, CompilationRequest {.modules = std::span(&input, 1)});
+    REQUIRE(syntax.has_value());
+    auto semantic = analyze(std::move(*syntax));
+    REQUIRE(semantic.has_value());
+    const auto compilation = PlannedCompilation::build(
+        std::move(semantic->value),
+        request(TestGenerationMode::None, "entry-arguments")
+    );
+    auto wrappers = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        for (const auto& item : unit.sections().epilogue) {
+            const auto* declaration = std::get_if<TargetDecl>(&item.value);
+            if (declaration == nullptr) {
+                continue;
+            }
+            const auto* entry = std::get_if<TargetFunctionDecl>(declaration);
+            if (entry == nullptr) {
+                continue;
+            }
+            ++wrappers;
+            REQUIRE_EQ(entry->parameters.size(), 2);
+            const auto* body = std::get_if<TargetFreeFunctionDefinition>(&entry->form);
+            REQUIRE(body != nullptr);
+            REQUIRE_FALSE(body->body.empty());
+            const auto* result = std::get_if<TargetVariableStmt>(&body->body.front().value);
+            REQUIRE(result != nullptr);
+            const auto* call = std::get_if<TargetCallExpr>(&result->initializer.value);
+            REQUIRE(call != nullptr);
+            REQUIRE_EQ(call->arguments.size(), 1);
+            const auto* arguments = std::get_if<TargetCallExpr>(&call->arguments[0].value);
+            REQUIRE(arguments != nullptr);
+            const auto* adapter = std::get_if<TargetIntrinsicNameExpr>(&arguments->callee->value);
+            REQUIRE(adapter != nullptr);
+            CHECK_EQ(adapter->symbol, TargetSymbol::RuntimeEntryArgs);
+            REQUIRE_EQ(arguments->arguments.size(), 2);
+            for (auto index = 0uz; index < entry->parameters.size(); ++index) {
+                const auto* forwarded =
+                    std::get_if<TargetNameExpr>(&arguments->arguments[index].value);
+                REQUIRE(forwarded != nullptr);
+                REQUIRE(entry->parameters[index].name.has_value());
+                CHECK_EQ(forwarded->name, TargetName(*entry->parameters[index].name));
+            }
+        }
+    }
+    CHECK_EQ(wrappers, 1);
+}

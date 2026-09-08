@@ -42,3 +42,12 @@ test "Testing: require exits across nested control" {
     }
     cv_test_reporting_mark(9);
 }
+
+private import(cpp) fn cv_test_reporting_verify();
+
+// Entry points: ordinary results are discarded after local cleanup.
+fn main() -> i32 {
+    let owner = ::cv_test_entry_begin();
+    cv_test_reporting_verify();
+    return 29;
+}

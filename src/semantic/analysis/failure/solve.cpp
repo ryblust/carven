@@ -64,7 +64,9 @@ auto subset(std::span<const TypeID> actual, std::span<const TypeID> allowed) noe
 
 auto empty_requirement_diagnostic(
     const RequiresEmptyFailure& requirement,
-    CompilationProvenanceReader provenance
+    CompilationProvenanceReader provenance,
+    std::span<const TypeID> members,
+    const FailureTypeDiagnosticNames& type_names
 ) noexcept -> Diagnostic {
     auto code = DiagnosticCode::EffectUnmarked;
     auto message = std::string("failure-producing expression requires explicit '?' propagation");
@@ -79,9 +81,20 @@ auto empty_requirement_diagnostic(
             message = "effect root leaves failures unhandled";
             break;
     }
-    return DiagnosticBuilder(code, std::move(message))
-        .primary(provenance.source_span(requirement.origin))
-        .build();
+    auto diagnostic = DiagnosticBuilder(code, std::move(message));
+    diagnostic.primary(provenance.source_span(requirement.origin));
+    if (requirement.kind == EmptyFailureRequirementKind::CatchResidual) {
+        auto names = std::vector<std::string>();
+        names.reserve(members.size());
+        for (const auto member : members) {
+            names.push_back(type_names.name(member));
+        }
+        std::ranges::sort(names);
+        for (const auto& name : names) {
+            diagnostic.note(std::format("failure type not fully covered: {}", name));
+        }
+    }
+    return diagnostic.build();
 }
 
 auto subset_diagnostic(
@@ -108,6 +121,38 @@ auto subset_diagnostic(
 }
 
 } // namespace
+
+FailureTypeDiagnosticNames::FailureTypeDiagnosticNames(
+    const CanonicalTypeStoreBuilder& source_types,
+    ResolvedDeclarationView source_declarations,
+    CompilationProvenanceReader source_provenance
+) noexcept
+    : types(source_types),
+      declarations(source_declarations),
+      provenance(source_provenance) {
+    if (types.owner() != declarations.owner()) {
+        invariant_violation("failure diagnostic names belong to different semantic programs");
+    }
+}
+
+auto FailureTypeDiagnosticNames::name(TypeID type) const noexcept -> std::string {
+    const auto qualify = [&](const auto& declaration) noexcept {
+        const auto module_decl = declarations.module_decl(declaration.module_id);
+        return std::format(
+            "{}.{}",
+            provenance.module_path_copy(module_decl.provenance_module).value(),
+            provenance.spelling_copy(declaration.name)
+        );
+    };
+    const auto canonical = types.copy(type);
+    if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
+        return qualify(declarations.structure(structure->structure));
+    }
+    if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+        return qualify(declarations.enumeration(enumeration->enumeration));
+    }
+    invariant_violation("failure diagnostic requires a nominal type");
+}
 
 FailureSolution::FailureSolution(
     ProgramIdentity identity,
@@ -136,6 +181,7 @@ auto solve_failure_constraints(
     FrozenFailureConstraints&& constraints,
     FailureSetStoreBuilder& failure_sets,
     CompilationProvenanceReader provenance,
+    const FailureTypeDiagnosticNames& type_names,
     AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<FailureSolution> {
     if (constraints.owner() != failure_sets.owner()) {
@@ -234,9 +280,12 @@ auto solve_failure_constraints(
             Overloaded {
                 [&](const RequiresEmptyFailure& requirement) noexcept {
                     if (!members(requirement.term).empty()) {
-                        failure = diagnostics.error(
-                            empty_requirement_diagnostic(requirement, provenance)
-                        );
+                        failure = diagnostics.error(empty_requirement_diagnostic(
+                            requirement,
+                            provenance,
+                            members(requirement.term),
+                            type_names
+                        ));
                     }
                 },
                 [&](const RequiresNonEmptyFailure& requirement) noexcept {
@@ -244,7 +293,7 @@ auto solve_failure_constraints(
                         failure = diagnostics.error(
                             DiagnosticBuilder(
                                 DiagnosticCode::EffectPropagateRedundant,
-                                "'?' cannot propagate an infallible value"
+                                "'?' requires a fallible expression"
                             )
                                 .primary(provenance.source_span(requirement.origin))
                                 .build()
@@ -276,7 +325,7 @@ auto solve_failure_constraints(
                         failure = diagnostics.error(
                             DiagnosticBuilder(
                                 DiagnosticCode::EffectThrowPublished,
-                                "published function with failures requires an explicit 'throw' clause"
+                                "entry or published function with failures requires an explicit 'throw' clause"
                             )
                                 .primary(provenance.source_span(requirement.origin))
                                 .build()

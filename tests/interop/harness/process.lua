@@ -1,6 +1,6 @@
 function main(target, arguments, expected_code, description)
-    local stdout_file = os.tmpfile("carven-interop-stdout")
-    local stderr_file = os.tmpfile("carven-interop-stderr")
+    local stdout_file = os.tmpfile()
+    local stderr_file = os.tmpfile()
     local code = os.execv(target:targetfile(), arguments, {
         try = true,
         timeout = 30000,

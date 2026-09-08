@@ -139,9 +139,9 @@ auto DeclResolver::resolve_function(
         failures = draft.add_empty_failure_term();
     } else {
         failures = draft.add_empty_failure_term();
-        policy = symbol.visibility == DeclarationVisibility::Module
+        policy = !entry && symbol.visibility == DeclarationVisibility::Module
             ? FailureContractPolicy::Inferred
-            : FailureContractPolicy::UndeclaredPublished;
+            : FailureContractPolicy::UndeclaredExplicit;
     }
 
     auto boundary = validate_cpp_boundary_declaration(

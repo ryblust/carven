@@ -1,6 +1,7 @@
 module carven:semantic.analysis.failure;
 
 import :semantic.analysis.diagnostics;
+import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.table;
@@ -156,6 +157,22 @@ private:
     std::vector<FailureConstraint> requirements;
 };
 
+class FailureTypeDiagnosticNames final {
+public:
+    FailureTypeDiagnosticNames(
+        const CanonicalTypeStoreBuilder& types,
+        ResolvedDeclarationView declarations,
+        CompilationProvenanceReader provenance
+    ) noexcept;
+
+    auto name(TypeID type) const noexcept -> std::string;
+
+private:
+    const CanonicalTypeStoreBuilder& types;
+    ResolvedDeclarationView declarations;
+    CompilationProvenanceReader provenance;
+};
+
 class FailureSolution final {
 public:
     FailureSolution(const FailureSolution&) = delete;
@@ -178,6 +195,7 @@ private:
         FrozenFailureConstraints&&,
         FailureSetStoreBuilder&,
         CompilationProvenanceReader,
+        const FailureTypeDiagnosticNames&,
         AnalysisDiagnostics
     ) noexcept -> AnalysisResult<FailureSolution>;
 };
@@ -186,5 +204,6 @@ auto solve_failure_constraints(
     FrozenFailureConstraints&& constraints,
     FailureSetStoreBuilder& failure_sets,
     CompilationProvenanceReader provenance,
+    const FailureTypeDiagnosticNames& type_names,
     AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<FailureSolution>;

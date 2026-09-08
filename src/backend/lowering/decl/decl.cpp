@@ -323,18 +323,41 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
         ));
     }
     auto body = std::vector<TargetStmt>();
-    body.push_back(generated_statement(
-        TargetExprStmt {
-            .expression = call_expression(
-                name_expression(context.global_function_name(function_id)),
-                std::move(arguments)
-            ),
-        }
-    ));
-    body.push_back(generated_statement(
-        TargetReturnStmt {
-            .expression = integer_expression(0),
-        }
-    ));
+    auto call = call_expression(
+        name_expression(context.global_function_name(function_id)),
+        std::move(arguments)
+    );
+    const auto& callable = context.semantic().declarations().callable(function.callable);
+    const auto& signature = context.semantic().callable_signatures().signature(callable.signature);
+    auto status = integer_expression(0);
+    if (context.plan().failure_abi().members(signature.failures).empty()) {
+        body.push_back(generated_statement(TargetExprStmt {.expression = std::move(call)}));
+    } else {
+        auto names = context.make_callable_name_allocator();
+        const auto outcome = names.fresh(TargetTemporaryNameKind::Outcome);
+        body.push_back(generated_statement(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstValue,
+                .maybe_unused = false,
+                .name = outcome,
+                .type = context.intrinsic_type(TargetSymbol::Auto),
+                .initializer = std::move(call),
+            }
+        ));
+        status = TargetExpr {
+            .value = TargetConditionalExpr {
+                .condition = target_child(call_expression(
+                    member_expression(
+                        name_expression(outcome),
+                        TargetIdentifier::from_spelling("success_if")
+                    ),
+                    {}
+                )),
+                .true_value = target_child(integer_expression(0)),
+                .false_value = target_child(intrinsic_expression(TargetSymbol::StdExitFailure)),
+            }
+        };
+    }
+    body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(status)}));
     return lower_process_entry(context, with_arguments, std::move(body));
 }

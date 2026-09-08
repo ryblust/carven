@@ -127,6 +127,12 @@ strict failure-set superset. Calls, propagation, handlers, and callable
 adaptation use this one contract. Handler failures go to the enclosing failure
 target; rethrow preserves the selected failure. Test exit leaves the test.
 
+The process entry wrapper calls the Carven entry exactly once. An infallible
+entry's ordinary result is discarded and the wrapper returns zero. For a
+nonempty declared failure contract, the wrapper owns the returned `Outcome`,
+checks `success_if()`, and returns zero or `EXIT_FAILURE` from `<cstdlib>`.
+The wrapper's result storage undergoes ordinary scope cleanup.
+
 A local label realizes an exit for which C++ has no suitable structured form.
 Labels carry a control purpose and must respect initialization barriers. The
 label remains local to the source control construct it implements. Region exits

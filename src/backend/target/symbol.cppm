@@ -57,6 +57,7 @@ enum class TargetSymbol {
     StdMove,
     StdNullopt,
     StdNullptr,
+    StdExitFailure,
     StdOptional,
     StdStringView,
     StdVariant,

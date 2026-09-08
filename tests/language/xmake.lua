@@ -36,11 +36,12 @@ target("carven-test-language")
 
 target("carven-test-language-cxx23-compatibility")
     set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
+    add_rules("@carven/carven", {tests = "external"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++23")
     add_includedirs(language_dir)
     add_files(table.unpack(language_sources))
+    add_files(path.join(language_dir, "testing", "entry_point.cv"))
     after_load(use_local_carven)
     add_tests("cxx23-compatibility", {build_should_pass = true, group = "language"})
 
@@ -54,10 +55,11 @@ target("carven-test-language-entry-point")
     add_includedirs(language_dir)
     add_files(entry_point_source)
     after_load(use_local_carven)
-    add_tests("entry-point", {
-        group = "language",
-        runargs = {"alpha", "beta"},
-    })
+    add_tests("entry-point", {group = "language"})
+    on_test(function (target)
+        import("harness.entry", {rootdir = language_dir}).main(target, "entry-point")
+        return true
+    end)
 
 local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
@@ -68,6 +70,10 @@ target("carven-test-language-reporting")
     set_languages("c++20")
     add_includedirs(language_dir)
     add_files(reporting_source)
-    add_files(path.join(language_dir, "testing", "reporting_runner.cpp"))
+    add_files(path.join(language_dir, "testing", "reporting_provider.cpp"))
     after_load(use_local_carven)
     add_tests("reporting", {group = "language"})
+    on_test(function (target)
+        import("harness.entry", {rootdir = language_dir}).main(target, "reporting")
+        return true
+    end)

@@ -119,6 +119,7 @@ private:
             case TargetSymbol::StdUInt64:           include("cstdint"); break;
             case TargetSymbol::StdPtrdiff:
             case TargetSymbol::StdSize:             include("cstddef"); break;
+            case TargetSymbol::StdExitFailure:      include("cstdlib"); break;
             case TargetSymbol::RuntimeOutcome:      include("carven/runtime/outcome.hpp"); break;
             case TargetSymbol::RuntimeStrBytesView:
             case TargetSymbol::RuntimeStrCharsView:

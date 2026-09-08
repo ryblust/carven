@@ -1,6 +1,7 @@
 #include <carven/generated/carven-test-runner.hpp>
 
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -33,14 +34,14 @@ auto contains(const std::string& text, const std::string& expected) noexcept -> 
 
 } // namespace
 
-auto main() noexcept -> int {
+auto cv_test_reporting_verify() noexcept -> void {
     const auto result = carven::testing::run_generated_tests(&report);
     const auto& text = observed_output;
 
     constexpr auto expected_flags =
         (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 6) | (1u << 8);
     if (result == 0 || cv_test_reporting_observed_flags() != expected_flags) {
-        return 1;
+        std::abort();
     }
     if (!contains(text, "tests/language/testing/reporting.cv:16")
         || !contains(text, "operation: check")
@@ -62,7 +63,6 @@ auto main() noexcept -> int {
         || !contains(text, "operation: fail")
         || !contains(text, "message: fail message")) {
         std::cerr << text;
-        return 2;
+        std::abort();
     }
-    return 0;
 }

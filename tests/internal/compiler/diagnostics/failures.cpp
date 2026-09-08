@@ -231,18 +231,6 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
             .primary_text = {},
         },
         {
-            .name = "entry point handles every failure",
-            .source = "struct Failure {} fn main() { throw Failure {}; }",
-            .code = "CV-EFFECT-ROOT-UNHANDLED",
-            .primary_text = {},
-        },
-        {
-            .name = "test handles every failure",
-            .source = "struct Failure {} test \"failure\" { throw Failure {}; }",
-            .code = "CV-EFFECT-ROOT-UNHANDLED",
-            .primary_text = {},
-        },
-        {
             .name = "partial catch",
             .source = "enum Failure { First(i32), Second(i32) } "
                       "fn fail() -> i32 throw Failure { return 0; } "
@@ -355,5 +343,179 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
         if (!expectation.primary_text.empty()) {
             CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);
         }
+    }
+}
+
+TEST_CASE("Compiler diagnostics: entry failure contracts are explicit regardless of visibility") {
+    struct Case final {
+        std::string_view source;
+        std::string_view error;
+    };
+
+    const auto cases = std::array {
+        Case {"fn main() {}", ""},
+        Case {"fn main() -> i32 { return 7; }", ""},
+        Case {"struct E {} fn main() throw E { throw E {}; }", ""},
+        Case {"struct E {} private fn main() throw E {}", ""},
+        Case {"struct E {} private fn main() { throw E {}; }", "CV-EFFECT-THROW-PUBLISHED"},
+        Case {"struct E {} fn main() { throw E {}; }", "CV-EFFECT-THROW-PUBLISHED"},
+        Case {
+            "struct E {} struct F {} fn main() throw E { throw F {}; }",
+            "CV-EFFECT-SIGNATURE-BOUND"
+        },
+        Case {"struct E {} test \"root\" { throw E {}; }", "CV-EFFECT-ROOT-UNHANDLED"},
+    };
+    for (const auto& item : cases) {
+        CAPTURE(item.source);
+        auto sources = SourceManager();
+        const auto source = *sources.append_virtual("entry.cv", std::string(item.source));
+        const auto input = CompilationModuleInput {
+            .source_id = source,
+            .module_path = *CanonicalModulePath::from_value("entry"),
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("test:entry"),
+            }
+        );
+        if (item.error.empty()) {
+            CHECK(result.has_value());
+        } else {
+            REQUIRE_FALSE(result.has_value());
+            REQUIRE_EQ(result.error().size(), 1);
+            CHECK_EQ(result.error().front().finding.code, item.error);
+        }
+    }
+}
+
+TEST_CASE("Compiler diagnostics: failure explanations describe resolved source contracts") {
+    struct Case final {
+        std::string_view source;
+        std::string_view code;
+        std::string_view message;
+        std::vector<std::string> notes;
+    };
+
+    const auto cases = std::array {
+        Case {
+            "fn f() -> i32 { return 1?; }",
+            "CV-EFFECT-PROPAGATE-REDUNDANT",
+            "'?' requires a fallible expression",
+            {}
+        },
+        Case {
+            "fn plain() -> i32 { return 1; } fn f() -> i32 { return plain()?; }",
+            "CV-EFFECT-PROPAGATE-REDUNDANT",
+            "'?' requires a fallible expression",
+            {}
+        },
+        Case {
+            "struct Z {} struct A {} fn f() throw Z + A {} "
+            "fn main() { try { f()?; } catch {} }",
+            "CV-EFFECT-CATCH-NON-EXHAUSTIVE",
+            "catch does not cover every protected failure",
+            {"failure type not fully covered: app.A", "failure type not fully covered: app.Z"}
+        },
+        Case {
+            "struct A {} struct B {} fn f() throw A + B {} "
+            "fn main() { try { f()?; } catch { A(_) => {} } }",
+            "CV-EFFECT-CATCH-NON-EXHAUSTIVE",
+            "catch does not cover every protected failure",
+            {"failure type not fully covered: app.B"}
+        },
+        Case {
+            "enum E { A, B } fn f() throw E {} "
+            "fn main() { try { f()?; } catch { E(.A) => {} } }",
+            "CV-EFFECT-CATCH-NON-EXHAUSTIVE",
+            "catch does not cover every protected failure",
+            {"failure type not fully covered: app.E"}
+        },
+        Case {
+            "struct E {} fn f() throw E {} fn guard() -> bool { return false; } "
+            "fn main() { try { f()?; } catch { E(_) if guard() => {} } }",
+            "CV-EFFECT-CATCH-NON-EXHAUSTIVE",
+            "catch does not cover every protected failure",
+            {"failure type not fully covered: app.E"}
+        },
+    };
+    for (const auto& item : cases) {
+        CAPTURE(item.source);
+        auto sources = SourceManager();
+        const auto source = *sources.append_virtual("app.cv", std::string(item.source));
+        const auto input = CompilationModuleInput {
+            .source_id = source,
+            .module_path = *CanonicalModulePath::from_value("app"),
+        };
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("test:failure-explanations"),
+            }
+        );
+        REQUIRE_FALSE(result.has_value());
+        const auto* diagnostic = find_diagnostic(result.error(), item.code);
+        REQUIRE(diagnostic != nullptr);
+        CHECK_EQ(diagnostic->finding.message, item.message);
+        REQUIRE(diagnostic->attachment.primary.has_value());
+        CHECK_EQ(diagnostic->attachment.primary->span.source_id, source);
+        auto notes = std::vector<std::string>();
+        for (const auto& note : diagnostic->attachment.notes) {
+            notes.push_back(note.message);
+        }
+        CHECK_EQ(notes, item.notes);
+    }
+}
+
+TEST_CASE("Compiler diagnostics: catch type names distinguish modules in stable order") {
+    for (const auto reverse : {false, true}) {
+        auto sources = SourceManager();
+        const auto alpha =
+            *sources.append_virtual("alpha.cv", "export struct E {} export fn first() throw E {}");
+        const auto zeta =
+            *sources.append_virtual("zeta.cv", "export struct E {} export fn second() throw E {}");
+        const auto app = *sources.append_virtual(
+            "app.cv",
+            "import alpha using first; import zeta using second; "
+            "fn main() { try { second()?; first()?; } catch {} }"
+        );
+        auto inputs = std::array {
+            CompilationModuleInput {
+                .source_id = zeta,
+                .module_path = *CanonicalModulePath::from_value("zeta")
+            },
+            CompilationModuleInput {
+                .source_id = alpha,
+                .module_path = *CanonicalModulePath::from_value("alpha")
+            },
+            CompilationModuleInput {
+                .source_id = app,
+                .module_path = *CanonicalModulePath::from_value("app")
+            },
+        };
+        if (reverse) {
+            std::ranges::reverse(inputs);
+        }
+        const auto result = compile(
+            sources,
+            CompilationRequest {.modules = inputs},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("test:catch-type-names"),
+            }
+        );
+        REQUIRE_FALSE(result.has_value());
+        const auto* diagnostic = find_diagnostic(result.error(), "CV-EFFECT-CATCH-NON-EXHAUSTIVE");
+        REQUIRE(diagnostic != nullptr);
+        REQUIRE_EQ(diagnostic->attachment.notes.size(), 2);
+        CHECK_EQ(
+            diagnostic->attachment.notes[0].message,
+            "failure type not fully covered: alpha.E"
+        );
+        CHECK_EQ(diagnostic->attachment.notes[1].message, "failure type not fully covered: zeta.E");
     }
 }

@@ -238,7 +238,7 @@ auto BodyElaborator::lambda_expression(
         std::move(reservation),
         lambda_result,
         actual_failures,
-        failure_policy != FailureContractPolicy::UndeclaredPublished,
+        true,
         false
     );
     auto inherited_constants = std::vector<std::string>();

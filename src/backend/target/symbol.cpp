@@ -5,6 +5,7 @@ import std;
 
 auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
     switch (symbol) {
+        case TargetSymbol::StdExitFailure:           return "EXIT_FAILURE";
         case TargetSymbol::Auto:                     return "auto";
         case TargetSymbol::Void:                     return "void";
         case TargetSymbol::Bool:                     return "bool";

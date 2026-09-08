@@ -61,7 +61,7 @@ target("carven-test-interop-exception-boundary")
         return true
     end)
 
-target("carven-test-interop-cxx23-compatibility")
+target("carven-test-interop-cxx23")
     set_default(false)
     add_rules("@carven/carven", {tests = "external"})
     set_values("carven.includedir", crafts_dir)
@@ -69,20 +69,11 @@ target("carven-test-interop-cxx23-compatibility")
     add_includedirs(interop_dir)
     add_files(table.unpack(interop_sources))
     after_load(use_local_carven)
-    add_tests("cxx23-compatibility", {build_should_pass = true, group = "interop"})
-
-target("carven-test-interop-print")
-    set_default(false)
-    set_kind("binary")
-    add_rules("@carven/carven")
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++23")
     add_files(path.join(interop_dir, "output", "print.cv"))
-    after_load(use_local_carven)
-    add_tests("print", {group = "interop"})
+    add_tests("cxx23", {group = "interop"})
     on_test(function (target)
-        local output = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-        assert(output:gsub("\r\n", "\n") == "Literal\nValue: {123}\n",
-            "std::print produced unexpected output:\n%s", output)
+        local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
+        assert(output:gsub("\r\n", "\n") == "Literal\nValue: {123}\n" and errors == "",
+            "C++23 interop produced unexpected output:\n%s\n%s", output, errors)
         return true
     end)

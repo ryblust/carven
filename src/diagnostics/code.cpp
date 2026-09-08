@@ -114,7 +114,7 @@ namespace {
     X(EffectThrowPublished,                                                                        \
       "CV-EFFECT-THROW-PUBLISHED",                                                                 \
       Error,                                                                                       \
-      "Published callable with failures requires an explicit throw clause.")                       \
+      "Entry or published callable with failures requires an explicit throw clause.")              \
     X(EffectSignatureBound,                                                                        \
       "CV-EFFECT-SIGNATURE-BOUND",                                                                 \
       Error,                                                                                       \

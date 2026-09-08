@@ -45,14 +45,18 @@ its versioned patch.
 | `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
-Generated programs use C++20 as their baseline. The language and ordinary
-interop corpora execute in C++20 and reuse the same sources in C++23
-compatibility targets that only compile and link (`build_should_pass`).
-The separate C++23 `<print>` interop case executes and checks actual output;
-the Hello World example owns direct `printf` output coverage.
-Default and caller-provided test entries use the same generated runner. C++
-provider and consumer cases execute against the current boundary contract.
-Support headers are also compiled individually to check self-containment.
+Generated programs use C++20 as their baseline. The language corpus executes
+with the default generated test entry. Its C++23 target compiles and links the
+same sources with the explicit entry fixture (`build_should_pass`). The ordinary
+interop corpus executes in C++20 and C++23; the C++23 target also checks `<print>`
+output. The Hello World example owns direct `printf` output coverage.
+
+The language entry-point target checks the explicit entry's test-runner calls,
+success and failure exit status, and payload cleanup. The reporting target checks
+reported failures and an infallible entry's completion and local cleanup. Its
+intentional test failures use a dedicated reporter. Default and explicit test
+entries use the same generated runner. Support headers are also compiled
+individually to check self-containment.
 
 A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
@@ -118,11 +122,15 @@ The CLI harness limits each process to 30 seconds and preserves failed fixtures
 with stdout and stderr logs for every step. Successful cases remove their
 temporary directories; multi-step reports retain each step's output.
 Generated target configuration directly expresses the boundary under test.
-Interop cases with compatible build and execution requirements share a target.
+Place new cases in the owning domain and extend an existing target when its
+build and execution requirements fit. Separate targets express incompatible
+entry definitions, compiler settings, or linkage requirements. Helpers stay
+within their owning domain; scenario selection stays within the target harness.
 The main interop executable runs ordinary generated tests without arguments;
 its harness selects terminating contract checks by argument in separate processes.
 Process isolation does not require a separate build target.
-Cases initialize their own observable state. Header self-containment checks use
+Cases initialize their own observable state. Temporary directories and captured
+streams use fresh paths for each invocation, including concurrent suite runs. Header self-containment checks use
 one translation unit per header, including generated interfaces, within the
 consumer target. These units instantiate interfaces; behavioral assertions belong
 in the corresponding runtime or generated-program tests.

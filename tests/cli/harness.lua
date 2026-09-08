@@ -55,8 +55,7 @@ function main(target, opt, case_specs)
     local case_spec = case_specs[case_name]
     assert(case_spec, "unknown CLI test case: " .. case_name)
     local case_dir = path.join(os.projectdir(), "tests", "cli", case_name)
-    local work_dir = os.tmpfile("carven-cli-" .. case_name) .. ".dir"
-    os.tryrm(work_dir)
+    local work_dir = os.tmpfile() .. ".dir"
     local function case_path(relative)
         return path.normalize(path.absolute(relative, case_dir))
     end

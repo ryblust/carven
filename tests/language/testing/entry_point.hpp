@@ -1,9 +1,13 @@
 #pragma once
 
+#include "entry_lifetime.hpp"
+
 #include <carven/generated/carven-test-runner.hpp>
 
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <string_view>
 
 inline auto cv_test_entry_test_observed = false;
 
@@ -23,4 +27,16 @@ inline auto cv_test_entry_observe(bool condition) noexcept -> void {
 
 inline auto cv_test_entry_test_was_observed() noexcept -> bool {
     return cv_test_entry_test_observed;
+}
+
+inline auto cv_test_entry_selected(std::string_view expected) noexcept -> bool {
+    const auto* selected = std::getenv("CARVEN_ENTRY_TEST_SCENARIO");
+    if (selected == nullptr) {
+        std::abort();
+    }
+    return selected == expected;
+}
+
+inline auto cv_test_entry_print_failure_status() noexcept -> void {
+    std::printf("%d", EXIT_FAILURE);
 }

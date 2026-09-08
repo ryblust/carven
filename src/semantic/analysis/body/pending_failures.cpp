@@ -53,7 +53,7 @@ auto BodyElaborator::propagate_pending(BuiltExpression& expression, Span span) n
         return std::unexpected(fail(
             span,
             DiagnosticCode::EffectPropagateRedundant,
-            "postfix '?' requires a fallible expression"
+            "'?' requires a fallible expression"
         ));
     }
     route_pending(take_pending_failures(expression), failure_context_for_current_path(), span);

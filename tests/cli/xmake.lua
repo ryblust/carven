@@ -243,7 +243,7 @@ target("carven-test-cli")
         return harness(target, opt, case_specs)
     end)
 
-target("carven-test-xmake-default-domain-a")
+target("carven-test-cli-default-domain-a")
     set_default(false)
     set_kind("object")
     add_rules("@carven/carven")
@@ -252,7 +252,7 @@ target("carven-test-xmake-default-domain-a")
     add_files(path.join(xmake_rule_dir, "domain.cv"))
     after_load(use_local_carven)
 
-target("carven-test-xmake-default-domain-b")
+target("carven-test-cli-default-domain-b")
     set_default(false)
     set_kind("object")
     add_rules("@carven/carven")
@@ -261,12 +261,12 @@ target("carven-test-xmake-default-domain-b")
     add_files(path.join(xmake_rule_dir, "domain.cv"))
     after_load(use_local_carven)
 
-target("carven-test-xmake-default-domain-isolation")
+target("carven-test-cli-default-domain-isolation")
     set_default(false)
     set_languages("c++20")
     add_deps(
-        "carven-test-xmake-default-domain-a",
-        "carven-test-xmake-default-domain-b"
+        "carven-test-cli-default-domain-a",
+        "carven-test-cli-default-domain-b"
     )
     add_files(path.join(xmake_rule_dir, "main.cpp"))
     add_tests("default-domain-isolation", {group = "cli"})
