@@ -523,12 +523,15 @@ auto Parser::parse_function(
         implementation = ASTCppImportForm {.span = *cpp_import};
         end = semicolon.span;
     } else {
-        const auto body = parse_ordinary_block();
+        const auto body = parse_callable_body();
         if (!body) {
             return std::nullopt;
         }
         implementation = ASTFunctionBody {.body = *body};
-        end = builder.block(*body).span;
+        end = callable_body_span(*body);
+        if (std::holds_alternative<ASTExpressionBody>(*body)) {
+            end = expect(TokenKind::Semicolon, "expected ';' after expression function body").span;
+        }
     }
     return {
         std::pair {

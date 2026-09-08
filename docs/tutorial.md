@@ -201,6 +201,25 @@ failure.
 
 ## Closures and callbacks
 
+Functions and lambdas can return a single expression with `=>`:
+
+```cv
+fn increment(value: i32) => value + 1;
+fn record(&count: i32) { count += 1; }
+fn log(&count: i32) => record(&count);
+
+fn example() {
+    let double = [](value: i32) => value * 2;
+    let increment: fn(i32) -> i32 = [](value) => value + 1;
+}
+```
+
+The expression determines the result when there is no result annotation (or,
+for a lambda, no expected callable view). Void calls work the same way.
+Block-bodied functions default to `void`; their value returns require
+an explicit result type. Recursive result dependencies require enough explicit
+result annotations to break the inference cycle.
+
 A lambda lists its captured runtime bindings in brackets. `[]` captures nothing,
 `[value]` copies a value, and `[&value]` grants access to mutable storage:
 

@@ -6,6 +6,12 @@
 
 namespace scalar_boundary_detail {
 
+inline auto expression_calls = 0;
+
+inline auto record_expression_call() noexcept -> void {
+    ++expression_calls;
+}
+
 template<typename Type>
 constexpr auto echo(Type value) noexcept -> Type {
     return value;

@@ -128,7 +128,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
             .items = {ModuleItem {enumeration}, ModuleItem {uninhabited}, ModuleItem {test}},
         }
     );
-    compilation.finish_declarations();
+    compilation.finish_declaration_heads();
 
     auto reservation = compilation.reserve_body(BodyKind::Test);
     compilation.define_test(

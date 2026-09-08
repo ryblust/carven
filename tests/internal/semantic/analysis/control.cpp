@@ -13,9 +13,11 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.manager;
 import :source.module_path;
+import :source.provenance;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
@@ -149,4 +151,71 @@ TEST_CASE("Semantic control: every operand is checked after a nonreturning opera
         }
     )");
     CHECK(contains_diagnostic_code(unknown_subject, DiagnosticCode::TypeValueRequired));
+}
+
+TEST_CASE("Functions: expression result dependencies are independent of module order") {
+    for (const auto reverse : {false, true}) {
+        auto sources = SourceManager();
+        const auto consumer = sources.append_virtual(
+            "consumer.cv",
+            "import producer using next; fn first() => next(4); fn again() => first();"
+        );
+        const auto producer =
+            sources.append_virtual("producer.cv", "export fn next(a: i32) => a + 1;");
+        REQUIRE(consumer.has_value());
+        REQUIRE(producer.has_value());
+        auto inputs = std::array {
+            CompilationModuleInput {
+                .source_id = *consumer,
+                .module_path = *CanonicalModulePath::from_value("consumer")
+            },
+            CompilationModuleInput {
+                .source_id = *producer,
+                .module_path = *CanonicalModulePath::from_value("producer")
+            },
+        };
+        if (reverse) {
+            std::ranges::reverse(inputs);
+        }
+        auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+        REQUIRE(parsed.has_value());
+        auto result = analyze(std::move(*parsed));
+        REQUIRE(result.has_value());
+        const auto& program = result->value;
+        CHECK_EQ(program.bodies().size(), 3uz);
+        for (const auto callable : test_function_callables(program)) {
+            const auto result_type = test_callable_signature(program, callable).result;
+            const auto expected = CanonicalTypeValue {BuiltinTypeValue {BuiltinType::I32}};
+            CHECK(program.types().type(result_type).value == expected);
+        }
+    }
+}
+
+TEST_CASE("Functions: inferred expression results obey visibility and return restrictions") {
+    const auto visibility =
+        analyze_test_errors("private struct Hidden {} export fn leak() => Hidden {};");
+    CHECK(contains_diagnostic_code(visibility, DiagnosticCode::TypeVisibilityLeak));
+    const auto boundary = analyze_test_errors("struct Value {} export(cpp) fn leak() => Value {};");
+    CHECK(contains_diagnostic_code(boundary, DiagnosticCode::CppBoundaryType));
+    const auto view = analyze_test_errors("fn leak(value: fn() -> void) => value;");
+    CHECK(contains_diagnostic_code(view, DiagnosticCode::TypeCallableViewEscape));
+    const auto captures =
+        analyze_test_errors("fn leak() => []() { var local = 1; return [&local]() => local; }();");
+    CHECK(contains_diagnostic_code(captures, DiagnosticCode::AccessBorrowConflict));
+    const auto propagation = analyze_test_errors(
+        "struct E {} private fn fail() -> i32 throw E { throw E {}; } private fn bad() => fail();"
+    );
+    CHECK(contains_diagnostic_code(propagation, DiagnosticCode::EffectUnmarked));
+}
+
+TEST_CASE("Functions: expression body returns retain expansion provenance") {
+    const auto program = analyze_test_program("fn answer() => 42;");
+    const auto callable = test_function_callables(program).front();
+    const auto& body = program.bodies().body(*program.declarations().body_for_callable(callable));
+    REQUIRE_EQ(body.region().statements.size(), 1uz);
+    const auto& statement = body.region().statements.front();
+    CHECK(std::holds_alternative<SemReturn>(statement.value));
+    const auto& origin = program.provenance().origin(statement.origin);
+    REQUIRE(std::holds_alternative<ProgramExpansionOrigin>(origin.value));
+    CHECK_EQ(program.provenance().slice(statement.origin), "=>");
 }

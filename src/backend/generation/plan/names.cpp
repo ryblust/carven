@@ -147,6 +147,12 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         const auto& declaration = declarations.callable(callable);
         const auto body_id = std::get<ClosureBodyImplementation>(declaration.implementation).body;
         const auto& body = semantic.bodies().body(body_id);
+        auto result_types = std::flat_set<TypeID>();
+        collect_value_closure_dependencies(
+            semantic.callable_signatures().signature(declaration.signature).result,
+            dependencies[callable.index()],
+            result_types
+        );
         for (const auto capture : body.inputs().captures) {
             const auto& binding = body.binding(capture);
             const auto* storage = std::get_if<CaptureBindingStorage>(&binding.storage);
@@ -177,6 +183,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto production_order = std::vector<std::vector<CallableID>>(module_count);
     auto test_order = std::vector<std::vector<CallableID>>(module_count);
     auto state = std::vector<std::uint8_t>(callable_count);
+    auto definition_order = std::vector<CallableID>();
     auto order = std::function<void(CallableID, bool)>();
     order = [&](CallableID callable, bool test) noexcept {
         if (state[callable.index()] == 2) {
@@ -188,9 +195,8 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         state[callable.index()] = 1;
         const auto module_id = *owners[callable.index()];
         for (const auto dependency : dependencies[callable.index()]) {
-            if (!owners[dependency.index()].has_value()
-                || *owners[dependency.index()] != module_id) {
-                invariant_violation("closure target type depends on a foreign or unowned closure");
+            if (!owners[dependency.index()].has_value()) {
+                invariant_violation("closure target type depends on an unowned closure");
             }
             if (production[dependency.index()] != 0 || (test && tests[dependency.index()] != 0)) {
                 order(dependency, test && production[dependency.index()] == 0);
@@ -200,6 +206,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         auto& destination =
             test ? test_order[module_id.index()] : production_order[module_id.index()];
         destination.push_back(callable);
+        definition_order.push_back(callable);
     };
     for (const auto callable : discovery) {
         if (production[callable.index()] != 0) {
@@ -217,6 +224,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         .owner_modules = std::move(owners),
         .production_definitions = std::move(production_order),
         .test_definitions = std::move(test_order),
+        .definition_order = std::move(definition_order),
     };
 }
 

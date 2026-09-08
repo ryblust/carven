@@ -81,13 +81,11 @@ auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept ->
 
 } // namespace
 
-auto validate_cpp_boundary_declaration(
+auto validate_cpp_boundary_head(
     ProgramDraft& draft,
     ProgramModuleID module_id,
-    ASTView syntax,
     const ASTFunctionDecl& function,
-    std::span<const ConstructionCallableParameter> parameters,
-    ConstructionTypeRef result
+    std::span<const ConstructionCallableParameter> parameters
 ) noexcept -> AnalysisResult<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto cpp_export = function.cpp_export.has_value();
@@ -128,14 +126,6 @@ auto validate_cpp_boundary_declaration(
             );
         }
     }
-    if (!is_cpp_result_type(draft, result)) {
-        diagnose(
-            function.result_type.has_value() ? syntax.type(*function.result_type).span
-                                             : function.name_span,
-            "a C++ boundary result requires a supported scalar type or void",
-            DiagnosticCode::CppBoundaryType
-        );
-    }
     const auto name = draft.source_slice_copy(module_id, function.name_span);
     if (cpp_import && !is_supported_cpp_identifier(name)) {
         diagnose(
@@ -152,6 +142,30 @@ auto validate_cpp_boundary_declaration(
     }
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
                                : AnalysisResult<void>();
+}
+
+auto validate_cpp_boundary_result(
+    const ProgramDraft& draft,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    const ASTFunctionDecl& function,
+    ConstructionTypeRef result
+) noexcept -> AnalysisResult<void> {
+    if ((!std::holds_alternative<ASTCppImportForm>(function.implementation)
+         && !function.cpp_export.has_value())
+        || is_cpp_result_type(draft, result)) {
+        return {};
+    }
+    const auto span = function.result_type.has_value() ? syntax.type(*function.result_type).span
+                                                       : function.name_span;
+    return std::unexpected(draft.diagnostics().error(
+        DiagnosticBuilder(
+            DiagnosticCode::CppBoundaryType,
+            "a C++ boundary result requires a supported scalar type or void"
+        )
+            .primary(locate(source_id(draft, module_id), span))
+            .build()
+    ));
 }
 
 auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept

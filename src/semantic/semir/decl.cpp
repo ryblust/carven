@@ -233,68 +233,68 @@ auto DeclarationStore::callables() const noexcept
     return callable_rows.entries();
 }
 
-ResolvedDeclarationView::ResolvedDeclarationView(const DeclarationBuilder& builder) noexcept
+DeclarationConstructionView::DeclarationConstructionView(const DeclarationBuilder& builder) noexcept
     : declaration_builder(std::addressof(builder)) {}
 
-auto ResolvedDeclarationView::owner() const noexcept -> ProgramIdentity {
+auto DeclarationConstructionView::owner() const noexcept -> ProgramIdentity {
     return declaration_builder->owner();
 }
 
-auto ResolvedDeclarationView::module_decl(ModuleID id) const noexcept -> ModuleDeclaration {
+auto DeclarationConstructionView::module_decl(ModuleID id) const noexcept -> ModuleDeclaration {
     return declaration_builder->modules.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::function(FunctionID id) const noexcept -> FunctionDeclaration {
+auto DeclarationConstructionView::function(FunctionID id) const noexcept -> FunctionDeclaration {
     return declaration_builder->functions.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::structure(StructID id) const noexcept
+auto DeclarationConstructionView::structure(StructID id) const noexcept
     -> ConstructionStructDeclaration {
     return declaration_builder->structures.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::enumeration(EnumID id) const noexcept -> EnumDeclaration {
+auto DeclarationConstructionView::enumeration(EnumID id) const noexcept -> EnumDeclaration {
     return declaration_builder->enumerations.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::enum_case(EnumCaseID id) const noexcept
+auto DeclarationConstructionView::enum_case(EnumCaseID id) const noexcept
     -> ConstructionEnumCaseDeclaration {
     return declaration_builder->enum_cases.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::module_constant(ModuleConstantID id) const noexcept
+auto DeclarationConstructionView::module_constant(ModuleConstantID id) const noexcept
     -> ModuleConstantDeclaration {
     return declaration_builder->module_constants.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::callable_contract(CallableID id) const noexcept
+auto DeclarationConstructionView::callable_contract(CallableID id) const noexcept
     -> ConstructionCallableContract {
     return declaration_builder->callable_contracts.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::callable_signature(CallableID id) const noexcept
+auto DeclarationConstructionView::callable_signature(CallableID id) const noexcept
     -> CallableSignatureID {
     declaration_builder->require_concrete();
     return declaration_builder->callable_signature_ids.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::callable_implementation(CallableID id) const noexcept
+auto DeclarationConstructionView::callable_implementation(CallableID id) const noexcept
     -> CallableImplementation {
-    declaration_builder->require_resolution_finished();
+    declaration_builder->require_heads_finished();
     return declaration_builder->callable_implementations.copy_defined(id);
 }
 
-auto ResolvedDeclarationView::body_for_callable(CallableID callable) const noexcept
+auto DeclarationConstructionView::body_for_callable(CallableID callable) const noexcept
     -> std::optional<BodyID> {
-    declaration_builder->require_resolution_finished();
+    declaration_builder->require_heads_finished();
     return implementation_body_id(
         declaration_builder->callable_implementations.copy_defined(callable)
     );
 }
 
-auto ResolvedDeclarationView::callable_for_body(BodyID body) const noexcept
+auto DeclarationConstructionView::callable_for_body(BodyID body) const noexcept
     -> std::optional<CallableID> {
-    declaration_builder->require_resolution_finished();
+    declaration_builder->require_heads_finished();
     require_owner(body.owner(), owner(), "callable lookup used a foreign body");
     auto result = std::optional<CallableID>();
     for (const auto id : declaration_builder->callable_order) {
@@ -313,64 +313,72 @@ auto ResolvedDeclarationView::callable_for_body(BodyID body) const noexcept
     return result;
 }
 
-auto ResolvedDeclarationView::module_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::module_count() const noexcept -> std::size_t {
     return declaration_builder->modules.size();
 }
 
-auto ResolvedDeclarationView::function_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::function_count() const noexcept -> std::size_t {
     return declaration_builder->functions.size();
 }
 
-auto ResolvedDeclarationView::struct_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::struct_count() const noexcept -> std::size_t {
     return declaration_builder->structures.size();
 }
 
-auto ResolvedDeclarationView::enum_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::enum_count() const noexcept -> std::size_t {
     return declaration_builder->enumerations.size();
 }
 
-auto ResolvedDeclarationView::enum_case_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::enum_case_count() const noexcept -> std::size_t {
     return declaration_builder->enum_cases.size();
 }
 
-auto ResolvedDeclarationView::module_constant_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::module_constant_count() const noexcept -> std::size_t {
     return declaration_builder->module_constants.size();
 }
 
-auto ResolvedDeclarationView::callable_count() const noexcept -> std::size_t {
+auto DeclarationConstructionView::callable_count() const noexcept -> std::size_t {
     return declaration_builder->callable_contracts.size();
 }
 
-auto ResolvedDeclarationView::module_ids() const noexcept -> std::vector<ModuleID> {
+auto DeclarationConstructionView::module_ids() const noexcept -> std::vector<ModuleID> {
     return declaration_builder->modules.ids();
 }
 
-auto ResolvedDeclarationView::function_ids() const noexcept -> std::vector<FunctionID> {
+auto DeclarationConstructionView::function_ids() const noexcept -> std::vector<FunctionID> {
     return declaration_builder->functions.ids();
 }
 
-auto ResolvedDeclarationView::struct_ids() const noexcept -> std::vector<StructID> {
+auto DeclarationConstructionView::struct_ids() const noexcept -> std::vector<StructID> {
     return declaration_builder->structures.ids();
 }
 
-auto ResolvedDeclarationView::enum_ids() const noexcept -> std::vector<EnumID> {
+auto DeclarationConstructionView::enum_ids() const noexcept -> std::vector<EnumID> {
     return declaration_builder->enumerations.ids();
 }
 
-auto ResolvedDeclarationView::enum_case_ids() const noexcept -> std::vector<EnumCaseID> {
+auto DeclarationConstructionView::enum_case_ids() const noexcept -> std::vector<EnumCaseID> {
     return declaration_builder->enum_cases.ids();
 }
 
-auto ResolvedDeclarationView::module_constant_ids() const noexcept
+auto DeclarationConstructionView::module_constant_ids() const noexcept
     -> std::vector<ModuleConstantID> {
     return declaration_builder->module_constants.ids();
 }
 
-auto ResolvedDeclarationView::callable_ids() const noexcept -> std::vector<CallableID> {
+auto DeclarationConstructionView::callable_ids() const noexcept -> std::vector<CallableID> {
     return declaration_builder->callable_order;
 }
 
-auto ResolvedDeclarationView::callable_implementations_complete() const noexcept -> bool {
+auto DeclarationConstructionView::callable_contract_defined(CallableID id) const noexcept -> bool {
+    return declaration_builder->callable_contracts.is_defined(id);
+}
+
+auto DeclarationConstructionView::callable_contracts_complete() const noexcept -> bool {
+    return declaration_builder->callable_contracts.all_defined();
+}
+
+auto DeclarationConstructionView::callable_implementations_complete() const noexcept -> bool {
     return declaration_builder->callable_implementations.all_defined();
 }
 
@@ -673,21 +681,21 @@ auto DeclarationBuilder::define_callable_contract(
     callable_contracts.define(id, std::move(contract));
 }
 
-auto DeclarationBuilder::finish_resolution() noexcept -> ResolvedDeclarationView {
+auto DeclarationBuilder::finish_heads() noexcept -> DeclarationConstructionView {
     require_reserving();
-    require_all_declarations_defined();
-    state = State::Resolved;
-    return ResolvedDeclarationView(*this);
+    require_heads_defined();
+    state = State::BuildingCallables;
+    return DeclarationConstructionView(*this);
 }
 
-auto DeclarationBuilder::resolved_view() const noexcept -> ResolvedDeclarationView {
-    require_resolution_finished();
-    return ResolvedDeclarationView(*this);
+auto DeclarationBuilder::construction_view() const noexcept -> DeclarationConstructionView {
+    require_heads_finished();
+    return DeclarationConstructionView(*this);
 }
 
 auto DeclarationBuilder::append_body_callable(ConstructionCallableContract contract) noexcept
     -> CallableID {
-    require_resolved();
+    require_building_callables();
     const auto id = reserve_callable_pair();
     define_callable_contract(id, std::move(contract));
     return id;
@@ -697,13 +705,13 @@ auto DeclarationBuilder::define_callable_signature(
     CallableID id,
     CallableSignatureID signature
 ) noexcept -> void {
-    require_resolved();
+    require_building_callables();
     require_owner(signature.owner(), program_identity, "callable used a foreign signature");
     callable_signature_ids.define(id, signature);
 }
 
 auto DeclarationBuilder::finish_callable_signatures() noexcept -> void {
-    require_resolved();
+    require_building_callables();
     if (!callable_signature_ids.all_defined()) {
         invariant_violation("callable signature resolution left an undefined callable");
     }
@@ -714,7 +722,7 @@ auto DeclarationBuilder::complete_callable(
     CallableID id,
     CallableImplementation implementation
 ) noexcept -> void {
-    require_resolution_finished();
+    require_heads_finished();
     std::visit(
         [this](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
@@ -845,15 +853,15 @@ auto DeclarationBuilder::require_reserving() const noexcept -> void {
     }
 }
 
-auto DeclarationBuilder::require_resolved() const noexcept -> void {
-    if (state != State::Resolved) {
-        invariant_violation("resolved declaration operation used before resolution completed");
+auto DeclarationBuilder::require_building_callables() const noexcept -> void {
+    if (state != State::BuildingCallables) {
+        invariant_violation("callable construction operation used outside callable construction");
     }
 }
 
-auto DeclarationBuilder::require_resolution_finished() const noexcept -> void {
+auto DeclarationBuilder::require_heads_finished() const noexcept -> void {
     if (state == State::Reserving) {
-        invariant_violation("declaration operation used before resolution completed");
+        invariant_violation("declaration operation used before heads completed");
     }
 }
 
@@ -863,14 +871,13 @@ auto DeclarationBuilder::require_concrete() const noexcept -> void {
     }
 }
 
-auto DeclarationBuilder::require_all_declarations_defined() const noexcept -> void {
+auto DeclarationBuilder::require_heads_defined() const noexcept -> void {
     if (!modules.all_defined()
         || !functions.all_defined()
         || !structures.all_defined()
         || !enumerations.all_defined()
         || !enum_cases.all_defined()
-        || !module_constants.all_defined()
-        || !callable_contracts.all_defined()) {
-        invariant_violation("declaration resolution completed with an undefined shell");
+        || !module_constants.all_defined()) {
+        invariant_violation("declaration heads completed with an undefined shell");
     }
 }

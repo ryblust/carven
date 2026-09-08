@@ -25,7 +25,7 @@ auto analyze(SyntaxProgram syntax) noexcept -> std::expected<Diagnosed<SemIRProg
         const auto catalog = std::move(*catalog_result);
         auto import_usage = ImportUsage(catalog.view().imports().size());
 
-        const auto declarations = complete_declarations(draft, catalog.view(), import_usage);
+        const auto declarations = resolve_declaration_heads(draft, catalog.view(), import_usage);
         if (!declarations.has_value() || diagnostics.has_errors()) {
             return std::unexpected(diagnostics.take());
         }

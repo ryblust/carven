@@ -1,10 +1,10 @@
 module carven:frontend.dump.ast;
 
-import :frontend.ast.interop;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
 import :frontend.ast.stmt;
@@ -259,6 +259,12 @@ private:
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
+    ) noexcept -> void;
+    auto render_callable_body(
+        const ASTCallableBody& body,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
     ) noexcept -> void;
     auto render_ordinary_block(
         ASTBlockID block,

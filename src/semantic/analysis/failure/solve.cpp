@@ -124,7 +124,7 @@ auto subset_diagnostic(
 
 FailureTypeDiagnosticNames::FailureTypeDiagnosticNames(
     const CanonicalTypeStoreBuilder& source_types,
-    ResolvedDeclarationView source_declarations,
+    DeclarationConstructionView source_declarations,
     CompilationProvenanceReader source_provenance
 ) noexcept
     : types(source_types),

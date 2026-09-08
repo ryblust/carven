@@ -385,6 +385,7 @@ private:
     std::vector<std::optional<EnumDeclaration>> enumerations;
     std::vector<std::optional<ConstructionEnumCaseDeclaration>> enum_cases;
     std::vector<std::optional<ModuleConstantDeclaration>> module_constants;
-    std::vector<std::optional<ConstructionCallableContract>> callable_contracts;
+    std::vector<std::optional<std::variant<ConstructionCallableContract, PendingFunctionContract>>>
+        callable_contracts;
     std::vector<std::optional<ProgramOriginID>> cpp_import_origins;
 };

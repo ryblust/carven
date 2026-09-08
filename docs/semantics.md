@@ -476,8 +476,12 @@ or general lifetime-extension syntax.
 
 ### Functions and calls
 
-Every ordinary function parameter requires an explicit type. Omitted result
-syntax means `void`. Parameter names must be unique. A call requires the exact
+Every ordinary function parameter requires an explicit type. In a block-bodied
+function, omitted result syntax means `void`. In an expression-bodied function
+(`fn increment(a: i32) => a + 1;`), it infers the result from the body expression,
+without using the caller's expected type. An explicit result annotation supplies
+the expected type and is checked against the expression. Parameter names must be
+unique. A call requires the exact
 arity, access marker, and compatible argument type declared by the callable.
 The callee is evaluated first, then arguments are evaluated once from left to
 right. A concrete closure selects its object identity; a callable view selects
@@ -493,10 +497,19 @@ type. Every reachable path of a non-`void` function or lambda must return a valu
 Violation is identified by `CV-FLOW-MISSING-RETURN`; the explanatory
 message is not part of the language contract.
 
-Function declarations may refer to later declarations because signatures are
-collected before bodies. Direct and mutual recursion are supported. Typed
-failure contracts are described below and remain part of callable
-compatibility.
+Functions and lambdas may use `=> expression` instead of a block. This implicitly
+returns the expression using the same evaluation, access, lifetime, and failure
+rules as `return expression;`. A void expression is valid and infers `void`.
+Failure propagation requires `?`. Block-bodied functions return values through
+explicit `return` statements.
+
+Function declarations may refer to later declarations because function identities
+and heads are collected before bodies. Expression-body results are completed on
+demand before a dependent function reference is used. A cycle that requires an
+unfinished result is rejected with `CV-TYPE-RESULT-INFERENCE-CYCLE`; add an
+explicit `-> T` to break the signature dependency. Operator constraints, constant
+branches, and caller context do not solve such cycles. Typed failure contracts
+are part of callable compatibility.
 
 ### Lambdas and callable views
 
@@ -556,6 +569,7 @@ every parameter requires an explicit type. An explicit lambda result type fixes
 the result. Otherwise an expected callable view supplies it; with no expected
 view, return operands determine the result, including `void`. The inferred or
 expected signature is checked against the body before the closure type is completed.
+These rules apply equally to block and expression bodies.
 
 Source `fn(...) -> R throw E + F` denotes a non-owning callable view. Parameter
 access, parameter types, and success result match exactly. A source callable
@@ -566,8 +580,9 @@ A callable view may be a parameter or local value, including local aggregate
 storage, but it cannot be stored in a structure or enum, returned from a
 function or lambda, or captured by a lambda. These restrictions apply
 recursively through arrays. A capturing lambda temporary may form a view only
-as a direct call argument and remains valid for that call. A named capturing
-closure may initialize a local view while its owner remains in an enclosing
+as a direct call argument and remains valid for that call. Noncapturing closures
+form views without borrowing closure storage; the closure expression is
+evaluated once. A named capturing closure may initialize a local view while its owner remains in an enclosing
 scope.
 
 Adopting a capturing closure as a callable view borrows the closure object; it

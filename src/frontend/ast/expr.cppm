@@ -144,7 +144,7 @@ struct ASTLambdaExpr final {
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;
     std::optional<ASTThrowClause> throw_clause;
-    ASTBlockID body;
+    ASTCallableBody body;
 };
 
 struct ASTPropagationExpr final {

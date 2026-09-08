@@ -94,6 +94,16 @@ auto OwnershipBodyAnalyzer::expression(
         }
         return std::nullopt;
     };
+    const auto stateless_callable_for = [&](TypeID type) noexcept -> std::optional<CallableID> {
+        const auto callable_id = callable_for(type);
+        if (!callable_id.has_value()) {
+            return std::nullopt;
+        }
+        const auto body_id = draft.declarations().body_for_callable(*callable_id);
+        return !body_id.has_value() || draft.bodies().body(*body_id).inputs().captures.empty()
+            ? callable_id
+            : std::nullopt;
+    };
     if (source.category == SemanticValueCategory::Place) {
         flow = place(source, std::move(*flow.normal));
     } else {
@@ -229,6 +239,12 @@ auto OwnershipBodyAnalyzer::expression(
                             }
                             return;
                         }
+                        if (const auto callable_id = stateless_callable_for(from)) {
+                            flow.value.loans.push_back(
+                                {path, std::nullopt, *callable_id, source.origin, false}
+                            );
+                            return;
+                        }
                         auto element = backing;
                         element.path.insert(element.path.end(), path.begin(), path.end());
                         flow.value.loans.push_back(
@@ -265,10 +281,11 @@ auto OwnershipBodyAnalyzer::expression(
                     if (value.source->type.resolved() == source.type.resolved()) {
                         return;
                     }
-                    if (const auto* function = std::get_if<SemCallable>(&value.source->value)) {
+                    if (const auto callable_id =
+                            stateless_callable_for(value.source->type.resolved())) {
                         flow.value = {
-                            .loans = {{{}, std::nullopt, function->callable, source.origin, false}},
-                            .captures = {}
+                            .loans = {{{}, std::nullopt, *callable_id, source.origin, false}},
+                            .captures = {},
                         };
                     } else {
                         const auto backing = source_place.has_value()

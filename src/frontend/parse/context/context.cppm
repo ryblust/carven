@@ -199,6 +199,8 @@ private:
     auto parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID>;
     auto parse_primary_expression() noexcept -> std::optional<ASTExprID>;
     auto lambda_starts_here() const noexcept -> bool;
+    auto parse_callable_body() noexcept -> std::optional<ASTCallableBody>;
+    auto callable_body_span(const ASTCallableBody& body) const noexcept -> Span;
     auto parse_lambda_expression() noexcept -> std::optional<ASTExprID>;
     auto construction_allowed_here() const noexcept -> bool;
     auto try_parse_construction() noexcept -> std::optional<ASTExprID>;

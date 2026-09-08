@@ -6,8 +6,8 @@ import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.table;
 import :semantic.semir.type;
-import :source.provenance;
 import :source.provenance.ids;
+import :source.provenance;
 import std;
 
 enum class EmptyFailureRequirementKind {
@@ -161,7 +161,7 @@ class FailureTypeDiagnosticNames final {
 public:
     FailureTypeDiagnosticNames(
         const CanonicalTypeStoreBuilder& types,
-        ResolvedDeclarationView declarations,
+        DeclarationConstructionView declarations,
         CompilationProvenanceReader provenance
     ) noexcept;
 
@@ -169,7 +169,7 @@ public:
 
 private:
     const CanonicalTypeStoreBuilder& types;
-    ResolvedDeclarationView declarations;
+    DeclarationConstructionView declarations;
     CompilationProvenanceReader provenance;
 };
 

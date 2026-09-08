@@ -78,10 +78,22 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
         }
         active = planned.module_id;
         auto module_context = context.module_context(planned.module_id);
-        const auto declaration_only = std::holds_alternative<FunctionID>(planned.declaration);
-        append_items(
-            module_items,
-            lower_declaration(module_context, planned.declaration, declaration_only)
+        std::visit(
+            [&](auto id) noexcept {
+                if constexpr (std::same_as<decltype(id), CallableID>) {
+                    module_items.push_back(lower_closure_type(module_context, id));
+                } else {
+                    append_items(
+                        module_items,
+                        lower_declaration(
+                            module_context,
+                            DeclarationRef {id},
+                            std::same_as<decltype(id), FunctionID>
+                        )
+                    );
+                }
+            },
+            planned.declaration
         );
     }
     flush();

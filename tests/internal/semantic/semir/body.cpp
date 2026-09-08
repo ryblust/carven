@@ -101,7 +101,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
             .items = {ModuleItem {function}},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     return PreparedFunction {
         .builder = std::move(builder),
         .callable = callable,

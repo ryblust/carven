@@ -324,7 +324,7 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
             UniqueIndirect(std::move(body)),
             UniqueIndirect(std::move(steps))
         },
-        span
+        origin(span)
     );
     return {};
 }

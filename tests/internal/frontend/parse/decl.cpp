@@ -450,3 +450,31 @@ TEST_CASE("Parser: module components accept keyword spellings in every reference
         CHECK_EQ(root(tree).module_imports.size(), 1uz);
     }
 }
+
+TEST_CASE("Parser: callable expression bodies retain syntax and outer delimiters") {
+    constexpr auto source = std::string_view(
+        "fn add(a: i32) -> i32 => a + 1;\n"
+        "fn nested() => [](a: i32) => [](b: i32) => a + b;\n"
+        "fn use() { invoke([](a) => a * 2, 3); }\n"
+    );
+    const auto tree = parse_valid(source);
+    const auto ast = tree.view();
+    const auto& body =
+        get<ASTExpressionBody>(get<ASTFunctionBody>(function(tree, 0).implementation).body);
+    CHECK_EQ(slice(source, body.arrow_span), "=>");
+    CHECK(is<ASTBinaryExpr>(ast.expression(body.expression).value));
+    const auto& outer =
+        get<ASTExpressionBody>(get<ASTFunctionBody>(function(tree, 1).implementation).body);
+    const auto& lambda = get<ASTLambdaExpr>(ast.expression(outer.expression).value);
+    CHECK(is<ASTExpressionBody>(lambda.body));
+    const auto invalid = std::to_array<std::string_view>({
+        "fn missing() => ;",
+        "fn missing() => 1",
+        "import(cpp) fn invalid() => 1;",
+        "fn invalid() { let f = []() => ; }",
+        "fn invalid() => let x = 1;",
+    });
+    for (const auto text : invalid) {
+        check_invalid(text);
+    }
+}

@@ -15,8 +15,8 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
-import :frontend.lex;
 import :frontend.lex.token;
+import :frontend.lex;
 import :frontend.parse;
 import :source.manager;
 import :source.text;
@@ -92,5 +92,5 @@ auto function(const SyntaxTree& tree, std::size_t index = 0) noexcept -> const A
 auto function_body(const SyntaxTree& tree, std::size_t index = 0) noexcept -> const ASTBlock& {
     const auto ast = tree.view();
     const auto& implementation = get<ASTFunctionBody>(function(tree, index).implementation);
-    return ast.block(implementation.body);
+    return ast.block(get<ASTBlockID>(implementation.body));
 }

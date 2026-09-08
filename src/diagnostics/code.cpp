@@ -233,6 +233,10 @@ namespace {
     X(TypeRangeInteger, "CV-TYPE-RANGE-INTEGER", Error, "Integer range required.")                 \
     X(TypeRangeIterable, "CV-TYPE-RANGE-ITERABLE", Error, "Invalid range iterable.")               \
     X(TypeReturnMismatch, "CV-TYPE-RETURN-MISMATCH", Error, "Return type mismatch.")               \
+    X(TypeResultInferenceCycle,                                                                    \
+      "CV-TYPE-RESULT-INFERENCE-CYCLE",                                                            \
+      Error,                                                                                       \
+      "Function result inference cycle.")                                                          \
     X(TypeReturnValue, "CV-TYPE-RETURN-VALUE", Error, "Unexpected return value.")                  \
     X(TypeStrMethod, "CV-TYPE-STR-METHOD", Error, "Invalid str method.")                           \
     X(TypeStrMethodArity, "CV-TYPE-STR-METHOD-ARITY", Error, "Invalid str method arity.")          \

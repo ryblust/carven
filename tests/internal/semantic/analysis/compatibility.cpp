@@ -132,7 +132,7 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
             .items = {failure_structure},
         }
     );
-    compilation.finish_declarations();
+    compilation.finish_declaration_heads();
     const auto function = compilation.intern_type(
         CanonicalType {
             .value = FunctionTypeValue {.callable = function_callable},

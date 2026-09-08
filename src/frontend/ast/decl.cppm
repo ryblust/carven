@@ -113,8 +113,15 @@ struct ASTFunctionParameter final {
     std::optional<ASTTypeID> type;
 };
 
+struct ASTExpressionBody final {
+    Span arrow_span;
+    ASTExprID expression;
+};
+
+using ASTCallableBody = std::variant<ASTBlockID, ASTExpressionBody>;
+
 struct ASTFunctionBody final {
-    ASTBlockID body;
+    ASTCallableBody body;
 };
 
 using ASTFunctionImplementation = std::variant<ASTFunctionBody, ASTCppImportForm>;

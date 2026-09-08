@@ -266,6 +266,20 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     function.form
                 );
             },
+            [&](const TargetOutOfClassMemberDefinition& function) noexcept {
+                auto name = render_name_layouts(function.owner);
+                const auto member = render_member_function_name(function.name);
+                name.inline_qualified = concat({name.inline_qualified, text("::"), member});
+                name.wrapping = concat({name.wrapping, text("::"), member});
+                const auto signature = render_function_declarator(
+                    "",
+                    name,
+                    function.parameters,
+                    render_type_layouts(function.result),
+                    function.const_qualified
+                );
+                return concat({signature, text(" "), render_statement_block(function.body)});
+            },
             [&](const TargetStructDecl& structure) noexcept {
                 auto members = std::vector<LayoutNodeID> {};
                 for (const auto& member : structure.members) {

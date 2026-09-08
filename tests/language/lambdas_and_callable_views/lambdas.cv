@@ -153,3 +153,20 @@ test "Callee selection: identity and explicit value snapshots" {
     let snapshot = selected;
     check(snapshot(rebind()) == 1);
 }
+
+
+test "Callable views: stateless targets outlive their creation expression" {
+    var count = 0;
+    let stateless: fn() -> i32 = [&count]() { count += 1; return []() => 7; }();
+    check(count == 1);
+    check(stateless() == 7);
+    let block_view: fn(i32) -> i32 = [](value) { return value + 1; };
+    check(block_view(2) == 3);
+}
+
+fn stateless_callbacks() => [[]() => 8];
+
+test "Callable views: stateless array elements need no backing storage" {
+    let callbacks: [fn() -> i32; 1] = stateless_callbacks();
+    check(callbacks[0]() == 8);
+}

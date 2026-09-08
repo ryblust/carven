@@ -545,6 +545,29 @@ auto Parser::lambda_starts_here() const noexcept -> bool {
     return false;
 }
 
+auto Parser::parse_callable_body() noexcept -> std::optional<ASTCallableBody> {
+    if (const auto arrow = match(TokenKind::FatArrow)) {
+        const auto expression = parse_expression();
+        if (!expression || failed) {
+            return std::nullopt;
+        }
+        return ASTExpressionBody {.arrow_span = arrow->span, .expression = *expression};
+    }
+    const auto block = parse_ordinary_block();
+    if (!block || failed) {
+        return std::nullopt;
+    }
+    return *block;
+}
+
+auto Parser::callable_body_span(const ASTCallableBody& body) const noexcept -> Span {
+    if (const auto* block = std::get_if<ASTBlockID>(&body)) {
+        return builder.block(*block).span;
+    }
+    const auto& expression = std::get<ASTExpressionBody>(body);
+    return join(expression.arrow_span, builder.expression(expression.expression).span);
+}
+
 auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
     const auto left = expect(TokenKind::LeftBracket, "expected '[' in lambda capture list");
     auto captures = std::vector<ASTLambdaCapture> {};
@@ -610,13 +633,13 @@ auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
         throw_clause = parse_throw_clause();
     }
     const auto test_context = enter_test_statement_context(false);
-    const auto body = parse_ordinary_block();
+    const auto body = parse_callable_body();
     if (!body || failed) {
         return std::nullopt;
     }
     return builder.append_expression(
         ASTExpr {
-            .span = join(left.span, builder.block(*body).span),
+            .span = join(left.span, callable_body_span(*body)),
             .value = ASTLambdaExpr {
                 .captures = std::move(captures),
                 .parameters = std::move(parameters),

@@ -8,12 +8,18 @@ import :semantic.analysis.program;
 import :semantic.semir.program;
 import std;
 
-auto validate_cpp_boundary_declaration(
+auto validate_cpp_boundary_head(
     ProgramDraft& draft,
+    ProgramModuleID module_id,
+    const ASTFunctionDecl& function,
+    std::span<const ConstructionCallableParameter> parameters
+) noexcept -> AnalysisResult<void>;
+
+auto validate_cpp_boundary_result(
+    const ProgramDraft& draft,
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionDecl& function,
-    std::span<const ConstructionCallableParameter> parameters,
     ConstructionTypeRef result
 ) noexcept -> AnalysisResult<void>;
 

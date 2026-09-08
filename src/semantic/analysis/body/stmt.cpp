@@ -112,7 +112,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         writable,
         origin(binding_target_span(source.target))
     );
-    append_statement(SemInitialize {storage.binding, std::move(*value)}, source.span);
+    append_statement(SemInitialize {storage.binding, std::move(*value)}, origin(source.span));
     if (named == nullptr) {
         return {};
     }
@@ -158,7 +158,7 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         }
         append_statement(
             SemAssign {std::move(target->expression), std::nullopt, std::move(*value)},
-            source.span
+            origin(source.span)
         );
         return {};
     }
@@ -206,7 +206,7 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     }
     append_statement(
         SemAssign {std::move(target->expression), operation, std::move(*right_value)},
-        source.span
+        origin(source.span)
     );
     return {};
 }
@@ -234,7 +234,10 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
         if (!updated.has_value()) {
             return std::unexpected(updated.error());
         }
-        append_statement(SemExpressionStatement {take_built(*updated, source.span)}, source.span);
+        append_statement(
+            SemExpressionStatement {take_built(*updated, source.span)},
+            origin(source.span)
+        );
         return {};
     }
     const auto* concrete = std::get_if<TypeID>(&target->expression.type.construction());
@@ -285,7 +288,7 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
                                                       : BinaryOperator::Subtract,
             std::move(right)
         },
-        source.span
+        origin(source.span)
     );
     return {};
 }
@@ -384,7 +387,7 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
                   )
                 : std::nullopt
         },
-        span
+        origin(span)
     );
     if (source.kind != ASTTestOperationKind::Check) {
         regions.back().exits_test = true;
@@ -395,79 +398,86 @@ auto BodyElaborator::test_statement(const ASTTestOperationStmt& source, Span spa
     return {};
 }
 
+auto BodyElaborator::return_statement(
+    std::optional<ASTExprID> operand,
+    Span span,
+    Span keyword_span,
+    bool implicit
+) noexcept -> AnalysisResult<void> {
+    if (!value_boundary_loop_depths.empty()) {
+        static_cast<void>(fail(
+            keyword_span,
+            DiagnosticCode::FlowTransferValueBranch,
+            "return cannot cross a value-control branch"
+        ));
+        reachable = false;
+        return {};
+    }
+    auto value = std::optional<SemanticExpression>();
+    if (operand.has_value()) {
+        auto built = expression(*operand, result_type);
+        if (!built.has_value()) {
+            return std::unexpected(built.error());
+        }
+        if (result_type.has_value()
+            && is_void_type(draft(), *result_type)
+            && !is_void_type(draft(), built->type())
+            && !does_not_complete(*built)) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeReturnValue,
+                "void callable requires a void return operand"
+            ));
+        }
+        if (!result_type.has_value()) {
+            auto inferred = infer_value_type(*built, ast.expression(*operand).span);
+            if (!inferred.has_value()) {
+                return std::unexpected(inferred.error());
+            }
+            result_type = *inferred;
+        } else {
+            auto coerced = coerce_to(*built, *result_type, ast.expression(*operand).span);
+            if (!coerced.has_value()) {
+                return std::unexpected(coerced.error());
+            }
+        }
+        if (is_void_type(draft(), built->type())) {
+            auto consumed = consume_pending(*built, ast.expression(*operand).span);
+            if (!consumed.has_value()) {
+                return std::unexpected(consumed.error());
+            }
+            value = take_built(*built, ast.expression(*operand).span);
+        } else {
+            auto consumed = consume_value(*built, ast.expression(*operand).span, AccessMode::Read);
+            if (!consumed.has_value()) {
+                return std::unexpected(consumed.error());
+            }
+            value = std::move(*consumed);
+        }
+    } else {
+        if (!result_type.has_value()) {
+            result_type = draft().intern_builtin_type(BuiltinType::Void);
+        } else if (!is_void_type(draft(), *result_type)) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeMissingReturnValue,
+                "value-returning callable must return a value"
+            ));
+        }
+    }
+    append_statement(
+        SemReturn {value.has_value() ? std::optional(std::move(*value)) : std::nullopt},
+        implicit ? expansion(keyword_span, ProgramExpansionReason::SyntheticControl) : origin(span)
+    );
+    reachable = false;
+    return {};
+}
+
 auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexcept
     -> AnalysisResult<void> {
     switch (source.kind) {
         case ASTControlTransferKind::Return: {
-            if (!value_boundary_loop_depths.empty()) {
-                static_cast<void>(fail(
-                    source.keyword_span,
-                    DiagnosticCode::FlowTransferValueBranch,
-                    "return cannot cross a value-control branch"
-                ));
-                reachable = false;
-                return {};
-            }
-            auto value = std::optional<SemanticExpression>();
-            if (source.value.has_value()) {
-                auto built = expression(*source.value, result_type);
-                if (!built.has_value()) {
-                    return std::unexpected(built.error());
-                }
-                if (result_type.has_value()
-                    && is_void_type(draft(), *result_type)
-                    && !is_void_type(draft(), built->type())
-                    && !does_not_complete(*built)) {
-                    return std::unexpected(fail(
-                        source.span,
-                        DiagnosticCode::TypeReturnValue,
-                        "void callable requires a void return operand"
-                    ));
-                }
-                if (!result_type.has_value()) {
-                    auto inferred = infer_value_type(*built, ast.expression(*source.value).span);
-                    if (!inferred.has_value()) {
-                        return std::unexpected(inferred.error());
-                    }
-                    result_type = *inferred;
-                } else {
-                    auto coerced =
-                        coerce_to(*built, *result_type, ast.expression(*source.value).span);
-                    if (!coerced.has_value()) {
-                        return std::unexpected(coerced.error());
-                    }
-                }
-                if (is_void_type(draft(), built->type())) {
-                    auto consumed = consume_pending(*built, ast.expression(*source.value).span);
-                    if (!consumed.has_value()) {
-                        return std::unexpected(consumed.error());
-                    }
-                    value = take_built(*built, ast.expression(*source.value).span);
-                } else {
-                    auto operand =
-                        consume_value(*built, ast.expression(*source.value).span, AccessMode::Read);
-                    if (!operand.has_value()) {
-                        return std::unexpected(operand.error());
-                    }
-                    value = std::move(*operand);
-                }
-            } else {
-                if (!result_type.has_value()) {
-                    result_type = draft().intern_builtin_type(BuiltinType::Void);
-                } else if (!is_void_type(draft(), *result_type)) {
-                    return std::unexpected(fail(
-                        source.span,
-                        DiagnosticCode::TypeMissingReturnValue,
-                        "value-returning callable must return a value"
-                    ));
-                }
-            }
-            append_statement(
-                SemReturn {value.has_value() ? std::optional(std::move(*value)) : std::nullopt},
-                source.span
-            );
-            reachable = false;
-            return {};
+            return return_statement(source.value, source.span, source.keyword_span, false);
         }
         case ASTControlTransferKind::Break: {
             if (loops.empty()) {
@@ -495,7 +505,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                 ));
             }
             loops.back().has_break |= reachable && reference_path_reachable;
-            append_statement(SemBreak {}, source.span);
+            append_statement(SemBreak {}, origin(source.span));
             reachable = false;
             return {};
         }
@@ -525,7 +535,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                 ));
             }
             loops.back().has_continue |= reachable && reference_path_reachable;
-            append_statement(SemContinue {}, source.span);
+            append_statement(SemContinue {}, origin(source.span));
             reachable = false;
             return {};
         }
@@ -556,7 +566,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             }
             const auto& target = failure_context_for_current_path();
             draft().add_failure_member(target.term, *failure_type);
-            append_statement(SemThrow {std::move(*value), *failure_type}, source.span);
+            append_statement(SemThrow {std::move(*value), *failure_type}, origin(source.span));
             reachable = false;
             return {};
         }
@@ -578,7 +588,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             const auto& caught = catches.back();
             const auto& target = failure_context_for_current_path();
             draft().add_failure_contribution(target.term, caught.failures);
-            append_statement(SemRethrow {}, source.span);
+            append_statement(SemRethrow {}, origin(source.span));
             reachable = false;
             return {};
         }

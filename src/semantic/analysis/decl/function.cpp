@@ -118,7 +118,14 @@ auto DeclResolver::resolve_function(
         parameters.push_back({.access = access, .type = *type});
     }
 
-    auto result = ConstructionTypeRef {draft.intern_builtin_type(BuiltinType::Void)};
+    const auto* body = std::get_if<ASTFunctionBody>(&function.implementation);
+    const auto infer_result = !function.result_type.has_value()
+        && body != nullptr
+        && std::holds_alternative<ASTExpressionBody>(body->body);
+    auto result = std::optional<ConstructionTypeRef>();
+    if (!infer_result) {
+        result = draft.intern_builtin_type(BuiltinType::Void);
+    }
     if (function.result_type.has_value()) {
         auto resolved = resolve_type(symbol.module_id, syntax, *function.result_type);
         if (!resolved.has_value()) {
@@ -144,16 +151,16 @@ auto DeclResolver::resolve_function(
             : FailureContractPolicy::UndeclaredExplicit;
     }
 
-    auto boundary = validate_cpp_boundary_declaration(
-        draft,
-        symbol.module_id,
-        syntax,
-        function,
-        parameters,
-        result
-    );
-    if (!boundary.has_value()) {
-        return std::unexpected(boundary.error());
+    auto head_boundary = validate_cpp_boundary_head(draft, symbol.module_id, function, parameters);
+    if (!head_boundary.has_value()) {
+        return std::unexpected(head_boundary.error());
+    }
+    if (result.has_value()) {
+        auto boundary =
+            validate_cpp_boundary_result(draft, symbol.module_id, syntax, function, *result);
+        if (!boundary.has_value()) {
+            return std::unexpected(boundary.error());
+        }
     }
     if (form.function.index() >= functions.size()
         || form.callable.index() >= callable_contracts.size()) {
@@ -176,12 +183,20 @@ auto DeclResolver::resolve_function(
               )
             : std::nullopt,
     };
-    callable_contracts[form.callable.index()] = ConstructionCallableContract {
-        .parameters = std::move(parameters),
-        .result = result,
-        .failures = *failures,
-        .policy = policy,
-    };
+    if (result.has_value()) {
+        callable_contracts[form.callable.index()] = ConstructionCallableContract {
+            .parameters = std::move(parameters),
+            .result = *result,
+            .failures = *failures,
+            .policy = policy,
+        };
+    } else {
+        callable_contracts[form.callable.index()] = PendingFunctionContract {
+            .parameters = std::move(parameters),
+            .failures = *failures,
+            .policy = policy,
+        };
+    }
     if (cpp_import) {
         cpp_import_origins[form.callable.index()] = declaration_source_origin(
             draft,

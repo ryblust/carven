@@ -354,6 +354,10 @@ private:
         visit_fields(value.span, value.access, value.target, value.type);
     }
 
+    auto visit(const ASTExpressionBody& value) noexcept -> void {
+        visit_fields(value.arrow_span, value.expression);
+    }
+
     auto visit(const ASTFunctionBody& value) noexcept -> void { visit(value.body); }
 
     auto visit(const ASTFunctionDecl& value) noexcept -> void {

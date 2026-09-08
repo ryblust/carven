@@ -7,7 +7,7 @@ import :semantic.analysis.nominal.containment;
 import :semantic.analysis.program;
 import std;
 
-auto complete_declarations(
+auto resolve_declaration_heads(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage
@@ -23,7 +23,6 @@ auto complete_declarations(
             failure = result.error();
         }
     };
-    retain_first_failure(validate_declaration_surfaces(draft, catalog));
     retain_first_failure(analyze_nominal_containment(draft));
     retain_first_failure(diagnose_cpp_api_surface(draft, catalog));
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))

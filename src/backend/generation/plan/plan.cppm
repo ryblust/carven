@@ -31,6 +31,7 @@ struct TargetClosureCatalog final {
     std::vector<std::optional<ModuleID>> owner_modules;
     std::vector<std::vector<CallableID>> production_definitions;
     std::vector<std::vector<CallableID>> test_definitions;
+    std::vector<CallableID> definition_order;
 
     auto owner(CallableID callable) const noexcept -> ModuleID;
     auto production(ModuleID module_id) const noexcept -> std::span<const CallableID>;
@@ -130,13 +131,14 @@ struct TargetInterfaceForwardDeclaration final {
 
 struct TargetInterfaceDeclaration final {
     ModuleID module_id;
-    DeclarationRef declaration;
+    std::variant<FunctionID, StructID, EnumID, CallableID> declaration;
 };
 
 struct TargetModuleSchedule final {
     ModuleID module_id;
     std::vector<NominalDeclarationRef> private_nominal_order;
     std::vector<CallableID> closure_definitions;
+    std::vector<CallableID> interface_closures;
     std::vector<TestID> emitted_tests;
 };
 

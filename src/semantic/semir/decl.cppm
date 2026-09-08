@@ -242,7 +242,7 @@ private:
 
 class DeclarationBuilder;
 
-class ResolvedDeclarationView final {
+class DeclarationConstructionView final {
 public:
     auto owner() const noexcept -> ProgramIdentity;
     auto module_decl(ModuleID id) const noexcept -> ModuleDeclaration;
@@ -271,10 +271,12 @@ public:
     auto enum_case_ids() const noexcept -> std::vector<EnumCaseID>;
     auto module_constant_ids() const noexcept -> std::vector<ModuleConstantID>;
     auto callable_ids() const noexcept -> std::vector<CallableID>;
+    auto callable_contract_defined(CallableID id) const noexcept -> bool;
+    auto callable_contracts_complete() const noexcept -> bool;
     auto callable_implementations_complete() const noexcept -> bool;
 
 private:
-    explicit ResolvedDeclarationView(const DeclarationBuilder& builder) noexcept;
+    explicit DeclarationConstructionView(const DeclarationBuilder& builder) noexcept;
 
     const DeclarationBuilder* declaration_builder;
 
@@ -310,8 +312,8 @@ public:
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
 
-    auto finish_resolution() noexcept -> ResolvedDeclarationView;
-    auto resolved_view() const noexcept -> ResolvedDeclarationView;
+    auto finish_heads() noexcept -> DeclarationConstructionView;
+    auto construction_view() const noexcept -> DeclarationConstructionView;
 
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
     auto define_callable_signature(CallableID id, CallableSignatureID signature) noexcept -> void;
@@ -323,15 +325,15 @@ public:
 private:
     enum class State {
         Reserving,
-        Resolved,
+        BuildingCallables,
         Concrete,
     };
 
     auto require_reserving() const noexcept -> void;
-    auto require_resolved() const noexcept -> void;
-    auto require_resolution_finished() const noexcept -> void;
+    auto require_building_callables() const noexcept -> void;
+    auto require_heads_finished() const noexcept -> void;
     auto require_concrete() const noexcept -> void;
-    auto require_all_declarations_defined() const noexcept -> void;
+    auto require_heads_defined() const noexcept -> void;
     auto reserve_callable_pair() noexcept -> CallableID;
 
     ProgramIdentity program_identity;
@@ -348,5 +350,5 @@ private:
     ReservedProgramTable<CallableImplementation, CallableID> callable_implementations;
     std::vector<CallableID> callable_order;
 
-    friend class ResolvedDeclarationView;
+    friend class DeclarationConstructionView;
 };

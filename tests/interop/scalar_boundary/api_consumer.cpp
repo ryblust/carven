@@ -1,6 +1,8 @@
 #include "carven/api/tests/interop/scalar_boundary/scalars.hpp"
 #include "carven/api/tests/interop/scalar_boundary/scalars.hpp"
 
+#include "scalar_boundary/providers.hpp"
+
 #include <cstdlib>
 #include <type_traits>
 
@@ -31,8 +33,21 @@ static_assert(std::is_same_v<decltype(api::echo_usize), auto(std::size_t) noexce
 static_assert(std::is_same_v<decltype(api::echo_f32), auto(float) noexcept -> float>);
 static_assert(std::is_same_v<decltype(api::echo_f64), auto(double) noexcept -> double>);
 
+static_assert(
+    std::is_same_v<decltype(api::expression_scalar), auto(std::int32_t) noexcept -> std::int32_t>
+);
+static_assert(std::is_same_v<decltype(api::expression_void), auto() noexcept -> void>);
+
 struct VerifyCppAPI final {
     VerifyCppAPI() noexcept {
+        scalar_boundary_detail::expression_calls = 0;
+        api::expression_void();
+        if (scalar_boundary_detail::expression_calls != 1) {
+            std::abort();
+        }
+        if (api::expression_scalar(4) != 5) {
+            std::abort();
+        }
         if (!api::echo_bool(true)
             || api::echo_char(U'Z') != U'Z'
             || api::echo_i8(std::int8_t {-8}) != std::int8_t {-8}

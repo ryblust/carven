@@ -206,10 +206,15 @@ auto DeclResolver::publish() noexcept -> void {
                         invariant_violation("resolved function has an incomplete contract");
                     }
                     draft.define_declaration(form.function, *functions[form.function.index()]);
-                    draft.define_callable_contract(
-                        form.callable,
-                        std::move(*callable_contracts[form.callable.index()])
-                    );
+                    auto& contract = *callable_contracts[form.callable.index()];
+                    if (auto* complete = std::get_if<ConstructionCallableContract>(&contract)) {
+                        draft.define_callable_contract(form.callable, std::move(*complete));
+                    } else {
+                        draft.define_pending_function_contract(
+                            form.callable,
+                            std::move(std::get<PendingFunctionContract>(contract))
+                        );
+                    }
                 },
                 [&](const CatalogStructForm& form) noexcept {
                     if (!structures[form.structure.index()].has_value()) {
@@ -251,7 +256,7 @@ auto DeclResolver::publish() noexcept -> void {
             symbol.form
         );
     }
-    draft.finish_declarations();
+    draft.finish_declaration_heads();
     for (const auto& symbol : catalog.symbols()) {
         const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
         if (form == nullptr || !cpp_import_origins[form->callable.index()].has_value()) {

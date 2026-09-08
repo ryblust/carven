@@ -146,6 +146,11 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
                 };
             },
             [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+                auto completed =
+                    batch->ensure_function_signature(form.function, source_module_id, span);
+                if (!completed.has_value()) {
+                    return std::unexpected(completed.error());
+                }
                 return ResolvedConstantName {
                     .type = draft().intern_type(
                         CanonicalType {

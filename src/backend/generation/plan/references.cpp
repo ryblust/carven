@@ -20,6 +20,7 @@ public:
                   std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>>(
                       surfaces.size()
                   ),
+              .surface_closures = std::vector<std::flat_set<CallableID>>(surfaces.size()),
           } {}
 
     auto finish() && noexcept -> TargetReferenceFacts {
@@ -143,7 +144,18 @@ private:
                     collect_callable(module_id, value.callable, guard);
                 },
                 [&](const ClosureTypeValue& value) noexcept {
+                    result.surface_closures[module_id.index()].insert(value.callable);
                     collect_callable(module_id, value.callable, guard);
+                    const auto body_id = semantic.declarations().body_for_callable(value.callable);
+                    const auto& body = semantic.bodies().body(*body_id);
+                    for (const auto capture : body.inputs().captures) {
+                        collect_type(
+                            module_id,
+                            body.binding(capture).type,
+                            TargetTypeCompleteness::CompleteDefinition,
+                            guard
+                        );
+                    }
                 },
                 [&](const CallableViewTypeValue& value) noexcept {
                     collect_signature(module_id, value.signature, guard);

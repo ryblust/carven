@@ -48,7 +48,9 @@ auto ProgramDraft::complete_body(SemIRBody body, const DeclarationStore& declara
 auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
     require_state(State::Bodies, "solve construction");
     auto& input = construction();
-    if (!input.declarations.resolved_view().callable_implementations_complete()
+    if (!input.pending_function_contracts.empty()
+        || !input.declarations.construction_view().callable_contracts_complete()
+        || !input.declarations.construction_view().callable_implementations_complete()
         || input.body_drafts.size() != input.body_slots.size()
         || !input.test_slots.all_defined()) {
         invariant_violation("construction solving began with incomplete reservations");
@@ -60,7 +62,7 @@ auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
         provenance_appender.reader(),
         FailureTypeDiagnosticNames(
             input.types,
-            input.declarations.resolved_view(),
+            input.declarations.construction_view(),
             provenance_appender.reader()
         ),
         analysis_diagnostics
@@ -109,7 +111,7 @@ auto ProgramDraft::finalize_callable_signatures(
     const TypeResolution& types,
     const FailureSolution& failures
 ) noexcept -> void {
-    const auto view = construction().declarations.resolved_view();
+    const auto view = construction().declarations.construction_view();
     for (const auto callable_id : view.callable_ids()) {
         const auto contract = view.callable_contract(callable_id);
         auto parameters = std::vector<CallableParameter>();

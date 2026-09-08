@@ -10,7 +10,6 @@ import :semantic.analysis.validation.context;
 import :semantic.analysis.validation;
 import :semantic.semir.constant;
 import :support.invariant;
-import :support.visit;
 import std;
 
 auto verify_semantic_body(
@@ -58,5 +57,5 @@ auto validate_global_semantic_contracts(
     if (failure.has_value()) {
         return std::unexpected(*failure);
     }
-    return {};
+    return validate_declaration_surfaces(draft);
 }

@@ -396,7 +396,8 @@ contain fields only.
 ### 3.4 Functions
 
 ```ebnf
-function-definition = function-head, ordinary-block;
+function-definition = function-head,
+                      ( ordinary-block | "=>", expression, ";" );
 
 function-head = "fn", IDENTIFIER,
                 "(", [ parameter-list ], ")",
@@ -415,7 +416,7 @@ throw-clause = "throw", named-type, { "+", named-type };
 ```
 
 Function definitions are top-level items. `import(cpp)` uses the same function
-head followed by `;`; `export(cpp)` uses it followed by an ordinary block.
+head followed by `;`; `export(cpp)` uses either function-body form.
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions, default arguments,
 variadic parameters, and explicit generic parameter lists have no syntax.
@@ -779,13 +780,18 @@ array-element-list = expression,
 
 lambda-expression = "[", [ capture-list ], "]",
                     "(", [ lambda-parameter-list ], ")",
-                    [ "->", type ], [ throw-clause ], ordinary-block;
+                    [ "->", type ], [ throw-clause ],
+                    ( ordinary-block | "=>", expression );
 
 capture-list = capture, { ",", capture }, [ "," ];
 capture = [ "&" ], IDENTIFIER;
 
 lambda-parameter-list = parameter, { ",", parameter }, [ "," ];
 ```
+
+An expression-bodied lambda does not consume a trailing semicolon or comma;
+these delimit the enclosing declaration, statement, or argument list. The body
+is one complete expression, including nested lambdas and value control forms.
 
 An access expression begins only at the start of an `expression` production.
 Its marker therefore covers the complete expression to its right. Infix `&`

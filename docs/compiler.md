@@ -22,9 +22,17 @@ publishes an immutable semantic program. Source errors discard the draft.
 
 ## Publication gates
 
-The analysis driver builds the declaration catalog, completes signatures and
-required constants, elaborates bodies, and diagnoses unused imports. The catalog
-and import-use state end before solving.
+The analysis driver collects declaration identities, resolves function heads and
+required constants, and elaborates bodies. Function results are completed on demand;
+a dependency on an active, unknown result produces an inference-cycle diagnostic.
+Known signatures support recursive calls. Each body is elaborated once.
+
+`ProgramDraft` owns pending function heads. A complete callable contract includes
+its result. Declaration-head completion closes the nominal tables; solving requires
+complete callable contracts and bodies. The catalog and import-use state end before
+solving. Final semantic validation checks declaration surfaces, including closure
+captures and solved failure sets.
+
 `analysis.program` owns `ProgramDraft` and declaration/body reservations.
 `solve_construction` checks reservation completeness, solves failures and types,
 and finalizes callable signatures, declarations, and bodies in that order.

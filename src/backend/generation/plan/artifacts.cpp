@@ -234,6 +234,7 @@ auto plan_artifacts(
             .module_id = module_record.id,
             .private_nominal_order = {},
             .closure_definitions = {},
+            .interface_closures = {},
             .emitted_tests = {},
         };
         auto& closure_definitions = schedules[module_record.id.index()]->closure_definitions;
@@ -293,12 +294,29 @@ auto plan_artifacts(
     }
 
     const auto references = collect_target_references(semantic, surface_declarations);
+    auto exposed_closures = std::flat_set<CallableID>();
+    for (const auto& requirements : references.surface_closures) {
+        exposed_closures.insert(requirements.begin(), requirements.end());
+    }
+    for (auto& schedule : schedules) {
+        for (const auto closure : schedule->closure_definitions) {
+            if (exposed_closures.contains(closure)) {
+                schedule->interface_closures.push_back(closure);
+            }
+        }
+    }
     auto complete_dependencies = std::vector<std::flat_set<ModuleID>>(module_count);
     for (auto index = 0uz; index < module_count; ++index) {
         if (!module_by_index[index].has_value()) {
             invariant_violation("semantic module table contains a missing row");
         }
         const auto module_id = *module_by_index[index];
+        for (const auto closure : references.surface_closures[index]) {
+            const auto owner = closures.owner(closure);
+            if (owner != module_id) {
+                complete_dependencies[index].insert(owner);
+            }
+        }
         for (const auto& [nominal, completeness] : references.surface_requirements[index]) {
             if (completeness != TargetTypeCompleteness::CompleteDefinition) {
                 continue;
@@ -435,8 +453,21 @@ auto plan_artifacts(
                 && *module_component[owner.index()] == component_index) {
                 interface_declarations.push_back({
                     .module_id = owner,
-                    .declaration = target_declaration_ref(nominal),
+                    .declaration = std::visit(
+                        [](auto id) static noexcept
+                            -> std::variant<FunctionID, StructID, EnumID, CallableID> {
+                            return id;
+                        },
+                        nominal
+                    ),
                 });
+            }
+        }
+        for (const auto callable_id : closures.definition_order) {
+            const auto owner = closures.owner(callable_id);
+            if (exposed_closures.contains(callable_id)
+                && std::ranges::contains(component_members[component_index], owner)) {
+                interface_declarations.push_back({.module_id = owner, .declaration = callable_id});
             }
         }
         for (const auto member : component_members[component_index]) {
@@ -448,7 +479,7 @@ auto plan_artifacts(
                                 != DeclarationVisibility::Module) {
                                 interface_declarations.push_back({
                                     .module_id = member,
-                                    .declaration = DeclarationRef {id},
+                                    .declaration = id,
                                 });
                             }
                         },

@@ -8,6 +8,9 @@ import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.sink;
 import :frontend.program.parse;
+import :semantic.analysis.body.pipeline;
+import :semantic.analysis.catalog;
+import :semantic.analysis.decl;
 import :semantic.analysis.program;
 import :semantic.analysis.types.contents;
 import :semantic.analysis.validation;
@@ -204,14 +207,14 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     CHECK(expect_termination(
         std::format("compilation-builder-moved-finish-declarations-{}", module_name),
         // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { builder.finish_declarations(); }
+        [&] { builder.finish_declaration_heads(); }
     ));
     CHECK(expect_termination(
         std::format("compilation-builder-moved-identity-{}", module_name),
         // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
         [&] { static_cast<void>(builder.identity()); }
     ));
-    active_builder.finish_declarations();
+    active_builder.finish_declaration_heads();
     CHECK(expect_termination(
         std::format("compilation-builder-reserve-after-declarations-{}", module_name),
         [&] { static_cast<void>(active_builder.reserve_test()); }
@@ -407,7 +410,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
             .items = {*item},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     const auto solved = builder.solve_construction();
     REQUIRE(solved.has_value());
 
@@ -480,4 +483,35 @@ TEST_CASE("SemIR global contracts: structure rejects nested callable-view storag
 
 TEST_CASE("SemIR global contracts: enum payload rejects nested callable-view storage") {
     require_callable_view_storage_rejected(true);
+}
+
+TEST_CASE("SemIR lifecycle: pending function results cannot be read or solved") {
+    auto sources = SourceManager();
+    const auto source = sources.append_virtual("pending.cv", "fn inferred() => 1;");
+    REQUIRE(source.has_value());
+    const auto inputs =
+        std::array {CompilationModuleInput {.source_id = *source, .module_path = path("pending")}};
+    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    REQUIRE(syntax.has_value());
+    auto diagnostics = DiagnosticSink();
+    auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
+    auto catalog = build_analysis_catalog(draft);
+    REQUIRE(catalog.has_value());
+    auto usage = ImportUsage(catalog->view().imports().size());
+    REQUIRE(resolve_declaration_heads(draft, catalog->view(), usage).has_value());
+    const auto function = draft.function_declaration_ids().front();
+    const auto callable = draft.function_declaration_copy(function).callable;
+    REQUIRE(draft.pending_function_contract_copy(callable).has_value());
+    CHECK(expect_termination("pending-function-contract-read", [&] {
+        static_cast<void>(draft.construction_callable_contract_copy(callable));
+    }));
+    CHECK(expect_termination("pending-function-contract-solve", [&] {
+        static_cast<void>(draft.solve_construction());
+    }));
+    REQUIRE(elaborate_body_batch(draft, catalog->view(), usage).has_value());
+    CHECK_FALSE(draft.pending_function_contract_copy(callable).has_value());
+    CHECK(expect_termination("duplicate-function-result-completion", [&] {
+        draft.complete_function_result(callable, draft.intern_builtin_type(BuiltinType::I32));
+    }));
+    CHECK(draft.solve_construction().has_value());
 }

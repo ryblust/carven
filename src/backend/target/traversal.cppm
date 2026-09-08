@@ -622,6 +622,11 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
                 return definition == nullptr
                     || traverse_target_callable_body(definition->body, visitor);
             },
+            [&](const TargetOutOfClassMemberDefinition& value) noexcept {
+                return traverse_target_parameters(value.parameters, visitor)
+                    && visit_target_type(visitor, value.result)
+                    && traverse_target_callable_body(value.body, visitor);
+            },
             [&](const TargetStructDecl& value) noexcept {
                 return std::ranges::all_of(value.members, [&](const auto& member) noexcept {
                     return traverse_target_record_member(member, visitor);

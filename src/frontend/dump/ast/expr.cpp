@@ -437,7 +437,7 @@ auto ASTDumper::render_expression(
         append_line(nested, false, "result <absent>");
     }
     render_throw_clause(lambda.throw_clause, nested, false);
-    render_ordinary_block(lambda.body, nested, true, "body ");
+    render_callable_body(lambda.body, nested, true, "body ");
 }
 
 auto ASTDumper::render_expression(

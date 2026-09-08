@@ -357,12 +357,7 @@ auto ASTDumper::render_top_level_item(
                 std::visit(
                     Overloaded {
                         [&](const ASTFunctionBody& implementation) noexcept {
-                            render_ordinary_block(
-                                implementation.body,
-                                nested_prefix,
-                                true,
-                                "body "
-                            );
+                            render_callable_body(implementation.body, nested_prefix, true, "body ");
                         },
                         [&](const ASTCppImportForm& implementation) noexcept {
                             render_span_field(

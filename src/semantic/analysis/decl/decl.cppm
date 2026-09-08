@@ -5,7 +5,7 @@ import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
 import :semantic.semir.program;
 
-auto complete_declarations(
+auto resolve_declaration_heads(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage

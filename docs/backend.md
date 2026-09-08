@@ -45,10 +45,13 @@ C++ selects the constructor. Semantic analysis enforces source availability.
 The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades obey their explicit boundary signatures.
 
-Concrete closures use named structures. Value captures are fields; Write
-captures are `std::reference_wrapper<T>` fields. Their call operators are const:
-value captures are read-only through the operator, and reference captures reach
-their referents through `.get()`. Capture fields permit the generated default
+Concrete closures use named structures with const call operators defined in the
+source artifact. Closures exposed by function result types publish their layouts
+in the generated interface. Noncapturing closures adapt to callable views without
+borrowing an object; the source closure expression is evaluated once.
+Value captures are fields and are read-only through the call operator. Write
+captures are `std::reference_wrapper<T>` fields whose referents are accessed
+through `.get()`. Capture fields permit the generated default
 C++ assignment operation to copy values and rebind reference targets.
 Callable borrows use non-owning `FunctionRef` target descriptions.
 
@@ -169,8 +172,8 @@ interface. Function declaration return types, including Outcome and arrays,
 require only declarations of their component types. Object storage and Read traits require
 complete definitions. Body-only calls do not merge interfaces.
 
-Schedules own interface declarations, C++ façades, private nominal and closure
-ordering, and selected tests. Ordinary module items are scanned from SemIR.
+Schedules own the ordered interface definitions and function declarations, C++
+façades, private nominal and closure ordering, and selected tests. Ordinary module items are scanned from SemIR.
 Lowering records providers of actually emitted names and types. These transient
 provider sets are consumed into include directives.
 

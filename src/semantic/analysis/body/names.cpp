@@ -89,6 +89,11 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     return std::visit(
         Overloaded {
             [&](const CatalogFunctionForm& function) noexcept -> AnalysisResult<BuiltExpression> {
+                auto completed =
+                    batch->ensure_function_signature(function.function, source_module_id, span);
+                if (!completed.has_value()) {
+                    return std::unexpected(completed.error());
+                }
                 auto value = active_builder().callable_expression(function.callable, origin(span));
                 return BuiltExpression {
                     .storage = std::move(value),

@@ -222,6 +222,48 @@ auto ProgramDraft::define_callable_contract(
     construction().declarations.define_callable_contract(id, std::move(contract));
 }
 
+auto ProgramDraft::define_pending_function_contract(
+    CallableID id,
+    PendingFunctionContract contract
+) noexcept -> void {
+    require_state(State::Declarations, "define pending function contract");
+    if (id.owner() != program_identity
+        || !construction().pending_function_contracts.emplace(id, std::move(contract)).second) {
+        invariant_violation("invalid pending function contract reservation");
+    }
+}
+
+auto ProgramDraft::pending_function_contract_copy(CallableID id) const noexcept
+    -> std::optional<PendingFunctionContract> {
+    require_declarations_available("read pending function contract");
+    if (id.owner() != program_identity) {
+        invariant_violation("pending function contract used a foreign callable");
+    }
+    const auto& pending = construction().pending_function_contracts;
+    const auto found = pending.find(id);
+    return found == pending.end() ? std::nullopt : std::optional(found->second);
+}
+
+auto ProgramDraft::complete_function_result(CallableID id, ConstructionTypeRef result) noexcept
+    -> void {
+    require_state(State::Bodies, "complete function result");
+    auto& pending = construction().pending_function_contracts;
+    const auto found = pending.find(id);
+    if (found == pending.end()) {
+        invariant_violation("function result completed without a pending contract");
+    }
+    construction().declarations.define_callable_contract(
+        id,
+        {
+            .parameters = std::move(found->second.parameters),
+            .result = result,
+            .failures = found->second.failures,
+            .policy = found->second.policy,
+        }
+    );
+    pending.erase(found);
+}
+
 auto ProgramDraft::append_body_callable(ConstructionCallableContract contract) noexcept
     -> CallableID {
     require_state(State::Bodies, "append body callable");
@@ -236,41 +278,41 @@ auto ProgramDraft::complete_callable(CallableID id, CallableImplementation imple
 
 auto ProgramDraft::module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration {
     require_declarations_available("read module declaration");
-    return construction().declarations.resolved_view().module_decl(id);
+    return construction().declarations.construction_view().module_decl(id);
 }
 
 auto ProgramDraft::function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration {
     require_declarations_available("read function declaration");
-    return construction().declarations.resolved_view().function(id);
+    return construction().declarations.construction_view().function(id);
 }
 
 auto ProgramDraft::construction_struct_declaration_copy(StructID id) const noexcept
     -> ConstructionStructDeclaration {
     require_declarations_available("read construction struct declaration");
-    return construction().declarations.resolved_view().structure(id);
+    return construction().declarations.construction_view().structure(id);
 }
 
 auto ProgramDraft::enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration {
     require_declarations_available("read construction enum declaration");
-    return construction().declarations.resolved_view().enumeration(id);
+    return construction().declarations.construction_view().enumeration(id);
 }
 
 auto ProgramDraft::construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
     -> ConstructionEnumCaseDeclaration {
     require_declarations_available("read construction enum-case declaration");
-    return construction().declarations.resolved_view().enum_case(id);
+    return construction().declarations.construction_view().enum_case(id);
 }
 
 auto ProgramDraft::module_constant_declaration_copy(ModuleConstantID id) const noexcept
     -> ModuleConstantDeclaration {
     require_declarations_available("read construction module-constant declaration");
-    return construction().declarations.resolved_view().module_constant(id);
+    return construction().declarations.construction_view().module_constant(id);
 }
 
 auto ProgramDraft::construction_callable_contract_copy(CallableID id) const noexcept
     -> ConstructionCallableContract {
     require_declarations_available("read construction callable contract");
-    return construction().declarations.resolved_view().callable_contract(id);
+    return construction().declarations.construction_view().callable_contract(id);
 }
 
 auto ProgramDraft::construction_failure_term_copy(FailureTermID failures) const noexcept
@@ -281,73 +323,73 @@ auto ProgramDraft::construction_failure_term_copy(FailureTermID failures) const 
 
 auto ProgramDraft::module_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read module declaration count");
-    return construction().declarations.resolved_view().module_count();
+    return construction().declarations.construction_view().module_count();
 }
 
 auto ProgramDraft::function_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read function declaration count");
-    return construction().declarations.resolved_view().function_count();
+    return construction().declarations.construction_view().function_count();
 }
 
 auto ProgramDraft::struct_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read struct declaration count");
-    return construction().declarations.resolved_view().struct_count();
+    return construction().declarations.construction_view().struct_count();
 }
 
 auto ProgramDraft::enum_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read enum declaration count");
-    return construction().declarations.resolved_view().enum_count();
+    return construction().declarations.construction_view().enum_count();
 }
 
 auto ProgramDraft::enum_case_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read enum-case declaration count");
-    return construction().declarations.resolved_view().enum_case_count();
+    return construction().declarations.construction_view().enum_case_count();
 }
 
 auto ProgramDraft::module_constant_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read module-constant declaration count");
-    return construction().declarations.resolved_view().module_constant_count();
+    return construction().declarations.construction_view().module_constant_count();
 }
 
 auto ProgramDraft::callable_declaration_count() const noexcept -> std::size_t {
     require_declarations_available("read callable declaration count");
-    return construction().declarations.resolved_view().callable_count();
+    return construction().declarations.construction_view().callable_count();
 }
 
 auto ProgramDraft::module_declaration_ids() const noexcept -> std::vector<ModuleID> {
     require_declarations_available("read module declaration identities");
-    return construction().declarations.resolved_view().module_ids();
+    return construction().declarations.construction_view().module_ids();
 }
 
 auto ProgramDraft::function_declaration_ids() const noexcept -> std::vector<FunctionID> {
     require_declarations_available("read function declaration identities");
-    return construction().declarations.resolved_view().function_ids();
+    return construction().declarations.construction_view().function_ids();
 }
 
 auto ProgramDraft::struct_declaration_ids() const noexcept -> std::vector<StructID> {
     require_declarations_available("read struct declaration identities");
-    return construction().declarations.resolved_view().struct_ids();
+    return construction().declarations.construction_view().struct_ids();
 }
 
 auto ProgramDraft::enum_declaration_ids() const noexcept -> std::vector<EnumID> {
     require_declarations_available("read enum declaration identities");
-    return construction().declarations.resolved_view().enum_ids();
+    return construction().declarations.construction_view().enum_ids();
 }
 
 auto ProgramDraft::enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID> {
     require_declarations_available("read enum-case declaration identities");
-    return construction().declarations.resolved_view().enum_case_ids();
+    return construction().declarations.construction_view().enum_case_ids();
 }
 
 auto ProgramDraft::module_constant_declaration_ids() const noexcept
     -> std::vector<ModuleConstantID> {
     require_declarations_available("read module-constant declaration identities");
-    return construction().declarations.resolved_view().module_constant_ids();
+    return construction().declarations.construction_view().module_constant_ids();
 }
 
 auto ProgramDraft::callable_declaration_ids() const noexcept -> std::vector<CallableID> {
     require_declarations_available("read callable declaration identities");
-    return construction().declarations.resolved_view().callable_ids();
+    return construction().declarations.construction_view().callable_ids();
 }
 
 auto ProgramDraft::add_empty_failure_term() noexcept -> FailureTermID {
@@ -555,9 +597,22 @@ auto ProgramDraft::append_expansion_origin(
     );
 }
 
-auto ProgramDraft::finish_declarations() noexcept -> void {
-    require_state(State::Declarations, "finish declarations");
-    static_cast<void>(construction().declarations.finish_resolution());
+auto ProgramDraft::finish_declaration_heads() noexcept -> void {
+    require_state(State::Declarations, "finish declaration heads");
+    const auto heads = construction().declarations.finish_heads();
+    auto pending_count = 0uz;
+    for (const auto callable_id : heads.callable_ids()) {
+        const auto pending = construction().pending_function_contracts.contains(callable_id);
+        pending_count += pending;
+        if (heads.callable_contract_defined(callable_id) == pending) {
+            invariant_violation(
+                "function head must have either a complete contract or a pending result"
+            );
+        }
+    }
+    if (pending_count != construction().pending_function_contracts.size()) {
+        invariant_violation("pending function result has no reserved callable");
+    }
     state = State::Bodies;
 }
 
@@ -601,7 +656,7 @@ auto ProgramDraft::define_test(TestID id, TestDeclaration test) noexcept -> void
         || test.origin.owner() != provenance_appender.reader().identity()) {
         invariant_violation("test declaration mixed semantic or provenance owners");
     }
-    static_cast<void>(construction().declarations.resolved_view().module_decl(test.module_id));
+    static_cast<void>(construction().declarations.construction_view().module_decl(test.module_id));
     if (!construction().body_slots.contains(test.body)
         || static_cast<std::size_t>(test.body.index()) >= construction().reserved_body_kinds.size()
         || construction().reserved_body_kinds.size() != construction().test_by_body.size()
@@ -638,14 +693,14 @@ auto ProgramDraft::body_for_callable(CallableID callable) const noexcept -> std:
     require_declarations_available("find body for callable");
     return state == State::Solved
         ? final().declarations.body_for_callable(callable)
-        : construction().declarations.resolved_view().body_for_callable(callable);
+        : construction().declarations.construction_view().body_for_callable(callable);
 }
 
 auto ProgramDraft::callable_for_body(BodyID body) const noexcept -> std::optional<CallableID> {
     require_declarations_available("find callable for body");
     return state == State::Solved
         ? final().declarations.callable_for_body(body)
-        : construction().declarations.resolved_view().callable_for_body(body);
+        : construction().declarations.construction_view().callable_for_body(body);
 }
 
 auto ProgramDraft::require_state(State expected, std::string_view operation) const noexcept

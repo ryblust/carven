@@ -105,8 +105,10 @@ auto BodyElaborator::mark_noncompleting(BuiltExpression value) noexcept -> Built
     return value;
 }
 
-auto BodyElaborator::append_statement(decltype(SemanticStatement::value) value, Span span) noexcept
-    -> void {
+auto BodyElaborator::append_statement(
+    decltype(SemanticStatement::value) value,
+    ProgramOriginID statement_origin
+) noexcept -> void {
     auto& destination = regions.back();
     const auto statement_failures = draft().add_empty_failure_term();
     auto statement_exits_test = false;
@@ -187,14 +189,14 @@ auto BodyElaborator::append_statement(decltype(SemanticStatement::value) value, 
     );
     destination.exits_test |= statement_exits_test;
     destination.statements.push_back(
-        {.origin = origin(span),
+        {.origin = statement_origin,
          .lifetime = active_full_expression.value_or(frames.back().lifetime),
          .value = std::move(value)}
     );
 }
 
 auto BodyElaborator::append_expression(BuiltExpression& expression, Span span) noexcept -> void {
-    append_statement(SemExpressionStatement {take_built(expression, span)}, span);
+    append_statement(SemExpressionStatement {take_built(expression, span)}, origin(span));
 }
 
 auto BodyElaborator::inferred_result_type() const noexcept -> ConstructionTypeRef {

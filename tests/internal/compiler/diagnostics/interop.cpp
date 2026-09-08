@@ -36,6 +36,24 @@ TEST_CASE("Compiler diagnostics: interop failures preserve code and precise span
             .primary_text = "&",
         },
         {
+            .name = "expression function boundary parameter",
+            .source = "export(cpp) fn invalid(value: str) => invalid(value);",
+            .code = "CV-CPP-CARRIER",
+            .primary_text = "value: str",
+        },
+        {
+            .name = "expression function boundary failure contract",
+            .source = "struct Failure {} export(cpp) fn invalid() throw Failure => invalid();",
+            .code = "CV-CPP-BOUNDARY",
+            .primary_text = "throw Failure",
+        },
+        {
+            .name = "inferred C++ boundary result",
+            .source = "export(cpp) fn invalid() => \"text\";",
+            .code = "CV-CPP-CARRIER",
+            .primary_text = "invalid",
+        },
+        {
             .name = "C++ boundary failure contract",
             .source = "struct Failure {} private import(cpp) fn invalid() throw Failure;",
             .code = "CV-CPP-BOUNDARY",

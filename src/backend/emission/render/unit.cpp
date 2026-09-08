@@ -21,6 +21,7 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
                 return std::visit(
                     []<typename Value>(const Value&) static noexcept -> TargetItemCategory {
                         if constexpr (std::same_as<Value, TargetFunctionDecl>
+                                      || std::same_as<Value, TargetOutOfClassMemberDefinition>
                                       || std::same_as<Value, TargetStructForwardDecl>
                                       || std::same_as<Value, TargetEnumForwardDecl>
                                       || std::same_as<Value, TargetClassForwardDecl>) {

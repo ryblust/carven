@@ -256,7 +256,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
             .items = {function, structure, enumeration, module_constant, test},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
 
     auto function_body = builder.reserve_body(BodyKind::Function);
     const auto function_body_id = function_body.id();
@@ -357,7 +357,7 @@ TEST_CASE("SemIR publication: semantic module order is independent of provenance
             .items = {},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     const auto program = std::move(builder).seal();
     CHECK_EQ(
@@ -389,7 +389,7 @@ TEST_CASE("SemIR publication invariant: every failure-set member is nominal") {
             .items = {},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-nonnominal-failure", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -419,7 +419,7 @@ TEST_CASE("SemIR publication invariant: every constant matches its canonical typ
             .items = {},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-constant-type", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -454,7 +454,7 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
             .items = {},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-orphan-module-item", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -481,7 +481,7 @@ TEST_CASE("SemIR publication invariant: every provenance module has one semantic
     };
     builder.define_declaration(first_module, declaration);
     builder.define_declaration(second_module, declaration);
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-duplicate-provenance-module", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -516,7 +516,7 @@ TEST_CASE("SemIR publication invariant: a named declaration has one module item"
             .items = {structure, structure},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-duplicate-module-item", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -567,7 +567,7 @@ TEST_CASE("SemIR publication invariant: a module item agrees with its declaratio
             .items = {structure},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-module-item-owner", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -614,7 +614,7 @@ TEST_CASE("SemIR publication invariant: enum owner and case list are bidirection
             .items = {enumeration},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-orphan-enum-case", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -661,7 +661,7 @@ TEST_CASE("SemIR publication invariant: an enum case appears once in its owner l
             .items = {enumeration},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-duplicate-enum-case", [&] noexcept {
         static_cast<void>(std::move(builder).seal());
@@ -702,7 +702,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
             .items = {first, second},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     builder.complete_callable(callable, CppImportImplementation {.form_origin = facts.origin});
     REQUIRE(builder.solve_construction().has_value());
     CHECK(expect_termination("semir-publication-duplicate-function-callable", [&] noexcept {
@@ -727,7 +727,7 @@ TEST_CASE("SemIR publication invariant: a test has one owning module item") {
             .items = {test, test},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     auto reservation = builder.reserve_body(BodyKind::Test);
     const auto body_id = reservation.id();
     builder.define_test(
@@ -779,7 +779,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
             .items = {function},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     auto reservation = builder.reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();
     builder.complete_callable(callable, ClosureBodyImplementation {.body = body_id});
@@ -806,7 +806,7 @@ TEST_CASE("SemIR publication invariant: a closure callable has one closure opera
             .items = {},
         }
     );
-    builder.finish_declarations();
+    builder.finish_declaration_heads();
     const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
     const auto callable = builder.append_body_callable(callable_contract(builder, void_type));
     auto reservation = builder.reserve_body(BodyKind::Closure);
@@ -873,7 +873,7 @@ TEST_CASE("SemIR publication invariant: external names require valid structured 
                  },
              }}
         ));
-        builder.finish_declarations();
+        builder.finish_declaration_heads();
         REQUIRE(builder.solve_construction().has_value());
         CHECK(expect_termination("semir-external-invalid-path", [&] noexcept {
             static_cast<void>(std::move(builder).seal());

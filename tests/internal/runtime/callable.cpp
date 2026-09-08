@@ -107,6 +107,14 @@ static_assert(!std::convertible_to<MutableCallable&, IntFunctionRef>);
 static_assert(std::copyable<IntFunctionRef>);
 static_assert(noexcept(std::declval<const IntFunctionRef&>()(0)));
 
+template<typename Callable>
+concept StatelessIntTarget =
+    requires (const Callable& callable) { IntFunctionRef::from_stateless(callable); };
+
+static_assert(StatelessIntTarget<ConstCallable>);
+static_assert(!StatelessIntTarget<MutableCallable>);
+static_assert(!StatelessIntTarget<CapturingCallable>);
+
 } // namespace
 
 TEST_CASE("Runtime: FunctionRef invokes functions and noncapturing callables") {
@@ -267,4 +275,13 @@ TEST_CASE("Runtime FunctionRef: noexcept boundary admits potentially throwing ta
     CHECK_EQ(pointer(7), 9);
     const auto temporary = IntFunctionRef([](int value) static -> int { return value + 3; });
     CHECK_EQ(temporary(7), 10);
+}
+
+TEST_CASE("Callable views: stateless targets require no backing object") {
+    const auto view = IntFunctionRef::from_stateless(ConstCallable {});
+    CHECK(view(4) == 12);
+    const auto failing_view = WideFunctionRef::from_stateless(ConstCallable {});
+    const auto result = failing_view(3);
+    REQUIRE(result.success_if() != nullptr);
+    CHECK(result.success_if()->value == 9);
 }

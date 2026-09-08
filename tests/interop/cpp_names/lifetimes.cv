@@ -273,3 +273,17 @@ test "Lifetimes: discarded short circuit operands execute once and finish before
     discard_short_circuit(true);
     check(matches("1 2 3 9 -1 8 "));
 }
+
+
+fn owning_callback(marker: i32) => [marker](&&owner: Owner) => observe_owner(owner, marker);
+
+test "Lifetimes: closure parameters construct directly from owned temporaries" {
+    reset();
+    let captured = owning_callback(9);
+    captured(&&Owner { 1 });
+    check(matches("1 9 -1 "));
+    reset();
+    let stateless = [](&&value: Owner) => observe_owner(value, 9);
+    stateless(&&Owner { 2 });
+    check(matches("2 9 -2 "));
+}

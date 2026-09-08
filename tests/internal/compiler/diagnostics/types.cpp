@@ -283,3 +283,25 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
     });
     check_compiler_errors(cases);
 }
+
+TEST_CASE("Compiler diagnostics: expression body result contracts preserve source locations") {
+    constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "direct result cycle",
+         .source = "fn recurse() => recurse();",
+         .code = "CV-TYPE-RESULT-INFERENCE-CYCLE",
+         .primary_text = "recurse"},
+        {.name = "mutual result cycle",
+         .source = "fn first() => second(); fn second() => first();",
+         .code = "CV-TYPE-RESULT-INFERENCE-CYCLE",
+         .primary_text = "first"},
+        {.name = "explicit void expression body",
+         .source = "fn wrong() -> void => 1;",
+         .code = "CV-TYPE-RETURN-VALUE",
+         .primary_text = "=> 1"},
+        {.name = "lambda parameters still require context",
+         .source = "fn wrong() { let f = [](a) => a; }",
+         .code = "CV-LAMBDA-SIGNATURE-INFERENCE",
+         .primary_text = "a"},
+    });
+    check_compiler_errors(cases);
+}

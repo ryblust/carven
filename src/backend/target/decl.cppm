@@ -98,6 +98,15 @@ struct TargetMemberFunctionDecl final {
     bool const_qualified;
 };
 
+struct TargetOutOfClassMemberDefinition final {
+    TargetName owner;
+    TargetMemberFunctionName name;
+    std::vector<TargetParameter> parameters;
+    TargetTypeID result;
+    std::vector<TargetStmt> body;
+    bool const_qualified;
+};
+
 using TargetRecordMember = std::variant<TargetStructField, TargetMemberFunctionDecl>;
 
 struct TargetStructDecl final {
@@ -159,6 +168,7 @@ struct TargetClassForwardDecl final {
 
 using TargetDecl = std::variant<
     TargetFunctionDecl,
+    TargetOutOfClassMemberDefinition,
     TargetStructDecl,
     TargetStructForwardDecl,
     TargetEnumDecl,

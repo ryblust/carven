@@ -106,6 +106,12 @@ private:
         return invoke_adapted<Result>(function, std::forward<Arguments>(arguments)...);
     }
 
+    template<typename Callable>
+    static auto invoke_stateless(Entity, Arguments&&... arguments) noexcept -> Result {
+        const auto callable = Callable {};
+        return invoke_adapted<Result>(callable, std::forward<Arguments>(arguments)...);
+    }
+
 public:
     FunctionRef() = delete;
     FunctionRef(std::nullptr_t) = delete;
@@ -140,6 +146,16 @@ public:
         : entity(static_cast<const void*>(std::addressof(callable))),
           thunk(&invoke_object<Callable>) {}
 
+    template<typename Callable>
+        requires std::is_empty_v<Callable>
+        && std::is_trivially_default_constructible_v<Callable>
+        && std::is_trivially_destructible_v<Callable>
+        && std::is_invocable_v<const Callable&, Arguments...>
+        && (result_compatible<std::invoke_result_t<const Callable&, Arguments...>, Result>())
+    static auto from_stateless(const Callable&) noexcept -> FunctionRef {
+        return FunctionRef(Entity(static_cast<const void*>(nullptr)), &invoke_stateless<Callable>);
+    }
+
     FunctionRef(const FunctionRef&) = default;
     FunctionRef(FunctionRef&&) = default;
     auto operator=(const FunctionRef&) -> FunctionRef& = default;
@@ -154,6 +170,10 @@ public:
     }
 
 private:
+    FunctionRef(Entity target, Thunk invocation) noexcept
+        : entity(target),
+          thunk(invocation) {}
+
     Entity entity;
     Thunk thunk;
 };

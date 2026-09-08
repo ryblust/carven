@@ -1,0 +1,41 @@
+struct ExpressionFailure {}
+
+fn forward_expression(value: i32) => expression_increment(value);
+fn expression_increment(value: i32) => value + 1;
+fn expression_invoke(callback: fn(i32) -> i32, value: i32) => callback(value);
+fn expression_record(&count: i32) { count += 1; }
+fn expression_void(&count: i32) => expression_record(&count);
+fn expression_select(value: bool) => if value { 10 } else { 20 };
+fn expression_match(value: bool) => match value { true => 30, false => 40, };
+fn expression_closure(offset: i32) => [offset](value: i32) => offset + value;
+fn expression_nested() => [](offset: i32) => [offset](value: i32) => offset + value;
+private fn expression_failure() -> i32 throw ExpressionFailure { throw ExpressionFailure {}; }
+private fn expression_propagate() => expression_failure()?;
+fn expression_handle() => try { expression_propagate()? } catch { ExpressionFailure(_) => 42, };
+fn expression_recursive(value: i32) -> i32 => if value == 0 { 0 } else { expression_step(value - 1) };
+fn expression_step(value: i32) => expression_recursive(value);
+
+test "Functions: expression bodies infer results and preserve execution" {
+    check(forward_expression(4) == 5);
+    let callback: fn(i32) -> i32 = expression_increment;
+    check(callback(6) == 7);
+    check(expression_invoke([](value) => value * 2, 3) == 6);
+    let typed: fn(i32) -> i32 = [](value) => value + 2;
+    check(typed(3) == 5);
+    let annotated = [](value: i32) -> i32 => value + 3;
+    check(annotated(3) == 6);
+    var count = 0;
+    expression_void(&count);
+    let log = [&count]() => expression_void(&count);
+    log();
+    check(count == 2);
+    check(expression_select(true) == 10);
+    check(expression_match(false) == 40);
+    let closure = expression_closure(5);
+    check(closure(2) == 7);
+    let outer = expression_nested();
+    let inner = outer(6);
+    check(inner(2) == 8);
+    check(expression_handle() == 42);
+    check(expression_recursive(3) == 0);
+}

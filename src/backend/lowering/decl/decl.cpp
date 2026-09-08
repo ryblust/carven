@@ -4,8 +4,8 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
+import :backend.lowering.decl;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -252,6 +252,9 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
         );
     }
     for (const auto callable : schedule.closure_definitions) {
+        if (std::ranges::contains(schedule.interface_closures, callable)) {
+            continue;
+        }
         const auto type_name = context.closure_type_name(callable);
         result.private_items.push_back(compiler_item(
             TargetDecl {TargetStructForwardDecl {
@@ -275,7 +278,15 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
         }
     }
     for (const auto callable : schedule.closure_definitions) {
-        result.private_items.push_back(lower_closure_definition(context, callable));
+        if (!std::ranges::contains(schedule.interface_closures, callable)) {
+            result.private_items.push_back(lower_closure_type(context, callable));
+        }
+    }
+    for (const auto callable : schedule.closure_definitions) {
+        auto& destination = std::ranges::contains(schedule.interface_closures, callable)
+            ? result.module_items
+            : result.private_items;
+        destination.push_back(lower_closure_body(context, callable));
     }
     for (const auto function : functions) {
         const auto& declaration = declarations.function(function);

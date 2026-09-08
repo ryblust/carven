@@ -7,6 +7,7 @@ import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.semir.program;
 import :semantic.semir.structured;
+import :semantic.semir.type;
 import std;
 
 class BodyReservation final {
@@ -43,6 +44,12 @@ private:
 
     friend class BodyBuilder;
     friend class ProgramDraft;
+};
+
+struct PendingFunctionContract final {
+    std::vector<ConstructionCallableParameter> parameters;
+    FailureTermID failures;
+    FailureContractPolicy policy;
 };
 
 class ProgramDraft final {
@@ -121,6 +128,11 @@ public:
         -> void;
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
+    auto define_pending_function_contract(CallableID id, PendingFunctionContract contract) noexcept
+        -> void;
+    auto pending_function_contract_copy(CallableID id) const noexcept
+        -> std::optional<PendingFunctionContract>;
+    auto complete_function_result(CallableID id, ConstructionTypeRef result) noexcept -> void;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
 
@@ -190,7 +202,7 @@ public:
     auto require_declared_failure_contract(FailureTermID actual, ProgramOriginID origin) noexcept
         -> void;
 
-    auto finish_declarations() noexcept -> void;
+    auto finish_declaration_heads() noexcept -> void;
 
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
     auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
@@ -266,6 +278,7 @@ private:
         ConstructionTypeStore construction_types;
         DeclarationBuilder declarations;
         FailureConstraintStore failure_constraints;
+        std::map<CallableID, PendingFunctionContract> pending_function_contracts;
         std::vector<StructuredBodyDraft> body_drafts;
         ReservedProgramTable<SemIRBody, BodyID> body_slots;
         ReservedProgramTable<TestDeclaration, TestID> test_slots;

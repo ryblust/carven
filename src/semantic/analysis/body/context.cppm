@@ -203,15 +203,16 @@ auto known_boolean_constant(const ProgramDraft& draft, std::optional<ConstantID>
 
 auto create_body_failure_term(
     ProgramDraft& draft,
-    const ConstructionCallableContract& contract,
+    FailureTermID failures,
+    FailureContractPolicy policy,
     ProgramOriginID origin
 ) noexcept -> FailureTermID {
     const auto actual = draft.add_empty_failure_term();
-    switch (contract.policy) {
+    switch (policy) {
         case FailureContractPolicy::Declared: {
             draft.require_failure_subset(
                 actual,
-                contract.failures,
+                failures,
                 origin,
                 FailureSubsetRequirementKind::DeclaredCallable
             );
@@ -219,8 +220,8 @@ auto create_body_failure_term(
         }
         case FailureContractPolicy::Inferred:
         case FailureContractPolicy::UndeclaredExplicit: {
-            draft.equate_failures(actual, contract.failures);
-            if (contract.policy == FailureContractPolicy::UndeclaredExplicit) {
+            draft.equate_failures(actual, failures);
+            if (policy == FailureContractPolicy::UndeclaredExplicit) {
                 draft.require_declared_failure_contract(actual, origin);
             }
             break;
@@ -255,7 +256,7 @@ public:
         -> AnalysisResult<void>;
     auto inferred_result_type() const noexcept -> ConstructionTypeRef;
     auto local_was_used(std::string_view name) const noexcept -> bool;
-    auto run(ASTBlockID source_body) noexcept -> AnalysisResult<StructuredBodyDraft>;
+    auto run(const ASTCallableBody& source_body) noexcept -> AnalysisResult<StructuredBodyDraft>;
 
 private:
     auto draft() const noexcept -> ProgramDraft&;
@@ -301,7 +302,10 @@ private:
     ) noexcept -> BuiltExpression;
 
     auto mark_noncompleting(BuiltExpression value) noexcept -> BuiltExpression;
-    auto append_statement(decltype(SemanticStatement::value) value, Span span) noexcept -> void;
+    auto append_statement(
+        decltype(SemanticStatement::value) value,
+        ProgramOriginID statement_origin
+    ) noexcept -> void;
     auto append_expression(BuiltExpression& expression, Span span) noexcept -> void;
     auto build_branch(
         ASTBranchBlockID id,
@@ -475,6 +479,12 @@ private:
         Span span
     ) noexcept -> AnalysisResult<void>;
     auto if_statement(const ASTIfForm& source, Span span) noexcept -> AnalysisResult<void>;
+    auto return_statement(
+        std::optional<ASTExprID> operand,
+        Span span,
+        Span keyword_span,
+        bool implicit
+    ) noexcept -> AnalysisResult<void>;
     auto block(ASTBlockID id) noexcept -> AnalysisResult<void>;
     auto branch_block(
         ASTBranchBlockID id,
@@ -519,11 +529,40 @@ public:
     ) noexcept
         : draft(std::addressof(builder)),
           catalog_data(catalog_view),
-          imports(std::addressof(usage)) {}
+          imports(std::addressof(usage)),
+          functions(catalog_view.function_count()),
+          states(catalog_view.function_count(), Unvisited {}) {
+        for (const auto& symbol : catalog_view.symbols()) {
+            if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
+                functions[function->function.index()] = std::addressof(symbol);
+            }
+        }
+    }
 
     auto run() noexcept -> AnalysisResult<void>;
+
+    auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisResult<void>;
 
     ProgramDraft* draft;
     AnalysisCatalogView catalog_data;
     ImportUsage* imports;
+
+private:
+    struct Unvisited final {};
+
+    struct Analyzing final {};
+
+    struct Complete final {};
+
+    struct Failed final {
+        AnalysisFailure failure;
+    };
+
+    using State = std::variant<Unvisited, Analyzing, Complete, Failed>;
+    auto complete_function(FunctionID id) noexcept -> AnalysisResult<void>;
+    auto elaborate_function(FunctionID id) noexcept -> AnalysisResult<void>;
+    std::vector<const CatalogSymbol*> functions;
+    std::vector<State> states;
+    std::vector<FunctionID> active_path;
 };

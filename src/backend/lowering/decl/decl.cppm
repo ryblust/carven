@@ -41,3 +41,7 @@ auto lower_test_runner_header(
 ) noexcept -> TargetUnitSections;
 
 auto lower_test_entry(ArtifactLowering& context) noexcept -> TargetUnitSections;
+
+auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcept -> TargetItem;
+
+auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcept -> TargetItem;

@@ -48,6 +48,3 @@ auto resolve_declarations(
     AnalysisCatalogView catalog,
     ImportUsage& import_usage
 ) noexcept -> AnalysisResult<void>;
-
-auto validate_declaration_surfaces(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept
-    -> AnalysisResult<void>;

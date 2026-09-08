@@ -144,7 +144,7 @@ auto BodyElaborator::c_style_for_statement(
             UniqueIndirect(std::move(body)),
             UniqueIndirect(std::move(steps))
         },
-        span
+        origin(span)
     );
     return {};
 }
@@ -353,7 +353,7 @@ auto BodyElaborator::range_for_statement(
             std::move(end),
             UniqueIndirect(std::move(body))
         },
-        span
+        origin(span)
     );
     return {};
 }

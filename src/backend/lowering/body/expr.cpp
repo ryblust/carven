@@ -28,6 +28,29 @@ auto restore_integer_type(ModuleLowering& context, TargetExpr expression, TypeID
     }
     return expression;
 }
+
+auto adapt_callable_view(ModuleLowering& context, TargetExpr input, TypeID from, TypeID to) noexcept
+    -> TargetExpr {
+    const auto& type = context.semantic().types().type(from);
+    if (const auto* closure = std::get_if<ClosureTypeValue>(&type.value)) {
+        const auto body_id = context.semantic().declarations().body_for_callable(closure->callable);
+        if (context.semantic().bodies().body(*body_id).inputs().captures.empty()) {
+            return call_expression(
+                static_member_expression(
+                    context.lower_type(to),
+                    TargetIdentifier::from_spelling("from_stateless")
+                ),
+                target_expressions(std::move(input))
+            );
+        }
+    }
+    return TargetExpr {
+        .value = TargetConstructionExpr {
+            .type = context.lower_type(to),
+            .initializer = target_expressions(std::move(input))
+        }
+    };
+}
 } // namespace
 
 auto BodyLowerer::binary(
@@ -166,12 +189,7 @@ auto BodyLowerer::construct_operation(
                             }
                         };
                     }
-                    return TargetExpr {
-                        .value = TargetConstructionExpr {
-                            .type = context.lower_type(to),
-                            .initializer = target_expressions(std::move(input))
-                        }
-                    };
+                    return adapt_callable_view(context, std::move(input), from, to);
                 };
                 return adopt(
                     std::move(operands[0]),
@@ -315,13 +333,13 @@ auto BodyLowerer::construct_operation(
                     }
                 };
             },
-            [&](const SemBorrowCallable&) noexcept -> std::optional<TargetExpr> {
-                return TargetExpr {
-                    .value = TargetConstructionExpr {
-                        .type = context.lower_type(source.type.resolved()),
-                        .initializer = std::move(operands)
-                    }
-                };
+            [&](const SemBorrowCallable& value) noexcept -> std::optional<TargetExpr> {
+                return adapt_callable_view(
+                    context,
+                    std::move(operands.front()),
+                    value.source->type.resolved(),
+                    source.type.resolved()
+                );
             },
             [&](const SemTake&) noexcept -> std::optional<TargetExpr> {
                 owned_result = true;

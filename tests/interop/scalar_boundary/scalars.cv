@@ -116,3 +116,12 @@ test "C++ deduction: scalar expressions preserve canonical types" {
     check(::native_overload_i8(1i8));
     check(::native_overload_i8(~value_i8));
 }
+
+export(cpp) fn expression_scalar(value: i32) => value + 1;
+export(cpp) fn expression_void() => expression_action();
+fn expression_action() { ::scalar_boundary_detail::record_expression_call(); }
+fn native_expression(value: i32) => ::native_i32(value);
+
+test "C++ boundary: expression bodies retain native result queries" {
+    check(native_expression(7) == 7);
+}

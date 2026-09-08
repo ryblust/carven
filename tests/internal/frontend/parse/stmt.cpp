@@ -208,7 +208,8 @@ TEST_CASE("Parser: inline-test operations are contextual statements and lambdas 
     const auto& nested = get<ASTVariableDecl>(ast.statement(body.statements[2]));
     REQUIRE(nested.initializer.has_value());
     const auto& lambda = get<ASTLambdaExpr>(ast.expression(*nested.initializer));
-    const auto& lambda_statement = ast.statement(ast.block(lambda.body).statements.front());
+    const auto& lambda_statement =
+        ast.statement(ast.block(get<ASTBlockID>(lambda.body)).statements.front());
     CHECK(is<ASTExprStatement>(lambda_statement));
 
     const auto& value = get<ASTVariableDecl>(ast.statement(body.statements[3]));
@@ -220,7 +221,8 @@ TEST_CASE("Parser: inline-test operations are contextual statements and lambdas 
     );
 
     const auto& production = get<ASTFunctionDecl>(item(result, 1));
-    const auto& production_body = ast.block(get<ASTFunctionBody>(production.implementation).body);
+    const auto& production_body =
+        ast.block(get<ASTBlockID>(get<ASTFunctionBody>(production.implementation).body));
     const auto& production_statement = ast.statement(production_body.statements.front());
     CHECK(is<ASTExprStatement>(production_statement));
 

@@ -142,6 +142,7 @@ enum class DiagnosticCode {
     TypeRangeInteger,
     TypeRangeIterable,
     TypeReturnMismatch,
+    TypeResultInferenceCycle,
     TypeReturnValue,
     TypeStrMethod,
     TypeStrMethodArity,

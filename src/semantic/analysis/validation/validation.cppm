@@ -17,3 +17,5 @@ auto validate_global_semantic_contracts(
     ProgramDraft& draft,
     std::span<const TypeContents> types
 ) noexcept -> AnalysisResult<void>;
+
+auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResult<void>;
