@@ -1,0 +1,7 @@
+import <print> using std::print;
+
+fn main() {
+    print("Literal\n");
+    let text = "{123}";
+    print("Value: {}\n", text);
+}

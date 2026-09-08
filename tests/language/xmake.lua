@@ -34,6 +34,16 @@ target("carven-test-language")
     after_load(use_local_carven)
     add_tests("language", {group = "language"})
 
+target("carven-test-language-cxx23-compatibility")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "default"})
+    set_values("carven.includedir", crafts_dir)
+    set_languages("c++23")
+    add_includedirs(language_dir)
+    add_files(table.unpack(language_sources))
+    after_load(use_local_carven)
+    add_tests("cxx23-compatibility", {build_should_pass = true, group = "language"})
+
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 
 target("carven-test-language-entry-point")

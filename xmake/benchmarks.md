@@ -1,6 +1,6 @@
 # Build performance pulse
 
-`build_pulse.py` reports coarse, system-level signals for the normal Carven
+`xmake/build_pulse.lua` reports coarse, system-level signals for the normal Carven
 build workflow.
 
 ## Signals
@@ -30,7 +30,9 @@ coarse throughput signal and the 128-to-16 ratio as the breadth-scaling signal.
 The private-edit workload performs a warm Xmake build, changes only a private
 function body, rebuilds, and compares C++ object modification times. It measures
 invalidation fanout, not incremental-build duration. The fixture holds one
-explicit linkage domain constant throughout the measurement.
+explicit linkage domain constant throughout the measurement. Since Xmake
+exposes whole-second object timestamps, the fixture waits for a later filesystem
+timestamp before editing. This wait is outside the batch timing measurements.
 
 The pulse is observational: it does not run in CI, store baselines, or define an
 absolute pass/fail threshold. Compare nearby revisions on the same machine and
@@ -44,29 +46,35 @@ Build the configured compiler first, then run:
 
 ```shell
 ./xmakew build
-python3 benchmarks/build_pulse.py
+./xmakew bench-build
 ```
 
-The pulse reuses that exact compiler and the Carven rule package already selected
-by Xmake, including a local rule package installed by a dual-repository checkout.
+The pulse reuses that exact compiler and the rule repository associated with
+the Carven package already selected by Xmake, including a local rule repository
+used by a dual-repository checkout. Temporary builds use the running Xmake
+executable in a separate process.
 The default timing uses one warmup and five measured runs. Pass `--verbose` to
 display raw samples and recompiled object paths.
 
 ## Structured analysis pulse
 
-`analysis_pulse.py` measures independent functions, forward/reverse declaration
+`xmake/analysis_pulse.lua` measures independent functions, forward/reverse declaration
 orders of call chains, and nested loops with no backedge. It launches an already
 built compiler against temporary source files and discards generated C++ output.
-Timings include parsing, analysis and generation; they do not isolate solver
+Timings use `os.mclock()` in milliseconds and include process startup, parsing,
+analysis and generation; they do not isolate solver
 CPU time. There are no timing assertions or stored baselines. Use the same build
 mode and machine for comparisons; independent functions provide a breadth
 baseline for the call chains.
 
 ```shell
 ./xmakew build
-python3 benchmarks/analysis_pulse.py build/macosx/arm64/debug/carven
+./xmakew bench-analysis
 ```
 
-Pass the actual executable path for other platforms or build modes. Optional
-`--samples` and `--warmups` control repetition. Semantic acceptance, rejection,
+Both tasks use Xmake's current project configuration and target API to locate
+an existing Carven executable, without building or reconfiguring the project.
+`--compiler=<path>` overrides that executable. `--samples=<count>` and
+`--warmups=<count>` control repetition. The analysis task defaults to one warmup
+and three measured runs. Semantic acceptance, rejection,
 relationship identity and diagnostic checks belong in the internal tests.

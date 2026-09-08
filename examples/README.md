@@ -35,6 +35,7 @@ For a focused tour of failure contracts, start with the
 
 | Direction | Program | Target | What to follow |
 | --- | --- | --- | --- |
+| First program | [Hello World](helloworld/) | `carven-example-hello-world` | Direct standard-library import and C string literal |
 | Basics | [Receipt](basics/) | `example-receipt` | Values, records, arrays, loops, functions |
 | Ownership | [Inventory](ownership/) | `example-inventory` | Read, Write, Take, copying and reassignment |
 | Modules | [Shipping](modules/) | `example-shipping` | Relative imports and private constants |
@@ -50,7 +51,8 @@ Change the small inputs in `main` and run the target again after rebuilding it.
 The output check uses the documented inputs, so restore them before running the
 example test group.
 
-The Carven-entry examples use C++ console output. They import two C++ `print` overloads from [support/console.hpp](support/console.hpp):
+Hello World calls `std::printf` directly. The other Carven-entry examples use
+C++ console output through two C++ `print` overloads from [support/console.hpp](support/console.hpp):
 one for text and one for i32. This shared helper only prints values; the task's
 logic stays in the example. The native parser examines the same header-import
 mechanism in more detail.

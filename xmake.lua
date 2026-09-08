@@ -27,6 +27,23 @@ task("format-check")
     end)
 task_end()
 
+for _, pulse in ipairs({{name = "analysis", samples = "3"}, {name = "build", samples = "5"}}) do
+    task("bench-" .. pulse.name)
+        set_menu({
+            usage = "xmake bench-" .. pulse.name .. " [options]",
+            description = "Measure the Carven " .. pulse.name .. " performance pulse",
+            options = {
+                {nil, "samples", "kv", pulse.samples, "Number of measured runs"},
+                {nil, "warmups", "kv", "1", "Number of warmup runs"},
+                {nil, "compiler", "kv", nil, "Override the configured Carven executable"},
+            },
+        })
+        on_run(function ()
+            import("xmake." .. pulse.name .. "_pulse").main()
+        end)
+    task_end()
+end
+
 if is_plat("windows") then
     set_toolchains("clang-cl[llvm]")
 else

@@ -45,7 +45,11 @@ its versioned patch.
 | `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
-Generated programs use C++20. The language corpus runs once in that target mode.
+Generated programs use C++20 as their baseline. The language and ordinary
+interop corpora execute in C++20 and reuse the same sources in C++23
+compatibility targets that only compile and link (`build_should_pass`).
+The separate C++23 `<print>` interop case executes and checks actual output;
+the Hello World example owns direct `printf` output coverage.
 Default and caller-provided test entries use the same generated runner. C++
 provider and consumer cases execute against the current boundary contract.
 Support headers are also compiled individually to check self-containment.
@@ -102,9 +106,9 @@ their subject. Malformed compiler representations use the internal death-test
 harness and an explicit invariant scenario.
 
 Runtime cost and compilation time are measured separately. The manual workload
-in `benchmarks/build_pulse.py` measures fresh build throughput, module scaling,
-and private-edit locality. `benchmarks/analysis_pulse.py` measures call-chain
-ordering and structured loop depth. Their contracts are in `benchmarks/README.md`.
+in `xmake/build_pulse.lua` measures fresh build throughput, module scaling,
+and private-edit locality. `xmake/analysis_pulse.lua` measures call-chain
+ordering and structured loop depth. Their contracts are in `xmake/benchmarks.md`.
 
 ## Organization
 

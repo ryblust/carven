@@ -9,7 +9,8 @@ implementation-source rules.
 
 - Source under `src/` and `tests/internal/` may use C++26.
 - Crafts, installed support source, and consumer fixtures use only features
-  admitted by the C++20 generated-source baseline.
+  admitted by the C++20 generated-source baseline. Explicit newer-standard
+  interop targets may exercise APIs from their selected C++ standard.
 - Do not add standard-version macros, compatibility branches, or parallel
   implementations for newer consumer modes.
 - Every noncapturing lambda in `src/` and `tests/internal/` is `static`.
