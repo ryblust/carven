@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / Debug
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: carven
+    env:
+      LLVM_VERSION: 23.1.0
+      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
+
+    steps:
+      - name: Check out Carven
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: carven
+          persist-credentials: false
+
+      - name: Check out build rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ryblust/carven-xmake-repo
+          ref: 94bb08377c18bb4503271f77b014fcad55c4e82b
+          path: carven-xmake-repo
+          persist-credentials: false
+
+      - name: Install official Xmake
+        uses: xmake-io/github-action-setup-xmake@3a1a5dddfc7fa625d9a698738334bf55655a861a # v1
+        with:
+          xmake-version: '3.1.1'
+
+      - name: Install LLVM on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm@23
+          llvm_root="$(brew --prefix llvm@23)"
+          test "$("$llvm_root/bin/llvm-config" --version)" = "$LLVM_VERSION"
+          echo "LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
+          echo "$llvm_root/bin" >> "$GITHUB_PATH"
+
+      - name: Install LLVM on Linux
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
+          echo "LLVM_ROOT=/usr/lib/llvm-23" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
+
+      - name: Compiler version
+        run: clang --version
+
+      - name: Configure macOS
+        if: runner.os == 'macOS'
+        run: |
+          xmake f -y -m debug --sdk="$LLVM_ROOT" --build_tests=y --target_minver=26.0 \
+            --ldflags="-L$LLVM_ROOT/lib/c++ -Wl,-rpath,$LLVM_ROOT/lib/c++"
+
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: xmake f -y -m debug --sdk="$LLVM_ROOT" --build_tests=y --runtimes=c++_shared --syslinks=c++abi
+
+      # The compiler must exist before test preparation generates C++ sources.
+      # CI deliberately uses stock Xmake; xmakew is a local build optimization.
+      - name: Build compiler
+        run: xmake build -y
+
+      - name: Test all groups
+        run: xmake test
+
+      - name: Clang-tidy
+        run: xmake check clang.tidy
+
+      - name: Check formatting
+        if: runner.os == 'macOS'
+        run: xmake format-check

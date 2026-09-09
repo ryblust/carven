@@ -32,7 +32,7 @@ Unexpected module or dependency failures must be reproduced after
 `./xmakew clean` and `./xmakew build`.
 
 For local build-rule development, set `CARVEN_XMAKE_REPO_DIR` to the rule checkout
-when building. Stock Xmake is the fallback only when the wrapper cannot apply
+when building. Stock Xmake is the local fallback when the wrapper cannot apply
 its versioned patch.
 
 ## Test responsibilities
