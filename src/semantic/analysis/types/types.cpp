@@ -318,6 +318,38 @@ auto resolve_type_value(
                     source_type.span
                 );
             },
+            [&](const ASTPointerType& pointer) noexcept -> AnalysisResult<ConstructionTypeRef> {
+                auto target = resolve_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    pointer.target,
+                    resolve_extent
+                );
+                if (!target) {
+                    return std::unexpected(target.error());
+                }
+                if (pointer.access.mode == ASTAccessMode::Take) {
+                    return std::unexpected(fail(
+                        draft,
+                        module_id,
+                        source_type.span,
+                        DiagnosticCode::TypeUnresolved,
+                        "ptr target cannot have Take access"
+                    ));
+                }
+                const auto access = pointer.access.mode == ASTAccessMode::Write
+                    ? PointerAccess::Write
+                    : PointerAccess::Read;
+                return ConstructionTypeRef {draft.intern_type(
+                    {.value = PointerTypeValue {
+                         .target = draft.canonicalize_declared_type(*target),
+                         .access = access
+                     }}
+                )};
+            },
             [&](const ASTArrayType& array) noexcept -> AnalysisResult<ConstructionTypeRef> {
                 auto element = resolve_source_type(
                     draft,
@@ -563,7 +595,8 @@ auto resolve_failure_types(
                                   || std::same_as<Value, FunctionTypeValue>
                                   || std::same_as<Value, ClosureTypeValue>
                                   || std::same_as<Value, CallableViewTypeValue>
-                                  || std::same_as<Value, CppTypeValue>,
+                                  || std::same_as<Value, CppTypeValue>
+                                  || std::same_as<Value, PointerTypeValue>,
                               "unhandled non-nominal failure type"
                           );
                           return false;

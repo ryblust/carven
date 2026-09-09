@@ -18,6 +18,8 @@ local provider_form_sources = {
 }
 
 local interop_sources = table.join(scalar_boundary_sources, provider_form_sources)
+table.join2(interop_sources, os.files(path.join(interop_dir, "pointers", "*.cv")))
+table.join2(interop_sources, os.files(path.join(interop_dir, "pointers", "interface.cpp")))
 table.join2(interop_sources, os.files(path.join(interop_dir, "runtime_headers", "*.cpp")))
 table.join2(interop_sources, os.files(path.join(interop_dir, "unicode_contract", "export_argument.cv")))
 table.join2(interop_sources, os.files(path.join(interop_dir, "cpp_names", "*.cv")))
@@ -39,6 +41,8 @@ target("carven-test-interop")
     on_test(function (target)
         local check_process = import("harness.process", {rootdir = interop_dir})
         check_process(target, {}, 0, "interop behavior checks")
+        local check_pointer_rejections = import("pointers.rejections", {rootdir = interop_dir})
+        check_pointer_rejections(target)
         for _, operation in ipairs({"divide", "remainder", "shift", "width", "index", "unicode", "unicode-export"}) do
             check_process(target, {operation}, 73, operation .. " runtime check")
         end

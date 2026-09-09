@@ -1,0 +1,10 @@
+import "pointers/provider.hpp";
+
+export struct Link { value: i32, next: ptr<&Link> }
+
+export fn identity(p: ptr<Link>) -> ptr<Link> { return p; }
+export fn opaque() -> ptr<::pointer_probe::Incomplete> { return ::pointer_probe::opaque(); }
+export fn accept_opaque(p: ptr<::pointer_probe::Incomplete>) -> bool { return p == nullptr; }
+
+export struct CallbackHolder { callback: ptr<fn(Later) -> void> }
+export struct Later { value: i32 }

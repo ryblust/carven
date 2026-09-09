@@ -287,6 +287,9 @@ auto BodyLowerer::construct_operation(
                     }
                 };
             },
+            [&](const SemDereference&) noexcept -> std::optional<TargetExpr> {
+                return dereference_expression(std::move(operands[0]));
+            },
             [&](const SemField& value) noexcept -> std::optional<TargetExpr> {
                 return member_expression(
                     std::move(operands[0]),

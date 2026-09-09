@@ -31,6 +31,7 @@ enum class TokenKind {
     Is,
     Let,
     Match,
+    Nullptr,
     Private,
     Return,
     Struct,

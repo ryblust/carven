@@ -280,6 +280,17 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     }
                 }
             },
+            [&](const SemDereference& value) noexcept {
+                require_origin(value.origin);
+                const auto source_type = require_type(value.source->type.resolved());
+                const auto* pointer = std::get_if<PointerTypeValue>(&source_type.value);
+                if (pointer == nullptr
+                    || pointer->target != source.type.resolved()
+                    || require_type(source.type.resolved()).value
+                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                    invariant_violation("dereference has an invalid target type");
+                }
+            },
             [&](const SemField& value) noexcept {
                 const auto type = require_type(value.source->type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);

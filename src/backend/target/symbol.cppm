@@ -41,6 +41,8 @@ enum class TargetSymbol {
     RuntimeIntegerRightShift,
     RuntimeCheckedArrayIndex,
     RuntimeCheckedUnicodeScalar,
+    StdAddConst,
+    StdTypeIdentity,
     StdReferenceWrapper,
     StdAddressof,
     StdGetIf,

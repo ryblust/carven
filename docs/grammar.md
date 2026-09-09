@@ -90,11 +90,11 @@ The following spellings are reserved keywords and are not emitted as
 
 ```text
 as break catch const continue else enum export false fn for if import in is let
-match private rethrow return struct test throw true try using var while
+match nullptr private rethrow return struct test throw true try using var while
 ```
 
 `as` participates in the cast-expression production. Spellings without a
-language production, including `new`, `delete`, and `nullptr`, remain
+language production, including `new` and `delete`, remain
 ordinary identifiers.
 
 Canonical naming conventions are style guidance only. They do not change the
@@ -460,7 +460,9 @@ with the same spelling is visible.
 ## 4. Types
 
 ```ebnf
-type = named-type | array-type | function-type;
+type = named-type | array-type | function-type | pointer-type;
+
+pointer-type = "ptr", "<", [ "&" ], type, ">";
 
 named-type = qualified-type-name, [ "<", type, { ",", type }, ">" ];
 
@@ -485,12 +487,18 @@ function-type-parameter-list = function-type-parameter,
 function-type-parameter = [ access-marker ], type;
 ```
 
+Unqualified `ptr` in type position constructs a pointer type. Its optional inner
+`&` selects writable target access; `ptr<&&T>` is invalid. Targets can be Carven
+or external types, including nested pointer types. The inner access marker is
+not a general reference-type production. `*p` is dereference; `p->member`
+abbreviates `(*p).member`. Neither spelling adds an address-of operation.
+
 A named type can carry a nonempty type argument list after its qualified name.
 Nested lists may close with `>>`; token splitting applies only during type
 parsing and leaves expression shift operators unchanged.
 
 There is no type-alias declaration, tuple type syntax, generic
-parameter declaration, or reference/pointer type syntax.
+parameter declaration, or general reference-type syntax.
 
 ## 5. Statements and Blocks
 
@@ -705,7 +713,7 @@ or alternative productions.
 prefix-expression = prefix-operator, prefix-expression
                   | postfix-expression;
 
-prefix-operator = "!" | "-" | "~";
+prefix-operator = "!" | "-" | "~" | "*";
 ```
 
 ### 7.3 Postfix Expressions
@@ -726,7 +734,7 @@ call-argument = expression;
 
 index-operation = "[", expression, "]";
 
-member-operation = ( "." | "::" ), IDENTIFIER;
+member-operation = ( "." | "::" | "->" ), IDENTIFIER;
 
 propagation-operation = "?";
 ```
@@ -747,7 +755,7 @@ primary-expression = literal
                    | try-form;
 
 literal = NUMBER_LITERAL | STRING_LITERAL | C_STRING_LITERAL | CHAR_LITERAL
-        | "true" | "false";
+        | "true" | "false" | "nullptr";
 
 global-cpp-name = "::", IDENTIFIER, { "::", IDENTIFIER };
 

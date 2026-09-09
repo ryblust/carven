@@ -1,0 +1,10 @@
+import .api using { Link, identity, opaque, accept_opaque };
+import "pointers/provider.hpp";
+
+test "Pointers: recursive and incomplete types cross generated interfaces" {
+    var link = Link { value: 4, next: nullptr };
+    let p: ptr<&Link> = ::pointer_probe::address(&link);
+    let reader = identity(p);
+    if reader != nullptr { check(reader->value == 4); }
+    check(accept_opaque(opaque()));
+}

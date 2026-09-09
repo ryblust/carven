@@ -95,3 +95,31 @@ TEST_CASE("External types: C string storage has a closed operand and type contra
     );
     CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "\xff"}, 0uz));
 }
+
+TEST_CASE("Pointer types: nested declared callable contracts have stable identities") {
+    const auto program = analyze_test_program(
+        "struct Failure {}\n"
+        "fn first(p: ptr<ptr<&fn(&i32) -> i32 throw Failure>>) {}\n"
+        "fn second(p: ptr<ptr<&fn(&i32) -> i32 throw Failure>>) {}\n"
+        "fn writer(p: ptr<&ptr<&fn(&i32) -> i32 throw Failure>>) {}\n"
+    );
+    const auto callables = test_function_callables(program);
+    REQUIRE_EQ(callables.size(), 3uz);
+    const auto first = test_callable_signature(program, callables[0]).parameters.front().type;
+    const auto second = test_callable_signature(program, callables[1]).parameters.front().type;
+    const auto writer = test_callable_signature(program, callables[2]).parameters.front().type;
+    CHECK_EQ(first, second);
+    CHECK_NE(first, writer);
+    const auto* reader_type = std::get_if<PointerTypeValue>(&program.types().type(first).value);
+    const auto* writer_type = std::get_if<PointerTypeValue>(&program.types().type(writer).value);
+    REQUIRE(reader_type != nullptr);
+    REQUIRE(writer_type != nullptr);
+    CHECK_EQ(reader_type->access, PointerAccess::Read);
+    CHECK_EQ(writer_type->access, PointerAccess::Write);
+    CHECK_EQ(reader_type->target, writer_type->target);
+    const auto* inner =
+        std::get_if<PointerTypeValue>(&program.types().type(reader_type->target).value);
+    REQUIRE(inner != nullptr);
+    CHECK_EQ(inner->access, PointerAccess::Write);
+    CHECK(std::holds_alternative<CallableViewTypeValue>(program.types().type(inner->target).value));
+}

@@ -21,6 +21,8 @@ auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexc
                 require_owner(value.structure.owner(), owner, "struct type used a foreign program");
             } else if constexpr (std::same_as<Value, EnumTypeValue>) {
                 require_owner(value.enumeration.owner(), owner, "enum type used a foreign program");
+            } else if constexpr (std::same_as<Value, PointerTypeValue>) {
+                require_owner(value.target.owner(), owner, "ptr type used a foreign target");
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 require_owner(
                     value.element.owner(),

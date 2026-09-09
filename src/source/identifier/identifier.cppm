@@ -20,6 +20,7 @@ enum class SourceKeyword {
     Is,
     Let,
     Match,
+    Nullptr,
     Private,
     Return,
     Struct,

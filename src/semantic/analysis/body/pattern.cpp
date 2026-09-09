@@ -352,7 +352,8 @@ auto BodyElaborator::build_match(
     const ASTMatchForm& source,
     Span span,
     std::optional<ConstructionTypeRef> expected,
-    bool value_form
+    bool value_form,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
     auto subject = expression(source.subject);
     if (!subject.has_value()) {
@@ -529,7 +530,13 @@ auto BodyElaborator::build_match(
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
-            return build_arm(plan.source->body, value_form, result_type, pending);
+            return build_arm(
+                plan.source->body,
+                value_form,
+                result_type,
+                pending,
+                expected.has_value() && allow_pointer_narrowing
+            );
         }();
         if (!body.has_value()) {
             return std::unexpected(body.error());
@@ -561,9 +568,10 @@ auto BodyElaborator::build_match(
 auto BodyElaborator::match_expression(
     const ASTMatchForm& source,
     Span span,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto built = build_match(source, span, expected, true);
+    auto built = build_match(source, span, expected, true, allow_pointer_narrowing);
     if (!built.has_value()) {
         return std::unexpected(built.error());
     }

@@ -167,6 +167,10 @@ private:
         visit_fields(value.components, value.arguments);
     }
 
+    auto visit(const ASTPointerType& value) noexcept -> void {
+        visit_fields(value.target, value.access);
+    }
+
     auto visit(const ASTArrayType& value) noexcept -> void {
         visit_fields(value.element_type, value.extent);
     }

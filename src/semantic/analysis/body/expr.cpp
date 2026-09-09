@@ -32,14 +32,15 @@ import std;
 auto BodyElaborator::conditional_expression(
     const ASTIfForm& source,
     Span span,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<BuiltExpression> {
     if (!source.else_branch.has_value()) {
         return std::unexpected(
             fail(span, DiagnosticCode::TypeIfMissingElse, "value-form if requires an else branch")
         );
     }
-    return build_if(source, span, expected, true);
+    return build_if(source, span, expected, true, allow_pointer_narrowing);
 }
 
 auto BodyElaborator::lambda_expression(
@@ -345,20 +346,24 @@ auto BodyElaborator::lambda_expression(
 
 auto BodyElaborator::select_expression(
     ASTExprID id,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<SelectedExpression> {
     const auto was_reachable = reachable;
     [[maybe_unused]] const auto path =
         BodyReferencePathGuard(reference_path_reachable, was_reachable);
-    auto site = BodyExpressionSite(*this);
+    auto site = BodyExpressionSite(*this, allow_pointer_narrowing);
     return interpret_expression(site, id, expected);
 }
 
-auto BodyElaborator::expression(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
-    -> AnalysisResult<BuiltExpression> {
+auto BodyElaborator::expression(
+    ASTExprID id,
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
+) noexcept -> AnalysisResult<BuiltExpression> {
     const auto was_reachable = reachable;
     const auto& source = ast.expression(id);
-    auto selected = select_expression(id, expected);
+    auto selected = select_expression(id, expected, allow_pointer_narrowing);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }

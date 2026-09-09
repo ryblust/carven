@@ -104,6 +104,26 @@ auto BodyElaborator::coerce_to(
     if (built.type() == target) {
         return {};
     }
+    if (pointer_narrows(draft(), built.type(), target)) {
+        auto source = consume_value(built, span, AccessMode::Read);
+        if (!source) {
+            return std::unexpected(source.error());
+        }
+        auto constant = std::optional<ConstantID>();
+        if (source->constant && std::holds_alternative<TypeID>(target)) {
+            constant = draft().intern_constant(
+                {.type = std::get<TypeID>(target), .value = NullPointerConstant {}}
+            );
+        }
+        built.storage = active_builder().make_expression(
+            target,
+            active_builder().lifetime(),
+            origin(span),
+            SemCast {UniqueIndirect(std::move(*source)), CastKind::PointerRead},
+            constant
+        );
+        return {};
+    }
     if (is_cpp_type(built.type()) || is_cpp_type(target)) {
         auto value = consume_value(built, span, AccessMode::Read);
         if (!value.has_value()) {

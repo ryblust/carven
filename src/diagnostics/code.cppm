@@ -77,6 +77,7 @@ enum class DiagnosticCode {
     NameUnresolved,
     NameUnresolvedPattern,
     ParseNestingTooDeep,
+    PointerNonNull,
     Syntax,
     EffectThrowType,
     EffectThrowDuplicate,

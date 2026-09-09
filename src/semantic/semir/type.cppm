@@ -50,6 +50,14 @@ struct EnumTypeValue final {
     constexpr auto operator==(const EnumTypeValue&) const noexcept -> bool = default;
 };
 
+enum class PointerAccess { Read, Write };
+
+struct PointerTypeValue final {
+    TypeID target;
+    PointerAccess access;
+    constexpr auto operator==(const PointerTypeValue&) const noexcept -> bool = default;
+};
+
 struct ArrayTypeValue final {
     TypeID element;
     std::uint64_t extent;
@@ -76,6 +84,7 @@ using CanonicalTypeValue = std::variant<
     StructTypeValue,
     EnumTypeValue,
     ArrayTypeValue,
+    PointerTypeValue,
     FunctionTypeValue,
     ClosureTypeValue,
     CallableViewTypeValue,
@@ -336,6 +345,53 @@ public:
     auto owner() const noexcept -> ProgramIdentity;
     auto size() const noexcept -> std::size_t;
 
+    template<typename TypeResolver, typename FailureResolver>
+    static auto canonicalize_type(
+        const ConstructionType& type,
+        CanonicalTypeStoreBuilder& types,
+        CallableSignatureStoreBuilder& signatures,
+        TypeResolver resolve_ref,
+        FailureResolver resolve_failure
+    ) noexcept -> TypeID {
+        return std::visit(
+            [&](const auto& value) noexcept -> TypeID {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+                    return types.intern(
+                        CanonicalType {
+                            .value = ArrayTypeValue {
+                                .element = resolve_ref(value.element),
+                                .extent = value.extent,
+                            },
+                        }
+                    );
+                } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
+                    auto parameters = std::vector<CallableParameter>();
+                    parameters.reserve(value.parameters.size());
+                    for (const auto& parameter : value.parameters) {
+                        parameters.push_back(
+                            CallableParameter {
+                                .access = parameter.access,
+                                .type = resolve_ref(parameter.type),
+                            }
+                        );
+                    }
+                    const auto signature = signatures.intern(
+                        CallableSignature {
+                            .parameters = std::move(parameters),
+                            .result = resolve_ref(value.result),
+                            .failures = resolve_failure(value.failures),
+                        }
+                    );
+                    return types.intern_resolved_callable_view(signature, signatures);
+                } else {
+                    static_assert(std::same_as<Value, void>, "unhandled construction type shape");
+                }
+            },
+            type.value
+        );
+    }
+
     template<FailureResolutionReader FailureReader>
     auto canonicalize(
         const FailureReader& failures,
@@ -358,50 +414,19 @@ public:
             return resolved[std::get<TypeTermID>(ref).index()];
         };
         for (const auto entry : terms.entries()) {
-            const auto concrete = std::visit(
-                [&](const auto& value) noexcept -> TypeID {
-                    using Value = std::remove_cvref_t<decltype(value)>;
-                    if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
-                        return types.intern(
-                            CanonicalType {
-                                .value = ArrayTypeValue {
-                                    .element = resolve_ref(value.element),
-                                    .extent = value.extent,
-                                },
-                            }
-                        );
-                    } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
-                        if (!failures.contains(value.failures)) {
-                            invariant_violation(
-                                "construction callable type used an unresolved failure term"
-                            );
-                        }
-                        auto parameters = std::vector<CallableParameter>();
-                        parameters.reserve(value.parameters.size());
-                        for (const auto& parameter : value.parameters) {
-                            parameters.push_back(
-                                CallableParameter {
-                                    .access = parameter.access,
-                                    .type = resolve_ref(parameter.type),
-                                }
-                            );
-                        }
-                        const auto signature = signatures.intern(
-                            CallableSignature {
-                                .parameters = std::move(parameters),
-                                .result = resolve_ref(value.result),
-                                .failures = failures.failure_set(value.failures),
-                            }
-                        );
-                        return types.intern_resolved_callable_view(signature, signatures);
-                    } else {
-                        static_assert(
-                            std::same_as<Value, void>,
-                            "unhandled construction type shape"
+            const auto concrete = canonicalize_type(
+                entry.value,
+                types,
+                signatures,
+                resolve_ref,
+                [&](FailureTermID term) noexcept {
+                    if (!failures.contains(term)) {
+                        invariant_violation(
+                            "construction callable type used an unresolved failure term"
                         );
                     }
-                },
-                entry.value.value
+                    return failures.failure_set(term);
+                }
             );
             resolved.push_back(concrete);
         }

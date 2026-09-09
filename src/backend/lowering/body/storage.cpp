@@ -166,6 +166,11 @@ auto BodyLowerer::materialize_operand(
                 ? context.lower_parameter(
                       CallableParameter {.access = AccessMode::Read, .type = source.type.resolved()}
                   )
+                : (use == OperandUse::Snapshot || use == OperandUse::Own)
+                    && std::holds_alternative<PointerTypeValue>(
+                        context.semantic().types().type(source.type.resolved()).value
+                    )
+                ? context.lower_type(source.type.resolved())
                 : context.intrinsic_type(TargetSymbol::Auto),
             .initializer = std::move(value)
         }

@@ -51,6 +51,15 @@ auto interpret_literal(
     if (const auto* value = std::get_if<CStringLiteralValue>(&source.value)) {
         return site.c_string(value->bytes, span);
     }
+    if (std::holds_alternative<NullPointerLiteralValue>(source.value)) {
+        const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
+        if (type == nullptr
+            || !std::holds_alternative<PointerTypeValue>(site.draft().type_copy(*type).value)) {
+            return std::unexpected(
+                site.fail(span, DiagnosticCode::TypeMismatch, "nullptr requires a ptr type context")
+            );
+        }
+    }
     auto fact = normalize_literal(site.draft(), source, expected, sign);
     if (!fact.has_value()) {
         const auto diagnostic = constant_evaluation_diagnostic(fact.error());
@@ -70,6 +79,9 @@ auto interpret_unary(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisResult<typename Site::Value> {
+    if (source.op == ASTPrefixOperator::Dereference) {
+        return site.dereference(source, span);
+    }
     auto literal_id = source.operand_id;
     while (const auto* group =
                std::get_if<ASTGroupExpr>(&site.syntax().expression(literal_id).value)) {
@@ -253,15 +265,29 @@ auto interpret_binary(
         right.emplace(std::move(*value));
     }
     const auto operation = *semantic_operator(source.op);
+    const auto left_pointer = pointer_shape(site.draft(), site.type(*left));
+    const auto right_pointer = pointer_shape(site.draft(), site.type(*right));
+    if ((left_pointer || right_pointer) && (!left_pointer || !right_pointer)) {
+        return std::unexpected(site.fail(
+            source.operator_span,
+            DiagnosticCode::TypeBinary,
+            "ptr operations require two typed pointer operands"
+        ));
+    }
     if (site.external(site.type(*left)) || site.external(site.type(*right))) {
         return site.external_binary(operation, std::move(*left), std::move(*right), span);
     }
+    const auto pointer_equality =
+        (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
+        && (pointer_narrows(site.draft(), site.type(*left), site.type(*right))
+            || pointer_narrows(site.draft(), site.type(*right), site.type(*left)));
     const auto decision = decide_binary_operator(
         site.draft(),
         operation,
         site.type(*left),
         site.type(*right),
-        type_shapes_compatible(site.draft(), site.type(*left), site.type(*right)),
+        pointer_equality
+            || type_shapes_compatible(site.draft(), site.type(*left), site.type(*right)),
         !binary_operator_requires_equality(source.op) || site.supports_equality(site.type(*left))
     );
     if (!decision.has_value()) {
@@ -299,6 +325,19 @@ auto interpret_binary(
 template<typename Site>
 auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     -> AnalysisResult<typename Site::Value> {
+    auto literal_id = source.operand_id;
+    while (const auto* group =
+               std::get_if<ASTGroupExpr>(&site.syntax().expression(literal_id).value)) {
+        literal_id = group->expression;
+    }
+    if (const auto* literal = std::get_if<ASTLiteral>(&site.syntax().expression(literal_id).value);
+        literal != nullptr && std::holds_alternative<NullPointerLiteralValue>(literal->value)) {
+        auto target = site.resolve_type(source.target_type);
+        if (!target) {
+            return std::unexpected(target.error());
+        }
+        return site.read(source.operand_id, *target);
+    }
     auto operand = site.read(source.operand_id, std::nullopt);
     if (!operand.has_value()) {
         return std::unexpected(operand.error());

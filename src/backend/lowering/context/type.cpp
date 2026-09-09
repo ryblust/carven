@@ -202,6 +202,20 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
     state = Resolving {};
     auto lowered = std::visit(
         Overloaded {
+            [&](const PointerTypeValue& value) noexcept -> TargetType {
+                auto pointee = lower_type(value.target);
+                if (value.access == PointerAccess::Read) {
+                    pointee = target().intern_type(
+                        {.value =
+                             TargetIntrinsicType {
+                                 .symbol = TargetSymbol::StdAddConst,
+                                 .type_argument_ids = {pointee}
+                             },
+                         .const_qualified = false}
+                    );
+                }
+                return {.value = TargetPointerType {.pointee = pointee}, .const_qualified = false};
+            },
             [&](const CppTypeValue& value) noexcept -> TargetType {
                 if (std::holds_alternative<CppConstCharPointerType>(value.form)) {
                     return {

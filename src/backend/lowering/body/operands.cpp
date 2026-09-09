@@ -12,10 +12,18 @@ import std;
 auto BodyLowerer::operation_operands(const SemanticExpression& source) const noexcept
     -> OperandGroup {
     auto group = OperandGroup {.values = {}, .order = OperandOrder::Unspecified};
-    const auto access = [](AccessMode mode) static noexcept {
-        return mode == AccessMode::Write ? OperandUse::Place
-            : mode == AccessMode::Take   ? OperandUse::Own
-                                         : OperandUse::Read;
+    const auto access = [&](const SemCallArgument& argument) noexcept {
+        if (argument.access == AccessMode::Write) {
+            return OperandUse::Place;
+        }
+        if (argument.access == AccessMode::Take) {
+            return OperandUse::Own;
+        }
+        return std::holds_alternative<PointerTypeValue>(
+                   context.semantic().types().type(argument.expression.type.resolved()).value
+               )
+            ? OperandUse::Snapshot
+            : OperandUse::Read;
     };
     std::visit(
         Overloaded {
@@ -68,7 +76,7 @@ auto BodyLowerer::operation_operands(const SemanticExpression& source) const noe
                     {*call.callee, closure ? OperandUse::ConstPlace : OperandUse::Snapshot}
                 );
                 for (const auto& value : call.arguments) {
-                    group.values.push_back({value.expression, access(value.access)});
+                    group.values.push_back({value.expression, access(value)});
                 }
             },
             [&](const SemCppCall& call) noexcept {
@@ -91,7 +99,7 @@ auto BodyLowerer::operation_operands(const SemanticExpression& source) const noe
                     call.callee
                 );
                 for (const auto& value : call.arguments) {
-                    group.values.push_back({value.expression, access(value.access)});
+                    group.values.push_back({value.expression, access(value)});
                 }
             },
             [&](const SemCpp& operation) noexcept {
@@ -106,7 +114,7 @@ auto BodyLowerer::operation_operands(const SemanticExpression& source) const noe
                         {value.expression,
                          receiver ? (value.access == AccessMode::Write ? OperandUse::Place
                                                                        : OperandUse::ConstPlace)
-                                  : access(value.access)}
+                                  : access(value)}
                     );
                 }
             },
@@ -115,6 +123,9 @@ auto BodyLowerer::operation_operands(const SemanticExpression& source) const noe
             },
             [&](const SemCast& value) noexcept {
                 group.values.push_back({*value.operand, OperandUse::Snapshot});
+            },
+            [&](const SemDereference& value) noexcept {
+                group.values.push_back({*value.source, OperandUse::Snapshot});
             },
             [&](const SemField& value) noexcept {
                 group.values.push_back({*value.source, OperandUse::Place});
@@ -145,6 +156,13 @@ auto BodyLowerer::requires_materialization(const OperandGroup& group, bool prefi
     auto takes = false;
     for (auto index = 0uz; index < group.values.size(); ++index) {
         const auto& source = group.values[index].expression;
+        if (group.values[index].use == OperandUse::Snapshot
+            && facts(source).reads_storage
+            && std::holds_alternative<PointerTypeValue>(
+                context.semantic().types().type(source.type.resolved()).value
+            )) {
+            return true;
+        }
         takes |= std::holds_alternative<SemTake>(source.value);
         if (group.order == OperandOrder::Postfix
             && index == 0uz

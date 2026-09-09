@@ -58,6 +58,7 @@ private:
                     validate_nominal(program.declarations().enumeration(value.enumeration));
                 },
                 [&](const ArrayTypeValue& value) noexcept { validate(value.element); },
+                [&](const PointerTypeValue& value) noexcept { validate(value.target); },
                 [&](const FunctionTypeValue& value) noexcept {
                     validate_signature(program.declarations().callable(value.callable).signature);
                 },

@@ -3,6 +3,7 @@ module carven:semantic.analysis.constant.evaluate.impl;
 import :diagnostics.code;
 import :frontend.literal;
 import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.constant;
@@ -83,6 +84,7 @@ auto validate_constant_value(const ProgramDraft& draft, const ConstantValue& val
                 static_assert(
                     std::same_as<Item, IntegerConstant>
                         || std::same_as<Item, BooleanConstant>
+                        || std::same_as<Item, NullPointerConstant>
                         || std::same_as<Item, F32Constant>
                         || std::same_as<Item, F64Constant>
                         || std::same_as<Item, CharacterConstant>,
@@ -105,6 +107,8 @@ auto validate_constant_fact(const ProgramDraft& draft, const ConstantFact& fact)
                 return builtin != nullptr
                     && builtin_is_integer(builtin->kind)
                     && integer_constant_fits(value, builtin->kind);
+            } else if constexpr (std::same_as<Value, NullPointerConstant>) {
+                return std::holds_alternative<PointerTypeValue>(type.value);
             } else if constexpr (std::same_as<Value, BooleanConstant>) {
                 const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
                 return builtin != nullptr && builtin->kind == BuiltinType::Bool;
@@ -570,7 +574,11 @@ auto evaluate_binary_constant_value(
     validate_constant_fact(draft, left);
     validate_constant_fact(draft, right);
     static_cast<void>(draft.type_copy(result));
-    if (left.type != right.type) {
+    const auto pointer_equality =
+        (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
+        && (pointer_narrows(draft, left.type, right.type)
+            || pointer_narrows(draft, right.type, left.type));
+    if (left.type != right.type && !pointer_equality) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
     if (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual) {
@@ -611,6 +619,13 @@ auto evaluate_cast_constant_value(
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(draft, operand);
     const auto target = builtin_type(draft, result);
+    if (kind == CastKind::PointerRead
+        && std::holds_alternative<NullPointerConstant>(operand.value)) {
+        if (pointer_narrows(draft, operand.type, result)) {
+            return ConstantFact {.type = result, .value = NullPointerConstant {}};
+        }
+        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+    }
     if (kind == CastKind::Identity) {
         if (operand.type != result) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
@@ -822,6 +837,14 @@ auto normalize_literal(
                     .type = type,
                     .value = F64Constant {.value = number},
                 };
+            } else if constexpr (std::same_as<Value, NullPointerLiteralValue>) {
+                const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
+                if (negative
+                    || type == nullptr
+                    || !std::holds_alternative<PointerTypeValue>(draft.type_copy(*type).value)) {
+                    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                }
+                return ConstantFact {.type = *type, .value = NullPointerConstant {}};
             } else if constexpr (std::same_as<Value, BooleanLiteralValue>) {
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);

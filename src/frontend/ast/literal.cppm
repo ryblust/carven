@@ -10,7 +10,8 @@ using ASTLiteralValue = std::variant<
     StringLiteralValue,
     CStringLiteralValue,
     CharacterLiteralValue,
-    BooleanLiteralValue>;
+    BooleanLiteralValue,
+    NullPointerLiteralValue>;
 
 struct ASTLiteral final {
     Span span;

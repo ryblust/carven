@@ -31,7 +31,8 @@ auto BodyElaborator::build_try(
     const ASTTryForm& source,
     Span span,
     std::optional<ConstructionTypeRef> expected,
-    bool value_form
+    bool value_form,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
     struct CatchCoverageAlternative final {
         std::optional<TypeID> failure_type;
@@ -52,7 +53,13 @@ auto BodyElaborator::build_try(
     push_frame(ast.branch_block(source.body).span);
     reachable = true;
     failure_contexts.push_back({protected_failures, true});
-    auto protected_body = build_branch(source.body, value_form, result_type, pending);
+    auto protected_body = build_branch(
+        source.body,
+        value_form,
+        result_type,
+        pending,
+        expected.has_value() && allow_pointer_narrowing
+    );
     failure_contexts.pop_back();
     if (!protected_body.has_value()) {
         return std::unexpected(protected_body.error());
@@ -350,7 +357,13 @@ auto BodyElaborator::build_try(
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
-            return build_arm(arm.body, value_form, result_type, arm_pending);
+            return build_arm(
+                arm.body,
+                value_form,
+                result_type,
+                arm_pending,
+                expected.has_value() && allow_pointer_narrowing
+            );
         }();
         if (!body.has_value()) {
             return std::unexpected(body.error());
@@ -408,9 +421,10 @@ auto BodyElaborator::build_try(
 auto BodyElaborator::try_expression(
     const ASTTryForm& source,
     Span span,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto built = build_try(source, span, expected, true);
+    auto built = build_try(source, span, expected, true, allow_pointer_narrowing);
     if (!built.has_value()) {
         return std::unexpected(built.error());
     }

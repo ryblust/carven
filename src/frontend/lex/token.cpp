@@ -121,6 +121,7 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case Enum:               return "Enum";
         case Export:             return "Export";
         case False:              return "False";
+        case Nullptr:            return "Nullptr";
         case Fn:                 return "Fn";
         case For:                return "For";
         case If:                 return "If";

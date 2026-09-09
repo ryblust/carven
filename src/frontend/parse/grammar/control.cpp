@@ -555,6 +555,10 @@ auto Parser::parse_qualified_name() noexcept -> ASTQualifiedName {
 }
 
 auto Parser::consume_literal() noexcept -> ASTLiteral {
+    if (check(TokenKind::Nullptr)) {
+        const auto token = consume();
+        return {.span = token.span, .value = NullPointerLiteralValue {}};
+    }
     const auto token_index = cursor;
     const auto token = consume();
     if (token.kind == TokenKind::True || token.kind == TokenKind::False) {

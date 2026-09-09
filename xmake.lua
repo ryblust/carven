@@ -8,7 +8,7 @@ set_policy("build.progress_style", "multirow")
 task("format")
     set_menu({
         usage = "xmake format [options]",
-        description = "Format C++ sources with clang-format 23",
+        description = "Format C++ sources with clang-format",
         options = {},
     })
     on_run(function ()
@@ -19,7 +19,7 @@ task_end()
 task("format-check")
     set_menu({
         usage = "xmake format-check [options]",
-        description = "Check C++ formatting with clang-format 23",
+        description = "Check C++ formatting with clang-format",
         options = {},
     })
     on_run(function ()

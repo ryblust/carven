@@ -195,6 +195,12 @@ public:
 
     auto convert_argument(Value& value, ConstructionTypeRef expected, Span span) noexcept
         -> AnalysisResult<void> {
+        if (pointer_narrows(program, type(value), expected)) {
+            auto fact = program.constant_copy(std::get<ConstantID>(value));
+            fact.type = std::get<TypeID>(expected);
+            value = program.intern_constant(std::move(fact));
+            return {};
+        }
         if (!type_shapes_compatible(program, type(value), expected)) {
             return std::unexpected(
                 fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
@@ -231,6 +237,8 @@ public:
     ) const noexcept -> Value {
         return result(known);
     }
+
+    auto dereference(const ASTPrefixExpr&, Span) const noexcept -> Value { return unavailable(); }
 
     auto member(const ASTMemberExpr&, Value, Span) const noexcept -> Value { return unavailable(); }
 

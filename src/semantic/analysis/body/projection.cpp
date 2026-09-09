@@ -28,6 +28,45 @@ import :support.invariant;
 import :support.visit;
 import std;
 
+auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
+    -> AnalysisResult<BuiltExpression> {
+    auto operand = expression(source.operand_id);
+    if (!operand) {
+        return std::unexpected(operand.error());
+    }
+    const auto pointer = pointer_shape(draft(), operand->type());
+    if (!pointer) {
+        return std::unexpected(fail(
+            source.operator_span,
+            DiagnosticCode::TypeMismatch,
+            "dereference requires a ptr value"
+        ));
+    }
+    if (is_void_type(draft(), pointer->target)) {
+        return std::unexpected(fail(
+            source.operator_span,
+            DiagnosticCode::TypeValueRequired,
+            "ptr<void> has no object to dereference"
+        ));
+    }
+    auto pending = take_pending_failures(*operand);
+    auto value = consume_value(*operand, span, AccessMode::Read);
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    return BuiltExpression {
+        .storage = active_builder().make_place(
+            std::nullopt,
+            pointer->target,
+            SemDereference {.source = UniqueIndirect(std::move(*value)), .origin = origin(span)},
+            origin(span)
+        ),
+        .pending_failures = std::move(pending),
+        .takeable = false,
+        .completes = operand->completes,
+    };
+}
+
 auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noexcept
     -> AnalysisResult<BuiltExpression> {
     auto operand = expression(source.operand_id);

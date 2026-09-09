@@ -30,7 +30,8 @@ import std;
 auto BodyElaborator::branch_block(
     ASTBranchBlockID id,
     bool consume_result,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
     const auto& source = ast.branch_block(id);
     const auto enclosing_full_expression = active_full_expression;
@@ -47,7 +48,7 @@ auto BodyElaborator::branch_block(
         return std::optional<BuiltExpression>();
     }
     ensure_reachable_diagnostics(ast.expression(*source.result).span);
-    auto result = expression(*source.result, expected);
+    auto result = expression(*source.result, expected, allow_pointer_narrowing);
     if (!result.has_value()) {
         active_full_expression = enclosing_full_expression;
         return std::unexpected(result.error());
@@ -67,14 +68,15 @@ auto BodyElaborator::build_branch(
     ASTBranchBlockID id,
     bool value_form,
     std::optional<ConstructionTypeRef>& merged_type,
-    BodyPendingFailureTerms& pending
+    BodyPendingFailureTerms& pending,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<SemanticRegion> {
     const auto span = ast.branch_block(id).span;
     regions.push_back(empty_region(span));
     if (value_form) {
         value_boundary_loop_depths.push_back(loops.size());
     }
-    auto result = branch_block(id, !value_form, merged_type);
+    auto result = branch_block(id, !value_form, merged_type, allow_pointer_narrowing);
     if (value_form) {
         value_boundary_loop_depths.pop_back();
     }
@@ -91,6 +93,14 @@ auto BodyElaborator::build_branch(
                     return std::unexpected(inferred.error());
                 }
                 merged_type = *inferred;
+            }
+            if (!allow_pointer_narrowing
+                && pointer_narrows(draft(), (value).type(), *merged_type)) {
+                return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::TypeMismatch,
+                    "mixed ptr target permissions require an explicit result type"
+                ));
             }
             auto coerced = coerce_to(value, *merged_type, span);
             if (!coerced.has_value()) {
@@ -127,17 +137,19 @@ auto BodyElaborator::build_arm(
     const ASTMatchArmBody& source,
     bool value_form,
     std::optional<ConstructionTypeRef>& type,
-    BodyPendingFailureTerms& pending
+    BodyPendingFailureTerms& pending,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<SemanticRegion> {
     if (const auto* branch = std::get_if<ASTBranchBlockID>(&source.value)) {
-        return build_branch(*branch, value_form, type, pending);
+        return build_branch(*branch, value_form, type, pending, allow_pointer_narrowing);
     }
     regions.push_back(empty_region(source.span));
     if (value_form) {
         value_boundary_loop_depths.push_back(loops.size());
     }
     if (const auto* expression_id = std::get_if<ASTExprID>(&source.value)) {
-        auto built = expression(*expression_id, value_form ? type : std::nullopt);
+        auto built =
+            expression(*expression_id, value_form ? type : std::nullopt, allow_pointer_narrowing);
         if (!built.has_value()) {
             return std::unexpected(built.error());
         }
@@ -149,6 +161,13 @@ auto BodyElaborator::build_arm(
                     return std::unexpected(inferred.error());
                 }
                 type = *inferred;
+            }
+            if (!allow_pointer_narrowing && pointer_narrows(draft(), (*built).type(), *type)) {
+                return std::unexpected(fail(
+                    source.span,
+                    DiagnosticCode::TypeMismatch,
+                    "mixed ptr target permissions require an explicit result type"
+                ));
             }
             auto coerced = coerce_to(*built, *type, source.span);
             if (!coerced.has_value()) {
@@ -190,7 +209,8 @@ auto BodyElaborator::build_if(
     const ASTIfForm& source,
     Span span,
     std::optional<ConstructionTypeRef> expected,
-    bool value_form
+    bool value_form,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<BuiltExpression> {
     auto branches = std::vector<SemConditionalBranch>();
     auto pending = BodyPendingFailureTerms();
@@ -228,7 +248,13 @@ auto BodyElaborator::build_if(
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, selected);
-            return build_branch(branch.body, value_form, merged_type, pending);
+            return build_branch(
+                branch.body,
+                value_form,
+                merged_type,
+                pending,
+                expected.has_value() && allow_pointer_narrowing
+            );
         }();
         if (!body.has_value()) {
             return std::unexpected(body.error());
@@ -247,7 +273,13 @@ auto BodyElaborator::build_if(
         auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, remaining);
-            return build_branch(id, value_form, merged_type, pending);
+            return build_branch(
+                id,
+                value_form,
+                merged_type,
+                pending,
+                expected.has_value() && allow_pointer_narrowing
+            );
         }();
         if (!body.has_value()) {
             return std::unexpected(body.error());

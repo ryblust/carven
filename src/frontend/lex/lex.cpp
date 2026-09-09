@@ -42,6 +42,7 @@ constexpr auto token_kind(SourceKeyword keyword) noexcept -> TokenKind {
         case Enum:     return TokenKind::Enum;
         case Export:   return TokenKind::Export;
         case False:    return TokenKind::False;
+        case Nullptr:  return TokenKind::Nullptr;
         case Fn:       return TokenKind::Fn;
         case For:      return TokenKind::For;
         case If:       return TokenKind::If;

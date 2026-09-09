@@ -48,17 +48,26 @@ every operation and region contains resolved facts, including inactive source.
 
 Structural type terms reference only previously appended terms. Canonicalization
 consumes them in storage order into one final type mapping after failure solving.
+Closed declared subtypes can be interned earlier through the same construction
+operation; that path accepts no inferred failure terms.
 Callable recursion and recursive failure constraints retain their own identities
 and solving rules.
 
 `finish()` constructs a local `SemIRProgram`, releases the consumed draft and its
 syntax, imports, and construction solutions, then checks that final program.
 Checks run in this order: program facts and topology, body contracts, global
-semantic contracts, then ownership. All checks read `const SemIRProgram&`.
+semantic contracts, ownership, then local pointer nullability. All checks read
+`const SemIRProgram&`.
 Source diagnostics use a separate channel. Body contracts establish the parameter
 and binding relations used by global checks. Ownership analysis prepares and solves ownership facts.
 The operation tree moves with its owning program. Successful checks deliver the
 program.
+
+Pointer nullability walks the existing structured operations and merges local
+slot facts across normal and abrupt exits. It does not introduce CFG/SSA or
+interprocedural analysis. Indirect places check address availability and target
+access without assigning a local owner to the referent. Pointer targets are
+leaves for owned-content, loan-content, and infinite-size containment queries.
 
 ## Ownership and identity
 

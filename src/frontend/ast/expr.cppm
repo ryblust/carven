@@ -9,6 +9,7 @@ import :source.text;
 import std;
 
 enum class ASTPrefixOperator {
+    Dereference,
     LogicalNot,
     Negate,
     BitwiseNot,

@@ -97,10 +97,21 @@ auto BodyLowerer::cpp_operation(
             }
         };
     }
+    auto construction_type = context.lower_type(source.type.resolved());
+    if (std::holds_alternative<PointerTypeValue>(
+            context.semantic().types().type(source.type.resolved()).value
+        )) {
+        construction_type = context.target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::StdTypeIdentity,
+                     .type_argument_ids = {construction_type}
+                 },
+             .const_qualified = false}
+        );
+    }
     return TargetExpr {
-        .value = TargetConstructionExpr {
-            .type = context.lower_type(source.type.resolved()),
-            .initializer = std::move(arguments)
-        }
+        .value =
+            TargetConstructionExpr {.type = construction_type, .initializer = std::move(arguments)}
     };
 }

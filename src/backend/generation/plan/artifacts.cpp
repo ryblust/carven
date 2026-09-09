@@ -66,76 +66,6 @@ auto nominal_key(const SemIRProgram& semantic, NominalDeclarationRef nominal) no
     };
 }
 
-auto complete_type_nominals(
-    const SemIRProgram& semantic,
-    TypeID type,
-    std::flat_set<TypeID>& active,
-    std::flat_set<NominalDeclarationRef>& result
-) noexcept -> void {
-    if (!active.insert(type).second) {
-        invariant_violation("canonical type graph contains a structural cycle");
-    }
-    std::visit(
-        Overloaded {
-            [](const BuiltinTypeValue&) static noexcept {},
-            [&](const StructTypeValue& value) noexcept {
-                result.insert(NominalDeclarationRef {value.structure});
-            },
-            [&](const EnumTypeValue& value) noexcept {
-                result.insert(NominalDeclarationRef {value.enumeration});
-            },
-            [&](const ArrayTypeValue& value) noexcept {
-                complete_type_nominals(semantic, value.element, active, result);
-            },
-            [](const FunctionTypeValue&) static noexcept {},
-            [](const ClosureTypeValue&) static noexcept {},
-            [](const CallableViewTypeValue&) static noexcept {},
-            [&](const CppTypeValue& value) noexcept {
-                for (const auto argument : cpp_type_references(value)) {
-                    complete_type_nominals(semantic, argument, active, result);
-                }
-            },
-        },
-        semantic.types().type(type).value
-    );
-    active.erase(type);
-}
-
-auto nominal_dependencies(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
-    -> std::vector<NominalDeclarationRef> {
-    auto result = std::flat_set<NominalDeclarationRef>();
-    auto active_types = std::flat_set<TypeID>();
-    std::visit(
-        Overloaded {
-            [&](StructID id) noexcept {
-                for (const auto& field : semantic.declarations().structure(id).fields) {
-                    complete_type_nominals(semantic, field.type, active_types, result);
-                }
-            },
-            [&](EnumID id) noexcept {
-                const auto& enumeration = semantic.declarations().enumeration(id);
-                if (const auto* numeric =
-                        std::get_if<NumericEnumRepresentation>(&enumeration.representation)) {
-                    complete_type_nominals(
-                        semantic,
-                        numeric->underlying_type,
-                        active_types,
-                        result
-                    );
-                }
-                for (const auto case_id : enumeration.cases) {
-                    for (const auto type :
-                         semantic.declarations().enum_case(case_id).payload_types) {
-                        complete_type_nominals(semantic, type, active_types, result);
-                    }
-                }
-            },
-        },
-        nominal
-    );
-    return std::vector<NominalDeclarationRef>(result.begin(), result.end());
-}
-
 auto target_nominal_order(const SemIRProgram& semantic) noexcept
     -> std::vector<NominalDeclarationRef> {
     auto source_order = std::vector<NominalDeclarationRef>();
@@ -161,9 +91,11 @@ auto target_nominal_order(const SemIRProgram& semantic) noexcept
             return;
         }
         if (!active.insert(nominal).second) {
-            invariant_violation("semantic nominal containment contains a cycle");
+            // Storage cycles were rejected by analysis. Type-formation cycles
+            // (for example ReadArg<Self> in a callable target) remain C++ errors.
+            return;
         }
-        auto dependencies = nominal_dependencies(semantic, nominal);
+        auto dependencies = target_nominal_dependencies(semantic, nominal);
         std::ranges::sort(dependencies, [&](const auto left, const auto right) noexcept {
             return nominal_key(semantic, left) < nominal_key(semantic, right);
         });

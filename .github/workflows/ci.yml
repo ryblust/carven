@@ -27,35 +27,31 @@ jobs:
         shell: bash
         working-directory: carven
     env:
-      LLVM_VERSION: 23.1.0
       CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
 
     steps:
       - name: Check out Carven
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7
         with:
           path: carven
           persist-credentials: false
 
       - name: Check out build rules
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7
         with:
           repository: ryblust/carven-xmake-repo
-          ref: 94bb08377c18bb4503271f77b014fcad55c4e82b
           path: carven-xmake-repo
           persist-credentials: false
 
       - name: Install official Xmake
-        uses: xmake-io/github-action-setup-xmake@3a1a5dddfc7fa625d9a698738334bf55655a861a # v1
-        with:
-          xmake-version: '3.1.1'
+        if: runner.os == 'Linux'
+        uses: xmake-io/github-action-setup-xmake@v1
 
-      - name: Install LLVM on macOS
+      - name: Install toolchain on macOS
         if: runner.os == 'macOS'
         run: |
-          brew install llvm@23
-          llvm_root="$(brew --prefix llvm@23)"
-          test "$("$llvm_root/bin/llvm-config" --version)" = "$LLVM_VERSION"
+          brew install llvm xmake
+          llvm_root="$(brew --prefix llvm)"
           echo "LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
           echo "$llvm_root/bin" >> "$GITHUB_PATH"
 
@@ -67,8 +63,11 @@ jobs:
           echo "LLVM_ROOT=/usr/lib/llvm-23" >> "$GITHUB_ENV"
           echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
 
-      - name: Compiler version
-        run: clang --version
+      - name: Toolchain versions
+        run: |
+          xmake --version
+          clang --version
+          clang-format --version
 
       - name: Configure macOS
         if: runner.os == 'macOS'

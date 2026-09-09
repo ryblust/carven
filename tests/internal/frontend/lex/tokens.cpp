@@ -32,6 +32,7 @@ TEST_CASE("Lexer: every reserved spelling has its grammar token") {
         {.spelling = "is", .kind = TokenKind::Is},
         {.spelling = "let", .kind = TokenKind::Let},
         {.spelling = "match", .kind = TokenKind::Match},
+        {.spelling = "nullptr", .kind = TokenKind::Nullptr},
         {.spelling = "private", .kind = TokenKind::Private},
         {.spelling = "return", .kind = TokenKind::Return},
         {.spelling = "rethrow", .kind = TokenKind::Rethrow},
@@ -59,7 +60,6 @@ TEST_CASE("Lexer: identifiers are ASCII") {
         "imported",
         "new",
         "delete",
-        "nullptr",
     });
     for (const auto& spelling : identifiers) {
         check_token(spelling, TokenKind::Identifier);

@@ -1,5 +1,6 @@
 module carven:semantic.analysis.program.publication.impl;
 
+import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
 import :semantic.analysis.types.contents;
@@ -30,6 +31,10 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
         return std::unexpected(checked.error());
     }
     checked = analyze_body_batch(program, diagnostics, types);
+    if (!checked) {
+        return std::unexpected(checked.error());
+    }
+    checked = check_pointer_nullability(program, diagnostics);
     if (!checked) {
         return std::unexpected(checked.error());
     }

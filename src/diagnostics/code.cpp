@@ -105,6 +105,7 @@ namespace {
     X(NameUnresolved, "CV-NAME-UNRESOLVED", Error, "Unresolved value name.")                       \
     X(NameUnresolvedPattern, "CV-NAME-UNRESOLVED-PATTERN", Error, "Unresolved pattern name.")      \
     X(ParseNestingTooDeep, "CV-PARSE-NESTING-TOO-DEEP", Error, "Parser nesting limit exceeded.")   \
+    X(PointerNonNull, "CV-PTR-NONNULL", Error, "Dereference requires a proven non-null address.")  \
     X(Syntax, "CV-SYNTAX", Error, "Syntax error.")                                                 \
     X(EffectThrowType, "CV-EFFECT-THROW-TYPE", Error, "Invalid thrown failure type.")              \
     X(EffectThrowDuplicate,                                                                        \

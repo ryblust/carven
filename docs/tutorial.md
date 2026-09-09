@@ -65,6 +65,40 @@ UTF-8 bytes; `text.is_empty()` tests for an empty string. `text.bytes` and
 `_` discards a binding name. Its runtime initializer still executes.
 Use `//` for a line comment.
 
+## Acquiring an external address
+
+Explicit `ptr` types let an external address enter ordinary Carven code. This
+complete example uses a small native provider:
+
+```carven
+import <cstdint>;
+
+#[cpp] ---
+auto counter_address() noexcept -> std::int32_t* {
+    static std::int32_t counter = 0;
+    return &counter;
+}
+---
+
+fn observe(p: ptr<i32>) -> i32 {
+    if p == nullptr { return 0; }
+    return *p;
+}
+
+fn main() {
+    let p: ptr<&i32> = ::counter_address();
+    if p != nullptr { *p += 1; }
+    let value = observe(p);
+}
+```
+
+The `let` keeps the address slot fixed. `ptr<&i32>` permits writing the target;
+`observe` receives a narrowed `ptr<i32>` address value and checks it locally.
+For object targets, `p->field` abbreviates `(*p).field`. Use `var` and a Write
+parameter `&p` when a helper must replace the address slot. Copying or taking a
+pointer does not release or retain the external object. Its owner or provider
+still determines how long it lives and how it must be released.
+
 ## Records and arrays
 
 A structure groups named fields. An array has one element type and a fixed

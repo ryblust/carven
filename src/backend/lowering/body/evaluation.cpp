@@ -227,6 +227,7 @@ auto BodyLowerer::expression(
     auto result = destination.accept(expression_impl(source, literal, demand, materializing));
     const auto producer = source.category != SemanticValueCategory::Place
         && !std::holds_alternative<SemBinding>(source.value)
+        && !std::holds_alternative<SemDereference>(source.value)
         && !std::holds_alternative<SemField>(source.value)
         && !std::holds_alternative<SemIndex>(source.value)
         && !std::holds_alternative<SemCallable>(source.value)

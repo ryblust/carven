@@ -311,19 +311,22 @@ private:
         ASTBranchBlockID id,
         bool value_form,
         std::optional<ConstructionTypeRef>& result_type,
-        BodyPendingFailureTerms& pending
+        BodyPendingFailureTerms& pending,
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisResult<SemanticRegion>;
     auto build_arm(
         const ASTMatchArmBody& source,
         bool value_form,
         std::optional<ConstructionTypeRef>& type,
-        BodyPendingFailureTerms& pending
+        BodyPendingFailureTerms& pending,
+        bool allow_pointer_narrowing
     ) noexcept -> AnalysisResult<SemanticRegion>;
     auto build_if(
         const ASTIfForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool value_form
+        bool value_form,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
 
     auto push_frame(Span span) noexcept -> void;
@@ -338,6 +341,8 @@ private:
 
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
+    auto dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
+        -> AnalysisResult<BuiltExpression>;
     auto consume_place(BuiltExpression& expression, Span span) noexcept
         -> AnalysisResult<PlaceExpression>;
     auto coerce_to(BuiltExpression& expression, ConstructionTypeRef target, Span span) noexcept
@@ -358,11 +363,13 @@ private:
 
     auto expression(
         ASTExprID id,
-        std::optional<ConstructionTypeRef> expected = std::nullopt
+        std::optional<ConstructionTypeRef> expected = std::nullopt,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto select_expression(
         ASTExprID id,
-        std::optional<ConstructionTypeRef> expected = std::nullopt
+        std::optional<ConstructionTypeRef> expected = std::nullopt,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<SelectedExpression>;
     auto materialize_selection(SelectedExpression selected) noexcept
         -> AnalysisResult<BuiltExpression>;
@@ -392,7 +399,8 @@ private:
     auto array_expression(
         const ASTArrayExpr& array,
         Span span,
-        std::optional<ConstructionTypeRef> expected
+        std::optional<ConstructionTypeRef> expected,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto construction_expression(const ASTConstructionExpr& source, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
@@ -418,25 +426,29 @@ private:
     auto conditional_expression(
         const ASTIfForm& source,
         Span span,
-        std::optional<ConstructionTypeRef> expected
+        std::optional<ConstructionTypeRef> expected,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto match_expression(
         const ASTMatchForm& source,
         Span span,
-        std::optional<ConstructionTypeRef> expected
+        std::optional<ConstructionTypeRef> expected,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto match_statement(const ASTMatchForm& source, Span span) noexcept -> AnalysisResult<void>;
     auto try_expression(
         const ASTTryForm& source,
         Span span,
-        std::optional<ConstructionTypeRef> expected
+        std::optional<ConstructionTypeRef> expected,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto try_statement(const ASTTryForm& source, Span span) noexcept -> AnalysisResult<void>;
     auto build_try(
         const ASTTryForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool value_form
+        bool value_form,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
     auto build_pattern(
         ASTPatternID source,
@@ -451,7 +463,8 @@ private:
         const ASTMatchForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
-        bool value_form
+        bool value_form,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
     auto lambda_expression(
         const ASTLambdaExpr& source,
@@ -489,7 +502,8 @@ private:
     auto branch_block(
         ASTBranchBlockID id,
         bool consume_result,
-        std::optional<ConstructionTypeRef> expected = std::nullopt
+        std::optional<ConstructionTypeRef> expected = std::nullopt,
+        bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
 
     auto callable_contract(BuiltExpression& callee, Span span) noexcept

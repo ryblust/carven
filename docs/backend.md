@@ -37,12 +37,25 @@ to those C++ operations.
 Read parameters, Read argument temporaries, and Read array-range bindings use
 `runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
 and destroyed types and a const reference otherwise. Its trait
-queries require complete definitions, which interface planning includes.
+queries require complete definitions of value representations, which interface
+planning includes. A pointer representation is complete without completing its
+target; pointer dependencies request target declarations. Forming that target's
+type expression can still require complete definitions, such as Read parameter
+types in a callable signature. Declaration ordering includes these requirements;
+cycles in type formation remain C++ errors.
 
 Write parameters use `T&`; Take parameters own a `T`. `runtime::transfer` exposes
 a mutable owner's value for construction: trivial values are read, other values
 are supplied as rvalues. It returns a reference and adds no intermediate owner.
 C++ selects the constructor. Semantic analysis enforces source availability.
+
+`ptr<T>` lowers to a pointer to `std::add_const_t<T>` and `ptr<&T>` to a
+pointer to T, composed per layer for nested ptr values. Read ptr operands
+snapshot the address before later operands can replace its slot. Dereference
+selects that saved address before evaluating the rest of a store or call. Typed
+null constants retain the complete pointer type in native overload resolution.
+Native adoption uses typed initialization, preserving C++ conversion checks;
+there is no runtime pointer wrapper or automatic resource cleanup.
 
 The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades obey their explicit boundary signatures.

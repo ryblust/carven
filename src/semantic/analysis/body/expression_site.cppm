@@ -12,8 +12,9 @@ public:
     using Value = BuiltExpression;
     using Result = SelectedExpression;
 
-    explicit BodyExpressionSite(BodyElaborator& body) noexcept
-        : body(body) {}
+    explicit BodyExpressionSite(BodyElaborator& body, bool allow_pointer_narrowing = true) noexcept
+        : body(body),
+          allow_pointer_narrowing(allow_pointer_narrowing) {}
 
     auto draft() noexcept -> ProgramDraft& { return body.draft(); }
 
@@ -25,7 +26,7 @@ public:
 
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> AnalysisResult<Value> {
-        return body.expression(id, expected);
+        return body.expression(id, expected, allow_pointer_narrowing);
     }
 
     auto present(const Value&) const noexcept -> bool { return true; }
@@ -42,6 +43,10 @@ public:
 
     auto external(ConstructionTypeRef type) const noexcept -> bool {
         return body.is_cpp_type(type);
+    }
+
+    auto dereference(const ASTPrefixExpr& source, Span span) noexcept -> AnalysisResult<Value> {
+        return body.dereference_expression(source, span);
     }
 
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool {
@@ -267,7 +272,7 @@ public:
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<Result> {
-        return this->body.array_expression(value, span, expected);
+        return this->body.array_expression(value, span, expected, allow_pointer_narrowing);
     }
 
     auto extension(
@@ -307,7 +312,7 @@ public:
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<Result> {
-        return this->body.conditional_expression(value, span, expected);
+        return this->body.conditional_expression(value, span, expected, allow_pointer_narrowing);
     }
 
     auto extension(
@@ -323,7 +328,7 @@ public:
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<Result> {
-        return this->body.match_expression(value, span, expected);
+        return this->body.match_expression(value, span, expected, allow_pointer_narrowing);
     }
 
     auto extension(
@@ -331,7 +336,7 @@ public:
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<Result> {
-        return this->body.try_expression(value, span, expected);
+        return this->body.try_expression(value, span, expected, allow_pointer_narrowing);
     }
 
     auto resolve_name(std::string_view name, Span span) noexcept
@@ -518,4 +523,5 @@ private:
     }
 
     BodyElaborator& body;
+    bool allow_pointer_narrowing;
 };

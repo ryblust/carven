@@ -55,6 +55,28 @@ auto ProgramDraft::intern_builtin_type(BuiltinType type) noexcept -> TypeID {
     return storage.types.intern_builtin(type);
 }
 
+auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        return *concrete;
+    }
+    return ConstructionTypeStore::canonicalize_type(
+        construction_type_copy(std::get<TypeTermID>(type)),
+        storage.types,
+        storage.callable_signatures,
+        [&](ConstructionTypeRef child) noexcept { return canonicalize_declared_type(child); },
+        [&](FailureTermID term) noexcept {
+            const auto failures = construction_failure_term_copy(term);
+            if (!failures.inputs.empty()
+                || !failures.guarded_inputs.empty()
+                || !failures.excluded_members.empty()
+                || failures.retained_members) {
+                invariant_violation("declared type contains an inferred callable contract");
+            }
+            return intern_failure_set(failures.direct_members);
+        }
+    );
+}
+
 auto ProgramDraft::type_copy(TypeID type) const noexcept -> CanonicalType {
     return storage.types.copy(type);
 }

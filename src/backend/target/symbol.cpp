@@ -45,6 +45,8 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeCheckedArrayIndex: return "carven::runtime::checked_array_index";
         case TargetSymbol::RuntimeCheckedUnicodeScalar:
             return "carven::runtime::checked_unicode_scalar";
+        case TargetSymbol::StdAddConst:         return "std::add_const_t";
+        case TargetSymbol::StdTypeIdentity:     return "std::type_identity_t";
         case TargetSymbol::StdReferenceWrapper: return "std::reference_wrapper";
         case TargetSymbol::StdAddressof:        return "std::addressof";
         case TargetSymbol::StdGetIf:            return "std::get_if";

@@ -86,6 +86,7 @@ public:
 
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto intern_builtin_type(BuiltinType type) noexcept -> TypeID;
+    auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
     auto constant_copy(ConstantID constant) const noexcept -> ConstantFact;

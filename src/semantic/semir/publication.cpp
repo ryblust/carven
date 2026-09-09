@@ -360,6 +360,13 @@ auto validate_publication_facts(
                         invariant_violation("canonical type used an unpublished enum");
                     }
                 },
+                [&](const PointerTypeValue& value) noexcept {
+                    if (!types.contains(value.target)
+                        || (value.access != PointerAccess::Read
+                            && value.access != PointerAccess::Write)) {
+                        invariant_violation("canonical ptr used an invalid target or access");
+                    }
+                },
                 [&](const ArrayTypeValue& value) noexcept {
                     if (!types.contains(value.element)) {
                         invariant_violation("canonical array used an unpublished element type");
@@ -427,6 +434,9 @@ auto validate_publication_facts(
                     return builtin != nullptr
                         && builtin_is_integer(builtin->kind)
                         && integer_constant_fits(value, builtin->kind);
+                },
+                [&](const NullPointerConstant&) noexcept {
+                    return std::holds_alternative<PointerTypeValue>(canonical);
                 },
                 [&](const BooleanConstant&) noexcept {
                     return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}};

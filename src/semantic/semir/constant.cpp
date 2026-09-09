@@ -169,6 +169,7 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
                 static_assert(
                     std::same_as<Value, IntegerConstant>
                     || std::same_as<Value, BooleanConstant>
+                    || std::same_as<Value, NullPointerConstant>
                     || std::same_as<Value, F32Constant>
                     || std::same_as<Value, F64Constant>
                     || std::same_as<Value, CharacterConstant>

@@ -58,6 +58,8 @@ struct CharacterLiteralValue final {
     char32_t scalar;
 };
 
+struct NullPointerLiteralValue final {};
+
 struct BooleanLiteralValue final {
     bool value;
 };

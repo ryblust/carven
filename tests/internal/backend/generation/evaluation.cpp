@@ -346,3 +346,65 @@ TEST_CASE("Generation: void calls remain return expressions") {
     }
     CHECK(query.returned_calls == 1uz);
 }
+
+TEST_CASE("Generation: pointer reads and indirect targets select saved address values") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn snapshot(&p: ptr<&i32>) { ::rebind(p, &p); }\n"
+            "fn indirect(&p: ptr<&i32>) {\n"
+            "  if p != nullptr { ::rebind_target(&*p, &p); }\n"
+            "}\n"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("pointer_evaluation")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::vector<TargetName> snapshots;
+        std::size_t calls = 0uz;
+        std::size_t dereferences = 0uz;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                variable != nullptr && variable->binding == TargetVariableBinding::ConstValue) {
+                CHECK(std::holds_alternative<TargetPointerType>(unit.type(variable->type).value));
+                snapshots.emplace_back(variable->name);
+            }
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value);
+                prefix != nullptr && prefix->op == TargetPrefixOperator::Dereference) {
+                const auto* saved = std::get_if<TargetNameExpr>(&prefix->operand->value);
+                REQUIRE(saved != nullptr);
+                CHECK(std::ranges::contains(snapshots, saved->name));
+                ++dereferences;
+            }
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
+                if (name != nullptr && name->name.components().back().spelling() == "rebind") {
+                    REQUIRE(call->arguments.size() == 2uz);
+                    const auto* saved = std::get_if<TargetNameExpr>(&call->arguments.front().value);
+                    REQUIRE(saved != nullptr);
+                    CHECK(std::ranges::contains(snapshots, saved->name));
+                    ++calls;
+                }
+            }
+            return true;
+        }
+    };
+
+    auto calls = 0uz;
+    auto dereferences = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit, .snapshots = {}};
+        CHECK(traverse_target_unit(unit.sections(), query));
+        calls += query.calls;
+        dereferences += query.dereferences;
+    }
+    CHECK(calls == 1uz);
+    CHECK(dereferences == 1uz);
+}

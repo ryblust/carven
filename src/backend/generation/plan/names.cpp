@@ -123,6 +123,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         std::visit(
             Overloaded {
                 [](const BuiltinTypeValue&) static noexcept {},
+                [](const PointerTypeValue&) static noexcept {},
                 [](const StructTypeValue&) static noexcept {},
                 [](const EnumTypeValue&) static noexcept {},
                 [&](const ArrayTypeValue& value) noexcept {

@@ -46,7 +46,8 @@ auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexc
                             || std::same_as<Value, EnumTypeValue>
                             || std::same_as<Value, ArrayTypeValue>
                             || std::same_as<Value, CallableViewTypeValue>
-                            || std::same_as<Value, CppTypeValue>,
+                            || std::same_as<Value, CppTypeValue>
+                            || std::same_as<Value, PointerTypeValue>,
                         "unhandled non-owning callable type"
                     );
                 },
@@ -141,6 +142,15 @@ auto BodyElaborator::build_call_argument(
             .pending_failures = std::move(pending_failures),
             .completes = built->completes,
         };
+    }
+    if (parameter.access == AccessMode::Take
+        && pointer_shape(draft(), parameter.type)
+        && built->type() != parameter.type) {
+        return std::unexpected(fail(
+            source.span,
+            DiagnosticCode::TypeMismatch,
+            "Take requires the same complete ptr type"
+        ));
     }
     auto coerced = coerce_to(*built, parameter.type, source.span);
     if (!coerced.has_value()) {

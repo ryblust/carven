@@ -128,6 +128,11 @@ struct SemCast final {
     CastKind kind;
 };
 
+struct SemDereference final {
+    OwnedSemanticExpression source;
+    ProgramOriginID origin;
+};
+
 struct SemField final {
     OwnedSemanticExpression source;
     FieldProjection field;
@@ -239,6 +244,7 @@ struct SemanticExpression final {
         SemShortCircuit,
         SemCast,
         SemField,
+        SemDereference,
         SemIndex,
         SemTextIntrinsic,
         SemCall,

@@ -41,6 +41,7 @@ auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassi
         {"enum", SourceKeyword::Enum},
         {"export", SourceKeyword::Export},
         {"false", SourceKeyword::False},
+        {"nullptr", SourceKeyword::Nullptr},
         {"fn", SourceKeyword::Fn},
         {"for", SourceKeyword::For},
         {"if", SourceKeyword::If},

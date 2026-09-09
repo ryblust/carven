@@ -9,14 +9,20 @@ auto OwnershipBodyAnalyzer::place(
     bool read
 ) noexcept -> OwnershipFlow {
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}}, .exits = {}};
-    if (const auto* foreign = std::get_if<SemCpp>(&source.value)) {
+    if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
+        auto next = expression(*dereference->source, std::move(result.normal->state));
+        result.normal = std::move(next.normal);
+        append_ownership_exits(result, next);
+    } else if (const auto* foreign = std::get_if<SemCpp>(&source.value)) {
         result = place(foreign->operands.front().expression, std::move(result.normal->state));
         for (const auto& operand : std::span(foreign->operands).subspan(1)) {
             if (!result.normal.has_value()) {
                 break;
             }
             const auto previous = accesses.size();
-            accesses.push_back({*location(foreign->operands.front().expression), false});
+            if (const auto target = location(foreign->operands.front().expression)) {
+                accesses.push_back({*target, false});
+            }
             auto next = expression(operand.expression, std::move(result.normal->state));
             accesses.resize(previous);
             result.normal = std::move(next.normal);
@@ -28,7 +34,9 @@ auto OwnershipBodyAnalyzer::place(
         result = place(*index->source, std::move(result.normal->state));
         if (result.normal.has_value()) {
             const auto previous = accesses.size();
-            accesses.push_back({*location(*index->source), false});
+            if (const auto target = location(*index->source)) {
+                accesses.push_back({*target, false});
+            }
             auto constant_index = expression(*index->index, std::move(result.normal->state));
             accesses.resize(previous);
             result.normal = std::move(constant_index.normal);
@@ -38,7 +46,16 @@ auto OwnershipBodyAnalyzer::place(
     if (result.normal.has_value()) {
         const auto target = location(source);
         if (!target.has_value()) {
-            invariant_violation("semantic place has no storage location");
+            result.normal->value = {};
+            if (source.category == SemanticValueCategory::Value
+                && analysis.contents(source.type.resolved()).callable_view) {
+                diagnose(
+                    DiagnosticCode::TypeCallableViewEscape,
+                    "an indirect target cannot establish a Carven callable borrow",
+                    source.origin
+                );
+            }
+            return result;
         }
         if (read) {
             require_available(result.normal->state, *target, source.origin);
@@ -138,7 +155,11 @@ auto OwnershipBodyAnalyzer::expression(
                             source.origin
                         );
                     }
-                    if (access != AccessMode::Take) {
+                    const auto snapshot = access == AccessMode::Read
+                        && std::holds_alternative<PointerTypeValue>(
+                                              program.types().type(operand.type.resolved()).value
+                        );
+                    if (access != AccessMode::Take && !snapshot) {
                         if (const auto target = location(operand)) {
                             if (access == AccessMode::Write) {
                                 write_access(*target, operand.origin);
@@ -200,6 +221,9 @@ auto OwnershipBodyAnalyzer::expression(
                     if (!known.has_value()) {
                         join_normal_ownership(flow.normal, skipped);
                     }
+                },
+                [&](const SemDereference&) noexcept {
+                    flow = place(source, std::move(flow.normal->state));
                 },
                 [&](const SemField& value) noexcept {
                     const auto relationships = evaluate(*value.source);
@@ -425,7 +449,12 @@ auto OwnershipBodyAnalyzer::expression(
                         if (!flow.normal.has_value()) {
                             break;
                         }
-                        auto alias = argument.access == AccessMode::Take
+                        const auto snapshot =
+                            argument.access == AccessMode::Read
+                            && std::holds_alternative<PointerTypeValue>(
+                                program.types().type(argument.expression.type.resolved()).value
+                            );
+                        auto alias = argument.access == AccessMode::Take || snapshot
                             ? std::nullopt
                             : location(argument.expression);
                         if (alias.has_value()) {

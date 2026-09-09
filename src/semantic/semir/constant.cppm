@@ -26,6 +26,10 @@ private:
     bool stored_negative;
 };
 
+struct NullPointerConstant final {
+    constexpr auto operator==(const NullPointerConstant&) const noexcept -> bool = default;
+};
+
 struct BooleanConstant final {
     bool value;
     constexpr auto operator==(const BooleanConstant&) const noexcept -> bool = default;
@@ -72,6 +76,7 @@ struct PayloadEnumConstant final {
 using ConstantValue = std::variant<
     IntegerConstant,
     BooleanConstant,
+    NullPointerConstant,
     StringConstant,
     F32Constant,
     F64Constant,

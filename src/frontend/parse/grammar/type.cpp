@@ -19,6 +19,35 @@ auto Parser::parse_type() noexcept -> std::optional<ASTTypeID> {
     if (!nesting) {
         return std::nullopt;
     }
+    if (check(TokenKind::Identifier) && slice(source, current().span) == "ptr") {
+        const auto start = consume();
+        expect(TokenKind::Less, "expected '<' after ptr");
+        auto access = ASTAccessSyntax {.mode = ASTAccessMode::Read, .marker = std::nullopt};
+        if (const auto marker = match(TokenKind::Ampersand)) {
+            access = {.mode = ASTAccessMode::Write, .marker = marker->span};
+        }
+        if (check(TokenKind::AmpersandAmpersand)) {
+            fail_here("ptr target access permits only Read or Write, not Take");
+            return std::nullopt;
+        }
+        const auto target = parse_type();
+        if (!target) {
+            return std::nullopt;
+        }
+        auto end = current().span;
+        if (check(TokenKind::RightShift)) {
+            end = Span::from_bounds(end.start(), end.start() + 1);
+            split_right_shift = true;
+        } else {
+            end = expect(TokenKind::Greater, "expected '>' after ptr target").span;
+        }
+        return builder.append_type(
+            ASTType {
+                .span = join(start.span, end),
+                .value = ASTPointerType {.target = *target, .access = access},
+            }
+        );
+    }
     if (check(TokenKind::Identifier) || check(TokenKind::ColonColon)) {
         return parse_named_type();
     }

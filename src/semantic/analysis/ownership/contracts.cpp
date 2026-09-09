@@ -22,9 +22,36 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
         }
         return std::nullopt;
     };
-    const auto write = [&](const SemanticExpression& source) noexcept {
+    const auto writable = [&](this const auto& self,
+                              const SemanticExpression& source) noexcept -> bool {
+        if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
+            const auto* pointer = std::get_if<PointerTypeValue>(
+                &program.types().type(dereference->source->type.resolved()).value
+            );
+            return pointer != nullptr && pointer->access == PointerAccess::Write;
+        }
+        if (const auto* field = std::get_if<SemField>(&source.value)) {
+            return self(*field->source);
+        }
+        if (const auto* index = std::get_if<SemIndex>(&source.value)) {
+            return self(*index->source);
+        }
+        if (const auto* cpp = std::get_if<SemCpp>(&source.value);
+            cpp && source.category == SemanticValueCategory::Place) {
+            return self(cpp->operands.front().expression);
+        }
         const auto id = root(source);
-        if (!id.has_value() || !is_writable(*id)) {
+        return id && is_writable(*id);
+    };
+    const auto write = [&](const SemanticExpression& source) noexcept {
+        if (!root(source) && analysis.contents(source.type.resolved()).callable_view) {
+            diagnose(
+                DiagnosticCode::TypeCallableViewEscape,
+                "indirect storage cannot carry a tracked Carven callable borrow",
+                source.origin
+            );
+        }
+        if (!writable(source)) {
             diagnose(
                 DiagnosticCode::AccessImmutable,
                 "Write requires writable storage",
@@ -103,7 +130,9 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
                 if (const auto* value = std::get_if<SemAssign>(&source.value)) {
                     write(value->target);
                     if (const auto* take = std::get_if<SemTake>(&value->value.value);
-                        take != nullptr && root(*take->place) == root(value->target)) {
+                        take != nullptr
+                        && root(value->target).has_value()
+                        && root(*take->place) == root(value->target)) {
                         diagnose(
                             DiagnosticCode::AccessOperationConflict,
                             "direct self-transfer assignment is invalid",

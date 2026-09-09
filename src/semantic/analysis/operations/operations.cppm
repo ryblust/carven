@@ -46,6 +46,14 @@ auto select_contextual_numeric_type(
 ) noexcept -> TypeID;
 
 auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool;
+auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<PointerTypeValue>;
+auto pointer_narrows(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool;
+
 auto type_shapes_compatible(
     const ProgramDraft& draft,
     ConstructionTypeRef left,

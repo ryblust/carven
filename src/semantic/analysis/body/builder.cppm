@@ -13,7 +13,7 @@ struct BoundStorage final {
 };
 
 struct PlaceExpression final {
-    LocalBindingID root;
+    std::optional<LocalBindingID> root;
     SemanticExpression expression;
 };
 
@@ -67,7 +67,7 @@ public:
     auto place_access(const PlaceExpression&) const noexcept -> AccessMode;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
     auto make_place(
-        LocalBindingID,
+        std::optional<LocalBindingID>,
         ConstructionTypeRef,
         SemanticExpressionValue,
         ProgramOriginID

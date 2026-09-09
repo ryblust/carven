@@ -77,6 +77,7 @@ public:
                     child(*value.right);
                 },
                 [&](Node<SemCast>& value) noexcept { child(*value.operand); },
+                [&](Node<SemDereference>& value) noexcept { child(*value.source); },
                 [&](Node<SemField>& value) noexcept { child(*value.source); },
                 [&](Node<SemIndex>& value) noexcept {
                     child(*value.source);

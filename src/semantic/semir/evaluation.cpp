@@ -90,6 +90,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     : required;
             },
             [&](const SemTextIntrinsic& value) noexcept { return operands(*value.source); },
+            [&](const SemDereference&) noexcept { return required; },
             [&](const SemField& value) noexcept { return operands(*value.source); },
             [&](const SemIndex& value) noexcept {
                 return std::holds_alternative<RuntimeCheckedBounds>(value.bounds)

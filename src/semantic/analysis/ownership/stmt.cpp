@@ -113,7 +113,22 @@ auto OwnershipBodyAnalyzer::statement(
                 }
             },
             [&](const SemAssign& value) noexcept {
-                const auto target = *location(value.target);
+                const auto selected = location(value.target);
+                if (!selected) {
+                    result = place(value.target, std::move(result.normal->state));
+                    evaluate(value.value);
+                    if (result.normal
+                        && (!result.normal->value.loans.empty()
+                            || !result.normal->value.captures.empty())) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "tracked borrows cannot be stored through a ptr",
+                            source.origin
+                        );
+                    }
+                    return;
+                }
+                const auto& target = *selected;
                 const auto whole = target.path.empty();
                 result = place(
                     value.target,

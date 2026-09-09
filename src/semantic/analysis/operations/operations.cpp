@@ -41,12 +41,16 @@ enum class ContextualOperandKind {
     None,
     NumericLiteral,
     EnumCase,
+    NullPointer,
 };
 
 auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> ContextualOperandKind {
     return std::visit(
         [&]<typename Form>(const Form& form) noexcept -> ContextualOperandKind {
             if constexpr (std::same_as<Form, ASTLiteral>) {
+                if (std::holds_alternative<NullPointerLiteralValue>(form.value)) {
+                    return ContextualOperandKind::NullPointer;
+                }
                 const auto unsuffixed = std::visit(
                     []<typename Value>(const Value& value) static noexcept {
                         if constexpr (std::same_as<Value, IntegerLiteralValue>
@@ -55,7 +59,8 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                         } else if constexpr (std::same_as<Value, StringLiteralValue>
                                              || std::same_as<Value, CStringLiteralValue>
                                              || std::same_as<Value, CharacterLiteralValue>
-                                             || std::same_as<Value, BooleanLiteralValue>) {
+                                             || std::same_as<Value, BooleanLiteralValue>
+                                             || std::same_as<Value, NullPointerLiteralValue>) {
                             return false;
                         } else {
                             static_assert(
@@ -76,9 +81,12 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                        )
                     ? ContextualOperandKind::EnumCase
                     : ContextualOperandKind::None;
+            } else if constexpr (std::same_as<Form, ASTGroupExpr>) {
+                const auto inner = contextual_operand_kind(ast, form.expression);
+                return inner == ContextualOperandKind::NullPointer ? inner
+                                                                   : ContextualOperandKind::None;
             } else if constexpr (std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
-                                 || std::same_as<Form, ASTGroupExpr>
                                  || std::same_as<Form, ASTArrayExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
                                  || std::same_as<Form, ASTPrefixExpr>
@@ -229,6 +237,8 @@ auto shapes_compatible(
 
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator {
     switch (op) {
+        case ASTPrefixOperator::Dereference:
+            invariant_violation("pointer dereference is not a scalar unary operator");
         case ASTPrefixOperator::LogicalNot: return UnaryOperator::LogicalNot;
         case ASTPrefixOperator::Negate:     return UnaryOperator::Negate;
         case ASTPrefixOperator::BitwiseNot: return UnaryOperator::BitwiseNot;
@@ -269,6 +279,16 @@ auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) no
     const auto equality = binary_operator_requires_equality(expression.op);
     const auto left_kind = contextual_operand_kind(ast, expression.left);
     const auto right_kind = contextual_operand_kind(ast, expression.right);
+    if (equality
+        && left_kind == ContextualOperandKind::NullPointer
+        && right_kind != ContextualOperandKind::NullPointer) {
+        return BinaryOperandPlan::LeftExpectedFromRight;
+    }
+    if (equality
+        && right_kind == ContextualOperandKind::NullPointer
+        && left_kind != ContextualOperandKind::NullPointer) {
+        return BinaryOperandPlan::RightExpectedFromLeft;
+    }
     const auto left_case = left_kind == ContextualOperandKind::EnumCase;
     const auto right_case = right_kind == ContextualOperandKind::EnumCase;
     if (equality && left_case && !right_case) {
@@ -346,6 +366,31 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
     std::unreachable();
 }
 
+auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<PointerTypeValue> {
+    if (const auto* id = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*id);
+        if (const auto* pointer = std::get_if<PointerTypeValue>(&canonical.value)) {
+            return *pointer;
+        }
+    }
+    return std::nullopt;
+}
+
+auto pointer_narrows(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool {
+    const auto from = pointer_shape(draft, source);
+    const auto to = pointer_shape(draft, target);
+    return from
+        && to
+        && from->target == to->target
+        && from->access == PointerAccess::Write
+        && to->access == PointerAccess::Read;
+}
+
 auto type_shapes_compatible(
     const ProgramDraft& draft,
     ConstructionTypeRef left,
@@ -390,6 +435,7 @@ auto supports_equality(
             [](const ClosureTypeValue&) static noexcept { return false; },
             [](const CallableViewTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
+            [](const PointerTypeValue&) static noexcept { return true; },
         },
         canonical.value
     );
@@ -592,6 +638,9 @@ auto decide_cast(
     ConstructionTypeRef target,
     bool numeric_enum
 ) noexcept -> CastDecision {
+    if (pointer_narrows(facts, source, target)) {
+        return CastKind::PointerRead;
+    }
     return decide_builtin_cast(
         source == target,
         builtin_type(facts, source),
@@ -631,6 +680,15 @@ auto decide_cast(
     TypeID target,
     bool numeric_enum
 ) noexcept -> CastDecision {
+    const auto* from = std::get_if<PointerTypeValue>(&facts.type(source).value);
+    const auto* to = std::get_if<PointerTypeValue>(&facts.type(target).value);
+    if (from
+        && to
+        && from->target == to->target
+        && from->access == PointerAccess::Write
+        && to->access == PointerAccess::Read) {
+        return CastKind::PointerRead;
+    }
     return decide_builtin_cast(
         source == target,
         builtin_type(facts, source),

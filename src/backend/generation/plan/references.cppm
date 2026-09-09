@@ -23,3 +23,8 @@ auto collect_target_references(
     const SemIRProgram& semantic,
     std::span<const std::vector<DeclarationRef>> surface_declarations
 ) noexcept -> TargetReferenceFacts;
+
+auto target_nominal_dependencies(
+    const SemIRProgram& semantic,
+    NominalDeclarationRef nominal
+) noexcept -> std::vector<NominalDeclarationRef>;

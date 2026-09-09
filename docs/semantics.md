@@ -15,6 +15,7 @@ This document defines the validity and observable behavior of Carven programs.
   - [Constant expressions](#constant-expressions)
   - [Numeric types and conversions](#numeric-types-and-conversions)
   - [Unicode text](#unicode-text)
+- [Pointer values](#pointer-values)
 - [Bindings, access, and mutation](#bindings-access-and-mutation)
 - [Functions and callable values](#functions-and-callable-values)
   - [Functions and calls](#functions-and-calls)
@@ -150,8 +151,8 @@ extent. Function-view types include parameter access, parameter types, success
 result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
-The defined exceptions are contextual numeric literals and compatible callable-to-view
-adoption. There are no general implicit numeric promotions, structural
+The defined exceptions are contextual numeric literals, compatible callable-to-view
+adoption, and narrowing `ptr<&T>` to `ptr<T>`. There are no general implicit numeric promotions, structural
 conversions, truthiness conversions, or opaque dynamically typed values.
 
 `void` is the absence of a value. It may describe a callable's success result,
@@ -164,9 +165,9 @@ conversion rules, specified under C++ interoperation.
 
 ### Type context and inference
 
-An expected type is supplied by a surrounding source operation. For Carven
-values, it provides context without requesting an implicit conversion. An explicit annotation fixes the required type, and an
-incompatible initializer is rejected rather than changing that annotation.
+An expected type is supplied by a surrounding source operation. It guides
+literal typing and the defined value conversions. An explicit annotation fixes
+the required type; an incompatible initializer is rejected.
 The following are supported sources of context:
 
 | Position | Source of expected type |
@@ -182,8 +183,9 @@ The following are supported sources of context:
 
 Grouping passes an existing expected type to its operand. Contextual numeric
 literals and enum cases use that context as specified in their sections.
-Context does not change a named value's type, supply an omitted call access
-marker, insert a capture, or make an incompatible ordinary value convertible.
+Context does not change a binding's declared type. An admitted value conversion
+can produce the expected type. Context does not supply an omitted call access
+marker or insert a capture.
 
 For ordinary binary operands, a direct unsuffixed numeric literal on the left
 obtains context from a right operand that is not a direct unsuffixed numeric
@@ -348,11 +350,95 @@ construction. User structures may declare same-named fields because member
 resolution depends on the receiver type.
 
 
+## Pointer values
+
+`ptr<T>` stores an address that grants Read access to T; `ptr<&T>` grants Write
+access. Both are ordinary nullable, copyable address values. `let` and `var`
+control reassignment of the address slot. For example, `let p: ptr<&T>` cannot
+be reassigned but can modify its target. A Read aggregate preserves the complete
+types of its pointer fields, including their target permissions.
+
+Targets use ordinary type resolution and can be Carven types, external types,
+or nested pointers. Carven does not classify the underlying kind of a native
+alias. A pointer does not contain or own its target, so pointer fields permit
+recursive structures. `ptr<void>` can be stored and passed but cannot be
+dereferenced. Native aliases and operations remain subject to C++ legality.
+
+`*p` accesses the target as a place; `p->member` is `(*p).member`. The address
+must be available and locally proven non-null. Target access comes from the
+pointer type, independently of the slot's binding access. `let value = *p`
+performs ordinary value initialization; C++ checks native copyability. `&*p`
+passes a writable target to an ordinary Write parameter. `&&*p` is rejected:
+the target is not an owned Carven binding. Existing callable-borrow boundaries
+remain in force; an indirect address does not establish a tracked borrow.
+
+For the same target type, `ptr<&T>` can become `ptr<T>` in a value context:
+initialization, assignment, field or element construction, Read arguments,
+constant initialization, and return. The reverse conversion is invalid. This
+does not introduce array, aggregate, nested-target, or function-type covariance.
+Each pointer layer has its own target/access pair. Copying an inner pointer
+through an outer Read pointer retains the inner pointer's target permissions.
+Context-free mixed pointer modes in array or branch results require a type
+annotation. A type inferred from a sibling can type `nullptr`, but cannot
+authorize narrowing inside nested arrays or branches. Inferred same-type copies
+retain their full type.
+
+Read pointer arguments save an address snapshot. Write parameters alias the
+caller's slot and require the complete pointer type to match. Take parameters
+also require an exact type, transfer the address value, and make its source
+owner unavailable. Take does not zero other aliases or release the target.
+
+`nullptr` needs a concrete pointer type context, including in an explicitly
+typed `const`. There is no independent null type. Pointers support `==` and
+`!=` with `nullptr` and with pointers to the same target type. They have no
+implicit boolean conversion, ordering, arithmetic, direct indexing, integer
+conversion, or Carven address-of operation.
+
+### Local non-null checks
+
+The compiler traverses each function and closure's structured semantic body.
+It tracks null, non-null, and unknown facts for local names, fixed Carven field
+paths, and constant array indices. Tests against `nullptr` refine branches,
+including negation, short-circuit expressions, and early returns. Branch joins
+keep only common facts. A bool helper, API success code, or test assertion is
+not a proof. Functions and closures establish their own conditions.
+
+Address copies and permission narrowing carry the current fact to the new
+slot without creating a lasting equality relationship. Assignment replaces a
+fact; Take removes the source fact. Write calls clear facts for overlapping
+storage. A slot passed to a Write parameter may escape through that callee.
+Later calls clear facts for such slots, Write parameters, and Write captures.
+Loops clear potentially written facts before checking the condition and body;
+the checker merges normal exits without computing cross-iteration relations.
+
+Native projections, dynamic indices, and memory reached through a pointer do
+not retain cross-expression facts. Save such a pointer in a local handle and
+check that handle. An unproven dereference reports `CV-PTR-NONNULL`; the compiler
+does not insert a runtime trap. Passing a nullable address to an API is allowed
+without a dereference proof. Non-nullness never proves that a target is alive.
+
+### Native representation and responsibility
+
+Read and Write target access lower to `const T*` and `T*`, composed by layer.
+Read parameters pass the address by value; Write uses the corresponding pointer
+reference. Generated code selects the dereference address before evaluating
+later operands that could replace its slot. Saving or passing a pointer needs
+only the target's declaration, so incomplete native types remain usable.
+Forming the target's C++ type expression still follows its own requirements.
+For example, `ptr<fn(T) -> void>` requires T to be complete for the callable's Read
+parameter representation; a self-dependent representation is rejected by C++.
+
+There is no runtime handle wrapper, reference counting, allocation, or automatic
+release. Owners and adapters implement the external resource protocol. Native
+`T**` output protocols and buffer traversal remain in `#[cpp]`; `&p` passes a
+pointer slot by reference and does not implicitly compute a `T**`. Public scalar
+`import(cpp)` / `export(cpp)` restrictions remain unchanged.
+
 ## Bindings, access, and mutation
 
-Carven separates value type, binding role, and access mode. `&` and `&&` are
-access markers; they are neither part of a Carven type nor source-level C++
-reference types.
+Carven separates value type, binding role, and access mode. Binding and argument
+markers `&` and `&&` describe access; they do not construct reference types.
+Inside `ptr<&T>`, `&` is the pointer type's explicit target-access parameter.
 
 - `let` creates an immutable runtime owner.
 - `var` creates a mutable runtime owner.
@@ -383,7 +469,8 @@ A call repeats every declared parameter access exactly: `read(value)`,
 access permits but does not require mutation. It is non-owning and nonexclusive:
 the same mutable owner may be passed to multiple `Write` parameters in one call.
 Arguments are evaluated left to right, and mutations take effect in the
-function body's execution order. Read grants no write access through the parameter.
+function body's execution order. Read prevents writes to the parameter's current
+storage. Contained pointers and Write captures retain their separate target access.
 
 ### Read values and aliases
 
@@ -701,7 +788,8 @@ Ordering requires identical numeric operands. Logical `&&` and `||` require
 Equality requires compatible operands and an equality-capable type. It is
 available for `bool`, `char`, integers, floating-point values, `str`, arrays
 whose elements support equality, structures whose fields all support equality,
-numeric enums, and payload enums whose payloads all support equality. Callable
+numeric enums, payload enums whose payloads all support equality, and pointers
+with identical target types. Callable
 types, process-entry arguments, and `str.bytes` / `str.chars` iteration views do
 not support equality.
 
@@ -977,8 +1065,9 @@ External calls do not expose typed failures and obey the
 Carven checks its own storage availability and explicit access conflicts but
 does not infer C++ reference retention, pointer validity or iterator invalidation.
 Known callable borrows and Write captures cannot cross an undeclared external
-contract. External reference bindings, pointer operations and external iteration
-protocols are unsupported.
+contract. The `ptr` model checks target access and local non-null facts without
+proving target liveness. External reference bindings, pointer arithmetic and
+external iteration protocols are unsupported.
 
 ### Source fragments
 

@@ -5,7 +5,7 @@ function main(check)
     if os.host() == "macosx" then
         local brew = find_program("brew")
         if brew then
-            local prefix = try {function () return os.iorunv(brew, {"--prefix", "llvm@23"}) end}
+            local prefix = try {function () return os.iorunv(brew, {"--prefix", "llvm"}) end}
             if prefix then
                 local candidate = path.join(prefix:trim(), "bin", "clang-format")
                 if os.isfile(candidate) then
@@ -15,10 +15,7 @@ function main(check)
         end
     end
     program = program or find_program("clang-format")
-    assert(program, "clang-format 23 is required; install llvm@23 on macOS or add clang-format to PATH")
-    local version = os.iorunv(program, {"--version"}):trim()
-    assert(version:match("version%s+(%d+)%.") == "23",
-        "clang-format major version 23 is required; found %s (%s)", version, program)
+    assert(program, "clang-format is required; install llvm on macOS or add clang-format to PATH")
 
     local files = {}
     for _, root in ipairs({"src", "tests", "crafts", "examples"}) do

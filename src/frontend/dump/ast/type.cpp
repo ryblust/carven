@@ -44,6 +44,10 @@ auto literal_kind_name(const CharacterLiteralValue&) noexcept -> std::string_vie
     return "Character";
 }
 
+auto literal_kind_name(const NullPointerLiteralValue&) noexcept -> std::string_view {
+    return "nullptr";
+}
+
 auto literal_kind_name(const BooleanLiteralValue& value) noexcept -> std::string_view {
     return value.value ? "True" : "False";
 }
@@ -221,6 +225,20 @@ auto ASTDumper::render_type(
                     std::format("{}NamedType {}", field, format_dump_span(type.span))
                 );
                 render_named_type_children(named, child_prefix(prefix, is_last), true);
+            },
+            [&](const ASTPointerType& pointer) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("{}PointerType {}", field, format_dump_span(type.span))
+                );
+                const auto nested = child_prefix(prefix, is_last);
+                append_line(
+                    nested,
+                    false,
+                    pointer.access.mode == ASTAccessMode::Write ? "access Write" : "access Read"
+                );
+                render_type(pointer.target, nested, true, "target ");
             },
             [&](const ASTArrayType& array) noexcept {
                 append_line(

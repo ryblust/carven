@@ -146,6 +146,8 @@ private:
                 include("carven/runtime/numeric.hpp");
                 break;
             case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
+            case TargetSymbol::StdAddConst:
+            case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
             case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
             case TargetSymbol::StdAddressof:             include("memory"); break;
             case TargetSymbol::StdGetIf:

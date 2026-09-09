@@ -1,0 +1,50 @@
+import "pointers/provider.hpp";
+
+fn read(p: ptr<i32>) -> i32 {
+    if p == nullptr { return -1; }
+    return *p;
+}
+
+#[cpp] ---
+auto pointer_output_adapter() noexcept -> std::int32_t* {
+    std::int32_t* result = nullptr;
+    pointer_probe::output(&result);
+    return result;
+}
+---
+
+test "Pointers: Read calls snapshot addresses and dereference selects its target first" {
+    var p: ptr<&i32> = ::pointer_probe::get();
+    check(::pointer_probe::snapshot(p, &p));
+    check(read(p) == 20);
+    p = ::pointer_probe::get();
+    let next: ptr<&i32> = ::pointer_probe::other();
+    if p == nullptr { fail("missing address"); }
+    let old = *p;
+    ::pointer_probe::increment(&*p, next, &p);
+    check(read(p) == 20);
+    let original: ptr<i32> = ::pointer_probe::get();
+    check(read(original) == old + 1);
+}
+
+test "Pointers: noncopyable native targets can be observed through an address" {
+    let p: ptr<::pointer_probe::Fixed> = ::pointer_probe::fixed_object();
+    if p != nullptr { check(p->read() == 91); }
+}
+
+test "Pointers: native qualifiers aliases and incomplete targets retain their types" {
+    let empty: ptr<i32> = nullptr;
+    check(::pointer_probe::overload(empty) == 1);
+    let null_write: ptr<&i32> = nullptr;
+    check(::pointer_probe::overload(null_write) == 2);
+    let native: ptr<::pointer_probe::NativePointer> = ::pointer_probe::nested_native();
+    check(native != nullptr);
+    let opaque: ptr<::pointer_probe::Incomplete> = ::pointer_probe::opaque();
+    check(opaque == nullptr);
+    let nothing: ptr<void> = nullptr;
+    check(nothing == nullptr);
+    let output: ptr<&i32> = ::pointer_output_adapter();
+    check(output != nullptr);
+    let owned: ptr<i32> = output;
+    check(::pointer_probe::pair(owned, &&owned));
+}

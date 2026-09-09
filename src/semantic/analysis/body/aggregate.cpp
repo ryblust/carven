@@ -31,7 +31,8 @@ import std;
 auto BodyElaborator::array_expression(
     const ASTArrayExpr& array,
     Span span,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    bool allow_pointer_narrowing
 ) noexcept -> AnalysisResult<BuiltExpression> {
     auto expected_element = std::optional<ConstructionTypeRef>();
     if (expected.has_value()) {
@@ -74,7 +75,11 @@ auto BodyElaborator::array_expression(
     auto element_type = expected_element;
     auto completes = true;
     for (const auto element_id : array.element_ids) {
-        auto element = expression(element_id, element_type);
+        auto element = expression(
+            element_id,
+            element_type,
+            expected_element.has_value() && allow_pointer_narrowing
+        );
         if (!element.has_value()) {
             return std::unexpected(element.error());
         }
@@ -87,6 +92,14 @@ auto BodyElaborator::array_expression(
             }
             element_type = *inferred;
         } else {
+            if ((!expected_element || !allow_pointer_narrowing)
+                && pointer_narrows(draft(), element->type(), *element_type)) {
+                return std::unexpected(fail(
+                    ast.expression(element_id).span,
+                    DiagnosticCode::TypeMismatch,
+                    "mixed ptr target permissions require an explicit array element type"
+                ));
+            }
             auto coerced = coerce_to(*element, *element_type, ast.expression(element_id).span);
             if (!coerced.has_value()) {
                 return std::unexpected(coerced.error());
@@ -207,12 +220,21 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
         }
         completes &= value->completes;
         append_pending_failures(pending_failures, take_pending_failures(*value));
-        if (!compatible(value->type(), declaration.fields[index].type)) {
+        if (!compatible(value->type(), declaration.fields[index].type)
+            && !pointer_narrows(draft(), value->type(), declaration.fields[index].type)
+            && !(
+                is_cpp_type(value->type()) && pointer_shape(draft(), declaration.fields[index].type)
+            )) {
             return std::unexpected(fail(
                 ast.expression(value_id).span,
                 DiagnosticCode::TypeConstructField,
                 "structure initializer has an incompatible field type"
             ));
+        }
+        auto converted =
+            coerce_to(*value, declaration.fields[index].type, ast.expression(value_id).span);
+        if (!converted) {
+            return std::unexpected(converted.error());
         }
         auto operand = consume_value(*value, ast.expression(value_id).span, AccessMode::Read);
         if (!operand.has_value()) {

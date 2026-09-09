@@ -75,6 +75,9 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
                 }
                 return result;
             },
+            [](const PointerTypeValue&) static noexcept -> TypeContents {
+                return {.closure_owner = false, .callable_view = false};
+            },
             [](const BuiltinTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false};
             },

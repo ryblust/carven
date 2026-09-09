@@ -25,6 +25,11 @@ struct ASTNamedType final {
     std::vector<ASTTypeID> arguments;
 };
 
+struct ASTPointerType final {
+    ASTTypeID target;
+    ASTAccessSyntax access;
+};
+
 struct ASTArrayType final {
     ASTTypeID element_type;
     ASTExprID extent;
@@ -51,7 +56,7 @@ struct ASTFunctionType final {
 
 struct ASTType final {
     Span span;
-    std::variant<ASTNamedType, ASTArrayType, ASTFunctionType> value;
+    std::variant<ASTNamedType, ASTArrayType, ASTFunctionType, ASTPointerType> value;
 };
 
 struct ASTConstructionType final {

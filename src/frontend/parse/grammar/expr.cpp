@@ -212,7 +212,10 @@ auto Parser::parse_cast_expression() noexcept -> std::optional<ASTExprID> {
 }
 
 auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
-    if (check(TokenKind::Bang) || check(TokenKind::Minus) || check(TokenKind::Tilde)) {
+    if (check(TokenKind::Bang)
+        || check(TokenKind::Minus)
+        || check(TokenKind::Tilde)
+        || check(TokenKind::Star)) {
         const auto nesting = enter_syntax_nesting();
         if (!nesting) {
             return std::nullopt;
@@ -222,9 +225,10 @@ auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
         if (!operand) {
             return std::nullopt;
         }
-        const auto op = operation.kind == TokenKind::Minus ? ASTPrefixOperator::Negate
-            : operation.kind == TokenKind::Tilde           ? ASTPrefixOperator::BitwiseNot
-                                                           : ASTPrefixOperator::LogicalNot;
+        const auto op = operation.kind == TokenKind::Star ? ASTPrefixOperator::Dereference
+            : operation.kind == TokenKind::Minus          ? ASTPrefixOperator::Negate
+            : operation.kind == TokenKind::Tilde          ? ASTPrefixOperator::BitwiseNot
+                                                          : ASTPrefixOperator::LogicalNot;
         return builder.append_expression(
             ASTExpr {
                 .span = join(operation.span, builder.expression(*operand).span),
@@ -270,8 +274,20 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
             );
             continue;
         }
-        if (check(TokenKind::Dot) || check(TokenKind::ColonColon)) {
+        if (check(TokenKind::Dot) || check(TokenKind::ColonColon) || check(TokenKind::Arrow)) {
             const auto operation = consume();
+            if (operation.kind == TokenKind::Arrow) {
+                operand = builder.append_expression(
+                    ASTExpr {
+                        .span = join(builder.expression(*operand).span, operation.span),
+                        .value = ASTPrefixExpr {
+                            .op = ASTPrefixOperator::Dereference,
+                            .operator_span = operation.span,
+                            .operand_id = *operand
+                        },
+                    }
+                );
+            }
             const auto name = expect(TokenKind::Identifier, "expected member name");
             if (failed) {
                 return std::nullopt;
@@ -281,8 +297,8 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
                     .span = join(builder.expression(*operand).span, name.span),
                     .value = ASTMemberExpr {
                         .operand_id = *operand,
-                        .op = operation.kind == TokenKind::Dot ? ASTMemberOperator::Dot
-                                                               : ASTMemberOperator::Scope,
+                        .op = operation.kind != TokenKind::ColonColon ? ASTMemberOperator::Dot
+                                                                      : ASTMemberOperator::Scope,
                         .operator_span = operation.span,
                         .name_span = name.span,
                     },
@@ -349,7 +365,8 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
         || check(TokenKind::CStringLiteral)
         || check(TokenKind::CharLiteral)
         || check(TokenKind::True)
-        || check(TokenKind::False)) {
+        || check(TokenKind::False)
+        || check(TokenKind::Nullptr)) {
         auto value = consume_literal();
         return builder.append_expression(
             ASTExpr {

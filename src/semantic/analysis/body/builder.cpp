@@ -92,6 +92,7 @@ auto BodyBuilder::make_expression(
                     add(*node.right);
                 }
             },
+            [&](const SemDereference& node) noexcept { add(*node.source); },
             [&](const SemCast& node) noexcept { add(*node.operand); },
             [&](const SemField& node) noexcept { add(*node.source); },
             [&](const SemIndex& node) noexcept {
@@ -204,7 +205,7 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
 }
 
 auto BodyBuilder::make_place(
-    LocalBindingID root,
+    std::optional<LocalBindingID> root,
     ConstructionTypeRef type,
     SemanticExpressionValue value,
     ProgramOriginID origin

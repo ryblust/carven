@@ -198,6 +198,14 @@ auto constant_expression(
                     },
                 };
             },
+            [&](const NullPointerConstant&) noexcept -> TargetExpr {
+                return {
+                    .value = TargetStaticCastExpr {
+                        .type = context.lower_type(fact.type),
+                        .operand = target_child(intrinsic_expression(TargetSymbol::StdNullptr)),
+                    }
+                };
+            },
             [&](const NumericEnumConstant& value) noexcept {
                 return enum_case_expression(context, value.enum_case, {});
             },
