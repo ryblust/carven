@@ -127,6 +127,9 @@ public:
             },
             expression.value
         );
+        if constexpr (requires { visitor.leave(expression); }) {
+            visitor.leave(expression);
+        }
     }
 
     auto operator()(Node<SemanticRegion>& region) const noexcept -> void {
@@ -166,10 +169,17 @@ public:
                         child(*value.steps);
                     },
                     [&](Node<SemRangeLoop>& value) noexcept {
-                        child(value.begin);
-                        if (value.end.has_value()) {
-                            child(*value.end);
-                        }
+                        std::visit(
+                            [&](auto& range) noexcept {
+                                if constexpr (requires { range.begin; }) {
+                                    child(range.begin);
+                                    child(range.end);
+                                } else {
+                                    child(range.value);
+                                }
+                            },
+                            value.source
+                        );
                         child(*value.body);
                     },
                     [&](Node<SemTestReport>& value) noexcept {

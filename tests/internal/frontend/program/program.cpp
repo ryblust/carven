@@ -23,7 +23,7 @@ auto path(std::string_view value) noexcept -> CanonicalModulePath {
 } // namespace
 
 static_assert(!std::copy_constructible<SyntaxProgram>);
-static_assert(std::movable<SyntaxProgram>);
+static_assert(std::move_constructible<SyntaxProgram>);
 static_assert(!std::constructible_from<SyntaxProgram, SyntaxProgramParts>);
 
 TEST_CASE("Syntax program: publication gate correlates roots, provenance, and imports") {
@@ -71,6 +71,16 @@ TEST_CASE("Syntax program: publication gate correlates roots, provenance, and im
     );
     CHECK_EQ(main_imports.front().target, model_module);
     CHECK(program.resolved_imports(model_module).empty());
-    CHECK(program.provenance().find_source_snapshot(*main_source).has_value());
-    CHECK(program.provenance().find_source_snapshot(*model_source).has_value());
+    CHECK_EQ(
+        program.provenance()
+            .source_snapshot(program.provenance().module_record(main_module).source_id)
+            .manager_source_id(),
+        *main_source
+    );
+    CHECK_EQ(
+        program.provenance()
+            .source_snapshot(program.provenance().module_record(model_module).source_id)
+            .manager_source_id(),
+        *model_source
+    );
 }

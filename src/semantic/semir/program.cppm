@@ -21,7 +21,7 @@ public:
     ~BodyStore() = default;
 
     auto operator=(const BodyStore&) -> BodyStore& = delete;
-    auto operator=(BodyStore&&) -> BodyStore& = default;
+    auto operator=(BodyStore&&) -> BodyStore& = delete;
 
     auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
 
@@ -51,7 +51,7 @@ public:
     ~TestStore() = default;
 
     auto operator=(const TestStore&) -> TestStore& = delete;
-    auto operator=(TestStore&&) -> TestStore& = default;
+    auto operator=(TestStore&&) -> TestStore& = delete;
 
     auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
 
@@ -77,59 +77,34 @@ private:
 class SemIRProgram final {
 public:
     SemIRProgram(const SemIRProgram&) = delete;
-    SemIRProgram(SemIRProgram&& other) noexcept;
+    SemIRProgram(SemIRProgram&&) noexcept = default;
     ~SemIRProgram() = default;
 
     auto operator=(const SemIRProgram&) -> SemIRProgram& = delete;
-    auto operator=(SemIRProgram&& other) noexcept -> SemIRProgram&;
+    auto operator=(SemIRProgram&&) -> SemIRProgram& = delete;
 
-    auto identity() const noexcept -> ProgramIdentity {
-        require_active();
-        return program_identity;
-    }
+    auto identity() const noexcept -> ProgramIdentity { return program_identity; }
 
     auto provenance() const noexcept -> CompilationProvenanceView {
-        require_active();
         return compilation_provenance.view();
     }
 
-    auto types() const noexcept -> const CanonicalTypeStore& {
-        require_active();
-        return type_store;
-    }
+    auto types() const noexcept -> const CanonicalTypeStore& { return type_store; }
 
-    auto constants() const noexcept -> const ConstantStore& {
-        require_active();
-        return constant_store;
-    }
+    auto constants() const noexcept -> const ConstantStore& { return constant_store; }
 
-    auto failure_sets() const noexcept -> const FailureSetStore& {
-        require_active();
-        return failure_set_store;
-    }
+    auto failure_sets() const noexcept -> const FailureSetStore& { return failure_set_store; }
 
     auto callable_signatures() const noexcept -> const CallableSignatureStore& {
-        require_active();
         return callable_signature_store;
     }
 
-    auto declarations() const noexcept -> const DeclarationStore& {
-        require_active();
-        return declaration_store;
-    }
+    auto declarations() const noexcept -> const DeclarationStore& { return declaration_store; }
 
-    auto bodies() const noexcept -> const BodyStore& {
-        require_active();
-        return body_store;
-    }
+    auto bodies() const noexcept -> const BodyStore& { return body_store; }
 
-    auto tests() const noexcept -> const TestStore& {
-        require_active();
-        return test_store;
-    }
+    auto tests() const noexcept -> const TestStore& { return test_store; }
 
-    auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
-    auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
 
 private:
     SemIRProgram(
@@ -143,7 +118,6 @@ private:
         BodyStore bodies,
         TestStore tests
     ) noexcept;
-    auto require_active() const noexcept -> void;
 
     ProgramIdentity program_identity;
     CompilationProvenance compilation_provenance;
@@ -154,7 +128,6 @@ private:
     DeclarationStore declaration_store;
     BodyStore body_store;
     TestStore test_store;
-    bool active;
 
     friend class ProgramDraft;
 };

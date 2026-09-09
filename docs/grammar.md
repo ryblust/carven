@@ -285,7 +285,7 @@ cpp-import-function-declaration = [ "private" ],
                                   function-head, ";";
 
 cpp-export-function-definition = "export", "(", "cpp", ")",
-                                 function-head, ordinary-block;
+                                 function-head, function-body;
 
 module-constant-declaration = "const", declaration-name,
                               [ ":", type ],
@@ -396,8 +396,9 @@ contain fields only.
 ### 3.4 Functions
 
 ```ebnf
-function-definition = function-head,
-                      ( ordinary-block | "=>", expression, ";" );
+function-definition = function-head, function-body;
+
+function-body = ordinary-block | "=>", expression, ";";
 
 function-head = "fn", IDENTIFIER,
                 "(", [ parameter-list ], ")",

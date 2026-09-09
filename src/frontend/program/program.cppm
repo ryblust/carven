@@ -1,7 +1,7 @@
 module carven:frontend.program;
 
-import :frontend.ast.tree;
 import :frontend.ast.ids;
+import :frontend.ast.tree;
 import :source.provenance;
 import std;
 
@@ -25,7 +25,7 @@ struct SyntaxProgramParts final {
     ~SyntaxProgramParts() = default;
 
     auto operator=(const SyntaxProgramParts&) -> SyntaxProgramParts& = delete;
-    auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = default;
+    auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = delete;
 
     CompilationProvenance provenance;
     std::vector<SyntaxTree> syntax_by_module;
@@ -39,7 +39,7 @@ public:
     ~SyntaxProgram() = default;
 
     auto operator=(const SyntaxProgram&) -> SyntaxProgram& = delete;
-    auto operator=(SyntaxProgram&&) -> SyntaxProgram& = default;
+    auto operator=(SyntaxProgram&&) -> SyntaxProgram& = delete;
 
     auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;

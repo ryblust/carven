@@ -39,15 +39,6 @@ enum class TargetSymbol {
     RuntimeIntegerRemainder,
     RuntimeIntegerLeftShift,
     RuntimeIntegerRightShift,
-    RuntimeIntegerAddAssign,
-    RuntimeIntegerSubtractAssign,
-    RuntimeIntegerMultiplyAssign,
-    RuntimeIntegerDivideAssign,
-    RuntimeIntegerRemainderAssign,
-    RuntimeIntegerLeftShiftAssign,
-    RuntimeIntegerRightShiftAssign,
-    RuntimeIntegerIncrement,
-    RuntimeIntegerDecrement,
     RuntimeCheckedArrayIndex,
     RuntimeCheckedUnicodeScalar,
     StdReferenceWrapper,
@@ -63,7 +54,6 @@ enum class TargetSymbol {
     StdVariant,
     TestingContext,
     TestingReporter,
-    TestingControl,
 };
 
 auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view;

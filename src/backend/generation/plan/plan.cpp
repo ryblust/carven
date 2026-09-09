@@ -42,14 +42,11 @@ auto logical_path(
 
 auto target_source_origin(CompilationProvenanceView provenance, ProgramOriginID origin) noexcept
     -> TargetSourceOrigin {
-    const auto span = provenance.source_span(origin);
-    const auto source = provenance.find_source_snapshot(span.source_id);
-    if (!source.has_value()) {
-        invariant_violation("semantic origin references an unknown source snapshot");
-    }
+    const auto source = provenance.source_origin(origin);
+    const auto& snapshot = provenance.source_snapshot(source.source_id);
     return {
-        .display_origin = std::string(provenance.source_snapshot(*source).display_origin()),
-        .line = provenance.location(origin).line,
+        .display_origin = std::string(snapshot.display_origin()),
+        .line = snapshot.location(source.span).line,
     };
 }
 
@@ -478,8 +475,7 @@ TargetPlan::TargetPlan(
       plan_identity(identity),
       name_plan(std::move(names)),
       failure_abi_plan(std::move(failure_abi)),
-      artifact_plans(std::move(artifacts)),
-      active(true) {
+      artifact_plans(std::move(artifacts)) {
     if (name_plan.semantic_owner() != source_identity
         || failure_abi_plan.semantic_owner() != source_identity) {
         invariant_violation("target plan combines metadata from different semantic programs");
@@ -503,20 +499,6 @@ TargetPlan::TargetPlan(
     verify_target_artifact_logical_paths(artifact_logical_paths);
 }
 
-TargetPlan::TargetPlan(TargetPlan&& other) noexcept
-    : source_identity(other.source_identity),
-      plan_identity(other.plan_identity),
-      name_plan(std::move(other.name_plan)),
-      failure_abi_plan(std::move(other.failure_abi_plan)),
-      artifact_plans(std::move(other.artifact_plans)),
-      active(std::exchange(other.active, false)) {}
-
-auto TargetPlan::require_active() const noexcept -> void {
-    if (!active) {
-        invariant_violation("target plan was used after move");
-    }
-}
-
 auto TargetPlan::build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
     -> TargetPlan {
     const auto identity = TargetPlanIdentity::fresh();
@@ -535,38 +517,31 @@ auto TargetPlan::build(const SemIRProgram& semantic, const TargetPlanningRequest
 }
 
 auto TargetPlan::semantic_identity() const noexcept -> ProgramIdentity {
-    require_active();
     return source_identity;
 }
 
 auto TargetPlan::identity() const noexcept -> TargetPlanIdentity {
-    require_active();
     return plan_identity;
 }
 
 auto TargetPlan::names() const noexcept -> const TargetNamePlan& {
-    require_active();
     return name_plan;
 }
 
 auto TargetPlan::failure_abi() const noexcept -> const FailureABI& {
-    require_active();
     return failure_abi_plan;
 }
 
 auto TargetPlan::artifacts() const noexcept
     -> TargetPlanTableEntries<TargetArtifactPlan, TargetArtifactID> {
-    require_active();
     return artifact_plans.entries();
 }
 
 auto TargetPlan::artifact_count() const noexcept -> std::size_t {
-    require_active();
     return artifact_plans.size();
 }
 
 auto TargetPlan::artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan& {
-    require_active();
     return artifact_plans.get(id);
 }
 
@@ -584,17 +559,11 @@ auto PlannedCompilation::build(SemIRProgram semantic, const TargetPlanningReques
     return PlannedCompilation(std::move(semantic), std::move(target));
 }
 
-auto PlannedCompilation::require_active() const noexcept -> void {
-    static_cast<void>(semantic_program.identity());
-}
-
 auto PlannedCompilation::semantic() const noexcept -> const SemIRProgram& {
-    require_active();
     return semantic_program;
 }
 
 auto PlannedCompilation::target() const noexcept -> const TargetPlan& {
-    require_active();
     return target_plan;
 }
 

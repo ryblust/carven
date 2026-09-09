@@ -161,10 +161,19 @@ auto BodyElaborator::append_statement(
                 add_region(*node.steps);
             },
             [&](const SemRangeLoop& node) noexcept {
-                add(node.begin);
-                if (node.end.has_value()) {
-                    add(*node.end);
-                }
+                std::visit(
+                    [&](const auto& range) noexcept {
+                        if constexpr (std::same_as<
+                                          std::remove_cvref_t<decltype(range)>,
+                                          SemIntegerRange>) {
+                            add(range.begin);
+                            add(range.end);
+                        } else {
+                            add(range.value);
+                        }
+                    },
+                    node.source
+                );
                 add_region(*node.body);
             },
             [&](const SemTestReport& node) noexcept {

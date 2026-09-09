@@ -38,6 +38,10 @@ struct UniqueTypes<First, Rest...> final
 template<typename Result>
 struct SuccessState final {
     Result value;
+
+    template<typename Factory>
+    constexpr explicit SuccessState(std::in_place_t, Factory&& factory) noexcept
+        : value(std::forward<Factory>(factory)()) {}
 };
 
 template<>
@@ -78,9 +82,9 @@ class Outcome final {
     template<typename, typename...>
     friend class Outcome;
 
-    template<typename Value>
-    constexpr explicit Outcome(std::in_place_type_t<Success>, Value&& value) noexcept
-        : state(std::in_place_type<Success>, std::forward<Value>(value)) {}
+    template<typename Factory>
+    constexpr explicit Outcome(std::in_place_type_t<Success>, Factory&& factory) noexcept
+        : state(std::in_place_type<Success>, std::in_place, std::forward<Factory>(factory)) {}
 
     constexpr explicit Outcome(std::in_place_type_t<Success>) noexcept
         : state(std::in_place_type<Success>) {}
@@ -115,10 +119,10 @@ public:
     auto operator=(const Outcome&) -> Outcome& = delete;
     auto operator=(Outcome&&) -> Outcome& = delete;
 
-    template<typename Value>
-        requires (!std::is_void_v<Result> && std::is_constructible_v<Result, Value &&>)
-    static constexpr auto success(Value&& value) noexcept -> Outcome {
-        return Outcome(std::in_place_type<Success>, std::forward<Value>(value));
+    template<typename Factory>
+        requires (!std::is_void_v<Result>) && std::same_as<std::invoke_result_t<Factory>, Result>
+    static constexpr auto success_from(Factory&& factory) noexcept -> Outcome {
+        return Outcome(std::in_place_type<Success>, std::forward<Factory>(factory));
     }
 
     static constexpr auto success() noexcept -> Outcome

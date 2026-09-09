@@ -17,7 +17,9 @@ SemIRProgram + TargetPlanningRequest
 `PlannedCompilation` owns a sealed semantic program and its matching immutable
 `TargetPlan`. Planning selects names, interfaces, failure representation, and
 artifact schedules. Each artifact is lowered into a fresh `ArtifactLowering`
-and target-unit identity. Repeated lowering produces independent units.
+and target-unit identity. Repeated lowering produces independent units. Type and
+signature-result caches each use one slot containing Unseen, Resolving, or a
+completed TargetTypeID.
 
 `TargetUnitBuilder::finish` verifies the target tree, derives dependencies, and
 materializes directives. Rendering serializes that finished tree. Filesystem
@@ -79,7 +81,8 @@ a normal result, and owned control exits. A normal result retains an expression
 or records that evaluation is complete. Retained expressions may have void type;
 completed evaluation is distinct from absence of a normal successor. Regions
 deliver a result on each normal path, including paths without a tail expression.
-Result destinations return, initialize, consume, or discard the result. Discard
+Result destinations are function return, local lambda yield, final-storage
+initialization, discard, and boolean-result assignment. Discard
 executes any retained expression. Owned and temporary results preserve storage
 identity and observation or transfer behavior.
 
@@ -97,7 +100,9 @@ bodies provide scopes; independent regions with declarations require a block.
 Statement composition and source attribution do not create scopes.
 
 Locals that require writes, delayed initialization, or Take remain mutable C++ storage.
-Other local owners are const. Read range bindings use the Read parameter policy;
+Other local owners are const. A local requiring deferred initialization initializes
+its final storage directly.
+Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
 source. Arrays and text use C++ range-for
 iteration; text is decoded sequentially without length prepasses or indexed
@@ -110,11 +115,18 @@ before argument evaluation;
 callable views retain a target description. Neither choice copies capture contents.
 Source and full-expression scopes preserve lifetimes.
 
-Operand composition uses semantic execution and storage-read facts together with
-C++ sequencing guarantees. Recursive consumers compose evaluation and result
-delivery; operation construction only consumes evaluated operands. Branches can
-receive the remaining computation directly, keeping temporary objects in native
-scopes. Expression-position lexical regions retain their cleanup boundary.
+Operand composition uses prepared execution and storage-read facts together with
+C++ sequencing guarantees. It lowers operands in source order once and constructs
+the operation from their results. A value branch delivers a value through a local
+lambda or an explicit destination. Each following operand and statement is lowered
+once. Operand access determines Read snapshots and Write aliases; calls select
+their callee before arguments, and short-circuit operators evaluate only the
+selected side.
+
+Conditional full-expression temporaries reserve storage in construction order at
+the enclosing expression boundary and initialize only on the selected path.
+Reverse destruction order includes those objects and any retained Outcome owners.
+Expression-position lexical regions retain their separate cleanup boundary.
 Known or discarded results retain required execution.
 Result demand determines whether a call checks success, observes its payload, or
 transfers ownership. Numeric operations preserve their resolved type across
@@ -126,13 +138,17 @@ Conditionals, returns, and scopes lower directly. Ordinary loops use an
 initializer scope and a while loop; condition sequencing executes on every
 test. A loop with steps gives continue a local step target during construction.
 Known consumers receive results directly, including returns from selected branches.
-Expression-position regions use value lambdas when their exits are local;
-otherwise they use deferred initialization. Function return applies the failure
-ABI independently of lambda yield. A retained void expression can be returned
-directly; an Outcome return executes it before constructing success without a
-payload. Void and discarded regions need no result storage. Loops and handlers
-receive only exits belonging to their own construct. Loops without steps and
-range loops use native `continue`.
+Expression-position value branches with no outward failure or test exit use local
+value lambdas; branches with those exits use deferred initialization. Function
+return applies the failure ABI independently of lambda yield. A retained void
+expression can be returned directly; an Outcome return executes it before
+constructing success without a payload. Non-void success uses `Outcome::success_from(factory)`: the factory is
+invoked immediately and exactly once to construct the payload directly. Callable
+adaptation uses the same construction. A factory may return an immovable prvalue.
+Owner transfer, payload extraction, and Outcome widening require the constructors
+used by those operations. Void and discarded regions need no result storage.
+Loops and handlers receive only exits belonging to their own construct. Loops
+without steps and range loops use native `continue`.
 
 Match locates its subject once and keeps it alive and stable through selection.
 Pattern owners initialize before guards. A single selection path declares its

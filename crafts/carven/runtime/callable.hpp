@@ -69,12 +69,12 @@ private:
             );
             return Destination::success();
         } else {
-            return Destination::success(
-                std::invoke(
+            return Destination::success_from([&]() -> Source {
+                return std::invoke(
                     std::forward<Callable>(callable),
                     std::forward<CallArguments>(arguments)...
-                )
-            );
+                );
+            });
         }
     }
 

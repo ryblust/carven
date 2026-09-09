@@ -14,7 +14,7 @@ import std;
 
 auto BodyLowerer::structured_expression(
     const SemanticExpression& source,
-    LoweringResultDestination result,
+    const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     std::visit(
@@ -77,7 +77,7 @@ auto BodyLowerer::guarded_region(
 
 auto BodyLowerer::lower_if(
     const SemIf& value,
-    LoweringResultDestination result,
+    const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto lower_branch = [&](this const auto& self,

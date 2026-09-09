@@ -60,7 +60,7 @@ public:
     TargetNamePlan(TargetNamePlan&&) = default;
     ~TargetNamePlan() = default;
     auto operator=(const TargetNamePlan&) -> TargetNamePlan& = delete;
-    auto operator=(TargetNamePlan&&) -> TargetNamePlan& = default;
+    auto operator=(TargetNamePlan&&) -> TargetNamePlan& = delete;
 
     auto semantic_owner() const noexcept -> ProgramIdentity;
     auto module_names(ModuleID id) const noexcept -> const TargetModuleNames&;
@@ -113,7 +113,7 @@ public:
     FailureABI(FailureABI&&) = default;
     ~FailureABI() = default;
     auto operator=(const FailureABI&) -> FailureABI& = delete;
-    auto operator=(FailureABI&&) -> FailureABI& = default;
+    auto operator=(FailureABI&&) -> FailureABI& = delete;
 
     auto semantic_owner() const noexcept -> ProgramIdentity;
     auto members(FailureSetID set) const noexcept -> std::span<const TypeID>;
@@ -194,7 +194,7 @@ class PlannedCompilation;
 class TargetPlan final {
 public:
     TargetPlan(const TargetPlan&) = delete;
-    TargetPlan(TargetPlan&& other) noexcept;
+    TargetPlan(TargetPlan&&) noexcept = default;
     ~TargetPlan() = default;
     auto operator=(const TargetPlan&) -> TargetPlan& = delete;
     auto operator=(TargetPlan&&) -> TargetPlan& = delete;
@@ -208,8 +208,6 @@ public:
     auto artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan&;
 
 private:
-    auto require_active() const noexcept -> void;
-
     static auto build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
         -> TargetPlan;
 
@@ -226,7 +224,6 @@ private:
     TargetNamePlan name_plan;
     FailureABI failure_abi_plan;
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifact_plans;
-    bool active;
 
     friend class PlannedCompilation;
 };
@@ -247,7 +244,6 @@ public:
 
 private:
     PlannedCompilation(SemIRProgram semantic, TargetPlan target) noexcept;
-    auto require_active() const noexcept -> void;
 
     SemIRProgram semantic_program;
     TargetPlan target_plan;

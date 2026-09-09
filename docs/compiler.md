@@ -18,7 +18,8 @@ CompilationRequest → SyntaxProgram → ProgramDraft → SemIRProgram
 `parse_program` parses the closed source batch and resolves module imports.
 `analyze` constructs declarations and typed structured bodies, solves types and
 failure sets, validates contracts, checks ownership and callable loans, and
-publishes an immutable semantic program. Source errors discard the draft.
+publishes an immutable semantic program. Errors prevent delivery; warnings accompany
+a successful result.
 
 ## Publication gates
 
@@ -34,8 +35,10 @@ solving. Final semantic validation checks declaration surfaces, including closur
 captures and solved failure sets.
 
 `analysis.program` owns `ProgramDraft` and declaration/body reservations.
-`solve_construction` checks reservation completeness, solves failures and types,
-and finalizes callable signatures, declarations, and bodies in that order.
+Its consuming `finish()` checks reservation completeness, solves failures and types,
+and finalizes callable signatures, declarations, and bodies in that order. Each
+body reservation has one slot containing its kind, test owner when applicable,
+and optional completed draft; callable ownership remains in declarations.
 Body completion resolves type and failure facts in the owned operation tree in
 place, borrowing only the solutions and diagnostic sources. Completion and
 read-only checks share the structural child traversal; completion owns only fact
@@ -48,13 +51,14 @@ consumes them in storage order into one final type mapping after failure solving
 Callable recursion and recursive failure constraints retain their own identities
 and solving rules.
 
-Construction and final storage are mutually exclusive. Successful solving closes
-interning and releases source syntax, resolved imports, and construction
-solutions. The operation tree moves into final storage without rebuilding its
-children. Global validation, body contracts, coverage, and ownership inspect the
-same final data. Publication
-validates its structure and moves it into `SemIRProgram`; it derives no new facts.
-Source errors prevent delivery; warnings accompany a successful program.
+`finish()` constructs a local `SemIRProgram`, releases the consumed draft and its
+syntax, imports, and construction solutions, then checks that final program.
+Checks run in this order: program facts and topology, body contracts, global
+semantic contracts, then ownership. All checks read `const SemIRProgram&`.
+Source diagnostics use a separate channel. Body contracts establish the parameter
+and binding relations used by global checks. Ownership analysis prepares and solves ownership facts.
+The operation tree moves with its owning program. Successful checks deliver the
+program.
 
 ## Ownership and identity
 
@@ -75,14 +79,23 @@ store construction or resolved facts; their accessors explicitly select the
 required stage. Published bodies expose only const access to the completed tree.
 
 Solving consumes construction state. `SemIRProgram` retains resolved
-semantic data and provenance; lowering does not query source syntax.
+semantic data and provenance; lowering does not query source syntax. Program,
+provenance, plan, and table owners permit move construction where required, but
+not replacement through move assignment. Borrows end before an owner moves or
+is consumed. Construction readers return copies because storage may grow;
+final views borrow immutable storage. Query boundaries check identity and bounds;
+construction boundaries check unique definitions and structure.
+
+Provenance resolves an origin directly to `ProgramSourceID` and `Span`.
+Only diagnostic transport converts that identity to the source manager domain.
 
 ## Structured semantics
 
 Bodies retain conditionals, loops, matches, handlers, lexical scopes, and exits.
 Places describe storage identity and projection evaluation. Values describe
 computation. Initialization, assignment, and Take remain distinct operations.
-Children and operation contracts specify evaluation order.
+Children and operation contracts specify evaluation order. Range sources explicitly
+select integer bounds or a sequence expression.
 
 Bindings carry their role and access. Scope and full-expression boundaries
 record lifetimes. Function return, failure propagation, loop transfer, and test
@@ -124,10 +137,11 @@ operands, or requiring no execution when discarded. It consumes resolved
 operations, types, and constant facts. Storage reads are separate from execution
 requirements, so a removable read can still require a snapshot before a later
 mutation. Calls and native operations are conservative; checks, ownership
-operations, and floating computations retain execution. Full-expression lifetime
-queries identify expressions requiring object-lifetime preservation. Queries
-borrow the published tree. Type rules shared across stages consume concrete
-stage facts rather than reconstructing drafts from final declarations.
+operations, and floating computations retain execution. Before lowering a body,
+one traversal prepares execution, storage-read, full-expression lifetime, and
+external-exit facts from children to parents. The backend associates facts with
+stable node addresses and releases them with that lowering. Shared type rules
+consume the relevant stage's facts.
 
 Local construction checks its preconditions. Program validation checks owner
 and range relations, type and call contracts, lifetime and control legality,
@@ -136,6 +150,11 @@ Each declaration and body has its required unique owner; each closure has one
 construction site and one body.
 
 ## Ownership and callable loans
+
+An ownership flow has an optional normal completion containing its state and
+result relationships. Every exit carries a state. Return exits carry result
+relationships, failure exits carry a failure type, and loop transfers distinguish
+break from continue.
 
 An ownership batch prepares local object descriptions, relative temporary
 positions, lifetime membership, and pattern acceptance once for each final body.

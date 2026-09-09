@@ -78,7 +78,7 @@ public:
     FrozenFailureConstraints(const FrozenFailureConstraints&) = delete;
     FrozenFailureConstraints(FrozenFailureConstraints&&) = default;
     auto operator=(const FrozenFailureConstraints&) -> FrozenFailureConstraints& = delete;
-    auto operator=(FrozenFailureConstraints&&) -> FrozenFailureConstraints& = default;
+    auto operator=(FrozenFailureConstraints&&) -> FrozenFailureConstraints& = delete;
     ~FrozenFailureConstraints() = default;
 
     auto owner() const noexcept -> ProgramIdentity;
@@ -106,7 +106,7 @@ public:
     FailureConstraintStore(const FailureConstraintStore&) = delete;
     FailureConstraintStore(FailureConstraintStore&&) = default;
     auto operator=(const FailureConstraintStore&) -> FailureConstraintStore& = delete;
-    auto operator=(FailureConstraintStore&&) -> FailureConstraintStore& = default;
+    auto operator=(FailureConstraintStore&&) -> FailureConstraintStore& = delete;
     ~FailureConstraintStore() = default;
 
     auto add_empty_term() noexcept -> FailureTermID;

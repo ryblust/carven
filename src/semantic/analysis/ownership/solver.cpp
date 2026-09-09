@@ -1,21 +1,20 @@
 module carven:semantic.analysis.ownership.solver.impl;
 
 import :semantic.analysis.ownership.context;
-import :semantic.analysis.program;
-import :semantic.analysis.validation;
+import :semantic.semir.program;
 import std;
 
 OwnershipBatchAnalyzer::OwnershipBatchAnalyzer(
-    const BodyStore& bodies,
-    ProgramDraft& draft,
+    const SemIRProgram& program,
+    AnalysisDiagnostics diagnostics,
     std::span<const TypeContents> types
 ) noexcept
-    : draft(draft),
-      bodies(bodies),
+    : program(program),
+      diagnostics(diagnostics),
+      bodies(program.bodies()),
       type_contents(types) {
     for (const auto [id, body] : bodies.entries()) {
-        verify_semantic_body(body, draft, bodies);
-        body_facts.emplace(id, prepare_ownership_body_facts(body, draft, type_contents));
+        body_facts.emplace(id, prepare_ownership_body_facts(body, program, type_contents));
     }
 }
 
@@ -24,7 +23,7 @@ auto OwnershipBatchAnalyzer::facts_for_body(BodyID id) const noexcept -> const O
 }
 
 auto OwnershipBatchAnalyzer::contents(TypeID type) const noexcept -> TypeContents {
-    if (type.owner() != draft.identity() || type.index() >= type_contents.size()) {
+    if (type.owner() != program.identity() || type.index() >= type_contents.size()) {
         invariant_violation("ownership type facts used an invalid type");
     }
     return type_contents[type.index()];
@@ -44,11 +43,11 @@ auto OwnershipBatchAnalyzer::diagnose(
         return;
     }
     auto diagnostic = DiagnosticBuilder(code, std::move(message));
-    diagnostic.primary(draft.source_span(origin));
+    diagnostic.primary(program.provenance().source_span(origin));
     if (related.has_value()) {
-        diagnostic.related(draft.source_span(*related), "related storage or access");
+        diagnostic.related(program.provenance().source_span(*related), "related storage or access");
     }
-    failure = draft.diagnostics().error(diagnostic.build());
+    failure = diagnostics.error(diagnostic.build());
 }
 
 auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
@@ -103,11 +102,11 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                                     TypeID type,
                                     ProgramOriginID origin) noexcept -> OwnershipRelationships {
         auto relationships = OwnershipRelationships {};
-        const auto value = draft.types().type(type).value;
+        const auto value = program.types().type(type).value;
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
             relationships.loans.push_back({{}, std::nullopt, std::nullopt, origin, false});
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
-            const auto& target = body(*draft.body_for_callable(closure->callable));
+            const auto& target = body(*program.declarations().body_for_callable(closure->callable));
             for (const auto [index, id] : std::views::enumerate(target.inputs().captures)) {
                 const auto& capture = target.binding(id);
                 auto captured = self(capture.type, capture.origin);
@@ -216,9 +215,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
 }
 
 auto analyze_body_batch(
-    const BodyStore& bodies,
-    ProgramDraft& draft,
+    const SemIRProgram& program,
+    AnalysisDiagnostics diagnostics,
     std::span<const TypeContents> types
 ) noexcept -> AnalysisResult<void> {
-    return OwnershipBatchAnalyzer(bodies, draft, types).run();
+    return OwnershipBatchAnalyzer(program, diagnostics, types).run();
 }

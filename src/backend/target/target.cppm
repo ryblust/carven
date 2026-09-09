@@ -15,7 +15,7 @@ class TargetUnitBuilder;
 class TargetUnit final {
 public:
     TargetUnit(const TargetUnit&) = delete;
-    TargetUnit(TargetUnit&& other) noexcept;
+    TargetUnit(TargetUnit&&) noexcept = default;
     ~TargetUnit() = default;
 
     auto operator=(const TargetUnit&) -> TargetUnit& = delete;
@@ -30,7 +30,6 @@ public:
 private:
     friend class TargetUnitBuilder;
 
-    auto require_active() const noexcept -> void;
 
     TargetUnit(
         TargetUnitIdentity identity,
@@ -41,5 +40,4 @@ private:
     TargetUnitIdentity unit_identity;
     std::vector<TargetType> target_types;
     TargetUnitContents contents;
-    bool active;
 };

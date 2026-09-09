@@ -9,23 +9,12 @@ import std;
 TargetUnitBuilder::TargetUnitBuilder() noexcept
     : unit_identity(TargetUnitIdentity::fresh()) {}
 
-TargetUnitBuilder::TargetUnitBuilder(TargetUnitBuilder&& other) noexcept
-    : unit_identity(std::exchange(other.unit_identity, std::nullopt)),
-      types(std::move(other.types)) {}
-
-auto TargetUnitBuilder::require_identity() const noexcept -> TargetUnitIdentity {
-    if (!unit_identity.has_value()) {
-        invariant_violation("target unit builder was used after move or finish");
-    }
-    return *unit_identity;
-}
-
 auto TargetUnitBuilder::identity() const noexcept -> TargetUnitIdentity {
-    return require_identity();
+    return unit_identity;
 }
 
 auto TargetUnitBuilder::intern_type(TargetType type) noexcept -> TargetTypeID {
-    const auto identity = require_identity();
+    const auto identity = unit_identity;
 
     struct Children final {
         TargetUnitIdentity identity;
@@ -76,8 +65,7 @@ auto TargetUnitBuilder::finish(
     TargetUnitSections sections,
     TargetDirectiveInputs directives
 ) && noexcept -> TargetUnit {
-    const auto identity = require_identity();
-    unit_identity.reset();
+    const auto identity = unit_identity;
     auto target_types = std::move(types);
     const auto validation =
         validate_target_unit(TargetVerificationInput(identity, target_types, sections));

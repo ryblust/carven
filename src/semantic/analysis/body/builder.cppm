@@ -19,7 +19,7 @@ struct PlaceExpression final {
 
 class BodyBuilder final {
 public:
-    BodyBuilder(BodyReservation&& reservation, ProgramDraft& draft) noexcept;
+    BodyBuilder(BodyReservation reservation, ProgramDraft& draft) noexcept;
 
     auto identity() const noexcept -> BodyIdentity { return body_identity; }
 
@@ -90,7 +90,6 @@ public:
     auto finish(SemanticRegion) && noexcept -> StructuredBodyDraft;
 
 private:
-    BodyBuilder(BodyReservation::Consumed, ProgramDraft&) noexcept;
     auto add_binding(
         ProgramSpellingID,
         ConstructionTypeRef,

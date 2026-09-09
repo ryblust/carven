@@ -8,31 +8,17 @@ ArtifactLowering::ArtifactLowering(
     const PlannedCompilation& compilation,
     TargetArtifactID artifact
 ) noexcept
-    : planned_compilation(std::addressof(compilation)),
+    : planned_compilation(compilation),
       artifact_id(artifact) {
     static_cast<void>(compilation.target().artifact(artifact));
 }
 
-ArtifactLowering::ArtifactLowering(ArtifactLowering&& other) noexcept
-    : planned_compilation(std::exchange(other.planned_compilation, nullptr)),
-      artifact_id(other.artifact_id),
-      target_builder(std::move(other.target_builder)),
-      lowering_dependencies(std::move(other.lowering_dependencies)),
-      cpp_environments(std::move(other.cpp_environments)) {}
-
-auto ArtifactLowering::require_compilation() const noexcept -> const PlannedCompilation& {
-    if (planned_compilation == nullptr) {
-        invariant_violation("artifact lowering context was used after move");
-    }
-    return *planned_compilation;
-}
-
 auto ArtifactLowering::semantic() const noexcept -> const SemIRProgram& {
-    return require_compilation().semantic();
+    return planned_compilation.semantic();
 }
 
 auto ArtifactLowering::plan() const noexcept -> const TargetPlan& {
-    return require_compilation().target();
+    return planned_compilation.target();
 }
 
 auto ArtifactLowering::artifact() const noexcept -> const TargetArtifactPlan& {
@@ -40,7 +26,6 @@ auto ArtifactLowering::artifact() const noexcept -> const TargetArtifactPlan& {
 }
 
 auto ArtifactLowering::target() noexcept -> TargetUnitBuilder& {
-    static_cast<void>(require_compilation());
     return target_builder;
 }
 
@@ -76,11 +61,9 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
 }
 
 ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
-    : artifact_lowering(std::addressof(artifact)),
+    : artifact_lowering(artifact),
       module_id(owner_module_id),
-      type_states(artifact.semantic().types().size(), LoweringState::Unseen),
       type_cache(artifact.semantic().types().size()),
-      signature_states(artifact.semantic().callable_signatures().size(), LoweringState::Unseen),
       signature_result_cache(artifact.semantic().callable_signatures().size()) {
     if (owner_module_id.owner() != semantic().identity()) {
         invariant_violation("module lowering received a foreign semantic module ID");
@@ -91,36 +74,19 @@ ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module
     }
 }
 
-ModuleLowering::ModuleLowering(ModuleLowering&& other) noexcept
-    : artifact_lowering(std::exchange(other.artifact_lowering, nullptr)),
-      module_id(other.module_id),
-      allocator(std::move(other.allocator)),
-      type_states(std::move(other.type_states)),
-      type_cache(std::move(other.type_cache)),
-      signature_states(std::move(other.signature_states)),
-      signature_result_cache(std::move(other.signature_result_cache)) {}
-
-auto ModuleLowering::require_artifact() const noexcept -> ArtifactLowering& {
-    if (artifact_lowering == nullptr) {
-        invariant_violation("module lowering context was used after move");
-    }
-    return *artifact_lowering;
-}
-
 auto ModuleLowering::semantic() const noexcept -> const SemIRProgram& {
-    return require_artifact().semantic();
+    return artifact_lowering.semantic();
 }
 
 auto ModuleLowering::plan() const noexcept -> const TargetPlan& {
-    return require_artifact().plan();
+    return artifact_lowering.plan();
 }
 
 auto ModuleLowering::target() noexcept -> TargetUnitBuilder& {
-    return require_artifact().target();
+    return artifact_lowering.target();
 }
 
 auto ModuleLowering::active_module() const noexcept -> ModuleID {
-    static_cast<void>(require_artifact());
     return module_id;
 }
 
@@ -130,40 +96,39 @@ auto ModuleLowering::names() const noexcept -> const TargetNamePlan& {
 
 auto ModuleLowering::global_function_name(FunctionID id) noexcept -> TargetName {
     const auto provider = semantic().declarations().function(id).module_id;
-    require_artifact().record_provider_interface(module_id, provider);
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().global_function_name(id);
 }
 
 auto ModuleLowering::structure_name(StructID id) noexcept -> TargetName {
     const auto provider = semantic().declarations().structure(id).module_id;
-    require_artifact().record_provider_interface(module_id, provider);
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().structure_name(module_id, id);
 }
 
 auto ModuleLowering::enumeration_name(EnumID id) noexcept -> TargetName {
     const auto provider = semantic().declarations().enumeration(id).module_id;
-    require_artifact().record_provider_interface(module_id, provider);
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().enumeration_name(module_id, id);
 }
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
-    require_artifact().record_provider_interface(module_id, names().callable_owner(id));
+    artifact_lowering.record_provider_interface(module_id, names().callable_owner(id));
     return names().callable_name(module_id, id);
 }
 
 auto ModuleLowering::closure_type_name(CallableID id) noexcept -> TargetName {
-    require_artifact().record_provider_interface(module_id, names().closure_owner(id));
+    artifact_lowering.record_provider_interface(module_id, names().closure_owner(id));
     return names().closure_type_name(module_id, id);
 }
 
 auto ModuleLowering::payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames& {
     const auto provider = semantic().declarations().enumeration(id).module_id;
-    require_artifact().record_provider_interface(module_id, provider);
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().payload_enum(id);
 }
 
 auto ModuleLowering::name_allocator() noexcept -> TargetNameAllocator& {
-    static_cast<void>(require_artifact());
     return allocator;
 }
 

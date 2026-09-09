@@ -183,7 +183,7 @@ public:
     ~DeclarationStore() = default;
 
     auto operator=(const DeclarationStore&) -> DeclarationStore& = delete;
-    auto operator=(DeclarationStore&&) -> DeclarationStore& = default;
+    auto operator=(DeclarationStore&&) -> DeclarationStore& = delete;
 
     auto owner() const noexcept -> ProgramIdentity;
 
@@ -254,8 +254,6 @@ public:
     auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
-    auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
-    auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
 
     auto module_count() const noexcept -> std::size_t;
     auto function_count() const noexcept -> std::size_t;
@@ -291,7 +289,7 @@ public:
     ~DeclarationBuilder() = default;
 
     auto operator=(const DeclarationBuilder&) -> DeclarationBuilder& = delete;
-    auto operator=(DeclarationBuilder&&) -> DeclarationBuilder& = default;
+    auto operator=(DeclarationBuilder&&) -> DeclarationBuilder& = delete;
 
     auto owner() const noexcept -> ProgramIdentity;
 

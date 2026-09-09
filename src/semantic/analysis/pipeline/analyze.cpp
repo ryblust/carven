@@ -7,7 +7,6 @@ import :semantic.analysis.body.pipeline;
 import :semantic.analysis.catalog;
 import :semantic.analysis.decl;
 import :semantic.analysis.lint.unused_imports;
-import :semantic.analysis.pipeline.publish;
 import :semantic.analysis.program;
 import :semantic.analyze;
 import :semantic.semir.program;
@@ -39,11 +38,7 @@ auto analyze(SyntaxProgram syntax) noexcept -> std::expected<Diagnosed<SemIRProg
             return std::unexpected(diagnostics.take());
         }
     }
-    const auto solved = draft.solve_construction();
-    if (!solved.has_value() || diagnostics.has_errors()) {
-        return std::unexpected(diagnostics.take());
-    }
-    auto published = publish_semantic_program(std::move(draft));
+    auto published = std::move(draft).finish();
     if (!published.has_value() || diagnostics.has_errors()) {
         return std::unexpected(diagnostics.take());
     }

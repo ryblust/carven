@@ -284,35 +284,6 @@ auto DeclarationConstructionView::callable_implementation(CallableID id) const n
     return declaration_builder->callable_implementations.copy_defined(id);
 }
 
-auto DeclarationConstructionView::body_for_callable(CallableID callable) const noexcept
-    -> std::optional<BodyID> {
-    declaration_builder->require_heads_finished();
-    return implementation_body_id(
-        declaration_builder->callable_implementations.copy_defined(callable)
-    );
-}
-
-auto DeclarationConstructionView::callable_for_body(BodyID body) const noexcept
-    -> std::optional<CallableID> {
-    declaration_builder->require_heads_finished();
-    require_owner(body.owner(), owner(), "callable lookup used a foreign body");
-    auto result = std::optional<CallableID>();
-    for (const auto id : declaration_builder->callable_order) {
-        if (!declaration_builder->callable_implementations.is_defined(id)) {
-            continue;
-        }
-        const auto implementation = declaration_builder->callable_implementations.copy_defined(id);
-        if (implementation_body_id(implementation) != body) {
-            continue;
-        }
-        if (result.has_value()) {
-            invariant_violation("body was owned by more than one callable declaration");
-        }
-        result = id;
-    }
-    return result;
-}
-
 auto DeclarationConstructionView::module_count() const noexcept -> std::size_t {
     return declaration_builder->modules.size();
 }

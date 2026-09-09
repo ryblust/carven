@@ -49,7 +49,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
             Overloaded {
                 [](const WildcardPattern&) static noexcept {},
                 [&](const LiteralPattern& value) noexcept {
-                    if (draft->constants().constant(value.constant).type != pattern.type) {
+                    if (program.constants().constant(value.constant).type != pattern.type) {
                         invariant_violation("literal pattern type differs from its constant");
                     }
                 },
@@ -70,11 +70,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
                 },
                 [&](const TypeConstraintPattern& value) noexcept {
                     static_cast<void>(require_type(value.type));
-                    if (!type_shapes_compatible(
-                            *draft,
-                            ConstructionTypeRef {pattern.type},
-                            ConstructionTypeRef {value.type}
-                        )) {
+                    if (!compatible_pattern_type(pattern.type, value.type)) {
                         invariant_violation(
                             "type-constraint pattern is incompatible with its subject"
                         );
@@ -153,10 +149,10 @@ auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
 
 auto BodyContractVerifier::signature_for_callable(CallableID id) const noexcept
     -> CallableSignatureID {
-    if (id.owner() != draft->identity()) {
+    if (id.owner() != program.identity()) {
         invariant_violation("callable belongs to another semantic program");
     }
-    return draft->callable_signature(id);
+    return program.declarations().callable(id).signature;
 }
 
 auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> CallableSignatureID {
@@ -183,4 +179,42 @@ auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> Cal
         },
         require_type(type).value
     );
+}
+
+auto BodyContractVerifier::compatible_pattern_type(TypeID left, TypeID right) const noexcept
+    -> bool {
+    auto visited = std::flat_set<std::pair<TypeID, TypeID>>();
+    const auto compatible = [&](this const auto& self, TypeID left, TypeID right) noexcept -> bool {
+        if (left == right || !visited.emplace(left, right).second) {
+            return true;
+        }
+        const auto& a = program.types().type(left).value;
+        const auto& b = program.types().type(right).value;
+        if (const auto* array = std::get_if<ArrayTypeValue>(&a)) {
+            const auto* other = std::get_if<ArrayTypeValue>(&b);
+            return other && array->extent == other->extent && self(array->element, other->element);
+        }
+        const auto callable = [](const CanonicalTypeValue& type) static noexcept {
+            return std::holds_alternative<FunctionTypeValue>(type)
+                || std::holds_alternative<ClosureTypeValue>(type)
+                || std::holds_alternative<CallableViewTypeValue>(type);
+        };
+        if (!callable(a)
+            || !callable(b)
+            || (!std::holds_alternative<CallableViewTypeValue>(a)
+                && !std::holds_alternative<CallableViewTypeValue>(b))) {
+            return false;
+        }
+        const auto& first = program.callable_signatures().signature(signature_for_type(left));
+        const auto& second = program.callable_signatures().signature(signature_for_type(right));
+        return self(first.result, second.result)
+            && std::ranges::equal(
+                   first.parameters,
+                   second.parameters,
+                   [&](const CallableParameter& x, const CallableParameter& y) noexcept {
+                       return x.access == y.access && self(x.type, y.type);
+                   }
+            );
+    };
+    return compatible(left, right);
 }

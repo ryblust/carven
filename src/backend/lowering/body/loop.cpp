@@ -89,17 +89,20 @@ auto BodyLowerer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destinat
 
 auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
     -> void {
+    const auto* integer = std::get_if<SemIntegerRange>(&value.source);
+    const auto& first = integer ? integer->begin : std::get<SemSequenceRange>(value.source).value;
+
     auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
     const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
-    auto begin = value.end.has_value() ? scope.accept(operand(value.begin, OperandUse::Snapshot))
-                                       : read_value(expression(value.begin), scope);
+    auto begin = integer != nullptr ? scope.accept(operand(first, OperandUse::Snapshot))
+                                    : read_value(expression(first), scope);
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;
     }
-    if (!value.end.has_value()) {
+    if (integer == nullptr) {
         scope.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::RvalueReference,
@@ -148,8 +151,8 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
         return;
     }
     auto initial = std::move(*begin);
-    const auto index_type = context.lower_type(value.begin.type.resolved());
-    auto upper = read_value(expression(*value.end), scope);
+    const auto index_type = context.lower_type(first.type.resolved());
+    auto upper = read_value(expression(integer->end), scope);
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;

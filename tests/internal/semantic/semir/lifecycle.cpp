@@ -204,16 +204,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     );
 
     auto active_builder = ProgramDraft(std::move(builder));
-    CHECK(expect_termination(
-        std::format("compilation-builder-moved-finish-declarations-{}", module_name),
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { builder.finish_declaration_heads(); }
-    ));
-    CHECK(expect_termination(
-        std::format("compilation-builder-moved-identity-{}", module_name),
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { static_cast<void>(builder.identity()); }
-    ));
     active_builder.finish_declaration_heads();
     CHECK(expect_termination(
         std::format("compilation-builder-reserve-after-declarations-{}", module_name),
@@ -258,34 +248,10 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         second_callable,
         CppImportImplementation {.form_origin = origin}
     );
-    const auto solved = active_builder.solve_construction();
-    REQUIRE(solved.has_value());
+    auto finished = std::move(active_builder).finish();
+    REQUIRE(finished.has_value());
     REQUIRE(diagnostics.empty());
-    CHECK(expect_termination(std::format("solved-program-source-mutation-{}", module_name), [&] {
-        static_cast<void>(active_builder.intern_spelling("late"));
-    }));
-
-    CHECK_EQ(active_builder.declarations().modules().size(), 1uz);
-    CHECK_EQ(active_builder.declarations().callables().size(), 2uz);
-    CHECK(active_builder.callable_crosses_cpp_boundary(first_callable));
-    CHECK(active_builder.callable_crosses_cpp_boundary(second_callable));
-    CHECK(
-        active_builder.callable_signature(first_callable)
-        == active_builder.callable_signature(second_callable)
-    );
-
-    auto solved_builder = ProgramDraft(std::move(active_builder));
-    CHECK(expect_termination(
-        std::format("compilation-builder-solved-source-query-{}", module_name),
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { static_cast<void>(active_builder.types().type(boolean)); }
-    ));
-    auto program = std::move(solved_builder).seal();
-    CHECK(expect_termination(
-        std::format("compilation-builder-sealed-source-mutation-{}", module_name),
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the consumed-builder contract.
-        [&] { static_cast<void>(solved_builder.intern_builtin_type(BuiltinType::Bool)); }
-    ));
+    auto program = std::move(*finished);
     CHECK(
         program.declarations().callable(first_callable).signature
         == program.declarations().callable(second_callable).signature
@@ -411,13 +377,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         }
     );
     builder.finish_declaration_heads();
-    const auto solved = builder.solve_construction();
-    REQUIRE(solved.has_value());
-
-    const auto validated = validate_global_semantic_contracts(
-        builder,
-        compute_type_contents(builder.types(), builder.declarations())
-    );
+    const auto validated = std::move(builder).finish();
     CHECK_FALSE(validated.has_value());
     REQUIRE_EQ(diagnostics.size(), 1uz);
     CHECK_EQ(diagnostics.values().front().finding.code, DiagnosticCode::TypeCallableViewEscape);
@@ -431,7 +391,8 @@ static_assert(!std::default_initializable<TypeID>);
 static_assert(std::constructible_from<MutableProgramTable<CanonicalType, TypeID>, ProgramIdentity>);
 static_assert(std::ranges::range<IDTableEntries<TypeID, CanonicalType, ProgramIdentity>>);
 static_assert(!std::copy_constructible<SemIRProgram>);
-static_assert(std::movable<SemIRProgram>);
+static_assert(std::move_constructible<SemIRProgram>);
+static_assert(!std::is_move_assignable_v<SemIRProgram>);
 static_assert(!std::copy_constructible<SemIRBody>);
 
 TEST_CASE(
@@ -464,19 +425,6 @@ TEST_CASE("SemIR identity: owner evidence rejects rows from another sealed progr
     CHECK_FALSE(first.program.declarations().contains(second.first_callable));
 }
 
-TEST_CASE("SemIR lifecycle: moving the published owner consumes every immutable store") {
-    auto built = build_program("semir.published_move");
-    const auto boolean = built.boolean_type;
-    const auto moved = SemIRProgram(std::move(built.program));
-    CHECK(moved.types().contains(boolean));
-    CHECK(expect_termination("semir-program-moved-identity", [&] {
-        static_cast<void>(built.program.identity());
-    }));
-    CHECK(expect_termination("semir-program-moved-type-store", [&] {
-        static_cast<void>(built.program.types().size());
-    }));
-}
-
 TEST_CASE("SemIR global contracts: structure rejects nested callable-view storage") {
     require_callable_view_storage_rejected(false);
 }
@@ -506,12 +454,12 @@ TEST_CASE("SemIR lifecycle: pending function results cannot be read or solved") 
         static_cast<void>(draft.construction_callable_contract_copy(callable));
     }));
     CHECK(expect_termination("pending-function-contract-solve", [&] {
-        static_cast<void>(draft.solve_construction());
+        static_cast<void>(std::move(draft).finish());
     }));
     REQUIRE(elaborate_body_batch(draft, catalog->view(), usage).has_value());
     CHECK_FALSE(draft.pending_function_contract_copy(callable).has_value());
     CHECK(expect_termination("duplicate-function-result-completion", [&] {
         draft.complete_function_result(callable, draft.intern_builtin_type(BuiltinType::I32));
     }));
-    CHECK(draft.solve_construction().has_value());
+    CHECK(std::move(draft).finish().has_value());
 }

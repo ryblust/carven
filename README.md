@@ -47,8 +47,8 @@ Import C++ types and functions from headers, and export Carven functions through
 generated public interfaces. C++ checks native declarations and operations;
 Carven checks its own language contracts. Existing native tools and build
 systems support gradual adoption inside a C++ project. Try
-[calling C++](examples/interop/importing/) or
-[using Carven from C++](examples/interop/exporting/).
+[calling C++](examples/interop/import/) or
+[using Carven from C++](examples/interop/export/).
 
 > [!NOTE]
 > Carven is under active development, and language and tooling changes may

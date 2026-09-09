@@ -14,7 +14,7 @@ class TargetUnitBuilder final {
 public:
     TargetUnitBuilder() noexcept;
     TargetUnitBuilder(const TargetUnitBuilder&) = delete;
-    TargetUnitBuilder(TargetUnitBuilder&& other) noexcept;
+    TargetUnitBuilder(TargetUnitBuilder&&) noexcept = default;
     ~TargetUnitBuilder() = default;
 
     auto operator=(const TargetUnitBuilder&) -> TargetUnitBuilder& = delete;
@@ -27,9 +27,7 @@ public:
         -> TargetUnit;
 
 private:
-    auto require_identity() const noexcept -> TargetUnitIdentity;
-
-    std::optional<TargetUnitIdentity> unit_identity;
+    TargetUnitIdentity unit_identity;
     std::vector<TargetType> types;
 };
 

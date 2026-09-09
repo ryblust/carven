@@ -182,7 +182,7 @@ public:
     ~TargetPlanTable() = default;
 
     auto operator=(const TargetPlanTable&) -> TargetPlanTable& = delete;
-    auto operator=(TargetPlanTable&&) -> TargetPlanTable& = default;
+    auto operator=(TargetPlanTable&&) -> TargetPlanTable& = delete;
 
     auto owner() const noexcept -> TargetPlanIdentity { return plan_identity; }
 
@@ -224,27 +224,19 @@ public:
 
     TargetPlanTableBuilder(const TargetPlanTableBuilder&) = delete;
 
-    TargetPlanTableBuilder(TargetPlanTableBuilder&& other) noexcept
-        : plan_identity(std::exchange(other.plan_identity, std::nullopt)),
-          storage(std::move(other.storage)) {}
+    TargetPlanTableBuilder(TargetPlanTableBuilder&&) = default;
 
     ~TargetPlanTableBuilder() = default;
 
     auto operator=(const TargetPlanTableBuilder&) -> TargetPlanTableBuilder& = delete;
     auto operator=(TargetPlanTableBuilder&&) -> TargetPlanTableBuilder& = delete;
 
-    auto size() const noexcept -> std::size_t {
-        static_cast<void>(require_identity());
-        return storage.size();
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
-    auto reserve(std::size_t size) noexcept -> void {
-        static_cast<void>(require_identity());
-        storage.reserve(size);
-    }
+    auto reserve(std::size_t size) noexcept -> void { storage.reserve(size); }
 
     auto add(Value value) noexcept -> ID {
-        const auto identity = require_identity();
+        const auto identity = plan_identity;
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
             resource_limit_exceeded("target plan table exhausted its 32-bit identity space");
         }
@@ -254,19 +246,11 @@ public:
     }
 
     auto seal() && noexcept -> TargetPlanTable<Value, ID> {
-        const auto identity = require_identity();
-        plan_identity.reset();
+        const auto identity = plan_identity;
         return TargetPlanTable<Value, ID>(identity, std::move(storage));
     }
 
 private:
-    auto require_identity() const noexcept -> TargetPlanIdentity {
-        if (!plan_identity.has_value()) {
-            invariant_violation("target plan table builder was used after move or seal");
-        }
-        return *plan_identity;
-    }
-
-    std::optional<TargetPlanIdentity> plan_identity;
+    TargetPlanIdentity plan_identity;
     std::vector<Value> storage;
 };

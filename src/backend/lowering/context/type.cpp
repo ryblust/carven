@@ -149,17 +149,17 @@ auto ModuleLowering::function_type(CallableSignatureID id) noexcept -> TargetTyp
 }
 
 auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> TargetTypeID {
-    if (id.owner() != semantic().identity() || id.index() >= signature_states.size()) {
+    if (id.owner() != semantic().identity() || id.index() >= signature_result_cache.size()) {
         invariant_violation("module lowering received an unknown callable signature");
     }
-    auto& state = signature_states[id.index()];
-    if (state == LoweringState::Complete) {
-        return *signature_result_cache[id.index()];
+    auto& state = signature_result_cache[id.index()];
+    if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
+        return *complete;
     }
-    if (state == LoweringState::Visiting) {
+    if (std::holds_alternative<Resolving>(state)) {
         invariant_violation("recursive callable result reached target lowering");
     }
-    state = LoweringState::Visiting;
+    state = Resolving {};
     const auto& signature = semantic().callable_signatures().signature(id);
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
@@ -180,8 +180,7 @@ auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> 
             .const_qualified = false,
         });
     }();
-    signature_result_cache[id.index()] = result;
-    state = LoweringState::Complete;
+    state = result;
     return result;
 }
 
@@ -190,17 +189,17 @@ auto ModuleLowering::outcome_type(CallableSignatureID signature) noexcept -> Tar
 }
 
 auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
-    if (id.owner() != semantic().identity() || id.index() >= type_states.size()) {
+    if (id.owner() != semantic().identity() || id.index() >= type_cache.size()) {
         invariant_violation("module lowering received an unknown semantic type");
     }
-    auto& state = type_states[id.index()];
-    if (state == LoweringState::Complete) {
-        return *type_cache[id.index()];
+    auto& state = type_cache[id.index()];
+    if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
+        return *complete;
     }
-    if (state == LoweringState::Visiting) {
+    if (std::holds_alternative<Resolving>(state)) {
         invariant_violation("recursive structural type reached target lowering");
     }
-    state = LoweringState::Visiting;
+    state = Resolving {};
     auto lowered = std::visit(
         Overloaded {
             [&](const CppTypeValue& value) noexcept -> TargetType {
@@ -297,8 +296,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
         semantic().types().type(id).value
     );
     const auto result = target().intern_type(std::move(lowered));
-    type_cache[id.index()] = result;
-    state = LoweringState::Complete;
+    state = result;
     return result;
 }
 

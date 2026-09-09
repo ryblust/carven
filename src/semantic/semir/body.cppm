@@ -37,7 +37,7 @@ public:
     ~LifetimeRegionTree() = default;
 
     auto operator=(const LifetimeRegionTree&) -> LifetimeRegionTree& = delete;
-    auto operator=(LifetimeRegionTree&&) -> LifetimeRegionTree& = default;
+    auto operator=(LifetimeRegionTree&&) -> LifetimeRegionTree& = delete;
 
     auto owner() const noexcept -> BodyIdentity { return region_rows.owner(); }
 

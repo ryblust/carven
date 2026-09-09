@@ -6,15 +6,12 @@ import :semantic.semir.decl;
 import :support.visit;
 import std;
 
-BodyBuilder::BodyBuilder(BodyReservation&& reservation, ProgramDraft& draft) noexcept
-    : BodyBuilder(reservation.consume(), draft) {}
-
-BodyBuilder::BodyBuilder(BodyReservation::Consumed reservation, ProgramDraft& draft) noexcept
+BodyBuilder::BodyBuilder(BodyReservation reservation, ProgramDraft& draft) noexcept
     : draft(draft),
-      body_identity(reservation.id.owner(), reservation.id.index()),
-      body_id(reservation.id),
-      body_kind(reservation.kind),
-      provenance_identity(reservation.provenance),
+      body_identity(reservation.body_id.owner(), reservation.body_id.index()),
+      body_id(reservation.body_id),
+      body_kind(reservation.body_kind),
+      provenance_identity(reservation.provenance_identity),
       lifetime_regions(body_identity),
       bindings(body_identity),
       patterns(body_identity) {}

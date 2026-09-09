@@ -349,8 +349,8 @@ auto BodyElaborator::range_for_statement(
             loop_lifetime,
             header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
             binding,
-            std::move(*begin),
-            std::move(end),
+            end ? SemRangeSource(SemIntegerRange {std::move(*begin), std::move(*end)})
+                : SemRangeSource(SemSequenceRange {std::move(*begin)}),
             UniqueIndirect(std::move(body))
         },
         origin(span)

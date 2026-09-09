@@ -40,7 +40,7 @@ auto require_complete(std::span<const std::uint8_t> claims, std::string_view mis
 
 auto validate_publication_topology(
     ProgramIdentity owner,
-    CompilationProvenanceReader provenance,
+    CompilationProvenanceView provenance,
     const DeclarationStore& declarations,
     const BodyStore& bodies,
     const TestStore& tests
@@ -56,7 +56,7 @@ auto validate_publication_topology(
     const auto enum_case_count = range_size(declarations.enum_cases());
     const auto constant_count = range_size(declarations.module_constants());
     const auto callable_count = range_size(declarations.callables());
-    if (module_count != provenance.module_count()) {
+    if (module_count != provenance.module_records().size()) {
         invariant_violation("published modules do not close the provenance module domain");
     }
 
@@ -315,7 +315,7 @@ auto validate_publication_topology(
 
 auto validate_publication_facts(
     ProgramIdentity owner,
-    CompilationProvenanceReader provenance,
+    CompilationProvenanceView provenance,
     const CanonicalTypeStore& types,
     const ConstantStore& constants,
     const FailureSetStore& failure_sets,
@@ -542,25 +542,21 @@ auto validate_publication_facts(
 
 } // namespace
 
-auto validate_semantic_storage(
-    ProgramIdentity identity,
-    CompilationProvenanceReader provenance,
-    const CanonicalTypeStore& types,
-    const ConstantStore& constants,
-    const FailureSetStore& failures,
-    const CallableSignatureStore& signatures,
-    const DeclarationStore& declarations,
-    const BodyStore& bodies,
-    const TestStore& tests
-) noexcept -> void {
+auto validate_semantic_storage(const SemIRProgram& program) noexcept -> void {
     validate_publication_facts(
-        identity,
-        provenance,
-        types,
-        constants,
-        failures,
-        signatures,
-        declarations
+        program.identity(),
+        program.provenance(),
+        program.types(),
+        program.constants(),
+        program.failure_sets(),
+        program.callable_signatures(),
+        program.declarations()
     );
-    validate_publication_topology(identity, provenance, declarations, bodies, tests);
+    validate_publication_topology(
+        program.identity(),
+        program.provenance(),
+        program.declarations(),
+        program.bodies(),
+        program.tests()
+    );
 }

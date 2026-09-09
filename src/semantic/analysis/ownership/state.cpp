@@ -11,7 +11,7 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
     : analysis(analysis),
       input(input),
       body(analysis.body(input.body_id)),
-      draft(analysis.draft),
+      program(analysis.program),
       facts(analysis.facts_for_body(input.body_id)),
       diagnosing(diagnosing),
       accesses(input.accesses) {
@@ -77,7 +77,7 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
         }
     };
     if (flow.normal.has_value()) {
-        release(*flow.normal);
+        release(flow.normal->state);
     }
     for (auto& exit : flow.exits) {
         release(exit.state);
@@ -288,7 +288,7 @@ auto OwnershipBodyAnalyzer::require_available(
 auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
     if (source.constant.has_value()) {
-        const auto constant = draft.constants().constant(*source.constant);
+        const auto constant = program.constants().constant(*source.constant);
         if (const auto* value = std::get_if<BooleanConstant>(&constant.value)) {
             return value->value;
         }
@@ -299,7 +299,7 @@ auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) con
 auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept
     -> std::optional<std::uint64_t> {
     if (source.constant.has_value()) {
-        const auto constant = draft.constants().constant(*source.constant);
+        const auto constant = program.constants().constant(*source.constant);
         if (const auto* value = std::get_if<IntegerConstant>(&constant.value)) {
             return value->as_unsigned();
         }

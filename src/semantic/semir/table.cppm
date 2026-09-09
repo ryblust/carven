@@ -87,42 +87,20 @@ class ImmutableProgramTable final {
 public:
     ImmutableProgramTable(const ImmutableProgramTable&) = delete;
 
-    ImmutableProgramTable(ImmutableProgramTable&& other) noexcept
-        : program_identity(other.program_identity),
-          storage(std::move(other.storage)),
-          active(std::exchange(other.active, false)) {}
+    ImmutableProgramTable(ImmutableProgramTable&&) noexcept = default;
 
     ~ImmutableProgramTable() = default;
 
     auto operator=(const ImmutableProgramTable&) -> ImmutableProgramTable& = delete;
+    auto operator=(ImmutableProgramTable&&) -> ImmutableProgramTable& = delete;
 
-    auto operator=(ImmutableProgramTable&& other) noexcept -> ImmutableProgramTable& {
-        if (this == std::addressof(other)) {
-            invariant_violation("immutable program table was moved into itself");
-        }
-        program_identity = other.program_identity;
-        storage = std::move(other.storage);
-        active = std::exchange(other.active, false);
-        return *this;
-    }
+    auto owner() const noexcept -> ProgramIdentity { return program_identity; }
 
-    auto owner() const noexcept -> ProgramIdentity {
-        require_active();
-        return program_identity;
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
-    auto size() const noexcept -> std::size_t {
-        require_active();
-        return storage.size();
-    }
-
-    auto empty() const noexcept -> bool {
-        require_active();
-        return storage.empty();
-    }
+    auto empty() const noexcept -> bool { return storage.empty(); }
 
     auto contains(ID id) const noexcept -> bool {
-        require_active();
         return id.owner() == program_identity
             && static_cast<std::size_t>(id.index()) < storage.size();
     }
@@ -137,25 +115,16 @@ public:
     }
 
     auto entries() const noexcept -> IDTableEntries<ID, Value, ProgramIdentity> {
-        require_active();
         return IDTableEntries<ID, Value, ProgramIdentity>(program_identity, storage);
     }
 
 private:
     ImmutableProgramTable(ProgramIdentity identity, std::vector<Value> values) noexcept
         : program_identity(identity),
-          storage(std::move(values)),
-          active(true) {}
-
-    auto require_active() const noexcept -> void {
-        if (!active) {
-            invariant_violation("immutable program table was used after consumption");
-        }
-    }
+          storage(std::move(values)) {}
 
     ProgramIdentity program_identity;
     std::vector<Value> storage;
-    bool active;
 
     template<typename StoredValue, typename StoredID>
     friend class MutableProgramTable;
@@ -167,34 +136,18 @@ template<typename Value, typename ID>
 class MutableProgramTable final {
 public:
     explicit MutableProgramTable(ProgramIdentity owner) noexcept
-        : program_identity(owner),
-          active(true) {}
+        : program_identity(owner) {}
 
     MutableProgramTable(const MutableProgramTable&) = delete;
 
-    MutableProgramTable(MutableProgramTable&& other) noexcept
-        : program_identity(other.program_identity),
-          storage(std::move(other.storage)),
-          active(std::exchange(other.active, false)) {}
+    MutableProgramTable(MutableProgramTable&&) noexcept = default;
 
     ~MutableProgramTable() = default;
 
     auto operator=(const MutableProgramTable&) -> MutableProgramTable& = delete;
+    auto operator=(MutableProgramTable&&) -> MutableProgramTable& = delete;
 
-    auto operator=(MutableProgramTable&& other) noexcept -> MutableProgramTable& {
-        if (this == std::addressof(other)) {
-            invariant_violation("mutable program table was moved into itself");
-        }
-        program_identity = other.program_identity;
-        storage = std::move(other.storage);
-        active = std::exchange(other.active, false);
-        return *this;
-    }
-
-    auto owner() const noexcept -> ProgramIdentity {
-        require_active();
-        return program_identity;
-    }
+    auto owner() const noexcept -> ProgramIdentity { return program_identity; }
 
     auto add(Value value) noexcept -> ID {
         ensure_capacity();
@@ -206,7 +159,6 @@ public:
     auto intern(Value value) noexcept -> ID
         requires std::equality_comparable<Value>
     {
-        require_active();
         for (auto index = 0uz; index < storage.size(); ++index) {
             if (storage[index] == value) {
                 return ID(program_identity, static_cast<std::uint32_t>(index));
@@ -216,7 +168,6 @@ public:
     }
 
     auto contains(ID id) const noexcept -> bool {
-        require_active();
         return id.owner() == program_identity
             && static_cast<std::size_t>(id.index()) < storage.size();
     }
@@ -233,26 +184,14 @@ public:
         storage[id.index()] = std::move(value);
     }
 
-    auto size() const noexcept -> std::size_t {
-        require_active();
-        return storage.size();
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
     auto seal() && noexcept -> ImmutableProgramTable<Value, ID> {
-        require_active();
-        active = false;
         return ImmutableProgramTable<Value, ID>(program_identity, std::move(storage));
     }
 
 private:
-    auto require_active() const noexcept -> void {
-        if (!active) {
-            invariant_violation("mutable program table was used after consumption");
-        }
-    }
-
     auto ensure_capacity() const noexcept -> void {
-        require_active();
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
             resource_limit_exceeded("program table exhausted its 32-bit identity space");
         }
@@ -266,44 +205,26 @@ private:
 
     ProgramIdentity program_identity;
     std::vector<Value> storage;
-    bool active;
 };
 
 template<typename Value, typename ID>
 class ReservedProgramTable final {
 public:
     explicit ReservedProgramTable(ProgramIdentity owner) noexcept
-        : program_identity(owner),
-          active(true) {}
+        : program_identity(owner) {}
 
     ReservedProgramTable(const ReservedProgramTable&) = delete;
 
-    ReservedProgramTable(ReservedProgramTable&& other) noexcept
-        : program_identity(other.program_identity),
-          storage(std::move(other.storage)),
-          active(std::exchange(other.active, false)) {}
+    ReservedProgramTable(ReservedProgramTable&&) noexcept = default;
 
     ~ReservedProgramTable() = default;
 
     auto operator=(const ReservedProgramTable&) -> ReservedProgramTable& = delete;
+    auto operator=(ReservedProgramTable&&) -> ReservedProgramTable& = delete;
 
-    auto operator=(ReservedProgramTable&& other) noexcept -> ReservedProgramTable& {
-        if (this == std::addressof(other)) {
-            invariant_violation("reserved program table was moved into itself");
-        }
-        program_identity = other.program_identity;
-        storage = std::move(other.storage);
-        active = std::exchange(other.active, false);
-        return *this;
-    }
-
-    auto owner() const noexcept -> ProgramIdentity {
-        require_active();
-        return program_identity;
-    }
+    auto owner() const noexcept -> ProgramIdentity { return program_identity; }
 
     auto reserve() noexcept -> ID {
-        require_active();
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
             resource_limit_exceeded("reserved program table exhausted its 32-bit identity space");
         }
@@ -322,12 +243,10 @@ public:
     }
 
     auto is_defined(ID id) const noexcept -> bool {
-        require_active();
         return contains(id) && storage[id.index()].has_value();
     }
 
     auto all_defined() const noexcept -> bool {
-        require_active();
         return std::ranges::all_of(storage, [](const auto& slot) static noexcept {
             return slot.has_value();
         });
@@ -354,13 +273,9 @@ public:
         return result;
     }
 
-    auto size() const noexcept -> std::size_t {
-        require_active();
-        return storage.size();
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
     auto seal() && noexcept -> ImmutableProgramTable<Value, ID> {
-        require_active();
         auto values = std::vector<Value>();
         values.reserve(storage.size());
         for (auto& slot : storage) {
@@ -369,19 +284,12 @@ public:
             }
             values.push_back(std::move(*slot));
         }
-        active = false;
+
         return ImmutableProgramTable<Value, ID>(program_identity, std::move(values));
     }
 
 private:
-    auto require_active() const noexcept -> void {
-        if (!active) {
-            invariant_violation("reserved program table was used after consumption");
-        }
-    }
-
     auto contains(ID id) const noexcept -> bool {
-        require_active();
         return id.owner() == program_identity
             && static_cast<std::size_t>(id.index()) < storage.size();
     }
@@ -401,7 +309,6 @@ private:
 
     ProgramIdentity program_identity;
     std::vector<std::optional<Value>> storage;
-    bool active;
 
     friend class ProgramDraft;
 };
@@ -411,42 +318,20 @@ class ImmutableBodyTable final {
 public:
     ImmutableBodyTable(const ImmutableBodyTable&) = delete;
 
-    ImmutableBodyTable(ImmutableBodyTable&& other) noexcept
-        : body_identity(other.body_identity),
-          storage(std::move(other.storage)),
-          active(std::exchange(other.active, false)) {}
+    ImmutableBodyTable(ImmutableBodyTable&&) noexcept = default;
 
     ~ImmutableBodyTable() = default;
 
     auto operator=(const ImmutableBodyTable&) -> ImmutableBodyTable& = delete;
+    auto operator=(ImmutableBodyTable&&) -> ImmutableBodyTable& = delete;
 
-    auto operator=(ImmutableBodyTable&& other) noexcept -> ImmutableBodyTable& {
-        if (this == std::addressof(other)) {
-            invariant_violation("immutable body table was moved into itself");
-        }
-        body_identity = other.body_identity;
-        storage = std::move(other.storage);
-        active = std::exchange(other.active, false);
-        return *this;
-    }
+    auto owner() const noexcept -> BodyIdentity { return body_identity; }
 
-    auto owner() const noexcept -> BodyIdentity {
-        require_active();
-        return body_identity;
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
-    auto size() const noexcept -> std::size_t {
-        require_active();
-        return storage.size();
-    }
-
-    auto empty() const noexcept -> bool {
-        require_active();
-        return storage.empty();
-    }
+    auto empty() const noexcept -> bool { return storage.empty(); }
 
     auto contains(ID id) const noexcept -> bool {
-        require_active();
         return id.owner() == body_identity && static_cast<std::size_t>(id.index()) < storage.size();
     }
 
@@ -458,13 +343,11 @@ public:
     }
 
     auto entries() const noexcept -> IDTableEntries<ID, Value, BodyIdentity> {
-        require_active();
         return IDTableEntries<ID, Value, BodyIdentity>(body_identity, storage);
     }
 
     template<typename Result, typename Mapper>
     auto transform(Mapper mapper) && noexcept -> MutableBodyTable<Result, ID> {
-        require_active();
         auto result = MutableBodyTable<Result, ID>(body_identity);
         for (auto index = 0uz; index < storage.size(); ++index) {
             const auto id = ID(body_identity, static_cast<std::uint32_t>(index));
@@ -474,25 +357,17 @@ public:
             }
         }
         storage.clear();
-        active = false;
+
         return result;
     }
 
 private:
     ImmutableBodyTable(BodyIdentity identity, std::vector<Value> values) noexcept
         : body_identity(identity),
-          storage(std::move(values)),
-          active(true) {}
-
-    auto require_active() const noexcept -> void {
-        if (!active) {
-            invariant_violation("immutable body table was used after consumption");
-        }
-    }
+          storage(std::move(values)) {}
 
     BodyIdentity body_identity;
     std::vector<Value> storage;
-    bool active;
 
     template<typename StoredValue, typename StoredID>
     friend class MutableBodyTable;
@@ -502,37 +377,20 @@ template<typename Value, typename ID>
 class MutableBodyTable final {
 public:
     explicit MutableBodyTable(BodyIdentity owner) noexcept
-        : body_identity(owner),
-          active(true) {}
+        : body_identity(owner) {}
 
     MutableBodyTable(const MutableBodyTable&) = delete;
 
-    MutableBodyTable(MutableBodyTable&& other) noexcept
-        : body_identity(other.body_identity),
-          storage(std::move(other.storage)),
-          active(std::exchange(other.active, false)) {}
+    MutableBodyTable(MutableBodyTable&&) noexcept = default;
 
     ~MutableBodyTable() = default;
 
     auto operator=(const MutableBodyTable&) -> MutableBodyTable& = delete;
+    auto operator=(MutableBodyTable&&) -> MutableBodyTable& = delete;
 
-    auto operator=(MutableBodyTable&& other) noexcept -> MutableBodyTable& {
-        if (this == std::addressof(other)) {
-            invariant_violation("mutable body table was moved into itself");
-        }
-        body_identity = other.body_identity;
-        storage = std::move(other.storage);
-        active = std::exchange(other.active, false);
-        return *this;
-    }
-
-    auto owner() const noexcept -> BodyIdentity {
-        require_active();
-        return body_identity;
-    }
+    auto owner() const noexcept -> BodyIdentity { return body_identity; }
 
     auto add(Value value) noexcept -> ID {
-        require_active();
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
             resource_limit_exceeded("body table exhausted its 32-bit identity space");
         }
@@ -542,7 +400,6 @@ public:
     }
 
     auto contains(ID id) const noexcept -> bool {
-        require_active();
         return id.owner() == body_identity && static_cast<std::size_t>(id.index()) < storage.size();
     }
 
@@ -558,29 +415,17 @@ public:
         storage[id.index()] = std::move(value);
     }
 
-    auto size() const noexcept -> std::size_t {
-        require_active();
-        return storage.size();
-    }
+    auto size() const noexcept -> std::size_t { return storage.size(); }
 
     auto entries() const noexcept -> IDTableEntries<ID, Value, BodyIdentity> {
-        require_active();
         return IDTableEntries<ID, Value, BodyIdentity>(body_identity, storage);
     }
 
     auto seal() && noexcept -> ImmutableBodyTable<Value, ID> {
-        require_active();
-        active = false;
         return ImmutableBodyTable<Value, ID>(body_identity, std::move(storage));
     }
 
 private:
-    auto require_active() const noexcept -> void {
-        if (!active) {
-            invariant_violation("mutable body table was used after consumption");
-        }
-    }
-
     auto require_valid(ID id) const noexcept -> void {
         if (!contains(id)) {
             invariant_violation("mutable body table lookup used a foreign or invalid identity");
@@ -589,5 +434,4 @@ private:
 
     BodyIdentity body_identity;
     std::vector<Value> storage;
-    bool active;
 };

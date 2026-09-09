@@ -143,15 +143,6 @@ private:
             case TargetSymbol::RuntimeIntegerRemainder:
             case TargetSymbol::RuntimeIntegerLeftShift:
             case TargetSymbol::RuntimeIntegerRightShift:
-            case TargetSymbol::RuntimeIntegerAddAssign:
-            case TargetSymbol::RuntimeIntegerSubtractAssign:
-            case TargetSymbol::RuntimeIntegerMultiplyAssign:
-            case TargetSymbol::RuntimeIntegerDivideAssign:
-            case TargetSymbol::RuntimeIntegerRemainderAssign:
-            case TargetSymbol::RuntimeIntegerLeftShiftAssign:
-            case TargetSymbol::RuntimeIntegerRightShiftAssign:
-            case TargetSymbol::RuntimeIntegerIncrement:
-            case TargetSymbol::RuntimeIntegerDecrement:
                 include("carven/runtime/numeric.hpp");
                 break;
             case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
@@ -165,8 +156,7 @@ private:
             case TargetSymbol::StdOptional:              include("optional"); break;
             case TargetSymbol::StdStringView:            include("string_view"); break;
             case TargetSymbol::TestingContext:
-            case TargetSymbol::TestingReporter:
-            case TargetSymbol::TestingControl: include("carven/std/testing/testing.hpp"); break;
+            case TargetSymbol::TestingReporter: include("carven/std/testing/testing.hpp"); break;
             case TargetSymbol::Auto:
             case TargetSymbol::Void:
             case TargetSymbol::Bool:
@@ -175,7 +165,7 @@ private:
             case TargetSymbol::CChar:
             case TargetSymbol::Float:
             case TargetSymbol::Double:
-            case TargetSymbol::StdNullptr:     break;
+            case TargetSymbol::StdNullptr:      break;
         }
     }
 

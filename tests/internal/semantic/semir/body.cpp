@@ -180,7 +180,6 @@ auto finish_body(
                      );
     const auto id = draft.id;
     prepared.builder.add_body_draft(std::move(draft));
-    REQUIRE(prepared.builder.solve_construction().has_value());
     return id;
 }
 
@@ -204,11 +203,7 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
     [[maybe_unused]] const auto resolved =
         finish_body(prepared, std::move(body), std::move(statements), std::move(result));
     return expect_termination(scenario, [&] noexcept {
-        static_cast<void>(analyze_body_batch(
-            prepared.builder.bodies(),
-            prepared.builder,
-            compute_type_contents(prepared.builder.types(), prepared.builder.declarations())
-        ));
+        static_cast<void>(std::move(prepared.builder).finish());
     });
 }
 
@@ -226,20 +221,16 @@ TEST_CASE("SemIR body: publication preserves structured parameters and result") 
     [[maybe_unused]] const auto resolved =
         finish_body(prepared, std::move(body), {}, std::move(result));
     const auto body_id = resolved;
-    REQUIRE(analyze_body_batch(
-                prepared.builder.bodies(),
-                prepared.builder,
-                compute_type_contents(prepared.builder.types(), prepared.builder.declarations())
-    )
-                .has_value());
-    const auto program = std::move(prepared.builder).seal();
+    auto finished = std::move(prepared.builder).finish();
+    REQUIRE(finished.has_value());
+    const auto program = std::move(*finished);
     const auto& published = program.bodies().body(body_id);
     CHECK_EQ(published.inputs().parameters, std::vector {parameter});
     REQUIRE(published.region().result.has_value());
     const auto* binding = std::get_if<SemBinding>(&published.region().result->value);
     REQUIRE(binding != nullptr);
     CHECK_EQ(binding->binding, parameter);
-    CHECK_EQ(program.body_for_callable(prepared.callable), body_id);
+    CHECK_EQ(program.declarations().body_for_callable(prepared.callable), body_id);
     CHECK(diagnostics.empty());
 }
 
@@ -250,11 +241,7 @@ TEST_CASE("SemIR body invariant: result agrees with callable contract") {
     auto body = body_fixture(prepared);
     [[maybe_unused]] const auto resolved = finish_body(prepared, std::move(body), {}, std::nullopt);
     CHECK(expect_termination("structured-result-contract", [&] noexcept {
-        static_cast<void>(analyze_body_batch(
-            prepared.builder.bodies(),
-            prepared.builder,
-            compute_type_contents(prepared.builder.types(), prepared.builder.declarations())
-        ));
+        static_cast<void>(std::move(prepared.builder).finish());
     }));
 }
 
@@ -320,11 +307,7 @@ TEST_CASE("SemIR body invariant: body-local references reject foreign owners") {
     [[maybe_unused]] const auto resolved =
         finish_body(first, std::move(first_body), {}, std::move(result));
     CHECK(expect_termination("structured-foreign-binding", [&] noexcept {
-        static_cast<void>(analyze_body_batch(
-            first.builder.bodies(),
-            first.builder,
-            compute_type_contents(first.builder.types(), first.builder.declarations())
-        ));
+        static_cast<void>(std::move(first.builder).finish());
     }));
 }
 
@@ -350,11 +333,7 @@ TEST_CASE("SemIR body invariant: test operations cannot occur in an ordinary fun
     [[maybe_unused]] const auto resolved =
         finish_body(prepared, std::move(body), std::move(statements), std::move(result));
     CHECK(expect_termination("structured-test-operation-owner", [&] noexcept {
-        static_cast<void>(analyze_body_batch(
-            prepared.builder.bodies(),
-            prepared.builder,
-            compute_type_contents(prepared.builder.types(), prepared.builder.declarations())
-        ));
+        static_cast<void>(std::move(prepared.builder).finish());
     }));
 }
 

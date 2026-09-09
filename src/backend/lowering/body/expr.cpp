@@ -357,21 +357,43 @@ auto BodyLowerer::construct_operation(
                 if (failures.empty()) {
                     return call;
                 }
+                const auto signature = std::visit(
+                    Overloaded {
+                        [&](const FunctionTypeValue& type) noexcept {
+                            return context.semantic()
+                                .declarations()
+                                .callable(type.callable)
+                                .signature;
+                        },
+                        [&](const ClosureTypeValue& type) noexcept {
+                            return context.semantic()
+                                .declarations()
+                                .callable(type.callable)
+                                .signature;
+                        },
+                        [](const CallableViewTypeValue& type) static noexcept {
+                            return type.signature;
+                        },
+                        [](const auto&) static noexcept -> CallableSignatureID {
+                            invariant_violation("failing call has no signature");
+                        }
+                    },
+                    context.semantic().types().type(value.callee->type.resolved()).value
+                );
                 const auto outcome = names.fresh(TargetTemporaryNameKind::Outcome);
-                destination.emit(source_statement(
-                    context.semantic(),
-                    source.origin,
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::MutableValue,
-                        .maybe_unused = false,
-                        .name = outcome,
-                        .type = context.intrinsic_type(TargetSymbol::Auto),
-                        .initializer = std::move(call)
-                    }
+                static_cast<void>(materialize_temporary(
+                    {outcome, context.outcome_type(signature)},
+                    std::move(call),
+                    destination
                 ));
+                const auto outcome_expression = [&]() noexcept {
+                    return conditional_temporaries
+                        ? dereference_expression(name_expression(outcome))
+                        : name_expression(outcome);
+                };
                 const auto needs_value =
                     demand != ResultDemand::Discard && !context.is_void(source.type.resolved());
-                auto success_test = call_member(name_expression(outcome), "success_if", {});
+                auto success_test = call_member(outcome_expression(), "success_if", {});
                 auto success_value = std::optional<TargetExpr>();
                 if (needs_value) {
                     const auto success = names.fresh(TargetTemporaryNameKind::SuccessProjection);
@@ -405,7 +427,7 @@ auto BodyLowerer::construct_operation(
                                 context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
                             .initializer = template_call_expression(
                                 member_expression(
-                                    name_expression(outcome),
+                                    outcome_expression(),
                                     TargetIdentifier::from_spelling("failure_if")
                                 ),
                                 {context.lower_type(failure)},

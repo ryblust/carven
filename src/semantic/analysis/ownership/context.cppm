@@ -3,8 +3,8 @@ module carven:semantic.analysis.ownership.context;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.ownership;
-import :semantic.analysis.program;
 import :semantic.analysis.types.contents;
+import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
 import :support.visit;
@@ -71,18 +71,34 @@ struct OwnershipState final {
     std::vector<OwnershipObjectState> objects;
     auto operator==(const OwnershipState&) const noexcept -> bool = default;
 };
-enum class OwnershipExitKind { Return, Break, Continue, Failure };
+
+struct OwnershipReturn final {
+    OwnershipRelationships value;
+};
+
+struct OwnershipFailure final {
+    TypeID type;
+};
+
+struct OwnershipBreak final {};
+
+struct OwnershipContinue final {};
+
+using OwnershipExitPayload =
+    std::variant<OwnershipReturn, OwnershipFailure, OwnershipBreak, OwnershipContinue>;
 
 struct OwnershipExit final {
-    OwnershipExitKind kind;
-    std::optional<TypeID> failure;
+    OwnershipExitPayload payload;
+    OwnershipState state;
+};
+
+struct OwnershipNormal final {
     OwnershipState state;
     OwnershipRelationships value;
 };
 
 struct OwnershipFlow final {
-    std::optional<OwnershipState> normal;
-    OwnershipRelationships value;
+    std::optional<OwnershipNormal> normal;
     std::vector<OwnershipExit> exits;
 };
 
@@ -156,7 +172,7 @@ struct OwnershipBodyFacts final {
 
 auto prepare_ownership_body_facts(
     const SemIRBody& body,
-    const ProgramDraft& draft,
+    const SemIRProgram& program,
     std::span<const TypeContents> types
 ) noexcept -> OwnershipBodyFacts;
 
@@ -178,9 +194,9 @@ auto nest_relationships(OwnershipRelationships source, const OwnershipProjection
     -> OwnershipRelationships;
 auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
     -> void;
-auto join_normal_ownership_state(
-    std::optional<OwnershipState>& destination,
-    const std::optional<OwnershipState>& source
+auto join_normal_ownership(
+    std::optional<OwnershipNormal>& destination,
+    const std::optional<OwnershipNormal>& source
 ) noexcept -> void;
 auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void;
 
@@ -275,7 +291,7 @@ private:
     OwnershipBatchAnalyzer& analysis;
     const OwnershipCallInput& input;
     const SemIRBody& body;
-    ProgramDraft& draft;
+    const SemIRProgram& program;
     const OwnershipBodyFacts& facts;
     bool diagnosing;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
@@ -287,8 +303,8 @@ private:
 class OwnershipBatchAnalyzer final {
 public:
     OwnershipBatchAnalyzer(
-        const BodyStore& bodies,
-        ProgramDraft& draft,
+        const SemIRProgram& program,
+        AnalysisDiagnostics diagnostics,
         std::span<const TypeContents> types
     ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
@@ -303,11 +319,12 @@ public:
         std::optional<ProgramOriginID> related
     ) noexcept -> void;
 
-    ProgramDraft& draft;
+    const SemIRProgram& program;
 
 private:
     auto root_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
     auto enqueue(std::size_t query) noexcept -> void;
+    AnalysisDiagnostics diagnostics;
     const BodyStore& bodies;
     std::span<const TypeContents> type_contents;
     std::flat_map<BodyID, OwnershipBodyFacts> body_facts;

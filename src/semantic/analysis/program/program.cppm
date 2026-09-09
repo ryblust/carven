@@ -13,34 +13,25 @@ import std;
 class BodyReservation final {
 public:
     BodyReservation(const BodyReservation&) = delete;
-    BodyReservation(BodyReservation&& other) noexcept;
+    BodyReservation(BodyReservation&&) noexcept = default;
     ~BodyReservation() = default;
 
     auto operator=(const BodyReservation&) -> BodyReservation& = delete;
     auto operator=(BodyReservation&&) -> BodyReservation& = delete;
 
-    auto id() const noexcept -> BodyID;
-    auto kind() const noexcept -> BodyKind;
+    auto id() const noexcept -> BodyID { return body_id; }
+
+    auto kind() const noexcept -> BodyKind { return body_kind; }
 
 private:
-    struct Consumed final {
-        BodyID id;
-        BodyKind kind;
-        ProvenanceIdentity provenance;
-    };
-
     BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept
         : body_id(id),
           body_kind(kind),
-          provenance_identity(provenance),
-          active(true) {}
-
-    auto consume() noexcept -> Consumed;
+          provenance_identity(provenance) {}
 
     BodyID body_id;
     BodyKind body_kind;
     ProvenanceIdentity provenance_identity;
-    bool active;
 
     friend class BodyBuilder;
     friend class ProgramDraft;
@@ -57,26 +48,19 @@ public:
     static auto begin(SyntaxProgram&& syntax, DiagnosticSink& sink) noexcept -> ProgramDraft;
 
     ProgramDraft(const ProgramDraft&) = delete;
-    ProgramDraft(ProgramDraft&& other) noexcept;
+    ProgramDraft(ProgramDraft&&) = default;
     ~ProgramDraft() = default;
 
     auto operator=(const ProgramDraft&) -> ProgramDraft& = delete;
     auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
 
-    auto identity() const noexcept -> ProgramIdentity {
-        require_not_failed("read program identity");
-        return program_identity;
-    }
+    auto identity() const noexcept -> ProgramIdentity { return program_identity; }
 
     auto provenance_identity() const noexcept -> ProvenanceIdentity {
-        require_not_failed("read provenance identity");
         return provenance_appender.reader().identity();
     }
 
-    auto diagnostics() const noexcept -> AnalysisDiagnostics {
-        require_not_failed("read diagnostics");
-        return analysis_diagnostics;
-    }
+    auto diagnostics() const noexcept -> AnalysisDiagnostics { return analysis_diagnostics; }
 
     auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
@@ -209,39 +193,22 @@ public:
     auto reserve_test() noexcept -> TestID;
     auto define_test(TestID id, TestDeclaration test) noexcept -> void;
 
-    auto solve_construction() noexcept -> AnalysisResult<void>;
-    auto callable_signature(CallableID callable) const noexcept -> CallableSignatureID;
-    auto callable_crosses_cpp_boundary(CallableID callable) const noexcept -> bool;
-    auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
-    auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
-
-    auto types() const noexcept -> const CanonicalTypeStore&;
-    auto constants() const noexcept -> const ConstantStore&;
-    auto failure_sets() const noexcept -> const FailureSetStore&;
-    auto callable_signatures() const noexcept -> const CallableSignatureStore&;
-    auto declarations() const noexcept -> const DeclarationStore&;
-    auto bodies() const noexcept -> const BodyStore&;
-    auto tests() const noexcept -> const TestStore&;
-
-    auto seal() && noexcept -> SemIRProgram;
+    auto finish() && noexcept -> AnalysisResult<SemIRProgram>;
 
 private:
     enum class State {
         Declarations,
         Bodies,
-        Solved,
-        Failed,
-        Sealed,
     };
 
     ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink) noexcept;
+    auto resolve() && noexcept -> AnalysisResult<SemIRProgram>;
     auto finalize_callable_signatures(
         const TypeResolution& types,
         const FailureSolution& failures
     ) noexcept -> void;
-    auto complete_body(SemIRBody body, const DeclarationStore& declarations) noexcept -> void;
-    auto require_not_failed(std::string_view operation) const noexcept -> void;
-    auto require_construction_open(std::string_view operation) const noexcept -> void;
+    auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
+        -> void;
     auto require_declarations_available(std::string_view operation) const noexcept -> void;
     auto require_state(State expected, std::string_view operation) const noexcept -> void;
 
@@ -266,7 +233,6 @@ private:
               construction_types(identity),
               declarations(identity, provenance),
               failure_constraints(identity, provenance),
-              body_slots(identity),
               test_slots(identity) {}
 
         std::vector<SyntaxTree> syntax_by_module;
@@ -279,25 +245,16 @@ private:
         DeclarationBuilder declarations;
         FailureConstraintStore failure_constraints;
         std::map<CallableID, PendingFunctionContract> pending_function_contracts;
-        std::vector<StructuredBodyDraft> body_drafts;
-        ReservedProgramTable<SemIRBody, BodyID> body_slots;
+
+        struct BodySlot final {
+            BodyKind kind;
+            std::optional<TestID> test;
+            std::optional<StructuredBodyDraft> definition;
+        };
+
+        std::vector<BodySlot> bodies;
         ReservedProgramTable<TestDeclaration, TestID> test_slots;
-        std::vector<BodyKind> reserved_body_kinds;
-        std::vector<std::optional<TestID>> test_by_body;
     };
 
-    struct FinalStorage final {
-        CanonicalTypeStore types;
-        ConstantStore constants;
-        FailureSetStore failure_sets;
-        CallableSignatureStore callable_signatures;
-        DeclarationStore declarations;
-        BodyStore bodies;
-        TestStore tests;
-    };
-
-    auto construction() noexcept -> ConstructionStorage&;
-    auto construction() const noexcept -> const ConstructionStorage&;
-    auto final() const noexcept -> const FinalStorage&;
-    std::variant<ConstructionStorage, FinalStorage> storage;
+    ConstructionStorage storage;
 };

@@ -2,9 +2,9 @@ module carven:semantic.analysis.validation.surface.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
-import :semantic.analysis.program;
 import :semantic.analysis.validation;
 import :semantic.semir.constant;
+import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.visibility;
 import :source.module_path;
@@ -16,13 +16,15 @@ namespace {
 class DeclarationSurfaceValidator final {
 public:
     DeclarationSurfaceValidator(
-        ProgramDraft& target,
+        const SemIRProgram& target,
+        AnalysisDiagnostics diagnostics,
         DeclarationVisibility visibility,
         ModuleID module_id,
         ProgramOriginID origin,
         std::string_view description
     ) noexcept
-        : draft(target),
+        : program(target),
+          diagnostics(diagnostics),
           surface_visibility(visibility),
           surface_module(module_id),
           primary(origin),
@@ -50,19 +52,19 @@ private:
             Overloaded {
                 [](const BuiltinTypeValue&) static noexcept {},
                 [&](const StructTypeValue& value) noexcept {
-                    validate_nominal(draft.declarations().structure(value.structure));
+                    validate_nominal(program.declarations().structure(value.structure));
                 },
                 [&](const EnumTypeValue& value) noexcept {
-                    validate_nominal(draft.declarations().enumeration(value.enumeration));
+                    validate_nominal(program.declarations().enumeration(value.enumeration));
                 },
                 [&](const ArrayTypeValue& value) noexcept { validate(value.element); },
                 [&](const FunctionTypeValue& value) noexcept {
-                    validate_signature(draft.declarations().callable(value.callable).signature);
+                    validate_signature(program.declarations().callable(value.callable).signature);
                 },
                 [&](const ClosureTypeValue& value) noexcept {
-                    validate_signature(draft.declarations().callable(value.callable).signature);
-                    const auto& body = draft.bodies().body(
-                        *draft.declarations().body_for_callable(value.callable)
+                    validate_signature(program.declarations().callable(value.callable).signature);
+                    const auto& body = program.bodies().body(
+                        *program.declarations().body_for_callable(value.callable)
                     );
                     for (const auto capture : body.inputs().captures) {
                         validate(body.binding(capture).type);
@@ -77,7 +79,7 @@ private:
                     }
                 },
             },
-            draft.types().type(type).value
+            program.types().type(type).value
         );
     }
 
@@ -85,12 +87,12 @@ private:
         if (!visited_signatures.insert(id).second) {
             return;
         }
-        const auto& signature = draft.callable_signatures().signature(id);
+        const auto& signature = program.callable_signatures().signature(id);
         for (const auto& parameter : signature.parameters) {
             validate(parameter.type);
         }
         validate(signature.result);
-        for (const auto member : draft.failure_sets().failure_set(signature.failures).members) {
+        for (const auto member : program.failure_sets().failure_set(signature.failures).members) {
             validate(member);
         }
     }
@@ -99,7 +101,7 @@ private:
         if (!visited_constants.insert(id).second) {
             return;
         }
-        const auto& constant = draft.constants().constant(id);
+        const auto& constant = program.constants().constant(id);
         validate(constant.type);
         if (const auto* payload = std::get_if<PayloadEnumConstant>(&constant.value)) {
             for (const auto child : payload->payload) {
@@ -113,27 +115,35 @@ private:
             || (surface_visibility == DeclarationVisibility::ModuleDomain
                 && nominal.visibility == DeclarationVisibility::ModuleDomain
                 && same_module_domain(
-                    draft.module_path_copy(
-                        draft.declarations().module_decl(surface_module).provenance_module
-                    ),
-                    draft.module_path_copy(
-                        draft.declarations().module_decl(nominal.module_id).provenance_module
-                    )
+                    program.provenance()
+                        .module_record(
+                            program.declarations().module_decl(surface_module).provenance_module
+                        )
+                        .path,
+                    program.provenance()
+                        .module_record(
+                            program.declarations().module_decl(nominal.module_id).provenance_module
+                        )
+                        .path
                 ));
         if (!allowed) {
-            failure = draft.diagnostics().error(
+            failure = diagnostics.error(
                 DiagnosticBuilder(
                     DiagnosticCode::TypeVisibilityLeak,
                     std::format("{} references a declaration with narrower visibility", description)
                 )
-                    .primary(draft.source_span(primary))
-                    .related(draft.source_span(nominal.origin), "referenced declaration")
+                    .primary(program.provenance().source_span(primary))
+                    .related(
+                        program.provenance().source_span(nominal.origin),
+                        "referenced declaration"
+                    )
                     .build()
             );
         }
     }
 
-    ProgramDraft& draft;
+    const SemIRProgram& program;
+    AnalysisDiagnostics diagnostics;
     DeclarationVisibility surface_visibility;
     ModuleID surface_module;
     ProgramOriginID primary;
@@ -146,27 +156,31 @@ private:
 
 } // namespace
 
-auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResult<void> {
+auto validate_declaration_surfaces(
+    const SemIRProgram& program,
+    AnalysisDiagnostics diagnostics
+) noexcept -> AnalysisResult<void> {
     auto failure = std::optional<AnalysisFailure>();
     const auto retain_failure = [&](AnalysisResult<void> checked) noexcept {
         if (!checked.has_value() && !failure.has_value()) {
             failure = checked.error();
         }
     };
-    for (const auto& function : draft.declarations().functions()) {
-        const auto& signature = draft.callable_signatures().signature(
-            draft.declarations().callable(function.value.callable).signature
+    for (const auto& function : program.declarations().functions()) {
+        const auto& signature = program.callable_signatures().signature(
+            program.declarations().callable(function.value.callable).signature
         );
-        const auto body_id = draft.declarations().body_for_callable(function.value.callable);
+        const auto body_id = program.declarations().body_for_callable(function.value.callable);
         for (const auto [index, parameter] : std::views::enumerate(signature.parameters)) {
             const auto origin = body_id.has_value()
-                ? draft.bodies()
+                ? program.bodies()
                       .body(*body_id)
-                      .binding(draft.bodies().body(*body_id).inputs().parameters[index])
+                      .binding(program.bodies().body(*body_id).inputs().parameters[index])
                       .origin
                 : function.value.origin;
             auto validator = DeclarationSurfaceValidator(
-                draft,
+                program,
+                diagnostics,
                 function.value.visibility,
                 function.value.module_id,
                 origin,
@@ -175,7 +189,8 @@ auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResu
             retain_failure(validator.check(parameter.type));
         }
         auto result = DeclarationSurfaceValidator(
-            draft,
+            program,
+            diagnostics,
             function.value.visibility,
             function.value.module_id,
             function.value.origin,
@@ -183,20 +198,22 @@ auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResu
         );
         retain_failure(result.check(signature.result));
         auto failures = DeclarationSurfaceValidator(
-            draft,
+            program,
+            diagnostics,
             function.value.visibility,
             function.value.module_id,
             function.value.origin,
             "function failure"
         );
-        for (const auto member : draft.failure_sets().failure_set(signature.failures).members) {
+        for (const auto member : program.failure_sets().failure_set(signature.failures).members) {
             retain_failure(failures.check(member));
         }
     }
-    for (const auto& structure : draft.declarations().structures()) {
+    for (const auto& structure : program.declarations().structures()) {
         for (const auto& field : structure.value.fields) {
             auto validator = DeclarationSurfaceValidator(
-                draft,
+                program,
+                diagnostics,
                 structure.value.visibility,
                 structure.value.module_id,
                 field.origin,
@@ -205,9 +222,10 @@ auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResu
             retain_failure(validator.check(field.type));
         }
     }
-    for (const auto& enumeration : draft.declarations().enumerations()) {
+    for (const auto& enumeration : program.declarations().enumerations()) {
         auto validator = DeclarationSurfaceValidator(
-            draft,
+            program,
+            diagnostics,
             enumeration.value.visibility,
             enumeration.value.module_id,
             enumeration.value.origin,
@@ -218,9 +236,10 @@ auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResu
             retain_failure(validator.check(numeric->underlying_type));
         }
         for (const auto case_id : enumeration.value.cases) {
-            const auto& enum_case = draft.declarations().enum_case(case_id);
+            const auto& enum_case = program.declarations().enum_case(case_id);
             auto payload = DeclarationSurfaceValidator(
-                draft,
+                program,
+                diagnostics,
                 enumeration.value.visibility,
                 enumeration.value.module_id,
                 enum_case.origin,
@@ -231,9 +250,10 @@ auto validate_declaration_surfaces(ProgramDraft& draft) noexcept -> AnalysisResu
             }
         }
     }
-    for (const auto& constant : draft.declarations().module_constants()) {
+    for (const auto& constant : program.declarations().module_constants()) {
         auto validator = DeclarationSurfaceValidator(
-            draft,
+            program,
+            diagnostics,
             constant.value.visibility,
             constant.value.module_id,
             constant.value.origin,

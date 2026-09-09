@@ -1,8 +1,8 @@
 module carven:semantic.analysis.validation.context;
 import :semantic.analysis.operations;
-import :semantic.analysis.program;
 import :semantic.analysis.validation;
 import :semantic.semir.constant;
+import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
 import :support.visit;
@@ -10,14 +10,9 @@ import std;
 
 class BodyContractVerifier final {
 public:
-    BodyContractVerifier(
-        const SemIRBody& source,
-        ProgramDraft& builder,
-        const BodyStore& all_bodies
-    ) noexcept
+    BodyContractVerifier(const SemIRBody& source, const SemIRProgram& semantic) noexcept
         : body(source),
-          draft(&builder),
-          bodies(all_bodies) {}
+          program(semantic) {}
 
     auto verify() noexcept -> void;
 
@@ -37,6 +32,7 @@ private:
     auto verify_lifetimes() const noexcept -> void;
     auto verify_rows() noexcept -> void;
     auto verify_patterns() const noexcept -> void;
+    auto compatible_pattern_type(TypeID left, TypeID right) const noexcept -> bool;
     auto pattern_bindings(PatternID id) const noexcept -> std::vector<LocalBindingID>;
     auto signature_for_callable(CallableID id) const noexcept -> CallableSignatureID;
     auto signature_for_type(TypeID type) const noexcept -> CallableSignatureID;
@@ -44,6 +40,5 @@ private:
     auto verify_expression(const SemanticExpression& source) const noexcept -> void;
     auto verify_region(const SemanticRegion& source) const noexcept -> void;
     const SemIRBody& body;
-    ProgramDraft* draft;
-    const BodyStore& bodies;
+    const SemIRProgram& program;
 };

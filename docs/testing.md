@@ -82,9 +82,11 @@ valid internal representations and rejection of malformed representations at
 their owning boundary.
 
 Give each rule one primary responsibility test. Different syntax entry points
-need separate cases only for distinct contracts. Do not add compatibility or
-historical regression tests. Delete a malformed-state test when the representation
-cannot express that state.
+need separate cases only for distinct contracts. Tests assert current acceptance,
+rejection, results, effects, and lifecycle rules. Each supported C++ consumer mode
+has a compilation contract. Internal tests cover expressible invalid states,
+foreign IDs, bounds, duplicate definitions, and structural requirements. Borrows
+in fixtures obey their owner lifetimes.
 
 Language-behavior tests identify the owning semantic section through their
 case name or a focused comment. Cover acceptance, rejection, and relevant
@@ -98,7 +100,13 @@ assertions are appropriate for serialized syntax, source attribution, raw
 payload preservation, and artifact paths. Temporary names, helper spellings,
 old representations, and complete generated bodies are not contracts.
 
-Generation-quality tests inspect target structure. Language tests establish
+Generation-quality tests inspect target structure. Parameterized independent
+branch arguments and sequential initializations assert one final call and linear
+target-node growth. They do not pin temporary names or full generated bodies.
+Construction tests compile actual generated programs with immovable prvalues;
+runtime tests check factory invocation and construction constraints. Test direct
+construction, Take, payload extraction, and failure-set widening at their owning
+boundaries. Language tests establish
 semantic results; C++ interop tests establish deduction, access, and lifetime
 behavior at native boundaries. Lifetime providers record construction, transfer,
 execution, and destruction events in order. Terminating runtime checks run in

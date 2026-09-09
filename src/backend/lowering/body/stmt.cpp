@@ -16,7 +16,7 @@ import std;
 auto BodyLowerer::emit_return(
     std::optional<TargetExpr> value,
     LoweringStmtBuilder& destination,
-    LoweringResultDestination result
+    const LoweringResultDestination& result
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
@@ -31,13 +31,27 @@ auto BodyLowerer::emit_return(
                     if (context.is_void(signature.result)) {
                         destination.emit(statement_expression(std::move(*value)));
                     } else {
-                        arguments.push_back(std::move(*value));
+                        auto body = std::vector<TargetStmt>();
+                        body.push_back(
+                            generated_statement(TargetReturnStmt {.expression = std::move(*value)})
+                        );
+                        arguments.push_back(
+                            TargetExpr {
+                                .value = TargetLambdaExpr {
+                                    .parameters = {},
+                                    .result = context.lower_type(signature.result),
+                                    .body = std::move(body)
+                                }
+                            }
+                        );
                     }
                 }
                 value = call_expression(
                     static_member_expression(
                         context.outcome_type(callable->signature),
-                        TargetIdentifier::from_spelling("success")
+                        TargetIdentifier::from_spelling(
+                            context.is_void(signature.result) ? "success" : "success_from"
+                        )
                     ),
                     std::move(arguments)
                 );
@@ -150,8 +164,14 @@ auto BodyLowerer::deliver_result(
         emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
         initialize_deferred(initialize->storage, require_expression(std::move(value)), destination);
-    } else if (const auto* consumer = std::get_if<LoweringConsumeResult>(&result)) {
-        consumer->consume(std::move(value), destination);
+    } else if (const auto* boolean = std::get_if<LoweringBooleanResult>(&result)) {
+        destination.emit(generated_statement(
+            TargetAssignmentStmt {
+                .target = name_expression(boolean->name),
+                .op = TargetAssignmentOperator::Assign,
+                .value = require_expression(std::move(value), LoweringResultUse::Observe)
+            }
+        ));
     } else if (auto expression =
                    remaining_expression(std::move(value), LoweringResultUse::Observe)) {
         destination.emit(
@@ -162,7 +182,7 @@ auto BodyLowerer::deliver_result(
 
 auto BodyLowerer::result_expression(
     const SemanticExpression& source,
-    LoweringResultDestination result,
+    const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
@@ -193,15 +213,10 @@ auto BodyLowerer::result_expression(
             literal = LoweringLiteralContext::TargetTyped;
         }
     }
-    consume_expression(
-        source,
-        literal,
-        ResultDemand::Value,
-        [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
-            deliver_result(std::move(value), result, branch);
-        },
-        destination
-    );
+    auto value = destination.accept(expression(source, literal));
+    if (value) {
+        deliver_result(std::move(*value), result, destination);
+    }
 }
 
 auto BodyLowerer::statement(const SemanticStatement& source) noexcept
@@ -270,12 +285,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept
                 );
             },
             [&](const SemInitialize& value) noexcept {
-                if (external_exits(value.initializer)
-                    && evaluation_form(value.initializer) != EvaluationForm::Expression
-                    && evaluation_preserves_full_expression(
-                        context.semantic(),
-                        value.initializer
-                    )) {
+                if (facts(value.initializer).may_exit_value_region) {
                     const auto storage = LoweringDeferredStorage {
                         .name = binding_names.at(value.binding),
                         .value_type = context.lower_type(body.binding(value.binding).type)
@@ -302,7 +312,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept
                     destination.scope(std::move(initializer_statements));
                     return;
                 }
-                if (!evaluation_preserves_full_expression(context.semantic(), value.initializer)) {
+                if (!facts(value.initializer).needs_lifetime_scope) {
                     destination.append(std::move(initializer_statements));
                 } else if (!initializer_statements.empty()) {
                     const auto id = value.binding;
@@ -364,8 +374,7 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept
                     );
                 auto previous = std::optional<TargetIdentifier>();
                 if (value.compound.has_value() && !external) {
-                    const auto immediate =
-                        !evaluation_requires_execution(context.semantic(), value.value);
+                    const auto immediate = !facts(value.value).requires_execution;
                     if (!immediate) {
                         const auto name = names.fresh(TargetTemporaryNameKind::Operand);
                         statements.emit(generated_statement(
@@ -414,30 +423,24 @@ auto BodyLowerer::statement(const SemanticStatement& source) noexcept
                         default: invariant_violation("invalid external compound assignment");
                     }
                 }
-                consume_expression(
-                    value.value,
-                    LoweringLiteralContext::Exact,
-                    ResultDemand::Value,
-                    [&](LoweringResult result, LoweringStmtBuilder& branch) noexcept {
-                        auto assigned = require_expression(std::move(result));
-                        if (value.compound.has_value() && !external) {
-                            assigned = binary(
-                                previous ? name_expression(*previous) : target_again(),
-                                *value.compound,
-                                std::move(assigned),
-                                value.target.type.resolved()
-                            );
+                auto assigned = read_value(expression(value.value), statements);
+                if (assigned) {
+                    if (value.compound.has_value() && !external) {
+                        assigned = binary(
+                            previous ? name_expression(*previous) : target_again(),
+                            *value.compound,
+                            std::move(*assigned),
+                            value.target.type.resolved()
+                        );
+                    }
+                    statements.emit(generated_statement(
+                        TargetAssignmentStmt {
+                            .target = target_again(),
+                            .op = assignment,
+                            .value = std::move(*assigned)
                         }
-                        branch.emit(generated_statement(
-                            TargetAssignmentStmt {
-                                .target = target_again(),
-                                .op = assignment,
-                                .value = std::move(assigned)
-                            }
-                        ));
-                    },
-                    statements
-                );
+                    ));
+                }
                 destination.scope(
                     std::move(statements),
                     TargetSourceExpansionAttribution {

@@ -34,7 +34,7 @@ target("carven-test-language")
     after_load(use_local_carven)
     add_tests("language", {group = "language"})
 
-target("carven-test-language-cxx23-compatibility")
+target("carven-test-language-cxx23")
     set_default(false)
     add_rules("@carven/carven", {tests = "external"})
     set_values("carven.includedir", crafts_dir)
@@ -43,7 +43,7 @@ target("carven-test-language-cxx23-compatibility")
     add_files(table.unpack(language_sources))
     add_files(path.join(language_dir, "testing", "entry_point.cv"))
     after_load(use_local_carven)
-    add_tests("cxx23-compatibility", {build_should_pass = true, group = "language"})
+    add_tests("cxx23", {build_should_pass = true, group = "language"})
 
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 

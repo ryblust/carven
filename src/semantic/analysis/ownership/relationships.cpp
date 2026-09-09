@@ -102,9 +102,9 @@ auto join_ownership_state(OwnershipState& destination, const OwnershipState& sou
     }
 }
 
-auto join_normal_ownership_state(
-    std::optional<OwnershipState>& destination,
-    const std::optional<OwnershipState>& source
+auto join_normal_ownership(
+    std::optional<OwnershipNormal>& destination,
+    const std::optional<OwnershipNormal>& source
 ) noexcept -> void {
     if (!source.has_value()) {
         return;
@@ -112,7 +112,8 @@ auto join_normal_ownership_state(
     if (!destination.has_value()) {
         destination = source;
     } else {
-        join_ownership_state(*destination, *source);
+        join_ownership_state(destination->state, source->state);
+        merge_relationships(destination->value, source->value);
     }
 }
 
@@ -120,13 +121,19 @@ auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) n
     for (auto& exit : source.exits) {
         const auto found =
             std::ranges::find_if(destination.exits, [&](const OwnershipExit& other) noexcept {
-                return exit.kind == other.kind && exit.failure == other.failure;
+                if (exit.payload.index() != other.payload.index()) {
+                    return false;
+                }
+                const auto* failure = std::get_if<OwnershipFailure>(&exit.payload);
+                return !failure || failure->type == std::get<OwnershipFailure>(other.payload).type;
             });
         if (found == destination.exits.end()) {
             destination.exits.push_back(std::move(exit));
         } else {
             join_ownership_state(found->state, exit.state);
-            merge_relationships(found->value, exit.value);
+            if (auto* returned = std::get_if<OwnershipReturn>(&found->payload)) {
+                merge_relationships(returned->value, std::get<OwnershipReturn>(exit.payload).value);
+            }
         }
     }
 }

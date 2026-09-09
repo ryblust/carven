@@ -95,7 +95,7 @@ public:
     ~ConstantStore() = default;
 
     auto operator=(const ConstantStore&) -> ConstantStore& = delete;
-    auto operator=(ConstantStore&&) -> ConstantStore& = default;
+    auto operator=(ConstantStore&&) -> ConstantStore& = delete;
 
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(ConstantID id) const noexcept -> bool;
@@ -119,7 +119,7 @@ public:
     ~ConstantStoreBuilder() = default;
 
     auto operator=(const ConstantStoreBuilder&) -> ConstantStoreBuilder& = delete;
-    auto operator=(ConstantStoreBuilder&&) -> ConstantStoreBuilder& = default;
+    auto operator=(ConstantStoreBuilder&&) -> ConstantStoreBuilder& = delete;
 
     auto intern(ConstantFact fact) noexcept -> ConstantID;
     auto copy(ConstantID id) const noexcept -> ConstantFact;

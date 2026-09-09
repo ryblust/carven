@@ -22,7 +22,7 @@ public:
     ArtifactLowering(const PlannedCompilation& compilation, TargetArtifactID artifact) noexcept;
 
     ArtifactLowering(const ArtifactLowering&) = delete;
-    ArtifactLowering(ArtifactLowering&& other) noexcept;
+    ArtifactLowering(ArtifactLowering&&) = default;
     ~ArtifactLowering() = default;
     auto operator=(const ArtifactLowering&) -> ArtifactLowering& = delete;
     auto operator=(ArtifactLowering&&) -> ArtifactLowering& = delete;
@@ -37,10 +37,9 @@ public:
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
 
 private:
-    auto require_compilation() const noexcept -> const PlannedCompilation&;
     auto record_provider_interface(ModuleID active, ModuleID provider) noexcept -> void;
 
-    const PlannedCompilation* planned_compilation;
+    const PlannedCompilation& planned_compilation;
     TargetArtifactID artifact_id;
     TargetUnitBuilder target_builder;
     std::flat_set<TargetArtifactID> lowering_dependencies;
@@ -58,7 +57,7 @@ class ModuleLowering final {
 public:
     ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept;
     ModuleLowering(const ModuleLowering&) = delete;
-    ModuleLowering(ModuleLowering&& other) noexcept;
+    ModuleLowering(ModuleLowering&&) = default;
     ~ModuleLowering() = default;
     auto operator=(const ModuleLowering&) -> ModuleLowering& = delete;
     auto operator=(ModuleLowering&&) -> ModuleLowering& = delete;
@@ -94,22 +93,19 @@ public:
     auto is_integer(TypeID id) const noexcept -> bool;
 
 private:
-    enum class LoweringState : std::uint8_t {
-        Unseen,
-        Visiting,
-        Complete,
-    };
+    struct Unseen final {};
 
-    auto require_artifact() const noexcept -> ArtifactLowering&;
+    struct Resolving final {};
+
+    using TypeSlot = std::variant<Unseen, Resolving, TargetTypeID>;
+
     auto function_type(CallableSignatureID signature) noexcept -> TargetType;
 
-    ArtifactLowering* artifact_lowering;
+    ArtifactLowering& artifact_lowering;
     ModuleID module_id;
     TargetNameAllocator allocator;
-    std::vector<LoweringState> type_states;
-    std::vector<std::optional<TargetTypeID>> type_cache;
-    std::vector<LoweringState> signature_states;
-    std::vector<std::optional<TargetTypeID>> signature_result_cache;
+    std::vector<TypeSlot> type_cache;
+    std::vector<TypeSlot> signature_result_cache;
 };
 
 auto target_child(TargetExpr expression) noexcept -> UniqueIndirect<TargetExpr>;

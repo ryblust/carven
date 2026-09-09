@@ -2,9 +2,9 @@ module carven:backend.lowering.body.operands.impl;
 
 import :backend.generation.plan;
 import :backend.lowering.body.lowerer;
-import :semantic.semir;
 import :backend.target.expr;
 import :backend.target.symbol;
+import :semantic.semir;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -151,9 +151,9 @@ auto BodyLowerer::requires_materialization(const OperandGroup& group, bool prefi
             && group.values[index].use != OperandUse::Snapshot) {
             continue;
         }
-        const auto executes = evaluation_requires_execution(context.semantic(), source);
+        const auto executes = facts(source).requires_execution;
         executions += executes;
-        reads |= !executes && evaluation_reads_storage(context.semantic(), source);
+        reads |= !executes && facts(source).reads_storage;
     }
     return prefix
         || takes
@@ -162,12 +162,12 @@ auto BodyLowerer::requires_materialization(const OperandGroup& group, bool prefi
             && (executions > 1uz || (executions == 1uz && reads)));
 }
 
-auto BodyLowerer::evaluation_form(const SemanticExpression& source) const noexcept
+auto BodyLowerer::classify_evaluation(const SemanticExpression& source) const noexcept
     -> EvaluationForm {
     const auto folded = source.constant
-        && evaluation_rule(context.semantic(), source).action != EvaluationAction::Required
-        && !evaluation_preserves_full_expression(context.semantic(), source);
-    if (folded && !evaluation_requires_execution(context.semantic(), source)) {
+        && facts(source).rule.action != EvaluationAction::Required
+        && !facts(source).needs_lifetime_scope;
+    if (folded && !facts(source).requires_execution) {
         return EvaluationForm::Expression;
     }
     if (const auto* propagation = std::get_if<SemPropagate>(&source.value)) {
@@ -177,17 +177,16 @@ auto BodyLowerer::evaluation_form(const SemanticExpression& source) const noexce
         return folded
                 || evaluation_form(*logic->left) != EvaluationForm::Expression
                 || evaluation_form(*logic->right) != EvaluationForm::Expression
-                || evaluation_preserves_full_expression(context.semantic(), source)
-            ? EvaluationForm::Branches
+                || facts(source).needs_lifetime_scope
+            ? EvaluationForm::Statements
             : EvaluationForm::Expression;
-    }
-    if (can_extend_branch_scope(source)) {
-        return EvaluationForm::Branches;
     }
     if (std::holds_alternative<SemIf>(source.value)
         || std::holds_alternative<SemMatch>(source.value)
         || std::holds_alternative<SemTry>(source.value)) {
-        return folded || context.is_void(source.type.resolved()) || external_exits(source)
+        return folded
+                || context.is_void(source.type.resolved())
+                || facts(source).may_exit_value_region
             ? EvaluationForm::Statements
             : EvaluationForm::Expression;
     }
@@ -196,11 +195,8 @@ auto BodyLowerer::evaluation_form(const SemanticExpression& source) const noexce
     for (const auto& operand : group.values) {
         children = std::max(children, evaluation_form(operand.expression));
     }
-    if (children == EvaluationForm::Branches) {
-        return children;
-    }
     if (const auto* borrow = std::get_if<SemBorrowCallable>(&source.value);
-        borrow != nullptr && evaluation_requires_execution(context.semantic(), *borrow->source)) {
+        borrow != nullptr && facts(*borrow->source).requires_execution) {
         return EvaluationForm::Statements;
     }
     if (std::holds_alternative<SemArrayAdopt>(source.value)) {
@@ -215,165 +211,51 @@ auto BodyLowerer::evaluation_form(const SemanticExpression& source) const noexce
         : EvaluationForm::Expression;
 }
 
-namespace {
-auto copy_operand(const TargetExpr& source) noexcept -> TargetExpr {
-    const auto copy_values = [](const std::vector<TargetExpr>& values) static noexcept {
-        return values | std::views::transform(copy_operand) | std::ranges::to<std::vector>();
-    };
-    return std::visit(
-        Overloaded {
-            [&](const TargetPrefixExpr& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetPrefixExpr {
-                        .op = value.op,
-                        .operand = target_child(copy_operand(*value.operand))
-                    }
-                };
-            },
-            [&](const TargetStaticCastExpr& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetStaticCastExpr {
-                        .type = value.type,
-                        .operand = target_child(copy_operand(*value.operand))
-                    }
-                };
-            },
-            [&](const TargetCallExpr& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetCallExpr {
-                        .callee = target_child(copy_operand(*value.callee)),
-                        .template_argument_type_ids = value.template_argument_type_ids,
-                        .arguments = copy_values(value.arguments)
-                    }
-                };
-            },
-            [&](const TargetMemberExpr& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetMemberExpr {
-                        .operand = target_child(copy_operand(*value.operand)),
-                        .name = value.name
-                    }
-                };
-            },
-            [&](const TargetConstructionExpr& value) noexcept -> TargetExpr {
-                auto initializer = std::visit(
-                    Overloaded {
-                        [](std::monostate) static -> decltype(value.initializer) {
-                            return std::monostate {};
-                        },
-                        [&](const std::vector<TargetExpr>& values) -> decltype(value.initializer) {
-                            return copy_values(values);
-                        },
-                        [&](const std::vector<TargetFieldInitializer>& values)
-                            -> decltype(value.initializer) {
-                            auto fields = std::vector<TargetFieldInitializer>();
-                            for (const auto& field : values) {
-                                fields.push_back(
-                                    {.name = field.name,
-                                     .value = target_child(copy_operand(*field.value))}
-                                );
-                            }
-                            return fields;
-                        }
-                    },
-                    value.initializer
-                );
-                return {
-                    .value = TargetConstructionExpr {
-                        .type = value.type,
-                        .initializer = std::move(initializer)
-                    }
-                };
-            },
-            [&](const TargetArrayExpr& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetArrayExpr {
-                        .element_type_id = value.element_type_id,
-                        .extent = target_child(copy_operand(*value.extent)),
-                        .elements = copy_values(value.elements)
-                    }
-                };
-            },
-            [](const auto& value) static noexcept -> TargetExpr {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, TargetNameExpr>
-                              || std::same_as<Value, TargetIntrinsicNameExpr>
-                              || std::same_as<Value, TargetLiteralExpr>
-                              || std::same_as<Value, TargetStaticMemberExpr>) {
-                    return {.value = value};
-                } else {
-                    invariant_violation("branch continuation requires a stable operand");
-                }
-            }
-        },
-        source.value
-    );
-}
-} // namespace
-
-auto BodyLowerer::consume_operands(
+auto BodyLowerer::lower_operands(
     const OperandGroup& group,
     LoweringLiteralContext literal,
-    bool materializing,
-    const std::function<void(std::vector<TargetExpr>, LoweringStmtBuilder&)>& consume,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
-    auto children = EvaluationForm::Expression;
-    for (const auto& operand : group.values) {
-        children = std::max(children, evaluation_form(operand.expression));
-    }
-    const auto repeated = children == EvaluationForm::Branches;
-    const auto stabilize = requires_materialization(group, children != EvaluationForm::Expression);
+    bool materializing
+) noexcept -> Lowered<std::vector<TargetExpr>> {
+    const auto prefix = std::ranges::any_of(group.values, [&](const Operand& operand) noexcept {
+        return evaluation_form(operand.expression) == EvaluationForm::Statements;
+    });
+    const auto stabilize = requires_materialization(group, prefix);
+    auto statements = LoweringStmtBuilder();
     auto values = std::vector<TargetExpr>();
-    const auto next = [&](this const auto& self,
-                          std::size_t index,
-                          LoweringStmtBuilder& statements) noexcept -> void {
-        if (index == group.values.size()) {
-            auto arguments = std::vector<TargetExpr>();
-            for (auto& value : values) {
-                arguments.push_back(repeated ? copy_operand(value) : std::move(value));
-            }
-            consume(std::move(arguments), statements);
-            return;
-        }
-        const auto& input = group.values[index];
-        consume_expression(
+    for (const auto& input : group.values) {
+        auto evaluated = statements.accept(expression(
             input.expression,
             literal,
             input.use == OperandUse::Read || input.use == OperandUse::ConstPlace
                 ? ResultDemand::Observe
                 : ResultDemand::Value,
-            [&](LoweringResult evaluated, LoweringStmtBuilder& branch) noexcept {
-                const auto temporary = std::holds_alternative<LoweringTemporaryValue>(evaluated);
-                auto value = require_expression(
-                    std::move(evaluated),
-                    input.use == OperandUse::Own || input.use == OperandUse::Snapshot
-                        ? LoweringResultUse::Transfer
-                        : LoweringResultUse::Observe
-                );
-                if (stabilize && (!temporary || input.use == OperandUse::Own)) {
-                    value =
-                        materialize_operand(input.expression, std::move(value), input.use, branch);
-                } else if (input.use == OperandUse::ConstPlace
-                           || (input.use == OperandUse::Read
-                               && evaluation_reads_storage(context.semantic(), input.expression))) {
-                    value = TargetExpr {
-                        .value = TargetStaticCastExpr {
-                            .type = context.reference_type(
-                                context.lower_type(input.expression.type.resolved()),
-                                true
-                            ),
-                            .operand = target_child(std::move(value))
-                        }
-                    };
-                }
-                values.push_back(std::move(value));
-                self(index + 1uz, branch);
-                values.pop_back();
-            },
-            statements,
             materializing || stabilize
+        ));
+        if (!evaluated) {
+            return std::move(statements).complete<std::vector<TargetExpr>>(std::nullopt);
+        }
+        const auto temporary = std::holds_alternative<LoweringTemporaryValue>(*evaluated);
+        auto value = require_expression(
+            std::move(*evaluated),
+            input.use == OperandUse::Own || input.use == OperandUse::Snapshot
+                ? LoweringResultUse::Transfer
+                : LoweringResultUse::Observe
         );
-    };
-    next(0uz, destination);
+        if (stabilize && (!temporary || input.use == OperandUse::Own)) {
+            value = materialize_operand(input.expression, std::move(value), input.use, statements);
+        } else if (input.use == OperandUse::ConstPlace
+                   || (input.use == OperandUse::Read && facts(input.expression).reads_storage)) {
+            value = TargetExpr {
+                .value = TargetStaticCastExpr {
+                    .type = context.reference_type(
+                        context.lower_type(input.expression.type.resolved()),
+                        true
+                    ),
+                    .operand = target_child(std::move(value))
+                }
+            };
+        }
+        values.push_back(std::move(value));
+    }
+    return std::move(statements).complete<std::vector<TargetExpr>>(std::move(values));
 }

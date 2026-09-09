@@ -42,21 +42,6 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeIntegerRemainder:  return "carven::runtime::integer_remainder";
         case TargetSymbol::RuntimeIntegerLeftShift:  return "carven::runtime::integer_left_shift";
         case TargetSymbol::RuntimeIntegerRightShift: return "carven::runtime::integer_right_shift";
-        case TargetSymbol::RuntimeIntegerAddAssign:  return "carven::runtime::integer_add_assign";
-        case TargetSymbol::RuntimeIntegerSubtractAssign:
-            return "carven::runtime::integer_subtract_assign";
-        case TargetSymbol::RuntimeIntegerMultiplyAssign:
-            return "carven::runtime::integer_multiply_assign";
-        case TargetSymbol::RuntimeIntegerDivideAssign:
-            return "carven::runtime::integer_divide_assign";
-        case TargetSymbol::RuntimeIntegerRemainderAssign:
-            return "carven::runtime::integer_remainder_assign";
-        case TargetSymbol::RuntimeIntegerLeftShiftAssign:
-            return "carven::runtime::integer_left_shift_assign";
-        case TargetSymbol::RuntimeIntegerRightShiftAssign:
-            return "carven::runtime::integer_right_shift_assign";
-        case TargetSymbol::RuntimeIntegerIncrement:  return "carven::runtime::integer_increment";
-        case TargetSymbol::RuntimeIntegerDecrement:  return "carven::runtime::integer_decrement";
         case TargetSymbol::RuntimeCheckedArrayIndex: return "carven::runtime::checked_array_index";
         case TargetSymbol::RuntimeCheckedUnicodeScalar:
             return "carven::runtime::checked_unicode_scalar";
@@ -72,7 +57,6 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdVariant:          return "std::variant";
         case TargetSymbol::TestingContext:      return "carven::testing::TestContext";
         case TargetSymbol::TestingReporter:     return "carven::testing::TestReporter";
-        case TargetSymbol::TestingControl:      return "carven::testing::detail::TestControl";
     }
     std::unreachable();
 }

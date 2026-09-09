@@ -3,15 +3,15 @@ import :semantic.analysis.validation.context;
 import std;
 
 auto BodyContractVerifier::related_body(BodyID id) const noexcept -> const SemIRBody& {
-    return bodies.body(id);
+    return program.bodies().body(id);
 }
 
 auto BodyContractVerifier::require_top_level_owners() const noexcept -> void {
     const auto identity = body.identity();
-    if (body.id().owner() != identity.program() || draft->identity() != identity.program()) {
+    if (body.id().owner() != identity.program() || program.identity() != identity.program()) {
         invariant_violation("SemIR verifier mixed semantic program identities");
     }
-    if (body.provenance_identity() != draft->provenance_identity()) {
+    if (body.provenance_identity() != program.provenance().identity()) {
         invariant_violation("SemIR verifier mixed provenance identities");
     }
 }
@@ -20,45 +20,45 @@ auto BodyContractVerifier::require_origin(ProgramOriginID origin) const noexcept
     if (origin.owner() != body.provenance_identity()) {
         invariant_violation("SemIR row uses an origin from another provenance owner");
     }
-    static_cast<void>(draft->source_span(origin));
+    static_cast<void>(program.provenance().source_span(origin));
 }
 
 auto BodyContractVerifier::require_type(TypeID type) const noexcept -> CanonicalType {
-    if (type.owner() != draft->identity()) {
+    if (type.owner() != program.identity()) {
         invariant_violation("SemIR row uses a type from another semantic program");
     }
-    return draft->types().type(type);
+    return program.types().type(type);
 }
 
 auto BodyContractVerifier::require_failure_set(FailureSetID failures) const noexcept -> FailureSet {
-    if (failures.owner() != draft->identity()) {
+    if (failures.owner() != program.identity()) {
         invariant_violation("SemIR row uses a failure set from another semantic program");
     }
-    return draft->failure_sets().failure_set(failures);
+    return program.failure_sets().failure_set(failures);
 }
 
 auto BodyContractVerifier::require_structure(StructID structure) const noexcept
     -> StructDeclaration {
-    if (structure.owner() != draft->identity()) {
+    if (structure.owner() != program.identity()) {
         invariant_violation("SemIR row uses a structure from another semantic program");
     }
-    return draft->declarations().structure(structure);
+    return program.declarations().structure(structure);
 }
 
 auto BodyContractVerifier::require_enumeration(EnumID enumeration) const noexcept
     -> EnumDeclaration {
-    if (enumeration.owner() != draft->identity()) {
+    if (enumeration.owner() != program.identity()) {
         invariant_violation("SemIR row uses an enum from another semantic program");
     }
-    return draft->declarations().enumeration(enumeration);
+    return program.declarations().enumeration(enumeration);
 }
 
 auto BodyContractVerifier::require_enum_case(EnumCaseID enum_case) const noexcept
     -> EnumCaseDeclaration {
-    if (enum_case.owner() != draft->identity()) {
+    if (enum_case.owner() != program.identity()) {
         invariant_violation("SemIR row uses an enum case from another semantic program");
     }
-    return draft->declarations().enum_case(enum_case);
+    return program.declarations().enum_case(enum_case);
 }
 
 auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noexcept -> void {
@@ -70,7 +70,7 @@ auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noe
 }
 
 auto BodyContractVerifier::body_callable() const noexcept -> std::optional<CallableID> {
-    const auto callable = draft->callable_for_body(body.id());
+    const auto callable = program.declarations().callable_for_body(body.id());
     if (body.kind() == BodyKind::Test) {
         if (callable.has_value()) {
             invariant_violation("test body is owned by a callable declaration");
@@ -91,8 +91,9 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
         }
         return;
     }
-    const auto contract =
-        draft->callable_signatures().signature(draft->callable_signature(*callable));
+    const auto contract = program.callable_signatures().signature(
+        program.declarations().callable(*callable).signature
+    );
     if (body.inputs().parameters.size() != contract.parameters.size()) {
         invariant_violation("BodyInputs parameters differ from callable contract arity");
     }
@@ -122,8 +123,9 @@ auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const
     if (!callable.has_value()) {
         invariant_violation("test body exposes a failure contract");
     }
-    const auto contract =
-        draft->callable_signatures().signature(draft->callable_signature(*callable));
+    const auto contract = program.callable_signatures().signature(
+        program.declarations().callable(*callable).signature
+    );
     const auto expected = contract.failures;
     const auto actual = require_failure_set(failures);
     const auto allowed = require_failure_set(expected);

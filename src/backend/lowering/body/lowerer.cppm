@@ -2,8 +2,8 @@ module carven:backend.lowering.body.lowerer;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body;
 import :backend.lowering.body.composition;
+import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.target.expr;
 import :backend.target.ids;
@@ -136,23 +136,31 @@ private:
         std::vector<TargetExpr> operands,
         ResultDemand demand
     ) noexcept -> Lowered<LoweringResult>;
-    auto consume_expression(
-        const SemanticExpression& source,
-        LoweringLiteralContext literal,
-        ResultDemand demand,
-        const LoweringResultConsumer& consume,
-        LoweringStmtBuilder& destination,
-        bool materializing = false
-    ) noexcept -> void;
-    auto can_extend_branch_scope(const SemanticExpression& source) const noexcept -> bool;
-    enum class EvaluationForm { Expression, Statements, Branches };
-    auto evaluation_form(const SemanticExpression& source) const noexcept -> EvaluationForm;
-    auto external_exits(const SemanticExpression& source) const noexcept -> bool;
-    auto expression_region(
-        const SemanticExpression& source,
-        ResultDemand demand,
-        const std::function<void(LoweringResultDestination, LoweringStmtBuilder&)>& build
-    ) noexcept -> Lowered<LoweringResult>;
+    enum class EvaluationForm { Expression, Statements };
+
+    struct EvaluationFacts final {
+        EvaluationRule rule;
+        bool requires_execution;
+        bool reads_storage;
+        bool needs_lifetime_scope;
+        bool may_exit_value_region;
+        EvaluationForm form;
+    };
+
+    auto prepare_evaluation() noexcept -> void;
+
+    auto facts(const SemanticExpression& source) const noexcept -> const EvaluationFacts& {
+        return evaluation_facts.at(std::addressof(source));
+    }
+
+    auto evaluation_form(const SemanticExpression& source) const noexcept -> EvaluationForm {
+        return facts(source).form;
+    }
+
+    auto classify_evaluation(const SemanticExpression& source) const noexcept -> EvaluationForm;
+
+    auto expression_region(const SemanticExpression& source, ResultDemand demand) noexcept
+        -> Lowered<LoweringResult>;
     auto deliver_result(
         LoweringResult value,
         const LoweringResultDestination& result,
@@ -177,10 +185,22 @@ private:
     auto expression(
         const SemanticExpression& expression,
         LoweringLiteralContext use = LoweringLiteralContext::Exact,
-        ResultDemand demand = ResultDemand::Value
+        ResultDemand demand = ResultDemand::Value,
+        bool materializing = false
+    ) noexcept -> Lowered<LoweringResult>;
+    auto expression_impl(
+        const SemanticExpression& expression,
+        LoweringLiteralContext use = LoweringLiteralContext::Exact,
+        ResultDemand demand = ResultDemand::Value,
+        bool materializing = false
     ) noexcept -> Lowered<LoweringResult>;
     enum class OperandUse { Snapshot, Read, Own, Place, ConstPlace };
     enum class OperandOrder { Unspecified, LeftToRight, Reordered, Postfix };
+    auto materialize_temporary(
+        const LoweringDeferredStorage& storage,
+        TargetExpr value,
+        LoweringStmtBuilder& destination
+    ) noexcept -> TargetExpr;
     auto materialize_operand(
         const SemanticExpression& source,
         TargetExpr value,
@@ -205,24 +225,22 @@ private:
 
     auto operation_operands(const SemanticExpression& source) const noexcept -> OperandGroup;
     auto requires_materialization(const OperandGroup& group, bool prefix) const noexcept -> bool;
-    auto consume_operands(
+    auto lower_operands(
         const OperandGroup& group,
         LoweringLiteralContext literal,
-        bool materializing,
-        const std::function<void(std::vector<TargetExpr>, LoweringStmtBuilder&)>& consume,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
+        bool materializing
+    ) noexcept -> Lowered<std::vector<TargetExpr>>;
     auto statement(const SemanticStatement& statement) noexcept -> Lowered<LoweringCompleted>;
-    auto region(const SemanticRegion& region, LoweringResultDestination result) noexcept
+    auto region(const SemanticRegion& region, const LoweringResultDestination& result) noexcept
         -> LoweringStmtBuilder;
     auto result_expression(
         const SemanticExpression& expression,
-        LoweringResultDestination result,
+        const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto structured_expression(
         const SemanticExpression& expression,
-        LoweringResultDestination result,
+        const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto guarded_region(
@@ -233,7 +251,7 @@ private:
     ) noexcept -> LoweringStmtBuilder;
     auto lower_if(
         const SemIf& value,
-        LoweringResultDestination result,
+        const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto lower_match(
@@ -262,7 +280,7 @@ private:
     auto emit_return(
         std::optional<TargetExpr> value,
         LoweringStmtBuilder& destination,
-        LoweringResultDestination result = LoweringReturnResult {}
+        const LoweringResultDestination& result = LoweringReturnResult {}
     ) noexcept -> void;
     auto binary(TargetExpr left, BinaryOperator operation, TargetExpr right, TypeID type) noexcept
         -> TargetExpr;
@@ -292,6 +310,9 @@ private:
         const PatternSelection& selection,
         LocalBindingID binding
     ) noexcept -> TargetExpr;
+    std::unordered_map<const SemanticExpression*, EvaluationFacts> evaluation_facts;
+    // Declarations for owners initialized conditionally within one full expression.
+    LoweringStmtBuilder* conditional_temporaries = nullptr;
     ModuleLowering& context;
     const SemIRBody& body;
     TargetBodyInputs inputs;

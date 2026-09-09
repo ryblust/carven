@@ -5,8 +5,10 @@ import :semantic.analysis.program;
 import :support.invariant;
 import std;
 
-auto ProgramDraft::complete_body(SemIRBody body, const DeclarationStore& declaration_view) noexcept
-    -> void {
+auto ProgramDraft::verify_body(
+    const SemIRBody& body,
+    const DeclarationStore& declaration_view
+) const noexcept -> void {
     const auto body_id = body.id();
     const auto identity = body.identity();
     const auto kind = body.kind();
@@ -18,14 +20,12 @@ auto ProgramDraft::complete_body(SemIRBody body, const DeclarationStore& declara
     if (body.provenance_identity() != provenance_appender.reader().identity()) {
         invariant_violation("final body has foreign provenance identity evidence");
     }
-    if (!construction().body_slots.contains(body_id)
-        || static_cast<std::size_t>(body_id.index()) >= construction().reserved_body_kinds.size()
-        || construction().reserved_body_kinds[body_id.index()] != kind) {
+    if (body_id.index() >= storage.bodies.size() || storage.bodies[body_id.index()].kind != kind) {
         invariant_violation("final body disagreed with its reservation metadata");
     }
     const auto callable = declaration_view.callable_for_body(body_id);
     if (kind == BodyKind::Test) {
-        if (callable.has_value() || !construction().test_by_body[body_id.index()].has_value()) {
+        if (callable.has_value() || !storage.bodies[body_id.index()].test.has_value()) {
             invariant_violation("test body was not assigned exactly one test declaration");
         }
     } else {
@@ -42,20 +42,21 @@ auto ProgramDraft::complete_body(SemIRBody body, const DeclarationStore& declara
             invariant_violation("body kind disagreed with its callable implementation");
         }
     }
-    construction().body_slots.define(body_id, std::move(body));
 }
 
-auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
+auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     require_state(State::Bodies, "solve construction");
-    auto& input = construction();
+    auto& input = storage;
     if (!input.pending_function_contracts.empty()
         || !input.declarations.construction_view().callable_contracts_complete()
         || !input.declarations.construction_view().callable_implementations_complete()
-        || input.body_drafts.size() != input.body_slots.size()
+        || !std::ranges::all_of(
+            input.bodies,
+            [](const auto& slot) static noexcept { return slot.definition.has_value(); }
+        )
         || !input.test_slots.all_defined()) {
         invariant_violation("construction solving began with incomplete reservations");
     }
-    state = State::Failed;
     auto failures = solve_failure_constraints(
         std::move(input.failure_constraints).finish(),
         input.failure_sets,
@@ -79,22 +80,27 @@ auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
     auto constants = std::move(input.constants).seal();
     auto failure_sets = std::move(input.failure_sets).seal();
     auto signatures = std::move(input.callable_signatures).seal();
-    for (auto& body : input.body_drafts) {
-        complete_body(
-            resolve_body(
-                std::move(body),
-                resolved_types,
-                *failures,
-                failure_sets,
-                provenance_appender.reader(),
-                analysis_diagnostics
-            ),
-            declarations
+    auto bodies = MutableProgramTable<SemIRBody, BodyID>(program_identity);
+    for (auto& slot : input.bodies) {
+        auto body = resolve_body(
+            std::move(*slot.definition),
+            resolved_types,
+            *failures,
+            failure_sets,
+            provenance_appender.reader(),
+            analysis_diagnostics
         );
+        verify_body(body, declarations);
+        const auto expected = body.id();
+        if (bodies.add(std::move(body)) != expected) {
+            invariant_violation("body publication changed its reserved identity");
+        }
     }
-    auto final_bodies = BodyStore(std::move(input.body_slots).seal());
+    auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
-    storage.emplace<FinalStorage>(
+    return SemIRProgram(
+        program_identity,
+        std::move(provenance_appender).finish(),
         std::move(types),
         std::move(constants),
         std::move(failure_sets),
@@ -103,15 +109,13 @@ auto ProgramDraft::solve_construction() noexcept -> AnalysisResult<void> {
         std::move(final_bodies),
         std::move(final_tests)
     );
-    state = State::Solved;
-    return {};
 }
 
 auto ProgramDraft::finalize_callable_signatures(
     const TypeResolution& types,
     const FailureSolution& failures
 ) noexcept -> void {
-    const auto view = construction().declarations.construction_view();
+    const auto view = storage.declarations.construction_view();
     for (const auto callable_id : view.callable_ids()) {
         const auto contract = view.callable_contract(callable_id);
         auto parameters = std::vector<CallableParameter>();
@@ -124,14 +128,14 @@ auto ProgramDraft::finalize_callable_signatures(
                 }
             );
         }
-        const auto signature = construction().callable_signatures.intern(
+        const auto signature = storage.callable_signatures.intern(
             CallableSignature {
                 .parameters = std::move(parameters),
                 .result = types.resolve(contract.result),
                 .failures = failures.failure_set(contract.failures),
             }
         );
-        construction().declarations.define_callable_signature(callable_id, signature);
+        storage.declarations.define_callable_signature(callable_id, signature);
     }
-    construction().declarations.finish_callable_signatures();
+    storage.declarations.finish_callable_signatures();
 }

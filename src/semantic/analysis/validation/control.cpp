@@ -5,9 +5,9 @@ import std;
 auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noexcept -> void {
     const auto callable = body_callable();
     const auto result = callable.has_value()
-        ? std::optional(
-              draft->callable_signatures().signature(draft->callable_signature(*callable)).result
-          )
+        ? std::optional(program.callable_signatures()
+                            .signature(program.declarations().callable(*callable).signature)
+                            .result)
         : std::nullopt;
     const auto check_return = [&](const std::optional<SemanticExpression>& value) noexcept {
         const auto is_void = !result.has_value()

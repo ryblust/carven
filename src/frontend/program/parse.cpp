@@ -29,7 +29,7 @@ public:
     ~SyntaxProgramBuilder() = default;
 
     auto operator=(const SyntaxProgramBuilder&) -> SyntaxProgramBuilder& = delete;
-    auto operator=(SyntaxProgramBuilder&&) -> SyntaxProgramBuilder& = default;
+    auto operator=(SyntaxProgramBuilder&&) -> SyntaxProgramBuilder& = delete;
 
     auto define_module_syntax(ProgramModuleID module_id, SyntaxTree syntax_tree) noexcept -> void {
         const auto expected_module_id = provenance.view().module_id_at(syntax_by_module.size());

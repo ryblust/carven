@@ -6,7 +6,7 @@ import std;
 
 auto prepare_ownership_body_facts(
     const SemIRBody& body,
-    const ProgramDraft& draft,
+    const SemIRProgram& program,
     std::span<const TypeContents> types
 ) noexcept -> OwnershipBodyFacts {
     auto facts = OwnershipBodyFacts {};
@@ -40,7 +40,7 @@ auto prepare_ownership_body_facts(
                     PatternCoverageArm {.alternatives = {arm.pattern}, .guarded = false}
                 };
                 auto complete = patterns_exhaustive(
-                    draft,
+                    program,
                     body.pattern_table(),
                     body.pattern(arm.pattern).type,
                     arms
@@ -58,7 +58,7 @@ auto prepare_ownership_body_facts(
             return;
         }
         const auto& failures =
-            draft.failure_sets().failure_set(attempt->protected_failures.resolved());
+            program.failure_sets().failure_set(attempt->protected_failures.resolved());
         for (const auto& arm : attempt->arms) {
             auto accepted = std::flat_map<TypeID, OwnershipCatchAcceptance>();
             for (const auto type : failures.members) {
@@ -82,7 +82,7 @@ auto prepare_ownership_body_facts(
                 const auto patterns = std::array {
                     PatternCoverageArm {.alternatives = alternatives, .guarded = false}
                 };
-                auto complete = patterns_exhaustive(draft, body.pattern_table(), type, patterns);
+                auto complete = patterns_exhaustive(program, body.pattern_table(), type, patterns);
                 if (!complete.has_value()) {
                     invariant_violation(complete.error());
                 }

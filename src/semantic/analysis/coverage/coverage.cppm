@@ -32,7 +32,7 @@ auto compute_pattern_coverage(
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 
 auto patterns_exhaustive(
-    const ProgramDraft& draft,
+    const SemIRProgram& semantic,
     const ImmutableBodyTable<Pattern, PatternID>& patterns,
     TypeID subject_type,
     std::span<const PatternCoverageArm> arms

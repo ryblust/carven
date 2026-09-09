@@ -5,7 +5,7 @@ import :support.visit;
 import std;
 
 auto ModuleLowering::cpp_name(const CppNameReference& name) noexcept -> TargetName {
-    artifact_lowering->require_cpp_environment(
+    artifact_lowering.require_cpp_environment(
         name.context_module,
         name.lookup == CppNameLookup::Global ? CppEnvironmentRequirement::Declarations
                                              : CppEnvironmentRequirement::Using

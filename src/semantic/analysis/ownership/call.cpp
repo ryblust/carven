@@ -1,7 +1,7 @@
 module carven:semantic.analysis.ownership.call.impl;
 
 import :semantic.analysis.ownership.context;
-import :semantic.analysis.program;
+import :semantic.semir.program;
 import std;
 
 auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletion> {
@@ -75,23 +75,34 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
         }
     };
     if (flow.normal.has_value()) {
-        const auto callable = draft.callable_for_body(body.id());
+        const auto callable = program.declarations().callable_for_body(body.id());
         if (callable.has_value() && !body.region().result.has_value()) {
             const auto result_type =
-                draft.callable_signatures().signature(draft.callable_signature(*callable)).result;
-            if (draft.types().type(result_type).value
+                program.callable_signatures()
+                    .signature(program.declarations().callable(*callable).signature)
+                    .result;
+            if (program.types().type(result_type).value
                 != CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
                 invariant_violation("normal callable exit did not deliver its result");
             }
         }
-        complete(std::nullopt, std::move(*flow.normal), std::move(flow.value));
+        complete(std::nullopt, std::move(flow.normal->state), std::move(flow.normal->value));
     }
     for (auto& exit : flow.exits) {
-        if (exit.kind == OwnershipExitKind::Return || exit.kind == OwnershipExitKind::Failure) {
-            complete(exit.failure, std::move(exit.state), std::move(exit.value));
-        } else {
-            invariant_violation("loop transfer escaped its callable");
-        }
+        std::visit(
+            Overloaded {
+                [&](OwnershipReturn& value) noexcept {
+                    complete(std::nullopt, std::move(exit.state), std::move(value.value));
+                },
+                [&](OwnershipFailure value) noexcept {
+                    complete(value.type, std::move(exit.state), {});
+                },
+                [](const auto&) static noexcept {
+                    invariant_violation("loop transfer escaped its callable");
+                }
+            },
+            exit.payload
+        );
     }
     for (auto& completion : result) {
         normalize_relationships(completion.value);
@@ -110,13 +121,14 @@ auto OwnershipBodyAnalyzer::call(
     OwnershipState state,
     ProgramOriginID origin
 ) noexcept -> OwnershipFlow {
-    const auto target_id = draft.body_for_callable(callable);
+    const auto target_id = program.declarations().body_for_callable(callable);
     if (!target_id.has_value()) {
-        auto result = OwnershipFlow {.normal = std::move(state), .value = {}, .exits = {}};
-        const auto contract =
-            draft.callable_signatures().signature(draft.callable_signature(callable));
-        for (const auto type : draft.failure_sets().failure_set(contract.failures).members) {
-            result.exits.push_back({OwnershipExitKind::Failure, type, *result.normal, {}});
+        auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}}, .exits = {}};
+        const auto contract = program.callable_signatures().signature(
+            program.declarations().callable(callable).signature
+        );
+        for (const auto type : program.failure_sets().failure_set(contract.failures).members) {
+            result.exits.push_back({OwnershipFailure {type}, result.normal->state});
         }
         return result;
     }
@@ -220,12 +232,12 @@ auto OwnershipBodyAnalyzer::call(
         }
         const auto value = restore_facts(std::move(answer.value));
         if (answer.failure.has_value()) {
-            result.exits.push_back(
-                {OwnershipExitKind::Failure, answer.failure, std::move(returned), {}}
-            );
+            result.exits.push_back({OwnershipFailure {*answer.failure}, std::move(returned)});
         } else {
-            join_normal_ownership_state(result.normal, std::optional(std::move(returned)));
-            merge_relationships(result.value, value);
+            join_normal_ownership(
+                result.normal,
+                std::optional(OwnershipNormal {std::move(returned), value})
+            );
         }
     }
     return result;

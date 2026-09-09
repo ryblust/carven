@@ -26,6 +26,10 @@ public:
     auto warning(Diagnostic diagnostic) const noexcept -> void;
     auto has_errors() const noexcept -> bool;
 
+    auto failure() const noexcept -> std::optional<AnalysisFailure> {
+        return has_errors() ? std::optional(AnalysisFailure {}) : std::nullopt;
+    }
+
 private:
     DiagnosticSink* diagnostic_sink;
 };

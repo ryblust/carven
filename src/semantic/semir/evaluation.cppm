@@ -18,18 +18,3 @@ auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expre
 
 auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
     -> EvaluationRule;
-
-auto evaluation_requires_execution(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool;
-
-auto evaluation_reads_storage(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool;
-
-auto evaluation_preserves_full_expression(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool;

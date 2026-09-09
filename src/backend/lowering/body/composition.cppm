@@ -103,11 +103,8 @@ auto known_predicate(const std::optional<LoweringPredicate>& predicate) noexcept
 
 auto predicate_expression(LoweringPredicate predicate) noexcept -> TargetExpr;
 
-class LoweringStmtBuilder;
-using LoweringResultConsumer = std::function<void(LoweringResult, LoweringStmtBuilder&)>;
-
-struct LoweringConsumeResult final {
-    LoweringResultConsumer consume;
+struct LoweringBooleanResult final {
+    TargetIdentifier name;
 };
 
 struct LoweringDiscardResult final {};
@@ -132,7 +129,7 @@ using LoweringResultDestination = std::variant<
     LoweringReturnResult,
     LoweringYieldResult,
     LoweringInitializeResult,
-    LoweringConsumeResult>;
+    LoweringBooleanResult>;
 
 auto returns_result(const LoweringResultDestination& result) noexcept -> bool {
     return std::holds_alternative<LoweringReturnResult>(result)

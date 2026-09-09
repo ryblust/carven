@@ -6,56 +6,10 @@
 #include <cstdlib>
 #include <optional>
 #include <string_view>
-#include <type_traits>
-#include <utility>
 
 namespace carven::testing {
 
 namespace detail {
-
-template<typename Result>
-class TestControl final {
-public:
-    static auto success(Result value) noexcept(std::is_nothrow_move_constructible_v<Result>)
-        -> TestControl {
-        return TestControl(std::move(value));
-    }
-
-    static auto exit() noexcept -> TestControl { return TestControl(std::nullopt); }
-
-    auto has_value() const noexcept -> bool { return result.has_value(); }
-
-    auto value() && noexcept(std::is_nothrow_move_constructible_v<Result>) -> Result {
-        return std::move(*result);
-    }
-
-private:
-    explicit TestControl(Result value) noexcept(std::is_nothrow_move_constructible_v<Result>)
-        : result(std::move(value)) {}
-
-    explicit TestControl(std::nullopt_t) noexcept
-        : result(std::nullopt) {}
-
-    std::optional<Result> result;
-};
-
-template<>
-class TestControl<void> final {
-public:
-    static auto success() noexcept -> TestControl { return TestControl(true); }
-
-    static auto exit() noexcept -> TestControl { return TestControl(false); }
-
-    auto has_value() const noexcept -> bool { return normal; }
-
-    auto value() const noexcept -> void {}
-
-private:
-    explicit TestControl(bool value) noexcept
-        : normal(value) {}
-
-    bool normal;
-};
 
 [[noreturn]] inline auto testing_contract_error() noexcept -> void {
     std::fputs("carven testing contract error\n", stderr);

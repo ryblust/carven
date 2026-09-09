@@ -335,13 +335,22 @@ struct SemLoop final {
     OwnedSemanticRegion steps;
 };
 
+struct SemIntegerRange final {
+    SemanticExpression begin;
+    SemanticExpression end;
+};
+
+struct SemSequenceRange final {
+    SemanticExpression value;
+};
+
+using SemRangeSource = std::variant<SemIntegerRange, SemSequenceRange>;
+
 struct SemRangeLoop final {
     LifetimeRegionID lifetime;
     AccessMode access;
     std::optional<LocalBindingID> binding;
-    SemanticExpression begin;
-    // Present for an integer half-open range; absent for array/text iteration.
-    std::optional<SemanticExpression> end;
+    SemRangeSource source;
     OwnedSemanticRegion body;
 };
 

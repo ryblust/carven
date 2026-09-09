@@ -66,7 +66,8 @@ constexpr auto outcome_constant_evaluation() noexcept -> bool {
     using ConstexprNarrow = carven::runtime::Outcome<int, ParseFailure>;
     using ConstexprWide = carven::runtime::Outcome<int, ParseFailure, NetworkFailure>;
 
-    auto success = ConstexprWide(ConstexprNarrow::success(42));
+    auto success =
+        ConstexprWide(ConstexprNarrow::success_from([]() static noexcept { return 42; }));
     const auto* success_value = success.success_if();
     if (success_value == nullptr || success_value->value != 42) {
         return false;
@@ -118,7 +119,7 @@ static_assert(outcome_constant_evaluation());
 
 TEST_CASE("Runtime Outcome: value and void successes stay flat") {
     using ValueOutcome = carven::runtime::Outcome<int, int>;
-    auto value = ValueOutcome::success(42);
+    auto value = ValueOutcome::success_from([]() static noexcept { return 42; });
     auto* value_success = value.success_if();
     REQUIRE(value_success != nullptr);
     CHECK_EQ(value_success->value, 42);
@@ -126,6 +127,37 @@ TEST_CASE("Runtime Outcome: value and void successes stay flat") {
     using VoidOutcome = carven::runtime::Outcome<void, ParseFailure>;
     auto empty = VoidOutcome::success();
     CHECK(empty.success_if() != nullptr);
+}
+
+TEST_CASE("Runtime Outcome: success factories construct immovable payloads exactly once") {
+    class Fixed final {
+    public:
+        explicit Fixed(int source) noexcept
+            : value(source) {}
+
+        Fixed(const Fixed&) = delete;
+        Fixed(Fixed&&) = delete;
+
+        auto get() const noexcept -> int { return value; }
+
+    private:
+        int value;
+    };
+
+    using Result = carven::runtime::Outcome<Fixed, ParseFailure>;
+    using Wider = carven::runtime::Outcome<Fixed, ParseFailure, NetworkFailure>;
+    static_assert(!std::is_move_constructible_v<Result>);
+    static_assert(carven::runtime::OutcomeWidening<Result, Wider>);
+    static_assert(!std::constructible_from<Wider, Result&&>);
+    static_assert(!std::constructible_from<Fixed, Fixed&&>);
+    auto calls = 0;
+    const auto result = Result::success_from([&]() noexcept {
+        ++calls;
+        return Fixed(42);
+    });
+    REQUIRE(result.success_if() != nullptr);
+    CHECK(result.success_if()->value.get() == 42);
+    CHECK(calls == 1);
 }
 
 TEST_CASE("Runtime Outcome: success and failure may have the same source type") {
@@ -145,7 +177,7 @@ TEST_CASE("Runtime Outcome: widening preserves success and failure states") {
     REQUIRE(widened_failure != nullptr);
     CHECK_EQ(std::move(*widened_failure).offset, 5);
 
-    auto success = Narrow::success(std::string("ready"));
+    auto success = Narrow::success_from([]() static noexcept { return std::string("ready"); });
     auto widened_success = Wide(std::move(success));
     auto* success_value = widened_success.success_if();
     REQUIRE(success_value != nullptr);
@@ -204,7 +236,7 @@ TEST_CASE("Runtime Outcome: admission requires only the performed construction")
     static_assert(!std::is_nothrow_move_constructible_v<Observed>);
     static_assert(std::is_nothrow_move_constructible_v<Value>);
     static_assert(!std::is_move_assignable_v<Value>);
-    auto success = Value::success(source);
+    auto success = Value::success_from([&]() noexcept { return Observed(source); });
     CHECK_EQ(copies, 1);
     CHECK_EQ(moves, 0);
     auto moved = Value(std::move(success));
@@ -218,7 +250,7 @@ TEST_CASE("Runtime Outcome: admission requires only the performed construction")
     REQUIRE(failure.failure_if<Observed>() != nullptr);
     CHECK_EQ(failure.failure_if<Observed>()->value, 42);
     const auto text = std::string("copied text");
-    const auto copied_text = Narrow::success(text);
+    const auto copied_text = Narrow::success_from([&]() noexcept { return std::string(text); });
     REQUIRE(copied_text.success_if() != nullptr);
     CHECK_EQ(copied_text.success_if()->value, text);
 }

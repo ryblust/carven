@@ -191,12 +191,12 @@ TEST_CASE("Target plan: generated test artifacts occupy the private path domain"
     CHECK_FALSE(std::ranges::contains(logical_paths, "carven-test-runner.hpp"));
     CHECK_FALSE(std::ranges::contains(logical_paths, "carven-test-main.cpp"));
 
-    const auto collision_regression = std::array<std::string, 3> {
+    const auto module_and_runner_paths = std::array<std::string, 3> {
         module_implementation_logical_path(std::array<std::string, 1> {"carven-test-main"}),
         "carven/generated/carven-test-runner.hpp",
         "carven/generated/carven-test-main.cpp",
     };
-    verify_target_artifact_logical_paths(collision_regression);
+    verify_target_artifact_logical_paths(module_and_runner_paths);
 }
 
 TEST_CASE("Target plan: malformed artifact path schedules fail before seal") {
@@ -215,26 +215,6 @@ TEST_CASE("Target plan: malformed artifact path schedules fail before seal") {
     CHECK(expect_termination("target-plan-prefix-artifact-path", [&] {
         verify_target_artifact_logical_paths(prefix_collision);
     }));
-}
-
-TEST_CASE("Planned compilation: move poisons every source query") {
-    auto source = PlannedCompilation::build(
-        analyze_failure_profiles(),
-        request(TestGenerationMode::None, "planned-compilation-move")
-    );
-    const auto moved = PlannedCompilation(std::move(source));
-
-    CHECK_GT(moved.target().artifact_count(), 0u);
-    CHECK(expect_termination(
-        "planned-compilation-moved-semantic",
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { static_cast<void>(source.semantic()); }
-    ));
-    CHECK(expect_termination(
-        "planned-compilation-moved-target",
-        // NOLINTNEXTLINE(bugprone-use-after-move): exercises the moved-from contract.
-        [&] { static_cast<void>(source.target()); }
-    ));
 }
 
 TEST_CASE("Target names: private collisions do not perturb public allocation") {

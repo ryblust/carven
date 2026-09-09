@@ -5,9 +5,9 @@ import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
 import :backend.target.builder;
 import :backend.target.expr;
-import :backend.target.type;
 import :backend.target.stmt;
 import :backend.target.symbol;
+import :backend.target.type;
 import :semantic.semir;
 import :support.invariant;
 import :support.visit;
@@ -97,49 +97,12 @@ auto BodyLowerer::condition(const SemanticExpression& source) noexcept
             }
             return LoweringKnownBool {*known};
         }
-        if (evaluation_form(source) == EvaluationForm::Branches) {
-            const auto result = names.fresh(TargetTemporaryNameKind::Logic);
-            consume_expression(
-                source,
-                LoweringLiteralContext::Exact,
-                ResultDemand::Observe,
-                [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
-                    branch.emit(generated_statement(
-                        TargetAssignmentStmt {
-                            .target = name_expression(result),
-                            .op = TargetAssignmentOperator::Assign,
-                            .value =
-                                require_expression(std::move(value), LoweringResultUse::Observe)
-                        }
-                    ));
-                },
-                statements
-            );
-            if (!statements.continues()) {
-                destination.scope(std::move(statements));
-                return std::nullopt;
-            }
-            destination.emit(generated_statement(
-                TargetVariableStmt {
-                    .binding = TargetVariableBinding::MutableValue,
-                    .maybe_unused = false,
-                    .name = result,
-                    .type = context.lower_type(source.type.resolved()),
-                    .initializer = bool_expression(false)
-                }
-            ));
-            destination.scope(std::move(statements));
-            return destination.continues()
-                ? std::optional<LoweringPredicate>(LoweringDynamicBool {name_expression(result)})
-                : std::nullopt;
-        }
         auto value = read_value(full_expression(source), statements);
         if (!statements.continues()) {
             destination.append(std::move(statements));
             return std::nullopt;
         }
-        if (!statements.empty()
-            && evaluation_preserves_full_expression(context.semantic(), source)) {
+        if (!statements.empty() && facts(source).needs_lifetime_scope) {
             const auto result = names.fresh(TargetTemporaryNameKind::Logic);
             destination.emit(generated_statement(
                 TargetVariableStmt {
@@ -172,9 +135,21 @@ auto BodyLowerer::materialize_operand(
     OperandUse use,
     LoweringStmtBuilder& destination
 ) noexcept -> TargetExpr {
-    if (!evaluation_requires_execution(context.semantic(), source)
-        && !evaluation_reads_storage(context.semantic(), source)) {
+    if (!facts(source).requires_execution && !facts(source).reads_storage) {
         return value;
+    }
+    if (conditional_temporaries
+        && (use == OperandUse::Own || use == OperandUse::Snapshot)
+        && !std::holds_alternative<BuiltinTypeValue>(
+            context.semantic().types().type(source.type.resolved()).value
+        )) {
+        auto stored = materialize_temporary(
+            {names.fresh(TargetTemporaryNameKind::Owner),
+             context.lower_type(source.type.resolved())},
+            std::move(value),
+            destination
+        );
+        return use == OperandUse::Own ? transfer_expression(std::move(stored)) : std::move(stored);
     }
     const auto name = names.fresh(TargetTemporaryNameKind::Operand);
     destination.emit(source_statement(
@@ -220,4 +195,27 @@ auto BodyLowerer::operand(
         value = materialize_operand(source, std::move(*value), use, destination);
     }
     return std::move(destination).complete<TargetExpr>(std::move(value));
+}
+
+auto BodyLowerer::materialize_temporary(
+    const LoweringDeferredStorage& storage,
+    TargetExpr value,
+    LoweringStmtBuilder& destination
+) noexcept -> TargetExpr {
+    const auto name = storage.name;
+    if (conditional_temporaries) {
+        declare_deferred(storage, false, *conditional_temporaries);
+        initialize_deferred(storage, std::move(value), destination);
+        return dereference_expression(name_expression(name));
+    }
+    destination.emit(generated_statement(
+        TargetVariableStmt {
+            .binding = TargetVariableBinding::RvalueReference,
+            .maybe_unused = false,
+            .name = name,
+            .type = context.intrinsic_type(TargetSymbol::Auto),
+            .initializer = std::move(value)
+        }
+    ));
+    return name_expression(name);
 }

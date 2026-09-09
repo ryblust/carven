@@ -139,11 +139,11 @@ auto defaults(const Matrix& source) noexcept -> Matrix {
     return result;
 }
 
-template<typename PatternTable>
+template<typename Program, typename PatternTable>
 class CoverageAnalyzer final {
 public:
-    CoverageAnalyzer(const ProgramDraft& source, const PatternTable& patterns) noexcept
-        : draft(source),
+    CoverageAnalyzer(const Program& source, const PatternTable& patterns) noexcept
+        : program(source),
           patterns(patterns) {}
 
     auto exhaustive(
@@ -326,7 +326,7 @@ private:
         return std::visit(
             [&]<typename ID>(ID id) noexcept {
                 static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
-                return id.owner() == draft.identity();
+                return id.owner() == program.identity();
             },
             type
         );
@@ -358,7 +358,7 @@ private:
                     return CoveragePattern {.value = CoverageAny {.type = expected_type}};
                 },
                 [&](const LiteralPattern& value) -> std::expected<CoveragePattern, std::string> {
-                    if (value.constant.owner() != draft.identity()) {
+                    if (value.constant.owner() != program.identity()) {
                         return std::unexpected(
                             "literal coverage constant belongs to another program"
                         );
@@ -390,7 +390,7 @@ private:
                     if (nominal == nullptr) {
                         return std::unexpected("case coverage subject is not an enum");
                     }
-                    if (value.enum_case.owner() != draft.identity()) {
+                    if (value.enum_case.owner() != program.identity()) {
                         return std::unexpected("coverage enum case belongs to another program");
                     }
                     const auto member = enum_case(value.enum_case);
@@ -445,7 +445,7 @@ private:
 
     auto lower(PatternID id, ConstructionTypeRef expected_type) noexcept
         -> std::expected<CoveragePattern, std::string> {
-        if (id.owner().program() != draft.identity()) {
+        if (id.owner().program() != program.identity()) {
             return std::unexpected("coverage pattern belongs to another semantic program");
         }
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
@@ -574,7 +574,14 @@ private:
             return std::unexpected("enum coverage constructor has the wrong witness arity");
         }
         const auto enum_case = this->enum_case(value->enum_case);
-        auto witness = std::format(".{}", draft.spelling_copy(enum_case.name));
+        const auto name = [&]() noexcept -> std::string {
+            if constexpr (std::same_as<Program, ProgramDraft>) {
+                return program.spelling_copy(enum_case.name);
+            } else {
+                return std::string(program.provenance().spelling(enum_case.name));
+            }
+        }();
+        auto witness = std::format(".{}", name);
         if (!payload.empty()) {
             witness += '(';
             for (auto index = 0uz; index < payload.size(); ++index) {
@@ -663,37 +670,37 @@ private:
 
     auto type(TypeID id) const noexcept -> CanonicalType {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return draft.type_copy(id);
+            return program.type_copy(id);
         } else {
-            return draft.types().type(id);
+            return program.types().type(id);
         }
     }
 
     auto constant(ConstantID id) const noexcept -> ConstantFact {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return draft.constant_copy(id);
+            return program.constant_copy(id);
         } else {
-            return draft.constants().constant(id);
+            return program.constants().constant(id);
         }
     }
 
     auto enumeration(EnumID id) const noexcept {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return draft.enum_declaration_copy(id);
+            return program.enum_declaration_copy(id);
         } else {
-            return draft.declarations().enumeration(id);
+            return program.declarations().enumeration(id);
         }
     }
 
     auto enum_case(EnumCaseID id) const noexcept {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return draft.construction_enum_case_declaration_copy(id);
+            return program.construction_enum_case_declaration_copy(id);
         } else {
-            return draft.declarations().enum_case(id);
+            return program.declarations().enum_case(id);
         }
     }
 
-    const ProgramDraft& draft;
+    const Program& program;
     const PatternTable& patterns;
 };
 
@@ -709,10 +716,10 @@ auto compute_pattern_coverage(
 }
 
 auto patterns_exhaustive(
-    const ProgramDraft& draft,
+    const SemIRProgram& semantic,
     const ImmutableBodyTable<Pattern, PatternID>& patterns,
     TypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<bool, std::string> {
-    return CoverageAnalyzer(draft, patterns).exhaustive(subject_type, arms);
+    return CoverageAnalyzer(semantic, patterns).exhaustive(subject_type, arms);
 }

@@ -18,6 +18,66 @@ fn returning() -> i32 {
     return 7;
 }
 
+fn fixed_success() -> FixedOwner throw Failure {
+    return FixedOwner { 41 };
+}
+
+fn fixed_plain() -> FixedOwner {
+    return FixedOwner { 42 };
+}
+
+struct FixedBox { value: FixedOwner, }
+
+fn boxed_after_loop(selected: bool, skip: bool) -> FixedBox {
+    return FixedBox { value: if (selected) {
+        for var n = 0; n < 2; n += 1 {
+            mark(n + 1);
+            if skip { continue; }
+            break;
+        }
+        FixedOwner { 51 }
+    } else { FixedOwner { 52 } } };
+}
+
+test "Lifetimes: loop-local transfers preserve direct branch construction" {
+    reset();
+    if true {
+        let box = boxed_after_loop(true, false);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("1 51 9 -51 "));
+    reset();
+    if true {
+        let box = boxed_after_loop(true, true);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("1 2 51 9 -51 "));
+    reset();
+    if true {
+        let box = boxed_after_loop(false, false);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("52 9 -52 "));
+}
+
+test "Lifetimes: failing results and callable adaptation directly construct fixed owners" {
+    reset();
+    try {
+        fixed_success()?.probe(0, 0);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("41 9 -41 "));
+    reset();
+    let callback: fn() -> FixedOwner throw Failure = fixed_plain;
+    try {
+        callback()?.probe(0, 0);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("42 9 -42 "));
+}
+
 fn failing() -> i32 throw Failure {
     let owner = Owner { 2 };
     throw Failure::Stop;
@@ -202,7 +262,7 @@ test "Lifetimes: discarded outcomes destroy success owners and propagate failure
     reset();
     try { owned_outcome(true)?; } catch { Failure(_) => { mark(8); }, }
     mark(9);
-    check(matches("1 101 -1 -1 9 "));
+    check(matches("1 -1 9 "));
     reset();
     try { owned_outcome(false)?; } catch { Failure(_) => { mark(8); }, }
     mark(9);
@@ -286,4 +346,37 @@ test "Lifetimes: closure parameters construct directly from owned temporaries" {
     let stateless = [](&&value: Owner) => observe_owner(value, 9);
     stateless(&&Owner { 2 });
     check(matches("2 9 -2 "));
+}
+
+fn conditional_outcome(flag: bool) -> bool throw Failure {
+    return (flag && (owned_outcome(true)?.probe() as bool))
+        && (matches("1 11 ") as bool);
+}
+
+fn conditional_branch_owner(flag: bool) -> bool {
+    return (flag && ((if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } })
+        .probe(event(5), event(6)) as bool)) && (matches("3 5 6 9 ") as bool);
+}
+
+fn conditional_failure(flag: bool) -> bool throw Failure {
+    return (Owner { 1 }.probe() as bool)
+        && (flag && (owned_outcome(false)?.probe() as bool));
+}
+
+test "Lifetimes: joined outcomes and branch values retain full expression owners" {
+    reset();
+    try { check(conditional_outcome(true)?); } catch { Failure(_) => { fail("unexpected failure"); }, }
+    check(matches("1 11 -1 "));
+    reset();
+    try { check(!conditional_outcome(false)?); } catch { Failure(_) => { fail("unexpected failure"); }, }
+    check(matches(""));
+    reset();
+    check(conditional_branch_owner(true));
+    check(matches("3 5 6 9 -3 "));
+    reset();
+    check(!conditional_branch_owner(false));
+    check(matches(""));
+    reset();
+    try { let _ = conditional_failure(true)?; } catch { Failure(_) => { mark(8); }, }
+    check(matches("1 11 -1 8 "));
 }

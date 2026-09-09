@@ -49,9 +49,9 @@ auto main(int argc, char** argv) -> int {
     using Outcome = carven::runtime::Outcome<Foreign, Foreign>;
     if (operation == "copy") {
         const auto source = Foreign(false);
-        static_cast<void>(Outcome::success(source));
+        static_cast<void>(Outcome::success_from([&]() { return Foreign(source); }));
     } else if (operation == "move") {
-        auto source = Outcome::success(Foreign(false));
+        auto source = Outcome::success_from([]() noexcept { return Foreign(false); });
         source.success_if()->value.fail = true;
         static_cast<void>(Outcome(std::move(source)));
     } else if (operation == "failure") {

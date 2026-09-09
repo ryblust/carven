@@ -4,8 +4,8 @@ import :backend.generation.names;
 import :backend.lowering.body.decl;
 import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
-import :backend.target.stmt;
 import :backend.target.origin;
+import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.traversal;
 import :semantic.semir;
@@ -37,17 +37,7 @@ BodyLowerer::BodyLowerer(
         names.reserve(inputs.captures[index].spelling());
         names.reserve(inputs.captures[index].spelling(), callable_scope);
     }
-    visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
-        const auto* take = std::get_if<SemTake>(&expression.value);
-        if (take == nullptr) {
-            return;
-        }
-        const auto* binding = std::get_if<SemBinding>(&take->place->value);
-        if (binding == nullptr) {
-            invariant_violation("take source is not a complete owner binding");
-        }
-        taken_bindings.insert(binding->binding);
-    });
+    prepare_evaluation();
     for (const auto binding : body.bindings()) {
         if (!binding_names.contains(binding.id)) {
             const auto preferred =
@@ -82,55 +72,25 @@ auto BodyLowerer::finish() noexcept -> LoweredBody {
     };
 }
 
-auto BodyLowerer::region(const SemanticRegion& source, LoweringResultDestination result) noexcept
-    -> LoweringStmtBuilder {
+auto BodyLowerer::region(
+    const SemanticRegion& source,
+    const LoweringResultDestination& result
+) noexcept -> LoweringStmtBuilder {
+    auto* const outer_storage = std::exchange(conditional_temporaries, nullptr);
     auto statements = LoweringStmtBuilder();
-    const auto append_from = [&](this const auto& self,
-                                 std::size_t index,
-                                 LoweringStmtBuilder& destination) noexcept -> void {
-        for (; index < source.statements.size() && destination.continues(); ++index) {
-            const auto& item = source.statements[index];
-            if (const auto* initialization = std::get_if<SemInitialize>(&item.value);
-                initialization != nullptr
-                && can_extend_branch_scope(initialization->initializer)
-                && external_exits(initialization->initializer)) {
-                structured_expression(
-                    initialization->initializer,
-                    LoweringConsumeResult {
-                        .consume =
-                            [&](LoweringResult value, LoweringStmtBuilder& branch) noexcept {
-                                auto binding = LoweringStmtBuilder();
-                                declare_binding(
-                                    initialization->binding,
-                                    require_expression(std::move(value)),
-                                    binding
-                                );
-                                binding.attribute(
-                                    TargetSourceExpansionAttribution {
-                                        .origin = target_source_origin(
-                                            context.semantic().provenance(),
-                                            item.origin
-                                        )
-                                    }
-                                );
-                                branch.append(std::move(binding));
-                                self(index + 1uz, branch);
-                            }
-                    },
-                    destination
-                );
-                return;
-            }
-            static_cast<void>(destination.accept(statement(item)));
+    for (const auto& item : source.statements) {
+        if (!statements.continues()) {
+            break;
         }
-        if (destination.continues()) {
-            if (source.result.has_value()) {
-                result_expression(*source.result, result, destination);
-            } else {
-                deliver_result(LoweringCompleted {}, result, destination);
-            }
+        static_cast<void>(statements.accept(statement(item)));
+    }
+    if (statements.continues()) {
+        if (source.result.has_value()) {
+            result_expression(*source.result, result, statements);
+        } else {
+            deliver_result(LoweringCompleted {}, result, statements);
         }
-    };
-    append_from(0uz, statements);
+    }
+    conditional_temporaries = outer_storage;
     return statements;
 }

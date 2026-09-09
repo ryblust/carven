@@ -71,7 +71,7 @@ using VoidOutcome = carven::runtime::Outcome<void, ParseFailure>;
 using VoidOutcomeFunctionRef = carven::runtime::FunctionRef<VoidOutcome(int) noexcept>;
 
 auto narrow_result(int value) noexcept -> NarrowOutcome {
-    return value >= 0 ? NarrowOutcome::success(value)
+    return value >= 0 ? NarrowOutcome::success_from([value]() noexcept { return value; })
                       : NarrowOutcome::failure(ParseFailure {.offset = -value});
 }
 
@@ -233,7 +233,7 @@ TEST_CASE("Runtime: FunctionRef widens compatible function, object, and temporar
     CHECK_EQ(std::move(*object_failure_value).offset, 11);
 
     const auto temporary = WideFunctionRef([](int value) static noexcept -> NarrowOutcome {
-        return NarrowOutcome::success(value * 2);
+        return NarrowOutcome::success_from([value]() noexcept { return value * 2; });
     });
     auto temporary_success = temporary(6);
     auto* temporary_value = temporary_success.success_if();

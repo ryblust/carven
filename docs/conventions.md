@@ -20,12 +20,14 @@ implementation-source rules.
 ## Borrowing and storage
 
 - References, pointers, spans, and string views are borrows. Their owner
-  outlives every use.
+  outlives every use. Moving or consuming an owner ends its outstanding borrows.
 - A required borrow is a reference. A nullable borrow is a raw pointer.
-- Variable-size owned storage uses a standard value container.
+- Variable-size owned storage uses a standard value container. Construction-time
+  readers return values when container growth can invalidate borrows.
+- Expose the owner operations used by production callers. State borrow lifetimes
+  at the owning boundary.
 - A function does not return a view into temporary or producer-private state.
-- Do not add a compatibility adapter, alias, branch, or parallel path for a
-  compiler-private interface.
+- Update compiler-private interfaces together with their callers.
 
 Required construction facts are explicit at every construction site. A
 required fact does not use a default value to mean unfinished analysis.

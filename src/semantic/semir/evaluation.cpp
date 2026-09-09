@@ -1,8 +1,7 @@
 module carven:semantic.semir.evaluation.impl;
 
-import :semantic.semir;
 import :semantic.semir.evaluation;
-import :semantic.semir.traversal;
+import :semantic.semir;
 import :support.visit;
 import std;
 
@@ -117,53 +116,4 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
         },
         expression.value
     );
-}
-
-auto evaluation_requires_execution(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool {
-    const auto rule = evaluation_rule(semantic, expression);
-    return rule.action == EvaluationAction::Required
-        || std::ranges::any_of(rule.operands, [&](const auto* operand) noexcept {
-               return operand != nullptr && evaluation_requires_execution(semantic, *operand);
-           });
-}
-
-auto evaluation_reads_storage(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool {
-    if (std::holds_alternative<SemBinding>(expression.value)) {
-        return true;
-    }
-    const auto rule = evaluation_rule(semantic, expression);
-    return rule.action == EvaluationAction::Required
-        || std::ranges::any_of(rule.operands, [&](const auto* operand) noexcept {
-               return operand != nullptr && evaluation_reads_storage(semantic, *operand);
-           });
-}
-
-auto evaluation_preserves_full_expression(
-    const SemIRProgram& semantic,
-    const SemanticExpression& expression
-) noexcept -> bool {
-    const auto rule = evaluation_rule(semantic, expression);
-    if (rule.action != EvaluationAction::Required) {
-        return std::ranges::any_of(rule.operands, [&](const auto* operand) noexcept {
-            return operand != nullptr && evaluation_preserves_full_expression(semantic, *operand);
-        });
-    }
-    auto preserve = false;
-    visit_semantic_nodes(expression, [&](const SemanticExpression& value) noexcept {
-        const auto* builtin =
-            std::get_if<BuiltinTypeValue>(&semantic.types().type(value.type.resolved()).value);
-        if (builtin == nullptr
-            && !scalar(semantic, value.type.resolved())
-            && !std::holds_alternative<SemCallable>(value.value)
-            && !std::holds_alternative<SemEnumConstructor>(value.value)) {
-            preserve = true;
-        }
-    });
-    return preserve;
 }

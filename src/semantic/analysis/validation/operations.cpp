@@ -21,7 +21,7 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                 [&](const SemUnary& value) noexcept {
                     check_result(
                         decide_unary_operator(
-                            draft->types(),
+                            program.types(),
                             value.operation,
                             value.operand->type.resolved()
                         ),
@@ -31,14 +31,14 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                 [&](const SemBinary& value) noexcept {
                     check_result(
                         decide_binary_operator(
-                            draft->types(),
+                            program.types(),
                             value.operation,
                             value.left->type.resolved(),
                             value.right->type.resolved(),
                             true,
                             type_supports_equality(
-                                draft->types(),
-                                draft->declarations(),
+                                program.types(),
+                                program.declarations(),
                                 value.left->type.resolved()
                             )
                         ),
@@ -54,7 +54,7 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                             require_enumeration(enumeration->enumeration).representation
                         );
                     const auto decision = decide_cast(
-                        draft->types(),
+                        program.types(),
                         value.operand->type.resolved(),
                         source.type.resolved(),
                         numeric_enum
@@ -81,7 +81,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
     std::visit(
         Overloaded {
             [&](const SemConstant& value) noexcept {
-                if (draft->constants().constant(value.constant).type != source.type.resolved()) {
+                if (program.constants().constant(value.constant).type != source.type.resolved()) {
                     invariant_violation("constant expression type mismatch");
                 }
             },
@@ -95,7 +95,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("invalid C++ operation operands");
                 }
                 if (const auto* name = std::get_if<CppNameOperation>(&value.operation)) {
-                    static_cast<void>(draft->declarations().module_decl(name->name.context_module));
+                    static_cast<void>(
+                        program.declarations().module_decl(name->name.context_module)
+                    );
                 }
                 if (std::holds_alternative<CppCStringOperation>(value.operation)
                     && require_type(source.type.resolved()).value
@@ -142,11 +144,11 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("C++ call differs from its result query");
                 }
                 for (const auto& name : cpp_type_names(expected)) {
-                    static_cast<void>(draft->declarations().module_decl(name.context_module));
+                    static_cast<void>(program.declarations().module_decl(name.context_module));
                 }
             },
             [&](const SemCall& value) noexcept {
-                const auto signature = draft->callable_signatures().signature(
+                const auto signature = program.callable_signatures().signature(
                     signature_for_type(value.callee->type.resolved())
                 );
                 if (signature.result != source.type.resolved()
@@ -302,7 +304,8 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemClosure& value) noexcept {
-                const auto& closure = related_body(*draft->body_for_callable(value.callable));
+                const auto& closure =
+                    related_body(*program.declarations().body_for_callable(value.callable));
                 if (closure.inputs().captures.size() != value.captures.size()) {
                     invariant_violation("closure capture arity mismatch");
                 }
