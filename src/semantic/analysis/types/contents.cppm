@@ -7,6 +7,7 @@ import std;
 struct TypeContents final {
     bool closure_owner;
     bool callable_view;
+    bool string_owner;
 };
 
 auto compute_type_contents(

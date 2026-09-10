@@ -1,91 +1,167 @@
 # Design principles
 
-Carven lets programmers express intent and supplies the routine boilerplate
-and mechanism composition a skilled C++ programmer would otherwise write.
-These principles provide criteria for evaluating design tradeoffs and admitting
-features.
+Carven lets programmers express intent and supplies the C++ operations, storage,
+and control flow needed to carry it out. It aims to make ownership, access, and
+failure easier to compose while retaining native performance and access to the
+C++ ecosystem.
 
-## Source intent
+These principles develop the goals in Why Carven into criteria for language and
+implementation decisions. They describe the design direction; the language and
+toolchain references state supported behavior and current restrictions.
 
-Source should expose distinctions that affect how a programmer reasons about
-access, ownership, mutation, lifetime, control, failure, allocation, or
-interoperability. A source distinction needs an observable operation,
-guarantee, cost, or boundary; equivalent C++ mechanisms do not require separate
-source features.
+## Intent over mechanism
 
-Representation choices remain with the implementation when they preserve the
-promised behavior. Parsing should depend on tokens and delimiters rather than
-semantic lookup, so a source form keeps the same structure across scopes.
+Source should state whether an operation reads, mutates, or takes ownership of a
+value, what it captures, and how it handles failure. The compiler selects and
+composes the constructors, references, storage, and control flow that realize
+those choices. This removes routine mechanism management while keeping decisions
+that affect program behavior visible to the programmer.
 
-An omitted spelling needs a bounded, documented rule. Type context may remove
-repeated type information, but must not silently introduce ownership transfer,
-mutable access, capture, failure handling, or a lifetime extension. An inference
-rule states its inputs, priority, stopping conditions, and incompatible cases.
+Expose distinctions that affect access, ownership, mutation, lifetime, control,
+failure, allocation, or interoperability. Representation choices remain internal
+when they preserve the promised behavior. Source-level control is needed where a
+choice changes the operation the programmer requests or the guarantee it provides.
 
-## Semantic authority
+Give omitted spellings bounded rules. Type context can remove repeated type
+information, and inference can derive facts from a body. Each rule states its
+inputs, priority, stopping conditions, and incompatible cases. Ownership transfer,
+mutable access, capture, failure handling, and retained lifetimes need explicit
+source forms or documented rules at the construct that supplies them.
 
-Carven determines the meaning and validity of its own operations. C++ realizes
-that meaning; a representation choice must not silently add a language rule.
-Each requirement must follow from a Carven rule or an explicit boundary
-contract, rather than emerge from the chosen implementation.
+## Typed failure contracts
 
-A boundary may delegate native capabilities to C++ without reproducing its type
-system or library internals in Carven analysis. Its contract must identify the
-required operations and the guarantees delegated to C++. C++ traits and
-protocols may check those requirements, but declaring an implementation
-contract does not justify imposing incidental requirements on admitted source
-operations.
+A callable's contract describes its possible failures alongside its successful
+result. Composition should preserve distinct failure types and payloads so a
+caller can decide what to propagate, recover from, or translate at an interface.
+The same model applies to ordinary functions and callbacks.
 
-Each fact has one authority. Later consumers should use established facts
-rather than reconstruct meaning from generated names or text. Reusable
-libraries and native build tools retain their own responsibilities; integration
-with Carven does not grant them authority over its language rules.
+Inference reduces repetition inside private implementations. Shared interfaces
+state bounds that their implementations must satisfy. Propagation and handling
+remain visible at their source positions, and failure behavior composes with
+ordinary evaluation order, ownership, and cleanup.
 
-## Requirements follow operations
+Failure contracts bound which failures can escape and require handling to cover
+the relevant cases. They preserve information for recovery decisions without
+selecting a recovery policy. Propagating a failure preserves completed effects;
+rollback, when required, is an application operation with its own contract.
 
-An implementation should require only the capabilities needed by the promised
-operation. Reading an object does not require copying it; transferring an owner
-does not require default construction or assignment. A temporary, wrapper, or
-storage strategy must accommodate admitted types rather than narrow them for
-implementation convenience.
+## Zero-overhead abstractions
 
-This applies equally to compiler-generated types and library-backed types.
-Native construction and library protocols may implement an operation without
-requiring Carven to duplicate their internal logic.
+The cost baseline is skilled handwritten C++ preserving the same evaluation
+order, ownership, lifetimes, and safety checks. Prefer direct native operations
+when they express those guarantees. An abstraction should not introduce costs
+unrelated to the behavior it provides, and compile-time distinctions should leave
+no runtime state unless execution needs it.
 
-## Guarantees match enforcement
+Storage, allocation, indirection, checks, and dispatch need an identifiable
+behavioral purpose. Compiler analysis may need information that the running
+program does not; that information alone does not justify runtime storage.
+Evaluate compiler time and memory separately from generated-program costs.
 
-Safety claims must match enforced checks and stated assumptions. A restriction
-should identify the guarantee it provides; an escape boundary should identify
-the guarantees entrusted to its author. Diagnostics should distinguish a
-Carven rule violation from a native contract violation at that boundary.
+Generated C++ remains inspectable so representation and cost can be examined.
+Performance claims require concrete comparison implementations, defined workloads,
+and measurements. Correctness must hold without optional optimizer transformations.
 
-Checking access, ownership, and lifetime does not establish the functional
-correctness of a type's copy, move, assignment, or business logic. Designs must
-make that distinction clear when stating what Carven guarantees.
+## Build on the C++ ecosystem
 
-## Cost follows behavior
+Use the C++ community's libraries, tools, and expertise as foundations for Carven
+facilities. A mature native capability can support a built-in language operation
+when its behavior, access requirements, and lifetime boundaries are defined.
+Carven can provide a coherent source interface while reusing the native
+implementation behind it.
 
-The cost baseline is skilled handwritten C++ preserving the same guarantees,
-including evaluation order, ownership, and safety checks. Prefer direct native
-operations when they express those guarantees. Correctness must not depend on
-an optional optimizer transformation, and performance claims require
-measurement of the relevant workload.
+Evaluate a native foundation for its behavior, maturity, performance, portability,
+and fit with the intended language operation. Reuse its implementation and
+established protocols where they satisfy that operation. Reimplementing library
+internals in compiler analysis needs a concrete semantic requirement.
 
-Compile-time distinctions should leave no runtime state unless execution still
-needs them. A runtime object, allocation, indirection, or synthetic control
-mechanism needs an identifiable behavioral requirement. Persistent storage or
-compiler representations need a later consumer and a reason the information
-must survive until then; an analysis representation does not by itself justify
-a corresponding runtime representation.
+The source facility presents the concepts needed by Carven programmers; the
+underlying library supplies the implementation. This separation lets the language
+benefit from native expertise without making every library detail a source concept.
 
-## Feature admission
+## Semantic authority and native boundaries
+
+Carven is a source-generation step in an existing native build. Header imports,
+explicit native calls, and generated public interfaces connect Carven programs to
+C++ providers and consumers. Native tools retain responsibility for compilation,
+linking, and their build configuration.
+
+Carven defines the meaning of its operations, including evaluation order, access,
+ownership, and failures. C++ checks explicitly delegated declarations, overloads,
+templates, conversions, and construction. Each boundary identifies the required
+operations and the responsibilities of Carven, the provider, and the caller.
+Where behavior depends on the native environment, state that dependency.
+
+Native providers and callers own specified obligations for external object
+validity, retained references, and reentry. Carven retains authority over its own
+access and ownership rules at those boundaries. Native exception recovery belongs
+in C++ before an exception escapes a generated `noexcept` boundary.
+
+Keep one authority for each fact. Later compiler stages consume established
+semantic facts rather than reconstructing meaning from generated names or text.
+Native traits and protocols check delegated requirements. Their results establish
+those native facts; they do not independently define Carven operations.
+
+## Require only what an operation needs
+
+An operation should require only the capabilities needed to perform it. Reading
+an object should not require user-defined copying. Constructing a destination
+should not require default construction and assignment merely because an
+implementation chose to create empty storage and fill it later. Transferring an
+owner needs the applicable construction operation, not unrelated capabilities.
+
+This principle constrains how the compiler composes mechanisms. Temporaries,
+wrappers, and storage strategies must accommodate the admitted operations and
+types, including both compiler-generated and library-backed types. Evaluate the
+required constructors, assignments, and other capabilities at each generated
+step, including paths that introduce intermediate storage.
+
+If the implementation imposes additional requirements, identify the affected
+cases as a current limitation. Resolve the implementation or reconsider the
+source contract explicitly. Implementation convenience alone does not justify
+narrowing the types an operation admits.
+
+## Practical safety
+
+Distinguish functional correctness from correct use. An implementation's author
+is responsible for whether it fulfills its purpose. The language defines the
+conditions under which operations may be used, including access, ownership,
+lifetime, and failure obligations. It provides necessary checks within that model;
+application requirements and recovery decisions remain with their authors.
+
+Check operation conditions where the required facts are available. Use static
+checks where sufficient information exists and runtime checks where the
+operation's contract requires them. The choice should
+account for the errors prevented, the burden on ordinary use, and runtime and
+integration costs. Clear defaults and explicit consequential operations should
+make correct use straightforward, with checks preventing violations of the
+conditions they can establish.
+
+State what each check establishes and where its evidence ends. A non-null address
+alone does not establish a live object, and a defined termination path provides no
+recovery guarantee. Access and lifetime checks constrain storage use without
+proving that an algorithm produces the intended result.
+
+Safety claims must match enforced checks and stated assumptions. Restrictions
+should identify the guarantees they provide. Diagnose violations at the boundary
+that checks them and keep known limitations visible.
+
+## Simplicity and feature admission
+
+Give the same intent one direct, consistent expression. Additional forms need a
+meaningful difference in behavior or contract; equivalent C++ mechanisms alone
+do not justify separate source forms. Prefer a small set of composable rules over
+parallel mechanisms and special cases that users must learn to choose between.
+Parsing should depend on tokens and delimiters so a form keeps the same structure
+across scopes.
 
 A feature needs a user intent or guarantee that existing forms do not adequately
-express. Technical feasibility alone is insufficient: its benefit must justify
-its semantic, runtime, interoperability, and tooling costs.
+express. Technical feasibility alone is insufficient. Evaluate the rules,
+exceptions, interactions, runtime costs, and tooling work it introduces. Its
+benefit must justify the burden on both programmers and implementers.
 
-A supported slice may be small, but every accepted form must have a coherent
-meaning that can be implemented and verified across its boundaries. Unsupported
-neighboring forms must be rejected. Syntax should follow settled meaning rather
-than reserve forms for an undecided design.
+Keep each supported scope coherent across its boundaries. Reject unsupported
+forms and identify the rejection boundary. Syntax follows settled meaning;
+speculative extension points need an actual consumer. Internal refactoring does
+not require preserving obsolete representations, while compatibility obligations
+need an identified interface and consumer.

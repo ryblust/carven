@@ -10,7 +10,8 @@ auto requires_literal_value(TokenKind kind) noexcept -> bool {
     return kind == TokenKind::NumberLiteral
         || kind == TokenKind::CharLiteral
         || kind == TokenKind::StringLiteral
-        || kind == TokenKind::CStringLiteral;
+        || kind == TokenKind::CStringLiteral
+        || kind == TokenKind::InterpolationText;
 }
 
 auto require_token_capacity(std::size_t token_count) noexcept -> void {
@@ -25,6 +26,8 @@ auto literal_token_kind(const TokenLiteralValue& value) noexcept -> TokenKind {
             if constexpr (std::same_as<Value, IntegerLiteralValue>
                           || std::same_as<Value, FloatingLiteralValue>) {
                 return TokenKind::NumberLiteral;
+            } else if constexpr (std::same_as<Value, InterpolationTextValue>) {
+                return TokenKind::InterpolationText;
             } else if constexpr (std::same_as<Value, StringLiteralValue>) {
                 return TokenKind::StringLiteral;
             } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
@@ -104,6 +107,12 @@ auto TokenBuffer::append_literal_token(Span span, TokenLiteralValue value) noexc
 auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::string_view {
     switch (kind) {
         using enum TokenKind;
+        case InterpolationStart: return "InterpolationStart";
+        case InterpolationEnd:   return "InterpolationEnd";
+        case InterpolationText:  return "InterpolationText";
+        case InterpolationOpen:  return "InterpolationOpen";
+        case InterpolationClose: return "InterpolationClose";
+        case InterpolationSpec:  return "InterpolationSpec";
         case Identifier:         return "Identifier";
         case NumberLiteral:      return "NumberLiteral";
         case CharLiteral:        return "CharLiteral";

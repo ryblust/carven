@@ -1,6 +1,8 @@
 import "failure_contracts/evaluation_order.hpp";
 
-struct ReadError { code: i32 }
+struct ReadError {
+    code: i32,
+}
 
 private import(cpp) fn cv_test_reset_effect_trace();
 private import(cpp) fn cv_test_record_effect(marker: i32) -> i32;
@@ -24,9 +26,7 @@ fn effect_array(marker: i32, fail: bool) -> [i32; 2] throw ReadError {
     return [4, 9];
 }
 
-fn pair_values(left: i32, right: i32) -> i32 {
-    return left * 10 + right;
-}
+fn pair_values(left: i32, right: i32) -> i32 => left * 10 + right;
 
 test "Failure contracts: effectful expressions preserve lexical placement" {
     cv_test_reset_effect_trace();

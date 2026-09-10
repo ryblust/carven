@@ -44,7 +44,7 @@ test "C++ results: returned references materialize owned values" {
     let snapshot = identity(value);
     value = 9;
     check(snapshot == 8);
-    let captured = [snapshot]() -> i32 { return snapshot; };
+    let captured = [snapshot]() -> i32 => snapshot;
     check(captured() == 8);
 }
 

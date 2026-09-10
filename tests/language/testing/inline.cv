@@ -1,21 +1,15 @@
 import "testing/inline.hpp";
 
-fn private_answer() -> i32 {
-    return 42;
-}
+fn private_answer() -> i32 => 42;
 
-fn check(value: bool) -> bool {
-    return value;
-}
+fn check(value: bool) -> bool => value;
 
 private import(cpp) fn cv_test_inline_reset_trace();
 private import(cpp) fn cv_test_inline_condition(digit: i32, value: bool) -> bool;
 private import(cpp) fn cv_test_inline_mark(digit: i32);
 private import(cpp) fn cv_test_inline_trace() -> i32;
 
-fn traced_condition(digit: i32, value: bool) -> bool {
-    return cv_test_inline_condition(digit, value);
-}
+fn traced_condition(digit: i32, value: bool) -> bool => cv_test_inline_condition(digit, value);
 
 fn traced_message(digit: i32, value: str) -> str {
     cv_test_inline_mark(digit);
@@ -45,7 +39,7 @@ test "Testing: inline-test context reaches control blocks but not lambdas" {
         1 => { check(true); },
         _ => { fail("unselected arm"); },
     }
-    let callback = []() { return check(true); };
+    let callback = []() => check(true);
     let ordinary = check(callback());
     check(ordinary);
 }

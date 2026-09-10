@@ -193,6 +193,18 @@ private:
         visit_fields(value.span, value.value);
     }
 
+    auto visit(const ASTInterpolationText&) noexcept -> void {}
+
+    auto visit(const ASTInterpolationHole& value) noexcept -> void {
+        visit_fields(value.expression, value.colon_span, value.specification);
+    }
+
+    auto visit(const ASTInterpolationPart& value) noexcept -> void {
+        visit_fields(value.span, value.value);
+    }
+
+    auto visit(const ASTInterpolationExpr& value) noexcept -> void { visit(value.parts); }
+
     auto visit(const ASTLiteral& value) noexcept -> void { visit(value.span); }
 
     auto visit(const ASTControlTransfer& value) noexcept -> void {

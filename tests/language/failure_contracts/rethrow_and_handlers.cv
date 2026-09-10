@@ -1,9 +1,18 @@
 import "failure_contracts/rethrow_and_handlers.hpp";
 
-struct ReadError { code: i32 }
-struct ParseError { code: i32 }
+struct ReadError {
+    code: i32,
+}
+
+struct ParseError {
+    code: i32,
+}
+
 struct UnreachableError {}
-struct RecursiveError { code: i32 }
+
+struct RecursiveError {
+    code: i32,
+}
 
 enum DecodeError {
     Empty,

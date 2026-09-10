@@ -1,6 +1,4 @@
-export fn child_value() -> i32 {
-    return 29;
-}
+export fn child_value() -> i32 => 29;
 
 test "Modules: a colliding child module receives a target-only suffix" {
     check(child_value() == 29);

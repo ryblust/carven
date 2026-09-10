@@ -1,11 +1,27 @@
 # Restock and dispatch inventory
 
+Read `main.cv` in source order: the console import, the `Stock` record,
+`restock` with a Write parameter, and `dispatch` with a Take parameter. Then
+follow the `stock` binding through `main`:
+
+- `restock(&stock, ...)` changes the existing stock from 4 to 7.
+- `let snapshot = stock` creates a separate record value.
+- The second restock changes the original to 9; the snapshot remains 7.
+- `dispatch(&&stock)` transfers ownership to the function.
+- A complete assignment restores `stock` with one unit.
+
+This record contains only an integer. Copies of values containing non-owning
+handles can retain aliases to external storage.
+
+From the repository root:
+
 ```sh
-./xmakew build example-inventory
-./xmakew run example-inventory
+./xmakew build
+./xmakew build carven-example-inventory
+./xmakew run carven-example-inventory
 ```
 
-Run from the repository root after [building the compiler](../README.md).
+Expected output:
 
 ```text
 Snapshot:
@@ -16,18 +32,5 @@ Replacement stock:
 1
 ```
 
-Follow the same `stock` binding through `main.cv`:
-
-- `restock(&stock, ...)` grants Write access to the existing stock.
-- `let snapshot = stock` creates a separate record value.
-- `dispatch(&&stock)` transfers ownership to the function.
-- A complete assignment initializes `stock` again after the transfer.
-
-The snapshot stays at 7 after the original reaches 9. This record contains only
-an integer; copying an external C++ handle can instead preserve an alias to
-external storage.
-
 Try reading `stock.units` immediately after dispatch and before reassignment;
 Carven rejects use of the transferred owner. Restore the program to run it.
-
-Next: [Shipping](../modules/).

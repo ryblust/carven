@@ -1,22 +1,12 @@
-fn increment(value: i32) -> i32 {
-    return value + 1;
-}
+fn increment(value: i32) -> i32 => value + 1;
 
-fn first(value: i32) -> i32 {
-    return value + 1;
-}
+fn first(value: i32) -> i32 => value + 1;
 
-fn second(value: i32) -> i32 {
-    return value + 2;
-}
+fn second(value: i32) -> i32 => value + 2;
 
-fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 {
-    return callback(value);
-}
+fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 => callback(value);
 
-fn apply(callback: fn(i32) -> i32, value: i32) -> i32 {
-    return callback(value);
-}
+fn apply(callback: fn(i32) -> i32, value: i32) -> i32 => callback(value);
 
 fn replace_with_second(&callback: fn(i32) -> i32) {
     callback = second;
@@ -24,9 +14,7 @@ fn replace_with_second(&callback: fn(i32) -> i32) {
 
 test "Lambdas: lambdas capture values and adapt callable views" {
     var source = 10;
-    let snapshot = [source](_: i32) {
-        return source;
-    };
+    let snapshot = [source](_: i32) => source;
     source = 20;
 
     let mutate = [&source](delta: i32) {
@@ -41,9 +29,9 @@ test "Lambdas: lambdas capture values and adapt callable views" {
     check(invoke(increment, 4) == 5);
     let callback = increment;
     check(apply(callback, 4) == 5);
-    check(invoke([](value: i32) { return value * 2; }, 4) == 8);
+    check(invoke([](value: i32) => value * 2, 4) == 8);
     check(invoke(snapshot, 0) == 10);
-    check(invoke([source](value: i32) { return value + source; }, 1) == 23);
+    check(invoke([source](value: i32) => value + source, 1) == 23);
     check(source == 22);
 }
 
@@ -55,7 +43,7 @@ test "Callable arrays: distinct functions with the same shape" {
 
 test "Callable loans: owner can move after nested borrower scope exits" {
     var source = 4;
-    let owner = [source](value: i32) { return value + source; };
+    let owner = [source](value: i32) => value + source;
     if true {
         let view: fn(i32) -> i32 = owner;
         check(view(1) == 5);
@@ -66,7 +54,10 @@ test "Callable loans: owner can move after nested borrower scope exits" {
 
 test "Callable views: copies retain their target after intermediate scope exit" {
     var source = 4;
-    let owner = [&source](delta: i32) { source += delta; return source; };
+    let owner = [&source](delta: i32) {
+        source += delta;
+        return source;
+    };
     var selected: fn(i32) -> i32 = first;
     if true {
         let intermediate: fn(i32) -> i32 = owner;
@@ -110,8 +101,12 @@ test "Calls: callee is selected before argument evaluation" {
 
 test "Captures: immutable closure owners preserve write access to referents" {
     var source = 1;
-    let update = [&source]() { source += 1; };
-    let nested = [update]() { update(); };
+    let update = [&source]() {
+        source += 1;
+    };
+    let nested = [update]() {
+        update();
+    };
     let callbacks = [update, update];
     nested();
     callbacks[0]();
@@ -124,7 +119,10 @@ test "Captures: immutable closure owners preserve write access to referents" {
 
 test "Closures: assignment rebinds Write targets with default C++ assignment" {
     let factory = [](&target: i32) {
-        return [&target](delta: i32) { target += delta; return target; };
+        return [&target](delta: i32) {
+            target += delta;
+            return target;
+        };
     };
     var first_target = 1;
     var second_target = 10;
@@ -141,10 +139,13 @@ test "Closures: assignment rebinds Write targets with default C++ assignment" {
 }
 
 test "Callee selection: identity and explicit value snapshots" {
-    let factory = [](value: i32) { return [value](ignored: i32) { return value; }; };
+    let factory = [](value: i32) => [value](ignored: i32) => value;
     var selected = factory(1);
     let replacement = factory(10);
-    let rebind = [&selected, replacement]() { selected = replacement; return 0; };
+    let rebind = [&selected, replacement]() {
+        selected = replacement;
+        return 0;
+    };
     check(selected(rebind()) == 10);
     selected = factory(1);
     let view: fn(i32) -> i32 = selected;
@@ -154,13 +155,15 @@ test "Callee selection: identity and explicit value snapshots" {
     check(snapshot(rebind()) == 1);
 }
 
-
 test "Callable views: stateless targets outlive their creation expression" {
     var count = 0;
-    let stateless: fn() -> i32 = [&count]() { count += 1; return []() => 7; }();
+    let stateless: fn() -> i32 = [&count]() {
+        count += 1;
+        return []() => 7;
+    }();
     check(count == 1);
     check(stateless() == 7);
-    let block_view: fn(i32) -> i32 = [](value) { return value + 1; };
+    let block_view: fn(i32) -> i32 = [](value) => value + 1;
     check(block_view(2) == 3);
 }
 

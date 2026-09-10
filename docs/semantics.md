@@ -15,6 +15,8 @@ This document defines the validity and observable behavior of Carven programs.
   - [Constant expressions](#constant-expressions)
   - [Numeric types and conversions](#numeric-types-and-conversions)
   - [Unicode text](#unicode-text)
+  - [Owning String and text borrowing](#owning-string-and-text-borrowing)
+  - [String interpolation](#string-interpolation)
 - [Pointer values](#pointer-values)
 - [Bindings, access, and mutation](#bindings-access-and-mutation)
 - [Functions and callable values](#functions-and-callable-values)
@@ -139,7 +141,7 @@ the published surface. A violation uses `CV-TYPE-VISIBILITY-LEAK`.
 The source-spellable builtin types are:
 
 ```text
-bool  char  str  void
+bool  char  str  String  void
 i8 i16 i32 i64 isize
 u8 u16 u32 u64 usize
 f32 f64
@@ -329,26 +331,172 @@ numeric conversion.
 `str` is an immutable, copyable, value-passed UTF-8 view represented by a pointer
 and byte length. Length defines its contents, including internal NUL bytes;
 the view does not promise a trailing NUL. It has no owning
-storage, `&str` type, or source lifetime syntax. Its ordinary safe backing is
-static literal storage and copies of such views. C++ boundary support and
-Unicode validation are defined under
-[C++ interoperation](#c-interoperation).
+storage, `&str` type, or source lifetime syntax. Its backing can be static
+literal storage, a checked borrow of a `String`, or explicitly entrusted C++
+storage. Copying a view preserves its backing relationship.
 
 Decoded string and character literal values are not Unicode-normalized.
 
-The builtin text surface is closed:
+Both `str` and `String` provide:
 
 - `text.len() -> usize` returns the UTF-8 byte count.
 - `text.is_empty() -> bool` tests that byte count.
 - `text.bytes` is a copyable read-only range of `u8` values.
 - `text.chars` is a copyable read-only range that decodes `char` values.
 
-`bytes` and `chars` are computed projections on `str`, not general properties.
+`bytes` and `chars` are computed projections, not general properties.
 Their view types cannot be spelled. They support Read range iteration and
 inferred value bindings, but not Write iteration, indexing, slicing, or
 construction. User structures may declare same-named fields because member
 resolution depends on the receiver type.
 
+
+### Owning String and text borrowing
+
+`String` is a builtin owning UTF-8 value, available without imports and distinct
+from `str`, user declarations, and C++ types. Unqualified `String` in type
+position or a factory qualifier selects the builtin before ordinary declarations.
+Ordinary value lookup is unchanged; `::String` selects an external C++ name.
+
+A String owns contiguous, valid UTF-8 bytes, including internal NUL. It performs
+no normalization, case folding, or BOM removal. Equality and inequality between
+two Strings compare their bytes. Length counts bytes. Storage layout, capacity,
+address stability, trailing NUL, and allocation count are unspecified.
+
+| Operation | Access and result |
+| --- | --- |
+| `String::new()` | Empty owning `String` |
+| `String::from_str(text: str)` | Read text; independent owning copy |
+| `s.len()` / `s.is_empty()` | Read receiver; `usize` / `bool` |
+| `s.as_str()` | Read receiver; borrowed `str` |
+| `s.bytes` / `s.chars` | Read receiver; borrowed byte/scalar range |
+| `s.append(text: str)` | Write receiver, Read text; `void` |
+| `s.push(value: char)` | Write receiver, Read scalar; `void` |
+| `s.clear()` | Write receiver; `void` |
+
+The queries `len`, `is_empty`, and `as_str` are O(1); `as_str` does not allocate
+or transcode. `push` encodes one Unicode scalar into UTF-8. Mutable fields and
+array elements can be Write receivers; temporaries and Read parameters cannot.
+The dot receiver supplies its access, while ordinary arguments follow the usual
+explicit-marker rules. Factories and methods require direct calls, including
+grouped direct calls; they do not produce first-class method values.
+
+Literals remain `str`. Construction and borrowing are explicit; there is no
+implicit allocation or String-to-str conversion, mixed String/str equality,
+String constant, String literal pattern, indexing, ordering, truthiness,
+concatenation, direct iteration, or access to C++ container members. `String(...)`,
+`String { ... }`, and non-identity `as` conversions between String and str are
+invalid. Iterate `s.bytes` or `s.chars` instead.
+
+Copying String creates independently owned content. Whole-owner Take transfers
+the value and makes its source unavailable. Read String parameters alias the
+caller's storage. Fields, elements, captures, results, and cleanup use ordinary
+Carven value rules. Borrowing does not extend a String owner's lifetime.
+
+A borrowed view keeps referring to its original storage when copied or passed
+through aggregates, captures, functions, Write outputs, branches, loops, and
+failure payloads. Owning copies made by `from_str` and extracted `u8`/`char`
+values are independent of the source. A named value holding a view keeps the
+borrow until that value is replaced, taken, or leaves scope; its last use does
+not end the borrow.
+
+While a view borrows a String, that String cannot be modified, replaced, or
+taken, including by taking a containing owner. The check distinguishes fields
+and elements; an unknown index may overlap any possible element. Write access
+is nonexclusive: creating a Write alias or capture is allowed, but actual
+writes through it must respect live borrows. Native Write access counts as a
+possible write. This also applies to `append` and `clear` when contents would
+not change. Self-append `s.append(s.as_str())` is rejected; copy to an independent
+owner first.
+
+Temporary views keep their backing borrowed until the consuming operation
+finishes, including evaluation of its remaining operands. An independent result
+ends that borrow when no other view remains. For example:
+
+```carven
+var text = String::from_str("hello");
+text = String::from_str(text.as_str());
+let snapshot = text;
+text.append(snapshot.as_str());
+```
+
+The RHS copy finishes before assignment writes. Similarly,
+`f(String::from_str(s.as_str()), &&s)` can be valid, while
+`f(s.as_str(), &&s)` is rejected. Each receiver/operand is evaluated once in
+source order, with the receiver or assignment target selected first. A selected
+Read receiver observes its content when the operation executes.
+
+A view may be returned from a Read String parameter when the caller backing
+outlives the returned view. Views into callee-local Strings or Take parameters
+cannot escape. Saving `String::from_str("x").as_str()` into a named view is
+invalid; immediate consumption is valid. A range loop retains String owners
+created while evaluating its header, including those passed through view-returning
+functions; `for c in String::from_str("x").chars` is valid. The borrow lasts
+through the loop; retained temporaries are destroyed on every loop exit.
+
+An aggregate can contain both String and str fields, but cannot store a view
+into its own String storage. Copying a String field creates independent content;
+copying a view field keeps referring to its original storage.
+A view may borrow an owning String stored in a live closure.
+
+Nominal failure values can contain Strings under the ordinary copyable failure
+contract; builtin String itself is not a failure type. Throw copies unless Take
+is explicit. Borrowed text must remain valid through throw, propagation, catch
+selection and guards, and rethrow. The original failure payload retains its
+borrows independently of copied catch bindings. Unwinding must not destroy
+their backing. A handler can copy borrowed content into an independent String result.
+Completed effects are retained on failure; mutation is not rolled back.
+
+Carven exposes no raw-byte constructor. Allocation failure and unrepresentable
+lengths terminate; they are not Carven typed failures or recoverable native
+exceptions. Native calls protect known backing for the duration of the call;
+retention and returned aliases remain the provider and caller's responsibility.
+
+
+### String interpolation
+
+`f"..."` always produces an independent owning `String`, including `f""` and
+text without holes. Ordinary string literals remain `str`.
+
+```carven
+f"Hello, {name}!"
+f"Total: {price * count:.2f}"
+f"ID: {id:08x}"
+f"{{value}} = {value}"
+f"{value:{width}.{precision}f}"
+```
+
+A hole contains an ordinary expression and an optional `:` format specification.
+Formatting follows `std::format` rules for escaped braces, alignment, width,
+precision, and type options. Dynamic width and precision holes contain Carven
+expressions. The C++ compiler
+checks the resulting format string and formatter availability. Custom C++
+formatters receive their format specifications through the same mechanism.
+
+Hole expressions, including dynamic format arguments, are evaluated once in
+source order before formatting. Each hole has Read access. Direct `&` and `&&`
+argument markers are rejected; nested calls retain their declared access rules.
+Scalar Read values are saved, while String Read values alias their owners.
+String formatting reads the contents after all holes finish evaluating. Text
+views keep their backing borrowed throughout hole evaluation and formatting.
+The result is independent of its inputs; named views keep their usual lifetimes.
+
+`String` uses standard string formatting. A `char` is encoded as UTF-8 and also
+uses standard string formatting, including width and precision. Other values use
+their C++ representation and corresponding `std::formatter`; Carven supplies no
+aggregate, enum, or callable formatting protocol.
+
+Interpolation supports ordinary expression composition and failure propagation.
+An early failure skips later holes and formatting, retaining completed effects
+and destroying temporary values. Discarding the result still executes formatting.
+Interpolation is excluded from constant
+declarations, literal patterns, and positions requiring an ordinary literal.
+
+Formatting preserves internal NUL and validates the completed output as UTF-8.
+Invalid UTF-8, allocation failure, and runtime formatting errors terminate;
+they do not introduce typed failures. C++ formatter retention and reentry remain
+provider/caller responsibilities. Callable-view and Write-capture boundary
+restrictions still apply.
 
 ## Pointer values
 
@@ -396,9 +544,9 @@ conversion, or Carven address-of operation.
 
 ### Local non-null checks
 
-The compiler traverses each function and closure's structured semantic body.
-It tracks null, non-null, and unknown facts for local names, fixed Carven field
-paths, and constant array indices. Tests against `nullptr` refine branches,
+Non-null checking is local to each function and closure. It tracks null,
+non-null, and unknown facts for local names, fixed Carven field paths, and constant
+array indices. Tests against `nullptr` refine branches,
 including negation, short-circuit expressions, and early returns. Branch joins
 keep only common facts. A bool helper, API success code, or test assertion is
 not a proof. Functions and closures establish their own conditions.
@@ -428,11 +576,11 @@ Forming the target's C++ type expression still follows its own requirements.
 For example, `ptr<fn(T) -> void>` requires T to be complete for the callable's Read
 parameter representation; a self-dependent representation is rejected by C++.
 
-There is no runtime handle wrapper, reference counting, allocation, or automatic
-release. Owners and adapters implement the external resource protocol. Native
-`T**` output protocols and buffer traversal remain in `#[cpp]`; `&p` passes a
-pointer slot by reference and does not implicitly compute a `T**`. Public scalar
-`import(cpp)` / `export(cpp)` restrictions remain unchanged.
+Copying, passing, and taking a pointer perform no allocation, reference counting,
+or automatic release. Owners and adapters implement the external resource protocol.
+Native `T**` output protocols and buffer traversal remain in `#[cpp]`; `&p` passes a
+pointer slot by reference and does not implicitly compute a `T**`. Pointers are
+not admitted in scalar `import(cpp)` and `export(cpp)` signatures.
 
 ## Bindings, access, and mutation
 
@@ -581,8 +729,7 @@ evaluates a void expression and returns on normal completion. Return operands
 follow ordinary failure-consumption rules; explicit propagation uses
 `return action()?;`. A value return is required for every other ordinary result
 type. Every reachable path of a non-`void` function or lambda must return a value.
-Violation is identified by `CV-FLOW-MISSING-RETURN`; the explanatory
-message is not part of the language contract.
+The diagnostic is `CV-FLOW-MISSING-RETURN`.
 
 Functions and lambdas may use `=> expression` instead of a block. This implicitly
 returns the expression using the same evaluation, access, lifetime, and failure
@@ -786,7 +933,7 @@ Ordering requires identical numeric operands. Logical `&&` and `||` require
 `bool` and short-circuit from left to right.
 
 Equality requires compatible operands and an equality-capable type. It is
-available for `bool`, `char`, integers, floating-point values, `str`, arrays
+available for `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
 whose elements support equality, structures whose fields all support equality,
 numeric enums, payload enums whose payloads all support equality, and pointers
 with identical target types. Callable
@@ -900,7 +1047,7 @@ function—bare or exported—with a nonempty actual set must state an explicit
 `CV-EFFECT-THROW-PUBLISHED`. Entry functions also require an explicit `throw`
 contract for outward failures, regardless of declaration visibility. Tests must
 handle every failure and cannot expose a failure contract. Failure types in a
-published contract also obey the declaration-audience closure.
+published contract must be visible to that contract's audience.
 
 A value with pending failures cannot be consumed where an ordinary completed
 value is required. Postfix `?` consumes the pending failures of its operand at
@@ -912,8 +1059,9 @@ normally.
 
 Failure propagation does not roll back completed mutations or external effects.
 
-Carven failures are independent of C++ exceptions. External exception handling
-and recovery obey the [native exception boundary](#native-exception-boundary).
+Carven failures are independent of C++ exceptions. Native exceptions must be
+handled in C++ before they escape a generated `noexcept` boundary to continue
+execution.
 
 `try` handles failures produced by its protected body. Catch arms may select a
 failure type, wildcard, alternatives, payload patterns, and guards; they must
@@ -992,7 +1140,10 @@ nested external type applications are supported. External construction uses
 function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
 not Carven compile-time constants and do not participate in pattern coverage or
-failure-set construction.
+failure-set construction. Native compilation checks constructor availability.
+Current lowering can require a copy or move from intermediate storage for an
+aggregate component evaluated before a later fallible component. An immovable
+native component can therefore fail C++ compilation after Carven analysis succeeds.
 
 ### C string literals
 
@@ -1059,8 +1210,8 @@ their storage's access. Local bindings remain owners: initializing one from a
 C++ reference result initializes an owned value, subject to C++ construction
 rules. External member and index places inherit the root's access; external
 indexing has the provider's bounds behavior, not Carven array bounds checks.
-External calls do not expose typed failures and obey the
-[native exception boundary](#native-exception-boundary).
+External calls do not expose typed failures. An exception escaping a generated
+`noexcept` boundary terminates under C++ rules.
 
 Carven checks its own storage availability and explicit access conflicts but
 does not infer C++ reference retention, pointer validity or iterator invalidation.
@@ -1068,6 +1219,14 @@ Known callable borrows and Write captures cannot cross an undeclared external
 contract. The `ptr` model checks target access and local non-null facts without
 proving target liveness. External reference bindings, pointer arithmetic and
 external iteration protocols are unsupported.
+
+Explicit C++ calls accept dynamic text views and aggregates containing them.
+Carven protects known backing during argument evaluation and the call. The
+provider and caller are responsible for retention, returned aliases, reentry,
+and indirect pointer lifetimes. Passing a view slot with Write access does not
+establish that it stops borrowing its previous backing. Callable-view and
+Write-capture escape restrictions also apply to values containing text views.
+String has no implicit conversion to a native string container.
 
 ### Source fragments
 
@@ -1125,10 +1284,9 @@ The closed boundary type mapping is:
 | `char` | `char32_t` |
 | `void` | `void`, result only |
 
-`str`, arrays, structures, enums, callables, process arguments, and iteration
+`str`, `String`, arrays, structures, enums, callables, process arguments, and iteration
 views are unsupported. An inbound `char32_t` is validated before it becomes a
-Carven `char`; violation terminates with
-`carven runtime contract error: invalid Unicode scalar at C++ boundary`.
+Carven `char`; an invalid scalar terminates the program.
 
 Public module components and exported function names use one deterministic
 encoding. Safe C++ identifiers retain their spelling unless they start with
@@ -1240,7 +1398,7 @@ layout are not language contracts.
 
 ### Diagnostics
 
-The following table names semantic diagnostic identities covered by this contract:
+The following table lists selected semantic diagnostics in the current compiler:
 
 | Code | Severity | Condition |
 | --- | --- | --- |
@@ -1267,9 +1425,8 @@ The following table names semantic diagnostic identities covered by this contrac
 | `CV-TEST-MESSAGE-TYPE` | Error | A test message is not exactly `str` |
 | `CV-TYPE-VISIBILITY-LEAK` | Error | A declaration surface exposes a narrower nominal identity |
 
-The code, severity, and condition in this table describe the current compiler.
-This table is not a complete list of internal diagnostic codes. Human-readable
-messages, notes, formatting, colors, and incidental ordering are presentation.
+The table is a partial lookup for current diagnostics. Human-readable messages,
+notes, formatting, colors, and incidental ordering are presentation.
 Warnings do not make an otherwise valid program fail.
 
 For unused diagnostics, a reachable reference counts as a use and `_` is never

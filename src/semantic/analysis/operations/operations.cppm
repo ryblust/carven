@@ -101,7 +101,6 @@ auto decide_text_method(
     std::size_t argument_count
 ) noexcept -> TextMethodDecision;
 auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecision;
-auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType;
 
 auto decide_unary_operator(
     const CanonicalTypeStore& types,

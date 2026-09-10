@@ -1,6 +1,4 @@
-fn choose(flag: bool) -> i32 {
-    return if flag { 1 } else { 0 };
-}
+fn choose(flag: bool) -> i32 => if flag { 1 } else { 0 };
 
 fn classify(value: i32) -> i32 {
     if value == 0 {

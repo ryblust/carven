@@ -107,6 +107,13 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
                                 }
                             );
                         },
+                        [&](const SemTextIntrinsic& value) noexcept {
+                            for (const auto& operand : value.operands) {
+                                if (operand.access == AccessMode::Write) {
+                                    write(operand.expression);
+                                }
+                            }
+                        },
                         [&](const SemCall& value) noexcept {
                             for (const auto& argument : value.arguments) {
                                 if (argument.access == AccessMode::Write) {

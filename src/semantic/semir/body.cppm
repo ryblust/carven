@@ -172,7 +172,6 @@ struct FieldProjection final {
     std::uint32_t field_index;
 };
 
-
 enum class CastKind {
     Identity,
     PointerRead,
@@ -189,7 +188,51 @@ enum class TextIntrinsic {
     IsEmpty,
     Bytes,
     Chars,
+    New,
+    FromStr,
+    AsStr,
+    Append,
+    Push,
+    Clear,
 };
+
+constexpr auto text_intrinsic_writes(TextIntrinsic intrinsic) noexcept -> bool {
+    return intrinsic == TextIntrinsic::Append
+        || intrinsic == TextIntrinsic::Push
+        || intrinsic == TextIntrinsic::Clear;
+}
+
+constexpr auto text_intrinsic_arity(TextIntrinsic intrinsic) noexcept -> std::size_t {
+    switch (intrinsic) {
+        case TextIntrinsic::New:     return 0;
+        case TextIntrinsic::Append:
+        case TextIntrinsic::Push:    return 2;
+        case TextIntrinsic::Len:
+        case TextIntrinsic::IsEmpty:
+        case TextIntrinsic::Bytes:
+        case TextIntrinsic::Chars:
+        case TextIntrinsic::FromStr:
+        case TextIntrinsic::AsStr:
+        case TextIntrinsic::Clear:   return 1;
+    }
+    std::unreachable();
+}
+
+constexpr auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType {
+    switch (intrinsic) {
+        case TextIntrinsic::Len:     return BuiltinType::Usize;
+        case TextIntrinsic::IsEmpty: return BuiltinType::Bool;
+        case TextIntrinsic::Bytes:   return BuiltinType::StrBytesView;
+        case TextIntrinsic::Chars:   return BuiltinType::StrCharsView;
+        case TextIntrinsic::New:
+        case TextIntrinsic::FromStr: return BuiltinType::String;
+        case TextIntrinsic::AsStr:   return BuiltinType::Str;
+        case TextIntrinsic::Append:
+        case TextIntrinsic::Push:
+        case TextIntrinsic::Clear:   return BuiltinType::Void;
+    }
+    std::unreachable();
+}
 
 enum class TestReportKind {
     Check,

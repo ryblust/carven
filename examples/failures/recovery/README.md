@@ -4,13 +4,6 @@ A configuration loader should try a backup when a setting is absent, report
 malformed input, and use a built-in default only when neither setting exists.
 These are three different decisions.
 
-```sh
-./xmakew build example-configuration
-./xmakew run example-configuration
-```
-
-Run from the repository root after [building the compiler](../../README.md).
-
 ## Follow a value through the layers
 
 [parser.cv](parser.cv) parses decimal ASCII text into a port in 1..65535.
@@ -34,6 +27,14 @@ silently overflow. Leading zeros are accepted; whitespace and signs are not.
 still declares `ConfigError`, so it handles the complete enum, including
 `Missing`; the contract does not narrow to a subset of enum cases merely
 because this implementation recovers one case.
+
+From the repository root:
+
+```sh
+./xmakew build
+./xmakew build carven-example-configuration
+./xmakew run carven-example-configuration
+```
 
 ## Output
 
@@ -70,5 +71,3 @@ Change the default policy to `ConfigError(_) => 8080` to observe a different,
 statically valid decision: invalid inputs now disappear into a default. The
 compiler checks coverage and propagation; the application chooses which
 failures it is appropriate to recover from.
-
-Next: [Fallible policies](../callbacks/).

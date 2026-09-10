@@ -294,17 +294,21 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
     };
     const auto closing = [](TokenKind kind) static noexcept -> TokenKind {
         switch (kind) {
-            case TokenKind::LeftParen:   return TokenKind::RightParen;
-            case TokenKind::LeftBracket: return TokenKind::RightBracket;
-            case TokenKind::LeftBrace:   return TokenKind::RightBrace;
-            default:                     return TokenKind::Invalid;
+            case TokenKind::InterpolationStart: return TokenKind::InterpolationEnd;
+            case TokenKind::InterpolationOpen:  return TokenKind::InterpolationClose;
+            case TokenKind::LeftParen:          return TokenKind::RightParen;
+            case TokenKind::LeftBracket:        return TokenKind::RightBracket;
+            case TokenKind::LeftBrace:          return TokenKind::RightBrace;
+            default:                            return TokenKind::Invalid;
         }
     };
 
     for (const auto& token : tokens) {
         const auto opening = token.kind == TokenKind::LeftParen
             || token.kind == TokenKind::LeftBracket
-            || token.kind == TokenKind::LeftBrace;
+            || token.kind == TokenKind::LeftBrace
+            || token.kind == TokenKind::InterpolationStart
+            || token.kind == TokenKind::InterpolationOpen;
         if (opening) {
             if (delimiters.size() == maximum_syntax_nesting) {
                 fail(
@@ -320,7 +324,9 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
 
         const auto closing_token = token.kind == TokenKind::RightParen
             || token.kind == TokenKind::RightBracket
-            || token.kind == TokenKind::RightBrace;
+            || token.kind == TokenKind::RightBrace
+            || token.kind == TokenKind::InterpolationEnd
+            || token.kind == TokenKind::InterpolationClose;
         if (!closing_token) {
             continue;
         }

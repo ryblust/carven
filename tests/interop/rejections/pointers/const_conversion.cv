@@ -1,0 +1,5 @@
+import "pointers/provider.hpp";
+
+fn probe() {
+    let p: ptr<&::pointer_probe::Fixed> = ::pointer_probe::readonly_fixed();
+}

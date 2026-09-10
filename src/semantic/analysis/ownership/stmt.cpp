@@ -73,7 +73,8 @@ auto OwnershipBodyAnalyzer::statement(
     };
     const auto transfer = [&](auto payload) noexcept {
         if (result.normal) {
-            if constexpr (std::same_as<decltype(payload), OwnershipReturn>) {
+            if constexpr (std::same_as<decltype(payload), OwnershipReturn>
+                          || std::same_as<decltype(payload), OwnershipFailure>) {
                 payload.value = std::move(result.normal->value);
             }
             result.exits.push_back({std::move(payload), std::move(result.normal->state)});
@@ -91,14 +92,15 @@ auto OwnershipBodyAnalyzer::statement(
             [&](const SemBreak&) noexcept { transfer(OwnershipBreak {}); },
             [&](const SemContinue&) noexcept { transfer(OwnershipContinue {}); },
             [&](const SemRethrow&) noexcept {
-                for (const auto type : caught) {
-                    result.exits.push_back({OwnershipFailure {type}, result.normal->state});
+                if (!caught) {
+                    invariant_violation("rethrow has no active failure payload");
                 }
+                result.exits.push_back({*caught, std::move(result.normal->state)});
                 result.normal.reset();
             },
             [&](const SemThrow& value) noexcept {
                 evaluate(value.value);
-                transfer(OwnershipFailure {value.failure_type});
+                transfer(OwnershipFailure {value.failure_type, {}});
             },
             [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
             [&](const SemInitialize& value) noexcept {
@@ -118,7 +120,7 @@ auto OwnershipBodyAnalyzer::statement(
                     result = place(value.target, std::move(result.normal->state));
                     evaluate(value.value);
                     if (result.normal
-                        && (!result.normal->value.loans.empty()
+                        && (!result.normal->value.callable_loans.empty()
                             || !result.normal->value.captures.empty())) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,

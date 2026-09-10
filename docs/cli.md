@@ -12,9 +12,9 @@ carven dump tokens <source-file>
 carven dump ast <source-file>
 ```
 
-`-h` and `--help` print command help. `-V` and `--version` print exactly
-`carven v0.1.0`. With no arguments, `carven` prints the top-level
-help and succeeds.
+`-h` and `--help` print command help. `-V` and `--version` print
+`carven v<version>` followed by a newline. With no arguments, `carven` prints
+the top-level help and succeeds.
 
 ## Source inputs
 
@@ -55,10 +55,9 @@ The long filesystem option also accepts `--output-dir=<dir>`. Repeating or
 mixing destination options is an error. The default mode does not create an
 implicit output directory.
 
-The generated artifact roles and logical paths are defined by
-[Toolchain and artifacts](toolchain.md#artifact-paths). After successful
-compilation and generation, Carven writes the complete artifact set in
-logical-path order: it creates parent directories, truncates existing files,
+After successful compilation and generation, Carven writes all generated
+C++ headers and sources below the destination in logical-path order:
+it creates parent directories, truncates existing files,
 and writes their new contents. It neither removes stale or unrelated files nor
 checks whether the root is isolated or safe for a particular build target. The
 first I/O failure stops the write; files earlier in the order may already have
@@ -87,10 +86,9 @@ Test emission is omitted by default. One explicit mode may be selected:
 The two options are mutually exclusive and cannot be repeated. Test emission
 does not suppress a source `main`; the downstream build chooses which generated
 translation units form an application or test executable. External mode
-supplies the generated runner function through the private companion header;
-its consumer owns the process entry point and may pass a custom reporter. The
-exact paths and companion boundary are defined by
-[Toolchain and artifacts](toolchain.md#artifact-paths).
+supplies the generated runner function through
+`carven/generated/carven-test-runner.hpp`; its consumer owns the process entry
+point and may pass a custom reporter.
 
 ## Linkage domain
 
@@ -104,8 +102,9 @@ directory, the current working directory for the default output `.`, and the
 current working directory as a virtual root for `--stdout`. Explicit and path
 domains have distinct identities even when their text is equal.
 
-A logical generation target must reuse its domain across edits. Different
-targets whose generated objects may enter the same linked image must use
+For consistent generated identity across edits, a logical generation target
+reuses its domain. Different targets whose generated objects may enter the same
+linked image must use
 different domains. Moving the output root changes the CLI default; callers that
 need identity across output layouts or checkouts must provide an explicit
 value.

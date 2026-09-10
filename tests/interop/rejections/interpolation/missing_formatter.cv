@@ -1,0 +1,5 @@
+import "interpolation/provider.hpp";
+
+fn probe() {
+    let result = f"{::interpolation_probe::unformatted()}";
+}

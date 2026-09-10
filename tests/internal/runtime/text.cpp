@@ -48,8 +48,8 @@ TEST_CASE("Runtime: empty text has no scalar to dereference") {
 
 TEST_CASE("Runtime: checked UTF-8 preserves the borrowed byte range") {
     const auto text = std::string_view("a\0\xc3\xa9", 4);
-    const auto checked = carven::runtime::checked_utf8(text, "invalid test text");
+    const auto checked = carven::runtime::checked_utf8(text);
     CHECK(checked.data() == text.data());
     CHECK(checked.size() == text.size());
-    CHECK(carven::runtime::checked_utf8({}, "invalid empty text").empty());
+    CHECK(carven::runtime::checked_utf8({}).empty());
 }

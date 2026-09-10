@@ -5,23 +5,23 @@ loader distinguishes missing input from corrupt input. A policy callback adds
 its own rejection conditions. Each task needs a successful result, a precise
 account of what can fail, and a place to decide what recovery means.
 
-Carven expresses those responsibilities with ordinary result types and closed
-failure contracts. Start with [composition/orders.cv](composition/orders.cv):
-`quote` returns i32 and declares `QuantityError + OutOfStock + DeliveryError`.
-Its private helper composes two fallible calculations, while the public module
-function selects an alternate carrier for one case and preserves the other
-failures. The caller receives the original typed payloads.
+Carven expresses these decisions with ordinary result types and closed failure
+contracts. Read the series in table order, beginning with one declared failure in
+Booking, then composing providers, adding recovery, and accepting callbacks.
+Within each program, follow failure declarations and producer functions before
+the handlers and entry point that use them.
 
 ## Run the series
 
-From the repository root, using the [example build setup](../README.md):
+From the repository root:
 
 ```sh
 ./xmakew build
 ./xmakew build examples
-./xmakew run example-order-quote
-./xmakew run example-configuration
-./xmakew run example-policies
+./xmakew run carven-example-booking
+./xmakew run carven-example-order-quote
+./xmakew run carven-example-configuration
+./xmakew run carven-example-policies
 ./xmakew test -g examples
 ```
 

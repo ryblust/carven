@@ -24,6 +24,7 @@ auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
         case Usize:        return TargetSymbol::StdSize;
         case F32:          return TargetSymbol::Float;
         case F64:          return TargetSymbol::Double;
+        case String:       return TargetSymbol::RuntimeString;
         case Str:          return TargetSymbol::StdStringView;
         case StrBytesView: return TargetSymbol::RuntimeStrBytesView;
         case StrCharsView: return TargetSymbol::RuntimeStrCharsView;

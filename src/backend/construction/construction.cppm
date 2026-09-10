@@ -41,7 +41,7 @@ using ConstructionRegionID = ConstructionID<ConstructionRegionTag>;
 enum class ConstructionUse {
     ReadBorrow,
     AddressValue,
-    ScalarValue,
+    OperandValue,
     Place,
     ConstPlace,
     Consume,

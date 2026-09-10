@@ -1,3 +1,1 @@
-export fn normalize(value: i32) -> i32 {
-    return value + 1;
-}
+export fn normalize(value: i32) -> i32 => value + 1;

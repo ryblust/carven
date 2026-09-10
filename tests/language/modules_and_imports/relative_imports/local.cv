@@ -1,3 +1,1 @@
-export fn local_value() -> i32 {
-    return 20;
-}
+export fn local_value() -> i32 => 20;

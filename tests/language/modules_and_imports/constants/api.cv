@@ -4,8 +4,6 @@ export const combined: i32 = base + published;
 
 export fn constants_cross_lambda_without_capture() -> i32 {
     const local: i32 = 1;
-    let read = []() {
-        return combined + local;
-    };
+    let read = []() => combined + local;
     return read();
 }

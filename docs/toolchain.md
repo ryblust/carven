@@ -1,7 +1,7 @@
 # Toolchain and artifacts
 
-This document specifies the current native build inputs and generated artifact
-layout.
+This document specifies native build requirements, generated artifact interfaces,
+and build integration for this checkout.
 
 ## Compiler and target
 
@@ -20,10 +20,25 @@ compiles and links the artifacts. C++ validates provider declarations and
 protocols, object definitions, and link requirements. It also checks overloads,
 templates, and conversions for explicitly delegated operations.
 
-For Carven-owned operations and declared boundary requirements, successful
-analysis must produce valid target C++ subject to those provider requirements.
+Semantic acceptance is one stage of compilation. Native compilation and linking
+must also succeed. Invalid target C++ for a supported Carven operation, after
+satisfying its provider requirements, is a compiler defect. The construction
+limitation below describes a current gap in that support.
 C++ diagnostics remain native toolchain diagnostics; source mapping identifies
 the corresponding Carven location.
+
+### Construction limitation
+
+An aggregate initializer may evaluate a native component before a later component
+that can produce a Carven failure. If lowering saves the earlier component in
+separate storage, final aggregate construction must copy or move it from that
+storage. An immovable component cannot satisfy this generated construction,
+even when C++ could construct it directly in the final aggregate.
+
+Carven semantic analysis does not establish native constructor availability;
+this limitation can therefore appear as a C++ compilation error after successful
+Carven analysis. It does not prohibit all immovable results: direct construction
+from a prvalue remains possible where no intermediate transfer is required.
 
 ## Numeric model
 
@@ -49,9 +64,9 @@ published semantic surface have no component of their own. Implementations use
 canonical module paths.
 
 The `carven/api` header contains explicit `export(cpp)` declarations in
-`carven::api` followed by the encoded module namespace components described in
-[the C++ API naming rules](semantics.md#c-interoperation). Its implementation
-contains the corresponding façades. The header is self-contained.
+`carven::api`, followed by nested namespaces for the encoded module path
+components. Its implementation contains the corresponding façades. The header
+is self-contained.
 
 C++ header imports become ordered includes in the owning implementation. An
 external type or result query needed by an interface brings its context module's
@@ -80,21 +95,16 @@ paths, compile the generated implementations, and link their C++ providers.
 Header imports do not add include directories or link inputs.
 
 The packaged `@carven/carven` Xmake rule owns batch scheduling and output
-promotion. It invokes Carven on a target's complete explicit `.cv` set before
-native dependency scanning, then registers the generated `.cpp` files as
-ordinary C++ sources. Its default C++ language is C++20 when the target has not
-selected one. Its default linkage domain combines the normalized absolute
-project directory and `target:fullname()`.
+promotion. It generates from a target's complete explicit `.cv` set before native
+dependency scanning, then registers the generated implementations as C++ sources.
+It supplies a target-private output root and linkage domain. Consumers select
+package options, compiler modes, and provider dependencies in their build.
 
-Generation uses a disposable staging directory and a target-private live root.
-A failed compiler invocation leaves the live output intact. For an unchanged
-artifact path set, promotion preserves content-identical files and their
-modification times; a changed path set replaces the live tree. Promotion failure
-may leave a partial update and invalidates the dependency cache for repair on
-the next build. This behavior belongs to the rule, not the standalone CLI.
-
-Package options and consumer setup are maintained in the
-[rule repository](https://github.com/ryblust/carven-xmake-repo).
+The rule stages generation before updating live artifacts. A failed compiler
+invocation leaves live output intact; promotion itself can fail partway through.
+The [rule repository](https://github.com/ryblust/carven-xmake-repo) owns setup,
+defaults, incremental promotion, and recovery behavior. These package behaviors
+are separate from the CLI's direct writes.
 
 ## Support headers
 
@@ -105,6 +115,8 @@ carven/runtime/passing.hpp
 carven/runtime/numeric.hpp
 carven/runtime/array.hpp
 carven/runtime/text.hpp
+carven/runtime/string.hpp
+carven/runtime/format.hpp
 carven/runtime/entry.hpp
 carven/runtime/outcome.hpp
 carven/runtime/callable.hpp
@@ -115,6 +127,17 @@ carven/std/testing/testing.hpp
 `carven/runtime/runtime.hpp` aggregates runtime leaves for direct consumers.
 The compiler and its generated support are developed together. Private target
 names, helper selections, and representation layouts are implementation details.
+Use support headers matching the compiler that generated the artifacts.
 
 `passing.hpp` supplies native parameter and transfer support; `entry.hpp`
 supplies process-argument ingress.
+
+`text.hpp` supplies UTF-8 views and validation; `string.hpp` supplies owning
+String. Interpolation uses `format.hpp` and requires C++20 `<format>` support
+in the consumer's standard library. The consumer compiler checks format strings
+and the availability of formatters for native types.
+
+For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
+`push` requires a Unicode scalar. `String::from_utf8` validates incoming byte
+storage and terminates on invalid UTF-8. Runtime String operations support C++20
+constant evaluation; this does not make String a Carven constant-expression type.

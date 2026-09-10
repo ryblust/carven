@@ -1,26 +1,32 @@
 # Call Carven from a C++ application
 
+Read `pricing.cv` first. Its `export(cpp)` function declares a scalar quantity
+parameter and result, then computes a quantity discount. The build generates the
+public header used by the C++ caller.
+
+Then read `main.cpp`: it includes that header and `<iostream>`, defines the
+process entry, and prints the result of calling the exported function. The build
+links the generated implementation with this host.
+
+The source module path determines the public namespace:
+`carven::api::examples::interop::cv_escaped_6578706f7274::pricing`. The `export`
+component is encoded because C++ reserves that spelling. This public API exposes
+fixed-width scalar parameters and results with a `noexcept` boundary.
+
+From the repository root:
+
 ```sh
-./xmakew build example-cpp-host
-./xmakew run example-cpp-host
+./xmakew build
+./xmakew build carven-example-cpp-host
+./xmakew run carven-example-cpp-host
 ```
 
-Run from the repository root after [building the compiler](../../README.md).
+Expected output:
 
 ```text
 Price in cents:
 1080
 ```
-
-`main.cpp` owns the entry point. `pricing.cv` exports a quantity discount
-calculation using `export(cpp)`. The build generates the public header included
-by the host and links the generated implementation with `main.cpp`.
-
-The source module path determines the public namespace:
-`carven::api::examples::interop::cv_escaped_6578706f7274::pricing`. The `export`
-component is encoded because C++ reserves that spelling. Use this public API
-rather than generated implementation namespaces. The function accepts and returns
-fixed-width scalar values and is exposed as `noexcept`.
 
 Change the quantity from 12 to 3 to use the regular unit price. The example's
 caller supplies a small nonnegative quantity; this calculation does not validate

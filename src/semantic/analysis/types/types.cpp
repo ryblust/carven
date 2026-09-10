@@ -31,6 +31,7 @@ auto builtin_kind(std::string_view name) noexcept -> std::optional<BuiltinType> 
     static constexpr auto names = std::array {
         std::pair {std::string_view("bool"), BuiltinType::Bool},
         std::pair {std::string_view("char"), BuiltinType::Char},
+        std::pair {std::string_view("String"), BuiltinType::String},
         std::pair {std::string_view("str"), BuiltinType::Str},
         std::pair {std::string_view("i8"), BuiltinType::I8},
         std::pair {std::string_view("i16"), BuiltinType::I16},

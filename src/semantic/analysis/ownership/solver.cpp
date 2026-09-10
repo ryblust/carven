@@ -60,6 +60,7 @@ auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
 
 auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     -> std::span<const OwnershipCallCompletion> {
+    normalize_text_loans(input.text_readers);
     for (auto& parameter : input.parameters) {
         normalize_relationships(parameter.value);
     }
@@ -97,14 +98,14 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
 
 auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
     -> OwnershipCallInput {
-    auto result = OwnershipCallInput {source.id(), {}, {}, {}, {}, {}};
+    auto result = OwnershipCallInput {source.id(), {}, {}, {}, {}, {}, {}};
     const auto abstract_value = [&](this const auto& self,
                                     TypeID type,
                                     ProgramOriginID origin) noexcept -> OwnershipRelationships {
         auto relationships = OwnershipRelationships {};
         const auto value = program.types().type(type).value;
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
-            relationships.loans.push_back({{}, std::nullopt, std::nullopt, origin, false});
+            relationships.callable_loans.push_back({{}, std::nullopt, std::nullopt, origin, false});
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
             const auto& target = body(*program.declarations().body_for_callable(closure->callable));
             for (const auto [index, id] : std::views::enumerate(target.inputs().captures)) {
@@ -138,6 +139,27 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 OwnershipProjectionPath {std::nullopt}
             );
         }
+        if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
+            for (const auto& [index, field] : std::views::enumerate(
+                     program.declarations().structure(structure->structure).fields
+                 )) {
+                merge_relationships(
+                    relationships,
+                    nest_relationships(self(field.type, origin), {index})
+                );
+            }
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&value)) {
+            for (const auto id :
+                 program.declarations().enumeration(enumeration->enumeration).cases) {
+                for (const auto& [index, element] :
+                     std::views::enumerate(program.declarations().enum_case(id).payload_types)) {
+                    merge_relationships(
+                        relationships,
+                        nest_relationships(self(element, origin), {index})
+                    );
+                }
+            }
+        }
         return relationships;
     };
     const auto inputs = [&](std::span<const LocalBindingID> ids,
@@ -150,8 +172,10 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                     [](const ParameterBindingStorage& value) static noexcept {
                         return value.access != AccessMode::Take;
                     },
-                    [](const CaptureBindingStorage& value) static noexcept {
-                        return value.mode == CaptureMode::Write;
+                    [](const CaptureBindingStorage&) static noexcept {
+                        // A closure invocation borrows its stored captures; it
+                        // does not create new owners for value-captured fields.
+                        return true;
                     },
                     [](const OwnerBindingStorage&) static noexcept { return false; },
                 },

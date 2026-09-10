@@ -1,12 +1,8 @@
 import <vector> using std::vector;
 
-fn create() -> vector<i32> {
-    return vector<i32> { 1, 2, 3 };
-}
+fn create() -> vector<i32> => vector<i32> { 1, 2, 3 };
 
-fn count(values: vector<i32>) -> usize {
-    return values.size();
-}
+fn count(values: vector<i32>) -> usize => values.size();
 
 fn append(&values: vector<i32>, value: i32) {
     values.push_back(value);
@@ -31,12 +27,19 @@ test "C++ names preserve vector operations and owner bindings" {
     check(nested.empty());
 }
 
-struct Entry { value: i32 }
-struct Entries { values: vector<Entry> }
-
-fn entries() -> Entries {
-    return Entries { values: vector<Entry> { Entry { value: 11 } } };
+struct Entry {
+    value: i32,
 }
+
+struct Entries {
+    values: vector<Entry>,
+}
+
+fn entries() -> Entries => Entries {
+    values: vector<Entry> {
+        Entry { value: 11 }
+    }
+};
 
 test "External owners in structure fields retain Carven template dependencies" {
     let result = entries();

@@ -135,7 +135,7 @@ auto BodyRealizer::dispatch_failure(
         const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
         transfers.emit(generated_statement(
             TargetVariableStmt {
-                .binding = TargetVariableBinding::MutableValue,
+                .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .name = projection,
                 .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
@@ -322,7 +322,7 @@ auto BodyRealizer::lower_report(
     auto should_report = bool_expression(true);
     if (value.condition) {
         auto condition = destination.accept(
-            operand({.expression = *value.condition, .use = ConstructionUse::ScalarValue})
+            operand({.expression = *value.condition, .use = ConstructionUse::OperandValue})
         );
         if (!condition) {
             return;

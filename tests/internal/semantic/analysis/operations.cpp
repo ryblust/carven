@@ -316,14 +316,14 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
     const auto property_as_method =
         decide_text_method(compilation, ConstructionTypeRef {text}, "bytes", 0uz);
     REQUIRE_FALSE(property_as_method.has_value());
-    CHECK_EQ(property_as_method.error().code, DiagnosticCode::TypeStrMethod);
+    CHECK_EQ(property_as_method.error().code, DiagnosticCode::TypeTextCall);
     const auto method_arity =
         decide_text_method(compilation, ConstructionTypeRef {text}, "len", 1uz);
     REQUIRE_FALSE(method_arity.has_value());
-    CHECK_EQ(method_arity.error().code, DiagnosticCode::TypeStrMethodArity);
+    CHECK_EQ(method_arity.error().code, DiagnosticCode::TypeTextCallArity);
     const auto method_as_property = decide_text_property("len");
     REQUIRE_FALSE(method_as_property.has_value());
-    CHECK_EQ(method_as_property.error().code, DiagnosticCode::TypeStrProperty);
+    CHECK_EQ(method_as_property.error().code, DiagnosticCode::TypeTextProperty);
     const auto property = decide_text_property("bytes");
     REQUIRE(property.has_value());
     CHECK_EQ(text_intrinsic_result(*property), BuiltinType::StrBytesView);

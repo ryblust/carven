@@ -29,6 +29,8 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeReadArg:           return "carven::runtime::ReadArg";
         case TargetSymbol::RuntimeTransfer:          return "carven::runtime::transfer";
         case TargetSymbol::RuntimeOutcome:           return "carven::runtime::Outcome";
+        case TargetSymbol::RuntimeFormat:            return "carven::runtime::format";
+        case TargetSymbol::RuntimeString:            return "carven::runtime::String";
         case TargetSymbol::RuntimeStrBytesView:      return "carven::runtime::StrBytesView";
         case TargetSymbol::RuntimeStrCharsView:      return "carven::runtime::StrCharsView";
         case TargetSymbol::RuntimeEntryArgs:         return "carven::runtime::entry_args";

@@ -1,0 +1,8 @@
+import "pointers/provider.hpp";
+
+fn accepted_pointer(p: ptr<i32>) -> i32 {
+    if p == nullptr {
+        return 0;
+    }
+    return *p;
+}

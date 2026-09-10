@@ -14,7 +14,8 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
       program(analysis.program),
       facts(analysis.facts_for_body(input.body_id)),
       diagnosing(diagnosing),
-      accesses(input.accesses) {
+      accesses(input.accesses),
+      text_readers(input.text_readers) {
     const auto bind = [&](std::span<const LocalBindingID> bindings,
                           std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
@@ -65,8 +66,7 @@ auto OwnershipBodyAnalyzer::outlives(std::size_t source, std::size_t destination
         );
 }
 
-auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime) const noexcept
-    -> void {
+auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void {
     const auto found = facts.lifetime_objects.find(lifetime);
     if (found == facts.lifetime_objects.end()) {
         return;
@@ -76,11 +76,33 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
             state.objects[input.objects.size() + object] = {};
         }
     };
+    const auto check = [&](const OwnershipRelationships& value,
+                           const OwnershipState& state) noexcept {
+        for (const auto& loan : value.text_loans) {
+            if (!state.objects[loan.backing.object].available) {
+                diagnose(
+                    DiagnosticCode::AccessBorrowConflict,
+                    "text view escapes the lifetime of its backing",
+                    loan.origin,
+                    object_origin(loan.backing.object)
+                );
+            }
+        }
+    };
     if (flow.normal.has_value()) {
         release(flow.normal->state);
+        check(flow.normal->value, flow.normal->state);
     }
     for (auto& exit : flow.exits) {
         release(exit.state);
+        std::visit(
+            [&](const auto& payload) noexcept {
+                if constexpr (requires { payload.value; }) {
+                    check(payload.value, exit.state);
+                }
+            },
+            exit.payload
+        );
     }
 }
 
@@ -93,6 +115,9 @@ auto OwnershipBodyAnalyzer::retain(
     if (found != facts.temporaries.end()) {
         state.objects[input.objects.size() + found->second] =
             {.available = true, .taken = std::nullopt, .relationships = relationships};
+        // Text expression results travel through their consumers. Keeping an
+        // additional synthetic holder here would extend transient borrows.
+        state.objects[input.objects.size() + found->second].relationships.text_loans.clear();
     }
 }
 
@@ -117,7 +142,7 @@ auto OwnershipBodyAnalyzer::references(
             }
             follow(capture.target);
         }
-        for (const auto& loan : value.loans) {
+        for (const auto& loan : value.callable_loans) {
             if (loan.backing.has_value()) {
                 follow(*loan.backing);
             }
@@ -133,7 +158,17 @@ auto OwnershipBodyAnalyzer::use(
     ProgramOriginID origin,
     bool direct
 ) noexcept -> void {
-    for (const auto& loan : relationships.loans) {
+    for (const auto& loan : relationships.text_loans) {
+        if (!state.objects[loan.backing.object].available) {
+            diagnose(
+                DiagnosticCode::AccessBorrowConflict,
+                "text view has unavailable or expired backing",
+                origin,
+                loan.origin
+            );
+        }
+    }
+    for (const auto& loan : relationships.callable_loans) {
         if (loan.backing.has_value() && !state.objects[loan.backing->object].available) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
@@ -169,7 +204,18 @@ auto OwnershipBodyAnalyzer::store(
     ProgramOriginID origin
 ) noexcept -> void {
     use(relationships, state, origin);
-    for (const auto& loan : relationships.loans) {
+    check_text_write(state, target, origin);
+    for (const auto& loan : relationships.text_loans) {
+        if (loan.backing.object == target.object || !outlives(loan.backing.object, target.object)) {
+            diagnose(
+                DiagnosticCode::AccessBorrowConflict,
+                "text holder outlives its backing or creates a self reference",
+                origin,
+                loan.origin
+            );
+        }
+    }
+    for (const auto& loan : relationships.callable_loans) {
         if (loan.backing.has_value() && !outlives(loan.backing->object, target.object)) {
             diagnose(
                 DiagnosticCode::TypeCallableViewEscape,
@@ -201,8 +247,9 @@ auto OwnershipBodyAnalyzer::store(
             return row.holder.size() >= target.path.size()
                 && std::equal(target.path.begin(), target.path.end(), row.holder.begin());
         };
-        std::erase_if(destination.relationships.loans, replaced);
+        std::erase_if(destination.relationships.callable_loans, replaced);
         std::erase_if(destination.relationships.captures, replaced);
+        std::erase_if(destination.relationships.text_loans, replaced);
     }
     merge_relationships(destination.relationships, nest_relationships(relationships, target.path));
 }
@@ -305,4 +352,59 @@ auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) con
         }
     }
     return std::nullopt;
+}
+
+auto OwnershipBodyAnalyzer::protect_text(const OwnershipRelationships& value) noexcept -> void {
+    text_readers.insert(text_readers.end(), value.text_loans.begin(), value.text_loans.end());
+}
+
+auto OwnershipBodyAnalyzer::restore_text_readers(std::size_t count) noexcept -> void {
+    text_readers.erase(
+        text_readers.begin() + static_cast<std::ptrdiff_t>(count),
+        text_readers.end()
+    );
+}
+
+auto OwnershipBodyAnalyzer::check_text_write(
+    const OwnershipState& state,
+    const OwnershipPlace& target,
+    ProgramOriginID origin
+) noexcept -> void {
+    const auto check = [&](std::span<const OwnershipTextLoan> loans) noexcept {
+        for (const auto& loan : loans) {
+            if (overlaps(loan.backing, target)) {
+                diagnose(
+                    DiagnosticCode::AccessBorrowConflict,
+                    "operation conflicts with a live text view",
+                    origin,
+                    loan.origin
+                );
+            }
+        }
+    };
+    check(text_readers);
+    for (const auto& object : state.objects) {
+        check(object.relationships.text_loans);
+    }
+}
+
+auto OwnershipBodyAnalyzer::storage_backing(const SemanticExpression& source) const noexcept
+    -> std::optional<OwnershipPlace> {
+    if (const auto selected = location(source)) {
+        return selected;
+    }
+    if (const auto* field = std::get_if<SemField>(&source.value)) {
+        auto backing = storage_backing(*field->source);
+        if (backing) {
+            backing->path.push_back(field->field.field_index);
+        }
+        return backing;
+    }
+    if (std::holds_alternative<SemDereference>(source.value)) {
+        return std::nullopt;
+    }
+    const auto found = facts.temporaries.find(std::addressof(source));
+    return found == facts.temporaries.end()
+        ? std::nullopt
+        : std::optional(OwnershipPlace {input.objects.size() + found->second, {}});
 }

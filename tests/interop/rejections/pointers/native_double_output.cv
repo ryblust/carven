@@ -1,0 +1,6 @@
+import "pointers/provider.hpp";
+
+fn probe() {
+    var p: ptr<&i32> = nullptr;
+    ::pointer_probe::output(&p);
+}

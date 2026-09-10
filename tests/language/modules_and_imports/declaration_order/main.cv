@@ -17,9 +17,7 @@ test "Modules: imported enum contracts are available before consumer bodies" {
     check(classify_remote_late(.Empty) == 0);
 }
 
-fn make_later(value: i32) -> Later {
-    return Later { value: value };
-}
+fn make_later(value: i32) -> Later => Later { value: value };
 
 struct Wrapper {
     later: Later,

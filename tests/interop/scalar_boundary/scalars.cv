@@ -15,61 +15,33 @@ private import(cpp) fn native_usize(value: usize) -> usize;
 private import(cpp) fn native_f32(value: f32) -> f32;
 private import(cpp) fn native_f64(value: f64) -> f64;
 
-export(cpp) fn echo_bool(value: bool) -> bool {
-    return native_bool(value);
-}
+export(cpp) fn echo_bool(value: bool) -> bool => native_bool(value);
 
-export(cpp) fn echo_char(value: char) -> char {
-    return native_char(value);
-}
+export(cpp) fn echo_char(value: char) -> char => native_char(value);
 
-export(cpp) fn echo_i8(value: i8) -> i8 {
-    return native_i8(value);
-}
+export(cpp) fn echo_i8(value: i8) -> i8 => native_i8(value);
 
-export(cpp) fn echo_i16(value: i16) -> i16 {
-    return native_i16(value);
-}
+export(cpp) fn echo_i16(value: i16) -> i16 => native_i16(value);
 
-export(cpp) fn echo_i32(value: i32) -> i32 {
-    return native_i32(value);
-}
+export(cpp) fn echo_i32(value: i32) -> i32 => native_i32(value);
 
-export(cpp) fn echo_i64(value: i64) -> i64 {
-    return native_i64(value);
-}
+export(cpp) fn echo_i64(value: i64) -> i64 => native_i64(value);
 
-export(cpp) fn echo_u8(value: u8) -> u8 {
-    return native_u8(value);
-}
+export(cpp) fn echo_u8(value: u8) -> u8 => native_u8(value);
 
-export(cpp) fn echo_u16(value: u16) -> u16 {
-    return native_u16(value);
-}
+export(cpp) fn echo_u16(value: u16) -> u16 => native_u16(value);
 
-export(cpp) fn echo_u32(value: u32) -> u32 {
-    return native_u32(value);
-}
+export(cpp) fn echo_u32(value: u32) -> u32 => native_u32(value);
 
-export(cpp) fn echo_u64(value: u64) -> u64 {
-    return native_u64(value);
-}
+export(cpp) fn echo_u64(value: u64) -> u64 => native_u64(value);
 
-export(cpp) fn echo_isize(value: isize) -> isize {
-    return native_isize(value);
-}
+export(cpp) fn echo_isize(value: isize) -> isize => native_isize(value);
 
-export(cpp) fn echo_usize(value: usize) -> usize {
-    return native_usize(value);
-}
+export(cpp) fn echo_usize(value: usize) -> usize => native_usize(value);
 
-export(cpp) fn echo_f32(value: f32) -> f32 {
-    return native_f32(value);
-}
+export(cpp) fn echo_f32(value: f32) -> f32 => native_f32(value);
 
-export(cpp) fn echo_f64(value: f64) -> f64 {
-    return native_f64(value);
-}
+export(cpp) fn echo_f64(value: f64) -> f64 => native_f64(value);
 
 test "C++ scalar boundary crosses import and export directions" {
     check(native_bool(true));
@@ -118,8 +90,13 @@ test "C++ deduction: scalar expressions preserve canonical types" {
 }
 
 export(cpp) fn expression_scalar(value: i32) => value + 1;
+
 export(cpp) fn expression_void() => expression_action();
-fn expression_action() { ::scalar_boundary_detail::record_expression_call(); }
+
+fn expression_action() {
+    ::scalar_boundary_detail::record_expression_call();
+}
+
 fn native_expression(value: i32) => ::native_i32(value);
 
 test "C++ boundary: expression bodies retain native result queries" {

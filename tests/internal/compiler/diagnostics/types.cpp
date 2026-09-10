@@ -92,7 +92,7 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
         {
             .name = "text method requires a call",
             .source = "fn invalid() { let value = \"a\".len; }",
-            .code = "CV-TYPE-STR-PROPERTY",
+            .code = "CV-TYPE-TEXT-PROPERTY",
             .primary_text = "len",
         },
         {

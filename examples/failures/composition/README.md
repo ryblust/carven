@@ -4,13 +4,6 @@ An order quote combines independent catalog and delivery rules. A caller needs
 the amount when it succeeds, enough data to explain rejection, and a selective
 recovery policy when the primary carrier is unavailable.
 
-```sh
-./xmakew build example-order-quote
-./xmakew run example-order-quote
-```
-
-Run from the repository root after [building the compiler](../../README.md).
-
 ## Read the program
 
 1. [catalog.cv](catalog.cv) validates quantity and stock. Its contract combines
@@ -34,6 +27,14 @@ Run from the repository root after [building the compiler](../../README.md).
 The providers do not share a base error type. Composition adds their distinct
 failure types to a set. Changing the spelling order of the set does not change
 its meaning; changing handler order can change which recovery is selected.
+
+From the repository root:
+
+```sh
+./xmakew build
+./xmakew build carven-example-order-quote
+./xmakew run carven-example-order-quote
+```
 
 ## Output
 
@@ -84,5 +85,3 @@ Make one edit at a time and rebuild; restore it before continuing:
 These checks connect source changes to their callers. Catching a wildcard would
 be valid but would deliberately accept a more general recovery policy; the
 example lists cases to keep that responsibility visible.
-
-Next: [Configuration recovery](../recovery/).

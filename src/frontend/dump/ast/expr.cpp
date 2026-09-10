@@ -490,3 +490,46 @@ auto ASTDumper::render_expression(
 ) noexcept -> void {
     render_try_form(form, prefix, is_last, field);
 }
+
+auto ASTDumper::render_expression(
+    const ASTInterpolationExpr& interpolation,
+    ASTExprID,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(prefix, is_last, std::format("{}InterpolationExpression", field));
+    const auto render_parts = [&](this const auto& self,
+                                  const std::vector<ASTInterpolationPart>& parts,
+                                  std::string_view nested) noexcept -> void {
+        render_list(
+            nested,
+            true,
+            "parts",
+            parts,
+            [&](const ASTInterpolationPart& part,
+                std::string_view item_prefix,
+                bool item_last) noexcept {
+                if (const auto* hole = std::get_if<ASTInterpolationHole>(&part.value)) {
+                    append_line(
+                        item_prefix,
+                        item_last,
+                        std::format("Hole {}", format_dump_span(part.span))
+                    );
+                    const auto child = child_prefix(item_prefix, item_last);
+                    render_expression(hole->expression, child, !hole->colon_span.has_value());
+                    if (hole->colon_span) {
+                        self(hole->specification, child);
+                    }
+                } else {
+                    append_line(
+                        item_prefix,
+                        item_last,
+                        std::format("Text {}", source_label(part.span))
+                    );
+                }
+            }
+        );
+    };
+    render_parts(interpolation.parts, child_prefix(prefix, is_last));
+}

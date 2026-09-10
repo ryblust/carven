@@ -1,4 +1,13 @@
-import "cpp_names/c_strings.hpp" using c_strings::{same, pointer_value, const_pointer_reference, remember, remembered, unicode, select, Box};
+import "cpp_names/c_strings.hpp" using c_strings::{
+    same,
+    pointer_value,
+    const_pointer_reference,
+    remember,
+    remembered,
+    unicode,
+    select,
+    Box,
+};
 import "cpp_names/c_strings.hpp" using c_strings::select;
 import "cpp_names/c_strings.hpp" using c_other::*;
 

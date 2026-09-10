@@ -85,7 +85,8 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                 const auto inner = contextual_operand_kind(ast, form.expression);
                 return inner == ContextualOperandKind::NullPointer ? inner
                                                                    : ContextualOperandKind::None;
-            } else if constexpr (std::same_as<Form, ASTCppNameExpr>
+            } else if constexpr (std::same_as<Form, ASTInterpolationExpr>
+                                 || std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
                                  || std::same_as<Form, ASTArrayExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
@@ -357,6 +358,7 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::Usize:
         case BuiltinType::F32:
         case BuiltinType::F64:
+        case BuiltinType::String:
         case BuiltinType::Str:          return true;
         case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
@@ -734,7 +736,8 @@ auto decide_text_method(
     std::string_view name,
     std::size_t argument_count
 ) noexcept -> TextMethodDecision {
-    if (builtin_type(draft, operand) != BuiltinType::Str) {
+    const auto owning = builtin_type(draft, operand) == BuiltinType::String;
+    if (!owning && builtin_type(draft, operand) != BuiltinType::Str) {
         return std::optional<TextIntrinsic>();
     }
     auto intrinsic = TextIntrinsic::Len;
@@ -742,17 +745,25 @@ auto decide_text_method(
         intrinsic = TextIntrinsic::Len;
     } else if (name == "is_empty") {
         intrinsic = TextIntrinsic::IsEmpty;
+    } else if (owning && name == "as_str") {
+        intrinsic = TextIntrinsic::AsStr;
+    } else if (owning && name == "append") {
+        intrinsic = TextIntrinsic::Append;
+    } else if (owning && name == "push") {
+        intrinsic = TextIntrinsic::Push;
+    } else if (owning && name == "clear") {
+        intrinsic = TextIntrinsic::Clear;
     } else {
         return operation_error(
-            name == "bytes" || name == "chars" ? "str bytes/chars are properties, not functions"
-                                               : "str has no such method",
-            DiagnosticCode::TypeStrMethod
+            name == "bytes" || name == "chars" ? "text bytes/chars are properties, not functions"
+                                               : "text type has no such method",
+            DiagnosticCode::TypeTextCall
         );
     }
-    if (argument_count != 0) {
+    if (argument_count != text_intrinsic_arity(intrinsic) - 1) {
         return operation_error(
-            "str text methods take no arguments",
-            DiagnosticCode::TypeStrMethodArity
+            "text method argument count does not match",
+            DiagnosticCode::TypeTextCallArity
         );
     }
     return std::optional(intrinsic);
@@ -766,18 +777,8 @@ auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecisi
         return TextIntrinsic::Chars;
     }
     return operation_error(
-        name == "len" || name == "is_empty" ? "str len/is_empty must be called"
-                                            : "str has no such property",
-        DiagnosticCode::TypeStrProperty
+        name == "len" || name == "is_empty" ? "text len/is_empty must be called"
+                                            : "text type has no such property",
+        DiagnosticCode::TypeTextProperty
     );
-}
-
-auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType {
-    switch (intrinsic) {
-        case TextIntrinsic::Len:     return BuiltinType::Usize;
-        case TextIntrinsic::IsEmpty: return BuiltinType::Bool;
-        case TextIntrinsic::Bytes:   return BuiltinType::StrBytesView;
-        case TextIntrinsic::Chars:   return BuiltinType::StrCharsView;
-    }
-    std::unreachable();
 }

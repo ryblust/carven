@@ -108,14 +108,10 @@ an analyzer states the scope it analyzes. Implementation slices name a stable
 responsibility rather than a storage detail or a quality claim. A file split
 does not change the lifetime or ownership of the objects involved.
 
-Name mutable `ProgramDraft` state `draft`, published `SemIRProgram` data
-`semantic`, and a `PlannedCompilation` owner `compilation` when those roles occur
-in the same pipeline. Distinguish source-module and semantic-module identities
-where both are present. Failure terms, solved failure sets, and control-flow
-completion are different facts; their names must preserve that distinction.
 Context can shorten a name when it already establishes the domain. Protocol
 names and fixture spellings that are themselves under test keep their required
-form.
+form. Domain-specific identities and lifecycle terminology follow the owning
+architecture document.
 
 ## Declarations and values
 

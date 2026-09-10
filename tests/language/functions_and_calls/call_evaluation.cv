@@ -4,36 +4,27 @@ private import(cpp) fn cv_test_call_reset_order();
 private import(cpp) fn cv_test_call_record(marker: i32) -> i32;
 private import(cpp) fn cv_test_call_order() -> i32;
 
-fn pair(left: i32, right: i32) -> i32 {
-    return left * 10 + right;
-}
+fn pair(left: i32, right: i32) -> i32 => left * 10 + right;
 
 struct RecordedPair {
     first: i32,
     second: i32,
 }
 
-fn recorded_one() -> i32 {
-    return cv_test_call_record(1);
-}
+fn recorded_one() -> i32 => cv_test_call_record(1);
 
-fn recorded_two() -> i32 {
-    return cv_test_call_record(2);
-}
+fn recorded_two() -> i32 => cv_test_call_record(2);
 
-fn source_first(operand: i32) -> i32 {
-    return pair(cv_test_call_record(3), operand);
-}
+fn source_first(operand: i32) -> i32 => pair(cv_test_call_record(3), operand);
 
-fn identity(value: i32) -> i32 {
+fn identity(value: i32) -> i32 => value;
+
+fn reserved_identifier(__value: i32) -> i32 => __value;
+
+fn next_value(&value: i32) -> i32 {
+    value += 1;
     return value;
 }
-
-fn reserved_identifier(__value: i32) -> i32 {
-    return __value;
-}
-
-fn next_value(&value: i32) -> i32 { value += 1; return value; }
 
 fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
     return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 + g * 1000000 + h * 10000000;
@@ -41,7 +32,9 @@ fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) 
 
 test "Evaluation: predecessor reads survive later effects across a wide argument list" {
     var value = 1;
-    let result = eight_values(value, value, next_value(&value), value, value, next_value(&value), value, value);
+    let result = eight_values(
+        value, value, next_value(&value), value, value, next_value(&value), value, value
+    );
     check(result == 33322211);
     check(value == 3);
 }

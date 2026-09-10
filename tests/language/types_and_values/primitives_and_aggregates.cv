@@ -5,13 +5,9 @@ struct Point {
 
 struct Empty {}
 
-fn first(values: [i32; 3]) -> i32 {
-    return values[0];
-}
+fn first(values: [i32; 3]) -> i32 => values[0];
 
-fn sum(point: Point) -> i32 {
-    return point.x + point.y;
-}
+fn sum(point: Point) -> i32 => point.x + point.y;
 
 test "Basics: representative primitives aggregates and arrays run end to end" {
     let signed_value: i32 = 3;

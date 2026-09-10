@@ -5,6 +5,6 @@ test "C++ global names: source environments follow cross-module results" {
     check(point.y == 2);
     let rows = global_rows();
     check(rows.values[0][0].y == 4);
-    let capture = [point]() -> i32 { return point.x as i32; };
+    let capture = [point]() -> i32 => point.x as i32;
     check(capture() == 1);
 }

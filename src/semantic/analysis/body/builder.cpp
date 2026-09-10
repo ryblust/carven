@@ -99,7 +99,16 @@ auto BodyBuilder::make_expression(
                 add(*node.source);
                 add(*node.index);
             },
-            [&](const SemTextIntrinsic& node) noexcept { add(*node.source); },
+            [&](const SemFormat& node) noexcept {
+                for (const auto& operand : node.operands) {
+                    add(operand.expression);
+                }
+            },
+            [&](const SemTextIntrinsic& node) noexcept {
+                for (const auto& operand : node.operands) {
+                    add(operand.expression);
+                }
+            },
             [&](const SemCall& node) noexcept {
                 add(*node.callee);
                 for (const auto& argument : node.arguments) {

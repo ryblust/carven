@@ -503,26 +503,38 @@ TEST_CASE("Generation: explicit writable source pointers retain their access con
     );
 
     struct Query final {
-        std::size_t declarations = 0uz;
-        std::size_t contracts = 0uz;
+        const TargetUnit& unit;
+        std::size_t writable = 0uz;
+        std::size_t readonly = 0uz;
 
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                ++declarations;
-                contracts += variable->preserve_pointer_access;
+                const auto* pointer =
+                    std::get_if<TargetPointerType>(&unit.type(variable->type).value);
+                REQUIRE(pointer != nullptr);
+                const auto& pointee = unit.type(pointer->pointee);
+                const auto* intrinsic = std::get_if<TargetIntrinsicType>(&pointee.value);
+                const auto constant = pointee.const_qualified
+                    || (intrinsic != nullptr && intrinsic->symbol == TargetSymbol::StdAddConst);
+                writable += !constant;
+                readonly += constant;
                 CHECK(variable->binding == TargetVariableBinding::ConstValue);
             }
             return true;
         }
     };
 
-    auto query = Query {};
+    auto writable = 0uz;
+    auto readonly = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {unit};
         CHECK(traverse_target_unit(unit.sections(), query));
+        writable += query.writable;
+        readonly += query.readonly;
     }
-    CHECK(query.declarations == 2uz);
-    CHECK(query.contracts == 1uz);
+    CHECK(writable == 1uz);
+    CHECK(readonly == 1uz);
 }
 
 TEST_CASE("Generation: independent nested pattern alternatives keep target size proportional") {

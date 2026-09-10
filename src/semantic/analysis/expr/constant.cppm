@@ -164,7 +164,8 @@ public:
     auto extension(const Form&, Span, std::optional<ConstructionTypeRef>) const noexcept
         -> AnalysisResult<Value> {
         static_assert(
-            std::same_as<Form, ASTCppNameExpr>
+            std::same_as<Form, ASTInterpolationExpr>
+            || std::same_as<Form, ASTCppNameExpr>
             || std::same_as<Form, ASTArrayExpr>
             || std::same_as<Form, ASTConstructionExpr>
             || std::same_as<Form, ASTAccessExpr>
@@ -236,6 +237,15 @@ public:
         Span
     ) const noexcept -> Value {
         return result(known);
+    }
+
+    auto finish_text_call(
+        TextIntrinsic,
+        std::optional<Value>,
+        std::span<const ASTCallArgument>,
+        Span
+    ) const noexcept -> Value {
+        return unavailable();
     }
 
     auto dereference(const ASTPrefixExpr&, Span) const noexcept -> Value { return unavailable(); }

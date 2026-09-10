@@ -284,8 +284,16 @@ private:
 
     auto scalar(TypeID id) const noexcept -> bool {
         const auto& type = owner.context.semantic().types().type(id).value;
-        return std::holds_alternative<BuiltinTypeValue>(type)
+        const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
+        return (builtin != nullptr && builtin->kind != BuiltinType::String)
             || std::holds_alternative<PointerTypeValue>(type);
+    }
+
+    auto names_storage(const ConstructionExpression& value) const noexcept -> bool {
+        return std::holds_alternative<SemBinding>(value.operation.value)
+            || std::holds_alternative<SemField>(value.operation.value)
+            || std::holds_alternative<SemIndex>(value.operation.value)
+            || std::holds_alternative<SemDereference>(value.operation.value);
     }
 
     auto pending(const Recipe& recipe) const noexcept -> bool {
@@ -456,7 +464,7 @@ private:
                   )
                 : nullptr;
             auto condition =
-                build(logic->condition, pending, known == nullptr, ConstructionUse::ScalarValue);
+                build(logic->condition, pending, known == nullptr, ConstructionUse::OperandValue);
             if (!statements.continues()) {
                 return recipe;
             }
@@ -468,7 +476,7 @@ private:
                         logic->selected,
                         nullptr,
                         result_needed,
-                        ConstructionUse::ScalarValue
+                        ConstructionUse::OperandValue
                     );
                 }
                 if (result_needed) {
@@ -492,14 +500,14 @@ private:
                 ));
             }
             preserve_borrows(condition);
-            auto test = emit(condition, ConstructionUse::ScalarValue);
+            auto test = emit(condition, ConstructionUse::OperandValue);
             if (logic->operation == ShortCircuitOperator::Or) {
                 test = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(test));
             }
             auto previous = std::move(statements);
             statements = LoweringStmtBuilder();
             auto selected =
-                build(logic->selected, nullptr, result_needed, ConstructionUse::ScalarValue);
+                build(logic->selected, nullptr, result_needed, ConstructionUse::OperandValue);
             if (statements.continues()) {
                 preserve_borrows(selected);
                 if (result_needed) {
@@ -507,7 +515,7 @@ private:
                         TargetAssignmentStmt {
                             .target = name_expression(*name),
                             .op = TargetAssignmentOperator::Assign,
-                            .value = emit(selected, ConstructionUse::ScalarValue)
+                            .value = emit(selected, ConstructionUse::OperandValue)
                         }
                     ));
                 } else {
@@ -755,7 +763,7 @@ private:
             operands.push_back(emit(
                 recipe.operands[index],
                 inputs[index].use,
-                inputs[index].use == ConstructionUse::ScalarValue
+                inputs[index].use == ConstructionUse::OperandValue
                     ? (typed_arithmetic ? RealizationLiteralContext::TargetTyped : literal)
                     : RealizationLiteralContext::Exact
             ));
@@ -806,7 +814,15 @@ private:
             }
             return transfer_expression(std::move(result));
         }
-        if (use == ConstructionUse::ReadBorrow
+        const auto& value = source(recipe);
+        const auto copy_binding =
+            (use == ConstructionUse::Consume || use == ConstructionUse::OperandValue)
+            && !saved(recipe)
+            && std::holds_alternative<SemBinding>(value.operation.value)
+            && !scalar(value.type);
+        // Named values copy even at C++ automatic-move return sites.
+        if (copy_binding
+            || use == ConstructionUse::ReadBorrow
             || use == ConstructionUse::ConstPlace
             || use == ConstructionUse::AddressValue) {
             const auto type = owner.context.lower_type(source(recipe).type);
@@ -856,6 +872,7 @@ private:
         }
         const auto name = owner.names.fresh(TargetTemporaryNameKind::Owner);
         if (direct_scalar
+            && scalar(value.type)
             && use != ConstructionUse::Place
             && use != ConstructionUse::ConstPlace
             && std::holds_alternative<BuiltinTypeValue>(
@@ -907,8 +924,8 @@ private:
             && (use == ConstructionUse::Place || use == ConstructionUse::ConstPlace);
         // Read describes the consumer, not ownership of a newly produced value.
         // A factory cannot extend a prvalue lifetime by returning const T&.
-        const auto read =
-            use == ConstructionUse::ReadBorrow && value.category == SemanticValueCategory::Place;
+        const auto read = use == ConstructionUse::ReadBorrow
+            && (value.category == SemanticValueCategory::Place || names_storage(value));
         const auto type = place ? owner.context.reference_type(
                                       owner.context.lower_type(value.type),
                                       use == ConstructionUse::ConstPlace
@@ -917,7 +934,13 @@ private:
                    : owner.context.lower_type(value.type);
         const auto storage = LoweringDeferredStorage {.name = name, .value_type = type};
         owner.declare_deferred(storage, false, declarations);
-        owner.initialize_deferred(storage, raw(recipe), statements);
+        owner.initialize_deferred(
+            storage,
+            use == ConstructionUse::Consume || use == ConstructionUse::OperandValue
+                ? emit(recipe, use)
+                : raw(recipe),
+            statements
+        );
         complete(
             recipe,
             Saved {.name = name, .kind = place ? SavedKind::StoredPlace : SavedKind::StoredValue}
@@ -985,7 +1008,7 @@ private:
             const auto name = owner.names.fresh(TargetTemporaryNameKind::SuccessProjection);
             statements.emit(generated_statement(
                 TargetVariableStmt {
-                    .binding = TargetVariableBinding::MutableValue,
+                    .binding = TargetVariableBinding::ConstValue,
                     .maybe_unused = false,
                     .name = name,
                     .type = owner.context.pointer_type(owner.context.intrinsic_type(
@@ -993,7 +1016,7 @@ private:
                         use == ConstructionUse::ReadBorrow
                             || use == ConstructionUse::ConstPlace
                             || use == ConstructionUse::AddressValue
-                            || use == ConstructionUse::ScalarValue
+                            || use == ConstructionUse::OperandValue
                             || (use == ConstructionUse::Consume && scalar(source(recipe).type))
                     )),
                     .initializer = std::move(success)

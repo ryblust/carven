@@ -239,9 +239,9 @@ namespace {
       Error,                                                                                       \
       "Function result inference cycle.")                                                          \
     X(TypeReturnValue, "CV-TYPE-RETURN-VALUE", Error, "Unexpected return value.")                  \
-    X(TypeStrMethod, "CV-TYPE-STR-METHOD", Error, "Invalid str method.")                           \
-    X(TypeStrMethodArity, "CV-TYPE-STR-METHOD-ARITY", Error, "Invalid str method arity.")          \
-    X(TypeStrProperty, "CV-TYPE-STR-PROPERTY", Error, "Invalid str property.")                     \
+    X(TypeTextCall, "CV-TYPE-TEXT-CALL", Error, "Invalid text call.")                              \
+    X(TypeTextCallArity, "CV-TYPE-TEXT-CALL-ARITY", Error, "Invalid text call arity.")             \
+    X(TypeTextProperty, "CV-TYPE-TEXT-PROPERTY", Error, "Invalid text property.")                  \
     X(TypeUnresolved, "CV-TYPE-UNRESOLVED", Error, "Unresolved type.")                             \
     X(TypeUpdateInteger, "CV-TYPE-UPDATE-INTEGER", Error, "Integer update target required.")       \
     X(TypeValueRequired,                                                                           \

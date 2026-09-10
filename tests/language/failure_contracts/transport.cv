@@ -1,8 +1,13 @@
 // ZFailure is intentionally declared before AFailure. The plan-level invariant
 // test owns representation ordering; this program checks that the resulting
 // representation interoperates across every transport form.
-struct ZFailure { code: i32 }
-struct AFailure { code: i32 }
+struct ZFailure {
+    code: i32,
+}
+
+struct AFailure {
+    code: i32,
+}
 
 fn narrow(value: i32) -> i32 throw ZFailure {
     if value < 0 {
@@ -11,13 +16,9 @@ fn narrow(value: i32) -> i32 throw ZFailure {
     return value;
 }
 
-fn exact_tail(value: i32) -> i32 throw ZFailure {
-    return narrow(value)?;
-}
+fn exact_tail(value: i32) -> i32 throw ZFailure => narrow(value)?;
 
-fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure {
-    return narrow(value)?;
-}
+fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure => narrow(value)?;
 
 fn selected_failure(select_a: bool) -> i32 throw ZFailure + AFailure {
     if select_a {
@@ -96,7 +97,7 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     let wide_array: [fn(i32) -> i32 throw ZFailure + AFailure; 2] = narrow_array;
     let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [[narrow]];
     let nested_wide: [[fn(i32) -> i32 throw ZFailure + AFailure; 1]; 1] = nested_narrow;
-    let closure = [](value: i32) { return narrow(value)?; };
+    let closure = [](value: i32) => narrow(value)?;
     let exact_closure: fn(i32) -> i32 throw ZFailure = closure;
     let wide_closure: fn(i32) -> i32 throw ZFailure + AFailure = closure;
 
@@ -127,7 +128,7 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     check(closure_result == 42);
 
     let temporary_result = try {
-        invoke_wide([](value: i32) { return narrow(value)?; }, 29)?
+        invoke_wide([](value: i32) => narrow(value)?, 29)?
     } catch {
         ZFailure(_) => -1,
         AFailure(_) => -2,

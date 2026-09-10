@@ -1,5 +1,3 @@
 import .model using OrderedModel;
 
-export fn ordered_value(model: OrderedModel) -> i32 {
-    return model.value;
-}
+export fn ordered_value(model: OrderedModel) -> i32 => model.value;

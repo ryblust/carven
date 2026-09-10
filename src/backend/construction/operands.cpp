@@ -33,14 +33,14 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
             [&](const SemUnary& value) noexcept {
-                add(*value.operand, ConstructionUse::ScalarValue);
+                add(*value.operand, ConstructionUse::OperandValue);
             },
             [&](const SemBinary& value) noexcept {
-                add(*value.left, ConstructionUse::ScalarValue);
-                add(*value.right, ConstructionUse::ScalarValue);
+                add(*value.left, ConstructionUse::OperandValue);
+                add(*value.right, ConstructionUse::OperandValue);
             },
             [&](const SemCast& value) noexcept {
-                add(*value.operand, ConstructionUse::ScalarValue);
+                add(*value.operand, ConstructionUse::OperandValue);
             },
             [&](const SemField& value) noexcept { add(*value.source, ConstructionUse::Place); },
             [&](const SemDereference& value) noexcept {
@@ -48,10 +48,17 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             },
             [&](const SemIndex& value) noexcept {
                 add(*value.source, ConstructionUse::Place);
-                add(*value.index, ConstructionUse::ScalarValue);
+                add(*value.index, ConstructionUse::OperandValue);
+            },
+            [&](const SemFormat& value) noexcept {
+                for (const auto& input : value.operands) {
+                    result.push_back(argument(input));
+                }
             },
             [&](const SemTextIntrinsic& value) noexcept {
-                add(*value.source, ConstructionUse::ReadBorrow);
+                for (const auto& input : value.operands) {
+                    result.push_back(argument(input));
+                }
             },
             [&](const SemArray& value) noexcept {
                 for (const auto& element : value.elements) {
@@ -115,7 +122,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                     semantic.types().type(value.callee->type.resolved()).value
                 );
                 add(*value.callee,
-                    closure ? ConstructionUse::ConstPlace : ConstructionUse::ScalarValue);
+                    closure ? ConstructionUse::ConstPlace : ConstructionUse::OperandValue);
                 for (const auto& input : value.arguments) {
                     result.push_back(argument(input));
                 }

@@ -23,6 +23,7 @@ import <cstdint>;
         return ProviderFormsCounter<std::int32_t>::record(value);
     }
 -----
+
 #[cpp] ---
     auto native_trace() noexcept -> std::int32_t {
         return provider_forms_trace;

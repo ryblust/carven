@@ -1,15 +1,13 @@
 import "cpp_names/global_base.hpp";
 import "cpp_names/global_provider.hpp";
 
-struct GlobalPoint { local: i32 }
-
-fn global_calculate() -> i32 {
-    return ::global_calculate(5) as i32;
+struct GlobalPoint {
+    local: i32,
 }
 
-fn make_global() -> ::GlobalPoint {
-    return ::GlobalPoint { 1, 2 };
-}
+fn global_calculate() -> i32 => ::global_calculate(5) as i32;
+
+fn make_global() -> ::GlobalPoint => ::GlobalPoint { 1, 2 };
 
 struct GlobalRows {
     values: ::std::vector<::std::vector<::GlobalPoint>>,

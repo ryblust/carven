@@ -1,6 +1,4 @@
-export fn public_later(value: i32) -> PublicLater {
-    return PublicLater { value: value };
-}
+export fn public_later(value: i32) -> PublicLater => PublicLater { value: value };
 
 export struct PublicWrapper {
     later: PublicLater,

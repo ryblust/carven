@@ -1,4 +1,4 @@
-export(cpp) fn class() -> i32 { return 17; }
-export(cpp) fn cv_escaped_636c617373() -> i32 { return 19; }
-export(cpp) fn _Upper() -> i32 { return 23; }
-export(cpp) fn a__b() -> i32 { return 29; }
+export(cpp) fn class() -> i32 => 17;
+export(cpp) fn cv_escaped_636c617373() -> i32 => 19;
+export(cpp) fn _Upper() -> i32 => 23;
+export(cpp) fn a__b() -> i32 => 29;

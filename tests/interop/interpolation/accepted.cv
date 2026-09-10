@@ -1,0 +1,5 @@
+import "interpolation/provider.hpp";
+
+fn accepted_format() {
+    let result = f"{42:04x} {::interpolation_probe::make(7):q}";
+}

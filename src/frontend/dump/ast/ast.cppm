@@ -72,6 +72,13 @@ private:
         std::string_view field = {}
     ) noexcept -> void;
     auto render_expression(
+        const ASTInterpolationExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTLiteral& value,
         ASTExprID expression,
         std::string_view prefix,

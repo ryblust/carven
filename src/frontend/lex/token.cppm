@@ -10,6 +10,12 @@ enum class TokenKind {
     CharLiteral,
     StringLiteral,
     CStringLiteral,
+    InterpolationStart,
+    InterpolationEnd,
+    InterpolationText,
+    InterpolationOpen,
+    InterpolationClose,
+    InterpolationSpec,
     CppAngleHeaderName,
     CppQuoteHeaderName,
     CppSourceFragment,
@@ -101,7 +107,12 @@ struct Token final {
     Span span;
 };
 
+struct InterpolationTextValue final {
+    std::string bytes;
+};
+
 using TokenLiteralValue = std::variant<
+    InterpolationTextValue,
     IntegerLiteralValue,
     FloatingLiteralValue,
     StringLiteralValue,

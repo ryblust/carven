@@ -144,9 +144,14 @@ struct SemIndex final {
     ArrayBoundsPolicy bounds;
 };
 
+struct SemFormat final {
+    ConstantID format_string_id;
+    std::vector<SemCallArgument> operands;
+};
+
 struct SemTextIntrinsic final {
-    OwnedSemanticExpression source;
     TextIntrinsic intrinsic;
+    std::vector<SemCallArgument> operands;
 };
 
 struct SemCpp final {
@@ -247,6 +252,7 @@ struct SemanticExpression final {
         SemDereference,
         SemIndex,
         SemTextIntrinsic,
+        SemFormat,
         SemCall,
         SemClosure,
         SemBorrowCallable,

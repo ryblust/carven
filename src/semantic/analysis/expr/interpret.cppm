@@ -483,9 +483,22 @@ auto interpret_text(
 }
 
 template<typename Site>
+auto string_qualifier(Site& site, ASTExprID expression) noexcept -> bool {
+    const auto* name = std::get_if<ASTNameExpr>(&site.syntax().expression(expression).value);
+    return name != nullptr && site.spelling(name->name_span) == "String";
+}
+
+template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
     -> AnalysisResult<typename Site::Result> {
     if (source.op == ASTMemberOperator::Scope) {
+        if (string_qualifier(site, source.operand_id)) {
+            return std::unexpected(site.fail(
+                source.name_span,
+                DiagnosticCode::TypeTextCall,
+                "String factories must be called directly"
+            ));
+        }
         auto type = site.resolve_enum_qualifier(source.operand_id);
         if (!type.has_value()) {
             return std::unexpected(type.error());
@@ -513,8 +526,10 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
     const auto operand_type = site.type(*operand);
     const auto* concrete = std::get_if<TypeID>(&operand_type);
     if (concrete != nullptr
-        && site.draft().type_copy(*concrete).value
-            == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}) {
+        && (site.draft().type_copy(*concrete).value
+                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}
+            || site.draft().type_copy(*concrete).value
+                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}})) {
         auto decision = decide_text_property(site.spelling(source.name_span));
         if (!decision.has_value()) {
             return std::unexpected(site.fail(
@@ -535,7 +550,12 @@ auto interpret_call(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisResult<typename Site::Value> {
-    const auto& callee = site.syntax().expression(source.callee);
+    auto callee_id = source.callee;
+    while (const auto* group =
+               std::get_if<ASTGroupExpr>(&site.syntax().expression(callee_id).value)) {
+        callee_id = group->expression;
+    }
+    const auto& callee = site.syntax().expression(callee_id);
     if (const auto* contextual = std::get_if<ASTContextualCaseExpr>(&callee.value)) {
         auto type = expected_expression_enum(site, expected, contextual->name_span);
         if (!type.has_value()) {
@@ -553,6 +573,25 @@ auto interpret_call(
     }
     if (const auto* member = std::get_if<ASTMemberExpr>(&callee.value)) {
         if (member->op == ASTMemberOperator::Scope) {
+            if (string_qualifier(site, member->operand_id)) {
+                const auto name = site.spelling(member->name_span);
+                if (name != "new" && name != "from_str") {
+                    return std::unexpected(site.fail(
+                        member->name_span,
+                        DiagnosticCode::TypeTextCall,
+                        "String has no such factory"
+                    ));
+                }
+                const auto intrinsic = name == "new" ? TextIntrinsic::New : TextIntrinsic::FromStr;
+                if (source.arguments.size() != text_intrinsic_arity(intrinsic)) {
+                    return std::unexpected(site.fail(
+                        span,
+                        DiagnosticCode::TypeTextCallArity,
+                        "String factory argument count does not match"
+                    ));
+                }
+                return site.finish_text_call(intrinsic, std::nullopt, source.arguments, span);
+            }
             auto type = site.resolve_enum_qualifier(member->operand_id);
             if (!type.has_value()) {
                 return std::unexpected(type.error());
@@ -587,14 +626,17 @@ auto interpret_call(
         );
         if (!decision.has_value()) {
             return std::unexpected(site.fail(
-                decision.error().code == DiagnosticCode::TypeStrMethodArity ? span
-                                                                            : member->name_span,
+                decision.error().code == DiagnosticCode::TypeTextCallArity ? span
+                                                                           : member->name_span,
                 decision.error().code,
                 std::string(decision.error().message)
             ));
         }
         if (decision->has_value()) {
-            return interpret_text(site, **decision, std::move(*operand), span);
+            if (**decision == TextIntrinsic::Len || **decision == TextIntrinsic::IsEmpty) {
+                return interpret_text(site, **decision, std::move(*operand), span);
+            }
+            return site.finish_text_call(**decision, std::move(*operand), source.arguments, span);
         }
         return site.member_call(source, *member, std::move(*operand), span);
     }

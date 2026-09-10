@@ -103,9 +103,12 @@ auto BodyRealizer::lower_range(
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
     const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
-    auto begin = integer != nullptr
-        ? scope.accept(operand({.expression = first, .use = ConstructionUse::ScalarValue}))
-        : read_value(expression(first), scope);
+    auto begin = scope.accept(operand({
+        .expression = first,
+        .use = integer != nullptr               ? ConstructionUse::OperandValue
+            : value.access == AccessMode::Write ? ConstructionUse::Place
+                                                : ConstructionUse::ReadBorrow,
+    }));
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;

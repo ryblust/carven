@@ -1,0 +1,31 @@
+import "cpp_names/string.hpp";
+
+struct View {
+    text: str,
+}
+
+fn same(text: String) -> bool => ::native_text::aliases_retained(text);
+
+test "String C++ boundary: dynamic views and aggregates can be read and retained" {
+    let text = String::from_str("a我😀\0");
+    check(::native_text::read(text.as_str()) == 9usize);
+    check(::native_text::read_aggregate(View { text: text.as_str() }) == 9usize);
+    ::native_text::remember(text.as_str());
+    check(same(text));
+    check(::native_text::retained_size() == 9usize);
+    ::native_text::forget();
+    let external: str = ::native_text::external_view();
+    let copy = String::from_str(external);
+    check(copy.as_str() == "native");
+    var view: str = "old";
+    ::native_text::replace(&view);
+    check(view == "native");
+    check(::native_text::read(String::from_str("temp").as_str()) == 4usize);
+}
+
+test "String: global C++ lookup is independent of the builtin" {
+    let native: ::String = ::String { 42 };
+    let local: String = String::new();
+    check(native.value == 42);
+    check(local.is_empty());
+}

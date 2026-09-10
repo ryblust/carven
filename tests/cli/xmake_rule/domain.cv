@@ -1,3 +1,1 @@
-fn domain_value() -> i32 {
-    return 42;
-}
+fn domain_value() -> i32 => 42;

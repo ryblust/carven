@@ -10,7 +10,9 @@ test "Testing: explicit entry point executes emitted tests" {
     check(true);
 }
 
-struct EntryFailure { payload: ::EntryPayload }
+struct EntryFailure {
+    payload: ::EntryPayload,
+}
 
 private fn fail_entry() throw EntryFailure {
     throw EntryFailure { payload: ::EntryPayload {} };
@@ -29,7 +31,11 @@ fn main(args) -> ::EntryPayload throw EntryFailure {
         throw EntryFailure { payload: ::EntryPayload {} };
     }
     if ::cv_test_entry_selected(c"recover") {
-        try { fail_entry()?; } catch { EntryFailure(_) => {} }
+        try {
+            fail_entry()?;
+        } catch {
+            EntryFailure(_) => {},
+        }
     }
     if ::cv_test_entry_selected(c"propagate") { fail_entry()?; }
     return ::EntryPayload {};

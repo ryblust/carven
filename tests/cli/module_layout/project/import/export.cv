@@ -1,1 +1,1 @@
-fn keyword_value() -> i32 { return 1; }
+fn keyword_value() -> i32 => 1;

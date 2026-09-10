@@ -119,6 +119,7 @@ auto builtin_is_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::Char:
         case BuiltinType::F32:
         case BuiltinType::F64:
+        case BuiltinType::String:
         case BuiltinType::Str:
         case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
@@ -144,6 +145,7 @@ auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::Usize:
         case BuiltinType::F32:
         case BuiltinType::F64:
+        case BuiltinType::String:
         case BuiltinType::Str:
         case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
@@ -160,19 +162,20 @@ auto builtin_is_numeric(BuiltinType type) noexcept -> bool {
 auto builtin_integer_width(BuiltinType type) noexcept -> std::optional<std::uint8_t> {
     switch (type) {
         case BuiltinType::I8:
-        case BuiltinType::U8:    return 8u;
+        case BuiltinType::U8:     return 8u;
         case BuiltinType::I16:
-        case BuiltinType::U16:   return 16u;
+        case BuiltinType::U16:    return 16u;
         case BuiltinType::I32:
-        case BuiltinType::U32:   return 32u;
+        case BuiltinType::U32:    return 32u;
         case BuiltinType::I64:
-        case BuiltinType::U64:   return 64u;
-        case BuiltinType::Isize: return static_cast<std::uint8_t>(sizeof(std::ptrdiff_t) * 8uz);
-        case BuiltinType::Usize: return static_cast<std::uint8_t>(sizeof(std::size_t) * 8uz);
+        case BuiltinType::U64:    return 64u;
+        case BuiltinType::Isize:  return static_cast<std::uint8_t>(sizeof(std::ptrdiff_t) * 8uz);
+        case BuiltinType::Usize:  return static_cast<std::uint8_t>(sizeof(std::size_t) * 8uz);
         case BuiltinType::Bool:
         case BuiltinType::Char:
         case BuiltinType::F32:
         case BuiltinType::F64:
+        case BuiltinType::String:
         case BuiltinType::Str:
         case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:

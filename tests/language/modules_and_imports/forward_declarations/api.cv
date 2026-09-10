@@ -5,6 +5,4 @@ export fn inspect(
     _: Choice,
     _: Code,
     callback: fn(Model) -> Model,
-) -> Model throw Failure {
-    return callback(model);
-}
+) -> Model throw Failure => callback(model);

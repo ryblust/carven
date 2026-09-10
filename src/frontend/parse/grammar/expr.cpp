@@ -359,7 +359,68 @@ auto Parser::parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID> {
     );
 }
 
+auto Parser::parse_interpolation_parts(TokenKind closing) noexcept
+    -> std::vector<ASTInterpolationPart> {
+    auto parts = std::vector<ASTInterpolationPart>();
+    while (!failed && !at_end() && !check(closing)) {
+        if (check(TokenKind::InterpolationText)) {
+            const auto* text =
+                std::get_if<InterpolationTextValue>(&token_buffer->literal_value(cursor));
+            auto bytes = text->bytes;
+            const auto token = consume();
+            parts.push_back(
+                {.span = token.span, .value = ASTInterpolationText {.bytes = std::move(bytes)}}
+            );
+            continue;
+        }
+        const auto open = expect(TokenKind::InterpolationOpen, "expected interpolation hole");
+        if (failed) {
+            break;
+        }
+        const auto depth = enter_syntax_nesting();
+        if (!depth) {
+            break;
+        }
+        const auto expression_depth = enter_depth(expression_nesting);
+        const auto expression = parse_expression();
+        if (!expression) {
+            break;
+        }
+        auto colon = std::optional<Span>();
+        auto specification = std::vector<ASTInterpolationPart>();
+        if (const auto token = match(TokenKind::InterpolationSpec)) {
+            colon = token->span;
+            specification = parse_interpolation_parts(TokenKind::InterpolationClose);
+        }
+        const auto close =
+            expect(TokenKind::InterpolationClose, "expected '}' after interpolation expression");
+        parts.push_back(
+            {.span = join(open.span, close.span),
+             .value = ASTInterpolationHole {
+                 .expression = *expression,
+                 .colon_span = colon,
+                 .specification = std::move(specification)
+             }}
+        );
+    }
+    return parts;
+}
+
 auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
+    if (const auto open = match(TokenKind::InterpolationStart)) {
+        auto parts = parse_interpolation_parts(TokenKind::InterpolationEnd);
+        const auto close =
+            expect(TokenKind::InterpolationEnd, "expected closing interpolation quote");
+        if (failed) {
+            return std::nullopt;
+        }
+        return builder.append_expression(
+            ASTExpr {
+                .span = join(open->span, close.span),
+                .value = ASTInterpolationExpr {.parts = std::move(parts)},
+            }
+        );
+    }
     if (check(TokenKind::NumberLiteral)
         || check(TokenKind::StringLiteral)
         || check(TokenKind::CStringLiteral)

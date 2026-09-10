@@ -1,3 +1,1 @@
-export fn internal_value() -> i32 {
-    return 1;
-}
+export fn internal_value() -> i32 => 1;

@@ -5,9 +5,7 @@ fn read(p: ptr<i32>) -> i32 {
     return *p;
 }
 
-fn writable_address() -> ptr<&i32> {
-    return ::pointer_probe::get();
-}
+fn writable_address() -> ptr<&i32> => ::pointer_probe::get();
 
 #[cpp] ---
 auto pointer_output_adapter() noexcept -> std::int32_t* {

@@ -219,22 +219,58 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("short circuit requires boolean values");
                 }
             },
-            [&](const SemTextIntrinsic& value) noexcept {
-                if (require_type(value.source->type.resolved()).value
-                    != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}) {
-                    invariant_violation("text intrinsic requires str");
+            [&](const SemFormat& value) noexcept {
+                const auto& specification = program.constants().constant(value.format_string_id);
+                if (require_type(specification.type).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}
+                    || !std::holds_alternative<StringConstant>(specification.value)
+                    || require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}
+                    || source.category != SemanticValueCategory::Value
+                    || source.constant) {
+                    invariant_violation(
+                        "format requires a str constant and an owning String result"
+                    );
                 }
-                const auto expected = [&]() noexcept {
-                    switch (value.intrinsic) {
-                        case TextIntrinsic::Len:     return BuiltinType::Usize;
-                        case TextIntrinsic::IsEmpty: return BuiltinType::Bool;
-                        case TextIntrinsic::Bytes:   return BuiltinType::StrBytesView;
-                        case TextIntrinsic::Chars:   return BuiltinType::StrCharsView;
+                for (const auto& operand : value.operands) {
+                    if (operand.access != AccessMode::Read) {
+                        invariant_violation("format operands require Read access");
                     }
-                    std::unreachable();
-                }();
+                }
+            },
+            [&](const SemTextIntrinsic& value) noexcept {
+                if (value.operands.size() != text_intrinsic_arity(value.intrinsic)) {
+                    invariant_violation("text intrinsic operand count mismatch");
+                }
+                for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
+                    const auto access = index == 0 && text_intrinsic_writes(value.intrinsic)
+                        ? AccessMode::Write
+                        : AccessMode::Read;
+                    if (operand.access != access
+                        || (access == AccessMode::Write
+                            && operand.expression.category != SemanticValueCategory::Place)) {
+                        invariant_violation("text intrinsic operand access mismatch");
+                    }
+                    const auto& type = require_type(operand.expression.type.resolved()).value;
+                    const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
+                    const auto query = value.intrinsic == TextIntrinsic::Len
+                        || value.intrinsic == TextIntrinsic::IsEmpty
+                        || value.intrinsic == TextIntrinsic::Bytes
+                        || value.intrinsic == TextIntrinsic::Chars;
+                    const auto expected = value.intrinsic == TextIntrinsic::FromStr || index == 1
+                        ? (value.intrinsic == TextIntrinsic::Push ? BuiltinType::Char
+                                                                  : BuiltinType::Str)
+                        : BuiltinType::String;
+                    if (builtin == nullptr
+                        || (builtin->kind != expected
+                            && !(query && builtin->kind == BuiltinType::Str))) {
+                        invariant_violation("text intrinsic operand type mismatch");
+                    }
+                }
                 if (require_type(source.type.resolved()).value
-                    != CanonicalTypeValue {BuiltinTypeValue {expected}}) {
+                    != CanonicalTypeValue {
+                        BuiltinTypeValue {text_intrinsic_result(value.intrinsic)}
+                    }) {
                     invariant_violation("text intrinsic result mismatch");
                 }
             },

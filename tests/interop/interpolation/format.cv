@@ -1,0 +1,42 @@
+import "interpolation/provider.hpp";
+
+struct FormatError {
+    code: i32,
+}
+
+fn fail_format(&count: i32) -> i32 throw FormatError {
+    count += 1;
+    throw FormatError { code: count };
+}
+
+fn after_format(&count: i32) -> i32 {
+    count += 10;
+    return count;
+}
+
+test "Interpolation interop: C++ formatter receives its specification and reads once" {
+    let calls = ::interpolation_probe::calls();
+    check(f"{::interpolation_probe::make(42):q04x}".as_str() == "002a");
+    check(::interpolation_probe::calls() == calls + 1);
+    check(::interpolation_probe::alive() == 0);
+    f"{::interpolation_probe::make(7)}";
+    check(::interpolation_probe::calls() == calls + 2);
+    check(::interpolation_probe::alive() == 0);
+}
+
+test "Interpolation interop: propagation cleans pending values before the handler" {
+    var effects = 0;
+    let calls = ::interpolation_probe::calls();
+    let result = try {
+        f"{::interpolation_probe::make(1)} {fail_format(&effects)?} {after_format(&effects)}"
+    } catch {
+        FormatError(error) => {
+            check(::interpolation_probe::alive() == 0);
+            check(::interpolation_probe::calls() == calls);
+            f"error {error.code}"
+        },
+    };
+    check(effects == 1);
+    check(result.as_str() == "error 1");
+    check(::interpolation_probe::alive() == 0);
+}

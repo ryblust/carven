@@ -891,3 +891,294 @@ TEST_CASE("SemIR publication invariant: external names require valid structured 
         }));
     }
 }
+
+TEST_CASE("SemIR publication: String operations validate arity types access and results") {
+    struct Scenario final {
+        std::string_view name;
+        TextIntrinsic intrinsic;
+        BuiltinType result;
+        std::optional<AccessMode> operand;
+        bool valid;
+    };
+
+    const auto scenarios = std::array {
+        Scenario {
+            .name = "empty construction",
+            .intrinsic = TextIntrinsic::New,
+            .result = BuiltinType::String,
+            .operand = std::nullopt,
+            .valid = true,
+        },
+        Scenario {
+            .name = "extra operand",
+            .intrinsic = TextIntrinsic::New,
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
+            .valid = false,
+        },
+        Scenario {
+            .name = "wrong result",
+            .intrinsic = TextIntrinsic::New,
+            .result = BuiltinType::Str,
+            .operand = std::nullopt,
+            .valid = false,
+        },
+        Scenario {
+            .name = "wrong input type",
+            .intrinsic = TextIntrinsic::FromStr,
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
+            .valid = false,
+        },
+        Scenario {
+            .name = "value Write receiver",
+            .intrinsic = TextIntrinsic::Clear,
+            .result = BuiltinType::Void,
+            .operand = AccessMode::Write,
+            .valid = false,
+        },
+        Scenario {
+            .name = "wrong receiver access",
+            .intrinsic = TextIntrinsic::Clear,
+            .result = BuiltinType::Void,
+            .operand = AccessMode::Read,
+            .valid = false,
+        },
+    };
+    for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.name);
+        const auto publish_text = [&]() noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto builder = begin_compilation(sources, diagnostics, "semir.publication.text");
+            const auto facts = module_facts(builder);
+            const auto module_id = builder.reserve_module_declaration();
+            const auto test = builder.reserve_test();
+            builder.define_declaration(
+                module_id,
+                ModuleDeclaration {
+                    .provenance_module = facts.provenance_module,
+                    .origin = facts.origin,
+                    .cpp_headers = {},
+                    .cpp_source_fragments = {},
+                    .items = {test},
+                }
+            );
+            const auto owning = builder.intern_builtin_type(BuiltinType::String);
+            const auto result_type = builder.intern_builtin_type(scenario.result);
+            builder.finish_declaration_heads();
+            auto reservation = builder.reserve_body(BodyKind::Test);
+            builder.define_test(
+                test,
+                TestDeclaration {
+                    .module_id = module_id,
+                    .name = builder.intern_spelling("text"),
+                    .origin = facts.origin,
+                    .body = reservation.id(),
+                }
+            );
+            auto body = BodyBuilder(std::move(reservation), builder);
+            const auto lifetime =
+                body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, facts.origin);
+            auto operands = std::vector<SemCallArgument>();
+            if (scenario.operand) {
+                operands.push_back({
+                    .access = *scenario.operand,
+                    .expression = body.make_expression(
+                        owning,
+                        lifetime,
+                        facts.origin,
+                        SemTextIntrinsic {.intrinsic = TextIntrinsic::New, .operands = {}}
+                    ),
+                });
+            }
+            auto statements = std::vector<SemanticStatement>();
+            statements.push_back({
+                .origin = facts.origin,
+                .lifetime = lifetime,
+                .value = SemExpressionStatement {
+                    .expression = body.make_expression(
+                        result_type,
+                        lifetime,
+                        facts.origin,
+                        SemTextIntrinsic {
+                            .intrinsic = scenario.intrinsic,
+                            .operands = std::move(operands),
+                        }
+                    )
+                },
+            });
+            publish(
+                std::move(body).finish(
+                    SemanticRegion {
+                        .lifetime = lifetime,
+                        .origin = facts.origin,
+                        .statements = std::move(statements),
+                        .result = std::nullopt,
+                        .failures = BodyFailures(builder.add_empty_failure_term()),
+                        .exits_test = false,
+                    }
+                ),
+                builder
+            );
+            const auto result = std::move(builder).finish();
+            REQUIRE(result.has_value());
+        };
+        if (scenario.valid) {
+            publish_text();
+        } else {
+            CHECK(expect_termination("semir-invalid-text-operation", publish_text));
+        }
+    }
+}
+
+TEST_CASE("SemIR publication: format constants result types and Read operands are required") {
+    enum class FormatConstant { Text, Boolean, Foreign };
+
+    struct Scenario final {
+        BuiltinType result;
+        AccessMode operand;
+        FormatConstant constant;
+        bool valid;
+    };
+
+    const auto scenarios = std::array {
+        Scenario {
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
+            .constant = FormatConstant::Text,
+            .valid = true
+        },
+        Scenario {
+            .result = BuiltinType::Str,
+            .operand = AccessMode::Read,
+            .constant = FormatConstant::Text,
+            .valid = false
+        },
+        Scenario {
+            .result = BuiltinType::String,
+            .operand = AccessMode::Write,
+            .constant = FormatConstant::Text,
+            .valid = false
+        },
+        Scenario {
+            .result = BuiltinType::String,
+            .operand = AccessMode::Take,
+            .constant = FormatConstant::Text,
+            .valid = false
+        },
+        Scenario {
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
+            .constant = FormatConstant::Boolean,
+            .valid = false
+        },
+        Scenario {
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
+            .constant = FormatConstant::Foreign,
+            .valid = false
+        },
+    };
+    for (const auto& scenario : scenarios) {
+        const auto publish_format = [&]() noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto builder = begin_compilation(sources, diagnostics, "semir.publication.format");
+            const auto facts = module_facts(builder);
+            const auto module_id = builder.reserve_module_declaration();
+            const auto test = builder.reserve_test();
+            builder.define_declaration(
+                module_id,
+                ModuleDeclaration {
+                    .provenance_module = facts.provenance_module,
+                    .origin = facts.origin,
+                    .cpp_headers = {},
+                    .cpp_source_fragments = {},
+                    .items = {test},
+                }
+            );
+            const auto owning = builder.intern_builtin_type(BuiltinType::String);
+            const auto result_type = builder.intern_builtin_type(scenario.result);
+            auto foreign_sources = SourceManager();
+            auto foreign_diagnostics = DiagnosticSink();
+            auto foreign =
+                begin_compilation(foreign_sources, foreign_diagnostics, "semir.foreign.format");
+            const auto foreign_constant = foreign.intern_constant({
+                .type = foreign.intern_builtin_type(BuiltinType::Str),
+                .value = StringConstant {.value = foreign.intern_spelling("{0}")},
+            });
+            const auto specification = scenario.constant != FormatConstant::Boolean
+                ? builder.intern_constant(
+                      {.type = builder.intern_builtin_type(BuiltinType::Str),
+                       .value = StringConstant {.value = builder.intern_spelling("{0}")}}
+                  )
+                : builder.intern_constant(
+                      {.type = builder.intern_builtin_type(BuiltinType::Bool),
+                       .value = BooleanConstant {.value = true}}
+                  );
+            builder.finish_declaration_heads();
+            auto reservation = builder.reserve_body(BodyKind::Test);
+            builder.define_test(
+                test,
+                TestDeclaration {
+                    .module_id = module_id,
+                    .name = builder.intern_spelling("text"),
+                    .origin = facts.origin,
+                    .body = reservation.id(),
+                }
+            );
+            auto body = BodyBuilder(std::move(reservation), builder);
+            const auto lifetime =
+                body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, facts.origin);
+            auto operands = std::vector<SemCallArgument>();
+            operands.push_back({
+                .access = scenario.operand,
+                .expression = body.make_expression(
+                    owning,
+                    lifetime,
+                    facts.origin,
+                    SemTextIntrinsic {.intrinsic = TextIntrinsic::New, .operands = {}}
+                ),
+            });
+            auto statements = std::vector<SemanticStatement>();
+            statements.push_back({
+                .origin = facts.origin,
+                .lifetime = lifetime,
+                .value = SemExpressionStatement {
+                    .expression = body.make_expression(
+                        result_type,
+                        lifetime,
+                        facts.origin,
+                        SemFormat {
+                            .format_string_id = scenario.constant == FormatConstant::Foreign
+                                ? foreign_constant
+                                : specification,
+                            .operands = std::move(operands),
+                        }
+                    )
+                },
+            });
+            publish(
+                std::move(body).finish(
+                    SemanticRegion {
+                        .lifetime = lifetime,
+                        .origin = facts.origin,
+                        .statements = std::move(statements),
+                        .result = std::nullopt,
+                        .failures = BodyFailures(builder.add_empty_failure_term()),
+                        .exits_test = false,
+                    }
+                ),
+                builder
+            );
+            const auto result = std::move(builder).finish();
+            REQUIRE(result.has_value());
+        };
+        if (scenario.valid) {
+            publish_format();
+        } else {
+            CHECK(expect_termination("semir-invalid-format", publish_format));
+        }
+    }
+}

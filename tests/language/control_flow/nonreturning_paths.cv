@@ -1,14 +1,17 @@
 struct SelectedFailure {}
+
 struct InactiveFailure {}
-struct Pair { first: i32, second: i32 }
+
+struct Pair {
+    first: i32,
+    second: i32,
+}
 
 fn inactive_value() -> i32 throw InactiveFailure {
     throw InactiveFailure {};
 }
 
-fn add_checked(a: i32, b: i32) -> i32 {
-    return a + b;
-}
+fn add_checked(a: i32, b: i32) -> i32 => a + b;
 
 fn terminal_argument() -> i32 throw SelectedFailure {
     return add_checked(
@@ -38,10 +41,24 @@ fn completed_value() -> i32 {
 
 test "Control: nonreturning operands retain types and stop evaluation" {
     var caught = 0;
-    try { terminal_argument()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_array()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_field()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    for ;; inactive_value()? { break; }
+    try {
+        terminal_argument()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_array()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_field()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    for ;; inactive_value()? {
+        break;
+    }
     check(caught == 3);
     check(completed_value() == 7);
 }
@@ -89,11 +106,35 @@ fn no_loop_exit() {
 
 test "Control: a guard or condition failure has no rejected successor" {
     var caught = 0;
-    try { terminal_boolean()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_and()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_or()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_condition()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    try { terminal_catch_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try {
+        terminal_boolean()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_and()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_or()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_condition()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_guard()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
+    try {
+        terminal_catch_guard()?;
+    } catch {
+        SelectedFailure(_) => { caught += 1; },
+    }
     check(caught == 6);
 }

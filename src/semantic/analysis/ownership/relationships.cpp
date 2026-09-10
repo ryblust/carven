@@ -40,17 +40,23 @@ auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept 
     return left.object == right.object && overlaps(left.path, right.path);
 }
 
+auto normalize_text_loans(std::vector<OwnershipTextLoan>& loans) noexcept -> void {
+    normalize_rows(loans);
+}
+
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void {
-    normalize_rows(relationships.loans);
+    normalize_rows(relationships.callable_loans);
     normalize_rows(relationships.captures);
+    normalize_text_loans(relationships.text_loans);
 }
 
 auto merge_relationships(
     OwnershipRelationships& destination,
     const OwnershipRelationships& source
 ) noexcept -> void {
-    merge_rows(destination.loans, source.loans);
+    merge_rows(destination.callable_loans, source.callable_loans);
     merge_rows(destination.captures, source.captures);
+    merge_rows(destination.text_loans, source.text_loans);
 }
 
 auto project_relationships(
@@ -70,15 +76,19 @@ auto project_relationships(
             destination.push_back(std::move(row));
         }
     };
-    select(source.loans, result.loans);
+    select(source.callable_loans, result.callable_loans);
     select(source.captures, result.captures);
+    select(source.text_loans, result.text_loans);
     normalize_relationships(result);
     return result;
 }
 
 auto nest_relationships(OwnershipRelationships source, const OwnershipProjectionPath& path) noexcept
     -> OwnershipRelationships {
-    for (auto& loan : source.loans) {
+    for (auto& loan : source.callable_loans) {
+        loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
+    }
+    for (auto& loan : source.text_loans) {
         loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
     }
     for (auto& capture : source.captures) {
@@ -133,6 +143,8 @@ auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) n
             join_ownership_state(found->state, exit.state);
             if (auto* returned = std::get_if<OwnershipReturn>(&found->payload)) {
                 merge_relationships(returned->value, std::get<OwnershipReturn>(exit.payload).value);
+            } else if (auto* failure = std::get_if<OwnershipFailure>(&found->payload)) {
+                merge_relationships(failure->value, std::get<OwnershipFailure>(exit.payload).value);
             }
         }
     }

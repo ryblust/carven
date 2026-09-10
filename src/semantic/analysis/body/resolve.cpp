@@ -46,6 +46,16 @@ public:
     auto operator()(SemanticExpression& value) const noexcept -> void {
         (*this)(value.type);
         (*this)(value.failures);
+        while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
+            if (types.resolve(adoption->source->type.construction()) != value.type.resolved()) {
+                break;
+            }
+            // Equal canonical arrays need no adaptation or independent temporary.
+            // The consumer still determines whether this source is copied or read.
+            auto source = std::move(*adoption->source);
+            value.constant = source.constant;
+            value.value = std::move(source.value);
+        }
         if (auto* call = std::get_if<SemCall>(&value.value)) {
             (*this)(call->callee_failures);
         }

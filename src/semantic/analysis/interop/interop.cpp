@@ -30,6 +30,7 @@ auto is_cpp_scalar_type(BuiltinType type) noexcept -> bool {
         case F32:
         case F64:          return true;
         case Void:
+        case String:
         case Str:
         case StrBytesView:
         case StrCharsView:

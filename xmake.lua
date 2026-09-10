@@ -1,7 +1,16 @@
 set_project("carven")
 set_version("0.1.0")
 
-add_rules("mode.debug", "mode.release")
+rule("generated-clang-tidy")
+    on_config(function (target)
+        os.cp(path.join(os.projectdir(), ".clang-tidy"),
+              path.join(target:autogendir(), ".clang-tidy"))
+        os.cp(path.join(os.projectdir(), "xmake", "generated.clang-tidy"),
+              path.join(target:autogendir(), "rules", ".clang-tidy"))
+    end)
+rule_end()
+
+add_rules("mode.debug", "mode.release", "generated-clang-tidy")
 set_defaultmode("debug")
 set_policy("build.progress_style", "multirow")
 

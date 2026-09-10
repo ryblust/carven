@@ -6,17 +6,6 @@ import std;
 
 namespace {
 
-auto variable_prefix(const TargetVariableStmt& value) noexcept -> std::string {
-    auto prefix = std::string();
-    if (value.preserve_pointer_access) {
-        prefix += "/* NOLINT(misc-const-correctness): preserve source pointee mutability. */ ";
-    }
-    if (value.maybe_unused) {
-        prefix += "[[maybe_unused]] ";
-    }
-    return prefix;
-}
-
 auto assignment_spelling(TargetAssignmentOperator op) noexcept -> std::string_view {
     switch (op) {
         case TargetAssignmentOperator::Assign:     return "=";
@@ -63,7 +52,6 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
             [&](const TargetVariableStmt& value) noexcept {
-                const auto prefix = variable_prefix(value);
                 const auto constant = value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string {};
@@ -74,7 +62,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                     suffix = "&&";
                 }
                 const auto left = concat(
-                    {text(prefix),
+                    {text(value.maybe_unused ? "[[maybe_unused]] " : ""),
                      render_type(value.type, constant),
                      text(suffix),
                      text(" "),
@@ -237,7 +225,6 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
-                const auto prefix = variable_prefix(value);
                 const auto constant = value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string();
@@ -248,7 +235,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                     suffix = "&&";
                 }
                 return concat(
-                    {text(prefix),
+                    {text(value.maybe_unused ? "[[maybe_unused]] " : ""),
                      render_type(value.type, constant),
                      text(suffix),
                      text(" "),

@@ -34,8 +34,6 @@ auto BodyRealizer::declare_binding(
     const auto& binding = metadata.binding(id);
     const auto& owner = std::get<OwnerBindingStorage>(binding.storage);
     const auto type = context.lower_type(binding.type);
-    const auto* pointer =
-        std::get_if<PointerTypeValue>(&context.semantic().types().type(binding.type).value);
     destination.emit(generated_statement(
         TargetVariableStmt {
             .binding = owner.writable || taken_bindings.contains(id)
@@ -45,7 +43,6 @@ auto BodyRealizer::declare_binding(
             .name = binding_names.at(id),
             .type = type,
             .initializer = std::move(initializer),
-            .preserve_pointer_access = pointer != nullptr && pointer->access == PointerAccess::Write
         }
     ));
 }

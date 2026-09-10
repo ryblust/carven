@@ -1,9 +1,11 @@
 #pragma once
+
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
 
 namespace c_strings {
+
 inline const char* retained = nullptr;
 
 inline auto same(const char* left, const char* right) noexcept -> bool {
@@ -43,10 +45,13 @@ inline auto select(double) noexcept -> std::int32_t {
 struct Box final {
     std::int32_t value;
 };
-}
+
+} // namespace c_strings
 
 namespace c_other {
+
 inline auto select(std::int32_t) noexcept -> std::int32_t {
     return 3;
 }
-}
+
+} // namespace c_other

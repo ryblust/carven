@@ -1,6 +1,8 @@
 import "console.hpp" using example::print;
 
-struct SoldOut { requested: i32 }
+struct SoldOut {
+    requested: i32,
+}
 
 fn reserve(requested: i32, available: i32) -> i32 throw SoldOut {
     if requested > available {

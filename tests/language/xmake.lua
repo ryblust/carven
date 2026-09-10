@@ -36,16 +36,13 @@ target("carven-test-language")
 
 target("carven-test-language-cxx23")
     set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
+    add_rules("@carven/carven", {tests = "default"})
     set_values("carven.includedir", crafts_dir)
     set_languages("c++23")
     add_includedirs(language_dir)
     add_files(table.unpack(language_sources))
-    add_files(path.join(language_dir, "testing", "entry_point.cv"))
     after_load(use_local_carven)
-    add_tests("cxx23", {group = "language"})
-    -- Compilation and linking establish the C++23 contract.
-    on_test(function () return true end)
+    add_tests("compatibility", {group = "language"})
 
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 
@@ -57,9 +54,11 @@ target("carven-test-language-entry-point")
     add_includedirs(language_dir)
     add_files(entry_point_source)
     after_load(use_local_carven)
-    add_tests("entry-point", {group = "language"})
-    on_test(function (target)
-        import("harness.entry", {rootdir = language_dir}).main(target, "entry-point")
+    for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
+        add_tests(scenario, {group = "language"})
+    end
+    on_test(function (target, opt)
+        import("harness.entry", {rootdir = language_dir}).main(target, opt.name:match("([^/]+)$"))
         return true
     end)
 

@@ -58,7 +58,11 @@ const grouped_minimum: i32 = -(2147483648);
 const grouped_negative: f64 = -(1.0);
 const positive_zero: f64 = 0.0;
 const negative_zero: f64 = -0.0;
-enum FloatingPayload { Value(f64), }
+
+enum FloatingPayload {
+    Value(f64),
+}
+
 const zero_equal = positive_zero == negative_zero;
 const zero_payload_equal = FloatingPayload::Value(positive_zero) == .Value(negative_zero);
 

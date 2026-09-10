@@ -1,7 +1,9 @@
 import .expression_bodies using { expression_closure, expression_nested };
 
 fn imported_closure() => expression_closure(10);
+
 fn imported_nested() => []() => expression_closure(5);
+
 fn imported_capture() => []() {
     let callback = expression_closure(9);
     return [callback](value: i32) => callback(value);

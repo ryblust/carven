@@ -1,0 +1,114 @@
+struct TextError {
+    message: String,
+}
+
+struct ViewError {
+    message: str,
+}
+
+enum TextFailure {
+    Owned(String),
+    Borrowed(str),
+}
+
+fn owned_failure(text: str) throw TextError {
+    let error = TextError { message: String::from_str(text) };
+    throw error;
+}
+
+fn taken_failure() throw TextError {
+    let error = TextError { message: String::from_str("taken") };
+    throw &&error;
+}
+
+fn borrowed_failure(text: String) throw ViewError {
+    throw ViewError { message: text.as_str() };
+}
+
+fn forward_failure(text: String) throw ViewError {
+    try {
+        borrowed_failure(text)?;
+    } catch {
+        ViewError(_) => rethrow,
+    }
+}
+
+fn recovered(text: String, reject: bool) -> String {
+    return try {
+        forward_failure(text)?;
+        String::new()
+    } catch {
+        ViewError(error) if reject => String::from_str(error.message),
+        ViewError(error) => String::from_str(error.message),
+    };
+}
+
+test "String failures: owning payloads copy Take and survive rejected guards" {
+    let result = try {
+        try {
+            owned_failure("é我😀")?;
+        } catch {
+            TextError(error) if error.message.is_empty() => {},
+            TextError(_) => rethrow,
+        }
+        String::new()
+    } catch {
+        TextError(error) => error.message,
+    };
+    check(result.as_str() == "é我😀");
+    let taken = try {
+        taken_failure()?;
+        String::new()
+    } catch {
+        TextError(error) => error.message,
+    };
+    check(taken.as_str() == "taken");
+}
+
+test "String failures: borrowed payloads preserve caller backing and owning recovery releases it" {
+    var text = String::from_str("outer");
+    let copy = recovered(text, false);
+    text.clear();
+    check(copy.as_str() == "outer");
+    let owner = String::from_str("enum");
+    let result = try {
+        throw TextFailure::Borrowed(owner.as_str());
+        String::new()
+    } catch {
+        TextFailure(.Borrowed(v)) => String::from_str(v),
+        TextFailure(.Owned(s)) => s,
+    };
+    check(result.as_str() == "enum");
+}
+
+struct TextSource {
+    text: String,
+}
+
+fn field_failure(source: TextSource) throw ViewError {
+    borrowed_failure(source.text)?;
+}
+
+fn element_failure(source: [String; 2], index: usize) throw ViewError {
+    borrowed_failure(source[index])?;
+}
+
+test "String failures: projected Read arguments keep the caller's backing" {
+    let expected = "a longer text keeps a dynamically allocated UTF-8 buffer: 我😀";
+    let source = TextSource { text: String::from_str(expected) };
+    let field = try {
+        field_failure(source)?;
+        String::new()
+    } catch {
+        ViewError(error) => String::from_str(error.message),
+    };
+    check(field.as_str() == expected);
+    let values = [String::new(), String::from_str(expected)];
+    let element = try {
+        element_failure(values, 1usize)?;
+        String::new()
+    } catch {
+        ViewError(error) => String::from_str(error.message),
+    };
+    check(element.as_str() == expected);
+}

@@ -104,7 +104,6 @@ The adjacent prefix `c"` starts a `CStringLiteral` token. Its quoted payload
 uses ordinary string decoding, but decoded NUL is rejected at the originating
 character or escape. `c` by itself remains an identifier; `c "text"` is not
 one literal. C strings admit neither raw forms nor implicit concatenation.
-They are expression literals with an external pointer type, not `str` literals.
 
 ### 2.3 Numeric Literals
 
@@ -156,9 +155,6 @@ when its value portion contains neither a decimal point nor an exponent. Thus
 `1f32` and `1f64` are floating literals, while `1` and `1i32` are integer
 literals.
 
-The lexical grammar does not assign a type or perform range checking. Those
-rules belong to the language semantics and are not lexical validity checks.
-
 ### 2.4 Character and String Literals
 
 ```ebnf
@@ -189,6 +185,24 @@ scalar. A Unicode escape must denote a scalar in `U+0000..U+10FFFF` excluding
 the surrogate range `U+D800..U+DFFF`. The spellings `\xNN`, `\uXXXX`, and
 `\UXXXXXXXX` are not accepted. Literal decoding performs no Unicode
 normalization.
+
+Interpolated strings are expressions with an adjacent `f"` prefix. A standalone
+`f` remains an identifier. Their text uses the same escapes and UTF-8 rules:
+
+```ebnf
+interpolated-string = 'f"', { interpolation-text | interpolation-hole }, '"';
+interpolation-hole = "{", expression, [ ":", format-specification ], "}";
+format-specification = { format-text | interpolation-hole };
+```
+
+`interpolation-text` excludes unescaped quotes, braces, and line terminators;
+`{{` and `}}` represent literal braces. `format-text` ends at a brace and uses
+ordinary text escapes. Escaped scalars are decoded as text, without rescanning
+for interpolation delimiters. Raw line terminators are allowed inside hole
+expressions under ordinary expression rules. Parentheses, brackets, braces,
+strings, and nested interpolation belong to the hole expression; only a
+top-level `:` distinct from `::` starts its format specification. Empty holes
+are invalid.
 
 Adjacent string literal tokens do not form one token and are not implicitly
 concatenated by the Carven grammar.
@@ -257,9 +271,7 @@ Lexical analysis uses maximal munch. The punctuator set is:
 
 ## 3. Source Modules and Items
 
-The source-module grammar describes the order and shape of source items. Caller-provided
-module identity, lexical module-path resolution, filesystem policy, visibility,
-and generated artifacts belong to later compiler or host boundaries.
+The source-module grammar describes the order and shape of source items.
 
 ```ebnf
 source-module = { import-declaration },
@@ -354,9 +366,7 @@ import "native/provider.hpp";
 ```
 
 Quoted strings, `/`, and `..` are not module-reference productions. `craft` is
-an ordinary identifier. The grammar preserves the three token-distinct module
-reference forms and the two header-name forms but does not assign resolution,
-filesystem, or header-search behavior to them.
+an ordinary identifier.
 
 ### 3.2 Enumerations
 
@@ -444,8 +454,7 @@ test-operation-name = "check" | "require" | "fail";
 ```
 
 A test declaration is a top-level item and cannot follow `export`. It has no
-parameter or result syntax. Its string literal and the treatment of tests in a
-compilation are language and compiler concerns rather than grammar rules.
+parameter or result syntax.
 
 `check`, `require`, and `fail` remain `IDENTIFIER` tokens rather than reserved
 keywords. At a statement boundary with test context enabled, the exact form
@@ -487,10 +496,12 @@ function-type-parameter-list = function-type-parameter,
 function-type-parameter = [ access-marker ], type;
 ```
 
+`String` is an `IDENTIFIER`. Its factories, dot methods, and `.bytes`/`.chars`
+projections use ordinary member and call syntax.
+
 Unqualified `ptr` in type position constructs a pointer type. Its optional inner
-`&` selects writable target access; `ptr<&&T>` is invalid. Targets can be Carven
-or external types, including nested pointer types. The inner access marker is
-not a general reference-type production. `*p` is dereference; `p->member`
+`&` selects writable target access; `ptr<&&T>` is invalid. This marker is part of
+the pointer-type production. `*p` is dereference; `p->member`
 abbreviates `(*p).member`. Neither spelling adds an address-of operation.
 
 A named type can carry a nonempty type argument list after its qualified name.
@@ -742,7 +753,8 @@ propagation-operation = "?";
 ### 7.4 Primary Expressions
 
 ```ebnf
-primary-expression = literal
+primary-expression = interpolated-string
+                   | literal
                    | construction-expression
                    | contextual-case-expression
                    | IDENTIFIER
@@ -882,10 +894,7 @@ constraint-pattern = "is", constraint-operand;
 constraint-operand = qualified-name | array-type;
 ```
 
-Patterns are a syntactic category independent from `expression`. A parser
-constructs pattern nodes rather than parsing patterns as expressions with later
-flags. Guard evaluation and pattern-binding meaning belong to the language
-specification.
+Patterns are a syntactic category independent from `expression`.
 
 ### 9.2 Match Arm Bodies
 
@@ -956,9 +965,7 @@ expression grammar outside a pattern.
 `T { ... }` is the only source form introduced by `construction-expression`.
 Parentheses following a parsed expression always start a call operation. A
 parser does not classify a name as a type to reinterpret `T(...)` as a
-construction. The production accepts a general construction type; semantic
-analysis requires it to denote a structure and the initializer to cover every
-field.
+construction. The production accepts the `construction-type` forms defined above.
 
 In a control-flow header whose expression is followed immediately by a required
 body, the `{` at the header's outer delimiter depth always begins that body. A

@@ -1,0 +1,11 @@
+InheritParentConfig: true
+Checks:
+  # Parameter passing follows the source access contract.
+  - '-performance-unnecessary-value-param'
+  # The escape heuristic also diagnoses valid, length-delimited byte literals.
+  - '-bugprone-string-literal-with-embedded-nul'
+CheckOptions:
+  # Source parameters and borrows retain their declared access.
+  misc-const-correctness.AnalyzeParameters: false
+  misc-const-correctness.AnalyzeReferences: false
+  misc-const-correctness.AnalyzePointers: false

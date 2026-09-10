@@ -442,6 +442,66 @@ public:
         );
     }
 
+    auto extension(
+        const ASTInterpolationExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef>
+    ) noexcept -> AnalysisResult<Result> {
+        auto format_string = std::string();
+        auto operands = std::vector<SemCallArgument>();
+        auto pending = BodyPendingFailureTerms();
+        auto completes = true;
+        const auto append = [&](this const auto& self,
+                                const std::vector<ASTInterpolationPart>& parts,
+                                bool in_specification) noexcept -> AnalysisResult<void> {
+            for (const auto& part : parts) {
+                if (const auto* text = std::get_if<ASTInterpolationText>(&part.value)) {
+                    for (const auto byte : text->bytes) {
+                        format_string.push_back(byte);
+                        if (!in_specification && (byte == '{' || byte == '}')) {
+                            format_string.push_back(byte);
+                        }
+                    }
+                    continue;
+                }
+                const auto* hole = std::get_if<ASTInterpolationHole>(&part.value);
+                const auto execution = enter_operand_execution(completes);
+                auto built =
+                    body.build_call_argument(hole->expression, AccessMode::Read, std::nullopt);
+                if (!built) {
+                    return std::unexpected(built.error());
+                }
+                append_pending_failures(pending, built->pending_failures);
+                completes &= built->completes;
+                format_string += std::format("{{{}", operands.size());
+                operands.push_back(std::move(built->argument));
+                if (hole->colon_span) {
+                    format_string.push_back(':');
+                    if (auto result = self(hole->specification, true); !result) {
+                        return result;
+                    }
+                }
+                format_string.push_back('}');
+            }
+            return {};
+        };
+        if (auto result = append(source.parts, false); !result) {
+            return std::unexpected(result.error());
+        }
+        const auto constant_id = draft().intern_constant({
+            .type = draft().intern_builtin_type(BuiltinType::Str),
+            .value = StringConstant {.value = draft().intern_spelling(format_string)},
+        });
+        return finish(
+            draft().intern_builtin_type(BuiltinType::String),
+            SemFormat {.format_string_id = constant_id, .operands = std::move(operands)},
+            std::nullopt,
+            span,
+            std::move(pending),
+            completes
+        );
+    }
+
     auto finish_text(
         TextIntrinsic intrinsic,
         TypeID type,
@@ -454,13 +514,68 @@ public:
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
+        auto operands = std::vector<SemCallArgument>();
+        operands.push_back({.access = AccessMode::Read, .expression = std::move(*value)});
         return finish(
             type,
-            SemTextIntrinsic {.source = UniqueIndirect(std::move(*value)), .intrinsic = intrinsic},
+            SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
             known,
             span,
             std::move(pending),
             operand.completes
+        );
+    }
+
+    auto finish_text_call(
+        TextIntrinsic intrinsic,
+        std::optional<Value> receiver,
+        std::span<const ASTCallArgument> arguments,
+        Span span
+    ) noexcept -> AnalysisResult<Value> {
+        auto pending = BodyPendingFailureTerms();
+        auto operands = std::vector<SemCallArgument>();
+        auto completes = true;
+        if (receiver) {
+            append_pending_failures(pending, take_pending_failures(*receiver));
+            completes &= receiver->completes;
+            if (text_intrinsic_writes(intrinsic)) {
+                auto place = body.consume_place(*receiver, span);
+                if (!place) {
+                    return std::unexpected(place.error());
+                }
+                operands.push_back(
+                    {.access = AccessMode::Write, .expression = std::move(place->expression)}
+                );
+            } else {
+                auto value = body.consume_value(*receiver, span, AccessMode::Read);
+                if (!value) {
+                    return std::unexpected(value.error());
+                }
+                operands.push_back({.access = AccessMode::Read, .expression = std::move(*value)});
+            }
+        }
+        for (const auto& argument : arguments) {
+            auto built = body.build_call_argument(
+                argument.expression,
+                AccessMode::Read,
+                draft().intern_builtin_type(
+                    intrinsic == TextIntrinsic::Push ? BuiltinType::Char : BuiltinType::Str
+                )
+            );
+            if (!built) {
+                return std::unexpected(built.error());
+            }
+            append_pending_failures(pending, built->pending_failures);
+            completes &= built->completes;
+            operands.push_back(std::move(built->argument));
+        }
+        return finish(
+            draft().intern_builtin_type(text_intrinsic_result(intrinsic)),
+            SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
+            std::nullopt,
+            span,
+            std::move(pending),
+            completes
         );
     }
 

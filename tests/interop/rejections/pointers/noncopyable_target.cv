@@ -1,0 +1,8 @@
+import "pointers/provider.hpp";
+
+fn probe(p: ptr<::pointer_probe::Fixed>) {
+    if p == nullptr {
+        return;
+    }
+    let value = *p;
+}

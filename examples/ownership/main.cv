@@ -1,14 +1,14 @@
 import "console.hpp" using example::print;
 
-struct Stock { units: i32 }
+struct Stock {
+    units: i32,
+}
 
 fn restock(&stock: Stock, units: i32) {
     stock.units += units;
 }
 
-fn dispatch(&&stock: Stock) -> i32 {
-    return stock.units;
-}
+fn dispatch(&&stock: Stock) -> i32 => stock.units;
 
 fn main() {
     var stock = Stock { units: 4 };

@@ -20,7 +20,13 @@ namespace {
 
 auto ast_literal_value(const TokenLiteralValue& value) noexcept -> ASTLiteralValue {
     return std::visit(
-        [](const auto& alternative) static noexcept -> ASTLiteralValue { return alternative; },
+        []<typename Value>(const Value& alternative) static noexcept -> ASTLiteralValue {
+            if constexpr (std::same_as<Value, InterpolationTextValue>) {
+                invariant_violation("interpolation text used as an ordinary literal");
+            } else {
+                return alternative;
+            }
+        },
         value
     );
 }

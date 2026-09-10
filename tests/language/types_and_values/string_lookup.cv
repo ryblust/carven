@@ -1,0 +1,13 @@
+struct String {
+    ignored: i32,
+}
+
+fn make(String: i32) -> String {
+    let _ = String;
+    return (String::from_str)("builtin");
+}
+
+test "String: builtin type and factory lookup precede nominal declarations" {
+    let text: String = make(42);
+    check(text.as_str() == "builtin");
+}

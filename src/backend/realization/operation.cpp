@@ -418,8 +418,53 @@ auto realize_operation(
                     }
                 };
             },
+            [&](const SemFormat& value) noexcept -> TargetExpr {
+                operands.insert(
+                    operands.begin(),
+                    constant_expression(context, value.format_string_id)
+                );
+                return call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeFormat),
+                    std::move(operands)
+                );
+            },
             [&](const SemTextIntrinsic& value) noexcept -> TargetExpr {
+                if ((value.intrinsic == TextIntrinsic::Bytes
+                     || value.intrinsic == TextIntrinsic::Chars)
+                    && context.semantic()
+                            .types()
+                            .type(value.operands[0].expression.type.resolved())
+                            .value
+                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                    operands[0] = call_member(std::move(operands[0]), "as_str", {});
+                }
                 switch (value.intrinsic) {
+                    case TextIntrinsic::New:
+                        return TargetExpr {
+                            .value = TargetConstructionExpr {
+                                .type = context.lower_type(source.type.resolved()),
+                                .initializer = {}
+                            }
+                        };
+                    case TextIntrinsic::FromStr:
+                        return call_expression(
+                            static_member_expression(
+                                context.lower_type(source.type.resolved()),
+                                TargetIdentifier::from_spelling("from_str")
+                            ),
+                            std::move(operands)
+                        );
+                    case TextIntrinsic::AsStr:
+                        return call_member(std::move(operands[0]), "as_str", {});
+                    case TextIntrinsic::Append:
+                    case TextIntrinsic::Push:
+                        return call_member(
+                            std::move(operands[0]),
+                            value.intrinsic == TextIntrinsic::Append ? "append" : "push",
+                            target_expressions(std::move(operands[1]))
+                        );
+                    case TextIntrinsic::Clear:
+                        return call_member(std::move(operands[0]), "clear", {});
                     case TextIntrinsic::Len: return call_member(std::move(operands[0]), "size", {});
                     case TextIntrinsic::IsEmpty:
                         return call_member(std::move(operands[0]), "empty", {});

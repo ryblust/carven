@@ -10,8 +10,8 @@ not a commitment that every listed direction ships in that milestone.
 ## Current design frontier
 
 Compiler architecture, target ownership, failure-effect realization, and the
-current [C++ interoperation contract](../docs/semantics.md#c-interoperation) are
-implemented foundations. Active proposals advance according to their semantic
+current C++ interoperation contract are implemented foundations.
+Active proposals advance according to their semantic
 dependencies and readiness. Generic participation in the C++ boundary is the
 next dependent slice. Documentation comments are independent. Async, the
 memory model, and threading follow the dependency edges below.
@@ -40,18 +40,22 @@ roadmap items. Their names alone do not determine their semantics.
 The [documentation comments](doc-comments.md) proposal is logically independent
 of this chain.
 
+## Owning text track
+
+Builtin UTF-8 String, explicit text borrowing, and string interpolation are
+implemented.
+
 ## Failure extension edges
 
 The current failure contract and compiler realization are closed.
-Only future features that cross its boundary reactivate design work:
+Features that extend their boundary require the following design work:
 
 ```text
 failure-effect private Outcome --> C++ interoperation failure contract
 failure-effect semantic facts + async suspension facts --> async completion transport
 ```
 
-Any public C++ failure mapping must extend the permanent
-[C++ interoperation contract](../docs/semantics.md#c-interoperation), even when
+Any public C++ failure mapping must extend the C++ interoperation contract, even when
 it adapts a private generated protocol. The [async](async.md) proposal owns
 suspension, cancellation, and completion; failure effects supply only their
 existing structured semantic facts.
@@ -81,8 +85,8 @@ memory-model work only when a concrete cross-thread value or use case exists.
 
 ## C++ interoperation track
 
-The implemented [C++ interoperation](../docs/semantics.md#c-interoperation)
-boundary is opt-in. Its concrete scalar scope covers C++ header imports,
+The implemented C++ interoperation boundary is opt-in. Its concrete scalar scope
+covers C++ header imports,
 top-level C++ source fragments, `import(cpp)`, and `export(cpp)`. Generic
 provider or façade surfaces remain inactive until a concrete use case requires
 both that boundary and the generic instance contract.

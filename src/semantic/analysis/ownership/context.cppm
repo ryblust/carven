@@ -20,19 +20,19 @@ struct OwnershipPlace final {
     auto operator<=>(const OwnershipPlace&) const noexcept = default;
 };
 
-struct OwnershipLoan final {
+struct OwnershipCallableLoan final {
     OwnershipProjectionPath holder;
     std::optional<OwnershipPlace> backing;
     std::optional<CallableID> callable;
     ProgramOriginID origin;
     bool direct_only;
 
-    auto operator<=>(const OwnershipLoan& other) const noexcept {
+    auto operator<=>(const OwnershipCallableLoan& other) const noexcept {
         return std::tie(holder, backing, callable, direct_only)
             <=> std::tie(other.holder, other.backing, other.callable, other.direct_only);
     }
 
-    auto operator==(const OwnershipLoan& other) const noexcept -> bool {
+    auto operator==(const OwnershipCallableLoan& other) const noexcept -> bool {
         return (*this <=> other) == 0;
     }
 };
@@ -51,9 +51,26 @@ struct OwnershipCapture final {
     }
 };
 
+// Only known Carven backing creates a text loan. An empty set makes no claim
+// about native storage lifetime. Origins do not participate in solver identity.
+struct OwnershipTextLoan final {
+    OwnershipProjectionPath holder;
+    OwnershipPlace backing;
+    ProgramOriginID origin;
+
+    auto operator<=>(const OwnershipTextLoan& other) const noexcept {
+        return std::tie(holder, backing) <=> std::tie(other.holder, other.backing);
+    }
+
+    auto operator==(const OwnershipTextLoan& other) const noexcept -> bool {
+        return (*this <=> other) == 0;
+    }
+};
+
 struct OwnershipRelationships final {
-    std::vector<OwnershipLoan> loans;
+    std::vector<OwnershipCallableLoan> callable_loans;
     std::vector<OwnershipCapture> captures;
+    std::vector<OwnershipTextLoan> text_loans;
     auto operator==(const OwnershipRelationships&) const noexcept -> bool = default;
 };
 
@@ -78,6 +95,7 @@ struct OwnershipReturn final {
 
 struct OwnershipFailure final {
     TypeID type;
+    OwnershipRelationships value;
 };
 
 struct OwnershipBreak final {};
@@ -134,6 +152,7 @@ struct OwnershipCallInput final {
     std::vector<OwnershipExternalObject> objects;
     std::vector<std::vector<bool>> outlives;
     std::vector<OwnershipAccess> accesses;
+    std::vector<OwnershipTextLoan> text_readers;
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
 
@@ -181,6 +200,7 @@ auto overlaps(
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
+auto normalize_text_loans(std::vector<OwnershipTextLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
 auto merge_relationships(
     OwnershipRelationships& destination,
@@ -220,7 +240,7 @@ private:
         std::optional<ProgramOriginID> related = std::nullopt
     ) noexcept -> void;
     auto outlives(std::size_t source, std::size_t destination) const noexcept -> bool;
-    auto leave(OwnershipFlow& flow, LifetimeRegionID lifetime) const noexcept -> void;
+    auto leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void;
     auto retain(
         OwnershipState& state,
         const OwnershipRelationships& relationships,
@@ -238,6 +258,15 @@ private:
         const OwnershipRelationships& relationships,
         ProgramOriginID origin
     ) noexcept -> void;
+    auto check_text_write(
+        const OwnershipState& state,
+        const OwnershipPlace& target,
+        ProgramOriginID origin
+    ) noexcept -> void;
+    auto protect_text(const OwnershipRelationships& value) noexcept -> void;
+    auto restore_text_readers(std::size_t count) noexcept -> void;
+    auto storage_backing(const SemanticExpression& source) const noexcept
+        -> std::optional<OwnershipPlace>;
     auto references(
         const OwnershipRelationships& relationships,
         const OwnershipState& state
@@ -274,6 +303,7 @@ private:
     auto call(
         CallableID callable,
         const OwnershipRelationships& captures,
+        std::optional<OwnershipPlace> capture_owner,
         std::span<const OwnershipCallArgument> parameters,
         OwnershipState state,
         ProgramOriginID origin
@@ -296,7 +326,8 @@ private:
     bool diagnosing;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
     std::vector<OwnershipAccess> accesses;
-    std::vector<TypeID> caught;
+    std::optional<OwnershipFailure> caught;
+    std::vector<OwnershipTextLoan> text_readers;
     std::optional<LifetimeRegionID> full_expression;
 };
 

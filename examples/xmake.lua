@@ -2,6 +2,7 @@ local examples_dir = path.join(os.projectdir(), "examples")
 local crafts_dir = path.join(os.projectdir(), "crafts")
 
 local cases = {
+    {name = "strings", dir = "strings", output = "Hello, 世界!\nGoodbye!\nHello, 世界!\nBytes: 14, ID: 002a\n"},
     {name = "hello-world", dir = "helloworld", output = "Hello World\n"},
     {name = "receipt", dir = "basics", output = "Total in cents:\n860\n"},
     {name = "inventory", dir = "ownership",

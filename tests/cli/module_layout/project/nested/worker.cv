@@ -1,6 +1,4 @@
 import .local using local_value;
 import sibling using sibling_value;
 
-export fn worker_value() -> i32 {
-    return local_value() + sibling_value();
-}
+export fn worker_value() -> i32 => local_value() + sibling_value();

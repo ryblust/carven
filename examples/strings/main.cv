@@ -1,0 +1,17 @@
+import "console.hpp" using example::print;
+
+fn greeting(name: str) -> String => f"Hello, {name}!";
+
+fn main() {
+    var message = greeting("世界");
+    let saved = message;
+    if true {
+        let view = message.as_str();
+        print(view);
+    }
+    message.clear();
+    message.append("Goodbye!");
+    print(message.as_str());
+    print(saved.as_str());
+    print(f"Bytes: {saved.len()}, ID: {42:04x}".as_str());
+}

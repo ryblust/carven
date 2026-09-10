@@ -23,6 +23,7 @@ enum class BuiltinType {
     Usize,
     F32,
     F64,
+    String,
     Str,
     StrBytesView,
     StrCharsView,

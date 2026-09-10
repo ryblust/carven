@@ -165,7 +165,7 @@ auto PatternRealizer::match(
                 const auto ordinal = enum_case_index(context.semantic(), value.enum_case);
                 destination.emit(generated_statement(
                     TargetVariableStmt {
-                        .binding = TargetVariableBinding::MutableValue,
+                        .binding = TargetVariableBinding::ConstValue,
                         .maybe_unused = false,
                         .name = projection,
                         .type =

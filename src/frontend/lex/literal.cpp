@@ -206,62 +206,13 @@ auto walk_quoted_literal(
         }
 
         const auto scalar_start = offset;
-        auto scalar = char32_t();
-        if (spelling[offset] == '\\') {
-            const auto escape_offset = offset++;
-            if (offset >= spelling.size()) {
-                return fail(escape_offset);
-            }
-            const auto escape = spelling[offset++];
-            switch (escape) {
-                case '0':  scalar = 0; break;
-                case 'n':  scalar = '\n'; break;
-                case 'r':  scalar = '\r'; break;
-                case 't':  scalar = '\t'; break;
-                case '\\': scalar = '\\'; break;
-                case '\'': scalar = '\''; break;
-                case '"':  scalar = '"'; break;
-                case 'u':  {
-                    if (offset >= spelling.size() || spelling[offset] != '{') {
-                        return fail(escape_offset);
-                    }
-                    ++offset;
-                    const auto digits_start = offset;
-                    auto value = std::uint32_t {};
-                    while (offset < spelling.size() && spelling[offset] != '}') {
-                        const auto nibble = hex_nibble(spelling[offset]);
-                        if (!nibble.has_value() || offset - digits_start >= 6) {
-                            return fail(offset);
-                        }
-                        value = (value << 4) | *nibble;
-                        ++offset;
-                    }
-                    if (offset == digits_start || offset >= spelling.size()) {
-                        return fail(escape_offset);
-                    }
-                    ++offset;
-                    if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
-                        return fail(digits_start);
-                    }
-                    scalar = static_cast<char32_t>(value);
-                    break;
-                }
-                default: return fail(escape_offset);
-            }
-            if (escape == '0'
-                && offset < spelling.size()
-                && spelling[offset] >= '0'
-                && spelling[offset] <= '7') {
-                return fail(offset);
-            }
-        } else {
-            const auto sequence = UTF8Decoder::decode(spelling, offset);
-            if (!sequence.valid) {
-                return fail(offset);
-            }
-            scalar = sequence.scalar;
-            offset += sequence.width;
+        const auto decoded = scan_literal_scalar(spelling.substr(offset));
+        if (!decoded) {
+            result.error_length = decoded.error().error_length;
+            return fail(offset + decoded.error().error_offset);
         }
+        const auto scalar = decoded->scalar;
+        offset += decoded->consumed;
         if (reject_nul && scalar == 0) {
             result.error_length = offset - scalar_start;
             return fail(scalar_start);
@@ -276,6 +227,80 @@ auto walk_quoted_literal(
 }
 
 } // namespace
+
+auto scan_literal_scalar(std::string_view spelling) noexcept
+    -> std::expected<LiteralScalarScan, QuotedLiteralScanError> {
+    auto offset = 0uz;
+    const auto fail = [&](std::size_t error_offset) noexcept {
+        return std::unexpected(
+            QuotedLiteralScanError {
+                .consumed = offset,
+                .error_offset = error_offset,
+                .error_length = 1uz,
+            }
+        );
+    };
+    if (spelling.empty() || spelling.front() == '\n' || spelling.front() == '\r') {
+        return fail(0);
+    }
+    auto scalar = char32_t();
+    if (spelling[offset] == '\\') {
+        const auto escape_offset = offset++;
+        if (offset >= spelling.size()) {
+            return fail(escape_offset);
+        }
+        const auto escape = spelling[offset++];
+        switch (escape) {
+            case '0':  scalar = 0; break;
+            case 'n':  scalar = '\n'; break;
+            case 'r':  scalar = '\r'; break;
+            case 't':  scalar = '\t'; break;
+            case '\\': scalar = '\\'; break;
+            case '\'': scalar = '\''; break;
+            case '"':  scalar = '"'; break;
+            case 'u':  {
+                if (offset >= spelling.size() || spelling[offset] != '{') {
+                    return fail(escape_offset);
+                }
+                ++offset;
+                const auto digits_start = offset;
+                auto value = std::uint32_t {};
+                while (offset < spelling.size() && spelling[offset] != '}') {
+                    const auto nibble = hex_nibble(spelling[offset]);
+                    if (!nibble.has_value() || offset - digits_start >= 6) {
+                        return fail(offset);
+                    }
+                    value = (value << 4) | *nibble;
+                    ++offset;
+                }
+                if (offset == digits_start || offset >= spelling.size()) {
+                    return fail(escape_offset);
+                }
+                ++offset;
+                if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
+                    return fail(digits_start);
+                }
+                scalar = static_cast<char32_t>(value);
+                break;
+            }
+            default: return fail(escape_offset);
+        }
+        if (escape == '0'
+            && offset < spelling.size()
+            && spelling[offset] >= '0'
+            && spelling[offset] <= '7') {
+            return fail(offset);
+        }
+    } else {
+        const auto sequence = UTF8Decoder::decode(spelling, offset);
+        if (!sequence.valid) {
+            return fail(offset);
+        }
+        scalar = sequence.scalar;
+        offset += sequence.width;
+    }
+    return LiteralScalarScan {.consumed = offset, .scalar = scalar};
+}
 
 auto scan_numeric_literal(std::string_view text, std::uint32_t source_offset) noexcept
     -> std::expected<NumericLiteralScan, NumericLiteralScanError> {

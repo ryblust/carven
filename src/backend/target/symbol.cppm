@@ -26,6 +26,8 @@ enum class TargetSymbol {
     RuntimeTransfer,
     RuntimeDeferredResult,
     RuntimeOutcome,
+    RuntimeString,
+    RuntimeFormat,
     RuntimeStrBytesView,
     RuntimeStrCharsView,
     RuntimeEntryArgs,

@@ -33,6 +33,7 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
         case BuiltinType::I32:
         case BuiltinType::F32:
         case BuiltinType::F64:
+        case BuiltinType::String:
         case BuiltinType::Str:
         case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:

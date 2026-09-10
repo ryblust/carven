@@ -2,6 +2,4 @@ import sibling using sibling_value;
 import nested.worker using worker_value;
 import __internal using internal_value;
 
-export fn total() -> i32 {
-    return sibling_value() + worker_value() + internal_value();
-}
+export fn total() -> i32 => sibling_value() + worker_value() + internal_value();

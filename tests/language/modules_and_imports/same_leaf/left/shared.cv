@@ -2,6 +2,4 @@ export struct LeftValue {
     value: i32,
 }
 
-export fn make_left() -> LeftValue {
-    return LeftValue { value: 19 };
-}
+export fn make_left() -> LeftValue => LeftValue { value: 19 };

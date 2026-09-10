@@ -9,9 +9,7 @@ fn read(ok: bool) -> i32 throw ReadError {
     throw ReadError { code: 7 };
 }
 
-private fn forwarded() -> i32 {
-    return read(true)?;
-}
+private fn forwarded() -> i32 => read(true)?;
 
 fn recovered() -> i32 {
     return try {

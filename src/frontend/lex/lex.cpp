@@ -98,6 +98,7 @@ private:
     std::uint32_t token_start = 0;
     std::optional<TokenKind> previous_token_kind;
     Diagnosed<TokenBuffer> result;
+    std::uint32_t interpolation_depth = 0;
 
     auto at_end(std::size_t lookahead = 0) const noexcept -> bool {
         return static_cast<std::size_t>(position) + lookahead >= source.size();
@@ -182,9 +183,116 @@ private:
         }
     }
 
+    auto scan_interpolation(bool specification) noexcept -> void {
+        if (++interpolation_depth > 512) {
+            diagnose("interpolation nesting limit exceeded", span());
+            position = static_cast<std::uint32_t>(source.size());
+            --interpolation_depth;
+            return;
+        }
+        auto bytes = std::string();
+        token_start = position;
+        const auto flush = [&]() noexcept {
+            if (position != token_start) {
+                append_literal_token(InterpolationTextValue {.bytes = std::move(bytes)});
+                bytes.clear();
+            }
+        };
+        while (!at_end()) {
+            const auto value = current();
+            if ((!specification && value == '"') || (specification && value == '}')) {
+                flush();
+                token_start = position++;
+                append_token(
+                    specification ? TokenKind::InterpolationClose : TokenKind::InterpolationEnd
+                );
+                --interpolation_depth;
+                return;
+            }
+            if (value == '{' || value == '}') {
+                if (!specification && current(1) == value) {
+                    bytes.push_back(value);
+                    position += 2;
+                    continue;
+                }
+                flush();
+                token_start = position++;
+                if (value == '}') {
+                    diagnose_invalid("unmatched '}' in interpolation text");
+                } else {
+                    append_token(TokenKind::InterpolationOpen);
+                    scan_interpolation_expression();
+                }
+                token_start = position;
+                continue;
+            }
+            const auto decoded = scan_literal_scalar(source.substr(position));
+            if (!decoded) {
+                const auto error_start =
+                    position + static_cast<std::uint32_t>(decoded.error().error_offset);
+                diagnose(
+                    "invalid interpolation text",
+                    Span::from_bounds(
+                        error_start,
+                        std::min(error_start + 1, static_cast<std::uint32_t>(source.size()))
+                    )
+                );
+                position += static_cast<std::uint32_t>(std::max(decoded.error().consumed, 1uz));
+                continue;
+            }
+            append_utf8(bytes, decoded->scalar);
+            position += static_cast<std::uint32_t>(decoded->consumed);
+        }
+        flush();
+        diagnose("unterminated interpolated string", span());
+        --interpolation_depth;
+    }
+
+    auto scan_interpolation_expression() noexcept -> void {
+        auto delimiters = std::vector<char>();
+        while (true) {
+            skip_whitespace_and_comments();
+            if (at_end()) {
+                diagnose("unterminated interpolation hole", span());
+                return;
+            }
+            const auto value = current();
+            if (delimiters.empty() && value == '}') {
+                token_start = position++;
+                append_token(TokenKind::InterpolationClose);
+                return;
+            }
+            if (delimiters.empty() && value == ':' && current(1) != ':') {
+                token_start = position++;
+                append_token(TokenKind::InterpolationSpec);
+                scan_interpolation(true);
+                return;
+            }
+            if (value == '(' || value == '[' || value == '{') {
+                delimiters.push_back(value);
+            } else if (value == ')' || value == ']' || value == '}') {
+                const auto expected = value == ')' ? '(' : value == ']' ? '[' : '{';
+                if (delimiters.empty() || delimiters.back() != expected) {
+                    token_start = position++;
+                    diagnose_invalid("unmatched delimiter in interpolation hole");
+                    return;
+                }
+                delimiters.pop_back();
+            }
+            scan_token();
+        }
+    }
+
     auto scan_token() noexcept -> void {
         token_start = position;
         const auto value = advance();
+
+        if (value == 'f' && current() == '"') {
+            ++position;
+            append_token(TokenKind::InterpolationStart);
+            scan_interpolation(false);
+            return;
+        }
 
         if (value == 'c' && current() == '"') {
             scan_string(true);

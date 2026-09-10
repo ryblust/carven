@@ -720,6 +720,12 @@ auto evaluate_text_intrinsic_constant_value(
             );
         }
         case TextIntrinsic::IsEmpty: return constant_boolean(draft, result, bytes.empty());
+        case TextIntrinsic::New:
+        case TextIntrinsic::FromStr:
+        case TextIntrinsic::AsStr:
+        case TextIntrinsic::Append:
+        case TextIntrinsic::Push:
+        case TextIntrinsic::Clear:
         case TextIntrinsic::Bytes:
         case TextIntrinsic::Chars:
             return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);

@@ -197,6 +197,7 @@ private:
     auto parse_prefix_expression() noexcept -> std::optional<ASTExprID>;
     auto parse_postfix_expression() noexcept -> std::optional<ASTExprID>;
     auto parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID>;
+    auto parse_interpolation_parts(TokenKind closing) noexcept -> std::vector<ASTInterpolationPart>;
     auto parse_primary_expression() noexcept -> std::optional<ASTExprID>;
     auto lambda_starts_here() const noexcept -> bool;
     auto parse_callable_body() noexcept -> std::optional<ASTCallableBody>;

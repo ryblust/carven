@@ -79,8 +79,6 @@ jobs:
         if: runner.os == 'Linux'
         run: xmake f -y -m debug --sdk="$LLVM_ROOT" --build_tests=y --runtimes=c++_shared --syslinks=c++abi
 
-      # The compiler must exist before test preparation generates C++ sources.
-      # CI deliberately uses stock Xmake; xmakew is a local build optimization.
       - name: Build compiler
         run: xmake build -y
 

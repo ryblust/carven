@@ -510,7 +510,8 @@ private:
         -> AnalysisResult<ConstructionCallableContract>;
     auto build_call_argument(
         ASTExprID source,
-        const ConstructionCallableParameter& parameter
+        AccessMode access,
+        std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<BuiltCallArgument>;
 
     BodyBatchElaborator* batch;

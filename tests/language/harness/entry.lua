@@ -24,21 +24,14 @@ function main(target, entry)
             .. "\n" .. output)
         return
     end
-    local query_status, output = run(target, "failure-status", "1")
-    local failure_status = tonumber(output)
-    assert(query_status == 0 and failure_status and failure_status ~= 0,
-        "entry did not supply the host failure status: exit " .. tostring(query_status)
-            .. "\nstdout:\n" .. output)
-    local scenarios = {
-        {name = "success", status = 0, payloads = "1"},
-        {name = "throw", status = failure_status, payloads = "1"},
-        {name = "recover", status = 0, payloads = "2"},
-        {name = "propagate", status = failure_status, payloads = "1"},
-    }
-    for _, scenario in ipairs(scenarios) do
-        local status, stdout = run(target, scenario.name, scenario.payloads)
-        assert(status == scenario.status and stdout == "", "entry " .. scenario.name
-            .. ": expected exit " .. scenario.status .. ", got " .. tostring(status)
-            .. "\n" .. stdout)
+    local expected_status = 0
+    if entry == "throw" or entry == "propagate" then
+        local query_status, output = run(target, "failure-status", "1")
+        expected_status = tonumber(output)
+        assert(query_status == 0 and expected_status and expected_status ~= 0,
+            "entry did not supply the host failure status: " .. tostring(query_status) .. "\n" .. output)
     end
+    local status, stdout = run(target, entry, entry == "recover" and "2" or "1")
+    assert(status == expected_status and stdout == "", "entry " .. entry
+        .. ": expected exit " .. expected_status .. ", got " .. tostring(status) .. "\n" .. stdout)
 end

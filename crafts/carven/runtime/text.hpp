@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <ranges>
 #include <span>
@@ -11,13 +10,6 @@
 namespace carven::runtime {
 
 namespace detail {
-
-[[noreturn]] inline auto unicode_contract_error(std::string_view detail) noexcept -> void {
-    std::fputs("carven runtime contract error: ", stderr);
-    std::fwrite(detail.data(), sizeof(char), detail.size(), stderr);
-    std::fputc('\n', stderr);
-    std::abort();
-}
 
 struct ByteProjection final {
     constexpr auto operator()(char value) const noexcept -> std::uint8_t {
@@ -76,11 +68,10 @@ constexpr auto utf8_is_valid(std::string_view text) noexcept -> bool {
 }
 
 // Validates ingress without copying bytes or extending the source lifetime.
-// Invalid input reports the supplied diagnostic as a runtime contract error and aborts.
-constexpr auto checked_utf8(std::string_view text, std::string_view diagnostic) noexcept
-    -> std::string_view {
+// Invalid input terminates.
+constexpr auto checked_utf8(std::string_view text) noexcept -> std::string_view {
     if (!utf8_is_valid(text)) {
-        detail::unicode_contract_error(diagnostic);
+        std::abort();
     }
     return text;
 }
@@ -181,13 +172,15 @@ constexpr auto str_bytes(std::string_view text) noexcept -> StrBytesView {
     return std::views::transform(text, detail::ByteProjection {});
 }
 
+// The borrowed range must contain valid UTF-8.
 constexpr auto str_chars(std::string_view text) noexcept -> StrCharsView {
     return StrCharsView(text);
 }
 
+// Validates an external value before it becomes a Carven char.
 constexpr auto checked_unicode_scalar(char32_t value) noexcept -> char32_t {
     if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
-        detail::unicode_contract_error("invalid Unicode scalar at C++ boundary");
+        std::abort();
     }
     return value;
 }

@@ -5,7 +5,8 @@ fn record(&count: i32, value: i32) {
 }
 
 fn argument(&count: i32) -> i32 {
-    count += 1; return 2;
+    count += 1;
+    return 2;
 }
 
 fn implicit(&count: i32) {
@@ -13,13 +14,9 @@ fn implicit(&count: i32) {
     return record(&count, value);
 }
 
-fn explicit(&count: i32) -> void {
-    return implicit(&count);
-}
+fn explicit(&count: i32) -> void => implicit(&count);
 
-fn invoke(callback: fn() -> void) {
-    return callback();
-}
+fn invoke(callback: fn() -> void) => callback();
 
 fn fallible(&count: i32, stop: bool) throw Stop {
     count += 1;
@@ -27,9 +24,7 @@ fn fallible(&count: i32, stop: bool) throw Stop {
     return record(&count, 10);
 }
 
-fn forward(&count: i32, stop: bool) throw Stop {
-    return fallible(&count, stop)?;
-}
+fn forward(&count: i32, stop: bool) throw Stop => fallible(&count, stop)?;
 
 fn terminal(&count: i32) throw Stop {
     return fallible(
@@ -42,10 +37,10 @@ test "Functions: void returns forward evaluation and lambda results" {
     var count = 0;
     explicit(&count);
     check(count == 3);
-    let inferred = [&count]() { return record(&count, 4); };
+    let inferred = [&count]() => record(&count, 4);
     inferred();
-    invoke([&count]() { return record(&count, 5); });
-    let annotated = [&count]() -> void { return record(&count, 6); };
+    invoke([&count]() => record(&count, 5));
+    let annotated = [&count]() -> void => record(&count, 6);
     annotated();
     check(count == 18);
 }
@@ -53,13 +48,25 @@ test "Functions: void returns forward evaluation and lambda results" {
 test "Functions: void forwarding preserves explicit failure and termination" {
     var count = 0;
     var caught = 0;
-    try { forward(&count, false)?; } catch { Stop(_) => { caught += 1; } }
+    try {
+        forward(&count, false)?;
+    } catch {
+        Stop(_) => { caught += 1; },
+    }
     check(count == 11);
     check(caught == 0);
-    try { forward(&count, true)?; } catch { Stop(_) => { caught += 1; } }
+    try {
+        forward(&count, true)?;
+    } catch {
+        Stop(_) => { caught += 1; },
+    }
     check(count == 12);
     check(caught == 1);
-    try { terminal(&count)?; } catch { Stop(_) => { caught += 1; } }
+    try {
+        terminal(&count)?;
+    } catch {
+        Stop(_) => { caught += 1; },
+    }
     check(count == 12);
     check(caught == 2);
 }
@@ -75,9 +82,16 @@ fn empty_paths(&count: i32, flag: bool) {
     count += 1;
     if flag { record(&count, 2); }
     count += 4;
-    match flag { true => {}, false => {}, }
+    match flag {
+        true => {},
+        false => {},
+    }
     count += 8;
-    try { fallible(&count, flag)?; } catch { Stop(_) => {} }
+    try {
+        fallible(&count, flag)?;
+    } catch {
+        Stop(_) => {},
+    }
     count += 16;
 }
 

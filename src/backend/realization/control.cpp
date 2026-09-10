@@ -174,7 +174,10 @@ auto BodyRealizer::lower_match(
     };
     auto scope = LoweringStmtBuilder();
     const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
-    auto subject_value = read_value(expression(value.subject), scope);
+    auto subject_value = scope.accept(operand({
+        .expression = value.subject,
+        .use = value.subject_is_place ? ConstructionUse::Place : ConstructionUse::Consume,
+    }));
     if (!scope.continues()) {
         destination.append(std::move(scope));
         return;
@@ -287,7 +290,7 @@ auto BodyRealizer::lower_try(
             const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
             candidate.emit(generated_statement(
                 TargetVariableStmt {
-                    .binding = TargetVariableBinding::MutableValue,
+                    .binding = TargetVariableBinding::ConstValue,
                     .maybe_unused = false,
                     .name = projection,
                     .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),

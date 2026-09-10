@@ -83,7 +83,16 @@ public:
                     child(*value.source);
                     child(*value.index);
                 },
-                [&](Node<SemTextIntrinsic>& value) noexcept { child(*value.source); },
+                [&](Node<SemFormat>& value) noexcept {
+                    for (auto& operand : value.operands) {
+                        child(operand.expression);
+                    }
+                },
+                [&](Node<SemTextIntrinsic>& value) noexcept {
+                    for (auto& operand : value.operands) {
+                        child(operand.expression);
+                    }
+                },
                 [&](Node<SemCall>& value) noexcept {
                     child(*value.callee);
                     for (auto& argument : value.arguments) {

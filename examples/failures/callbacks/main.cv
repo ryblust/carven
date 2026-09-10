@@ -1,7 +1,13 @@
 import "console.hpp" using example::print;
 
-struct InvalidAmount { amount: i32 }
-struct LimitExceeded { amount: i32, limit: i32 }
+struct InvalidAmount {
+    amount: i32,
+}
+
+struct LimitExceeded {
+    amount: i32,
+    limit: i32,
+}
 
 fn positive(amount: i32) -> i32 throw InvalidAmount {
     if amount <= 0 { throw InvalidAmount { amount: amount }; }

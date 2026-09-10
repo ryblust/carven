@@ -31,6 +31,7 @@ relevant to the current change.
 ./xmakew test -g language
 ./xmakew test -g interop
 ./xmakew test -g cli
+./xmakew test -g examples
 ```
 
 After implementation, run the full test suite, then run clang-tidy.

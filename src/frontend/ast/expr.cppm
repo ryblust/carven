@@ -153,10 +153,32 @@ struct ASTPropagationExpr final {
     Span operator_span;
 };
 
+struct ASTInterpolationPart;
+
+struct ASTInterpolationText final {
+    std::string bytes;
+};
+
+struct ASTInterpolationHole final {
+    ASTExprID expression;
+    std::optional<Span> colon_span;
+    std::vector<ASTInterpolationPart> specification;
+};
+
+struct ASTInterpolationPart final {
+    Span span;
+    std::variant<ASTInterpolationText, ASTInterpolationHole> value;
+};
+
+struct ASTInterpolationExpr final {
+    std::vector<ASTInterpolationPart> parts;
+};
+
 struct ASTExpr final {
     Span span;
     std::variant<
         ASTLiteral,
+        ASTInterpolationExpr,
         ASTNameExpr,
         ASTCppNameExpr,
         ASTContextualCaseExpr,

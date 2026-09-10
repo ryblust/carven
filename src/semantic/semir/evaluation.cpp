@@ -89,7 +89,14 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     ? operands(*value.operand)
                     : required;
             },
-            [&](const SemTextIntrinsic& value) noexcept { return operands(*value.source); },
+            [&](const SemFormat&) noexcept { return required; },
+            [&](const SemTextIntrinsic& value) noexcept {
+                return text_intrinsic_writes(value.intrinsic)
+                        || value.intrinsic == TextIntrinsic::New
+                        || value.intrinsic == TextIntrinsic::FromStr
+                    ? required
+                    : operands(value.operands.front().expression);
+            },
             [&](const SemDereference&) noexcept { return required; },
             [&](const SemField& value) noexcept { return operands(*value.source); },
             [&](const SemIndex& value) noexcept {

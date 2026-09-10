@@ -4,6 +4,4 @@ export struct Left {
     value: i32,
 }
 
-export fn read_right(_: Right) -> i32 {
-    return 20;
-}
+export fn read_right(_: Right) -> i32 => 20;
