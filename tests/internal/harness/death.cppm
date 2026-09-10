@@ -4,8 +4,12 @@ import std;
 
 using DeathTestAction = void (*)(void*) noexcept;
 
-auto run_death_test(std::string_view scenario, DeathTestAction action, void* context) noexcept
-    -> bool;
+auto run_death_test(
+    std::string_view scenario,
+    DeathTestAction action,
+    void* context,
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(30000)
+) noexcept -> bool;
 
 template<typename Function>
 auto invoke_death_test_action(void* context) noexcept -> void {

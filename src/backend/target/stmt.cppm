@@ -32,6 +32,8 @@ struct TargetVariableStmt final {
     TargetIdentifier name;
     TargetTypeID type;
     TargetExpr initializer;
+    // Optional declaration intent supplied by source-type realization.
+    bool preserve_pointer_access = false;
 };
 
 struct TargetBlockStmt final {
@@ -179,3 +181,5 @@ struct TargetStmt final {
     TargetStmtValue value;
     TargetAttribution attribution;
 };
+
+auto statement_expression(TargetExpr expression) noexcept -> TargetStmt;

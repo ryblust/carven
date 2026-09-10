@@ -13,11 +13,9 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcep
     const auto& value = unit.type(id);
     auto rendered = std::visit(
         Overloaded {
-            [&](const TargetDeducedType& deduced) noexcept -> SyntaxLayouts {
+            [&](const TargetDecltypeType& deduced) noexcept -> SyntaxLayouts {
                 const auto result = concat(
-                    {text("std::remove_cvref_t<decltype("),
-                     render_expression(deduced.expression()),
-                     text(")>")}
+                    {text("decltype(("), render_expression(deduced.expression()), text("))")}
                 );
                 return {.inline_qualified = result, .wrapping = result};
             },

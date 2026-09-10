@@ -23,14 +23,15 @@ auto BodyContractVerifier::require_origin(ProgramOriginID origin) const noexcept
     static_cast<void>(program.provenance().source_span(origin));
 }
 
-auto BodyContractVerifier::require_type(TypeID type) const noexcept -> CanonicalType {
+auto BodyContractVerifier::require_type(TypeID type) const noexcept -> const CanonicalType& {
     if (type.owner() != program.identity()) {
         invariant_violation("SemIR row uses a type from another semantic program");
     }
     return program.types().type(type);
 }
 
-auto BodyContractVerifier::require_failure_set(FailureSetID failures) const noexcept -> FailureSet {
+auto BodyContractVerifier::require_failure_set(FailureSetID failures) const noexcept
+    -> const FailureSet& {
     if (failures.owner() != program.identity()) {
         invariant_violation("SemIR row uses a failure set from another semantic program");
     }
@@ -38,7 +39,7 @@ auto BodyContractVerifier::require_failure_set(FailureSetID failures) const noex
 }
 
 auto BodyContractVerifier::require_structure(StructID structure) const noexcept
-    -> StructDeclaration {
+    -> const StructDeclaration& {
     if (structure.owner() != program.identity()) {
         invariant_violation("SemIR row uses a structure from another semantic program");
     }
@@ -46,7 +47,7 @@ auto BodyContractVerifier::require_structure(StructID structure) const noexcept
 }
 
 auto BodyContractVerifier::require_enumeration(EnumID enumeration) const noexcept
-    -> EnumDeclaration {
+    -> const EnumDeclaration& {
     if (enumeration.owner() != program.identity()) {
         invariant_violation("SemIR row uses an enum from another semantic program");
     }
@@ -54,7 +55,7 @@ auto BodyContractVerifier::require_enumeration(EnumID enumeration) const noexcep
 }
 
 auto BodyContractVerifier::require_enum_case(EnumCaseID enum_case) const noexcept
-    -> EnumCaseDeclaration {
+    -> const EnumCaseDeclaration& {
     if (enum_case.owner() != program.identity()) {
         invariant_violation("SemIR row uses an enum case from another semantic program");
     }
@@ -62,7 +63,7 @@ auto BodyContractVerifier::require_enum_case(EnumCaseID enum_case) const noexcep
 }
 
 auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noexcept -> void {
-    const auto canonical = require_type(type);
+    const auto& canonical = require_type(type);
     if (!std::holds_alternative<StructTypeValue>(canonical.value)
         && !std::holds_alternative<EnumTypeValue>(canonical.value)) {
         invariant_violation("Throw failure member is not a nominal structure or enum");
@@ -127,8 +128,8 @@ auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const
         program.declarations().callable(*callable).signature
     );
     const auto expected = contract.failures;
-    const auto actual = require_failure_set(failures);
-    const auto allowed = require_failure_set(expected);
+    const auto& actual = require_failure_set(failures);
+    const auto& allowed = require_failure_set(expected);
     if (!std::ranges::includes(
             allowed.members,
             actual.members,

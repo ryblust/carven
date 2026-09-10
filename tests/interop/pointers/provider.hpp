@@ -33,6 +33,16 @@ inline auto overload(std::nullptr_t) noexcept -> std::int32_t {
     return 3;
 }
 
+template<typename T>
+auto deduces_writable_pointer(T) noexcept -> bool {
+    return std::is_same_v<T, std::int32_t*>;
+}
+
+template<typename T>
+auto observes_const_lvalue(T&&) noexcept -> bool {
+    return std::is_lvalue_reference_v<T> && std::is_const_v<std::remove_reference_t<T>>;
+}
+
 inline auto snapshot(std::int32_t* const& saved, std::int32_t*& slot) noexcept -> bool {
     const auto* original = saved;
     slot = &second;
@@ -77,6 +87,12 @@ inline auto opaque() noexcept -> Incomplete* {
 }
 
 using NativePointer = std::int32_t*;
+
+template<typename T>
+auto deduces_readonly_native_slot(T) noexcept -> bool {
+    return std::is_same_v<T, NativePointer const*>;
+}
+
 inline NativePointer native_slot = &first;
 
 inline auto nested_native() noexcept -> NativePointer* {

@@ -51,7 +51,7 @@ test "Pointers: recursive Carven targets and shallow aggregate copies preserve m
     }
     check(node.value == 12);
     let scene = Scene { mesh: ::pointer_values::get() };
-    var copy = scene;
+    let copy = scene;
     if copy.mesh != nullptr { *copy.mesh = 55; }
     check(read(scene.mesh) == 55);
     let read_only: ptr<Node> = p;

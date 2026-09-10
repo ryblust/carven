@@ -9,7 +9,9 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target.name;
+import :backend.target.symbol;
 import :backend.target.traversal;
+import :backend.target.type;
 import :backend.target;
 import :semantic.semir.traversal;
 import :semantic.semir;
@@ -179,6 +181,8 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             "  if flag { return 7; } else { throw Error::Failed; }\n"
             "}\n"
             "fn discard(flag: bool) throw Error { produce(flag)?; }\n"
+            "fn discard_wrapped(flag: bool) throw Error { (produce(flag)? as i32) == 0; }\n"
+            "fn discard_selected(flag: bool) throw Error { flag && (produce(flag)? == 0); }\n"
             "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)?; }\n"
         ),
         {.test_mode = TestGenerationMode::None,
@@ -226,9 +230,107 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
     }
-    CHECK(query.success_checks == 2uz);
+    CHECK(query.success_checks == 4uz);
     CHECK(query.saved_successes == 1uz);
     CHECK(query.payloads == 1uz);
+}
+
+TEST_CASE("Generation: independent root calls initialize Outcomes without deferred storage") {
+    constexpr auto bodies = std::array<std::string_view, 2uz> {
+        "produce(flag)?;",
+        "let value = produce(flag)?; observe(value);"
+    };
+    for (const auto body : bodies) {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(
+                std::format(
+                    "enum Error {{ Failed, }} "
+                    "fn produce(flag: bool) -> i32 throw Error {{ if flag {{ return 7; }} throw Error::Failed; }} "
+                    "fn observe(value: i32) {{}} "
+                    "fn probe(flag: bool) throw Error {{ {} }}",
+                    body
+                )
+            ),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("root_outcome")}
+        );
+
+        struct Query final {
+            const TargetUnit& unit;
+            std::size_t direct = 0;
+            std::size_t deferred = 0;
+
+            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                if (variable == nullptr) {
+                    return true;
+                }
+                const auto* type =
+                    std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value);
+                if (type == nullptr) {
+                    return true;
+                }
+                if (type->symbol == TargetSymbol::RuntimeOutcome) {
+                    ++direct;
+                    CHECK(std::holds_alternative<TargetCallExpr>(variable->initializer.value));
+                }
+                if (type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                    REQUIRE(type->type_argument_ids.size() == 1uz);
+                    const auto* result = std::get_if<TargetIntrinsicType>(
+                        &unit.type(type->type_argument_ids.front()).value
+                    );
+                    deferred += result != nullptr && result->symbol == TargetSymbol::RuntimeOutcome;
+                }
+                return true;
+            }
+        };
+
+        auto direct = 0uz;
+        auto deferred = 0uz;
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            auto query = Query {unit};
+            CHECK(traverse_target_unit(unit.sections(), query));
+            direct += query.direct;
+            deferred += query.deferred;
+        }
+        CAPTURE(body);
+        CHECK(direct == 1uz);
+        CHECK(deferred == 0uz);
+    }
+}
+
+TEST_CASE("Generation: scalar predecessors in a full expression need no deferred storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn first() -> i32 { return 1; } "
+            "fn second() -> i32 { return 2; } "
+            "fn pair(a: i32, b: i32) -> i32 { return a * 10 + b; } "
+            "fn probe() -> i32 { return pair(first(), second()); }"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("scalar_predecessors")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                if (const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
+                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                }
+            }
+            return true;
+        }
+    };
+
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {unit};
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
 }
 
 TEST_CASE("Generation: independent value branches compose without duplicating successors") {
@@ -334,7 +436,6 @@ TEST_CASE("Generation: void calls remain return expressions") {
         auto enter_expression(const TargetExpr& expression, TargetExpressionRole) const noexcept
             -> bool {
             CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
-            CHECK_FALSE(std::holds_alternative<TargetPlacementNewExpr>(expression.value));
             return true;
         }
     };
@@ -347,64 +448,136 @@ TEST_CASE("Generation: void calls remain return expressions") {
     CHECK(query.returned_calls == 1uz);
 }
 
-TEST_CASE("Generation: pointer reads and indirect targets select saved address values") {
+TEST_CASE("Generation: builtin pointer observations need no temporary storage") {
     const auto compilation = PlannedCompilation::build(
         analyze_test_program(
-            "fn snapshot(&p: ptr<&i32>) { ::rebind(p, &p); }\n"
-            "fn indirect(&p: ptr<&i32>) {\n"
-            "  if p != nullptr { ::rebind_target(&*p, &p); }\n"
+            "fn present(p: ptr<i32>) -> bool { return p != nullptr; }\n"
+            "fn read(p: ptr<i32>) -> i32 {\n"
+            "  if p == nullptr { return 0; }\n"
+            "  return *p;\n"
             "}\n"
         ),
         {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("pointer_evaluation")}
+         .linkage_domain = *LinkageDomain::explicit_value("pointer_observation")}
     );
 
     struct Query final {
-        const TargetUnit& unit;
-        std::vector<TargetName> snapshots;
-        std::size_t calls = 0uz;
+        std::size_t comparisons = 0uz;
         std::size_t dereferences = 0uz;
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-                variable != nullptr && variable->binding == TargetVariableBinding::ConstValue) {
-                CHECK(std::holds_alternative<TargetPointerType>(unit.type(variable->type).value));
-                snapshots.emplace_back(variable->name);
-            }
+        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
             return true;
         }
 
         auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value);
-                prefix != nullptr && prefix->op == TargetPrefixOperator::Dereference) {
-                const auto* saved = std::get_if<TargetNameExpr>(&prefix->operand->value);
-                REQUIRE(saved != nullptr);
-                CHECK(std::ranges::contains(snapshots, saved->name));
-                ++dereferences;
+            CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
+            if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
+                comparisons += binary->op == TargetBinaryOperator::Equal
+                    || binary->op == TargetBinaryOperator::NotEqual;
             }
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
-                if (name != nullptr && name->name.components().back().spelling() == "rebind") {
-                    REQUIRE(call->arguments.size() == 2uz);
-                    const auto* saved = std::get_if<TargetNameExpr>(&call->arguments.front().value);
-                    REQUIRE(saved != nullptr);
-                    CHECK(std::ranges::contains(snapshots, saved->name));
-                    ++calls;
-                }
+            if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value)) {
+                dereferences += prefix->op == TargetPrefixOperator::Dereference;
             }
             return true;
         }
     };
 
-    auto calls = 0uz;
-    auto dereferences = 0uz;
+    auto query = Query {};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .snapshots = {}};
         CHECK(traverse_target_unit(unit.sections(), query));
-        calls += query.calls;
-        dereferences += query.dereferences;
     }
-    CHECK(calls == 1uz);
-    CHECK(dereferences == 1uz);
+    CHECK(query.comparisons == 2uz);
+    CHECK(query.dereferences == 1uz);
+}
+
+TEST_CASE("Generation: explicit writable source pointers retain their access contract") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn writable(p: ptr<&i32>) -> ptr<i32> { let saved = p; return saved; }\n"
+            "fn readonly(p: ptr<i32>) -> ptr<i32> { let saved = p; return saved; }\n"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("source_pointer_access")}
+    );
+
+    struct Query final {
+        std::size_t declarations = 0uz;
+        std::size_t contracts = 0uz;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                ++declarations;
+                contracts += variable->preserve_pointer_access;
+                CHECK(variable->binding == TargetVariableBinding::ConstValue);
+            }
+            return true;
+        }
+    };
+
+    auto query = Query {};
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.declarations == 2uz);
+    CHECK(query.contracts == 1uz);
+}
+
+TEST_CASE("Generation: independent nested pattern alternatives keep target size proportional") {
+    auto counts = std::vector<std::size_t>();
+    for (const auto width : {2uz, 4uz, 8uz}) {
+        auto fields = std::string();
+        auto patterns = std::string();
+        for (auto index = 0uz; index < width; ++index) {
+            if (index != 0uz) {
+                fields += ", ";
+                patterns += ", ";
+            }
+            fields += "i32";
+            patterns += "0 | 1";
+        }
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(
+                std::format(
+                    "enum Choices {{ Fields({}), }} "
+                    "fn select(value: Choices) -> i32 {{ return match value {{ "
+                    ".Fields({}) => 1, _ => 0, }}; }}",
+                    fields,
+                    patterns
+                )
+            ),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("pattern_size")}
+        );
+
+        struct Query final {
+            std::size_t nodes = 0uz;
+
+            auto enter_expression(const TargetExpr&, TargetExpressionRole) noexcept -> bool {
+                ++nodes;
+                return true;
+            }
+
+            auto enter_statement(const TargetStmt&) noexcept -> bool {
+                ++nodes;
+                return true;
+            }
+        };
+
+        auto query = Query {};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            CHECK(traverse_target_unit(unit.sections(), query));
+        }
+        counts.push_back(query.nodes);
+    }
+    REQUIRE(counts.front() > 0uz);
+    for (auto index = 1uz; index < counts.size(); ++index) {
+        CHECK(counts[index] > counts[index - 1uz]);
+        // Doubling independent choices must not expand their Cartesian product.
+        // Leave room for target scaffolding without fixing names or exact counts.
+        CHECK(counts[index] <= 3uz * counts[index - 1uz]);
+    }
 }

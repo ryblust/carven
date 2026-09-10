@@ -165,7 +165,7 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
     };
     return std::visit(
         Overloaded {
-            [&](const TargetDeducedType& deduced) noexcept {
+            [&](const TargetDecltypeType& deduced) noexcept {
                 return traverse_target_expression(deduced.expression(), visitor);
             },
             [&](const TargetNamedType& named) noexcept {
@@ -313,11 +313,6 @@ auto traverse_target_expression(
             [&](TargetTraversalNode<Node, TargetStaticCastExpr>& value) noexcept {
                 return visit_target_type(visitor, value.type)
                     && traverse_target_expression(*value.operand, visitor);
-            },
-            [&](TargetTraversalNode<Node, TargetPlacementNewExpr>& value) noexcept {
-                return visit_target_type(visitor, value.type)
-                    && traverse_target_expression(*value.address, visitor)
-                    && traverse_target_expression(*value.initializer, visitor);
             },
             [&](TargetTraversalNode<Node, TargetLambdaExpr>& value) noexcept {
                 return std::ranges::all_of(

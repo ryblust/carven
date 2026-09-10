@@ -7,6 +7,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
     switch (symbol) {
         case TargetSymbol::StdExitFailure:           return "EXIT_FAILURE";
         case TargetSymbol::Auto:                     return "auto";
+        case TargetSymbol::DecltypeAuto:             return "decltype(auto)";
         case TargetSymbol::Void:                     return "void";
         case TargetSymbol::Bool:                     return "bool";
         case TargetSymbol::Char:                     return "char32_t";
@@ -24,7 +25,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdSize:                  return "std::size_t";
         case TargetSymbol::Float:                    return "float";
         case TargetSymbol::Double:                   return "double";
-        case TargetSymbol::RuntimeDeferredStorage:   return "carven::runtime::DeferredStorage";
+        case TargetSymbol::RuntimeDeferredResult:    return "carven::runtime::DeferredResult";
         case TargetSymbol::RuntimeReadArg:           return "carven::runtime::ReadArg";
         case TargetSymbol::RuntimeTransfer:          return "carven::runtime::transfer";
         case TargetSymbol::RuntimeOutcome:           return "carven::runtime::Outcome";
@@ -45,11 +46,13 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeCheckedArrayIndex: return "carven::runtime::checked_array_index";
         case TargetSymbol::RuntimeCheckedUnicodeScalar:
             return "carven::runtime::checked_unicode_scalar";
+        case TargetSymbol::StdRemoveCVRef:      return "std::remove_cvref_t";
         case TargetSymbol::StdAddConst:         return "std::add_const_t";
         case TargetSymbol::StdTypeIdentity:     return "std::type_identity_t";
         case TargetSymbol::StdReferenceWrapper: return "std::reference_wrapper";
         case TargetSymbol::StdAddressof:        return "std::addressof";
         case TargetSymbol::StdGetIf:            return "std::get_if";
+        case TargetSymbol::StdDeclval:          return "::std::declval";
         case TargetSymbol::StdForward:          return "std::forward";
         case TargetSymbol::StdMove:             return "std::move";
         case TargetSymbol::StdNullopt:          return "std::nullopt";

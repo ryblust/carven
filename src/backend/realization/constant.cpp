@@ -1,72 +1,15 @@
-module carven:backend.lowering.body.constant.impl;
+module carven:backend.realization.constant.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body;
-import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
-import :backend.target.builder;
+import :backend.realization.constant;
 import :backend.target.expr;
-import :backend.target.stmt;
 import :backend.target.symbol;
-import :backend.target.type;
 import :semantic.semir;
 import :support.invariant;
 import :support.visit;
 import std;
-
-auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetExpr right) noexcept
-    -> TargetExpr {
-    return {
-        .value = TargetBinaryExpr {
-            .left = target_child(std::move(left)),
-            .op = operation,
-            .right = target_child(std::move(right)),
-        },
-    };
-}
-
-auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexcept -> TargetExpr {
-    return {
-        .value = TargetPrefixExpr {
-            .op = operation,
-            .operand = target_child(std::move(operand)),
-        },
-    };
-}
-
-auto template_call_expression(
-    TargetExpr callee,
-    std::vector<TargetTypeID> template_arguments,
-    std::vector<TargetExpr> arguments
-) noexcept -> TargetExpr {
-    return {
-        .value = TargetCallExpr {
-            .callee = target_child(std::move(callee)),
-            .template_argument_type_ids = std::move(template_arguments),
-            .arguments = std::move(arguments),
-        },
-    };
-}
-
-auto call_member(
-    TargetExpr owner,
-    std::string_view member,
-    std::vector<TargetExpr> arguments
-) noexcept -> TargetExpr {
-    return call_expression(
-        member_expression(std::move(owner), TargetIdentifier::from_spelling(member)),
-        std::move(arguments)
-    );
-}
-
-auto statement_expression(TargetExpr expression) noexcept -> TargetStmt {
-    return generated_statement(
-        TargetExprStmt {
-            .expression = std::move(expression),
-        }
-    );
-}
 
 namespace {
 
@@ -105,7 +48,7 @@ auto typed_integer_expression(
     ModuleLowering& context,
     const IntegerConstant& value,
     TypeID type,
-    LoweringLiteralContext use
+    RealizationLiteralContext use
 ) noexcept -> TargetExpr {
     auto result = TargetExpr {
         .value = TargetLiteralExpr {
@@ -116,7 +59,7 @@ auto typed_integer_expression(
             },
         },
     };
-    if (use == LoweringLiteralContext::TargetTyped) {
+    if (use == RealizationLiteralContext::TargetTyped) {
         return result;
     }
     return {
@@ -160,7 +103,7 @@ auto enum_case_expression(
 auto constant_expression(
     ModuleLowering& context,
     ConstantID id,
-    LoweringLiteralContext use
+    RealizationLiteralContext use
 ) noexcept -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
     return std::visit(
@@ -222,15 +165,8 @@ auto constant_expression(
     );
 }
 
-auto lower_constant_expression(ModuleLowering& context, ConstantID constant) noexcept
+auto numeric_enum_case_value_expression(ModuleLowering& context, EnumCaseID enum_case) noexcept
     -> TargetExpr {
-    return constant_expression(context, constant);
-}
-
-auto lower_numeric_enum_case_value_expression(
-    ModuleLowering& context,
-    EnumCaseID enum_case
-) noexcept -> TargetExpr {
     const auto& declaration = context.semantic().declarations().enum_case(enum_case);
     if (!declaration.constant.has_value()) {
         invariant_violation("numeric enum case has no canonical constant");
@@ -250,6 +186,6 @@ auto lower_numeric_enum_case_value_expression(
         context,
         numeric->value,
         representation->underlying_type,
-        LoweringLiteralContext::TargetTyped
+        RealizationLiteralContext::TargetTyped
     );
 }

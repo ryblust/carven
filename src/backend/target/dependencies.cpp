@@ -42,10 +42,7 @@ public:
         const auto& value = types[id.index()].value;
         std::visit(
             Overloaded {
-                [&](const TargetDeducedType&) noexcept {
-                    include("type_traits");
-                    include("utility");
-                },
+                [](const TargetDecltypeType&) static noexcept {},
                 [](const TargetNamedType&) static noexcept {},
                 [&](const TargetIntrinsicType& intrinsic) noexcept {
                     visit_symbol(intrinsic.symbol);
@@ -86,7 +83,6 @@ public:
                 [](const TargetScopeMemberExpr&) static noexcept {},
                 [](const TargetStaticMemberExpr&) static noexcept {},
                 [](const TargetStaticCastExpr&) static noexcept {},
-                [&](const TargetPlacementNewExpr&) noexcept { include("new"); },
                 [](const TargetLambdaExpr&) static noexcept {},
             },
             expression.value
@@ -128,13 +124,11 @@ private:
             case TargetSymbol::RuntimeCheckedUnicodeScalar:
                 include("carven/runtime/text.hpp");
                 break;
-            case TargetSymbol::RuntimeEntryArgs: include("carven/runtime/entry.hpp"); break;
-            case TargetSymbol::RuntimeDeferredStorage:
-                include("carven/runtime/lifetime.hpp");
-                break;
+            case TargetSymbol::RuntimeEntryArgs:      include("carven/runtime/entry.hpp"); break;
+            case TargetSymbol::RuntimeDeferredResult: include("carven/runtime/lifetime.hpp"); break;
             case TargetSymbol::RuntimeReadArg:
-            case TargetSymbol::RuntimeTransfer:      include("carven/runtime/passing.hpp"); break;
-            case TargetSymbol::RuntimeFunctionRef:   include("carven/runtime/callable.hpp"); break;
+            case TargetSymbol::RuntimeTransfer:       include("carven/runtime/passing.hpp"); break;
+            case TargetSymbol::RuntimeFunctionRef:    include("carven/runtime/callable.hpp"); break;
             case TargetSymbol::RuntimeIntegerNegate:
             case TargetSymbol::RuntimeIntegerAdd:
             case TargetSymbol::RuntimeIntegerSubtract:
@@ -146,12 +140,14 @@ private:
                 include("carven/runtime/numeric.hpp");
                 break;
             case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
+            case TargetSymbol::StdRemoveCVRef:
             case TargetSymbol::StdAddConst:
             case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
             case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
             case TargetSymbol::StdAddressof:             include("memory"); break;
             case TargetSymbol::StdGetIf:
             case TargetSymbol::StdVariant:               include("variant"); break;
+            case TargetSymbol::StdDeclval:
             case TargetSymbol::StdForward:
             case TargetSymbol::StdMove:                  include("utility"); break;
             case TargetSymbol::StdNullopt:
@@ -160,6 +156,7 @@ private:
             case TargetSymbol::TestingContext:
             case TargetSymbol::TestingReporter: include("carven/std/testing/testing.hpp"); break;
             case TargetSymbol::Auto:
+            case TargetSymbol::DecltypeAuto:
             case TargetSymbol::Void:
             case TargetSymbol::Bool:
             case TargetSymbol::Char:

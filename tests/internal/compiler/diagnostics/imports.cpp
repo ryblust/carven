@@ -12,27 +12,8 @@ import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.internal.compiler.diagnostics.fixture;
 import std;
-
-namespace {
-
-auto find_diagnostic(std::span<const Diagnostic> diagnostics, std::string_view code) noexcept
-    -> const Diagnostic* {
-    const auto found =
-        std::ranges::find_if(diagnostics, [&](const Diagnostic& diagnostic) noexcept {
-            return diagnostic.finding.code == code;
-        });
-    return found == diagnostics.end() ? nullptr : &*found;
-}
-
-struct ErrorExpectation final {
-    std::string_view name;
-    std::string_view source;
-    std::string_view code;
-    std::string_view primary_text;
-};
-
-} // namespace
 
 TEST_CASE("Compiler diagnostics: unused imports are tracked per import declaration") {
     auto sources = SourceManager();
@@ -74,7 +55,7 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
     );
 
     REQUIRE(result.has_value());
-    const auto* unused = find_diagnostic(result->diagnostics, "CV-LINT-UNUSED-IMPORT");
+    const auto* unused = find_compiler_diagnostic(result->diagnostics, "CV-LINT-UNUSED-IMPORT");
     REQUIRE(unused != nullptr);
     REQUIRE(unused->attachment.primary.has_value());
     CHECK_EQ(unused->attachment.primary->span.source_id, app);
@@ -122,7 +103,7 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
 
     REQUIRE_FALSE(result.has_value());
     REQUIRE_EQ(result.error().size(), 1u);
-    const auto* ambiguous = find_diagnostic(result.error(), "CV-NAME-AMBIGUOUS");
+    const auto* ambiguous = find_compiler_diagnostic(result.error(), "CV-NAME-AMBIGUOUS");
     REQUIRE(ambiguous != nullptr);
     REQUIRE(ambiguous->attachment.primary.has_value());
     CHECK_EQ(sources.slice(ambiguous->attachment.primary->span), "value");

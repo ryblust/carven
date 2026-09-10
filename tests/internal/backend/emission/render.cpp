@@ -196,3 +196,52 @@ TEST_CASE("Emission: range-for preserves native binding and loop scope") {
     });
     CHECK(artifact.content.contains("for (const int element : elements)"));
 }
+
+TEST_CASE(
+    "Emission: expression type queries preserve references unless normalization is explicit"
+) {
+    for (const auto normalize : {false, true}) {
+        const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
+            const auto member = []() static noexcept -> TargetExpr {
+                return {
+                    .value = TargetMemberExpr {
+                        .operand = UniqueIndirect(
+                            TargetExpr {
+                                .value =
+                                    TargetNameExpr {
+                                        .name =
+                                            TargetName(TargetIdentifier::from_spelling("source"))
+                                    }
+                            }
+                        ),
+                        .name = TargetIdentifier::from_spelling("value")
+                    }
+                };
+            };
+            auto type = builder.intern_type(
+                {.value = TargetDecltypeType(member()), .const_qualified = false}
+            );
+            if (normalize) {
+                type = builder.intern_type(
+                    {.value =
+                         TargetIntrinsicType {
+                             .symbol = TargetSymbol::StdRemoveCVRef,
+                             .type_argument_ids = {type}
+                         },
+                     .const_qualified = false}
+                );
+            }
+            return TargetVariableStmt {
+                .binding = TargetVariableBinding::MutableValue,
+                .maybe_unused = false,
+                .name = TargetIdentifier::from_spelling("result"),
+                .type = type,
+                .initializer = member()
+            };
+        });
+        CHECK(artifact.content.contains("decltype((source.value))"));
+        CHECK(artifact.content.contains("std::remove_cvref_t<") == normalize);
+        CHECK(artifact.content.contains("#include <type_traits>") == normalize);
+        CHECK_FALSE(artifact.content.contains("#include <utility>"));
+    }
+}

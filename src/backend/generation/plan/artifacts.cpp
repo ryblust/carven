@@ -317,6 +317,18 @@ auto plan_artifacts(
         }
     }
 
+    auto component_nominals =
+        std::vector<std::vector<NominalDeclarationRef>>(component_members.size());
+    for (const auto nominal : ordered_nominals) {
+        if (!published_nominal(semantic, nominal)) {
+            continue;
+        }
+        const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
+        if (const auto component = module_component[owner.index()]) {
+            component_nominals[*component].push_back(nominal);
+        }
+    }
+
     auto artifacts = TargetPlanTableBuilder<TargetArtifactPlan, TargetArtifactID>(identity);
     auto component_artifacts =
         std::vector<std::optional<TargetArtifactID>>(component_members.size());
@@ -336,13 +348,8 @@ auto plan_artifacts(
         include_predecessors(component_index);
 
         auto forwards = std::flat_set<NominalDeclarationRef>();
-        for (const auto nominal : ordered_nominals) {
-            const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-            if (published_nominal(semantic, nominal)
-                && module_component[owner.index()].has_value()
-                && *module_component[owner.index()] == component_index) {
-                forwards.insert(nominal);
-            }
+        for (const auto nominal : component_nominals[component_index]) {
+            forwards.insert(nominal);
         }
         for (const auto member : component_members[component_index]) {
             for (const auto& [nominal, completeness] :
@@ -378,22 +385,16 @@ auto plan_artifacts(
         }
 
         auto interface_declarations = std::vector<TargetInterfaceDeclaration>();
-        for (const auto nominal : ordered_nominals) {
+        for (const auto nominal : component_nominals[component_index]) {
             const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-            if (published_nominal(semantic, nominal)
-                && module_component[owner.index()].has_value()
-                && *module_component[owner.index()] == component_index) {
-                interface_declarations.push_back({
-                    .module_id = owner,
-                    .declaration = std::visit(
-                        [](auto id) static noexcept
-                            -> std::variant<FunctionID, StructID, EnumID, CallableID> {
-                            return id;
-                        },
-                        nominal
-                    ),
-                });
-            }
+            interface_declarations.push_back({
+                .module_id = owner,
+                .declaration = std::visit(
+                    [](auto id) static noexcept
+                        -> std::variant<FunctionID, StructID, EnumID, CallableID> { return id; },
+                    nominal
+                ),
+            });
         }
         for (const auto callable_id : closures.definition_order) {
             const auto owner = closures.owner(callable_id);

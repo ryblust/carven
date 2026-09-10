@@ -29,31 +29,21 @@ public:
           catalog(source_catalog),
           import_usage(usage),
           states(source_catalog.symbols().size(), Unvisited {}),
-          modules(source_catalog.modules().size()),
-          functions(source_catalog.function_count()),
           structures(source_catalog.struct_count()),
           enumerations(source_catalog.enum_count()),
           enum_cases(source_catalog.enum_case_count()),
           module_constants(source_catalog.symbols().size()),
-          callable_contracts(source_catalog.function_count()),
           cpp_import_origins(source_catalog.function_count()) {}
 
     auto run() noexcept -> AnalysisResult<void> {
-        auto first_failure = std::optional<AnalysisFailure>();
         for (const auto& symbol : catalog.symbols()) {
-            auto result = resolve(symbol.symbol_id, symbol.module_id, symbol.declaration_span);
-            if (!result.has_value() && !first_failure.has_value()) {
-                first_failure = result.error();
-            }
+            static_cast<void>(resolve(symbol.symbol_id, symbol.module_id, symbol.declaration_span));
         }
         for (const auto& symbol : catalog.symbols()) {
             if (!std::holds_alternative<CatalogEnumForm>(symbol.form)) {
                 continue;
             }
-            auto result = validate_enum_codes(symbol);
-            if (!result.has_value() && !first_failure.has_value()) {
-                first_failure = result.error();
-            }
+            static_cast<void>(validate_enum_codes(symbol));
         }
         if (std::ranges::any_of(states, [](const State& state) noexcept {
                 return std::holds_alternative<Unvisited>(state)
@@ -61,11 +51,11 @@ public:
             })) {
             invariant_violation("declaration resolution left a non-terminal symbol state");
         }
-        if (first_failure.has_value()) {
-            return std::unexpected(*first_failure);
+        if (const auto failure = draft.diagnostics().failure()) {
+            return std::unexpected(*failure);
         }
         finish_capabilities();
-        publish();
+        finish_declarations();
         return {};
     }
 
@@ -372,20 +362,16 @@ private:
         -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
     auto finish_capabilities() noexcept -> void;
-    auto publish() noexcept -> void;
+    auto finish_declarations() noexcept -> void;
 
     ProgramDraft& draft;
     AnalysisCatalogView catalog;
     ImportUsage& import_usage;
     std::vector<State> states;
     std::vector<CatalogSymbolID> active_path;
-    std::vector<std::optional<ModuleDeclaration>> modules;
-    std::vector<std::optional<FunctionDeclaration>> functions;
     std::vector<std::optional<ConstructionStructDeclaration>> structures;
     std::vector<std::optional<EnumDeclaration>> enumerations;
     std::vector<std::optional<ConstructionEnumCaseDeclaration>> enum_cases;
     std::vector<std::optional<ModuleConstantDeclaration>> module_constants;
-    std::vector<std::optional<std::variant<ConstructionCallableContract, PendingFunctionContract>>>
-        callable_contracts;
     std::vector<std::optional<ProgramOriginID>> cpp_import_origins;
 };

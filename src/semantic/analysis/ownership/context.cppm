@@ -311,7 +311,8 @@ public:
     auto body(BodyID id) const noexcept -> const SemIRBody&;
     auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(TypeID type) const noexcept -> TypeContents;
-    auto query(OwnershipCallInput input) noexcept -> std::vector<OwnershipCallCompletion>;
+    // Answers are borrowed during body evaluation, before the solver updates them.
+    auto query(OwnershipCallInput input) noexcept -> std::span<const OwnershipCallCompletion>;
     auto diagnose(
         DiagnosticCode code,
         std::string message,

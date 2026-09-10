@@ -51,8 +51,7 @@
      local outputfile = ((opt.bmi and not opt.objectfile) or opt.headerunit) and module.bmifile or module.objectfile
 --- a/rules/c++/modules/builder.lua
 +++ b/rules/c++/modules/builder.lua
-@@ -37,5 +37,38 @@
- function _builder(target)
+@@ -38,6 +38,51 @@
      return support.import_implementation_of(target, "builder")
  end
 -
@@ -60,6 +59,18 @@
 +function _use_clang_module_pipeline(target)
 +    return target:policy("build.c++.modules.two_phases")
 +        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
++end
++
++function _append_imported_bmifiles(target, module, files, seen)
++    for dep_name, dep in pairs(module.deps or {}) do
++        local imported = mapper.get(target, dep.headerunit and dep_name .. dep.key or dep_name)
++        local bmifile = assert(imported.bmifile, "imported module has no BMI: " .. dep_name)
++        if not seen[bmifile] then
++            seen[bmifile] = true
++            table.insert(files, bmifile)
++            _append_imported_bmifiles(target, imported, files, seen)
++        end
++    end
 +end
 +
 +function _mark_prunable_leaf_modules(target, built_modules, opt)
@@ -91,23 +102,51 @@
 +end
 +
  -- generate meta module informations for package / other buildsystems import
-@@ -191,10 +225,11 @@
+ --
+ -- e.g
+@@ -190,19 +235,34 @@
+         local compinst = compiler.load("cxx", {target = target})
          local compflags = compinst:compflags({sourcefile = module.sourcefile, target = target})
 -
 +
 -        local dependfile = target:dependfile(module.bmifile or module.objectfile)
 +        local artifactfile = module._carven_prune_leaf_bmi and module.objectfile or (module.bmifile or module.objectfile)
-+        local dependfile = target:dependfile(artifactfile)
++        local dependfile = target:dependfile(_use_clang_module_pipeline(target) and (artifactfile .. ".module") or artifactfile)
          local dependinfo = {}
          dependinfo.files = {module.sourcefile}
          dependinfo.values = {compinst:program(), compflags}
-         local objectfile_exists = (module.headerunit or support.is_bmionly(target, module.sourcefile)) and true or os.isfile(module.objectfile)
+-        local objectfile_exists = (module.headerunit or support.is_bmionly(target, module.sourcefile)) and true or os.isfile(module.objectfile)
 -        dependinfo.lastmtime = (os.isfile(module.bmifile or module.objectfile) and objectfile_exists) and os.mtime(dependfile) or 0
-+        dependinfo.lastmtime = (os.isfile(artifactfile) and objectfile_exists) and os.mtime(dependfile) or 0
++        local bmionly = module.headerunit or support.is_bmionly(target, module.sourcefile)
++        local objectfile_exists = bmionly or os.isfile(module.objectfile)
++        if _use_clang_module_pipeline(target) then
++            _append_imported_bmifiles(target, module, dependinfo.files, {})
++            table.sort(dependinfo.files)
++            -- Dependency records are saved while scheduling, before compilation finishes.
++            -- Both outputs must be current when this module produces a BMI and object.
++            dependinfo.lastmtime = os.mtime(artifactfile)
++            if not bmionly and not module._carven_prune_leaf_bmi then
++                dependinfo.lastmtime = math.min(dependinfo.lastmtime, os.mtime(module.objectfile))
++            end
++        else
++            dependinfo.lastmtime = (os.isfile(artifactfile) and objectfile_exists) and os.mtime(dependfile) or 0
++        end
 -
 +
          local fileconfig = target:fileconfig(module.sourcefile)
-@@ -248,7 +283,7 @@
+         local from_package = fileconfig and fileconfig.from_package
+         local is_std = path.basename(module.sourcefile) == "std" or path.basename(module.sourcefile) == "std.compat"
+         local rebuild = target:is_rebuilt() and not from_package and not is_std
+         local old_dependinfo = rebuild and {} or (depend.load(dependfile) or {})
+-        old_dependinfo.files = {module.sourcefile}
++        if not _use_clang_module_pipeline(target) then
++            old_dependinfo.files = {module.sourcefile}
++        end
+-
++
+         -- need build this object?
+         local dryrun = option.get("dry-run")
+@@ -248,7 +308,7 @@
      local _built_modules = {}
      for _, sourcefile in ipairs(built_modules) do
          local module = mapper.get(target, sourcefile)
@@ -116,7 +155,7 @@
              table.insert(_built_modules, sourcefile)
          else
              if not support.is_bmionly(target, sourcefile) then
-@@ -272,19 +307,26 @@
+@@ -272,19 +332,26 @@
              local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, moduletype)
              table.insert(buildfilejobs, buildfilejob)
              jobgraph:add(buildfilejob, function(_, _, jobopt)
@@ -133,7 +172,8 @@
 +                builder.make_module_job(target, module, moduleopt)
              end)
              _merge_jobdeps(jobdeps, _get_jobdeps(target, module, jobgraph, buildfilejob))
- 
+-
++
 -            -- if two phase compilation supported set jobdeps for objectfile job
 +            -- In the Clang module pipeline, the object is compiled
 +            -- directly from the source and only needs imported BMIs. It does not
@@ -149,7 +189,7 @@
              end
          end
      end)
-@@ -327,10 +369,11 @@
+@@ -327,10 +394,11 @@
                  local module = mapper.get(target, sourcefile)
                  local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, "objectfile")
                  jobgraph:add(buildfilejob, function(_, _, jobopt)
@@ -165,7 +205,7 @@
                  end)
              end
          end
-@@ -459,7 +502,7 @@
+@@ -459,7 +527,7 @@
      local _built_modules = {}
      for _, sourcefile in ipairs(built_modules) do
          local module = mapper.get(target, sourcefile)
@@ -174,7 +214,7 @@
              table.insert(_built_modules, sourcefile)
          end
      end
-@@ -716,6 +759,9 @@
+@@ -717,6 +785,9 @@
          local modules = scanner.get_modules(target)
          -- avoid building non referenced modules
          local built_modules, built_headerunits, _ = scanner.sort_modules_by_dependencies(target, modules, {jobgraph = target:policy("build.jobgraph")})
@@ -184,7 +224,7 @@
          local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
          if jobgraph.add_orders then -- jobgraph
              -- build headerunits
-@@ -787,3 +824,21 @@
+@@ -787,3 +858,21 @@
          profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
      end
  end

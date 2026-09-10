@@ -17,6 +17,7 @@ import :backend.target.type;
 import :backend.target.unit;
 import :backend.target.verify;
 import :backend.target;
+import :support.unique_indirect;
 import :test.internal.backend.target.fixture;
 import :test.internal.harness.death;
 import std;
@@ -276,4 +277,63 @@ TEST_CASE("Target builder: interning is unit-owned and unused types add no depen
     CHECK_EQ(first, second);
     CHECK_EQ(unit.type_count(), 2);
     CHECK(unit.directive_groups().empty());
+}
+
+TEST_CASE("Target builder: type queries retain call structure across table growth") {
+    auto builder = TargetTestingFixture::unit_builder();
+    const auto query = [](bool grouped) static noexcept -> TargetType {
+        const auto name = [](std::string_view text) static noexcept -> TargetExpr {
+            return {.value = TargetNameExpr {.name = TargetName(identifier(text))}};
+        };
+        auto arguments = std::vector<TargetExpr>();
+        arguments.push_back(name("a"));
+        if (grouped) {
+            arguments.push_back(name("b"));
+        }
+        auto nested = TargetExpr {
+            .value = TargetCallExpr {
+                .callee = UniqueIndirect(name("g")),
+                .template_argument_type_ids = {},
+                .arguments = std::move(arguments),
+            }
+        };
+        auto outer = std::vector<TargetExpr>();
+        outer.push_back(std::move(nested));
+        if (!grouped) {
+            outer.push_back(name("b"));
+        }
+        return {
+            .value = TargetDecltypeType(
+                TargetExpr {
+                    .value =
+                        TargetCallExpr {
+                            .callee = UniqueIndirect(name("f")),
+                            .template_argument_type_ids = {},
+                            .arguments = std::move(outer),
+                        }
+                }
+            ),
+            .const_qualified = false,
+        };
+    };
+    const auto separate = builder.intern_type(query(false));
+    const auto grouped = builder.intern_type(query(true));
+    CHECK_NE(separate, grouped);
+    for (auto index = 0uz; index < 128uz; ++index) {
+        static_cast<void>(builder.intern_type(
+            TargetType {
+                .value =
+                    TargetNamedType {
+                        .name = TargetName(identifier(std::format("T{}", index))),
+                        .type_argument_ids = {},
+                        .nested = {},
+                    },
+                .const_qualified = false,
+            }
+        ));
+    }
+    CHECK_EQ(builder.intern_type(query(false)), separate);
+    CHECK_EQ(builder.intern_type(query(true)), grouped);
+    const auto unit = std::move(builder).finish(sections());
+    CHECK_EQ(unit.type_count(), 130uz);
 }

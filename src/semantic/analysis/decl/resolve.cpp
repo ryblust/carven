@@ -117,7 +117,7 @@ auto DeclResolver::finish_capabilities() noexcept -> void {
     }
 }
 
-auto DeclResolver::publish() noexcept -> void {
+auto DeclResolver::finish_declarations() noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
         const auto syntax = draft.syntax_tree(module_record.module_id).view();
         const auto& source = syntax.ast_module();
@@ -183,40 +183,12 @@ auto DeclResolver::publish() noexcept -> void {
                 )
             );
         }
-        if (module_record.declaration.index() >= modules.size()) {
-            invariant_violation("module declaration identity is outside its reserved table");
-        }
-        modules[module_record.declaration.index()] = std::move(declaration);
-    }
-
-    for (const auto& module_record : catalog.modules()) {
-        if (!modules[module_record.declaration.index()].has_value()) {
-            invariant_violation("resolved module has no declaration fact");
-        }
-        draft.define_declaration(
-            module_record.declaration,
-            std::move(*modules[module_record.declaration.index()])
-        );
+        draft.define_declaration(module_record.declaration, std::move(declaration));
     }
     for (const auto& symbol : catalog.symbols()) {
         std::visit(
             Overloaded {
-                [&](const CatalogFunctionForm& form) noexcept {
-                    if (!functions[form.function.index()].has_value()
-                        || !callable_contracts[form.callable.index()].has_value()) {
-                        invariant_violation("resolved function has an incomplete contract");
-                    }
-                    draft.define_declaration(form.function, *functions[form.function.index()]);
-                    auto& contract = *callable_contracts[form.callable.index()];
-                    if (auto* complete = std::get_if<ConstructionCallableContract>(&contract)) {
-                        draft.define_callable_contract(form.callable, std::move(*complete));
-                    } else {
-                        draft.define_pending_function_contract(
-                            form.callable,
-                            std::move(std::get<PendingFunctionContract>(contract))
-                        );
-                    }
-                },
+                [](const CatalogFunctionForm&) static noexcept {},
                 [&](const CatalogStructForm& form) noexcept {
                     if (!structures[form.structure.index()].has_value()) {
                         invariant_violation("resolved struct has no declaration fact");

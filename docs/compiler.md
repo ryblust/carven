@@ -63,6 +63,12 @@ and binding relations used by global checks. Ownership analysis prepares and sol
 The operation tree moves with its owning program. Successful checks deliver the
 program.
 
+Backend body preparation checks the execution and control relationships it
+introduces at completion. It borrows frozen operations and checks membership in
+the published lifetime and pattern tables. Semantic publication owns type and
+ownership analysis. [C++ generation](backend.md) describes realization invariants
+and Target verification.
+
 Pointer nullability walks the existing structured operations and merges local
 slot facts across normal and abrupt exits. It does not introduce CFG/SSA or
 interprocedural analysis. Indirect places check address availability and target
@@ -73,8 +79,12 @@ leaves for owned-content, loan-content, and infinite-size containment queries.
 
 `SyntaxProgram` owns source provenance, syntax trees, and resolved imports.
 `ProgramDraft` consumes it and owns mutable declarations, canonical interning,
-construction types, failure constraints, and body construction. Declarations
+construction types, failure constraints, and body construction. Canonical type
+construction indexes candidates and compares complete values before reusing an ID.
+The index ends with construction; published types retain their insertion order. Declarations
 may reserve identities for recursion and forward references.
+Callable completion indexes each body by its owning callable and checks unique
+ownership. The same index moves into the immutable declaration store for lookup.
 
 Program IDs belong to one program. Binding, pattern, and lifetime IDs belong
 to one body. Name frames exist only during name resolution; bound operations

@@ -51,6 +51,14 @@ fn terminal_boolean() -> bool throw SelectedFailure {
     return answer;
 }
 
+fn terminal_and() -> bool throw SelectedFailure {
+    return (if true { throw SelectedFailure {}; } else { true }) && (inactive_value()? == 0);
+}
+
+fn terminal_or() -> bool throw SelectedFailure {
+    return (if true { throw SelectedFailure {}; } else { false }) || (inactive_value()? == 0);
+}
+
 fn terminal_condition() throw SelectedFailure {
     while (if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }) {
         inactive_value()?;
@@ -82,8 +90,10 @@ fn no_loop_exit() {
 test "Control: a guard or condition failure has no rejected successor" {
     var caught = 0;
     try { terminal_boolean()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_and()?; } catch { SelectedFailure(_) => { caught += 1; } }
+    try { terminal_or()?; } catch { SelectedFailure(_) => { caught += 1; } }
     try { terminal_condition()?; } catch { SelectedFailure(_) => { caught += 1; } }
     try { terminal_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
     try { terminal_catch_guard()?; } catch { SelectedFailure(_) => { caught += 1; } }
-    check(caught == 4);
+    check(caught == 6);
 }

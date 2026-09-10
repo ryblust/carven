@@ -127,30 +127,28 @@ auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeI
     return result;
 }
 
-auto cpp_type_names(const CppTypeValue& type) noexcept -> std::vector<CppNameReference> {
+auto cpp_type_name(const CppTypeValue& type) noexcept -> const CppNameReference* {
     if (const auto* named = std::get_if<CppNamedType>(&type.form)) {
-        return {named->name};
+        return std::addressof(named->name);
     }
     if (std::holds_alternative<CppConstCharPointerType>(type.form)) {
-        return {};
+        return nullptr;
     }
     const auto& query = std::get<CppQueryType>(type.form);
     if (const auto* name = std::get_if<CppNameReference>(&query.expression)) {
-        return {*name};
+        return name;
     }
     if (const auto* call = std::get_if<CppCallQuery>(&query.expression)) {
         if (const auto* name = std::get_if<CppNameReference>(&call->callee)) {
-            return {*name};
+            return name;
         }
     }
-    return {};
+    return nullptr;
 }
 
 auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool {
-    for (const auto& name : cpp_type_names(type)) {
-        if (!valid_cpp_name(name)) {
-            return false;
-        }
+    if (const auto* name = cpp_type_name(type); name != nullptr && !valid_cpp_name(*name)) {
+        return false;
     }
     const auto* query = std::get_if<CppQueryType>(&type.form);
     if (query == nullptr) {

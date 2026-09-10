@@ -12,27 +12,8 @@ import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.internal.compiler.diagnostics.fixture;
 import std;
-
-namespace {
-
-auto find_diagnostic(std::span<const Diagnostic> diagnostics, std::string_view code) noexcept
-    -> const Diagnostic* {
-    const auto found =
-        std::ranges::find_if(diagnostics, [&](const Diagnostic& diagnostic) noexcept {
-            return diagnostic.finding.code == code;
-        });
-    return found == diagnostics.end() ? nullptr : &*found;
-}
-
-struct ErrorExpectation final {
-    std::string_view name;
-    std::string_view source;
-    std::string_view code;
-    std::string_view primary_text;
-};
-
-} // namespace
 
 TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source") {
     auto sources = SourceManager();
@@ -64,7 +45,7 @@ TEST_CASE("Compiler diagnostics: module-scoped facts retain their owning source"
     );
 
     REQUIRE(!result.has_value());
-    const auto* diagnostic = find_diagnostic(result.error(), "CV-EFFECT-UNMARKED");
+    const auto* diagnostic = find_compiler_diagnostic(result.error(), "CV-EFFECT-UNMARKED");
     REQUIRE(diagnostic != nullptr);
     REQUIRE(diagnostic->attachment.primary.has_value());
     CHECK_EQ(diagnostic->attachment.primary->span.source_id, failing_source);
@@ -109,7 +90,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         );
 
         REQUIRE(!result.has_value());
-        const auto* diagnostic = find_diagnostic(result.error(), "CV-IMPORT-RESOLUTION");
+        const auto* diagnostic = find_compiler_diagnostic(result.error(), "CV-IMPORT-RESOLUTION");
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
         CHECK_EQ(diagnostic->attachment.primary->span.source_id, app);
@@ -141,7 +122,7 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         );
 
         REQUIRE(!result.has_value());
-        const auto* diagnostic = find_diagnostic(result.error(), "CV-ENTRY-DUPLICATE");
+        const auto* diagnostic = find_compiler_diagnostic(result.error(), "CV-ENTRY-DUPLICATE");
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
         REQUIRE_EQ(diagnostic->attachment.related.size(), 1u);
@@ -177,7 +158,8 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         );
 
         REQUIRE(!result.has_value());
-        const auto* diagnostic = find_diagnostic(result.error(), "CV-TYPE-RECURSIVE-STORAGE");
+        const auto* diagnostic =
+            find_compiler_diagnostic(result.error(), "CV-TYPE-RECURSIVE-STORAGE");
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
         CHECK(

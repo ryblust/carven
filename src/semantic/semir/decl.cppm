@@ -226,7 +226,8 @@ private:
         ImmutableProgramTable<EnumDeclaration, EnumID> enumerations,
         ImmutableProgramTable<EnumCaseDeclaration, EnumCaseID> enum_cases,
         ImmutableProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constants,
-        ImmutableProgramTable<CallableDeclaration, CallableID> callables
+        ImmutableProgramTable<CallableDeclaration, CallableID> callables,
+        std::map<BodyID, CallableID> body_callables
     ) noexcept;
 
     ImmutableProgramTable<ModuleDeclaration, ModuleID> module_rows;
@@ -236,6 +237,7 @@ private:
     ImmutableProgramTable<EnumCaseDeclaration, EnumCaseID> enum_case_rows;
     ImmutableProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constant_rows;
     ImmutableProgramTable<CallableDeclaration, CallableID> callable_rows;
+    std::map<BodyID, CallableID> body_callables;
 
     friend class DeclarationBuilder;
 };
@@ -346,6 +348,8 @@ private:
     ReservedProgramTable<ConstructionCallableContract, CallableID> callable_contracts;
     ReservedProgramTable<CallableSignatureID, CallableID> callable_signature_ids;
     ReservedProgramTable<CallableImplementation, CallableID> callable_implementations;
+    // Derived while completing implementations, then moved into the final store.
+    std::map<BodyID, CallableID> body_callables;
     std::vector<CallableID> callable_order;
 
     friend class DeclarationConstructionView;

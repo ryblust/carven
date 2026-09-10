@@ -777,6 +777,31 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
     }));
 }
 
+TEST_CASE("SemIR declaration invariant: body ownership is unique and program-local") {
+    auto sources = SourceManager();
+    auto diagnostics = DiagnosticSink();
+    auto builder = begin_compilation(sources, diagnostics, "semir.declaration.body_owner");
+    builder.finish_declaration_heads();
+    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
+    const auto first = builder.append_body_callable(callable_contract(builder, void_type));
+    const auto second = builder.append_body_callable(callable_contract(builder, void_type));
+    const auto body = builder.reserve_body(BodyKind::Closure);
+    builder.complete_callable(first, ClosureBodyImplementation {.body = body.id()});
+    CHECK(expect_termination("semir-declaration-duplicate-body-owner", [&] noexcept {
+        builder.complete_callable(second, ClosureBodyImplementation {.body = body.id()});
+    }));
+
+    auto foreign_sources = SourceManager();
+    auto foreign_diagnostics = DiagnosticSink();
+    auto foreign =
+        begin_compilation(foreign_sources, foreign_diagnostics, "semir.declaration.foreign_body");
+    foreign.finish_declaration_heads();
+    const auto foreign_body = foreign.reserve_body(BodyKind::Closure);
+    CHECK(expect_termination("semir-declaration-foreign-body-owner", [&] noexcept {
+        builder.complete_callable(second, ClosureBodyImplementation {.body = foreign_body.id()});
+    }));
+}
+
 TEST_CASE("SemIR publication invariant: a closure callable has one closure operation") {
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();

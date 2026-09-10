@@ -6,6 +6,17 @@ import std;
 
 namespace {
 
+auto variable_prefix(const TargetVariableStmt& value) noexcept -> std::string {
+    auto prefix = std::string();
+    if (value.preserve_pointer_access) {
+        prefix += "/* NOLINT(misc-const-correctness): preserve source pointee mutability. */ ";
+    }
+    if (value.maybe_unused) {
+        prefix += "[[maybe_unused]] ";
+    }
+    return prefix;
+}
+
 auto assignment_spelling(TargetAssignmentOperator op) noexcept -> std::string_view {
     switch (op) {
         case TargetAssignmentOperator::Assign:     return "=";
@@ -52,14 +63,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = std::string();
-                if (std::holds_alternative<TargetPointerType>(unit.type(value.type).value)) {
-                    // Preserve this declaration's target access without suppressing its initializer.
-                    prefix = "/* NOLINT(misc-const-correctness) */ ";
-                }
-                if (value.maybe_unused) {
-                    prefix += "[[maybe_unused]] ";
-                }
+                const auto prefix = variable_prefix(value);
                 const auto constant = value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string {};
@@ -233,14 +237,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
-                auto prefix = std::string();
-                if (std::holds_alternative<TargetPointerType>(unit.type(value.type).value)) {
-                    // Preserve this declaration's target access without suppressing its initializer.
-                    prefix = "/* NOLINT(misc-const-correctness) */ ";
-                }
-                if (value.maybe_unused) {
-                    prefix += "[[maybe_unused]] ";
-                }
+                const auto prefix = variable_prefix(value);
                 const auto constant = value.binding == TargetVariableBinding::ConstValue
                     || value.binding == TargetVariableBinding::ConstReference;
                 auto suffix = std::string();

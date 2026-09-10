@@ -1,28 +1,28 @@
-module carven:backend.lowering.body.lowerer.impl;
+module carven:backend.realization.realizer.impl;
 
 import :backend.generation.names;
-import :backend.lowering.body.decl;
-import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
+import :backend.realization.decl;
+import :backend.realization.realizer;
 import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir.traversal;
 import :semantic.semir;
 import :support.invariant;
 import std;
 
-BodyLowerer::BodyLowerer(
+BodyRealizer::BodyRealizer(
     ModuleLowering& source_context,
-    BodyID id,
-    TargetBodyInputs target_inputs
+    const BodyConstruction& construction,
+    BodyRealizationInputs target_inputs
 ) noexcept
     : context(source_context),
-      body(context.semantic().bodies().body(id)),
+      construction(construction),
+      metadata(context.semantic().bodies().body(construction.body())),
       inputs(std::move(target_inputs)),
       names(context.make_callable_name_allocator()),
-      parameter_bindings(body.inputs().parameters.begin(), body.inputs().parameters.end()),
-      capture_bindings(body.inputs().captures.begin(), body.inputs().captures.end()) {
+      parameter_bindings(metadata.inputs().parameters.begin(), metadata.inputs().parameters.end()),
+      capture_bindings(metadata.inputs().captures.begin(), metadata.inputs().captures.end()) {
     if (inputs.parameters.size() != parameter_bindings.size()
         || inputs.captures.size() != capture_bindings.size()) {
         invariant_violation("target inputs do not match semantic body inputs");
@@ -37,8 +37,16 @@ BodyLowerer::BodyLowerer(
         names.reserve(inputs.captures[index].spelling());
         names.reserve(inputs.captures[index].spelling(), callable_scope);
     }
-    prepare_evaluation();
-    for (const auto binding : body.bindings()) {
+    for (const auto& value : construction.expression_values()) {
+        if (const auto* take = std::get_if<SemTake>(&value.operation.value)) {
+            const auto* binding = std::get_if<SemBinding>(&take->place->value);
+            if (binding == nullptr) {
+                invariant_violation("take source is not a complete owner binding");
+            }
+            taken_bindings.insert(binding->binding);
+        }
+    }
+    for (const auto binding : metadata.bindings()) {
         if (!binding_names.contains(binding.id)) {
             const auto preferred =
                 names.source(context.semantic().provenance().spelling(binding.value.name));
@@ -50,8 +58,8 @@ BodyLowerer::BodyLowerer(
     }
 }
 
-auto BodyLowerer::finish() noexcept -> LoweredBody {
-    auto statements = region(body.region(), LoweringDiscardResult {});
+auto BodyRealizer::finish() noexcept -> LoweredBody {
+    auto statements = region(construction.root(), LoweringDiscardResult {});
 
     for (const auto exit : statements.exits().targets) {
         if (exit.identity != 0
@@ -72,17 +80,15 @@ auto BodyLowerer::finish() noexcept -> LoweredBody {
     };
 }
 
-auto BodyLowerer::region(
-    const SemanticRegion& source,
-    const LoweringResultDestination& result
-) noexcept -> LoweringStmtBuilder {
-    auto* const outer_storage = std::exchange(conditional_temporaries, nullptr);
+auto BodyRealizer::region(ConstructionRegionID id, const LoweringResultDestination& result) noexcept
+    -> LoweringStmtBuilder {
+    const auto& source = construction.region(id);
     auto statements = LoweringStmtBuilder();
     for (const auto& item : source.statements) {
         if (!statements.continues()) {
             break;
         }
-        static_cast<void>(statements.accept(statement(item)));
+        static_cast<void>(statements.accept(statement(item, id)));
     }
     if (statements.continues()) {
         if (source.result.has_value()) {
@@ -91,6 +97,5 @@ auto BodyLowerer::region(
             deliver_result(LoweringCompleted {}, result, statements);
         }
     }
-    conditional_temporaries = outer_storage;
     return statements;
 }

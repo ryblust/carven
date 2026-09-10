@@ -1,4 +1,4 @@
-module carven:backend.lowering.body.decl;
+module carven:backend.realization.decl;
 
 import :backend.target.name;
 import :backend.target.stmt;

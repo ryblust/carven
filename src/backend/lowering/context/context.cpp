@@ -63,15 +63,11 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
 ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
     : artifact_lowering(artifact),
       module_id(owner_module_id),
-      type_cache(artifact.semantic().types().size()),
-      signature_result_cache(artifact.semantic().callable_signatures().size()) {
+      allocator(artifact.plan().names().module_names(owner_module_id).reserved_identifiers) {
     if (owner_module_id.owner() != semantic().identity()) {
         invariant_violation("module lowering received a foreign semantic module ID");
     }
     static_cast<void>(semantic().declarations().module_decl(owner_module_id));
-    for (const auto& name : plan().names().module_names(owner_module_id).reserved_identifiers) {
-        allocator.reserve(name);
-    }
 }
 
 auto ModuleLowering::semantic() const noexcept -> const SemIRProgram& {
@@ -133,9 +129,5 @@ auto ModuleLowering::name_allocator() noexcept -> TargetNameAllocator& {
 }
 
 auto ModuleLowering::make_callable_name_allocator() const noexcept -> TargetNameAllocator {
-    auto result = TargetNameAllocator {};
-    for (const auto& name : plan().names().module_names(module_id).reserved_identifiers) {
-        result.reserve(name);
-    }
-    return result;
+    return TargetNameAllocator(plan().names().module_names(module_id).reserved_identifiers);
 }

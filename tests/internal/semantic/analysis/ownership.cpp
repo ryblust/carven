@@ -106,7 +106,7 @@ TEST_CASE("Semantic availability: assignment restores an owner consumed by a com
 }
 
 TEST_CASE("Semantic availability: assignment restores an owner only after normal completion") {
-    const auto restored = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    var payload = Payload { value: 1 };\n"
@@ -114,8 +114,7 @@ TEST_CASE("Semantic availability: assignment restores an owner only after normal
           "    payload = Payload { value: 2 };\n"
           "    let observed = payload.value;\n"
           "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(restored, DiagnosticCode::AccessUnavailable));
+    ));
 
     const auto failure_path = analyze_test_errors(
         std::string(semantic_test_payload_prelude)
@@ -192,8 +191,8 @@ TEST_CASE("Semantic availability: multi-word place state converges through a loo
     CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessUnavailable));
 }
 
-TEST_CASE("Semantic availability: unreachable operations do not diagnose") {
-    const auto diagnostics = analyze_test_errors(
+TEST_CASE("Semantic availability: unreachable Take and reads remain valid") {
+    static_cast<void>(analyze_test_program(
         std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    let payload = Payload { value: 1 };\n"
@@ -201,9 +200,7 @@ TEST_CASE("Semantic availability: unreachable operations do not diagnose") {
           "    consume(&&payload);\n"
           "    let observed = payload.value;\n"
           "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessUnavailable));
-    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessOperationConflict));
+    ));
 }
 
 TEST_CASE("Semantic availability: joins choose the earliest structural Take witness") {
@@ -235,7 +232,7 @@ TEST_CASE("Semantic availability: joins choose the earliest structural Take witn
 }
 
 TEST_CASE("Semantic availability: closure-local places are isolated from the outer body") {
-    const auto diagnostics = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    let payload = Payload { value: 1 };\n"
@@ -245,8 +242,7 @@ TEST_CASE("Semantic availability: closure-local places are isolated from the out
           "    };\n"
           "    let observed = payload.value;\n"
           "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessUnavailable));
+    ));
 }
 
 TEST_CASE("Semantic availability: completed values release call accesses") {

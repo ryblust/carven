@@ -33,6 +33,19 @@ fn reserved_identifier(__value: i32) -> i32 {
     return __value;
 }
 
+fn next_value(&value: i32) -> i32 { value += 1; return value; }
+
+fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
+    return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 + g * 1000000 + h * 10000000;
+}
+
+test "Evaluation: predecessor reads survive later effects across a wide argument list" {
+    var value = 1;
+    let result = eight_values(value, value, next_value(&value), value, value, next_value(&value), value, value);
+    check(result == 33322211);
+    check(value == 3);
+}
+
 test "Evaluation: call arguments evaluate from left to right" {
     cv_test_call_reset_order();
     let ordered = pair(

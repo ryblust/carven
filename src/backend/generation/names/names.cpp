@@ -146,6 +146,14 @@ auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
 
 } // namespace
 
+TargetNameAllocator::TargetNameAllocator(const std::flat_set<std::string>& enclosing) noexcept
+    : enclosing_names(std::addressof(enclosing)) {}
+
+auto TargetNameAllocator::is_reserved(const std::string& spelling) const noexcept -> bool {
+    return reserved_names.contains(spelling)
+        || (enclosing_names != nullptr && enclosing_names->contains(spelling));
+}
+
 auto TargetNameAllocator::source(
     std::string_view spelling,
     std::string_view enclosing_class
@@ -201,7 +209,7 @@ auto TargetNameAllocator::local_symbol(
             return identifier.spelling() == value;
         });
     };
-    while (reserved_names.contains(candidate)
+    while (is_reserved(candidate)
            || claimed_names.contains(candidate)
            || reserved.contains(candidate)
            || conflicts_with_initializer(candidate)
@@ -226,7 +234,7 @@ auto TargetNameAllocator::fresh(TargetTemporaryNameKind kind, TargetScopeID scop
 auto TargetNameAllocator::claim(std::string_view preferred) noexcept -> TargetIdentifier {
     auto candidate = std::string(preferred);
     auto suffix = 2uz;
-    while (reserved_names.contains(candidate) || !claimed_names.insert(candidate).second) {
+    while (is_reserved(candidate) || !claimed_names.insert(candidate).second) {
         candidate = std::format("{}_{}", preferred, suffix++);
     }
     return TargetIdentifier::from_spelling(candidate);

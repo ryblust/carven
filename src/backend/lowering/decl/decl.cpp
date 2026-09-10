@@ -2,7 +2,7 @@ module carven:backend.lowering.decl.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body;
+import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;

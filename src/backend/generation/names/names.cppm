@@ -42,6 +42,10 @@ struct TargetPayloadEnumNames final {
 
 class TargetNameAllocator final {
 public:
+    TargetNameAllocator() = default;
+    // The enclosing names remain immutable and outlive this allocator.
+    explicit TargetNameAllocator(const std::flat_set<std::string>& enclosing) noexcept;
+
     auto source(std::string_view spelling, std::string_view enclosing_class = {}) const noexcept
         -> TargetIdentifier;
     auto alias_scope(TargetScopeID source, TargetScopeID target) noexcept -> void;
@@ -85,12 +89,14 @@ public:
     static auto test_context() noexcept -> TargetIdentifier;
 
 private:
+    auto is_reserved(const std::string& spelling) const noexcept -> bool;
     auto claim(std::string_view preferred) noexcept -> TargetIdentifier;
     auto claim(std::string_view preferred, TargetScopeID scope) noexcept -> TargetIdentifier;
 
     std::flat_map<std::uint32_t, TargetIdentifier> local_names;
     std::flat_set<std::string> claimed_names;
     std::flat_set<std::string> reserved_names;
+    const std::flat_set<std::string>* enclosing_names = nullptr;
     std::flat_map<TargetScopeID, TargetScopeID> scope_aliases;
     std::flat_map<TargetScopeID, std::flat_set<std::string>> scoped_reserved_names;
     std::flat_map<TargetScopeID, std::flat_set<std::string>> local_claimed_names;

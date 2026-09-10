@@ -86,6 +86,11 @@ TEST_CASE("Compiler diagnostics: pointer permissions and null proofs preserve so
              "fn invalid(p: ptr<i32>, q: ptr<i32>) { var slot = p; if slot == nullptr { return; } while true { let value = *slot; slot = q; } }",
          .code = "CV-PTR-NONNULL",
          .primary_text = "*slot"},
+        {.name = "loop condition assignments clear entry proof",
+         .source =
+             "fn invalid(p: ptr<i32>) { var slot = p; if slot == nullptr { return; } while (if true { let value = *slot; slot = nullptr; value > 0 } else { false }) {} }",
+         .code = "CV-PTR-NONNULL",
+         .primary_text = "*slot"},
         {.name = "Write capture call invalidates",
          .source =
              "fn invalid(p: ptr<i32>) -> i32 { var slot = p; let clear = [&slot]() { slot = nullptr; }; if slot == nullptr { return 0; } clear(); return *slot; }",

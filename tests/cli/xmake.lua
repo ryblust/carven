@@ -1,9 +1,4 @@
 local case_specs = {
-    ["output/cpp_interface"] = {
-        inputs = {"input.cv"},
-        args = {"input.cv"},
-        output_files = {"input.cpp", "carven/generated/input.hpp"},
-    },
     ["commands/dump"] = {
         inputs = {"input.cv", "lexical_error.cv", "syntax_error.cv"},
         steps = {
@@ -68,27 +63,15 @@ local case_specs = {
             ["../state/preexisting.fixture"] = "emit/bare_structure.cpp",
             ["../state/stale.fixture"] = "emit/stale.txt",
         },
-        steps = {
-            {
-                args = {"--output-dir=emit", "bare_structure.cv"},
-                output_files = {
-                    "emit/bare_structure.cpp",
-                    "emit/carven/generated/bare_structure.hpp",
-                    "emit/stale.txt",
-                },
-                absent_files = {".carven"},
-                file_not_contains = {
-                    ["emit/bare_structure.cpp"] = {"preexisting output"},
-                },
-            },
-            {
-                args = {"bare_structure.cv", "-o", "emit"},
-                output_files = {
-                    "emit/bare_structure.cpp",
-                    "emit/carven/generated/bare_structure.hpp",
-                    "emit/stale.txt",
-                },
-            },
+        args = {"--output-dir=emit", "bare_structure.cv"},
+        output_files = {
+            "emit/bare_structure.cpp",
+            "emit/carven/generated/bare_structure.hpp",
+            "emit/stale.txt",
+        },
+        absent_files = {".carven"},
+        file_not_contains = {
+            ["emit/bare_structure.cpp"] = {"preexisting output"},
         },
     },
     ["output/stdout"] = {

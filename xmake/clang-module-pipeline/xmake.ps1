@@ -5,14 +5,19 @@ $scriptDir = $PSScriptRoot
 $patchFile = Join-Path $scriptDir "xmake-3.1.1.patch"
 $baseXmake = (Get-Command xmake.exe -CommandType Application -ErrorAction Stop).Source
 
-$sourceProgramDir = (& $baseXmake lua -c 'io.write(os.programdir())' | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $sourceProgramDir) {
-    throw "Failed to query the installed Xmake program directory."
+$sourceProfile = $env:XMAKE_PROFILE
+try {
+    $env:XMAKE_PROFILE = $null
+    $sourceInfo = @(& $baseXmake lua -c 'print(os.programdir()); print(tostring(xmake.version()))')
+    if ($LASTEXITCODE -ne 0 -or $sourceInfo.Count -ne 2 -or -not $sourceInfo[0] -or -not $sourceInfo[1]) {
+        throw "Failed to query the installed Xmake program directory and version."
+    }
 }
-$sourceVersion = (& $baseXmake lua -c 'io.write(tostring(xmake.version()))' | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $sourceVersion) {
-    throw "Failed to query the installed Xmake version."
+finally {
+    $env:XMAKE_PROFILE = $sourceProfile
 }
+$sourceProgramDir = $sourceInfo[0]
+$sourceVersion = $sourceInfo[1]
 
 $patchedFiles = @(
     (Join-Path $sourceProgramDir "rules/c++/modules/clang/builder.lua")

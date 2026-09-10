@@ -75,17 +75,17 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
 }
 }
 
-TargetDeducedType::TargetDeducedType(TargetExpr expression) noexcept
+TargetDecltypeType::TargetDecltypeType(TargetExpr expression) noexcept
     : queried_expression(std::move(expression)) {
     if (!valid_query(queried_expression)) {
         invariant_violation("invalid target type query expression");
     }
 }
 
-auto TargetDeducedType::expression() const noexcept -> const TargetExpr& {
+auto TargetDecltypeType::expression() const noexcept -> const TargetExpr& {
     return queried_expression;
 }
 
-auto TargetDeducedType::operator==(const TargetDeducedType& other) const noexcept -> bool {
+auto TargetDecltypeType::operator==(const TargetDecltypeType& other) const noexcept -> bool {
     return equal_query(queried_expression, other.queried_expression);
 }

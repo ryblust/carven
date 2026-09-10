@@ -20,11 +20,11 @@ private:
     auto related_body(BodyID id) const noexcept -> const SemIRBody&;
     auto require_top_level_owners() const noexcept -> void;
     auto require_origin(ProgramOriginID origin) const noexcept -> void;
-    auto require_type(TypeID type) const noexcept -> CanonicalType;
-    auto require_failure_set(FailureSetID failures) const noexcept -> FailureSet;
-    auto require_structure(StructID structure) const noexcept -> StructDeclaration;
-    auto require_enumeration(EnumID enumeration) const noexcept -> EnumDeclaration;
-    auto require_enum_case(EnumCaseID enum_case) const noexcept -> EnumCaseDeclaration;
+    auto require_type(TypeID type) const noexcept -> const CanonicalType&;
+    auto require_failure_set(FailureSetID failures) const noexcept -> const FailureSet&;
+    auto require_structure(StructID structure) const noexcept -> const StructDeclaration&;
+    auto require_enumeration(EnumID enumeration) const noexcept -> const EnumDeclaration&;
+    auto require_enum_case(EnumCaseID enum_case) const noexcept -> const EnumCaseDeclaration&;
     auto require_nominal_failure_member(TypeID type) const noexcept -> void;
     auto body_callable() const noexcept -> std::optional<CallableID>;
     auto verify_body_inputs() const noexcept -> void;

@@ -17,14 +17,10 @@ auto resolve_declaration_heads(
         return std::unexpected(resolved.error());
     }
 
-    auto failure = std::optional<AnalysisFailure>();
-    const auto retain_first_failure = [&](AnalysisResult<void> result) noexcept {
-        if (!result.has_value() && !failure.has_value()) {
-            failure = result.error();
-        }
-    };
-    retain_first_failure(analyze_nominal_containment(draft));
-    retain_first_failure(diagnose_cpp_api_surface(draft, catalog));
-    return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
-                               : AnalysisResult<void>();
+    static_cast<void>(analyze_nominal_containment(draft));
+    static_cast<void>(diagnose_cpp_api_surface(draft, catalog));
+    if (const auto failure = draft.diagnostics().failure()) {
+        return std::unexpected(*failure);
+    }
+    return {};
 }

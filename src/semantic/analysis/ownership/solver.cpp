@@ -59,7 +59,7 @@ auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
 }
 
 auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
-    -> std::vector<OwnershipCallCompletion> {
+    -> std::span<const OwnershipCallCompletion> {
     for (auto& parameter : input.parameters) {
         normalize_relationships(parameter.value);
     }

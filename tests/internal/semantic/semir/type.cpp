@@ -87,13 +87,43 @@ TEST_CASE("External types: C string storage has a closed operand and type contra
     const auto type = CppTypeValue {.form = CppConstCharPointerType {}};
     CHECK(valid_cpp_type(type));
     CHECK(cpp_type_references(type).empty());
-    CHECK(cpp_type_names(type).empty());
+    CHECK(cpp_type_name(type) == nullptr);
     CHECK(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 0uz));
     CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 1uz));
     CHECK_FALSE(
         cpp_operation_accepts_arity(CppCStringOperation {.bytes = std::string("a\0b", 3)}, 0uz)
     );
     CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "\xff"}, 0uz));
+}
+
+TEST_CASE("External types: query operand access participates in canonical identity") {
+    const auto program = analyze_test_program("");
+    auto types = CanonicalTypeStoreBuilder(program.identity());
+    const auto integer = types.intern_builtin(BuiltinType::I32);
+    const auto pointer = types.intern(
+        {.value = PointerTypeValue {.target = integer, .access = PointerAccess::Read}}
+    );
+    const auto query = [&](AccessMode access) noexcept {
+        return CanonicalType {
+            .value = CppTypeValue {
+                .form = CppQueryType {
+                    .expression = CppIndexQuery {
+                        .receiver = {.type = pointer, .access = access},
+                        .index = {.type = integer, .access = AccessMode::Read},
+                    },
+                },
+            },
+        };
+    };
+    const auto read = types.intern(query(AccessMode::Read));
+    const auto write = types.intern(query(AccessMode::Write));
+    const auto take = types.intern(query(AccessMode::Take));
+    CHECK_NE(read, write);
+    CHECK_NE(read, take);
+    CHECK_NE(write, take);
+    CHECK_EQ(types.intern(query(AccessMode::Read)), read);
+    CHECK_EQ(types.intern(query(AccessMode::Write)), write);
+    CHECK_EQ(types.intern(query(AccessMode::Take)), take);
 }
 
 TEST_CASE("Pointer types: nested declared callable contracts have stable identities") {

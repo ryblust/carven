@@ -19,7 +19,8 @@ struct CoverageAny final {
 
 struct CoverageAtom final {
     ConstructionTypeRef type;
-    std::variant<ConstantID, bool> value;
+    // Floating patterns use numeric equality; constant identities preserve sign bits.
+    std::variant<ConstantID, bool, float, double> value;
 };
 
 struct CoverageCase final {
@@ -369,9 +370,13 @@ private:
                             "literal coverage constant type differs from its subject"
                         );
                     }
-                    auto atom = std::variant<ConstantID, bool> {value.constant};
+                    auto atom = decltype(CoverageAtom::value) {value.constant};
                     if (const auto* boolean = std::get_if<BooleanConstant>(&fact.value)) {
                         atom = boolean->value;
+                    } else if (const auto* floating = std::get_if<F32Constant>(&fact.value)) {
+                        atom = floating->value;
+                    } else if (const auto* floating = std::get_if<F64Constant>(&fact.value)) {
+                        atom = floating->value;
                     }
                     return CoveragePattern {
                         .value = CoverageAtom {

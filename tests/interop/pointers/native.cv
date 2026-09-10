@@ -5,6 +5,10 @@ fn read(p: ptr<i32>) -> i32 {
     return *p;
 }
 
+fn writable_address() -> ptr<&i32> {
+    return ::pointer_probe::get();
+}
+
 #[cpp] ---
 auto pointer_output_adapter() noexcept -> std::int32_t* {
     std::int32_t* result = nullptr;
@@ -37,7 +41,12 @@ test "Pointers: native qualifiers aliases and incomplete targets retain their ty
     check(::pointer_probe::overload(empty) == 1);
     let null_write: ptr<&i32> = nullptr;
     check(::pointer_probe::overload(null_write) == 2);
+    check(::pointer_probe::deduces_writable_pointer(null_write));
+    check(!::pointer_probe::deduces_writable_pointer(empty));
+    check(::pointer_probe::observes_const_lvalue(null_write));
+    check(::pointer_probe::observes_const_lvalue(writable_address()));
     let native: ptr<::pointer_probe::NativePointer> = ::pointer_probe::nested_native();
+    check(::pointer_probe::deduces_readonly_native_slot(native));
     check(native != nullptr);
     let opaque: ptr<::pointer_probe::Incomplete> = ::pointer_probe::opaque();
     check(opaque == nullptr);

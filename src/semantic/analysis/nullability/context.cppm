@@ -25,11 +25,12 @@ struct NullNormal final {
     NullState state;
     NullValue value;
 };
-enum class NullExitKind { Return, Failure, Break, Continue };
+enum class NullTransfer { Return, Break, Continue };
+
+using NullExitPayload = std::variant<NullTransfer, TypeID>;
 
 struct NullExit final {
-    NullExitKind kind;
-    std::optional<TypeID> failure;
+    NullExitPayload payload;
     NullState state;
 };
 
@@ -83,6 +84,8 @@ private:
     ) const noexcept -> void;
     auto scan_writes(NullState& state, const SemanticRegion& region) noexcept -> void;
     auto scan_writes(NullState& state, const SemanticExpression& expression) noexcept -> void;
+    template<typename Source>
+    auto scan_writes_impl(NullState& state, const Source& source) noexcept -> void;
     auto add_range_aliases(const SemRangeLoop& source) noexcept -> void;
     auto scan_write(NullState& state, const SemanticExpression& expression) const noexcept -> void;
     auto expression(const SemanticExpression& source, NullState state) noexcept -> NullFlow;

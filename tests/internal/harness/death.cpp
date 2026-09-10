@@ -154,7 +154,8 @@ auto current_test_case_name() noexcept -> std::optional<std::string_view> {
     return context->currentTest->m_name;
 }
 
-auto run_child(std::string_view test_case) noexcept -> ChildResult {
+auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) noexcept
+    -> ChildResult {
     const auto executable = current_executable();
     const auto wide_test_case = utf8_to_wide(test_case);
     if (!executable.has_value() || !wide_test_case.has_value()) {
@@ -187,7 +188,7 @@ auto run_child(std::string_view test_case) noexcept -> ChildResult {
     }
     CloseHandle(process.hThread);
 
-    const auto wait = WaitForSingleObject(process.hProcess, 30000u);
+    const auto wait = WaitForSingleObject(process.hProcess, static_cast<DWORD>(timeout.count()));
     if (wait != WAIT_OBJECT_0) {
         static_cast<void>(TerminateProcess(process.hProcess, 1u));
         static_cast<void>(WaitForSingleObject(process.hProcess, INFINITE));
@@ -206,7 +207,8 @@ auto run_child(std::string_view test_case) noexcept -> ChildResult {
 auto expect_windows_termination(
     std::string_view scenario,
     DeathTestAction action,
-    void* context
+    void* context,
+    std::chrono::milliseconds timeout
 ) noexcept -> bool {
     const auto* selected_scenario = std::getenv(scenario_environment);
     const auto* event_text = std::getenv(event_environment);
@@ -250,7 +252,7 @@ auto expect_windows_termination(
     }
 
     std::fflush(nullptr);
-    const auto child = run_child(*test_case);
+    const auto child = run_child(*test_case, timeout);
     const auto restored_event = restore_environment(event_environment, saved_event);
     const auto restored_scenario = restore_environment(scenario_environment, saved_scenario);
     const auto entered_action = WaitForSingleObject(event, 0u) == WAIT_OBJECT_0;
@@ -264,7 +266,11 @@ auto expect_windows_termination(
 
 #else
 
-auto expect_posix_termination(DeathTestAction action, void* context) noexcept -> bool {
+auto expect_posix_termination(
+    DeathTestAction action,
+    void* context,
+    std::chrono::milliseconds timeout
+) noexcept -> bool {
     std::fflush(nullptr);
     auto readiness = std::array<int, 2> {};
     if (pipe(readiness.data()) != 0) {
@@ -294,18 +300,33 @@ auto expect_posix_termination(DeathTestAction action, void* context) noexcept ->
 
     auto status = 0;
     auto waited = pid_t {};
-    do {
-        waited = waitpid(child, &status, 0);
-    } while (waited < 0 && errno == EINTR);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (true) {
+        waited = waitpid(child, &status, WNOHANG);
+        if (waited == child || (waited < 0 && errno != EINTR)) {
+            break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            static_cast<void>(kill(child, SIGKILL));
+            do {
+                waited = waitpid(child, &status, 0);
+            } while (waited < 0 && errno == EINTR);
+            static_cast<void>(close(readiness[0]));
+            // A timeout is a harness failure, not evidence of expected termination.
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (waited != child) {
+        static_cast<void>(close(readiness[0]));
+        return false;
+    }
     auto entered = char {};
     auto read_count = ssize_t {};
     do {
         read_count = read(readiness[0], &entered, sizeof(entered));
     } while (read_count < 0 && errno == EINTR);
     static_cast<void>(close(readiness[0]));
-    if (waited != child) {
-        return false;
-    }
     const auto entered_action =
         read_count == static_cast<ssize_t>(sizeof(entered)) && entered == '1';
     const auto abnormal_exit =
@@ -317,14 +338,20 @@ auto expect_posix_termination(DeathTestAction action, void* context) noexcept ->
 
 } // namespace
 
-auto run_death_test(std::string_view scenario, DeathTestAction action, void* context) noexcept
-    -> bool {
-    if (scenario.empty()) {
+auto run_death_test(
+    std::string_view scenario,
+    DeathTestAction action,
+    void* context,
+    std::chrono::milliseconds timeout
+) noexcept -> bool {
+    if (scenario.empty()
+        || timeout.count() <= 0
+        || timeout.count() >= std::numeric_limits<std::uint32_t>::max()) {
         return false;
     }
 #if defined(_WIN32)
-    return expect_windows_termination(scenario, action, context);
+    return expect_windows_termination(scenario, action, context, timeout);
 #else
-    return expect_posix_termination(action, context);
+    return expect_posix_termination(action, context, timeout);
 #endif
 }

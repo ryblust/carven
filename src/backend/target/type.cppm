@@ -56,11 +56,11 @@ struct TargetReferenceType final {
     auto operator==(const TargetReferenceType&) const noexcept -> bool = default;
 };
 
-class TargetDeducedType final {
+class TargetDecltypeType final {
 public:
-    explicit TargetDeducedType(TargetExpr expression) noexcept;
+    explicit TargetDecltypeType(TargetExpr expression) noexcept;
     auto expression() const noexcept -> const TargetExpr&;
-    auto operator==(const TargetDeducedType& other) const noexcept -> bool;
+    auto operator==(const TargetDecltypeType& other) const noexcept -> bool;
 
 private:
     TargetExpr queried_expression;
@@ -73,7 +73,7 @@ using TargetTypeValue = std::variant<
     TargetFunctionType,
     TargetPointerType,
     TargetReferenceType,
-    TargetDeducedType>;
+    TargetDecltypeType>;
 
 struct TargetType final {
     TargetTypeValue value;

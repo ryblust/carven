@@ -100,10 +100,6 @@ auto dereference_expression(TargetExpr operand) noexcept -> TargetExpr {
     };
 }
 
-auto bool_expression(bool value) noexcept -> TargetExpr {
-    return {.value = TargetLiteralExpr {.value = value}};
-}
-
 auto integer_expression(std::uint64_t value) noexcept -> TargetExpr {
     return {
         .value = TargetLiteralExpr {

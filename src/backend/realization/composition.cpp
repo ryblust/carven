@@ -1,6 +1,6 @@
-module carven:backend.lowering.body.composition.impl;
+module carven:backend.realization.composition.impl;
 
-import :backend.lowering.body.composition;
+import :backend.realization.composition;
 import :backend.target;
 import :backend.target.expr;
 import :backend.target.origin;
@@ -8,6 +8,28 @@ import :backend.target.stmt;
 import :support.invariant;
 import :support.unique_indirect;
 import std;
+
+auto remaining_expression(LoweringResult result) noexcept -> std::optional<TargetExpr> {
+    if (auto* expression = std::get_if<LoweringDirectExpression>(&result)) {
+        return std::move(expression->expression);
+    }
+    return std::nullopt;
+}
+
+auto require_expression(LoweringResult value) noexcept -> TargetExpr {
+    auto expression = remaining_expression(std::move(value));
+    if (!expression) {
+        invariant_violation("completed evaluation has no value expression");
+    }
+    return std::move(*expression);
+}
+
+auto predicate_expression(LoweringPredicate predicate) noexcept -> TargetExpr {
+    if (const auto* known = std::get_if<LoweringKnownBool>(&predicate)) {
+        return bool_expression(known->value);
+    }
+    return std::move(std::get<LoweringDynamicBool>(predicate).expression);
+}
 
 auto LoweringStmtBuilder::emit(TargetStmt statement, bool continues) noexcept -> void {
     if (!this->continues()) {
@@ -91,7 +113,7 @@ auto LoweringStmtBuilder::resume(
     );
 }
 
-auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept
+auto LoweringStmtBuilder::result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept
     -> TargetExpr {
     if (continues()) {
         invariant_violation("value region has an undelivered normal result");
@@ -102,17 +124,19 @@ auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yi
         }
     }
     return TargetExpr {
+        .value = TargetLambdaExpr {
+            .parameters = {},
+            .result = type,
+            .body = std::move(lowered.statements)
+        }
+    };
+}
+
+auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept
+    -> TargetExpr {
+    return TargetExpr {
         .value = TargetCallExpr {
-            .callee = UniqueIndirect(
-                TargetExpr {
-                    .value =
-                        TargetLambdaExpr {
-                            .parameters = {},
-                            .result = type,
-                            .body = std::move(lowered.statements)
-                        }
-                }
-            ),
+            .callee = UniqueIndirect(std::move(*this).result_factory(type, yield)),
             .template_argument_type_ids = {},
             .arguments = {}
         }

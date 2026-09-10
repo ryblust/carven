@@ -36,5 +36,6 @@ struct QuotedLiteralScanError final {
 
 auto scan_string_literal(std::string_view text, bool reject_nul = false) noexcept
     -> std::expected<StringLiteralScan, QuotedLiteralScanError>;
+
 auto scan_character_literal(std::string_view text) noexcept
     -> std::expected<CharacterLiteralScan, QuotedLiteralScanError>;

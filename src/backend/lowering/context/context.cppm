@@ -93,19 +93,17 @@ public:
     auto is_integer(TypeID id) const noexcept -> bool;
 
 private:
-    struct Unseen final {};
-
     struct Resolving final {};
 
-    using TypeSlot = std::variant<Unseen, Resolving, TargetTypeID>;
+    using TypeState = std::variant<Resolving, TargetTypeID>;
 
     auto function_type(CallableSignatureID signature) noexcept -> TargetType;
 
     ArtifactLowering& artifact_lowering;
     ModuleID module_id;
     TargetNameAllocator allocator;
-    std::vector<TypeSlot> type_cache;
-    std::vector<TypeSlot> signature_result_cache;
+    std::map<TypeID, TypeState> type_cache;
+    std::map<CallableSignatureID, TypeState> signature_result_cache;
 };
 
 auto target_child(TargetExpr expression) noexcept -> UniqueIndirect<TargetExpr>;
@@ -124,7 +122,6 @@ auto transfer_expression(TargetExpr value) noexcept -> TargetExpr;
 
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto dereference_expression(TargetExpr operand) noexcept -> TargetExpr;
-auto bool_expression(bool value) noexcept -> TargetExpr;
 auto integer_expression(std::uint64_t value) noexcept -> TargetExpr;
 auto string_expression(std::string value, TargetStringLiteralKind kind) noexcept -> TargetExpr;
 auto generated_statement(TargetStmtValue value) noexcept -> TargetStmt;

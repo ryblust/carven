@@ -1,7 +1,7 @@
 module carven:backend.lowering.decl;
 
 import :backend.generation.plan;
-import :backend.lowering.body;
+import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.target.item;
 import :backend.target.unit;

@@ -3,6 +3,7 @@ module carven:backend.lowering.decl.closure.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
+import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
@@ -112,10 +113,10 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     if (body.inputs().parameters.size() != signature.parameters.size()) {
         invariant_violation("closure body inputs do not match its target signature");
     }
-    auto inputs = TargetBodyInputs {
+    auto inputs = BodyRealizationInputs {
         .parameters = {},
         .captures = {},
-        .exit = TargetCallableBodyExit {.signature = callable.signature},
+        .exit = CallableBodyExit {.signature = callable.signature},
     };
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < body.inputs().captures.size(); ++index) {

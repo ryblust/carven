@@ -169,13 +169,13 @@ fn guard_is_type_conditional() -> i32 {
     return result + calls * 100;
 }
 
-fn overlapping_alternatives_share_one_guard() -> i32 {
+fn overlapping_alternatives_share_one_guard(accepted: bool) -> i32 {
     cv_test_reset_catch_guard_calls();
     let result = try {
         fail_pair()?
     } catch {
         PairError(.Pair(1, _)) | PairError(.Pair(_, 1))
-            if cv_test_record_catch_guard() => 7,
+            if cv_test_record_catch_guard() && accepted => 7,
         PairError(_) => 0,
     };
     let calls = cv_test_catch_guard_call_count();
@@ -283,7 +283,8 @@ test "Failure contracts: preserve rethrow and handler semantics" {
     check(recover_wildcard_rethrow(true) == 31);
     check(recover_wildcard_rethrow(false) == 47);
     check(guard_is_type_conditional() == 47);
-    check(overlapping_alternatives_share_one_guard() == 17);
+    check(overlapping_alternatives_share_one_guard(true) == 17);
+    check(overlapping_alternatives_share_one_guard(false) == 10);
     check(recover_propagated_handler_failure() == 59);
     check(recover_transformed_handler_failure() == 61);
     check(recover_guard_failure() == 67);

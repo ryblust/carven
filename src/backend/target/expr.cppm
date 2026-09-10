@@ -173,12 +173,6 @@ struct TargetStaticCastExpr final {
     UniqueIndirect<TargetExpr> operand;
 };
 
-struct TargetPlacementNewExpr final {
-    TargetTypeID type;
-    UniqueIndirect<TargetExpr> address;
-    UniqueIndirect<TargetExpr> initializer;
-};
-
 struct TargetLambdaParameter final {
     TargetIdentifier name;
     TargetTypeID type;
@@ -205,9 +199,27 @@ using TargetExprValue = std::variant<
     TargetScopeMemberExpr,
     TargetStaticMemberExpr,
     TargetStaticCastExpr,
-    TargetPlacementNewExpr,
     TargetLambdaExpr>;
 
 struct TargetExpr final {
     TargetExprValue value;
 };
+
+auto bool_expression(bool value) noexcept -> TargetExpr;
+
+auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetExpr right) noexcept
+    -> TargetExpr;
+
+auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexcept -> TargetExpr;
+
+auto template_call_expression(
+    TargetExpr callee,
+    std::vector<TargetTypeID> template_arguments,
+    std::vector<TargetExpr> arguments
+) noexcept -> TargetExpr;
+
+auto call_member(
+    TargetExpr owner,
+    std::string_view member,
+    std::vector<TargetExpr> arguments
+) noexcept -> TargetExpr;

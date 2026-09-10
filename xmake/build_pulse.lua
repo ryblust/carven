@@ -55,7 +55,32 @@ function object_mtimes(root)
     return result
 end
 
-function private_edit(compiler, rules_repo)
+function changed_objects(before, after)
+    local changed = {}
+    for file, modified in pairs(after) do
+        if before[file] ~= modified then table.insert(changed, file) end
+    end
+    table.sort(changed)
+    return changed
+end
+
+function wait_for_timestamp(root, before)
+    local latest = 0
+    for _, modified in pairs(before) do
+        latest = math.max(latest, modified)
+    end
+    -- os.mtime has whole-second precision. Cross a filesystem timestamp tick
+    -- before editing so a fast rebuild cannot retain the observed timestamp.
+    local marker = path.join(root, "timestamp")
+    local started = os.mclock()
+    repeat
+        assert(os.mclock() - started < 10000, "filesystem timestamp did not advance")
+        os.sleep(100)
+        io.writefile(marker, "tick")
+    until os.mtime(marker) > latest
+end
+
+function incremental_edits(compiler, rules_repo)
     return benchmark.temporary(function (root)
         io.writefile(path.join(root, "library.cv"), library)
         io.writefile(path.join(root, "facade.cv"), [[import library using { Value, make_value, };
@@ -81,31 +106,28 @@ target("bench")
         os.iorunv(os.programfile(), {"build", "bench"}, {curdir = root})
         local before = object_mtimes(root)
         assert(#table.keys(before) > 0, "warm build produced no C++ object files")
-        local latest = 0
-        for _, modified in pairs(before) do
-            latest = math.max(latest, modified)
-        end
-        -- os.mtime has whole-second precision. Cross a filesystem timestamp tick
-        -- before editing so a fast rebuild cannot retain the observed timestamp.
-        local marker = path.join(root, "timestamp")
-        local started = os.mclock()
-        repeat
-            assert(os.mclock() - started < 10000, "filesystem timestamp did not advance")
-            os.sleep(100)
-            io.writefile(marker, "tick")
-        until os.mtime(marker) > latest
+        wait_for_timestamp(root, before)
         io.writefile(path.join(root, "library.cv"), (library:gsub("number %+ 1", "number + 2")))
         os.iorunv(os.programfile(), {"build", "bench"}, {curdir = root})
-        local after = object_mtimes(root)
-        local changed = {}
-        for file, modified in pairs(before) do
-            if after[file] ~= modified then table.insert(changed, file) end
+        local changes = {private_edit = changed_objects(before, object_mtimes(root))}
+        for _, operation in ipairs({"add_module", "remove_module"}) do
+            local previous = object_mtimes(root)
+            wait_for_timestamp(root, previous)
+            local extra = path.join(root, "extra.cv")
+            if operation == "add_module" then
+                io.writefile(extra, "export struct Extra { number: i32 }\n")
+            else
+                os.rm(extra)
+            end
+            os.iorunv(os.programfile(), {"build", "bench"}, {curdir = root})
+            changes[operation] = changed_objects(previous, object_mtimes(root))
+            for _, extension in ipairs({"cpp", "hpp"}) do
+                local artifacts = os.files(path.join(root, "build", ".gens", "**", "extra." .. extension))
+                assert(#artifacts == (operation == "add_module" and 1 or 0),
+                    operation .. " produced an unexpected artifact set")
+            end
         end
-        for file in pairs(after) do
-            if before[file] == nil then table.insert(changed, file) end
-        end
-        table.sort(changed)
-        return changed, #table.keys(after)
+        return changes, #table.keys(before)
     end)
 end
 
@@ -114,12 +136,14 @@ function main()
     local rules_repo = rules_repository()
     local small = batch(compiler, 16, samples, warmups)
     local large = batch(compiler, 128, samples, warmups)
-    local changed, count = private_edit(compiler, rules_repo)
+    local changes, count = incremental_edits(compiler, rules_repo)
     print("\nFresh batch\n  Modules      Median")
     print("%9d    %.2f ms", 16, benchmark.median(small))
     print("%9d    %.2f ms", 128, benchmark.median(large))
     print("   Growth    %.2fx for 8x input", benchmark.median(large) / benchmark.median(small))
-    print("\nPrivate edit\n  Rebuilt    %d / %d objects", #changed, count)
+    print("\nPrivate edit\n  Rebuilt    %d / %d objects", #changes.private_edit, count)
+    print("\nArtifact-set changes\n  Add module       %d changed object files", #changes.add_module)
+    print("  Remove module    %d changed object files", #changes.remove_module)
     if option.get("verbose") then
         print("\nDetails")
         for _, case in ipairs({{16, small}, {128, large}}) do
@@ -127,8 +151,10 @@ function main()
             for _, value in ipairs(case[2]) do table.insert(values, string.format("%.2f ms", value)) end
             print("  %d modules    %s", case[1], table.concat(values, ", "))
         end
-        print("  Recompiled objects")
-        for _, file in ipairs(changed) do print("    %s", file) end
+        for _, operation in ipairs({"private_edit", "add_module", "remove_module"}) do
+            print("  %s objects", operation)
+            for _, file in ipairs(changes[operation]) do print("    %s", file) end
+        end
     else
         print("\nUse --verbose to show individual samples and object paths.")
     end

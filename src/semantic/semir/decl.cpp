@@ -107,7 +107,8 @@ DeclarationStore::DeclarationStore(
     ImmutableProgramTable<EnumDeclaration, EnumID> enumerations,
     ImmutableProgramTable<EnumCaseDeclaration, EnumCaseID> enum_cases,
     ImmutableProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constants,
-    ImmutableProgramTable<CallableDeclaration, CallableID> callables
+    ImmutableProgramTable<CallableDeclaration, CallableID> callables,
+    std::map<BodyID, CallableID> body_callables
 ) noexcept
     : module_rows(std::move(modules)),
       function_rows(std::move(functions)),
@@ -115,7 +116,8 @@ DeclarationStore::DeclarationStore(
       enum_rows(std::move(enumerations)),
       enum_case_rows(std::move(enum_cases)),
       module_constant_rows(std::move(module_constants)),
-      callable_rows(std::move(callables)) {}
+      callable_rows(std::move(callables)),
+      body_callables(std::move(body_callables)) {}
 
 auto DeclarationStore::owner() const noexcept -> ProgramIdentity {
     return module_rows.owner();
@@ -185,17 +187,8 @@ auto DeclarationStore::body_for_callable(CallableID callable) const noexcept
 
 auto DeclarationStore::callable_for_body(BodyID body) const noexcept -> std::optional<CallableID> {
     require_owner(body.owner(), owner(), "callable lookup used a foreign body");
-    auto result = std::optional<CallableID>();
-    for (const auto [id, declaration] : callable_rows.entries()) {
-        if (callable_body_id(declaration) != body) {
-            continue;
-        }
-        if (result.has_value()) {
-            invariant_violation("body was owned by more than one callable declaration");
-        }
-        result = id;
-    }
-    return result;
+    const auto found = body_callables.find(body);
+    return found == body_callables.end() ? std::nullopt : std::optional(found->second);
 }
 
 auto DeclarationStore::modules() const noexcept
@@ -711,19 +704,12 @@ auto DeclarationBuilder::complete_callable(
         },
         implementation
     );
+    callable_implementations.define(id, implementation);
     if (const auto body = implementation_body_id(implementation)) {
-        for (const auto other_id : callable_order) {
-            if (other_id == id || !callable_implementations.is_defined(other_id)) {
-                continue;
-            }
-            const auto other = callable_implementations.copy_defined(other_id);
-            const auto other_body = implementation_body_id(other);
-            if (other_body == body) {
-                invariant_violation("body was assigned to more than one callable");
-            }
+        if (!body_callables.emplace(*body, id).second) {
+            invariant_violation("body was assigned to more than one callable");
         }
     }
-    callable_implementations.define(id, implementation);
 }
 
 auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
@@ -814,7 +800,8 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
         std::move(enumerations).seal(),
         std::move(final_enum_cases).seal(),
         std::move(module_constants).seal(),
-        std::move(final_callables).seal()
+        std::move(final_callables).seal(),
+        std::move(body_callables)
     );
 }
 

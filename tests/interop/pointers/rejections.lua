@@ -21,7 +21,7 @@ function main(target)
         os.mkdir(directory)
         io.writefile(path.join(directory, "probe.cv"), 'import "pointers/provider.hpp";\n' .. case.source .. "\n")
         local generated = path.join(directory, "generated")
-        os.vrunv(path.absolute(project.target("carven"):targetfile()), {"-o", generated, "probe.cv"}, {curdir = directory})
+        os.vrunv(path.absolute(project.target("carven"):targetfile()), {"-o", generated, "probe.cv"}, {curdir = directory, timeout = 30000})
         local cpp = path.join(generated, "probe.cpp")
         local program, arguments = compiler.compargv(cpp, path.join(directory, "probe.o"), {
             target = target,
@@ -50,7 +50,10 @@ function main(target)
             local reported = tonumber(errors:match("probe%.cv:(%d+):%d+: error:") or errors:match("probe%.cv%((%d+),%d+%): error:"))
             local primary = errors:match("probe%.cv[^\n]-: error: ([^\n]+)") or ""
             local line_number, file, selected = 1, cpp,
-                reported ~= nil and case.subject ~= nil and primary:find(case.subject, 1, true) ~= nil
+                reported ~= nil and (
+                    (case.subject ~= nil and primary:find(case.subject, 1, true) ~= nil)
+                    or (case.marker ~= nil and primary:find(case.marker, 1, true) ~= nil)
+                )
             for line in (io.readfile(cpp) .. "\n"):gmatch("(.-)\n") do
                 local number, name = line:match('^#line (%d+) "([^"]+)"')
                 if number then

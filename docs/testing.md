@@ -47,16 +47,14 @@ its versioned patch.
 
 Generated programs use C++20 as their baseline. The language corpus executes
 with the default generated test entry. Its C++23 target compiles and links the
-same sources with the explicit entry fixture (`build_should_pass`). The ordinary
-interop corpus executes in C++20 and C++23; the C++23 target also checks `<print>`
-output. The Hello World example owns direct `printf` output coverage.
+same sources with the explicit entry fixture. The interop corpus executes in
+C++20 and C++23; the C++23 target also checks `<print>` output. The Hello World example owns direct `printf` output coverage.
 
 The language entry-point target checks the explicit entry's test-runner calls,
 success and failure exit status, and payload cleanup. The reporting target checks
 reported failures and an infallible entry's completion and local cleanup. Its
 intentional test failures use a dedicated reporter. Default and explicit test
-entries use the same generated runner. Support headers are also compiled
-individually to check self-containment.
+entries use the same generated runner.
 
 A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
@@ -72,10 +70,10 @@ coverage stays in the test groups above.
 
 Every registered test target must build successfully. Do not use
 `build_should_fail` or `should_fail`: a test driver succeeds only when its
-assertions establish the expected behavior. Compile-only success checks may use
-`build_should_pass`. Diagnostic and termination tests retain explicit assertions
-about the expected diagnostic or termination contract; arbitrary failure is not
-sufficient evidence.
+assertions establish the expected behavior. Compile-only targets establish
+success through compilation and linking. Diagnostic and termination tests retain
+explicit assertions about the expected diagnostic or termination contract;
+arbitrary failure is not sufficient evidence.
 
 Tests establish what must be correct and what must be rejected. This includes
 valid internal representations and rejection of malformed representations at
@@ -87,6 +85,12 @@ rejection, results, effects, and lifecycle rules. Each supported C++ consumer mo
 has a compilation contract. Internal tests cover expressible invalid states,
 foreign IDs, bounds, duplicate definitions, and structural requirements. Borrows
 in fixtures obey their owner lifetimes.
+
+Backend construction tests use a restricted fixture to corrupt otherwise valid
+construction rows. They check ID bounds and ownership, execution duplication and
+cycles, loop/handler scope, rethrow provenance, lifetime and pattern membership.
+They also publish valid nested loop, try and closure bodies. These checks do not
+replace semantic ownership tests or native C++ construction tests.
 
 Language-behavior tests identify the owning semantic section through their
 case name or a focused comment. Cover acceptance, rejection, and relevant
@@ -102,7 +106,13 @@ old representations, and complete generated bodies are not contracts.
 
 Generation-quality tests inspect target structure. Parameterized independent
 branch arguments and sequential initializations assert one final call and linear
-target-node growth. They do not pin temporary names or full generated bodies.
+target-node growth.
+Independent root fallible calls check direct Outcome initialization; scalar
+predecessors check the absence of unnecessary deferred storage. Lifecycle tests
+cover nested calls, conditional execution and retained auxiliary owners through
+object identity, evaluation order and reverse destruction. They place Outcome
+payloads alongside lexical owners and check successful completion and failure
+cleanup. Equivalent storage representations satisfy the same behavior contracts.
 Construction tests compile actual generated programs with immovable prvalues;
 runtime tests check factory invocation and construction constraints. Test direct
 construction, Take, payload extraction, and failure-set widening at their owning
@@ -138,10 +148,10 @@ The main interop executable runs ordinary generated tests without arguments;
 its harness selects terminating contract checks by argument in separate processes.
 Process isolation does not require a separate build target.
 Cases initialize their own observable state. Temporary directories and captured
-streams use fresh paths for each invocation, including concurrent suite runs. Header self-containment checks use
-one translation unit per header, including generated interfaces, within the
-consumer target. These units instantiate interfaces; behavioral assertions belong
-in the corresponding runtime or generated-program tests.
+streams use fresh paths for each invocation, including concurrent suite runs. Header
+self-containment checks use one translation unit per header, including generated
+interfaces, within the consumer target. These units instantiate interfaces; behavioral
+assertionsbelong in the corresponding runtime or generated-program tests.
 
 Runtime exception boundaries are tested in isolated C++ consumer processes.
 The throwing operation itself must execute, and the process must reach the

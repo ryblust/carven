@@ -1,4 +1,4 @@
-module carven:backend.lowering.body.composition;
+module carven:backend.realization.composition;
 
 import :backend.target.expr;
 import :backend.target.ids;
@@ -58,32 +58,11 @@ struct LoweringDirectExpression final {
     TargetExpr expression;
 };
 
-enum class LoweringResultUse { Observe, Transfer };
+using LoweringResult = std::variant<LoweringCompleted, LoweringDirectExpression>;
 
-struct LoweringOwnedValue final {
-    TargetExpr storage;
-};
+auto remaining_expression(LoweringResult result) noexcept -> std::optional<TargetExpr>;
 
-struct LoweringTemporaryValue final {
-    TargetExpr storage;
-};
-
-using LoweringResult = std::variant<
-    LoweringCompleted,
-    LoweringKnownBool,
-    LoweringDirectExpression,
-    LoweringOwnedValue,
-    LoweringTemporaryValue>;
-
-auto remaining_expression(
-    LoweringResult result,
-    LoweringResultUse use = LoweringResultUse::Transfer
-) noexcept -> std::optional<TargetExpr>;
-
-auto require_expression(
-    LoweringResult value,
-    LoweringResultUse use = LoweringResultUse::Transfer
-) noexcept -> TargetExpr;
+auto require_expression(LoweringResult value) noexcept -> TargetExpr;
 
 struct LoweringDynamicBool final {
     TargetExpr expression;
@@ -102,10 +81,6 @@ auto known_predicate(const std::optional<LoweringPredicate>& predicate) noexcept
 }
 
 auto predicate_expression(LoweringPredicate predicate) noexcept -> TargetExpr;
-
-struct LoweringBooleanResult final {
-    TargetIdentifier name;
-};
 
 struct LoweringDiscardResult final {};
 
@@ -128,8 +103,7 @@ using LoweringResultDestination = std::variant<
     LoweringDiscardResult,
     LoweringReturnResult,
     LoweringYieldResult,
-    LoweringInitializeResult,
-    LoweringBooleanResult>;
+    LoweringInitializeResult>;
 
 auto returns_result(const LoweringResultDestination& result) noexcept -> bool {
     return std::holds_alternative<LoweringReturnResult>(result)
@@ -203,6 +177,7 @@ public:
         return std::move(source.normal);
     }
 
+    auto result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
     auto result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
 
     auto finish() && noexcept -> std::vector<TargetStmt> { return std::move(lowered.statements); }

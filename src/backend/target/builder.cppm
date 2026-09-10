@@ -29,6 +29,7 @@ public:
 private:
     TargetUnitIdentity unit_identity;
     std::vector<TargetType> types;
+    std::unordered_multimap<std::size_t, std::uint32_t> type_candidates;
 };
 
 auto target_lowering_statement(TargetStmtValue value) noexcept -> TargetStmt;

@@ -8,7 +8,7 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
-import :backend.lowering.body.decl;
+import :backend.realization.decl;
 import :backend.target;
 import :backend.target.builder;
 import :backend.target.decl;
@@ -239,5 +239,5 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
         CHECK(traverse_target_unit(unit.sections(), query));
     }
     CHECK(query.definitions == 7uz);
-    CHECK(query.locals == 3uz);
+    CHECK(query.locals == 2uz);
 }

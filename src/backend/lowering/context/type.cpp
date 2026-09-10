@@ -149,17 +149,18 @@ auto ModuleLowering::function_type(CallableSignatureID id) noexcept -> TargetTyp
 }
 
 auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> TargetTypeID {
-    if (id.owner() != semantic().identity() || id.index() >= signature_result_cache.size()) {
+    if (id.owner() != semantic().identity()
+        || id.index() >= semantic().callable_signatures().size()) {
         invariant_violation("module lowering received an unknown callable signature");
     }
-    auto& state = signature_result_cache[id.index()];
+    const auto [entry, inserted] = signature_result_cache.try_emplace(id);
+    auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
     }
-    if (std::holds_alternative<Resolving>(state)) {
+    if (!inserted) {
         invariant_violation("recursive callable result reached target lowering");
     }
-    state = Resolving {};
     const auto& signature = semantic().callable_signatures().signature(id);
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
@@ -189,17 +190,17 @@ auto ModuleLowering::outcome_type(CallableSignatureID signature) noexcept -> Tar
 }
 
 auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
-    if (id.owner() != semantic().identity() || id.index() >= type_cache.size()) {
+    if (id.owner() != semantic().identity() || id.index() >= semantic().types().size()) {
         invariant_violation("module lowering received an unknown semantic type");
     }
-    auto& state = type_cache[id.index()];
+    const auto [entry, inserted] = type_cache.try_emplace(id);
+    auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
     }
-    if (std::holds_alternative<Resolving>(state)) {
+    if (!inserted) {
         invariant_violation("recursive structural type reached target lowering");
     }
-    state = Resolving {};
     auto lowered = std::visit(
         Overloaded {
             [&](const PointerTypeValue& value) noexcept -> TargetType {
@@ -241,8 +242,17 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                         .const_qualified = false
                     };
                 }
+                const auto result = target().intern_type(
+                    {.value =
+                         TargetDecltypeType {cpp_type_query(std::get<CppQueryType>(value.form))},
+                     .const_qualified = false}
+                );
                 return {
-                    .value = TargetDeducedType {cpp_type_query(std::get<CppQueryType>(value.form))},
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::StdRemoveCVRef,
+                            .type_argument_ids = {result}
+                        },
                     .const_qualified = false
                 };
             },

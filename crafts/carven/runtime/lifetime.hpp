@@ -3,40 +3,73 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
+#include <new>
+#include <type_traits>
 #include <utility>
 
 namespace carven::runtime {
 
-template<typename Value>
-class DeferredStorage final {
-public:
-    constexpr DeferredStorage() noexcept {}
+// A reference borrows its owner; a value is constructed once in this storage.
+// The caller retains any borrowed owner through the source cleanup boundary.
+template<typename Result>
+    requires (!std::is_void_v<Result>)
+class DeferredResult final {
+    using Object = std::remove_reference_t<Result>;
+    static constexpr bool borrowed = std::is_reference_v<Result>;
 
-    constexpr ~DeferredStorage() noexcept {
-        if (value != nullptr) {
-            std::destroy_at(value);
+    struct OwnedStorage final {
+        alignas(Object) std::byte bytes[sizeof(Object)];
+    };
+
+    struct BorrowedStorage final {};
+
+    using Storage = std::conditional_t<borrowed, BorrowedStorage, OwnedStorage>;
+
+public:
+    constexpr DeferredResult() noexcept = default;
+
+    constexpr ~DeferredResult() noexcept {
+        if constexpr (!borrowed) {
+            if (value != nullptr) {
+                std::destroy_at(value);
+            }
         }
     }
 
-    DeferredStorage(const DeferredStorage&) = delete;
-    DeferredStorage(DeferredStorage&&) = delete;
-    auto operator=(const DeferredStorage&) -> DeferredStorage& = delete;
-    auto operator=(DeferredStorage&&) -> DeferredStorage& = delete;
+    DeferredResult(const DeferredResult&) = delete;
+    DeferredResult(DeferredResult&&) = delete;
+    auto operator=(const DeferredResult&) -> DeferredResult& = delete;
+    auto operator=(DeferredResult&&) -> DeferredResult& = delete;
 
-    // A source evaluation initializes its storage once per scope activation.
     template<typename Factory>
     constexpr auto initialize(Factory&& factory) noexcept -> void {
+        // Scalar prvalues discard top-level cv; class and reference results retain it.
+        using Expected =
+            std::conditional_t<std::is_scalar_v<Result>, std::remove_cv_t<Result>, Result>;
+        static_assert(std::is_same_v<std::invoke_result_t<Factory&&>, Expected>);
         assert(value == nullptr);
-        value = std::forward<Factory>(factory)(static_cast<void*>(storage));
+        if constexpr (borrowed) {
+            auto&& reference = std::forward<Factory>(factory)();
+            value = std::addressof(reference);
+        } else {
+            value =
+                ::new (static_cast<void*>(storage.bytes)) Result(std::forward<Factory>(factory)());
+        }
     }
 
-    constexpr auto operator*() noexcept -> Value& { return *value; }
+    constexpr auto operator*() noexcept -> Object& { return *value; }
 
-    constexpr auto operator*() const noexcept -> const Value& { return *value; }
+    constexpr auto operator*() const noexcept -> decltype(auto) {
+        if constexpr (borrowed) {
+            return *value;
+        } else {
+            return static_cast<const Object&>(*value);
+        }
+    }
 
 private:
-    alignas(Value) std::byte storage[sizeof(Value)];
-    Value* value = nullptr;
+    [[no_unique_address]] Storage storage;
+    Object* value = nullptr;
 };
 
 } // namespace carven::runtime

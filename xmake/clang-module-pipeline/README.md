@@ -91,6 +91,12 @@ A pruned leaf retains its object and every dependency on the BMIs that it
 imports. The same pruning model applies to projects with an equivalent
 object-only leaf invariant and a P1689 graph containing all permitted importers.
 
+Incremental checks retain the full imported BMI file set, including modules
+reused from another target. They compare those inputs with the completed object
+and BMI timestamps, so building a provider in one command still invalidates its
+consumers in a later command. Module dependency records use separate paths from
+C++ compiler dependency records.
+
 Each pruned leaf removes one PCM while retaining its object. The saving depends
 on the number and size of leaf BMIs. Carven has an internal module partition for
 each out-of-line implementation slice, so these BMIs account for a substantial

@@ -3,6 +3,7 @@ module carven:backend.lowering.decl.function.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
+import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
@@ -154,10 +155,10 @@ auto lower_carven_function(
         invariant_violation("function body inputs do not match its callable signature");
     }
     auto parameters = std::vector<TargetParameter>();
-    auto inputs = TargetBodyInputs {
+    auto inputs = BodyRealizationInputs {
         .parameters = {},
         .captures = {},
-        .exit = TargetCallableBodyExit {.signature = callable.signature},
+        .exit = CallableBodyExit {.signature = callable.signature},
     };
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {

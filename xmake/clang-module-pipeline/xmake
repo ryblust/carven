@@ -5,8 +5,16 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 patch_file="$script_dir/xmake-3.1.1.patch"
 base_xmake=$(command -v xmake)
-source_program_dir=$($base_xmake lua -c 'print(os.programdir())')
-source_version=$($base_xmake lua -c 'io.write(tostring(xmake.version()))')
+# Metadata must not include profiler reports; the requested command keeps its profile.
+source_info=$(XMAKE_PROFILE= "$base_xmake" lua -c 'print(os.programdir()); print(tostring(xmake.version()))')
+source_program_dir=${source_info%'
+'*}
+source_version=${source_info##*'
+'}
+if [ "$source_info" = "$source_program_dir" ] || [ -z "$source_program_dir" ] || [ -z "$source_version" ]; then
+    printf '%s\n' "Failed to query the installed Xmake program directory and version." >&2
+    exit 1
+fi
 cache_parent="${TMPDIR:-/tmp}/carven-xmake-clang-module-pipeline"
 
 if command -v shasum >/dev/null 2>&1; then

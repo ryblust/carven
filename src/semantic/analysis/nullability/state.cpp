@@ -262,9 +262,7 @@ auto NullabilityBodyAnalyzer::failures(NullFlow& flow, FailureSetID failures_id)
         return;
     }
     for (const auto type : program.failure_sets().failure_set(failures_id).members) {
-        flow.exits.push_back(
-            {.kind = NullExitKind::Failure, .failure = type, .state = flow.normal->state}
-        );
+        flow.exits.push_back({.payload = type, .state = flow.normal->state});
     }
 }
 
@@ -322,24 +320,8 @@ auto NullabilityBodyAnalyzer::add_range_aliases(const SemRangeLoop& source) noex
     }
 }
 
-auto NullabilityBodyAnalyzer::scan_writes(
-    NullState& state,
-    const SemanticExpression& source
-) noexcept -> void {
-    const auto previous_aliases = range_aliases;
-    visit_semantic_nodes(source, [&](const SemanticStatement& statement) noexcept {
-        if (const auto* range = std::get_if<SemRangeLoop>(&statement.value)) {
-            add_range_aliases(*range);
-        }
-    });
-    visit_semantic_nodes(source, [&](const SemanticExpression& value) noexcept {
-        scan_write(state, value);
-    });
-    invalidate_exposed(state);
-    range_aliases = previous_aliases;
-}
-
-auto NullabilityBodyAnalyzer::scan_writes(NullState& state, const SemanticRegion& source) noexcept
+template<typename Source>
+auto NullabilityBodyAnalyzer::scan_writes_impl(NullState& state, const Source& source) noexcept
     -> void {
     const auto previous_aliases = range_aliases;
     visit_semantic_nodes(source, [&](const SemanticStatement& statement) noexcept {
@@ -369,6 +351,18 @@ auto NullabilityBodyAnalyzer::scan_writes(NullState& state, const SemanticRegion
     );
     invalidate_exposed(state);
     range_aliases = previous_aliases;
+}
+
+auto NullabilityBodyAnalyzer::scan_writes(
+    NullState& state,
+    const SemanticExpression& source
+) noexcept -> void {
+    scan_writes_impl(state, source);
+}
+
+auto NullabilityBodyAnalyzer::scan_writes(NullState& state, const SemanticRegion& source) noexcept
+    -> void {
+    scan_writes_impl(state, source);
 }
 
 auto check_pointer_nullability(

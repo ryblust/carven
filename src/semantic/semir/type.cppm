@@ -232,12 +232,14 @@ public:
     auto seal() && noexcept -> CanonicalTypeStore;
 
 private:
+    auto intern_row(const CanonicalType& type) noexcept -> TypeID;
     auto intern_resolved_callable_view(
         CallableSignatureID signature,
         const CallableSignatureStoreBuilder& signatures
     ) noexcept -> TypeID;
 
     MutableProgramTable<CanonicalType, TypeID> rows;
+    std::unordered_multimap<std::size_t, TypeID> candidates;
 
     friend class ConstructionTypeStore;
 };

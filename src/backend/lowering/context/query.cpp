@@ -1,6 +1,7 @@
 module carven:backend.lowering.context.query.impl;
 
 import :backend.lowering.context;
+import :backend.target.symbol;
 import :support.visit;
 import std;
 
@@ -26,17 +27,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
     const auto operand = [&](const CppTypeOperand& value) noexcept -> TargetExpr {
         return {
             .value = TargetCallExpr {
-                .callee = UniqueIndirect(
-                    TargetExpr {
-                        .value =
-                            TargetNameExpr {
-                                .name = TargetName::globally_qualified(
-                                    {TargetIdentifier::from_spelling("std"),
-                                     TargetIdentifier::from_spelling("declval")}
-                                )
-                            }
-                    }
-                ),
+                .callee = target_child(intrinsic_expression(TargetSymbol::StdDeclval)),
                 .template_argument_type_ids = {reference_type(
                     lower_type(value.type),
                     value.access == AccessMode::Read,

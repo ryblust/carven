@@ -9,6 +9,7 @@ planning, representation selection, lowering, dependency collection, and emissio
 SemIRProgram + TargetPlanningRequest
   → PlannedCompilation
   → lower_artifact
+      → BodyConstruction → body realization → target syntax
   → TargetUnit
   → emit
   → GeneratedArtifactSet
@@ -18,8 +19,34 @@ SemIRProgram + TargetPlanningRequest
 `TargetPlan`. Planning selects names, interfaces, failure representation, and
 artifact schedules. Each artifact is lowered into a fresh `ArtifactLowering`
 and target-unit identity. Repeated lowering produces independent units. Type and
-signature-result caches each use one slot containing Unseen, Resolving, or a
-completed TargetTypeID.
+signature-result caches contain only queried identities. Each entry is Resolving
+or a completed TargetTypeID; recursive insertion preserves entry references.
+
+`lower_body` owns the synchronous `construct_body` → `realize_body` sequence.
+`BodyConstruction` prepares ordered operands, use contracts, execution summaries,
+structured regions and control destinations. It borrows the frozen SemIR operations
+and pattern identities through realization. Its expression and region IDs carry
+the source `BodyID`; semantic type, binding, lifetime, failure and provenance IDs
+retain their existing owners. The published semantic program outlives this data.
+Ordinary operation realization reads the original resolved operation and consumes
+prepared Target operands.
+
+Construction completion runs one read-only structural check before realization.
+It checks expression and region ID ownership and bounds, unique execution
+ownership, execution cycles and rows without execution owners, lifetime and pattern
+membership, loop target kind and body scope, protected-region failure destinations,
+and the selected catch arm behind a rethrow. Control references are not execution
+children: a handler is active only for its protected region, and a loop target
+only for its body. Catch guards and bodies send failures to the enclosing target.
+Violations retain the containing source origin when one is available. Malformed
+inputs are available only through the internal testing fixture.
+
+These checks cover relationships introduced by construction. Semantic publication
+owns type legality, binding contracts, ownership and lifetime analysis. Native C++
+compilation owns delegated operation and construction viability. Function return,
+test exit and function failure destinations implicitly refer to the current body;
+thrown types come from their values and call transport cleanup comes from the
+call's lifetime.
 
 `TargetUnitBuilder::finish` verifies the target tree, derives dependencies, and
 materializes directives. Rendering serializes that finished tree. Filesystem
@@ -34,6 +61,10 @@ object construction, copy elision, scope cleanup, layout, and native optimizatio
 Lowering preserves the types, value categories, and initialization syntax supplied
 to those C++ operations.
 
+Payload enum factories, storage constructors, and projections are ordinary C++
+functions. Carven evaluates source constants during semantic analysis; their
+uses reconstruct the normalized values through the same target operations.
+
 Read parameters, Read argument temporaries, and Read array-range bindings use
 `runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
 and destroyed types and a const reference otherwise. Its trait
@@ -43,6 +74,13 @@ target; pointer dependencies request target declarations. Forming that target's
 type expression can still require complete definitions, such as Read parameter
 types in a callable signature. Declaration ordering includes these requirements;
 cycles in type formation remain C++ errors.
+
+Native Take query operands require `T&&`, including scalar and pointer types.
+`BodyConstruction` records this as `NativeTake`, separately from Carven owning
+`Consume`. Realization must preserve the complete operand type when producing
+that rvalue reference. A sequencing barrier first completes the owning snapshot;
+its subsequent native delivery retains `T&&`. It must not cast away constness
+introduced by a different transfer policy.
 
 Write parameters use `T&`; Take parameters own a `T`. `runtime::transfer` exposes
 a mutable owner's value for construction: trivial values are read, other values
@@ -56,6 +94,16 @@ selects that saved address before evaluating the rest of a store or call. Typed
 null constants retain the complete pointer type in native overload resolution.
 Native adoption uses typed initialization, preserving C++ conversion checks;
 there is no runtime pointer wrapper or automatic resource cleanup.
+
+Native Read pointer operands preserve both the pointer type and the const-lvalue
+category used by C++ type queries. Without a sequencing conflict, a pointer-value
+cast isolates the address from its source slot and a const-reference cast supplies
+that category. Sequencing conflicts use stored values. Builtin pointer observations
+do not require such native argument adaptation or an unconditional local snapshot.
+
+Source-owned writable-pointer declarations retain explicit pointee access. Lowering
+records this declaration contract; emission attaches its const-correctness
+annotation. Backend operand storage and projections receive ordinary analysis.
 
 The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades obey their explicit boundary signatures.
@@ -83,9 +131,30 @@ restore the original pointer type before invocation.
 Bindings initialize in their natural scopes. Assignment uses C++ assignment;
 the backend does not reconstruct unassignable values. Delayed construction uses
 local result storage only where direct initialization cannot preserve control
-flow and temporary lifetimes. `runtime::DeferredStorage<T>` owns such storage;
-a generated placement-new expression constructs `T` directly, and the storage
-destroys the object at scope exit.
+flow and temporary lifetimes. `runtime::DeferredResult<Result>` initializes once
+from a typed factory. Value results construct directly in owned storage and are
+destroyed at scope exit; reference results retain their referent's identity.
+The runtime owns placement construction. Generated factories return complete
+initializers, preserving explicit construction and copy-initialization rules.
+
+Native call results retained for borrowing use
+the same storage with the exact queried return type. Their factory deduces its
+actual return type, which storage checks against that query. C++ drops top-level
+cv from scalar call results; scalar factory checks follow that rule. Exact native
+reference retention applies to call results, not arbitrary member expressions.
+
+Deferred declarations and initialization factories share one implementation.
+The factory result type may preserve an exact native query with `decltype(auto)`;
+owning snapshots use the normalized object type. These choices must remain
+distinct even though they use the same storage helper.
+
+`Consume` completes an owning value at its source evaluation point. When a
+sequencing boundary requires storage, typed initialization of the normalized
+object copies a native `T&` or `const T&`, moves from `T&&`, and directly constructs
+a prvalue. Later mutation of a borrowed source cannot change that completed
+snapshot. `NativeTake` additionally retains the queried rvalue argument category.
+Borrowing a native call result and acquiring an owning value therefore have
+different storage and delivery contracts.
 
 ## Evaluation and values
 
@@ -95,14 +164,14 @@ or records that evaluation is complete. Retained expressions may have void type;
 completed evaluation is distinct from absence of a normal successor. Regions
 deliver a result on each normal path, including paths without a tail expression.
 Result destinations are function return, local lambda yield, final-storage
-initialization, discard, and boolean-result assignment. Discard
-executes any retained expression. Owned and temporary results preserve storage
-identity and observation or transfer behavior.
+initialization, and discard. Discard preserves required execution without
+extracting an unused success payload. Operand realization determines storage
+identity and observation or transfer behavior before composing the result.
 
 Function-body completion finalizes parameter names and local declaration attributes
 from references in the retained target tree. Lexical scopes distinguish declaration
 occurrences; evaluation lambdas can reference outer declarations. Unreferenced
-parameters lose their names. Source bindings and operand temporaries start marked
+parameters lose their names. Declarations with conditional uses start marked
 `maybe_unused`; references outside direct assignment and update targets clear the
 attribute. Completion preserves initialization and lifetime. Source unused
 diagnostics belong to semantic analysis.
@@ -128,22 +197,79 @@ before argument evaluation;
 callable views retain a target description. Neither choice copies capture contents.
 Source and full-expression scopes preserve lifetimes.
 
-Operand composition uses prepared execution and storage-read facts together with
-C++ sequencing guarantees. It lowers operands in source order once and constructs
-the operation from their results. A value branch delivers a value through a local
-lambda or an explicit destination. Each following operand and statement is lowered
-once. Operand access determines Read snapshots and Write aliases; calls select
-their callee before arguments, and short-circuit operators evaluate only the
-selected side.
+`BodyRealizer::ExpressionBuilder` composes private recipes from prepared operations.
+A recipe retains an unevaluated operation and its operands, or a completed target
+expression or stable result. Recipes are temporary realization state. Operation
+emission consumes their prepared operands through `realize_operation`.
 
-Conditional full-expression temporaries reserve storage in construction order at
-the enclosing expression boundary and initialize only on the selected path.
+Body construction extracts source-ordered operands and their uses once.
+`construction_operands` exposes their immutable span for structural checking and
+recipe composition. Recipes borrow that span for borrow preservation, arity
+checking and emission. ExpressionBuilder owns the completion transition to a saved
+result, a residual target expression, or completed evaluation without a residual
+value.
+
+Composition uses execution and storage-read facts with C++ sequencing guarantees.
+An actual sequencing or control boundary completes preceding recipes in source
+order. Storage access distinguishes Read snapshots from Write aliases; callees
+are selected before arguments. Structured regions deliver through explicit
+result destinations. Completion without a normal successor stops operand
+composition. Known short-circuit conditions select execution paths while retaining
+the condition's required execution.
+
+Each pending operation tracks uncommitted effect and storage-read indices with
+forward cursors. A later read commits preceding effects; a later effect commits
+both queues in source order. Committed predecessors are not scanned again.
+Actual statement boundaries still flush the synchronous ancestor chain and
+select receiver/callee operands first. The bound applies to predecessor queue
+processing within each operation; ancestor traversal has a separate cost.
+
+Builtin scalar predecessors of an independent full-expression root operation use
+ordinary local initialization. Place uses retain aliases. Nested and shared frames
+keep the source cleanup frame's storage policy.
+
+Expression frames use the existing `LifetimeRegionID`. Conditional execution
+that shares a full-expression lifetime uses the same frame; an expression-position
+lexical region retains its own frame. Frames separate storage declarations from
+initialization, reserving temporary storage in construction order at the enclosing
+expression boundary and initializing only on the selected path.
 Reverse destruction order includes those objects and any retained Outcome owners.
-Expression-position lexical regions retain their separate cleanup boundary.
 Known or discarded results retain required execution.
-Result demand determines whether a call checks success, observes its payload, or
-transfers ownership. Numeric operations preserve their resolved type across
-promotion, overload, and deduction boundaries; the renderer does not infer types.
+Fallible calls check success before continuing. Result demand controls whether
+the success value is observed, transferred, or discarded. Numeric operations
+preserve their resolved type across promotion, overload, and deduction boundaries;
+the renderer does not infer types.
+Discard demand removes unneeded pure results through the same expression lowering
+that handles retained results. Short-circuit control has one construction path;
+execution and lifetime requirements remain active when the result is discarded.
+
+An independent full-expression root call can directly initialize an ordinary
+Outcome local after its operand recipes and borrow preservation are complete.
+This applies only outside a nested/shared frame, with no auxiliary declarations
+or retained statement storage in the current frame. Its failure dispatch and
+success delivery use the same path as deferred Outcomes. Nested calls, shared
+cleanup regions and conditional execution retain deferred storage. Promoting a
+single object among retained owners could change reverse destruction order and
+is not permitted by this optimization.
+
+## Extending operations
+
+Semantic analysis publishes the operation's type, evaluation and lifetime contracts.
+For ordinary operations using existing contracts, the backend describes ordered
+inputs and uses in `construction/operands.cpp` and realizes C++ syntax in
+`realization/operation.cpp`. Both visitors enumerate the semantic expression
+alternatives explicitly. Native operation realization also enumerates the
+`CppOperation` alternatives. Structured control and array adoption retain their
+specialized realization paths.
+
+Tests must establish the new operation's behavior and interactions with existing
+contracts. Scheduling, storage and cleanup consume those contracts. New control
+scopes, ownership modes or partial-object lifetimes require design and checks at
+their owning boundaries.
+
+The current representation does not support every immovable aggregate component
+followed by a fallible component. Such partial construction requires a separate
+initialization and failure-cleanup contract.
 
 ## Control
 
@@ -155,8 +281,8 @@ Expression-position value branches with no outward failure or test exit use loca
 value lambdas; branches with those exits use deferred initialization. Function
 return applies the failure ABI independently of lambda yield. A retained void
 expression can be returned directly; an Outcome return executes it before
-constructing success without a payload. Non-void success uses `Outcome::success_from(factory)`: the factory is
-invoked immediately and exactly once to construct the payload directly. Callable
+constructing success without a payload. Non-void success uses `Outcome::success_from(factory)`:
+the factory is invoked immediately and exactly once to construct the payload directly. Callable
 adaptation uses the same construction. A factory may return an immovable prvalue.
 Owner transfer, payload extraction, and Outcome widening require the constructors
 used by those operations. Void and discarded regions need no result storage.
@@ -164,15 +290,18 @@ Loops and handlers receive only exits belonging to their own construct. Loops
 without steps and range loops use native `continue`.
 
 Match locates its subject once and keeps it alive and stable through selection.
-Pattern owners initialize before guards. A single selection path declares its
-bindings in the successful branch; multiple alternatives share binding storage
-and one guard. Catch arms use the same selection lowering.
+`PatternRealizer` traverses the published SemIR patterns in source order without
+expanding combinations of alternatives. Partial matches record binding addresses;
+the successful arm constructs its bindings and evaluates its guard once. Catch
+arms use the same realization.
 
 `FailureABI` gives each failure set a deterministic member order. Failing
 results use `Outcome`; other results are direct. Widening accepts identity or a
 strict failure-set superset. Calls, propagation, handlers, and callable
 adaptation use this one contract. Handler failures go to the enclosing failure
 target; rethrow preserves the selected failure. Test exit leaves the test.
+Outcome and handler-variant failures share one typed dispatch construction;
+their source forms determine the payload projection.
 
 The process entry wrapper calls the Carven entry exactly once. An infallible
 entry's ordinary result is discarded and the wrapper returns zero. For a
@@ -191,6 +320,7 @@ entry; lowering never recovers continuation by scanning generated statements.
 `TargetNamePlan` owns linkage-domain namespaces, module names, nominal names,
 closure names, enum payload names, and generated test names. A callable-local
 allocator reserves source names and allocates temporaries and labels. The plan
+owns the immutable module reservations borrowed by these local allocators. It
 owns encoded public namespace and function names shared by API headers and
 export façades. Artifact paths retain canonical source names.
 
@@ -198,13 +328,13 @@ Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
 requirements form interface edges; strongly connected components share an
 interface. Function declaration return types, including Outcome and arrays,
-require only declarations of their component types. Object storage and Read traits require
-complete definitions. Body-only calls do not merge interfaces.
+require only declarations of their component types. Object storage and Read
+traits require complete definitions. Body-only calls do not merge interfaces.
 
 Schedules own the ordered interface definitions and function declarations, C++
-façades, private nominal and closure ordering, and selected tests. Ordinary module items are scanned from SemIR.
-Lowering records providers of actually emitted names and types. These transient
-provider sets are consumed into include directives.
+façades, private nominal and closure ordering, and selected tests. Ordinary module
+items are scanned from SemIR. Lowering records providers of actually emitted names and
+types. These transient provider sets are consumed into include directives.
 
 Each test becomes a function. Module runners call tests in source order; the
 runner header calls modules in canonical order. The default entry calls
@@ -214,16 +344,21 @@ that same runner. Explicit C++ fragments preserve their bytes and source order.
 
 Expressions, statements, and items are move-only recursive values.
 `TargetBlockStmt` always denotes an actual C++ block; plain sequences are
-composed before publication. Only types are interned. Target type IDs belong to one unit. Source attribution and
-function forms use exact variants.
+composed before publication. Only types are interned. A construction-time index
+selects candidates for structural equality; type storage and IDs retain insertion
+order. Target type IDs belong to one unit. Source attribution and function forms
+use exact variants.
 
 Type construction accepts only children already present in the same unit;
 append-only insertion establishes acyclicity. Finishing validates occurrence
 type references and local control transfers.
+Target verification does not recheck Carven evaluation order, object lifetime
+semantics, or C++ overload and constructor feasibility. Realization preserves
+those input contracts through operand use, frame ownership, result destinations
+and failure dispatch, with local invariants and generated-program tests.
 Recursive ownership establishes syntax occurrence ownership. Dependency
 collection traverses the finished tree and referenced types, producing the
-required standard and runtime headers. Unreferenced interned types add no
-headers.
+required standard and runtime headers. Unreferenced interned types add no headers.
 
 The renderer serializes nodes, directives, source mapping, and whitespace. It
 does not infer language meaning or repair target syntax. Artifact collection
@@ -244,10 +379,12 @@ their materialization into ordered includes and using declarations.
 Nested types and result queries carry their environments into consuming
 artifacts; dependencies are not inferred by matching symbols to headers.
 
-External result queries directly construct the expression owned by
-`TargetDeducedType`, rendered as `std::remove_cvref_t<decltype(...)>`. Its restricted
-query shapes have structural equality for type interning; general target
-expressions remain move-only and have no equality protocol. Executed calls and type queries
+External result queries use `TargetDecltypeType` to preserve the queried
+expression's type and value category as `decltype((...))`. Semantic object types
+explicitly wrap that query in `std::remove_cvref_t`; normalization belongs to
+representation selection. Restricted query shapes have structural equality for
+type interning; general target expressions remain move-only and have no equality
+protocol. Executed calls and type queries
 consume the explicit semantic callee and operand access. Executed calls use
 ordinary argument sequencing and access lowering. Receiver access is preserved
 independently of storage made mutable to realize a later Take. Discarded external

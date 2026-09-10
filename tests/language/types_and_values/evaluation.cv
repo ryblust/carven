@@ -95,6 +95,38 @@ fn evaluation_touch(&n: i32) -> bool { n += 1; return true; }
 fn evaluation_write(&n: i32) -> i32 { n = 9; return 2; }
 fn evaluation_pair(a: i32, b: i32) -> i32 { return a * 10 + b; }
 
+struct EvaluationFailure {}
+
+fn evaluation_fail(&n: i32) -> bool throw EvaluationFailure {
+    n += 100;
+    throw EvaluationFailure {};
+}
+
+fn known_and(&n: i32) -> bool {
+    return (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
+}
+
+fn known_or(&n: i32) -> bool {
+    return (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
+}
+
+test "Evaluation: known short circuit selection preserves execution and excludes failures" {
+    var n = 0;
+    check(!known_and(&n));
+    check(known_or(&n));
+    check(n == 2);
+    (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
+    (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
+    check(n == 4);
+    let selected = try { (evaluation_touch(&n) && false) && evaluation_fail(&n)? }
+        catch { EvaluationFailure(_) => true };
+    check(!selected);
+    check(n == 5);
+    check((evaluation_touch(&n) || true) && evaluation_touch(&n));
+    check((evaluation_touch(&n) && false) || evaluation_touch(&n));
+    check(n == 9);
+}
+
 test "Evaluation: known results preserve executed operands" {
     var n = 0;
     if false && evaluation_touch(&n) { check(false); }

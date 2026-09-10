@@ -12,18 +12,10 @@ import :diagnostics.diagnostic;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.internal.compiler.diagnostics.fixture;
 import std;
 
 namespace {
-
-auto find_diagnostic(std::span<const Diagnostic> diagnostics, std::string_view code) noexcept
-    -> const Diagnostic* {
-    const auto found =
-        std::ranges::find_if(diagnostics, [&](const Diagnostic& diagnostic) noexcept {
-            return diagnostic.finding.code == code;
-        });
-    return found == diagnostics.end() ? nullptr : &*found;
-}
 
 struct ErrorExpectation final {
     std::string_view name;
@@ -116,7 +108,7 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
             ),
             1
         );
-        const auto* warning = find_diagnostic(result->diagnostics, expectation.code);
+        const auto* warning = find_compiler_diagnostic(result->diagnostics, expectation.code);
         if (warning == nullptr) {
             continue;
         }
@@ -355,7 +347,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
         if (result.has_value()) {
             continue;
         }
-        const auto* diagnostic = find_diagnostic(result.error(), expectation.code);
+        const auto* diagnostic = find_compiler_diagnostic(result.error(), expectation.code);
         CHECK(diagnostic != nullptr);
         if (diagnostic == nullptr) {
             continue;
@@ -483,7 +475,7 @@ TEST_CASE("Compiler diagnostics: failure explanations describe resolved source c
             }
         );
         REQUIRE_FALSE(result.has_value());
-        const auto* diagnostic = find_diagnostic(result.error(), item.code);
+        const auto* diagnostic = find_compiler_diagnostic(result.error(), item.code);
         REQUIRE(diagnostic != nullptr);
         CHECK_EQ(diagnostic->finding.message, item.message);
         REQUIRE(diagnostic->attachment.primary.has_value());
@@ -534,7 +526,8 @@ TEST_CASE("Compiler diagnostics: catch type names distinguish modules in stable 
             }
         );
         REQUIRE_FALSE(result.has_value());
-        const auto* diagnostic = find_diagnostic(result.error(), "CV-EFFECT-CATCH-NON-EXHAUSTIVE");
+        const auto* diagnostic =
+            find_compiler_diagnostic(result.error(), "CV-EFFECT-CATCH-NON-EXHAUSTIVE");
         REQUIRE(diagnostic != nullptr);
         REQUIRE_EQ(diagnostic->attachment.notes.size(), 2);
         CHECK_EQ(

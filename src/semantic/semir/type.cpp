@@ -13,52 +13,79 @@ auto require_owner(ProgramIdentity owner, ProgramIdentity expected, std::string_
     }
 }
 
-auto validate_type_owner(const CanonicalType& type, ProgramIdentity owner) noexcept -> void {
+auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std::size_t {
+    auto hash = type.value.index();
+    const auto mix = [&](std::size_t value) noexcept {
+        hash ^= value + 0x9e3779b9uz + (hash << 6u) + (hash >> 2u);
+    };
+    const auto child = [&](auto id, std::string_view message) noexcept {
+        require_owner(id.owner(), owner, message);
+        mix(id.index());
+    };
+    const auto text = [&](std::string_view value) noexcept {
+        mix(std::hash<std::string_view>()(value));
+    };
     std::visit(
-        [owner](const auto& value) noexcept {
+        [&](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, StructTypeValue>) {
-                require_owner(value.structure.owner(), owner, "struct type used a foreign program");
+            if constexpr (std::same_as<Value, BuiltinTypeValue>) {
+                mix(static_cast<std::size_t>(value.kind));
+            } else if constexpr (std::same_as<Value, StructTypeValue>) {
+                child(value.structure, "struct type used a foreign program");
             } else if constexpr (std::same_as<Value, EnumTypeValue>) {
-                require_owner(value.enumeration.owner(), owner, "enum type used a foreign program");
+                child(value.enumeration, "enum type used a foreign program");
             } else if constexpr (std::same_as<Value, PointerTypeValue>) {
-                require_owner(value.target.owner(), owner, "ptr type used a foreign target");
+                child(value.target, "ptr type used a foreign target");
+                mix(static_cast<std::size_t>(value.access));
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
-                require_owner(
-                    value.element.owner(),
-                    owner,
-                    "array type used a foreign element type"
-                );
+                child(value.element, "array type used a foreign element type");
+                mix(std::hash<std::uint64_t>()(value.extent));
             } else if constexpr (std::same_as<Value, FunctionTypeValue>
                                  || std::same_as<Value, ClosureTypeValue>) {
-                require_owner(
-                    value.callable.owner(),
-                    owner,
-                    "callable type used a foreign program"
-                );
+                child(value.callable, "callable type used a foreign program");
             } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
-                require_owner(
-                    value.signature.owner(),
-                    owner,
-                    "callable view type used a foreign signature"
-                );
-            } else if constexpr (std::same_as<Value, CppTypeValue>) {
-                for (const auto& name : cpp_type_names(value)) {
-                    require_owner(
-                        name.context_module.owner(),
-                        owner,
-                        "C++ type used a foreign module"
+                child(value.signature, "callable view type used a foreign signature");
+            } else {
+                static_assert(std::same_as<Value, CppTypeValue>);
+                mix(value.form.index());
+                if (const auto* name = cpp_type_name(value)) {
+                    child(name->context_module, "C++ type used a foreign module");
+                    mix(static_cast<std::size_t>(name->lookup));
+                    for (const auto& component : name->components) {
+                        text(component);
+                    }
+                }
+                for (const auto reference : cpp_type_references(value)) {
+                    child(reference, "C++ type used a foreign argument");
+                }
+                if (const auto* query = std::get_if<CppQueryType>(&value.form)) {
+                    mix(query->expression.index());
+                    std::visit(
+                        [&](const auto& expression) noexcept {
+                            using Expression = std::remove_cvref_t<decltype(expression)>;
+                            if constexpr (std::same_as<Expression, CppMemberQuery>) {
+                                text(expression.member);
+                            } else if constexpr (std::same_as<Expression, CppUnaryQuery>
+                                                 || std::same_as<Expression, CppBinaryQuery>) {
+                                mix(static_cast<std::size_t>(expression.operation));
+                            } else if constexpr (std::same_as<Expression, CppCallQuery>) {
+                                mix(expression.callee.index());
+                                if (const auto* member =
+                                        std::get_if<CppMemberCallee<CppTypeOperand>>(
+                                            &expression.callee
+                                        )) {
+                                    text(member->member);
+                                }
+                            }
+                        },
+                        query->expression
                     );
                 }
-                for (const auto argument : cpp_type_references(value)) {
-                    require_owner(argument.owner(), owner, "C++ type used a foreign argument");
-                }
-            } else {
-                static_assert(std::same_as<Value, BuiltinTypeValue>);
             }
         },
         type.value
     );
+    return hash;
 }
 
 auto validate_signature_owner(const CallableSignature& signature, ProgramIdentity owner) noexcept
@@ -183,13 +210,26 @@ CanonicalTypeStoreBuilder::CanonicalTypeStoreBuilder(ProgramIdentity owner) noex
     : rows(owner) {}
 
 auto CanonicalTypeStoreBuilder::intern(const CanonicalType& type) noexcept -> TypeID {
-    validate_type_owner(type, rows.owner());
     if (std::holds_alternative<CallableViewTypeValue>(type.value)) {
         invariant_violation(
             "callable view types must be interned through construction type resolution"
         );
     }
-    return rows.intern(type);
+    return intern_row(type);
+}
+
+auto CanonicalTypeStoreBuilder::intern_row(const CanonicalType& type) noexcept -> TypeID {
+    const auto key = type_key(type, rows.owner());
+    // Candidate keys may collide; complete type equality determines identity.
+    const auto [begin, end] = candidates.equal_range(key);
+    for (auto candidate = begin; candidate != end; ++candidate) {
+        if (rows.copy(candidate->second) == type) {
+            return candidate->second;
+        }
+    }
+    const auto id = rows.add(type);
+    candidates.emplace(key, id);
+    return id;
 }
 
 auto CanonicalTypeStoreBuilder::intern_builtin(BuiltinType type) noexcept -> TypeID {
@@ -212,7 +252,7 @@ auto CanonicalTypeStoreBuilder::intern_resolved_callable_view(
         invariant_violation("resolved callable view mixed semantic program owners");
     }
     static_cast<void>(signatures.copy(signature));
-    return rows.intern(
+    return intern_row(
         CanonicalType {
             .value = CallableViewTypeValue {.signature = signature},
         }

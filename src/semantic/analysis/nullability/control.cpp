@@ -1,6 +1,7 @@
 module carven:semantic.analysis.nullability.control.impl;
 
 import :semantic.analysis.nullability.context;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -36,11 +37,9 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
         flow.normal = std::move(next.normal);
         append_null_exits(flow.exits, std::move(next.exits));
     };
-    const auto transfer = [&](NullExitKind kind, std::optional<TypeID> failure = {}) noexcept {
+    const auto transfer = [&](NullExitPayload payload) noexcept {
         if (flow.normal) {
-            flow.exits.push_back(
-                {.kind = kind, .failure = failure, .state = std::move(flow.normal->state)}
-            );
+            flow.exits.push_back({.payload = payload, .state = std::move(flow.normal->state)});
             flow.normal.reset();
         }
     };
@@ -50,25 +49,21 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                 if (value.value) {
                     evaluate(*value.value);
                 }
-                transfer(NullExitKind::Return);
+                transfer(NullTransfer::Return);
             },
-            [&](const SemBreak&) noexcept { transfer(NullExitKind::Break); },
-            [&](const SemContinue&) noexcept { transfer(NullExitKind::Continue); },
+            [&](const SemBreak&) noexcept { transfer(NullTransfer::Break); },
+            [&](const SemContinue&) noexcept { transfer(NullTransfer::Continue); },
             [&](const SemRethrow&) noexcept {
                 if (flow.normal) {
                     for (const auto type : caught) {
-                        flow.exits.push_back(
-                            {.kind = NullExitKind::Failure,
-                             .failure = type,
-                             .state = flow.normal->state}
-                        );
+                        flow.exits.push_back({.payload = type, .state = flow.normal->state});
                     }
                     flow.normal.reset();
                 }
             },
             [&](const SemThrow& value) noexcept {
                 evaluate(value.value);
-                transfer(NullExitKind::Failure, value.failure_type);
+                transfer(value.failure_type);
             },
             [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
             [&](const SemInitialize& value) noexcept {
@@ -106,7 +101,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                     evaluate(*value.message);
                 }
                 if (value.kind == TestReportKind::Fail) {
-                    transfer(NullExitKind::Return);
+                    transfer(NullTransfer::Return);
                 }
             },
             [&](const OwnedSemanticRegion& value) noexcept {
@@ -228,7 +223,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
     auto result = NullFlow {.normal = std::move(protected_flow.normal), .exits = {}};
     auto pending = std::vector<NullExit>();
     for (auto& exit : protected_flow.exits) {
-        if (exit.kind == NullExitKind::Failure) {
+        if (std::holds_alternative<TypeID>(exit.payload)) {
             pending.push_back(std::move(exit));
         } else {
             result.exits.push_back(std::move(exit));
@@ -237,9 +232,13 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
     for (const auto& arm : source.arms) {
         auto rejected = std::vector<NullExit>();
         for (auto& failure : pending) {
+            const auto* type = std::get_if<TypeID>(&failure.payload);
+            if (type == nullptr) {
+                invariant_violation("catch processing received a non-failure exit");
+            }
             if (!std::ranges::contains(
                     program.failure_sets().failure_set(arm.accepted_failures.resolved()).members,
-                    *failure.failure
+                    *type
                 )) {
                 rejected.push_back(std::move(failure));
                 continue;
@@ -254,14 +253,14 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                     exhaustive = true;
                 } else if (const auto* typed =
                                std::get_if<SemTypedCatchPattern>(&alternative.pattern);
-                           typed->type.resolved() == *failure.failure) {
+                           typed->type.resolved() == *type) {
                     exhaustive |= irrefutable(typed->inner);
                     bind_pattern(accepted->state, typed->inner, {});
                 }
             }
             auto remaining = exhaustive ? std::optional<NullNormal>() : accepted;
             const auto previous = caught;
-            caught = {*failure.failure};
+            caught = {*type};
             if (arm.guard) {
                 auto checked = condition(*arm.guard, std::move(accepted->state));
                 accepted = std::move(checked.yes);
@@ -275,11 +274,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
             }
             caught = previous;
             if (remaining) {
-                rejected.push_back(
-                    {.kind = NullExitKind::Failure,
-                     .failure = failure.failure,
-                     .state = std::move(remaining->state)}
-                );
+                rejected.push_back({.payload = *type, .state = std::move(remaining->state)});
             }
         }
         pending = std::move(rejected);
@@ -315,12 +310,13 @@ auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexc
     auto iteration = region(*source.body, std::move(branches.yes->state));
     auto step_input = std::move(iteration.normal);
     for (auto& exit : iteration.exits) {
-        if (exit.kind == NullExitKind::Break) {
+        const auto* transfer = std::get_if<NullTransfer>(&exit.payload);
+        if (transfer != nullptr && *transfer == NullTransfer::Break) {
             join_null_normal(
                 result.normal,
                 NullNormal {.state = std::move(exit.state), .value = {}}
             );
-        } else if (exit.kind == NullExitKind::Continue) {
+        } else if (transfer != nullptr && *transfer == NullTransfer::Continue) {
             join_null_normal(step_input, NullNormal {.state = std::move(exit.state), .value = {}});
         } else {
             result.exits.push_back(std::move(exit));
@@ -372,12 +368,13 @@ auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state)
     result.normal = NullNormal {.state = head, .value = {}};
     auto iteration = region(*source.body, std::move(head));
     for (auto& exit : iteration.exits) {
-        if (exit.kind == NullExitKind::Break) {
+        const auto* transfer = std::get_if<NullTransfer>(&exit.payload);
+        if (transfer != nullptr && *transfer == NullTransfer::Break) {
             join_null_normal(
                 result.normal,
                 NullNormal {.state = std::move(exit.state), .value = {}}
             );
-        } else if (exit.kind != NullExitKind::Continue) {
+        } else if (transfer == nullptr || *transfer != NullTransfer::Continue) {
             result.exits.push_back(std::move(exit));
         }
     }

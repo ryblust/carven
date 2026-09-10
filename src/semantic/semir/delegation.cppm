@@ -169,5 +169,6 @@ auto cpp_query_type(
     std::span<const CppTypeOperand> operands
 ) noexcept -> CppQueryType;
 auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeID>;
-auto cpp_type_names(const CppTypeValue& type) noexcept -> std::vector<CppNameReference>;
+// The returned name borrows the supplied type description.
+auto cpp_type_name(const CppTypeValue& type) noexcept -> const CppNameReference*;
 auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool;

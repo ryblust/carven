@@ -1,6 +1,6 @@
-module carven:backend.lowering.body.decl.impl;
+module carven:backend.realization.decl.impl;
 
-import :backend.lowering.body.decl;
+import :backend.realization.decl;
 import :backend.target.expr;
 import :backend.target.name;
 import :backend.target.stmt;

@@ -1,13 +1,14 @@
 module carven:backend.lowering.body.impl;
 
-import :backend.lowering.body.lowerer;
+import :backend.construction;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.target.stmt;
+import :backend.realization.body;
 import :semantic.semir;
 import std;
 
-auto lower_body(ModuleLowering& context, BodyID body, TargetBodyInputs inputs) noexcept
+auto lower_body(ModuleLowering& context, BodyID body_id, BodyRealizationInputs inputs) noexcept
     -> LoweredBody {
-    return BodyLowerer(context, body, std::move(inputs)).finish();
+    const auto construction = construct_body(context.semantic(), body_id);
+    return realize_body(context, construction, std::move(inputs));
 }

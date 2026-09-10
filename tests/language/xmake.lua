@@ -43,7 +43,9 @@ target("carven-test-language-cxx23")
     add_files(table.unpack(language_sources))
     add_files(path.join(language_dir, "testing", "entry_point.cv"))
     after_load(use_local_carven)
-    add_tests("cxx23", {build_should_pass = true, group = "language"})
+    add_tests("cxx23", {group = "language"})
+    -- Compilation and linking establish the C++23 contract.
+    on_test(function () return true end)
 
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 

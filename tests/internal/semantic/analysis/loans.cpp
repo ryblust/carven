@@ -87,28 +87,26 @@ TEST_CASE("Semantic availability: discarded owners retain Write captures until s
         );
         CHECK(contains_diagnostic_code(retained, DiagnosticCode::AccessCaptureConflict));
 
-        const auto released = analyze_test_errors(
+        static_cast<void>(analyze_test_program(
             std::string(semantic_test_payload_prelude)
             + "fn valid() { var payload = Payload { value: 1 }; if true { " + keyword
             + " _ = [&payload]() { payload.value = 2; }; } "
               "consume(&&payload); }"
-        );
-        CHECK_FALSE(contains_diagnostic_code(released, DiagnosticCode::AccessCaptureConflict));
+        ));
     }
 }
 
 TEST_CASE("Semantic availability: Write capture ends with its actual holder") {
-    const auto temporary = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    var payload = Payload { value: 1 };\n"
           "    [&payload]() { payload.value = 2; }();\n"
           "    consume(&&payload);\n"
           "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(temporary, DiagnosticCode::AccessCaptureConflict));
+    ));
 
-    const auto lexical = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         std::string(semantic_test_payload_prelude)
         + "fn valid() {\n"
           "    var payload = Payload { value: 1 };\n"
@@ -117,12 +115,11 @@ TEST_CASE("Semantic availability: Write capture ends with its actual holder") {
           "    }\n"
           "    consume(&&payload);\n"
           "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(lexical, DiagnosticCode::AccessCaptureConflict));
+    ));
 }
 
 TEST_CASE("Semantic availability: control-result callable loans end with borrower scope") {
-    const auto diagnostics = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         "fn fallback(value: i32) -> i32 { return value; }\n"
         "fn valid(flag: bool) {\n"
         "    let offset = 1;\n"
@@ -133,9 +130,7 @@ TEST_CASE("Semantic availability: control-result callable loans end with borrowe
         "    }\n"
         "    let moved = &&owner;\n"
         "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
-    CHECK_FALSE(contains_diagnostic_code(diagnostics, DiagnosticCode::TypeCallableViewEscape));
+    ));
 }
 
 TEST_CASE("Semantic loans: callee retains its backing during nested arguments") {

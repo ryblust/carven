@@ -61,6 +61,7 @@ auto check_compiler_errors(std::span<const CompilerErrorExpectation> cases) noex
         if (diagnostic == nullptr) {
             continue;
         }
+        CHECK_EQ(diagnostic->finding.severity, DiagnosticSeverity::Error);
         CHECK(diagnostic->attachment.primary.has_value());
         if (!diagnostic->attachment.primary.has_value()) {
             continue;

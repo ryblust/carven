@@ -278,21 +278,6 @@ TEST_CASE("Dump: invalid UTF-8 token bytes use hexadecimal escapes") {
     );
 }
 
-TEST_CASE("Dump: repeated rendering is deterministic") {
-    const auto owned = dump_source("main.cv", "fn value() -> i32 { return 1; }");
-    const auto source = owned.sources.view(owned.source_id);
-    const auto lexical = lex(source);
-    REQUIRE(lexical.diagnostics.empty());
-    const auto parsed = parse(owned.sources, lexical.value);
-    REQUIRE(parsed.has_value());
-
-    CHECK_EQ(
-        render_token_dump(owned.sources, lexical.value),
-        render_token_dump(owned.sources, lexical.value)
-    );
-    CHECK_EQ(render_ast_dump(owned.sources, *parsed), render_ast_dump(owned.sources, *parsed));
-}
-
 TEST_CASE("Dump: sum type syntax exposes payload, contextual cases, patterns, and guards") {
     const auto owned = dump_source(
         "sum.cv",

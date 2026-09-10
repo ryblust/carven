@@ -18,8 +18,7 @@ public:
 private:
     const CanonicalTypeStore& types;
     const DeclarationStore& declarations;
-    std::flat_map<TypeID, TypeContents> memo;
-    std::flat_set<TypeID> visiting;
+    std::vector<std::optional<TypeContents>> contents_by_type;
 };
 
 TypeContentsQuery::TypeContentsQuery(
@@ -27,22 +26,23 @@ TypeContentsQuery::TypeContentsQuery(
     const DeclarationStore& declarations
 ) noexcept
     : types(types),
-      declarations(declarations) {
+      declarations(declarations),
+      contents_by_type(types.size()) {
     if (types.owner() != declarations.owner()) {
         invariant_violation("type contents inputs belong to different programs");
     }
 }
 
 auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
-    if (type.owner() != types.owner()) {
-        invariant_violation("type contents query observed a foreign type");
+    if (!types.contains(type)) {
+        invariant_violation("type contents query observed a foreign or invalid type");
     }
-    if (const auto found = memo.find(type); found != memo.end()) {
-        return found->second;
+    auto& cached = contents_by_type[type.index()];
+    if (cached.has_value()) {
+        return *cached;
     }
-    if (!visiting.insert(type).second) {
-        return {.closure_owner = false, .callable_view = false};
-    }
+    // Recursive containment contributes no additional contents on this path.
+    cached = TypeContents {.closure_owner = false, .callable_view = false};
     const auto merge = [](TypeContents& destination, TypeContents source) static noexcept {
         destination.closure_owner |= source.closure_owner;
         destination.callable_view |= source.callable_view;
@@ -96,8 +96,7 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
         },
         types.type(type).value
     );
-    visiting.erase(type);
-    memo.emplace(type, result);
+    cached = result;
     return result;
 }
 

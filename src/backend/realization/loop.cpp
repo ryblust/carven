@@ -1,17 +1,20 @@
-module carven:backend.lowering.body.loop.impl;
+module carven:backend.realization.loop.impl;
 
 import :backend.generation.names;
-import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
+import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir;
 import std;
 
-auto BodyLowerer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
-    -> void {
-    auto initializer = region(*value.initializer, LoweringDiscardResult {});
+auto BodyRealizer::lower_loop(
+    ConstructionRegionID identity,
+    const ConstructionLoop& value,
+    LoweringStmtBuilder& destination
+) noexcept -> void {
+    auto initializer = region(value.initializer, LoweringDiscardResult {});
     if (!initializer.continues()) {
         destination.scope(std::move(initializer));
         return;
@@ -30,23 +33,23 @@ auto BodyLowerer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destinat
         destination.scope(std::move(initializer));
         return;
     }
-    const auto step = value.steps->statements.empty()
+    const auto step = construction.region(value.steps).statements.empty()
         ? std::nullopt
         : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
-    const auto previous = std::exchange(
-        loop_continuation,
+    loops.emplace(
+        identity,
         LoopContinuation {
             .step = step,
             .target = exit_target(LoweringExitKind::Continue),
             .break_target = exit_target(LoweringExitKind::Break)
         }
     );
-    auto body_statements = region(*value.body, LoweringDiscardResult {});
-    const auto continuation = *std::exchange(loop_continuation, previous);
+    auto body_statements = region(value.body, LoweringDiscardResult {});
+    const auto continuation = loops.at(identity);
     const auto continued = body_statements.exits().contains(continuation.target);
     const auto breaks = body_statements.exits().contains(continuation.break_target);
     const auto run_steps = body_statements.continues() || continued;
-    auto steps = run_steps ? region(*value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
+    auto steps = run_steps ? region(value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
     auto iteration = std::move(condition_statements);
     if (known_predicate(condition) != true) {
         auto exit_body = LoweringStmtBuilder();
@@ -87,17 +90,22 @@ auto BodyLowerer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destinat
     destination.scope(std::move(initializer));
 }
 
-auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
-    -> void {
-    const auto* integer = std::get_if<SemIntegerRange>(&value.source);
-    const auto& first = integer ? integer->begin : std::get<SemSequenceRange>(value.source).value;
+auto BodyRealizer::lower_range(
+    ConstructionRegionID identity,
+    const ConstructionRangeLoop& value,
+    LoweringStmtBuilder& destination
+) noexcept -> void {
+    const auto* integer = std::get_if<ConstructionIntegerRange>(&value.source);
+    const auto& first =
+        integer ? integer->begin : std::get<ConstructionSequenceRange>(value.source).value;
 
     auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
     const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
-    auto begin = integer != nullptr ? scope.accept(operand(first, OperandUse::Snapshot))
-                                    : read_value(expression(first), scope);
+    auto begin = integer != nullptr
+        ? scope.accept(operand({.expression = first, .use = ConstructionUse::ScalarValue}))
+        : read_value(expression(first), scope);
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;
@@ -112,16 +120,16 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
                 .initializer = std::move(*begin)
             }
         ));
-        const auto previous = std::exchange(
-            loop_continuation,
+        loops.emplace(
+            identity,
             LoopContinuation {
                 .step = std::nullopt,
                 .target = exit_target(LoweringExitKind::Continue),
                 .break_target = exit_target(LoweringExitKind::Break)
             }
         );
-        auto iteration = region(*value.body, LoweringDiscardResult {});
-        const auto continuation = *std::exchange(loop_continuation, previous);
+        auto iteration = region(value.body, LoweringDiscardResult {});
+        const auto continuation = loops.at(identity);
         static_cast<void>(iteration.consume_exit(continuation.target));
         static_cast<void>(iteration.consume_exit(continuation.break_target));
         scope.record_exits(iteration.exits());
@@ -135,11 +143,11 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
                 .name = value.binding.has_value() ? binding_names.at(*value.binding) : index,
                 .type = value.binding.has_value()
                     ? (value.access == AccessMode::Write
-                           ? context.lower_type(body.binding(*value.binding).type)
+                           ? context.lower_type(metadata.binding(*value.binding).type)
                            : context.lower_parameter(
                                  CallableParameter {
                                      .access = AccessMode::Read,
-                                     .type = body.binding(*value.binding).type
+                                     .type = metadata.binding(*value.binding).type
                                  }
                              ))
                     : context.intrinsic_type(TargetSymbol::Auto),
@@ -150,8 +158,17 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
         destination.scope(std::move(scope));
         return;
     }
-    auto initial = std::move(*begin);
-    const auto index_type = context.lower_type(first.type.resolved());
+    const auto index_type = context.lower_type(construction.expression(first).type);
+    scope.emit(generated_statement(
+        TargetVariableStmt {
+            .binding = TargetVariableBinding::ConstValue,
+            .maybe_unused = false,
+            .name = owner,
+            .type = index_type,
+            .initializer = std::move(*begin)
+        }
+    ));
+    auto initial = name_expression(owner);
     auto upper = read_value(expression(integer->end), scope);
     if (!scope.continues()) {
         destination.scope(std::move(scope));
@@ -167,8 +184,8 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
             .initializer = std::move(*upper)
         }
     ));
-    const auto previous = std::exchange(
-        loop_continuation,
+    loops.emplace(
+        identity,
         LoopContinuation {
             .step = std::nullopt,
             .target = exit_target(LoweringExitKind::Continue),
@@ -185,13 +202,13 @@ auto BodyLowerer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& de
                     : TargetVariableBinding::ConstValue,
                 .maybe_unused = true,
                 .name = binding_names.at(id),
-                .type = context.lower_type(body.binding(id).type),
+                .type = context.lower_type(metadata.binding(id).type),
                 .initializer = std::move(element)
             }
         ));
     }
-    iteration.append(region(*value.body, LoweringDiscardResult {}));
-    const auto continuation = *std::exchange(loop_continuation, previous);
+    iteration.append(region(value.body, LoweringDiscardResult {}));
+    const auto continuation = loops.at(identity);
     static_cast<void>(iteration.consume_exit(continuation.target));
     static_cast<void>(iteration.consume_exit(continuation.break_target));
     scope.record_exits(iteration.exits());

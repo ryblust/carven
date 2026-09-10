@@ -30,21 +30,19 @@ TEST_CASE("Semantic control: try around an infallible body is silent") {
 }
 
 TEST_CASE("Semantic control: only executable fallthrough requires a return") {
-    const auto terminal = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         "private fn classify(value: bool) -> i32 {\n"
         "    if value { return 1; }\n"
         "    else if !value { return 2; }\n"
         "    else { return 3; }\n"
         "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(terminal, DiagnosticCode::FlowMissingReturn));
+    ));
 
-    const auto dead_fallthrough = analyze_test_errors(
+    static_cast<void>(analyze_test_program(
         "private fn known() -> i32 {\n"
         "    if true { return 1; } else { let ignored = 0; }\n"
         "}\n"
-    );
-    CHECK_FALSE(contains_diagnostic_code(dead_fallthrough, DiagnosticCode::FlowMissingReturn));
+    ));
 
     const auto live_fallthrough = analyze_test_errors(
         "private fn invalid(value: bool) -> i32 {\n"

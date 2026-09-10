@@ -3,6 +3,7 @@ module carven:backend.lowering.decl.testing.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
+import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
@@ -48,10 +49,10 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     auto lowered = lower_body(
         context,
         test.body,
-        TargetBodyInputs {
+        BodyRealizationInputs {
             .parameters = {},
             .captures = {},
-            .exit = TargetTestBodyExit {},
+            .exit = TestBodyExit {},
         }
     );
     if (!lowered.uses_test_context) {

@@ -23,7 +23,6 @@ import :semantic.visibility;
 import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
-import :support.invariant;
 import :support.visit;
 import std;
 
@@ -162,40 +161,45 @@ auto DeclResolver::resolve_function(
             return std::unexpected(boundary.error());
         }
     }
-    if (form.function.index() >= functions.size()
-        || form.callable.index() >= callable_contracts.size()) {
-        invariant_violation("function declaration identity is outside its reserved table");
-    }
-    functions[form.function.index()] = FunctionDeclaration {
-        .module_id = module_declaration(symbol.module_id),
-        .name = draft.intern_spelling(symbol.name),
-        .origin = declaration_source_origin(draft, symbol.module_id, item_span),
-        .visibility = symbol.visibility,
-        .callable = form.callable,
-        .entry_point = entry ? std::optional(
-                                   function.parameters.empty() ? EntryPointKind::NoArguments
-                                                               : EntryPointKind::WithArguments
-                               )
-                             : std::nullopt,
-        .cpp_export_origin = function.cpp_export.has_value()
-            ? std::optional(
-                  declaration_source_origin(draft, symbol.module_id, function.cpp_export->span)
-              )
-            : std::nullopt,
-    };
+    draft.define_declaration(
+        form.function,
+        FunctionDeclaration {
+            .module_id = module_declaration(symbol.module_id),
+            .name = draft.intern_spelling(symbol.name),
+            .origin = declaration_source_origin(draft, symbol.module_id, item_span),
+            .visibility = symbol.visibility,
+            .callable = form.callable,
+            .entry_point = entry ? std::optional(
+                                       function.parameters.empty() ? EntryPointKind::NoArguments
+                                                                   : EntryPointKind::WithArguments
+                                   )
+                                 : std::nullopt,
+            .cpp_export_origin = function.cpp_export.has_value()
+                ? std::optional(
+                      declaration_source_origin(draft, symbol.module_id, function.cpp_export->span)
+                  )
+                : std::nullopt,
+        }
+    );
     if (result.has_value()) {
-        callable_contracts[form.callable.index()] = ConstructionCallableContract {
-            .parameters = std::move(parameters),
-            .result = *result,
-            .failures = *failures,
-            .policy = policy,
-        };
+        draft.define_callable_contract(
+            form.callable,
+            ConstructionCallableContract {
+                .parameters = std::move(parameters),
+                .result = *result,
+                .failures = *failures,
+                .policy = policy,
+            }
+        );
     } else {
-        callable_contracts[form.callable.index()] = PendingFunctionContract {
-            .parameters = std::move(parameters),
-            .failures = *failures,
-            .policy = policy,
-        };
+        draft.define_pending_function_contract(
+            form.callable,
+            PendingFunctionContract {
+                .parameters = std::move(parameters),
+                .failures = *failures,
+                .policy = policy,
+            }
+        );
     }
     if (cpp_import) {
         cpp_import_origins[form.callable.index()] = declaration_source_origin(

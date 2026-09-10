@@ -46,7 +46,7 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                     );
                 },
                 [&](const SemCast& value) noexcept {
-                    const auto type = require_type(value.operand->type.resolved());
+                    const auto& type = require_type(value.operand->type.resolved());
                     const auto* enumeration = std::get_if<EnumTypeValue>(&type.value);
                     const auto numeric_enum =
                         enumeration != nullptr
@@ -116,9 +116,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     }
                     const auto expected =
                         CppTypeValue {.form = cpp_query_type(value.operation, operands)};
-                    if (!valid_cpp_type(expected)
-                        || require_type(source.type.resolved()).value
-                            != CanonicalTypeValue {expected}) {
+                    const auto* actual =
+                        std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
+                    if (!valid_cpp_type(expected) || actual == nullptr || *actual != expected) {
                         invariant_violation("C++ operation differs from its result query");
                     }
                 }
@@ -138,17 +138,17 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 const auto expected = CppTypeValue {
                     .form = cpp_call_query(value, [](TypeID type) static noexcept { return type; })
                 };
-                if (!valid_cpp_type(expected)
-                    || require_type(source.type.resolved()).value
-                        != CanonicalTypeValue {expected}) {
+                const auto* actual =
+                    std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
+                if (!valid_cpp_type(expected) || actual == nullptr || *actual != expected) {
                     invariant_violation("C++ call differs from its result query");
                 }
-                for (const auto& name : cpp_type_names(expected)) {
-                    static_cast<void>(program.declarations().module_decl(name.context_module));
+                if (const auto* name = cpp_type_name(expected)) {
+                    static_cast<void>(program.declarations().module_decl(name->context_module));
                 }
             },
             [&](const SemCall& value) noexcept {
-                const auto signature = program.callable_signatures().signature(
+                const auto& signature = program.callable_signatures().signature(
                     signature_for_type(value.callee->type.resolved())
                 );
                 if (signature.result != source.type.resolved()
@@ -165,7 +165,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemArray& value) noexcept {
-                const auto type = require_type(source.type.resolved());
+                const auto& type = require_type(source.type.resolved());
                 const auto* array = std::get_if<ArrayTypeValue>(&type.value);
                 if (array == nullptr || array->extent != value.elements.size()) {
                     invariant_violation("array initialization has wrong shape");
@@ -177,9 +177,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemStruct& value) noexcept {
-                const auto type = require_type(source.type.resolved());
+                const auto& type = require_type(source.type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);
-                const auto fields = require_structure(value.structure).fields;
+                const auto& fields = require_structure(value.structure).fields;
                 if (structure == nullptr
                     || structure->structure != value.structure
                     || fields.size() != value.fields.size()) {
@@ -196,9 +196,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemEnumCase& value) noexcept {
-                const auto type = require_type(source.type.resolved());
+                const auto& type = require_type(source.type.resolved());
                 const auto* enumeration = std::get_if<EnumTypeValue>(&type.value);
-                const auto member = require_enum_case(value.enum_case);
+                const auto& member = require_enum_case(value.enum_case);
                 if (enumeration == nullptr
                     || enumeration->enumeration != member.owner
                     || value.payload.size() != member.payload_types.size()) {
@@ -282,7 +282,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
             },
             [&](const SemDereference& value) noexcept {
                 require_origin(value.origin);
-                const auto source_type = require_type(value.source->type.resolved());
+                const auto& source_type = require_type(value.source->type.resolved());
                 const auto* pointer = std::get_if<PointerTypeValue>(&source_type.value);
                 if (pointer == nullptr
                     || pointer->target != source.type.resolved()
@@ -292,9 +292,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemField& value) noexcept {
-                const auto type = require_type(value.source->type.resolved());
+                const auto& type = require_type(value.source->type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);
-                const auto fields = require_structure(value.field.owner).fields;
+                const auto& fields = require_structure(value.field.owner).fields;
                 if (structure == nullptr
                     || structure->structure != value.field.owner
                     || value.field.field_index >= fields.size()
@@ -303,9 +303,9 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemIndex& value) noexcept {
-                const auto type = require_type(value.source->type.resolved());
+                const auto& type = require_type(value.source->type.resolved());
                 const auto* array = std::get_if<ArrayTypeValue>(&type.value);
-                const auto index = require_type(value.index->type.resolved());
+                const auto& index = require_type(value.index->type.resolved());
                 const auto* integer = std::get_if<BuiltinTypeValue>(&index.value);
                 if (array == nullptr
                     || array->element != source.type.resolved()

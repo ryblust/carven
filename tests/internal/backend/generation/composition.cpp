@@ -4,7 +4,7 @@ module;
 
 module carven:test.internal.backend.generation.composition;
 
-import :backend.lowering.body.composition;
+import :backend.realization.composition;
 import :backend.target.builder;
 import :backend.target.expr;
 import :backend.target.name;

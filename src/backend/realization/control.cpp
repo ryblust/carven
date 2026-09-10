@@ -1,9 +1,9 @@
-module carven:backend.lowering.body.control.impl;
+module carven:backend.realization.control.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body.lowerer;
 import :backend.lowering.context;
+import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
@@ -12,27 +12,33 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyLowerer::structured_expression(
-    const SemanticExpression& source,
+auto BodyRealizer::structured_expression(
+    ConstructionExpressionID source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     std::visit(
         Overloaded {
-            [&](const SemIf& value) noexcept { lower_if(value, result, destination); },
-            [&](const SemMatch& value) noexcept { lower_match(value, result, destination); },
-            [&](const SemTry& value) noexcept { lower_try(value, result, destination); },
+            [&](const ConstructionConditional& value) noexcept {
+                lower_if(value, result, destination);
+            },
+            [&](const ConstructionMatch& value) noexcept {
+                lower_match(value, result, destination);
+            },
+            [&](const ConstructionTry& value) noexcept {
+                lower_try(source, value, result, destination);
+            },
             [](const auto&) static noexcept {
                 invariant_violation("expected a structured semantic expression");
             },
         },
-        source.value
+        construction.expression(source).value
     );
 }
 
-auto BodyLowerer::guarded_region(
-    const SemanticRegion& source,
-    const std::optional<SemanticExpression>& guard,
+auto BodyRealizer::guarded_region(
+    ConstructionRegionID source,
+    const std::optional<ConstructionExpressionID>& guard,
     const LoweringResultDestination& result,
     RegionExit& done
 ) noexcept -> LoweringStmtBuilder {
@@ -75,8 +81,8 @@ auto BodyLowerer::guarded_region(
     return guarded;
 }
 
-auto BodyLowerer::lower_if(
-    const SemIf& value,
+auto BodyRealizer::lower_if(
+    const ConstructionConditional& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
@@ -84,7 +90,7 @@ auto BodyLowerer::lower_if(
                                   std::size_t index) noexcept -> LoweringStmtBuilder {
         if (index == value.branches.size()) {
             if (value.otherwise.has_value()) {
-                return region(**value.otherwise, result);
+                return region(*value.otherwise, result);
             }
             auto completed = LoweringStmtBuilder();
             deliver_result(LoweringCompleted {}, result, completed);
@@ -130,123 +136,35 @@ auto BodyLowerer::lower_if(
     destination.append(lower_branch(0uz));
 }
 
-auto BodyLowerer::lower_arm(
-    std::vector<PatternSelection> selections,
+auto BodyRealizer::lower_arm(
+    const PatternState& pattern,
     std::span<const LocalBindingID> bindings,
-    const SemanticRegion& source,
-    const std::optional<SemanticExpression>& guard,
+    ConstructionRegionID source,
+    const std::optional<ConstructionExpressionID>& guard,
     const LoweringResultDestination& result,
     RegionExit& done
 ) noexcept -> LoweringStmtBuilder {
     auto statements = LoweringStmtBuilder();
-    auto projections = std::vector<PatternProjection>();
-    cache_pattern_projections(selections, projections, statements);
-    if (selections.size() == 1uz) {
-        const auto& selection = selections.front();
-        auto chosen = LoweringStmtBuilder();
-        for (const auto binding : bindings) {
-            chosen.emit(generated_statement(
-                TargetVariableStmt {
-                    .binding = TargetVariableBinding::ConstValue,
-                    .maybe_unused = true,
-                    .name = binding_names.at(binding),
-                    .type = context.lower_type(body.binding(binding).type),
-                    .initializer = pattern_binding_expression(selection, binding)
-                }
-            ));
-        }
-        chosen.append(guarded_region(source, guard, result, done));
-        auto condition = pattern_condition(selection);
-        if (condition.has_value()) {
-            statements.record_exits(chosen.exits());
-            auto branches = std::vector<TargetIfBranch>();
-            branches.push_back(
-                {.condition = std::move(*condition), .body = std::move(chosen).finish()}
-            );
-            statements.emit(generated_statement(
-                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-            ));
-        } else {
-            statements.append(std::move(chosen));
-        }
-        return statements;
-    }
-    const auto selected = names.fresh(TargetTemporaryNameKind::Logic);
-    statements.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
-            .name = selected,
-            .type = context.intrinsic_type(TargetSymbol::Bool),
-            .initializer = bool_expression(false)
-        }
-    ));
+    auto chosen = LoweringStmtBuilder();
     for (const auto binding : bindings) {
-        delayed_bindings.emplace(
-            binding,
-            LoweringDeferredStorage {
-                .name = binding_names.at(binding),
-                .value_type = context.lower_type(body.binding(binding).type)
-            }
-        );
-        declare_deferred(delayed_bindings.at(binding), true, statements);
-    }
-    auto alternatives = std::vector<TargetIfBranch>();
-    auto fallback = std::optional<std::vector<TargetStmt>>();
-    for (const auto& selection : selections) {
-        auto chosen = LoweringStmtBuilder();
-        for (const auto binding : bindings) {
-            initialize_deferred(
-                delayed_bindings.at(binding),
-                pattern_binding_expression(selection, binding),
-                chosen
-            );
-        }
         chosen.emit(generated_statement(
-            TargetAssignmentStmt {
-                .target = name_expression(selected),
-                .op = TargetAssignmentOperator::Assign,
-                .value = bool_expression(true)
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstValue,
+                .maybe_unused = true,
+                .name = binding_names.at(binding),
+                .type = context.lower_type(metadata.binding(binding).type),
+                .initializer =
+                    dereference_expression(name_expression(pattern.addresses.at(binding)))
             }
         ));
-        auto condition = pattern_condition(selection);
-        if (condition.has_value()) {
-            alternatives.push_back(
-                {.condition = std::move(*condition), .body = std::move(chosen).finish()}
-            );
-        } else {
-            fallback = std::move(chosen).finish();
-            break;
-        }
     }
-    if (alternatives.empty()) {
-        if (fallback.has_value()) {
-            for (auto& statement : *fallback) {
-                statements.emit(std::move(statement));
-            }
-        }
-    } else {
-        statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(alternatives), .else_body = std::move(fallback)}
-        ));
-    }
-    auto guarded = guarded_region(source, guard, result, done);
-    statements.record_exits(guarded.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back(
-        {.condition = name_expression(selected), .body = std::move(guarded).finish()}
-    );
-    statements.emit(generated_statement(
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-    ));
-    for (const auto binding : bindings) {
-        delayed_bindings.erase(binding);
-    }
+    chosen.append(guarded_region(source, guard, result, done));
+    pattern_branch(name_expression(pattern.matched), std::move(chosen), statements);
     return statements;
 }
 
-auto BodyLowerer::lower_match(
-    const SemMatch& value,
+auto BodyRealizer::lower_match(
+    const ConstructionMatch& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
@@ -256,7 +174,7 @@ auto BodyLowerer::lower_match(
     };
     auto scope = LoweringStmtBuilder();
     const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
-    auto subject_value = read_value(expression(*value.subject), scope);
+    auto subject_value = read_value(expression(value.subject), scope);
     if (!scope.continues()) {
         destination.append(std::move(scope));
         return;
@@ -275,16 +193,16 @@ auto BodyLowerer::lower_match(
         if (!scope.continues()) {
             break;
         }
-        if (!arm.reachable) {
-            continue;
-        }
         auto statements = LoweringStmtBuilder();
-        auto selections = lower_pattern(
-            arm.pattern,
-            {.root = subject, .dereference_root = false, .payload_path = {}}
+        auto matcher = PatternRealizer(context, names, metadata);
+        const auto pattern = matcher.prepare(pattern_bindings(arm.bindings), statements);
+        matcher.match(
+            arm.pattern_id,
+            {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
+            pattern,
+            statements
         );
-        statements =
-            lower_arm(std::move(selections), arm.bindings, arm.body, arm.guard, result, done);
+        statements.append(lower_arm(pattern, arm.bindings, arm.body, arm.guard, result, done));
         scope.scope(std::move(statements));
     }
     if (scope.continues()) {
@@ -301,13 +219,14 @@ auto BodyLowerer::lower_match(
     }
 }
 
-auto BodyLowerer::lower_try(
-    const SemTry& value,
+auto BodyRealizer::lower_try(
+    ConstructionExpressionID identity,
+    const ConstructionTry& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    if (context.plan().failure_abi().members(value.protected_failures.resolved()).empty()) {
-        destination.append(region(*value.body, result));
+    if (context.plan().failure_abi().members(value.protected_failures).empty()) {
+        destination.append(region(value.body, result));
         return;
     }
     const auto storage = names.fresh(TargetTemporaryNameKind::Try);
@@ -316,7 +235,7 @@ auto BodyLowerer::lower_try(
         .label = names.fresh(TargetTemporaryNameKind::CatchDone),
         .target = exit_target(LoweringExitKind::Value)
     };
-    const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
+    const auto failures = context.plan().failure_abi().members(value.protected_failures);
     destination.emit(generated_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
@@ -326,13 +245,15 @@ auto BodyLowerer::lower_try(
             .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
         }
     ));
-    const auto outer = failure_destination;
-    failure_destination = FailureDestination {
-        .storage = storage,
-        .label = handler,
-        .target = exit_target(LoweringExitKind::Failure)
-    };
-    auto protected_body = region(*value.body, result);
+    handlers.emplace(
+        identity,
+        FailureDestination {
+            .storage = storage,
+            .label = handler,
+            .target = exit_target(LoweringExitKind::Failure)
+        }
+    );
+    auto protected_body = region(value.body, result);
     if (!returns_result(result) && protected_body.continues()) {
         protected_body.terminate(
             generated_statement(
@@ -342,9 +263,8 @@ auto BodyLowerer::lower_try(
         );
     }
     destination.scope(std::move(protected_body));
-    const auto handler_target = failure_destination->target;
+    const auto handler_target = handlers.at(identity).target;
     const auto handler_used = destination.exits().contains(handler_target);
-    failure_destination = outer;
     if (!handler_used) {
         if (destination.exits().contains(done.target)) {
             destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
@@ -356,14 +276,16 @@ auto BodyLowerer::lower_try(
         if (!destination.continues()) {
             break;
         }
-        if (context.plan().failure_abi().members(arm.accepted_failures.resolved()).empty()) {
+        if (context.plan().failure_abi().members(arm.accepted_failures).empty()) {
             continue;
         }
         auto statements = LoweringStmtBuilder();
-        auto selections = std::vector<PatternSelection>();
-        const auto add = [&](TypeID type, std::optional<PatternID> pattern) noexcept {
+        auto matcher = PatternRealizer(context, names, metadata);
+        const auto state = matcher.prepare(pattern_bindings(arm.bindings), statements);
+        const auto add = [&](TypeID type, std::optional<PatternID> pattern_id) noexcept {
+            auto candidate = LoweringStmtBuilder();
             const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
-            statements.emit(generated_statement(
+            candidate.emit(generated_statement(
                 TargetVariableStmt {
                     .binding = TargetVariableBinding::MutableValue,
                     .maybe_unused = false,
@@ -378,44 +300,68 @@ auto BodyLowerer::lower_try(
                     )
                 }
             ));
-            auto candidates = std::vector<PatternSelection>();
-            if (pattern.has_value()) {
-                candidates = lower_pattern(
-                    *pattern,
-                    {.root = projection, .dereference_root = true, .payload_path = {}}
+            auto selected = LoweringStmtBuilder();
+            if (pattern_id) {
+                matcher.match(
+                    *pattern_id,
+                    {.root = projection, .dereference_root = true, .payload_index = std::nullopt},
+                    state,
+                    selected
                 );
             } else {
-                candidates.push_back(PatternSelection {});
+                selected.emit(generated_statement(
+                    TargetAssignmentStmt {
+                        .target = name_expression(state.matched),
+                        .op = TargetAssignmentOperator::Assign,
+                        .value = bool_expression(true)
+                    }
+                ));
             }
-            for (auto& candidate : candidates) {
-                candidate.failure_projection = projection;
-                selections.push_back(std::move(candidate));
-            }
+            pattern_branch(name_expression(projection), std::move(selected), candidate);
+            pattern_branch(
+                prefix_expression(TargetPrefixOperator::LogicalNot, name_expression(state.matched)),
+                std::move(candidate),
+                statements
+            );
         };
         for (const auto& alternative : arm.alternatives) {
-            if (!alternative.reachable) {
-                continue;
-            }
-            if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                add(pattern->type.resolved(), pattern->inner);
+            if (const auto* pattern = std::get_if<ConstructionTypedCatch>(&alternative.pattern)) {
+                add(pattern->type, pattern->pattern_id);
             } else {
                 for (const auto type :
-                     context.plan().failure_abi().members(arm.accepted_failures.resolved())) {
+                     context.plan().failure_abi().members(arm.accepted_failures)) {
                     add(type, std::nullopt);
                 }
             }
         }
-        const auto previous_caught = caught_failure;
-        caught_failure =
-            CaughtFailure {.storage = storage, .failures = arm.accepted_failures.resolved()};
-        statements.append(
-            lower_arm(std::move(selections), arm.bindings, arm.body, arm.guard, result, done)
-        );
-        caught_failure = previous_caught;
+        statements.append(lower_arm(state, arm.bindings, arm.body, arm.guard, result, done));
         destination.scope(std::move(statements));
     }
-    transfer_failure(storage, value.residual_failures.resolved(), destination);
+    transfer_failure(storage, value.residual_failures, value.residual_destination, destination);
     if (destination.exits().contains(done.target)) {
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
+}
+
+auto BodyRealizer::pattern_bindings(std::span<const LocalBindingID> bindings) const noexcept
+    -> std::vector<PatternBindingType> {
+    auto result = std::vector<PatternBindingType>();
+    result.reserve(bindings.size());
+    for (const auto binding : bindings) {
+        result.push_back({.binding = binding, .type = metadata.binding(binding).type});
+    }
+    return result;
+}
+
+auto BodyRealizer::pattern_branch(
+    TargetExpr condition,
+    LoweringStmtBuilder selected,
+    LoweringStmtBuilder& destination
+) noexcept -> void {
+    destination.record_exits(selected.exits());
+    auto branches = std::vector<TargetIfBranch>();
+    branches.push_back({.condition = std::move(condition), .body = std::move(selected).finish()});
+    destination.emit(generated_statement(
+        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+    ));
 }

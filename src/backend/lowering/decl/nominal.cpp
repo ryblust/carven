@@ -2,10 +2,10 @@ module carven:backend.lowering.decl.nominal.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
+import :backend.realization.constant;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -46,7 +46,7 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
                 .result = context.intrinsic_type(TargetSymbol::Bool),
                 .form = TargetMemberFunctionDefaulted {},
                 .static_specifier = false,
-                .constexpr_specifier = true,
+                .constexpr_specifier = false,
                 .friend_specifier = true,
                 .result_reference = false,
                 .const_qualified = false,
@@ -71,7 +71,7 @@ auto lower_numeric_enumeration(
     for (const auto case_id : declaration.cases) {
         cases.push_back({
             .name = context.names().enum_case_identifier(case_id),
-            .value = lower_numeric_enum_case_value_expression(context, case_id),
+            .value = numeric_enum_case_value_expression(context, case_id),
         });
     }
     auto result = std::vector<TargetItem>();
@@ -131,7 +131,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .result = enum_type,
                 .form = TargetMemberFunctionDeclaration {},
                 .static_specifier = true,
-                .constexpr_specifier = true,
+                .constexpr_specifier = false,
                 .friend_specifier = false,
                 .result_reference = false,
                 .const_qualified = false,
@@ -149,7 +149,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .result = context.intrinsic_type(TargetSymbol::Bool),
                 .form = TargetMemberFunctionDefaulted {},
                 .static_specifier = false,
-                .constexpr_specifier = true,
+                .constexpr_specifier = false,
                 .friend_specifier = true,
                 .result_reference = false,
                 .const_qualified = false,
@@ -183,7 +183,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                     .result = context.intrinsic_type(TargetSymbol::Bool),
                     .form = TargetMemberFunctionDefaulted {},
                     .static_specifier = false,
-                    .constexpr_specifier = true,
+                    .constexpr_specifier = false,
                     .friend_specifier = true,
                     .result_reference = false,
                     .const_qualified = false,
@@ -234,7 +234,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .type = context.reference_type(storage_type, false, true),
             }),
             .initializers = std::move(initializers),
-            .constexpr_specifier = true,
+            .constexpr_specifier = false,
             .explicit_specifier = true,
         }
     );
@@ -266,7 +266,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .result = context.pointer_type(context.named_type(TargetName {record}, true)),
                 .form = TargetMemberFunctionDefinition {.body = std::move(body)},
                 .static_specifier = false,
-                .constexpr_specifier = true,
+                .constexpr_specifier = false,
                 .friend_specifier = false,
                 .result_reference = false,
                 .const_qualified = true,
@@ -346,7 +346,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .parameters = std::move(parameters),
                 .result = enum_type,
                 .form = TargetFreeFunctionDefinition {.body = std::move(body)},
-                .constexpr_specifier = true,
+                .constexpr_specifier = false,
                 .static_specifier = false,
                 .inline_specifier = true,
             }}

@@ -338,8 +338,8 @@ auto validate_publication_facts(
                     if (!valid_cpp_type(value)) {
                         invariant_violation("C++ type has an invalid description");
                     }
-                    for (const auto& name : cpp_type_names(value)) {
-                        if (!declarations.contains(name.context_module)) {
+                    if (const auto* name = cpp_type_name(value)) {
+                        if (!declarations.contains(name->context_module)) {
                             invariant_violation("C++ type has an unpublished environment");
                         }
                     }
