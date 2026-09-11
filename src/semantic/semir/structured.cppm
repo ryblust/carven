@@ -141,11 +141,16 @@ struct SemField final {
 struct SemIndex final {
     OwnedSemanticExpression source;
     OwnedSemanticExpression index;
-    ArrayBoundsPolicy bounds;
+    IndexBoundsPolicy bounds;
 };
 
 struct SemFormat final {
     ConstantID format_string_id;
+    std::vector<SemCallArgument> operands;
+};
+
+struct SemSliceIntrinsic final {
+    SliceIntrinsic intrinsic;
     std::vector<SemCallArgument> operands;
 };
 
@@ -252,6 +257,7 @@ struct SemanticExpression final {
         SemDereference,
         SemIndex,
         SemTextIntrinsic,
+        SemSliceIntrinsic,
         SemFormat,
         SemCall,
         SemClosure,
@@ -262,6 +268,15 @@ struct SemanticExpression final {
         SemMatch,
         SemTry>
         value;
+
+    // A Read can retain this expression's selected object. Consuming a value
+    // still creates independent destination storage through the normal use rules.
+    auto selects_storage() const noexcept -> bool {
+        return std::holds_alternative<SemBinding>(value)
+            || std::holds_alternative<SemField>(value)
+            || std::holds_alternative<SemIndex>(value)
+            || std::holds_alternative<SemDereference>(value);
+    }
 };
 
 struct SemanticRegion final {

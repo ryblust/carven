@@ -37,6 +37,8 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
             } else if constexpr (std::same_as<Value, PointerTypeValue>) {
                 child(value.target, "ptr type used a foreign target");
                 mix(static_cast<std::size_t>(value.access));
+            } else if constexpr (std::same_as<Value, SliceTypeValue>) {
+                child(value.element, "slice type used a foreign element type");
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 child(value.element, "array type used a foreign element type");
                 mix(std::hash<std::uint64_t>()(value.extent));
@@ -121,7 +123,6 @@ auto builtin_is_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
-        case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -147,7 +148,6 @@ auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
-        case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -177,7 +177,6 @@ auto builtin_integer_width(BuiltinType type) noexcept -> std::optional<std::uint
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
-        case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return std::nullopt;
@@ -397,7 +396,8 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
     std::visit(
         [&](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                          || std::same_as<Value, ConstructionSliceTypeValue>) {
                 validate_ref(value.element);
             } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
                 for (const auto& parameter : value.parameters) {

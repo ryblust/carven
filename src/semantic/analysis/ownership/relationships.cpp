@@ -24,6 +24,33 @@ auto merge_rows(std::vector<T>& destination, const std::vector<T>& source) noexc
 
 } // namespace
 
+auto select_element_storage(
+    const CanonicalTypeStore& types,
+    TypeID sequence,
+    std::span<const OwnershipPlace> storage,
+    const OwnershipRelationships& relationships,
+    std::optional<std::uint64_t> index
+) noexcept -> std::vector<OwnershipPlace> {
+    auto result = std::vector<OwnershipPlace>();
+    if (std::holds_alternative<SliceTypeValue>(types.type(sequence).value)) {
+        for (const auto& loan : relationships.storage_loans) {
+            if (loan.holder.empty()) {
+                result.push_back(loan.backing);
+            }
+        }
+        // A slice can rebase indices; its backing is protected as a whole.
+        index = std::nullopt;
+    } else {
+        result.assign(storage.begin(), storage.end());
+    }
+    for (auto& selected : result) {
+        selected.path.push_back(index);
+    }
+    std::ranges::sort(result);
+    result.erase(std::ranges::unique(result).begin(), result.end());
+    return result;
+}
+
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
@@ -40,14 +67,14 @@ auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept 
     return left.object == right.object && overlaps(left.path, right.path);
 }
 
-auto normalize_text_loans(std::vector<OwnershipTextLoan>& loans) noexcept -> void {
+auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void {
     normalize_rows(loans);
 }
 
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void {
     normalize_rows(relationships.callable_loans);
     normalize_rows(relationships.captures);
-    normalize_text_loans(relationships.text_loans);
+    normalize_storage_loans(relationships.storage_loans);
 }
 
 auto merge_relationships(
@@ -56,7 +83,7 @@ auto merge_relationships(
 ) noexcept -> void {
     merge_rows(destination.callable_loans, source.callable_loans);
     merge_rows(destination.captures, source.captures);
-    merge_rows(destination.text_loans, source.text_loans);
+    merge_rows(destination.storage_loans, source.storage_loans);
 }
 
 auto project_relationships(
@@ -78,7 +105,7 @@ auto project_relationships(
     };
     select(source.callable_loans, result.callable_loans);
     select(source.captures, result.captures);
-    select(source.text_loans, result.text_loans);
+    select(source.storage_loans, result.storage_loans);
     normalize_relationships(result);
     return result;
 }
@@ -88,7 +115,7 @@ auto nest_relationships(OwnershipRelationships source, const OwnershipProjection
     for (auto& loan : source.callable_loans) {
         loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
     }
-    for (auto& loan : source.text_loans) {
+    for (auto& loan : source.storage_loans) {
         loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
     }
     for (auto& capture : source.captures) {

@@ -247,7 +247,7 @@ auto lower_test_runner_header(
     declarations.push_back(namespace_item(
         TargetName::from_components({
             TargetIdentifier::from_spelling("carven"),
-            TargetIdentifier::from_spelling("testing"),
+            TargetIdentifier::from_spelling("runtime"),
         }),
         std::move(testing_items),
         TargetCompilerReason::TestHarness
@@ -268,7 +268,7 @@ auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections
                 name_expression(
                     TargetName::from_components({
                         TargetIdentifier::from_spelling("carven"),
-                        TargetIdentifier::from_spelling("testing"),
+                        TargetIdentifier::from_spelling("runtime"),
                         TargetIdentifier::from_spelling("run_generated_tests"),
                     })
                 ),

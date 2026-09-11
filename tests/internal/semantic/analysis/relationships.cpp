@@ -20,13 +20,13 @@ TEST_CASE("Semantic relationships: unknown element projection preserves set iden
                 {{{0uz}, backing, std::nullopt, origin, false},
                  {{1uz}, backing, std::nullopt, origin, false}},
             .captures = {{{0uz}, backing, origin}, {{1uz}, backing, origin}},
-            .text_loans = {{{0uz}, backing, origin}, {{1uz}, backing, origin}}
+            .storage_loans = {{{0uz}, backing, origin}, {{1uz}, backing, origin}}
         };
         const auto result = project_relationships(source, {std::nullopt});
         REQUIRE(result.callable_loans.size() == 1uz);
         REQUIRE(result.captures.size() == 1uz);
-        REQUIRE(result.text_loans.size() == 1uz);
-        CHECK(result.text_loans.front().holder.empty());
+        REQUIRE(result.storage_loans.size() == 1uz);
+        CHECK(result.storage_loans.front().holder.empty());
         CHECK(result.callable_loans.front().holder.empty());
         CHECK(result.captures.front().holder.empty());
         auto merged = result;
@@ -50,7 +50,7 @@ TEST_CASE("Semantic relationships: equivalent facts retain a stable diagnostic o
             {{{}, backing, std::nullopt, origins[1], true},
              {{}, backing, std::nullopt, origins[0], false}},
         .captures = {{{}, backing, origins[1]}, {{}, backing, origins[0]}},
-        .text_loans = {{{}, backing, origins[1]}, {{}, backing, origins[0]}}
+        .storage_loans = {{{}, backing, origins[1]}, {{}, backing, origins[0]}}
     };
     for (auto& loan : first.callable_loans) {
         loan.direct_only = false;
@@ -58,14 +58,14 @@ TEST_CASE("Semantic relationships: equivalent facts retain a stable diagnostic o
     auto second = first;
     std::ranges::reverse(second.callable_loans);
     std::ranges::reverse(second.captures);
-    std::ranges::reverse(second.text_loans);
+    std::ranges::reverse(second.storage_loans);
     normalize_relationships(first);
     normalize_relationships(second);
     CHECK(first == second);
     REQUIRE(first.callable_loans.size() == 1uz);
     REQUIRE(first.captures.size() == 1uz);
-    REQUIRE(first.text_loans.size() == 1uz);
-    CHECK(first.text_loans.front().origin == origins.front());
+    REQUIRE(first.storage_loans.size() == 1uz);
+    CHECK(first.storage_loans.front().origin == origins.front());
     CHECK(first.callable_loans.front().origin == origins.front());
     CHECK(second.callable_loans.front().origin == origins.front());
     CHECK(first.captures.front().origin == origins.front());

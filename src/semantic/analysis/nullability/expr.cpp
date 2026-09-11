@@ -209,6 +209,12 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 }
                 set_value({});
             },
+            [&](const SemSliceIntrinsic& value) noexcept {
+                for (const auto& operand : value.operands) {
+                    static_cast<void>(evaluate(operand.expression));
+                }
+                set_value({});
+            },
             [&](const SemTextIntrinsic& value) noexcept {
                 for (const auto& operand : value.operands) {
                     static_cast<void>(evaluate(operand.expression));

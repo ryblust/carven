@@ -175,6 +175,8 @@ private:
         visit_fields(value.element_type, value.extent);
     }
 
+    auto visit(const ASTSliceType& value) noexcept -> void { visit(value.element_type); }
+
     auto visit(const ASTFunctionTypeParameter& value) noexcept -> void {
         visit_fields(value.span, value.access, value.type);
     }

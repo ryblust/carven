@@ -32,7 +32,17 @@ auto derive_input_module_path(std::string_view input_path) noexcept
     if (source_path.is_absolute()
         || source_path.has_root_name()
         || source_path.has_root_directory()) {
-        return std::unexpected(std::format("input '{}' must be relative", input_path));
+        const auto physical_path = path_to_generic_utf8(source_path);
+        const auto craft_root = physical_path.find("/crafts/");
+        if (!source_path.is_absolute() || craft_root == std::string::npos) {
+            return std::unexpected(
+                std::format(
+                    "input '{}' must be relative or belong to a crafts directory",
+                    input_path
+                )
+            );
+        }
+        source_path = path_from_utf8(physical_path.substr(craft_root + 1));
     }
 
     if (source_path.extension() != path_from_utf8(".cv")) {
@@ -74,15 +84,6 @@ auto derive_input_module_path(std::string_view input_path) noexcept
 
     auto module_path = CanonicalModulePath::from_components(components);
     if (module_path.has_value()) {
-        const auto craft_name = module_path->module_domain_prefix().craft_name();
-        if (craft_name.has_value() && *craft_name == "std") {
-            return std::unexpected(
-                std::format(
-                    "input '{}' resolves to the toolchain-reserved 'crafts.std' module domain",
-                    input_path
-                )
-            );
-        }
         return std::move(*module_path);
     }
 

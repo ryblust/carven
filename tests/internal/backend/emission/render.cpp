@@ -17,8 +17,8 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
-import :test.internal.backend.target.fixture;
 import :support.unique_indirect;
+import :test.internal.backend.target.fixture;
 import std;
 
 namespace {
@@ -174,27 +174,33 @@ TEST_CASE("Emission: value regions retain explicit result types and selective un
 }
 
 TEST_CASE("Emission: range-for preserves native binding and loop scope") {
-    const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
-        const auto type = builder.intern_type({
-            .value = TargetIntrinsicType {.symbol = TargetSymbol::Int, .type_argument_ids = {}},
-            .const_qualified = false,
+    for (const auto binding :
+         {TargetVariableBinding::ConstValue, TargetVariableBinding::ConstReference}) {
+        const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
+            const auto type = builder.intern_type({
+                .value = TargetIntrinsicType {.symbol = TargetSymbol::Int, .type_argument_ids = {}},
+                .const_qualified = false,
+            });
+            return TargetRangeForStmt {
+                .binding = binding,
+                .maybe_unused = false,
+                .name = TargetIdentifier::from_spelling("element"),
+                .type = type,
+                .range =
+                    TargetExpr {
+                        .value =
+                            TargetNameExpr {
+                                .name = TargetName(TargetIdentifier::from_spelling("elements"))
+                            }
+                    },
+                .body = {},
+            };
         });
-        return TargetRangeForStmt {
-            .binding = TargetVariableBinding::ConstValue,
-            .maybe_unused = false,
-            .name = TargetIdentifier::from_spelling("element"),
-            .type = type,
-            .range =
-                TargetExpr {
-                    .value =
-                        TargetNameExpr {
-                            .name = TargetName(TargetIdentifier::from_spelling("elements"))
-                        }
-                },
-            .body = {},
-        };
-    });
-    CHECK(artifact.content.contains("for (const int element : elements)"));
+        CHECK(artifact.content.contains(
+            binding == TargetVariableBinding::ConstValue ? "for (const int element : elements)"
+                                                         : "for (const int& element : elements)"
+        ));
+    }
 }
 
 TEST_CASE(

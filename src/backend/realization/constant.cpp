@@ -35,7 +35,6 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
-        case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return TargetIntegerSuffix::None;

@@ -195,13 +195,7 @@ local case_specs = {
     },
 }
 
-local crafts_dir = path.join(os.projectdir(), "crafts")
 local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
-
-local function use_local_carven(target)
-    import("core.project.project")
-    target:values_set("carven.program", project.target("carven"):targetfile())
-end
 
 target("carven-test-cli")
     set_default(false)
@@ -225,10 +219,10 @@ for _, domain in ipairs({"a", "b"}) do
         set_default(false)
         set_kind("object")
         add_rules("@carven/carven")
-        set_values("carven.includedir", crafts_dir)
+
         set_languages("c++20")
         add_files(path.join(xmake_rule_dir, "domain.cv"))
-        after_load(use_local_carven)
+
     target_end()
 end
 

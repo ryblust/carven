@@ -91,6 +91,7 @@ struct TargetMemberFunctionDecl final {
     std::vector<TargetParameter> parameters;
     TargetTypeID result;
     TargetMemberFunctionForm form;
+    bool maybe_unused;
     bool static_specifier;
     bool constexpr_specifier;
     bool friend_specifier;

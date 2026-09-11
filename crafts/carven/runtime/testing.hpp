@@ -7,7 +7,7 @@
 #include <optional>
 #include <string_view>
 
-namespace carven::testing {
+namespace carven::runtime {
 
 namespace detail {
 
@@ -119,4 +119,4 @@ private:
     std::optional<ActiveTestCase> active;
 };
 
-} // namespace carven::testing
+} // namespace carven::runtime

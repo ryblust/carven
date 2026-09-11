@@ -469,12 +469,14 @@ TargetPlan::TargetPlan(
     TargetPlanIdentity identity,
     TargetNamePlan names,
     FailureABI failure_abi,
+    std::vector<TypeContents> type_contents,
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifacts
 ) noexcept
     : source_identity(semantic_identity),
       plan_identity(identity),
       name_plan(std::move(names)),
       failure_abi_plan(std::move(failure_abi)),
+      type_contents(std::move(type_contents)),
       artifact_plans(std::move(artifacts)) {
     if (name_plan.semantic_owner() != source_identity
         || failure_abi_plan.semantic_owner() != source_identity) {
@@ -512,6 +514,7 @@ auto TargetPlan::build(const SemIRProgram& semantic, const TargetPlanningRequest
         identity,
         std::move(names),
         std::move(failures),
+        compute_type_contents(semantic.types(), semantic.declarations()),
         std::move(artifacts)
     );
 }
@@ -530,6 +533,12 @@ auto TargetPlan::names() const noexcept -> const TargetNamePlan& {
 
 auto TargetPlan::failure_abi() const noexcept -> const FailureABI& {
     return failure_abi_plan;
+}
+
+auto TargetPlan::read_borrows_storage(TypeID type) const noexcept -> bool {
+    const auto contents =
+        semantic_row(type_contents, source_identity, type, "Read parameter used an unknown type");
+    return contents.read_borrows_storage();
 }
 
 auto TargetPlan::artifacts() const noexcept

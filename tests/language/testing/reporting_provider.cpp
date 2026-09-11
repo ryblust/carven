@@ -11,7 +11,7 @@ namespace {
 
 auto observed_output = std::string();
 
-auto report(const carven::testing::TestFailure& failure) noexcept -> void {
+auto report(const carven::runtime::TestFailure& failure) noexcept -> void {
     observed_output += failure.file;
     observed_output += ':';
     observed_output += std::to_string(failure.line);
@@ -35,7 +35,7 @@ auto contains(const std::string& text, const std::string& expected) noexcept -> 
 } // namespace
 
 auto cv_test_reporting_verify() noexcept -> void {
-    const auto result = carven::testing::run_generated_tests(&report);
+    const auto result = carven::runtime::run_generated_tests(&report);
     const auto& text = observed_output;
 
     constexpr auto expected_flags =

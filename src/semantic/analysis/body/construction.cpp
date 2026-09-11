@@ -271,7 +271,7 @@ auto BodyElaborator::compatible(ConstructionTypeRef left, ConstructionTypeRef ri
     return type_shapes_compatible(draft(), left, right);
 }
 
-auto BodyElaborator::require_writable_storage_type(
+auto BodyElaborator::require_invariant_storage_type(
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     Span span
@@ -335,6 +335,11 @@ auto BodyElaborator::require_writable_storage_type(
         if (left == right) {
             return true;
         }
+        const auto left_slice = slice_element(draft(), left);
+        const auto right_slice = slice_element(draft(), right);
+        if (left_slice || right_slice) {
+            return left_slice && right_slice && self(*left_slice, *right_slice);
+        }
         const auto left_array = array_shape(left);
         const auto right_array = array_shape(right);
         if (left_array.has_value() || right_array.has_value()) {
@@ -371,11 +376,9 @@ auto BodyElaborator::require_writable_storage_type(
             && draft().type_copy(*left_type) == draft().type_copy(*right_type);
     };
     if (!invariant(source, target)) {
-        return std::unexpected(fail(
-            span,
-            DiagnosticCode::TypeMismatch,
-            "writable argument storage has an incompatible type"
-        ));
+        return std::unexpected(
+            fail(span, DiagnosticCode::TypeMismatch, "storage has an incompatible type")
+        );
     }
     return {};
 }

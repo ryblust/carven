@@ -60,9 +60,14 @@ auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
 
 auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     -> std::span<const OwnershipCallCompletion> {
-    normalize_text_loans(input.text_readers);
+    normalize_storage_loans(input.storage_readers);
     for (auto& parameter : input.parameters) {
         normalize_relationships(parameter.value);
+        std::ranges::sort(parameter.storage);
+        parameter.storage.erase(
+            std::ranges::unique(parameter.storage).begin(),
+            parameter.storage.end()
+        );
     }
     for (auto& capture : input.captures) {
         normalize_relationships(capture.value);
@@ -139,6 +144,10 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 OwnershipProjectionPath {std::nullopt}
             );
         }
+        if (const auto* slice = std::get_if<SliceTypeValue>(&value);
+            slice != nullptr && contents(type).callable_view) {
+            relationships = nest_relationships(self(slice->element, origin), {std::nullopt});
+        }
         if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
             for (const auto& [index, field] : std::views::enumerate(
                      program.declarations().structure(structure->structure).fields
@@ -190,7 +199,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                      {.available = true, .taken = std::nullopt, .relationships = relationships}}
                 );
             }
-            destination.push_back({std::move(alias), std::move(relationships)});
+            destination.push_back({std::move(alias), std::move(relationships), {}});
         }
     };
     inputs(source.inputs().parameters, result.parameters);

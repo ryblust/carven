@@ -279,7 +279,7 @@ private:
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisResult<ResolvedEnumCase>;
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
-    auto require_writable_storage_type(
+    auto require_invariant_storage_type(
         ConstructionTypeRef source,
         ConstructionTypeRef target,
         Span span

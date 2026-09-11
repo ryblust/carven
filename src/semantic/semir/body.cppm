@@ -165,7 +165,7 @@ struct ProvenInBounds final {};
 
 struct RuntimeCheckedBounds final {};
 
-using ArrayBoundsPolicy = std::variant<ProvenInBounds, RuntimeCheckedBounds>;
+using IndexBoundsPolicy = std::variant<ProvenInBounds, RuntimeCheckedBounds>;
 
 struct FieldProjection final {
     StructID owner;
@@ -182,6 +182,8 @@ enum class CastKind {
     FloatingWiden,
     EnumToInteger,
 };
+
+enum class SliceIntrinsic { FromArray, Len, IsEmpty, Slice };
 
 enum class TextIntrinsic {
     Len,
@@ -218,11 +220,12 @@ constexpr auto text_intrinsic_arity(TextIntrinsic intrinsic) noexcept -> std::si
     std::unreachable();
 }
 
-constexpr auto text_intrinsic_result(TextIntrinsic intrinsic) noexcept -> BuiltinType {
+constexpr auto text_intrinsic_builtin_result(TextIntrinsic intrinsic) noexcept
+    -> std::optional<BuiltinType> {
     switch (intrinsic) {
+        case TextIntrinsic::Bytes:   return std::nullopt;
         case TextIntrinsic::Len:     return BuiltinType::Usize;
         case TextIntrinsic::IsEmpty: return BuiltinType::Bool;
-        case TextIntrinsic::Bytes:   return BuiltinType::StrBytesView;
         case TextIntrinsic::Chars:   return BuiltinType::StrCharsView;
         case TextIntrinsic::New:
         case TextIntrinsic::FromStr: return BuiltinType::String;

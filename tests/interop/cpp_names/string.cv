@@ -1,4 +1,5 @@
 import "cpp_names/string.hpp";
+import <string>;
 
 struct View {
     text: str,
@@ -28,4 +29,29 @@ test "String: global C++ lookup is independent of the builtin" {
     let local: String = String::new();
     check(native.value == 42);
     check(local.is_empty());
+}
+
+private fn native_copy() -> ::std::string {
+    let original = String::from_str("independent");
+    return original.as_str() as ::std::string;
+}
+
+test "String C++ boundary: native owning conversion has independent storage" {
+    let result = native_copy();
+    check(::native_text::read(result) == 11usize);
+    var original = String::from_str("before");
+    let copy = original.as_str() as ::std::string;
+    original.clear();
+    check(::native_text::read(copy) == 6usize);
+}
+
+private fn observe_tagged(value: ::native_text::TaggedValue<String>, &target: ::native_text::TaggedValue<String>) -> i32 {
+    target.value = 2;
+    return value.value as i32;
+}
+
+test "Read: native template arguments do not determine owned storage" {
+    var value = ::native_text::TaggedValue<String> { 1 };
+    check(observe_tagged(value, &value) == 1);
+    check(value.value == 2);
 }

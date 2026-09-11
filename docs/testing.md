@@ -1,8 +1,8 @@
 # Testing
 
 This document defines test placement, evidence, and the validation workflow.
-Cases specify inputs, conditions, and expected results. Target configurations
-specify build and execution modes.
+Cases specify inputs, conditions, and expected results under the current
+contracts. Target configurations specify supported build and execution modes.
 
 ## Validation
 
@@ -19,6 +19,7 @@ Carven in Xmake's prepare phase, before target dependencies are built:
 ./xmakew build
 ./xmakew test -g internal
 ./xmakew test -g language
+./xmakew test -g crafts
 ./xmakew test -g interop
 ./xmakew test -g cli
 ./xmakew test -g examples
@@ -55,6 +56,7 @@ when building.
 | --- | --- | --- |
 | `internal` | Compiler modules and runtime facilities | Semantic rules, diagnostics, representation invariants, planning, serialization, and runtime operations |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
+| `crafts` | Public source-package APIs | Library results, errors, state transitions, and algorithms |
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, source fragments, native calls, Unicode checks, and header self-containment |
 | `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
@@ -69,6 +71,7 @@ Apply the following C++ modes:
 | Compiler internals and Carven diagnostics | Compiler's own C++26 configuration |
 | Language programs, entry and reporting contracts | C++20 and C++23 |
 | Interop programs, native rejection and termination contracts | C++20 and C++23 |
+| Crafts public APIs | C++20 baseline |
 | Examples | C++20 baseline |
 | C++23 print | C++23 |
 
@@ -83,6 +86,14 @@ support.
 
 User-facing programs live under `examples/`. Their output checks belong to the
 `examples` group; diagnostic and termination cases belong to the test suites.
+
+Crafts public API tests live under `tests/crafts/<craft>/`, mirroring the package
+module hierarchy. The group uses one C++20 binary and Carven's generated default
+inline-test entry. Production sources are supplied by the package rule; the target
+adds test sources explicitly. Compiler diagnostics remain in `internal`, language
+semantics in `language`, native contracts in `interop`, and compiler process
+contracts in `cli`. The Crafts target builds through the same package rule used
+by application targets.
 
 ## Assertions
 
@@ -143,6 +154,9 @@ stderr for each step, preserves failed fixtures, and removes successful temporar
 directories.
 
 Generated target configuration directly expresses the boundary under test.
+Use ordinary targets and native Xmake test assertions for program execution and
+output checks. Custom harnesses assert process, diagnostic, or artifact contracts
+that need additional observations.
 Place new cases in the owning domain and extend an existing target when its
 build and execution requirements fit. Separate targets express incompatible
 entry definitions, compiler settings, or linkage requirements. Helpers stay

@@ -526,6 +526,63 @@ public:
         );
     }
 
+    auto finish_slice_call(
+        SliceIntrinsic intrinsic,
+        Value receiver,
+        std::span<const ASTCallArgument> arguments,
+        Span span
+    ) noexcept -> AnalysisResult<Value> {
+        const auto receiver_type = receiver.type();
+        auto result_type = receiver_type;
+        if (intrinsic == SliceIntrinsic::FromArray) {
+            if (const auto* id = std::get_if<TypeID>(&receiver_type)) {
+                const auto array = std::get<ArrayTypeValue>(draft().type_copy(*id).value);
+                result_type =
+                    draft().intern_type({.value = SliceTypeValue {.element = array.element}});
+            } else {
+                const auto array = std::get<ConstructionArrayTypeValue>(
+                    draft().construction_type_copy(std::get<TypeTermID>(receiver_type)).value
+                );
+                result_type = draft().append_construction_type(
+                    {.value = ConstructionSliceTypeValue {.element = array.element}}
+                );
+            }
+        } else if (intrinsic == SliceIntrinsic::Len || intrinsic == SliceIntrinsic::IsEmpty) {
+            result_type = draft().intern_builtin_type(
+                intrinsic == SliceIntrinsic::Len ? BuiltinType::Usize : BuiltinType::Bool
+            );
+        }
+        auto pending = take_pending_failures(receiver);
+        auto completes = receiver.completes;
+        auto value = body.consume_value(receiver, span, AccessMode::Read);
+        if (!value) {
+            return std::unexpected(value.error());
+        }
+        auto operands = std::vector<SemCallArgument>();
+        operands.push_back({.access = AccessMode::Read, .expression = std::move(*value)});
+        for (const auto& argument : arguments) {
+            auto built = body.build_call_argument(
+                argument.expression,
+                AccessMode::Read,
+                draft().intern_builtin_type(BuiltinType::Usize)
+            );
+            if (!built) {
+                return std::unexpected(built.error());
+            }
+            append_pending_failures(pending, built->pending_failures);
+            completes &= built->completes;
+            operands.push_back(std::move(built->argument));
+        }
+        return finish(
+            result_type,
+            SemSliceIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
+            std::nullopt,
+            span,
+            std::move(pending),
+            completes
+        );
+    }
+
     auto finish_text_call(
         TextIntrinsic intrinsic,
         std::optional<Value> receiver,
@@ -570,7 +627,7 @@ public:
             operands.push_back(std::move(built->argument));
         }
         return finish(
-            draft().intern_builtin_type(text_intrinsic_result(intrinsic)),
+            draft().intern_builtin_type(*text_intrinsic_builtin_result(intrinsic)),
             SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
             std::nullopt,
             span,

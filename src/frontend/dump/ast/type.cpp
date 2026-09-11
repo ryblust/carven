@@ -240,6 +240,14 @@ auto ASTDumper::render_type(
                 );
                 render_type(pointer.target, nested, true, "target ");
             },
+            [&](const ASTSliceType& view) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("{}SliceType {}", field, format_dump_span(type.span))
+                );
+                render_type(view.element_type, child_prefix(prefix, is_last), true, "element ");
+            },
             [&](const ASTArrayType& array) noexcept {
                 append_line(
                     prefix,

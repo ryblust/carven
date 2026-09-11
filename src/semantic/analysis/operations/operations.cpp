@@ -203,6 +203,14 @@ auto shapes_compatible(
             && shapes_compatible(draft, left_array->element, right_array->element, visited);
     }
 
+    const auto left_slice = slice_element(draft, left);
+    const auto right_slice = slice_element(draft, right);
+    if (left_slice || right_slice) {
+        return left_slice
+            && right_slice
+            && shapes_compatible(draft, *left_slice, *right_slice, visited);
+    }
+
     const auto left_callable = callable_shape(draft, left);
     const auto right_callable = callable_shape(draft, right);
     if (left_callable.has_value() || right_callable.has_value()) {
@@ -360,7 +368,6 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:          return true;
-        case BuiltinType::StrBytesView:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -404,6 +411,9 @@ auto type_shapes_compatible(
 
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool {
+    if (const auto element = slice_element(draft, type)) {
+        return type_contains_callable_view(draft, *element);
+    }
     if (const auto* term = std::get_if<TypeTermID>(&type)) {
         const auto construction = draft.construction_type_copy(*term);
         if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
@@ -438,6 +448,7 @@ auto supports_equality(
             [](const CallableViewTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
             [](const PointerTypeValue&) static noexcept { return true; },
+            [](const SliceTypeValue&) static noexcept { return false; },
         },
         canonical.value
     );
@@ -730,6 +741,58 @@ auto decide_binary_operator(
     return decide_binary_operator(draft, *semantic, left, right, true, equality_capable);
 }
 
+auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionTypeRef> {
+    if (const auto* id = std::get_if<TypeID>(&type)) {
+        const auto value = draft.type_copy(*id).value;
+        if (const auto* slice = std::get_if<SliceTypeValue>(&value)) {
+            return slice->element;
+        }
+    } else {
+        const auto value = draft.construction_type_copy(std::get<TypeTermID>(type)).value;
+        if (const auto* slice = std::get_if<ConstructionSliceTypeValue>(&value)) {
+            return slice->element;
+        }
+    }
+    return std::nullopt;
+}
+
+auto decide_slice_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic> {
+    const auto array = array_shape(draft, operand).has_value();
+    const auto view = slice_element(draft, operand).has_value();
+    if (!array && !view) {
+        return std::optional<SliceIntrinsic>();
+    }
+    auto operation = std::optional<SliceIntrinsic>();
+    if (array && name == "as_slice") {
+        operation = SliceIntrinsic::FromArray;
+    }
+    if (view && name == "len") {
+        operation = SliceIntrinsic::Len;
+    }
+    if (view && name == "is_empty") {
+        operation = SliceIntrinsic::IsEmpty;
+    }
+    if (view && name == "slice") {
+        operation = SliceIntrinsic::Slice;
+    }
+    if (!operation) {
+        return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
+    }
+    if (arguments != (*operation == SliceIntrinsic::Slice ? 2uz : 0uz)) {
+        return operation_error(
+            "sequence method argument count does not match",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return operation;
+}
+
 auto decide_text_method(
     const ProgramDraft& draft,
     ConstructionTypeRef operand,
@@ -757,13 +820,13 @@ auto decide_text_method(
         return operation_error(
             name == "bytes" || name == "chars" ? "text bytes/chars are properties, not functions"
                                                : "text type has no such method",
-            DiagnosticCode::TypeTextCall
+            DiagnosticCode::TypeMethodCall
         );
     }
     if (argument_count != text_intrinsic_arity(intrinsic) - 1) {
         return operation_error(
             "text method argument count does not match",
-            DiagnosticCode::TypeTextCallArity
+            DiagnosticCode::TypeMethodCallArity
         );
     }
     return std::optional(intrinsic);

@@ -30,7 +30,7 @@ auto OwnershipBodyAnalyzer::region(
     OwnershipState state,
     bool release
 ) noexcept -> OwnershipFlow {
-    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}}, .exits = {}};
+    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
             break;
@@ -62,7 +62,7 @@ auto OwnershipBodyAnalyzer::statement(
     if (owns) {
         full_expression = source.lifetime;
     }
-    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}}, .exits = {}};
+    auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     const auto evaluate = [&](const SemanticExpression& expression_source) noexcept {
         if (result.normal.has_value()) {
             auto next = expression(expression_source, std::move(result.normal->state));

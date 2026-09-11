@@ -1,0 +1,102 @@
+import std::utf.validation using {UTF8Error, UTF8ErrorKind, validate_utf8, validator, push, feed, finish};
+
+test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
+    let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
+    let view = bytes.as_slice();
+    var split: usize = 0;
+    while split <= view.len() {
+        var state = validator();
+        try {
+            feed(&state, view.slice(0, split))?;
+            feed(&state, view.slice(split, view.len()))?;
+            finish(state)?;
+            check(state.offset == 5);
+        } catch { UTF8Error(_) => { check(false); }, }
+        split += 1;
+    }
+    var state = validator();
+    var rejected = false;
+    try {
+        push(&state, 0x61)?;
+        push(&state, 0xe2)?;
+        push(&state, 0x28)?;
+    } catch { UTF8Error(error) => {
+        rejected = error.kind == UTF8ErrorKind::InvalidContinuation
+            && error.offset == 2 && error.sequence_start == 1;
+    }, }
+    check(rejected);
+    check(state.offset == 2);
+    rejected = false;
+    try { finish(state)?; }
+    catch { UTF8Error(error) => {
+        rejected = error.kind == UTF8ErrorKind::Truncated
+            && error.offset == 2 && error.sequence_start == 1;
+    }, }
+    check(rejected);
+}
+
+private struct UTFCase {
+    bytes: [u8; 11],
+    length: usize,
+    error: UTF8Error,
+}
+
+test "UTF8: all rejection classes and chunk partitions preserve position and progress" {
+    let cases = [
+        UTFCase { bytes: [0x61, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 2, error: UTF8Error { kind: .InvalidLead, offset: 1, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xc0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 3, error: UTF8Error { kind: .InvalidLead, offset: 1, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xc1, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 3, error: UTF8Error { kind: .InvalidLead, offset: 1, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf5, 0x80, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 5, error: UTF8Error { kind: .InvalidLead, offset: 1, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 2, error: UTF8Error { kind: .InvalidLead, offset: 1, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .InvalidContinuation, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x9f, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .InvalidContinuation, offset: 3, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 5, error: UTF8Error { kind: .InvalidContinuation, offset: 4, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .Overlong, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 5, error: UTF8Error { kind: .Overlong, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xed, 0xa0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .Surrogate, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xed, 0xbf, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .Surrogate, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf4, 0x90, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 5, error: UTF8Error { kind: .TooLarge, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xc2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 2, error: UTF8Error { kind: .Truncated, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xe2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 2, error: UTF8Error { kind: .Truncated, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xe2, 0x82, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 3, error: UTF8Error { kind: .Truncated, offset: 3, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 2, error: UTF8Error { kind: .Truncated, offset: 2, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x9f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 3, error: UTF8Error { kind: .Truncated, offset: 3, sequence_start: 1 } },
+        UTFCase { bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], length: 4, error: UTF8Error { kind: .Truncated, offset: 4, sequence_start: 1 } },
+    ];
+    for item in cases {
+        let bytes = item.bytes.as_slice().slice(0, item.length);
+        var rejected = false;
+        try { validate_utf8(bytes)?; }
+        catch { UTF8Error(error) => { rejected = error == item.error; }, }
+        check(rejected);
+        var first: usize = 0;
+        while first <= bytes.len() {
+            var second = first;
+            while second <= bytes.len() {
+                var state = validator();
+                rejected = false;
+                try {
+                    feed(&state, bytes.slice(0, first))?;
+                    feed(&state, bytes.slice(first, second))?;
+                    feed(&state, bytes.slice(second, bytes.len()))?;
+                    finish(state)?;
+                } catch { UTF8Error(error) => { rejected = error == item.error; }, }
+                check(rejected);
+                check(state.offset == item.error.offset);
+                second += 1;
+            }
+            first += 1;
+        }
+        if item.error.offset < bytes.len() {
+            var state = validator();
+            try { feed(&state, bytes.slice(0, item.error.offset))?; }
+            catch { UTF8Error(_) => { check(false); }, }
+            let before = state;
+            rejected = false;
+            try { push(&state, bytes[item.error.offset])?; }
+            catch { UTF8Error(error) => { rejected = error == item.error; }, }
+            check(rejected);
+            check(state == before);
+        }
+    }
+}

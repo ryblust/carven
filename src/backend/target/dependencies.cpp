@@ -118,8 +118,9 @@ private:
             case TargetSymbol::StdExitFailure:      include("cstdlib"); break;
             case TargetSymbol::RuntimeOutcome:      include("carven/runtime/outcome.hpp"); break;
             case TargetSymbol::RuntimeFormat:       include("carven/runtime/format.hpp"); return;
+            case TargetSymbol::RuntimeAsSlice:
+            case TargetSymbol::RuntimeSlice:        include("carven/runtime/slice.hpp"); return;
             case TargetSymbol::RuntimeString:       include("carven/runtime/string.hpp"); return;
-            case TargetSymbol::RuntimeStrBytesView:
             case TargetSymbol::RuntimeStrCharsView:
             case TargetSymbol::RuntimeStrBytes:
             case TargetSymbol::RuntimeStrChars:
@@ -156,7 +157,7 @@ private:
             case TargetSymbol::StdOptional:              include("optional"); break;
             case TargetSymbol::StdStringView:            include("string_view"); break;
             case TargetSymbol::TestingContext:
-            case TargetSymbol::TestingReporter: include("carven/std/testing/testing.hpp"); break;
+            case TargetSymbol::TestingReporter: include("carven/runtime/testing.hpp"); break;
             case TargetSymbol::Auto:
             case TargetSymbol::DecltypeAuto:
             case TargetSymbol::Void:

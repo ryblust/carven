@@ -238,6 +238,47 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     }
                 }
             },
+            [&](const SemSliceIntrinsic& value) noexcept {
+                if (value.operands.size()
+                    != (value.intrinsic == SliceIntrinsic::Slice ? 3uz : 1uz)) {
+                    invariant_violation("slice intrinsic operand count mismatch");
+                }
+                for (const auto& operand : value.operands) {
+                    if (operand.access != AccessMode::Read) {
+                        invariant_violation("slice intrinsic requires Read operands");
+                    }
+                }
+                const auto& receiver =
+                    require_type(value.operands.front().expression.type.resolved()).value;
+                const auto* array = std::get_if<ArrayTypeValue>(&receiver);
+                const auto* slice = std::get_if<SliceTypeValue>(&receiver);
+                if ((value.intrinsic == SliceIntrinsic::FromArray && array == nullptr)
+                    || (value.intrinsic != SliceIntrinsic::FromArray && slice == nullptr)) {
+                    invariant_violation("slice intrinsic receiver mismatch");
+                }
+                const auto result = require_type(source.type.resolved()).value;
+                if (value.intrinsic == SliceIntrinsic::Len
+                    || value.intrinsic == SliceIntrinsic::IsEmpty) {
+                    if (result
+                        != CanonicalTypeValue {BuiltinTypeValue {
+                            value.intrinsic == SliceIntrinsic::Len ? BuiltinType::Usize
+                                                                   : BuiltinType::Bool
+                        }}) {
+                        invariant_violation("slice query result mismatch");
+                    }
+                } else if (result
+                           != CanonicalTypeValue {
+                               SliceTypeValue {.element = array ? array->element : slice->element}
+                           }) {
+                    invariant_violation("slice result element mismatch");
+                }
+                for (auto i = 1uz; i < value.operands.size(); ++i) {
+                    if (require_type(value.operands[i].expression.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}) {
+                        invariant_violation("slice bound type mismatch");
+                    }
+                }
+            },
             [&](const SemTextIntrinsic& value) noexcept {
                 if (value.operands.size() != text_intrinsic_arity(value.intrinsic)) {
                     invariant_violation("text intrinsic operand count mismatch");
@@ -267,10 +308,16 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         invariant_violation("text intrinsic operand type mismatch");
                     }
                 }
-                if (require_type(source.type.resolved()).value
-                    != CanonicalTypeValue {
-                        BuiltinTypeValue {text_intrinsic_result(value.intrinsic)}
-                    }) {
+                const auto& result = require_type(source.type.resolved()).value;
+                const auto* slice = std::get_if<SliceTypeValue>(&result);
+                const auto valid_result = value.intrinsic == TextIntrinsic::Bytes ? slice != nullptr
+                        && require_type(slice->element).value
+                            == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::U8}}
+                                                                                  : result
+                        == CanonicalTypeValue {
+                            BuiltinTypeValue {*text_intrinsic_builtin_result(value.intrinsic)}
+                        };
+                if (!valid_result) {
                     invariant_violation("text intrinsic result mismatch");
                 }
             },
@@ -343,8 +390,10 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 const auto* array = std::get_if<ArrayTypeValue>(&type.value);
                 const auto& index = require_type(value.index->type.resolved());
                 const auto* integer = std::get_if<BuiltinTypeValue>(&index.value);
-                if (array == nullptr
-                    || array->element != source.type.resolved()
+                const auto* slice = std::get_if<SliceTypeValue>(&type.value);
+                if ((array == nullptr && slice == nullptr)
+                    || (array != nullptr ? array->element : slice->element)
+                        != source.type.resolved()
                     || integer == nullptr
                     || !builtin_is_integer(integer->kind)) {
                     invariant_violation("invalid array projection");

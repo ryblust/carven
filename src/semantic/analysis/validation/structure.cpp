@@ -172,7 +172,8 @@ auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> Cal
                         || std::same_as<Value, EnumTypeValue>
                         || std::same_as<Value, ArrayTypeValue>
                         || std::same_as<Value, CppTypeValue>
-                        || std::same_as<Value, PointerTypeValue>,
+                        || std::same_as<Value, PointerTypeValue>
+                        || std::same_as<Value, SliceTypeValue>,
                     "unhandled non-callable canonical type"
                 );
                 invariant_violation("value or place does not have a callable type");

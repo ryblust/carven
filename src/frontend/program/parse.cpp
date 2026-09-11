@@ -111,7 +111,11 @@ auto resolve_import_path(
             },
             [&](const ASTCraftQualifiedModuleReference& value) noexcept {
                 components.push_back("crafts");
-                components.push_back(slice(source, value.name_span));
+                const auto craft = slice(source, value.name_span);
+                if (craft == "std") {
+                    components.push_back("carven");
+                }
+                components.push_back(craft);
                 for (const auto component : value.components) {
                     components.push_back(slice(source, component));
                 }

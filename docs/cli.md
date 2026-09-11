@@ -19,25 +19,29 @@ the top-level help and succeeds.
 ## Source inputs
 
 A compile invocation requires one or more explicitly named source files. The
-compiler analyzes that complete batch and does not discover additional files
-while resolving imports.
+compiler analyzes that complete batch; imports resolve among those inputs.
 
-Input paths are relative UTF-8 paths using `/` separators and a `.cv` extension.
-After lexical normalization, the path without its extension becomes the source
-module path. For example:
+Input paths use UTF-8, `/` separators, and a `.cv` extension. Relative paths
+determine module identities after lexical normalization:
 
 ```text
 src/main.cv       -> src.main
 crafts/json/io.cv -> crafts.json.io
 ```
 
+Absolute input paths are accepted for files in a `crafts/` directory. The path
+starting at the first `crafts/` component determines the canonical module path:
+`/opt/carven/crafts/carven/std/utf/text.cv` becomes `crafts.carven.std.utf.text`.
+The import `std::utf.text` selects that official module. Relative input paths retain
+their hierarchy, so `crafts/carven/std/utf/text.cv` names the same module.
+
+Relative paths must stay within the working directory. Absolute paths must
+follow the Crafts convention above. Paths are normalized lexically;
+symbolic links are resolved by the host filesystem when opening files.
+
 Every derived component must match `[A-Za-z_][A-Za-z0-9_]*`; language keywords
-are permitted as module components. Input paths cannot lexically escape the invoking working
-directory. Symbolic links are resolved by the host filesystem; the compiler
-does not require their targets to remain within that directory. CLI inputs in
-the `crafts.std` module domain are rejected because that domain is reserved for
-toolchain-provided sources. Two inputs cannot derive the same canonical module
-path.
+are permitted as module components. Two inputs cannot derive the same canonical
+module path.
 
 ## Artifact destinations
 
@@ -58,10 +62,8 @@ implicit output directory.
 After successful compilation and generation, Carven writes all generated
 C++ headers and sources below the destination in logical-path order:
 it creates parent directories, truncates existing files,
-and writes their new contents. It neither removes stale or unrelated files nor
-checks whether the root is isolated or safe for a particular build target. The
-first I/O failure stops the write; files earlier in the order may already have
-changed. Directory isolation, stale cleanup, failure protection, and
+and writes their new contents. The first I/O failure stops the write; files earlier
+in the order may already have changed. Directory isolation, stale cleanup, failure protection, and
 content-stable incremental promotion belong to the caller or build system.
 
 `--stdout` selects no filesystem sink. It prints every artifact in canonical
@@ -120,8 +122,8 @@ failure produce diagnostics on standard error and a nonzero status. Source
 warnings are printed on standard error while a successful compilation and
 materialization still return zero.
 
-The driver compiles Carven into artifacts only. It does not invoke a downstream
-C++ compiler or linker and accepts no C++ language-standard option.
+Native compilation, linking, and C++ language selection belong to the consuming
+build.
 
 ## Syntax inspection
 

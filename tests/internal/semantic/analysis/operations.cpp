@@ -308,7 +308,7 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
     REQUIRE(method.has_value());
     REQUIRE(method->has_value());
     CHECK_EQ(**method, TextIntrinsic::IsEmpty);
-    CHECK_EQ(text_intrinsic_result(**method), BuiltinType::Bool);
+    CHECK_EQ(text_intrinsic_builtin_result(**method), BuiltinType::Bool);
     const auto non_text_method =
         decide_text_method(compilation, ConstructionTypeRef {i32}, "len", 0uz);
     REQUIRE(non_text_method.has_value());
@@ -316,24 +316,26 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
     const auto property_as_method =
         decide_text_method(compilation, ConstructionTypeRef {text}, "bytes", 0uz);
     REQUIRE_FALSE(property_as_method.has_value());
-    CHECK_EQ(property_as_method.error().code, DiagnosticCode::TypeTextCall);
+    CHECK_EQ(property_as_method.error().code, DiagnosticCode::TypeMethodCall);
     const auto method_arity =
         decide_text_method(compilation, ConstructionTypeRef {text}, "len", 1uz);
     REQUIRE_FALSE(method_arity.has_value());
-    CHECK_EQ(method_arity.error().code, DiagnosticCode::TypeTextCallArity);
+    CHECK_EQ(method_arity.error().code, DiagnosticCode::TypeMethodCallArity);
     const auto method_as_property = decide_text_property("len");
     REQUIRE_FALSE(method_as_property.has_value());
     CHECK_EQ(method_as_property.error().code, DiagnosticCode::TypeTextProperty);
     const auto property = decide_text_property("bytes");
     REQUIRE(property.has_value());
-    CHECK_EQ(text_intrinsic_result(*property), BuiltinType::StrBytesView);
+    CHECK_FALSE(text_intrinsic_builtin_result(*property).has_value());
 }
 
 TEST_CASE("Semantic operations: construction types expose their exact recursive shape") {
     auto fixture = OperationFixture();
     auto& compilation = fixture.compilation;
     const auto i32 = compilation.intern_builtin_type(BuiltinType::I32);
-    const auto text_view = compilation.intern_builtin_type(BuiltinType::StrBytesView);
+    const auto text_view = compilation.intern_type(
+        {.value = SliceTypeValue {.element = compilation.intern_builtin_type(BuiltinType::U8)}}
+    );
     const auto failure = compilation.add_empty_failure_term();
     const auto first_array = compilation.append_construction_type(
         ConstructionType {
@@ -379,7 +381,6 @@ TEST_CASE("Semantic operations: construction types expose their exact recursive 
     CHECK(type_contains_callable_view(compilation, ConstructionTypeRef {callable}));
     CHECK(type_contains_callable_view(compilation, ConstructionTypeRef {callable_array}));
     CHECK(builtin_type_supports_equality(BuiltinType::Str));
-    CHECK_FALSE(builtin_type_supports_equality(BuiltinType::StrBytesView));
     CHECK_FALSE(type_supports_equality(compilation, ConstructionTypeRef {text_view}));
 }
 
@@ -395,7 +396,9 @@ TEST_CASE("Semantic operations: evaluator failures retain stable diagnostic boun
         compilation,
         TextIntrinsic::Bytes,
         text_value,
-        compilation.intern_builtin_type(BuiltinType::StrBytesView)
+        compilation.intern_type(
+            {.value = SliceTypeValue {.element = compilation.intern_builtin_type(BuiltinType::U8)}}
+        )
     );
     REQUIRE_FALSE(non_constant_view.has_value());
     CHECK_EQ(non_constant_view.error(), ConstantEvaluationFailure::UnsupportedOperation);

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <carven/runtime/text.hpp>
+#include "text.hpp"
 
-#include <array>
 #include <string>
 #include <utility>
 
@@ -42,28 +41,8 @@ public:
     constexpr auto append(std::string_view text) noexcept -> void { storage.append(text); }
 
     constexpr auto push(char32_t scalar) noexcept -> void {
-        auto bytes = std::array<char, 4>();
-        auto width = std::size_t {0};
-        if (scalar < 0x80) {
-            bytes[0] = static_cast<char>(scalar);
-            width = 1;
-        } else if (scalar < 0x800) {
-            bytes[0] = static_cast<char>(0xc0u | (scalar >> 6));
-            bytes[1] = static_cast<char>(0x80u | (scalar & 0x3fu));
-            width = 2;
-        } else if (scalar < 0x10000) {
-            bytes[0] = static_cast<char>(0xe0u | (scalar >> 12));
-            bytes[1] = static_cast<char>(0x80u | ((scalar >> 6) & 0x3fu));
-            bytes[2] = static_cast<char>(0x80u | (scalar & 0x3fu));
-            width = 3;
-        } else {
-            bytes[0] = static_cast<char>(0xf0u | (scalar >> 18));
-            bytes[1] = static_cast<char>(0x80u | ((scalar >> 12) & 0x3fu));
-            bytes[2] = static_cast<char>(0x80u | ((scalar >> 6) & 0x3fu));
-            bytes[3] = static_cast<char>(0x80u | (scalar & 0x3fu));
-            width = 4;
-        }
-        append(std::string_view(bytes.data(), width));
+        const auto encoded = encode_valid_utf8(scalar);
+        append(std::string_view(encoded.bytes.data(), encoded.width));
     }
 
     constexpr auto clear() noexcept -> void { storage.clear(); }

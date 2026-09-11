@@ -110,3 +110,79 @@ TEST_CASE("Syntax program: closed compilation rejects a missing source snapshot"
     REQUIRE_EQ(parsed.error().size(), 1u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
 }
+
+TEST_CASE("Syntax program: imports select official, craft root, and module directory sources") {
+    struct Case final {
+        std::string_view importer;
+        std::string_view craft_root_target;
+        std::string_view relative_target;
+    };
+
+    const auto cases = std::array {
+        Case {"nested.main", "std.utf", "nested.std.utf"},
+        Case {"crafts.app.nested.main", "crafts.app.std.utf", "crafts.app.nested.std.utf"},
+        Case {
+            "crafts.carven.nested.main",
+            "crafts.carven.std.utf",
+            "crafts.carven.nested.std.utf",
+        },
+    };
+    for (const auto& item : cases) {
+        CAPTURE(item.importer);
+        auto sources = SourceManager();
+        auto inputs = std::vector<CompilationModuleInput>();
+        const auto append = [&](std::string_view name, std::string_view text) noexcept {
+            const auto source = sources.append_virtual(std::string(name), std::string(text));
+            REQUIRE(source.has_value());
+            inputs.push_back({.source_id = *source, .module_path = path(name)});
+        };
+        append(
+            item.importer,
+            "import std::utf using *; import std.utf using *; "
+            "import .std.utf using *; import json::parser using *;"
+        );
+        append("crafts.carven.std.utf", "");
+        append("crafts.std.utf", "");
+        append("crafts.json.parser", "");
+        if (item.craft_root_target != "crafts.carven.std.utf") {
+            append(item.craft_root_target, "");
+        }
+        append(item.relative_target, "");
+
+        const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+        REQUIRE(parsed.has_value());
+        REQUIRE(verify_syntax_program(*parsed).has_value());
+        const auto provenance = parsed->provenance();
+        const auto importer = provenance.find_program_module(path(item.importer));
+        REQUIRE(importer.has_value());
+        const auto imports = parsed->resolved_imports(*importer);
+        const auto expected = std::array {
+            std::string_view("crafts.carven.std.utf"),
+            item.craft_root_target,
+            item.relative_target,
+            std::string_view("crafts.json.parser"),
+        };
+        REQUIRE_EQ(imports.size(), expected.size());
+        for (auto index = 0uz; index < expected.size(); ++index) {
+            CHECK_EQ(provenance.module_record(imports[index].target).path.value(), expected[index]);
+        }
+    }
+}
+
+TEST_CASE("Syntax program: a standard import requires the official source in the input batch") {
+    auto sources = SourceManager();
+    auto inputs = std::vector<CompilationModuleInput>();
+    for (const auto name : {"nested.main", "crafts.std.utf", "std.utf", "nested.std.utf"}) {
+        const auto source = sources.append_virtual(
+            name,
+            std::string_view(name) == "nested.main" ? "import std::utf using *;" : ""
+        );
+        REQUIRE(source.has_value());
+        inputs.push_back({.source_id = *source, .module_path = path(name)});
+    }
+    const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    REQUIRE_FALSE(parsed.has_value());
+    REQUIRE_EQ(parsed.error().size(), 1uz);
+    CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::ImportResolution);
+    REQUIRE(parsed.error().front().attachment.primary.has_value());
+}

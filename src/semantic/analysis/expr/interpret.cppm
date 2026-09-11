@@ -470,7 +470,12 @@ auto interpret_text(
     typename Site::Value operand,
     Span span
 ) noexcept -> AnalysisResult<typename Site::Value> {
-    const auto type = site.draft().intern_builtin_type(text_intrinsic_result(intrinsic));
+    const auto type = intrinsic == TextIntrinsic::Bytes
+        ? site.draft().intern_type(
+              {.value =
+                   SliceTypeValue {.element = site.draft().intern_builtin_type(BuiltinType::U8)}}
+          )
+        : site.draft().intern_builtin_type(*text_intrinsic_builtin_result(intrinsic));
     auto known = fold_expression_constant(
         site,
         fold_text_intrinsic_constant(site.draft(), intrinsic, site.known(operand), type),
@@ -495,7 +500,7 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         if (string_qualifier(site, source.operand_id)) {
             return std::unexpected(site.fail(
                 source.name_span,
-                DiagnosticCode::TypeTextCall,
+                DiagnosticCode::TypeMethodCall,
                 "String factories must be called directly"
             ));
         }
@@ -578,7 +583,7 @@ auto interpret_call(
                 if (name != "new" && name != "from_str") {
                     return std::unexpected(site.fail(
                         member->name_span,
-                        DiagnosticCode::TypeTextCall,
+                        DiagnosticCode::TypeMethodCall,
                         "String has no such factory"
                     ));
                 }
@@ -586,7 +591,7 @@ auto interpret_call(
                 if (source.arguments.size() != text_intrinsic_arity(intrinsic)) {
                     return std::unexpected(site.fail(
                         span,
-                        DiagnosticCode::TypeTextCallArity,
+                        DiagnosticCode::TypeMethodCallArity,
                         "String factory argument count does not match"
                     ));
                 }
@@ -618,6 +623,20 @@ auto interpret_call(
         if (!site.present(*operand)) {
             return site.unavailable();
         }
+        const auto slice = decide_slice_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!slice) {
+            return std::unexpected(
+                site.fail(span, slice.error().code, std::string(slice.error().message))
+            );
+        }
+        if (slice->has_value()) {
+            return site.finish_slice_call(**slice, std::move(*operand), source.arguments, span);
+        }
         const auto decision = decide_text_method(
             site.draft(),
             site.type(*operand),
@@ -626,8 +645,8 @@ auto interpret_call(
         );
         if (!decision.has_value()) {
             return std::unexpected(site.fail(
-                decision.error().code == DiagnosticCode::TypeTextCallArity ? span
-                                                                           : member->name_span,
+                decision.error().code == DiagnosticCode::TypeMethodCallArity ? span
+                                                                             : member->name_span,
                 decision.error().code,
                 std::string(decision.error().message)
             ));

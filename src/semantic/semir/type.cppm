@@ -25,7 +25,6 @@ enum class BuiltinType {
     F64,
     String,
     Str,
-    StrBytesView,
     StrCharsView,
     Void,
     EntryArgs,
@@ -65,6 +64,11 @@ struct ArrayTypeValue final {
     constexpr auto operator==(const ArrayTypeValue&) const noexcept -> bool = default;
 };
 
+struct SliceTypeValue final {
+    TypeID element;
+    constexpr auto operator==(const SliceTypeValue&) const noexcept -> bool = default;
+};
+
 struct FunctionTypeValue final {
     CallableID callable;
     constexpr auto operator==(const FunctionTypeValue&) const noexcept -> bool = default;
@@ -85,6 +89,7 @@ using CanonicalTypeValue = std::variant<
     StructTypeValue,
     EnumTypeValue,
     ArrayTypeValue,
+    SliceTypeValue,
     PointerTypeValue,
     FunctionTypeValue,
     ClosureTypeValue,
@@ -126,14 +131,20 @@ struct ConstructionArrayTypeValue final {
     std::uint64_t extent;
 };
 
+struct ConstructionSliceTypeValue final {
+    ConstructionTypeRef element;
+};
+
 struct ConstructionCallableViewTypeValue final {
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
     FailureTermID failures;
 };
 
-using ConstructionTypeValue =
-    std::variant<ConstructionArrayTypeValue, ConstructionCallableViewTypeValue>;
+using ConstructionTypeValue = std::variant<
+    ConstructionArrayTypeValue,
+    ConstructionSliceTypeValue,
+    ConstructionCallableViewTypeValue>;
 
 struct ConstructionType final {
     ConstructionTypeValue value;
@@ -367,6 +378,10 @@ public:
                                 .extent = value.extent,
                             },
                         }
+                    );
+                } else if constexpr (std::same_as<Value, ConstructionSliceTypeValue>) {
+                    return types.intern(
+                        {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
                     );
                 } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
                     auto parameters = std::vector<CallableParameter>();

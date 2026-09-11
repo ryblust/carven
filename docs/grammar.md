@@ -469,7 +469,7 @@ with the same spelling is visible.
 ## 4. Types
 
 ```ebnf
-type = named-type | array-type | function-type | pointer-type;
+type = named-type | array-type | slice-type | function-type | pointer-type;
 
 pointer-type = "ptr", "<", [ "&" ], type, ">";
 
@@ -483,6 +483,8 @@ type-name-component = IDENTIFIER;
 qualified-name = IDENTIFIER, { "::", IDENTIFIER };
 
 array-type = "[", type, ";", expression, "]";
+
+slice-type = "[", type, "]";
 
 function-type = "fn",
                 "(", [ function-type-parameter-list ], ")",

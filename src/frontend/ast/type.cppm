@@ -35,6 +35,10 @@ struct ASTArrayType final {
     ASTExprID extent;
 };
 
+struct ASTSliceType final {
+    ASTTypeID element_type;
+};
+
 struct ASTFunctionTypeParameter final {
     Span span;
     ASTAccessSyntax access;
@@ -56,7 +60,7 @@ struct ASTFunctionType final {
 
 struct ASTType final {
     Span span;
-    std::variant<ASTNamedType, ASTArrayType, ASTFunctionType, ASTPointerType> value;
+    std::variant<ASTNamedType, ASTArrayType, ASTSliceType, ASTFunctionType, ASTPointerType> value;
 };
 
 struct ASTConstructionType final {

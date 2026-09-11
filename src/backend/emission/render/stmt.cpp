@@ -150,11 +150,15 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                 );
             },
             [&](const TargetRangeForStmt& value) noexcept {
+                const auto constant = value.binding == TargetVariableBinding::ConstValue
+                    || value.binding == TargetVariableBinding::ConstReference;
+                const auto reference = value.binding == TargetVariableBinding::MutableReference
+                    || value.binding == TargetVariableBinding::ConstReference;
                 return concat(
                     {text("for ("),
                      text(value.maybe_unused ? "[[maybe_unused]] " : ""),
-                     render_type(value.type, value.binding == TargetVariableBinding::ConstValue),
-                     text(value.binding == TargetVariableBinding::MutableReference ? "& " : " "),
+                     render_type(value.type, constant),
+                     text(reference ? "& " : " "),
                      text(value.name.spelling()),
                      text(" : "),
                      render_expression(value.range),

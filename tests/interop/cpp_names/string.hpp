@@ -2,6 +2,7 @@
 #include <carven/runtime/string.hpp>
 #include <carven/runtime/passing.hpp>
 #include <string_view>
+#include <cstdint>
 
 namespace native_text {
 inline std::string_view retained;
@@ -44,3 +45,12 @@ inline auto aliases_retained(carven::runtime::ReadArg<carven::runtime::String> v
 struct String final {
     int value;
 };
+
+namespace native_text {
+
+template<typename T>
+struct TaggedValue final {
+    std::int32_t value;
+};
+
+} // namespace native_text

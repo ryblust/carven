@@ -6,7 +6,7 @@ import std;
 
 auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state) noexcept
     -> OwnershipFlow {
-    auto remaining = std::optional(OwnershipNormal {std::move(state), {}});
+    auto remaining = std::optional(OwnershipNormal {std::move(state), {}, {}});
     auto result = OwnershipFlow {};
     for (const auto& branch : value.branches) {
         if (!remaining.has_value()) {
@@ -88,8 +88,8 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
     auto result = OwnershipFlow {};
     append_ownership_exits(result, subject);
     const auto subject_value = subject.normal ? subject.normal->value : OwnershipRelationships {};
-    const auto previous_readers = text_readers.size();
-    protect_text(subject_value);
+    const auto previous_readers = storage_readers.size();
+    protect_storage(subject_value);
     auto remaining = std::move(subject.normal);
     const auto subject_place = location(*value.subject);
     for (const auto& arm : value.arms) {
@@ -130,7 +130,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             remaining = std::move(rejected.normal);
         }
     }
-    restore_text_readers(previous_readers);
+    restore_storage_readers(previous_readers);
     return result;
 }
 
@@ -163,8 +163,8 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             const auto& acceptance = found->second;
             auto remaining = acceptance.exhaustive
                 ? std::optional<OwnershipNormal>()
-                : std::optional(OwnershipNormal {failure.state, {}});
-            auto accepted = std::optional(OwnershipNormal {std::move(failure.state), {}});
+                : std::optional(OwnershipNormal {failure.state, {}, {}});
+            auto accepted = std::optional(OwnershipNormal {std::move(failure.state), {}, {}});
             for (const auto pattern : acceptance.alternatives) {
                 if (pattern.has_value()) {
                     bind_pattern(
@@ -176,8 +176,8 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             }
             const auto previous_caught = caught;
             caught = std::get<OwnershipFailure>(failure.payload);
-            const auto previous_readers = text_readers.size();
-            protect_text(caught->value);
+            const auto previous_readers = storage_readers.size();
+            protect_storage(caught->value);
             if (arm.guard.has_value()) {
                 auto guard = complete_expression(*arm.guard, std::move(accepted->state));
                 accepted = std::move(guard.normal);
@@ -196,7 +196,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 append_ownership_exits(result, handled);
             }
             caught = previous_caught;
-            restore_text_readers(previous_readers);
+            restore_storage_readers(previous_readers);
             if (remaining.has_value()) {
                 auto next = OwnershipFlow {.normal = std::move(remaining), .exits = {}};
                 leave(next, arm.body.lifetime);
@@ -226,7 +226,8 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     const auto entry = result.normal->state;
     auto header = entry;
     const auto iterate = [&](OwnershipState input) noexcept -> OwnershipFlow {
-        auto pass = OwnershipFlow {.normal = OwnershipNormal {std::move(input), {}}, .exits = {}};
+        auto pass =
+            OwnershipFlow {.normal = OwnershipNormal {std::move(input), {}, {}}, .exits = {}};
         if (value.condition.has_value()) {
             pass = complete_expression(*value.condition, std::move(pass.normal->state));
         }
@@ -247,7 +248,7 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         auto steps = std::move(child.normal);
         for (auto& exit : child.exits) {
             if (std::holds_alternative<OwnershipContinue>(exit.payload)) {
-                join_normal_ownership(steps, std::optional(OwnershipNormal {exit.state, {}}));
+                join_normal_ownership(steps, std::optional(OwnershipNormal {exit.state, {}, {}}));
             } else {
                 iteration.exits.push_back(std::move(exit));
             }
@@ -280,7 +281,10 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     result.normal.reset();
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
-            join_normal_ownership(result.normal, std::optional(OwnershipNormal {exit.state, {}}));
+            join_normal_ownership(
+                result.normal,
+                std::optional(OwnershipNormal {exit.state, {}, {}})
+            );
         } else {
             result.exits.push_back(std::move(exit));
         }
@@ -306,15 +310,35 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
         return result;
     }
     const auto previous = accesses.size();
-    const auto previous_readers = text_readers.size();
-    protect_text(result.normal->value);
+    const auto previous_readers = storage_readers.size();
+    protect_storage(result.normal->value);
     auto elements = std::optional<OwnershipPlace>();
+    if (integer == nullptr) {
+        for (const auto& selected : result.normal->storage) {
+            accesses.push_back({selected, false});
+        }
+    }
     if (integer == nullptr && source.has_value()) {
-        accesses.push_back({*source, false});
         elements = *source;
         elements->path.push_back(std::nullopt);
     }
-    if (value.binding.has_value() && value.access == AccessMode::Write && elements.has_value()) {
+    const auto borrowed = value.binding.has_value()
+        && value.access == AccessMode::Read
+        && analysis.contents(body.binding(*value.binding).type).read_borrows_storage();
+    if (borrowed) {
+        read_storage.emplace(
+            *value.binding,
+            select_element_storage(
+                program.types(),
+                first.type.resolved(),
+                result.normal->storage,
+                result.normal->value,
+                std::nullopt
+            )
+        );
+    } else if (value.binding.has_value()
+               && value.access == AccessMode::Write
+               && elements.has_value()) {
         aliases.emplace(*value.binding, *elements);
     }
     const auto entry = result.normal->state;
@@ -322,7 +346,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto initial_elements =
         project_relationships(result.normal->value, OwnershipProjectionPath {std::nullopt});
     const auto iterate = [&](OwnershipState input) noexcept -> OwnershipFlow {
-        if (value.binding.has_value() && value.access != AccessMode::Write) {
+        if (value.binding.has_value() && value.access != AccessMode::Write && !borrowed) {
             const auto relationships = elements.has_value()
                 ? project_relationships(
                       input.objects[elements->object].relationships,
@@ -361,19 +385,23 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     if (diagnosing) {
         pass = iterate(header);
     }
-    result.normal = OwnershipNormal {std::move(header), {}};
+    result.normal = OwnershipNormal {std::move(header), {}, {}};
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
-            join_normal_ownership(result.normal, std::optional(OwnershipNormal {exit.state, {}}));
+            join_normal_ownership(
+                result.normal,
+                std::optional(OwnershipNormal {exit.state, {}, {}})
+            );
         } else if (!std::holds_alternative<OwnershipContinue>(exit.payload)) {
             result.exits.push_back(std::move(exit));
         }
     }
     if (value.binding.has_value()) {
         aliases.erase(*value.binding);
+        read_storage.erase(*value.binding);
     }
     accesses.resize(previous);
-    restore_text_readers(previous_readers);
+    restore_storage_readers(previous_readers);
     leave(result, value.lifetime);
     return result;
 }

@@ -28,10 +28,10 @@ namespace {
     X(AccessNotAssignable, "CV-ACCESS-NOT-ASSIGNABLE", Error, "Non-assignable Update target.")     \
     X(AccessRangeBinding, "CV-ACCESS-RANGE-BINDING", Error, "Invalid Write range binding.")        \
     X(AccessRangeIterable, "CV-ACCESS-RANGE-ITERABLE", Error, "Invalid Write range iterable.")     \
-    X(AccessTextRangeBinding,                                                                      \
-      "CV-ACCESS-TEXT-RANGE-BINDING",                                                              \
+    X(AccessViewRangeBinding,                                                                      \
+      "CV-ACCESS-VIEW-RANGE-BINDING",                                                              \
       Error,                                                                                       \
-      "Text range bindings only support Read access.")                                             \
+      "View range bindings only support Read access.")                                             \
     X(Catalog, "CV-CATALOG", Error, "Semantic catalog failure.")                                   \
     X(CompilationInput, "CV-COMPILATION-INPUT", Error, "Invalid closed-compilation input.")        \
     X(CppBoundary, "CV-CPP-BOUNDARY", Error, "Invalid C++ boundary declaration.")                  \
@@ -239,8 +239,11 @@ namespace {
       Error,                                                                                       \
       "Function result inference cycle.")                                                          \
     X(TypeReturnValue, "CV-TYPE-RETURN-VALUE", Error, "Unexpected return value.")                  \
-    X(TypeTextCall, "CV-TYPE-TEXT-CALL", Error, "Invalid text call.")                              \
-    X(TypeTextCallArity, "CV-TYPE-TEXT-CALL-ARITY", Error, "Invalid text call arity.")             \
+    X(TypeMethodCall, "CV-TYPE-METHOD-CALL", Error, "Invalid built-in method call.")               \
+    X(TypeMethodCallArity,                                                                         \
+      "CV-TYPE-METHOD-CALL-ARITY",                                                                 \
+      Error,                                                                                       \
+      "Invalid built-in method call arity.")                                                       \
     X(TypeTextProperty, "CV-TYPE-TEXT-PROPERTY", Error, "Invalid text property.")                  \
     X(TypeUnresolved, "CV-TYPE-UNRESOLVED", Error, "Unresolved type.")                             \
     X(TypeUpdateInteger, "CV-TYPE-UPDATE-INTEGER", Error, "Integer update target required.")       \

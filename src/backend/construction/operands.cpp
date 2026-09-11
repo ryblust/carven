@@ -1,7 +1,7 @@
 module carven:backend.construction.operands.impl;
 
-import :backend.construction;
 import :backend.construction.builder;
+import :backend.construction;
 import :semantic.semir;
 import :support.invariant;
 import :support.visit;
@@ -51,6 +51,11 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 add(*value.index, ConstructionUse::OperandValue);
             },
             [&](const SemFormat& value) noexcept {
+                for (const auto& input : value.operands) {
+                    result.push_back(argument(input));
+                }
+            },
+            [&](const SemSliceIntrinsic& value) noexcept {
                 for (const auto& input : value.operands) {
                     result.push_back(argument(input));
                 }

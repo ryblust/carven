@@ -65,15 +65,27 @@ fn main() {
 Supply both files to the compiler, for example
 `./xmakew run carven --stdout main.cv math.cv`. Imports do not discover files.
 
-An unprefixed module reference starts at the current module domain root.
-A leading `.` starts in the importing module's logical directory.
-`json::parser` selects a module in the named `json` craft domain.
+An unprefixed module reference starts at the current craft's root. A leading
+`.` starts in the importing module's directory. `json::parser` selects a module
+in the external `json` craft. The reserved `std::` prefix selects the official
+Carven standard library.
+
+For a file at `crafts/foo/models/user.cv`:
+
+| Import | Selected source |
+| --- | --- |
+| `std::utf.text` | `crafts/carven/std/utf/text.cv` |
+| `std.utf` | `crafts/foo/std/utf.cv` |
+| `.std.utf` | `crafts/foo/models/std/utf.cv` |
+
 Use `using { first, second }` to select several names or `using *` for all
 visible names.
 
 Functions, structures, enums, and constants may be `private`, bare, or `export`.
-Private declarations are module-local; bare declarations are visible within
-the module domain; exported declarations are visible throughout the compilation.
+Private declarations are module-local; bare means no visibility modifier and
+allows use within the same craft; exported declarations are visible across
+crafts in the compilation. Application modules outside crafts share one module
+domain. Finding a module does not bypass these visibility rules.
 Cross-module use always requires an import. Declarations may refer forward.
 
 ## Records and arrays

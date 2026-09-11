@@ -202,7 +202,7 @@ evaluation order 与 failure/access behavior。它不需要生成 C++ overloaded
 - **Constraints:** 只有一份 capability identity、ordinary deterministic visibility 与
   evidence domain；runtime-header path 不能替代 source identity。
 - **Options:** A — true language-builtin identity；B — 位于 reserved
-  `crafts.std...` paths 的 toolchain-provided declarations；C — compiler 提供、通过
+  `crafts.carven.std...` paths、由 `std::` 引用的官方 declarations；C — compiler 提供、通过
   ordinary import/prelude 可见的 declarations。
 - **Closure condition:** 得到一套 conditional model，使 source lookup、desugaring、
   coherence 与 missing-name diagnostics 有一致解释；是否采用 carrier 仍由 `OPEN-01`

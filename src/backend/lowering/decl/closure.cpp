@@ -3,10 +3,10 @@ module carven:backend.lowering.decl.closure.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
-import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
+import :backend.realization.body;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -85,6 +85,7 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
             .parameters = std::move(parameters),
             .result = context.outcome_type(callable.signature),
             .form = TargetMemberFunctionDeclaration {},
+            .maybe_unused = false,
             .static_specifier = false,
             .constexpr_specifier = false,
             .friend_specifier = false,

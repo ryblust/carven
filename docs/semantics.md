@@ -14,6 +14,7 @@ This document defines the validity and observable behavior of Carven programs.
   - [Module constants](#module-constants)
   - [Constant expressions](#constant-expressions)
   - [Numeric types and conversions](#numeric-types-and-conversions)
+  - [Read-only slices](#read-only-slices)
   - [Unicode text](#unicode-text)
   - [Owning String and text borrowing](#owning-string-and-text-borrowing)
   - [String interpolation](#string-interpolation)
@@ -40,9 +41,8 @@ This document defines the validity and observable behavior of Carven programs.
 ### Compilations, crafts, and modules
 
 A compilation is one closed compiler boundary supplied by the driver or build
-system. Its module catalog is exactly the explicit source-input batch;
-compilation does not discover files while resolving imports. Every source input
-has one canonical module path, a nonempty sequence of components matching
+system. Its module catalog is exactly the explicit source-input batch. Every
+source input has one canonical module path, a nonempty sequence of components matching
 `[A-Za-z_][A-Za-z0-9_]*`, including keyword spellings.
 Path derivation from host filenames is driver policy rather than language
 semantics.
@@ -52,15 +52,19 @@ anchored by `crafts.<name>`. All other canonical paths belong to the unprefixed
 module domain. The reserved leading form requires both `<name>` and a nonempty
 `<path>`; `crafts` and `crafts.<name>` alone are not complete module paths. A
 non-leading `crafts` component is ordinary. The `crafts.<name>` prefix gives
-modules a craft-qualified domain and affects name resolution only; it does not
-create another compilation boundary.
+modules a craft-qualified domain for name resolution and bare declaration
+visibility within the compilation.
+
+The official craft is `carven`, stored in `crafts/carven/`. Its standard-library
+modules live under `std/`. The reserved import prefix `std::` selects that
+standard library, so `std::utf.text` names `crafts.carven.std.utf.text`.
 
 Imports form a prefix at the start of a module. Module imports use one of three
 structured references:
 
 - `model.user` starts at the importing module's domain root;
 - `.value` starts in the importing module's logical module directory;
-- `json::parser` names `crafts.json.parser` directly.
+- `json::parser` starts at the external craft `json` and names `crafts.json.parser`.
 
 A module's logical directory is its canonical path without the final module
 name; removing that name does not change the module domain. The reference
@@ -68,14 +72,19 @@ components after `.` are appended to that directory. For example, `.value` in
 `a.b.main` denotes `a.b.value`, and `.value` in `crafts.json.a.b.main` denotes
 `crafts.json.a.b.value`.
 
-Both unprefixed and leading-`.` references stay inside the importer's module
-domain. A craft-qualified reference selects its named craft domain. Each
-resolved path must exactly match one module in the closed module catalog.
-Resolution has no fallback root, does not search the filesystem, and does not
-discover sources implicitly. A module cannot import itself. No module-reference
-form resolves from a craft domain into the unprefixed domain. `std::path` follows
-the same craft-qualified rule and denotes `crafts.std.path` when that module is
-supplied by the compilation producer.
+Unprefixed and leading-`.` references stay inside the importer's module domain.
+Craft-qualified references select the named craft, with `std::` selecting
+`crafts.carven.std`. Resolution succeeds only when the resulting path names
+another module in the supplied input batch; an absent module or self-import is
+an error.
+
+For an importer at `crafts/foo/models/user.cv`, the three forms select:
+
+| Import | Input module path |
+| --- | --- |
+| `std::utf.text` | `crafts/carven/std/utf/text.cv` |
+| `std.utf` | `crafts/foo/std/utf.cv` |
+| `.std.utf` | `crafts/foo/models/std/utf.cv` |
 
 Cross-module selection always requires an explicit import. A selected name
 must be visible to the importer under the declaration rules below. Explicit
@@ -115,15 +124,20 @@ model:
 
 | Declaration form | Audience |
 | --- | --- |
-| `private` | Its defining module |
-| bare | Every module in its defining module domain |
-| `export` | The complete compilation |
+| `private` | Only its defining module |
+| bare (no visibility modifier) | All modules in the same craft (module domain) |
+| `export` | All modules in the compilation, across crafts |
 
-Every declaration is visible in its defining module. A cross-module use still
-requires an explicit import even when the importer belongs to the declaration's
-audience. The same rules apply in the unprefixed domain and every craft domain.
-Qualified lookup selects the named module or nominal owner and does not fall
-back to an unrelated unqualified declaration.
+Import resolution selects a module; visibility determines which of its
+declarations the importer may select.
+
+Visibility follows the defining craft, not the spelling used to import it.
+Official standard-library modules belong to the `carven` craft, including those
+selected through `std::`. Ordinary application modules share the unprefixed
+module domain and can import each other's bare declarations.
+
+Every declaration is visible in its defining module. Qualified lookup selects
+the named module or nominal owner.
 
 A declaration surface may refer only to nominal declarations whose audience
 contains the surface's audience. This structural check recursively covers
@@ -149,8 +163,8 @@ f32 f64
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
-extent. Function-view types include parameter access, parameter types, success
-result, and failure set.
+extent. Slices are identified by their element type. Function-view types include
+parameter access, parameter types, success result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
 The defined exceptions are contextual numeric literals, compatible callable-to-view
@@ -322,6 +336,32 @@ floating exception mechanism. Native floating results depend on the selected
 C++ compiler and floating environment. Floating division follows those native
 operations, including their handling of zero divisors.
 
+### Read-only slices
+
+`[T]` is a copyable, nonowning, read-only view of contiguous elements. `[T; N]`
+denotes a fixed array. An array creates a view explicitly through
+`array.as_slice()`; there is no implicit array-to-slice conversion.
+
+Slices provide `len() -> usize`, `is_empty() -> bool`, read-only integer
+indexing, Read iteration, and `slice(start: usize, end: usize) -> [T]` with a
+half-open range. Empty ranges, including `slice(len, len)`, are valid. Invalid
+indices and ranges terminate, following array bounds handling. Slices do not
+support element writes, Write iteration, pointer extraction, or comparison.
+Their element representation is invariant; creating a view never converts or
+copies its elements. Reading an element follows the ordinary Read/value rules.
+
+Slice and text views share storage-borrow analysis. A view with known Carven
+backing protects its entire array or String against mutation, replacement, Take, and destruction.
+Disjoint subranges are not analyzed separately. Copies, arguments, returned
+values, aggregate fields, closures, and failure values retain backing relations.
+Extracting an element also retains any borrows inside that element. Temporary
+backing follows existing expression and retained-loop rules; storing a view
+does not extend its lifetime.
+
+The [UTF library](../crafts/carven/std/utf/README.md) supplies validation and text
+construction from `[u8]`. Its borrowed results follow the
+[native access and lifetime contract](#external-access-and-lifetime).
+
 ### Unicode text
 
 `char` is one immutable, copyable Unicode scalar value. It supports equality,
@@ -332,8 +372,7 @@ numeric conversion.
 and byte length. Length defines its contents, including internal NUL bytes;
 the view does not promise a trailing NUL. It has no owning
 storage, `&str` type, or source lifetime syntax. Its backing can be static
-literal storage, a checked borrow of a `String`, or explicitly entrusted C++
-storage. Copying a view preserves its backing relationship.
+literal storage, a checked borrow of a `String`, or externally supplied storage. Copying a view preserves its known backing relationship.
 
 Decoded string and character literal values are not Unicode-normalized.
 
@@ -341,13 +380,12 @@ Both `str` and `String` provide:
 
 - `text.len() -> usize` returns the UTF-8 byte count.
 - `text.is_empty() -> bool` tests that byte count.
-- `text.bytes` is a copyable read-only range of `u8` values.
+- `text.bytes` returns the read-only slice `[u8]`.
 - `text.chars` is a copyable read-only range that decodes `char` values.
 
 `bytes` and `chars` are computed projections, not general properties.
-Their view types cannot be spelled. They support Read range iteration and
-inferred value bindings, but not Write iteration, indexing, slicing, or
-construction. User structures may declare same-named fields because member
+The `chars` view type cannot be spelled and supports only Read range iteration
+and inferred value bindings. Byte views support all slice operations. User structures may declare same-named fields because member
 resolution depends on the receiver type.
 
 
@@ -447,10 +485,8 @@ borrows independently of copied catch bindings. Unwinding must not destroy
 their backing. A handler can copy borrowed content into an independent String result.
 Completed effects are retained on failure; mutation is not rolled back.
 
-Carven exposes no raw-byte constructor. Allocation failure and unrepresentable
-lengths terminate; they are not Carven typed failures or recoverable native
-exceptions. Native calls protect known backing for the duration of the call;
-retention and returned aliases remain the provider and caller's responsibility.
+Builtin String construction accepts valid text and scalars. Allocation failure
+and unrepresentable lengths terminate.
 
 
 ### String interpolation
@@ -622,12 +658,11 @@ storage. Contained pointers and Write captures retain their separate target acce
 
 ### Read values and aliases
 
-Ordinary Read parameters and Read array-range bindings use the represented
-C++ type's copy and destruction properties. A type with trivial C++ copy
-construction and destruction is passed as a const value, regardless of size.
-Other types use a const reference, without introducing user-defined copying
-or destruction. Explicit scalar `import(cpp)` and `export(cpp)` parameters
-always cross by value.
+Read parameters and Read range bindings preserve Carven array, String, and
+closure storage through const references, including storage nested in Carven
+aggregates. Native C++ types and other types use a const value when their C++
+copy construction and destruction are trivial, and a const reference otherwise.
+Explicit scalar `import(cpp)` and `export(cpp)` parameters always cross by value.
 
 A by-value Read argument saves its value when that argument is evaluated. A
 by-reference Read argument retains the selected storage, so writes through
@@ -937,7 +972,7 @@ available for `bool`, `char`, integers, floating-point values, `str`, `String`, 
 whose elements support equality, structures whose fields all support equality,
 numeric enums, payload enums whose payloads all support equality, and pointers
 with identical target types. Callable
-types, process-entry arguments, and `str.bytes` / `str.chars` iteration views do
+types, process-entry arguments, slices, and `str.chars` iteration views do
 not support equality.
 
 Payload enum values with different cases compare unequal. Values of the same
@@ -976,7 +1011,7 @@ must have one compatible integer type. It visits the half-open ascending
 sequence from begin through end-exclusive; begin greater than or equal to end
 produces no iterations. Integer-range bindings cannot use Write access.
 
-Arrays support Read and, for a mutable source, Write range bindings. `str.bytes`
+Arrays support Read and, for a mutable source, Write range bindings. Slices
 and `str.chars` support Read bindings only. A range binding is scoped to the
 loop and cannot be taken. Its name is not visible in its declared type or range
 source; it is published only after those inputs complete and is then visible
@@ -1141,9 +1176,9 @@ function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
 not Carven compile-time constants and do not participate in pattern coverage or
 failure-set construction. Native compilation checks constructor availability.
-Current lowering can require a copy or move from intermediate storage for an
-aggregate component evaluated before a later fallible component. An immovable
-native component can therefore fail C++ compilation after Carven analysis succeeds.
+Intermediate storage can add native construction requirements; the
+[toolchain construction limitation](toolchain.md#construction-limitation) identifies
+the affected aggregate initializers.
 
 ### C string literals
 
@@ -1227,6 +1262,12 @@ and indirect pointer lifetimes. Passing a view slot with Write access does not
 establish that it stops borrowing its previous backing. Callable-view and
 Write-capture escape restrictions also apply to values containing text views.
 String has no implicit conversion to a native string container.
+
+Native calls, construction, and representation conversions do not infer borrowed
+storage for their results. C++ checks whether delegated operations are valid;
+the provider and caller own the result's storage and lifetime contract. Returning
+to a Carven type does not establish a previously unknown backing relationship.
+Known input borrows remain checked while the operation evaluates.
 
 ### Source fragments
 
@@ -1392,9 +1433,9 @@ Each failed operation reports the original `.cv` display origin, the 1-based
 line of its operation name, its operation kind, and an optional runtime
 message. `check` and `require` additionally report the complete condition
 source: the original UTF-8 byte slice of the condition expression span,
-including parentheses, whitespace, line breaks, and comments. `fail` has no
-invented condition. Doctest's surrounding wording, colors, statistics, and
-layout are not language contracts.
+including parentheses, whitespace, line breaks, and comments. `fail` reports
+without a condition. The runtime reporter controls the presentation of these
+records.
 
 ### Diagnostics
 

@@ -31,6 +31,9 @@ using CastDecision = std::expected<CastKind, OperationDiagnostic>;
 using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
 using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
+auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionTypeRef>;
+
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator;
 auto semantic_operator(ASTBinaryOperator op) noexcept -> std::optional<BinaryOperator>;
 auto binary_operator_requires_equality(ASTBinaryOperator op) noexcept -> bool;
@@ -93,6 +96,13 @@ auto decide_cast(
     ConstructionTypeRef target,
     bool source_is_numeric_enum
 ) noexcept -> CastDecision;
+
+auto decide_slice_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic>;
 
 auto decide_text_method(
     const ProgramDraft& draft,

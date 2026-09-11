@@ -114,15 +114,16 @@ auto BodyElaborator::array_expression(
     if (!element_type.has_value()) {
         invariant_violation("empty expected array lost its element type");
     }
-    const auto type = expected.has_value() ? *expected
-                                           : ConstructionTypeRef {draft().append_construction_type(
-                                                 ConstructionType {
-                                                     .value = ConstructionArrayTypeValue {
-                                                         .element = *element_type,
-                                                         .extent = array.element_ids.size(),
-                                                     },
-                                                 }
-                                             )};
+    const auto type = expected_element.has_value()
+        ? *expected
+        : ConstructionTypeRef {draft().append_construction_type(
+              ConstructionType {
+                  .value = ConstructionArrayTypeValue {
+                      .element = *element_type,
+                      .extent = array.element_ids.size(),
+                  },
+              }
+          )};
     auto value = active_builder().make_expression(
         type,
         active_builder().lifetime(),

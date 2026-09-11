@@ -9,8 +9,10 @@
 ## Summary
 
 Carven currently limits failure values to copyable nominal structures and
-enums. This proposal explores whether future move-only, owning, or managed
-values should also participate in failure contracts.
+enums. These can already contain owning String payloads and borrowed text
+views; ownership alone does not put a payload outside the current contract.
+This proposal explores whether future move-only or managed values beyond that
+copyable nominal category should also participate in failure contracts.
 
 The existing typed failure model is not under reconsideration. Failure
 contracts remain closed sets, and `throw`, postfix `?`, `try`/`catch`, and
@@ -38,7 +40,7 @@ Any extension should preserve the existing static failure contract and make
 ownership explicit in source semantics before choosing a runtime shape.
 
 The first candidate should be the smallest ownership category justified by a
-real API. Move-only values, owning references, and managed references need not
+real API. Move-only values, new owning-reference forms, and managed references need not
 share one design or ship together.
 
 Async completion is outside this proposal and remains owned by
@@ -84,6 +86,7 @@ rejected examples that expose invalid ownership or lifetime.
 ## References
 
 - [Failure-contract semantics](../docs/semantics.md#failure-contracts)
+- [Existing String and borrowed-text failure tests](../tests/language/failure_contracts/string.cv)
 - [Classes and ownership proposal](classes.md)
 - [Async proposal](async.md)
 - [C++ interoperation semantics](../docs/semantics.md#c-interoperation)

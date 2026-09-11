@@ -18,9 +18,13 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
             const auto* capture = std::get_if<CaptureBindingStorage>(&body.binding(id).storage);
             // A Read may be a value copy. Its snapshot remains a possible holder
             // independently of whether target traits choose a reference.
-            const auto copy = !value.alias.has_value()
-                || (parameter != nullptr && parameter->access == AccessMode::Read)
-                || (capture != nullptr && capture->mode != CaptureMode::Write);
+            const auto borrowed = parameter != nullptr
+                && parameter->access == AccessMode::Read
+                && analysis.contents(body.binding(id).type).read_borrows_storage();
+            const auto copy = !borrowed
+                && (!value.alias.has_value()
+                    || (parameter != nullptr && parameter->access == AccessMode::Read)
+                    || (capture != nullptr && capture->mode != CaptureMode::Write));
             state.objects[input.objects.size() + id.index()] = {
                 .available = true,
                 .taken = std::nullopt,
@@ -48,11 +52,11 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
                     valid = false;
                 }
             }
-            for (const auto& loan : relationships.text_loans) {
+            for (const auto& loan : relationships.storage_loans) {
                 if (loan.backing.object >= input.objects.size()) {
                     diagnose(
                         DiagnosticCode::AccessBorrowConflict,
-                        "escaping text outlives its backing",
+                        "escaping view outlives its backing",
                         body.region().origin,
                         loan.origin
                     );
@@ -137,7 +141,8 @@ auto OwnershipBodyAnalyzer::call(
 ) noexcept -> OwnershipFlow {
     const auto target_id = program.declarations().body_for_callable(callable);
     if (!target_id.has_value()) {
-        auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}}, .exits = {}};
+        auto result =
+            OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
         const auto contract = program.callable_signatures().signature(
             program.declarations().callable(callable).signature
         );
@@ -162,7 +167,7 @@ auto OwnershipBodyAnalyzer::call(
         for (auto& capture : value.captures) {
             capture.target = map_place(std::move(capture.target));
         }
-        for (auto& loan : value.text_loans) {
+        for (auto& loan : value.storage_loans) {
             loan.backing = map_place(std::move(loan.backing));
         }
         for (auto& loan : value.callable_loans) {
@@ -177,6 +182,9 @@ auto OwnershipBodyAnalyzer::call(
     const auto map_input = [&](OwnershipCallArgument value) noexcept {
         if (value.alias.has_value()) {
             value.alias = map_place(std::move(*value.alias));
+        }
+        for (auto& selected : value.storage) {
+            selected = map_place(std::move(selected));
         }
         value.value = map_facts(std::move(value.value));
         return value;
@@ -205,7 +213,7 @@ auto OwnershipBodyAnalyzer::call(
             alias = *capture_owner;
             alias->path.push_back(index);
         }
-        call_input.captures.push_back(map_input({std::move(alias), std::move(value)}));
+        call_input.captures.push_back(map_input({std::move(alias), std::move(value), {}}));
     }
     for (auto index = 0uz; index < sources.size(); ++index) {
         const auto source = sources[index];
@@ -217,19 +225,19 @@ auto OwnershipBodyAnalyzer::call(
     }
     // Unpassed holders cannot be replaced by this body. Summarize their loans
     // as readers instead of importing a new holder on every recursive call.
-    const auto protect_external = [&](std::span<const OwnershipTextLoan> loans) noexcept {
+    const auto protect_external = [&](std::span<const OwnershipStorageLoan> loans) noexcept {
         for (auto loan : loans) {
             if (normalized.contains(loan.backing.object)) {
                 loan.backing = map_place(std::move(loan.backing));
                 loan.holder.clear();
-                call_input.text_readers.push_back(std::move(loan));
+                call_input.storage_readers.push_back(std::move(loan));
             }
         }
     };
-    protect_external(text_readers);
+    protect_external(storage_readers);
     for (const auto& [holder, object] : std::views::enumerate(state.objects)) {
         if (!normalized.contains(static_cast<std::size_t>(holder))) {
-            protect_external(object.relationships.text_loans);
+            protect_external(object.relationships.storage_loans);
         }
     }
     for (const auto source : sources) {
@@ -248,7 +256,7 @@ auto OwnershipBodyAnalyzer::call(
     const auto duplicates = std::ranges::unique(call_input.accesses);
     call_input.accesses.erase(duplicates.begin(), duplicates.end());
     const auto restore_facts = [&](OwnershipRelationships value) noexcept {
-        for (auto& loan : value.text_loans) {
+        for (auto& loan : value.storage_loans) {
             loan.backing.object = sources[loan.backing.object];
         }
         for (auto& capture : value.captures) {
@@ -278,7 +286,7 @@ auto OwnershipBodyAnalyzer::call(
         } else {
             join_normal_ownership(
                 result.normal,
-                std::optional(OwnershipNormal {std::move(returned), value})
+                std::optional(OwnershipNormal {std::move(returned), value, {}})
             );
         }
     }

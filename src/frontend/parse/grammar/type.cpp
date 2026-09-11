@@ -52,7 +52,7 @@ auto Parser::parse_type() noexcept -> std::optional<ASTTypeID> {
         return parse_named_type();
     }
     if (check(TokenKind::LeftBracket)) {
-        return parse_array_type();
+        return parse_sequence_type();
     }
     if (check(TokenKind::Fn)) {
         return parse_function_type();
@@ -111,15 +111,30 @@ auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
     };
 }
 
-auto Parser::parse_array_type() noexcept -> std::optional<ASTTypeID> {
-    auto parsed = parse_array_type_form();
-    if (!parsed.has_value()) {
+auto Parser::parse_sequence_type() noexcept -> std::optional<ASTTypeID> {
+    const auto left = expect(TokenKind::LeftBracket, "expected '['");
+    const auto element = parse_type();
+    if (!element) {
+        return std::nullopt;
+    }
+    if (const auto right = match(TokenKind::RightBracket)) {
+        return builder.append_type(
+            ASTType {
+                .span = join(left.span, right->span),
+                .value = ASTSliceType {.element_type = *element},
+            }
+        );
+    }
+    expect(TokenKind::Semicolon, "expected ';' or ']' after element type");
+    const auto extent = parse_expression();
+    const auto right = expect(TokenKind::RightBracket, "expected ']' after array extent");
+    if (!extent || failed) {
         return std::nullopt;
     }
     return builder.append_type(
         ASTType {
-            .span = parsed->span,
-            .value = parsed->value,
+            .span = join(left.span, right.span),
+            .value = ASTArrayType {.element_type = *element, .extent = *extent},
         }
     );
 }

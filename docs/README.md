@@ -23,10 +23,11 @@ These documents describe Carven in this checkout.
 - Describe current behavior concretely. Distinguish language rules, implementation
   facts, and design goals; state restrictions and external responsibilities where
   they affect use.
-- Give each detailed rule one owning section. Keep necessary context local and
-  cross-references exceptional; navigation belongs in indexes and contents lists.
-- Explain explicit forms, omissions, evaluation, lifetimes, and failures where
-  relevant. Preserve the reasoning and examples needed to understand a rule.
+- Give each detailed rule one owning section. Other documents provide the context
+  needed for their task and link to that section for the full rule.
+- State supported forms, defaults, evaluation, lifetimes, failures, and the
+  responsible component. Use examples to clarify rules. Record unresolved choices
+  in proposals and research comparisons in notes.
 - Order tutorials and examples from imports and declarations to helpers, callers,
   and tests. Explain providers before consumers, then show build commands and
   expected output.

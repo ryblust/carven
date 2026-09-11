@@ -367,6 +367,11 @@ auto validate_publication_facts(
                         invariant_violation("canonical ptr used an invalid target or access");
                     }
                 },
+                [&](const SliceTypeValue& value) noexcept {
+                    if (!types.contains(value.element)) {
+                        invariant_violation("canonical array used an unpublished element type");
+                    }
+                },
                 [&](const ArrayTypeValue& value) noexcept {
                     if (!types.contains(value.element)) {
                         invariant_violation("canonical array used an unpublished element type");

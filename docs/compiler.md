@@ -196,25 +196,36 @@ Query inputs describe aliases, accesses, availability, relationships, and
 execution state.
 Known field and element writes replace the relationships at that position;
 unknown element writes merge possible relationships. Type contents recursively
-identify String owners, closure owners, and callable views.
+identify Carven storage owners (arrays and Strings), closure owners, and callable
+views. Native template arguments propagate callable-view restrictions. Native
+Read passing is selected from C++ copy and destruction traits.
 
-Text loans record known Carven backing separately from callable loans and Write
+Expression results carry selected storage separately from their value's contained
+relationships. Bindings and projections select existing objects; owned value
+results establish temporary storage. Copying into a destination copies contained
+relationships, not the source object's identity. Read parameters and range bindings
+use the shared resolved-type storage policy to retain selected objects, including
+multiple possible backing objects of a slice. The backend consumes that same policy.
+
+Storage loans record known Carven backing separately from callable loans and Write
 captures. Backing can select projected owner storage. Literal storage needs no
-loan; an empty text-loan set makes no claim about native storage lifetime.
-Named holders follow lexical lifetimes. Temporary text relationships travel with
-consumers and pending operands. Actual writes check overlapping live loans;
+loan; an empty storage-loan set makes no claim about native storage lifetime.
+Named holders follow lexical lifetimes. Temporary owners retain their contained
+relationships until their lifetime region ends; consumers also carry the
+relationships of the values they receive. Callable borrowing uses the selected
+backing object's lifetime to distinguish full-expression storage. Actual writes check overlapping live loans;
 assignment checks after its RHS completes.
 
 Value captures carry copied relationships. Write captures refer to live
 storage, so consumers follow the target's current contents. Lexical regions and
 full expressions release their own objects on each normal and control exit.
 A result's destination lifetime does not change the execution position.
-Lifetime exits check that returned and failed text values retain live backing.
+Lifetime exits check that returned and failed borrowed values retain live backing.
 Catch selection and guards hold the original failure independently of copied
 bindings; rethrow forwards its payload relationships.
 
-Calls map parameters and captures to actual storage, preserving Read String aliases.
-Unpassed holders that constrain reachable text backing contribute reader loans
+Calls map parameters and captures to actual storage, preserving Read storage aliases.
+Unpassed holders that constrain reachable storage backing contribute reader loans
 without introducing holder identities into recursive queries. Passed Write
 holders retain their identity so exact replacement can release their loans.
 Aliases share one state, including the order of external writes. Call answers
@@ -280,7 +291,8 @@ not the contents or ownership relationships of a result object.
 
 Semantic construction owns result-query derivation for external operations.
 Publication checks reference integrity and Carven-owned operation contracts.
-Ownership analysis checks access, known text and callable borrows, and Write
+Ownership analysis checks access, known storage and callable borrows, and Write
 captures. C++ determines the validity and results of delegated native operations.
 Native retention, returned aliases, and indirect storage obey the provider/caller
-contract. Native Write view slots retain their possible old text loans.
+contract. Native results, including representation conversions, establish no
+inferred storage loans. Native Write view slots retain their possible old storage loans.

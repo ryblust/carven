@@ -1,5 +1,4 @@
 local examples_dir = path.join(os.projectdir(), "examples")
-local crafts_dir = path.join(os.projectdir(), "crafts")
 
 local cases = {
     {name = "strings", dir = "strings", output = "Hello, 世界!\nGoodbye!\nHello, 世界!\nBytes: 14, ID: 002a\n"},
@@ -86,7 +85,7 @@ for _, case in ipairs(cases) do
         set_kind("binary")
         set_languages("c++20")
         add_rules("@carven/carven")
-        set_values("carven.includedir", crafts_dir)
+
         add_includedirs(path.join(examples_dir, "support"), path.join(examples_dir, case.dir))
         add_files(path.join(examples_dir, case.dir, "*.cv"))
         if case.name == "cpp-host" then
@@ -98,17 +97,12 @@ for _, case in ipairs(cases) do
             add_cxxflags("/GR", "/U_HAS_EXCEPTIONS", "/D_HAS_EXCEPTIONS=1",
                 {tools = {"cl", "clang_cl"}, force = true})
         end
-        after_load(function (target)
-            import("core.project.project")
-            target:values_set("carven.program", project.target("carven"):targetfile())
-        end)
-        add_tests("output", {group = "examples"})
-        on_test(function (target)
-            local output = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            assert(output:gsub("\r\n", "\n") == case.output,
-                "%s produced unexpected output:\n%s", name, output)
-            return true
-        end)
+        add_tests("output", {
+            group = "examples",
+            run_timeout = 30000,
+            plain = true,
+            pass_outputs = {case.output, (case.output:gsub("\n", "\r\n"))},
+        })
     target_end()
 end
 

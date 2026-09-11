@@ -96,6 +96,51 @@ Xmake package and rule live in the
 build systems can invoke Carven on a source batch, compile the generated C++,
 and link it with their native providers.
 
+### Compile generated C++ directly
+
+Generated programs do not require Xmake. Invoke Carven with every `.cv` source
+in the compilation batch, then compile and link the generated `.cpp` files with
+a C++20 or newer toolchain. Pass the generated output directory and the Carven
+`crafts/` directory as C++ include roots.
+
+For example, save the Hello World above as `main.cv`. With an installed `carven`
+on `PATH`, run:
+
+```shell
+carven -o out main.cv
+clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
+    out/main.cpp -o out/hello-carven
+./out/hello-carven
+```
+
+Replace `/path/to/carven/crafts` with the installed directory beside the
+toolchain's `bin/`, or use this repository's `crafts/` with the locally built
+compiler. From the repository root, the existing example can be built directly:
+
+```shell
+./xmakew run carven -o out/manual examples/helloworld/main.cv
+clang++ -std=c++20 -Iout/manual -Icrafts \
+    out/manual/examples/helloworld/main.cpp -o out/manual/hello-carven
+./out/manual/hello-carven
+```
+
+Carven does not discover imported source modules. For a `main.cv` that imports
+`std::utf.text`, explicitly include the package modules and their generated implementations:
+
+```shell
+carven -o out main.cv /path/to/carven/crafts/carven/std/utf/*.cv
+clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
+    out/main.cpp out/crafts/carven/std/utf/*.cpp -o out/app
+./out/app
+```
+
+Likewise, name imported project `.cv` files in the Carven invocation. Supply any
+native `.cpp` files, include directories, and libraries to the C++ toolchain.
+The maintained Xmake rule discovers `.cv` and `.cpp` sources and adds include
+roots for the toolchain and project `crafts/` directories; native library
+dependencies remain ordinary build configuration. See the
+[CLI reference](docs/cli.md) for source paths and generated artifact destinations.
+
 ## Documentation
 
 - **Run examples:** [Learning examples](examples/README.md) and the

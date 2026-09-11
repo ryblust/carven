@@ -3,7 +3,7 @@ module carven:semantic.analysis.ownership.context;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.ownership;
-import :semantic.analysis.types.contents;
+import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
@@ -51,18 +51,18 @@ struct OwnershipCapture final {
     }
 };
 
-// Only known Carven backing creates a text loan. An empty set makes no claim
+// Only known Carven backing creates a storage loan. An empty set makes no claim
 // about native storage lifetime. Origins do not participate in solver identity.
-struct OwnershipTextLoan final {
+struct OwnershipStorageLoan final {
     OwnershipProjectionPath holder;
     OwnershipPlace backing;
     ProgramOriginID origin;
 
-    auto operator<=>(const OwnershipTextLoan& other) const noexcept {
+    auto operator<=>(const OwnershipStorageLoan& other) const noexcept {
         return std::tie(holder, backing) <=> std::tie(other.holder, other.backing);
     }
 
-    auto operator==(const OwnershipTextLoan& other) const noexcept -> bool {
+    auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool {
         return (*this <=> other) == 0;
     }
 };
@@ -70,7 +70,7 @@ struct OwnershipTextLoan final {
 struct OwnershipRelationships final {
     std::vector<OwnershipCallableLoan> callable_loans;
     std::vector<OwnershipCapture> captures;
-    std::vector<OwnershipTextLoan> text_loans;
+    std::vector<OwnershipStorageLoan> storage_loans;
     auto operator==(const OwnershipRelationships&) const noexcept -> bool = default;
 };
 
@@ -113,6 +113,8 @@ struct OwnershipExit final {
 struct OwnershipNormal final {
     OwnershipState state;
     OwnershipRelationships value;
+    // Selected storage is expression provenance, not contents copied into a value.
+    std::vector<OwnershipPlace> storage;
 };
 
 struct OwnershipFlow final {
@@ -129,6 +131,7 @@ struct OwnershipAccess final {
 struct OwnershipCallArgument final {
     std::optional<OwnershipPlace> alias;
     OwnershipRelationships value;
+    std::vector<OwnershipPlace> storage;
     auto operator==(const OwnershipCallArgument&) const noexcept -> bool = default;
 };
 
@@ -152,7 +155,7 @@ struct OwnershipCallInput final {
     std::vector<OwnershipExternalObject> objects;
     std::vector<std::vector<bool>> outlives;
     std::vector<OwnershipAccess> accesses;
-    std::vector<OwnershipTextLoan> text_readers;
+    std::vector<OwnershipStorageLoan> storage_readers;
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
 
@@ -195,12 +198,20 @@ auto prepare_ownership_body_facts(
     std::span<const TypeContents> types
 ) noexcept -> OwnershipBodyFacts;
 
+auto select_element_storage(
+    const CanonicalTypeStore& types,
+    TypeID sequence,
+    std::span<const OwnershipPlace> storage,
+    const OwnershipRelationships& relationships,
+    std::optional<std::uint64_t> index
+) noexcept -> std::vector<OwnershipPlace>;
+
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
-auto normalize_text_loans(std::vector<OwnershipTextLoan>& loans) noexcept -> void;
+auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
 auto merge_relationships(
     OwnershipRelationships& destination,
@@ -240,6 +251,7 @@ private:
         std::optional<ProgramOriginID> related = std::nullopt
     ) noexcept -> void;
     auto outlives(std::size_t source, std::size_t destination) const noexcept -> bool;
+    auto full_expression_storage(std::size_t object) const noexcept -> bool;
     auto leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void;
     auto retain(
         OwnershipState& state,
@@ -258,15 +270,13 @@ private:
         const OwnershipRelationships& relationships,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto check_text_write(
+    auto check_storage_write(
         const OwnershipState& state,
         const OwnershipPlace& target,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto protect_text(const OwnershipRelationships& value) noexcept -> void;
-    auto restore_text_readers(std::size_t count) noexcept -> void;
-    auto storage_backing(const SemanticExpression& source) const noexcept
-        -> std::optional<OwnershipPlace>;
+    auto protect_storage(const OwnershipRelationships& value) noexcept -> void;
+    auto restore_storage_readers(std::size_t count) noexcept -> void;
     auto references(
         const OwnershipRelationships& relationships,
         const OwnershipState& state
@@ -316,7 +326,6 @@ private:
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto object_type(std::size_t object) const noexcept -> TypeID;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;
-    auto temporary(const SemanticExpression& expression) const noexcept -> std::size_t;
 
     OwnershipBatchAnalyzer& analysis;
     const OwnershipCallInput& input;
@@ -325,9 +334,11 @@ private:
     const OwnershipBodyFacts& facts;
     bool diagnosing;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
+    // Read bindings can select several possible backing objects after a join.
+    std::flat_map<LocalBindingID, std::vector<OwnershipPlace>> read_storage;
     std::vector<OwnershipAccess> accesses;
     std::optional<OwnershipFailure> caught;
-    std::vector<OwnershipTextLoan> text_readers;
+    std::vector<OwnershipStorageLoan> storage_readers;
     std::optional<LifetimeRegionID> full_expression;
 };
 

@@ -1,5 +1,4 @@
 local language_dir = path.join(os.projectdir(), "tests", "language")
-local crafts_dir = path.join(os.projectdir(), "crafts")
 
 local language_feature_dirs = {
     "bindings_and_access",
@@ -13,16 +12,10 @@ local language_feature_dirs = {
 
 local language_sources = {}
 for _, feature_dir in ipairs(language_feature_dirs) do
-    table.join2(language_sources, os.files(path.join(language_dir, feature_dir, "*.cv")))
+    table.insert(language_sources, path.join(language_dir, feature_dir, "*.cv"))
 end
-table.join2(language_sources, os.files(path.join(language_dir, "modules_and_imports", "**.cv")))
+table.insert(language_sources, path.join(language_dir, "modules_and_imports", "**.cv"))
 table.insert(language_sources, path.join(language_dir, "testing", "inline.cv"))
-table.sort(language_sources)
-
-local function use_local_carven(target)
-    import("core.project.project")
-    target:values_set("carven.program", project.target("carven"):targetfile())
-end
 
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
 local reporting_source = path.join(language_dir, "testing", "reporting.cv")
@@ -34,22 +27,22 @@ for _, mode in ipairs({
     target("carven-test-language" .. mode.suffix)
         set_default(false)
         add_rules("@carven/carven", {tests = "default"})
-        set_values("carven.includedir", crafts_dir)
+
         set_languages(mode.standard)
         add_includedirs(language_dir)
         add_files(table.unpack(language_sources))
-        after_load(use_local_carven)
+
         add_tests("language", {group = "language", run_timeout = 30000})
     target_end()
 
     target("carven-test-language-entry-point" .. mode.suffix)
         set_default(false)
         add_rules("@carven/carven", {tests = "external"})
-        set_values("carven.includedir", crafts_dir)
+
         set_languages(mode.standard)
         add_includedirs(language_dir)
         add_files(entry_point_source)
-        after_load(use_local_carven)
+
         for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
             add_tests(scenario, {group = "language"})
         end
@@ -62,12 +55,12 @@ for _, mode in ipairs({
     target("carven-test-language-reporting" .. mode.suffix)
         set_default(false)
         add_rules("@carven/carven", {tests = "external"})
-        set_values("carven.includedir", crafts_dir)
+
         set_languages(mode.standard)
         add_includedirs(language_dir)
         add_files(reporting_source)
         add_files(path.join(language_dir, "testing", "reporting_provider.cpp"))
-        after_load(use_local_carven)
+
         add_tests("reporting", {group = "language"})
         on_test(function (target)
             import("harness.entry", {rootdir = language_dir}).main(target, "reporting")

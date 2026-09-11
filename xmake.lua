@@ -62,14 +62,13 @@ target("carven")
     end
     add_deps("carven-modules")
     add_files("src/carven.cpp")
-    add_installfiles("crafts/(carven/**.hpp)", {prefixdir = "include"})
+    add_installfiles("(crafts/carven/**)")
 target_end()
 
-includes("tools/graver")
-includes("tools/carvend")
 includes("examples")
 includes("tests/internal")
 includes("tests/language")
+includes("tests/crafts")
 includes("tests/interop")
 includes("tests/cli")
 

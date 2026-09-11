@@ -22,3 +22,13 @@ export(cpp) fn index(value: usize) {
 export(cpp) fn unicode() {
     let _ = discarded_invalid_scalar();
 }
+
+export(cpp) fn slice_index(value: i32) {
+    let array = [1];
+    let _ = array.as_slice()[value];
+}
+
+export(cpp) fn slice_range(start: usize, end: usize) {
+    let array = [1];
+    let _ = array.as_slice().slice(start, end);
+}

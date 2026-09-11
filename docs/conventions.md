@@ -127,8 +127,12 @@ architecture document.
   producer-private state.
 - Use `const auto` for immutable value locals.
 - Use `auto` for values that are modified, moved from, or mutably borrowed.
-- Use `const auto*` for read-only raw-pointer borrows and `auto*` for mutable
-  raw-pointer borrows. Do not add top-level const to a local raw-pointer borrow.
+- `auto` may deduce a pointer; spelling `auto*` is not required.
+- Apply top-level constness according to the local value: use `const auto` when
+  it is not reassigned and `auto` when it is reassigned.
+- Pointee constness is part of the producing interface. Preserve it through
+  deduction; explicitly spell a pointer type only when the local declaration
+  intentionally narrows mutable access to the pointee.
 - Use `const auto&` for read-only lvalue borrows.
 - When an integer literal's type is intentional, use a lowercase literal suffix
   such as `u`, `ll`, `ull`, or `uz` instead of constructing a fixed-width alias

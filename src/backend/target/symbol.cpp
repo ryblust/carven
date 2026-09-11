@@ -30,8 +30,9 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeTransfer:          return "carven::runtime::transfer";
         case TargetSymbol::RuntimeOutcome:           return "carven::runtime::Outcome";
         case TargetSymbol::RuntimeFormat:            return "carven::runtime::format";
+        case TargetSymbol::RuntimeAsSlice:           return "carven::runtime::as_slice";
+        case TargetSymbol::RuntimeSlice:             return "carven::runtime::Slice";
         case TargetSymbol::RuntimeString:            return "carven::runtime::String";
-        case TargetSymbol::RuntimeStrBytesView:      return "carven::runtime::StrBytesView";
         case TargetSymbol::RuntimeStrCharsView:      return "carven::runtime::StrCharsView";
         case TargetSymbol::RuntimeEntryArgs:         return "carven::runtime::entry_args";
         case TargetSymbol::RuntimeFunctionRef:       return "carven::runtime::FunctionRef";
@@ -62,8 +63,8 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdOptional:         return "std::optional";
         case TargetSymbol::StdStringView:       return "std::string_view";
         case TargetSymbol::StdVariant:          return "std::variant";
-        case TargetSymbol::TestingContext:      return "carven::testing::TestContext";
-        case TargetSymbol::TestingReporter:     return "carven::testing::TestReporter";
+        case TargetSymbol::TestingContext:      return "carven::runtime::TestContext";
+        case TargetSymbol::TestingReporter:     return "carven::runtime::TestReporter";
     }
     std::unreachable();
 }

@@ -90,6 +90,11 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     : required;
             },
             [&](const SemFormat&) noexcept { return required; },
+            [&](const SemSliceIntrinsic& value) noexcept {
+                return value.intrinsic == SliceIntrinsic::Slice
+                    ? required
+                    : operands(value.operands.front().expression);
+            },
             [&](const SemTextIntrinsic& value) noexcept {
                 return text_intrinsic_writes(value.intrinsic)
                         || value.intrinsic == TextIntrinsic::New

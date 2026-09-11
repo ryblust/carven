@@ -26,7 +26,6 @@ auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
         case F64:          return TargetSymbol::Double;
         case String:       return TargetSymbol::RuntimeString;
         case Str:          return TargetSymbol::StdStringView;
-        case StrBytesView: return TargetSymbol::RuntimeStrBytesView;
         case StrCharsView: return TargetSymbol::RuntimeStrCharsView;
         case Void:         return TargetSymbol::Void;
         case EntryArgs:    return TargetSymbol::Auto;
@@ -118,6 +117,9 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
     }
     switch (parameter.access) {
         case AccessMode::Read:
+            if (plan().read_borrows_storage(parameter.type)) {
+                return reference_type(base, true);
+            }
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {
@@ -287,6 +289,16 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                             .nested = {},
                         },
                     .const_qualified = false,
+                };
+            },
+            [&](const SliceTypeValue& value) noexcept -> TargetType {
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeSlice,
+                            .type_argument_ids = {lower_type(value.element)},
+                        },
+                    .const_qualified = false
                 };
             },
             [&](const ArrayTypeValue& value) noexcept -> TargetType {

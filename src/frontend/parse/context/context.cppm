@@ -154,7 +154,7 @@ private:
 
     auto parse_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type() noexcept -> std::optional<ASTTypeID>;
-    auto parse_array_type() noexcept -> std::optional<ASTTypeID>;
+    auto parse_sequence_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_function_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType>;
     auto parse_array_type_form() noexcept -> std::optional<ParsedTypeForm<ASTArrayType>>;

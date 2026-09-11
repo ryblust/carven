@@ -94,17 +94,49 @@ Consumers provide the output root and installed support root as include search
 paths, compile the generated implementations, and link their C++ providers.
 Header imports do not add include directories or link inputs.
 
-The packaged `@carven/carven` Xmake rule owns batch scheduling and output
-promotion. It generates from a target's complete explicit `.cv` set before native
-dependency scanning, then registers the generated implementations as C++ sources.
-It supplies a target-private output root and linkage domain. Consumers select
-package options, compiler modes, and provider dependencies in their build.
+An Xmake project declares the Carven repository and package dependency, then
+attaches `@carven/carven` to its target:
 
-The rule stages generation before updating live artifacts. A failed compiler
-invocation leaves live output intact; promotion itself can fail partway through.
-The [rule repository](https://github.com/ryblust/carven-xmake-repo) owns setup,
-defaults, incremental promotion, and recovery behavior. These package behaviors
-are separate from the CLI's direct writes.
+```lua
+add_repositories("carven-xmake-repo https://github.com/ryblust/carven-xmake-repo.git")
+add_requires("carven")
+
+target("app")
+    set_kind("binary")
+    add_rules("@carven/carven")
+    add_files("src/**.cv")
+```
+
+The rule obtains the compiler and matching Crafts from the required package.
+It uses the installed `crafts/carven/` and project-root `crafts/` as source roots,
+and both `crafts/` directories as native include roots. A missing project
+`crafts/` contributes no files. Xmake file matching collects `.cv` and optional
+`.cpp` files. Test sources live under the project's `tests/` directory and are
+added explicitly by test targets. Inline tests follow the target's test emission
+mode.
+
+Application targets list their own sources. Toolchain paths and module mappings
+require no user configuration. Native provider dependencies and optional test
+modes use ordinary target configuration.
+
+The rule passes the complete `.cv` batch to Carven before native dependency
+scanning, supplies a target-private output root and linkage domain, and registers
+generated implementations as C++ sources. Installed source paths preserve their
+`crafts/carven/` hierarchy. The compiler derives module identities from the supplied
+filenames and diagnoses duplicates. The [module rules](semantics.md#compilations-crafts-and-modules)
+define import resolution and the reserved `std::` prefix.
+
+Generation runs in a staging directory before updating live artifacts. A failed
+compiler invocation leaves live output intact; promotion itself can fail partway
+through. The [rule repository](https://github.com/ryblust/carven-xmake-repo) owns
+batch scheduling, incremental promotion, and recovery.
+
+The installed layout places `crafts/` beside `bin/`. The official `carven` craft
+contains runtime support and the standard library. Capability modules keep their
+API documentation alongside their sources, as in
+[UTF](../crafts/carven/std/utf/README.md). Native headers and sources remain with
+their owning capability. Runtime support is independent of generated
+standard-library code.
 
 ## Support headers
 
@@ -114,14 +146,16 @@ Generated files include the self-contained support leaves they use:
 carven/runtime/passing.hpp
 carven/runtime/numeric.hpp
 carven/runtime/array.hpp
+carven/runtime/slice.hpp
 carven/runtime/text.hpp
+carven/runtime/utf.hpp
 carven/runtime/string.hpp
 carven/runtime/format.hpp
 carven/runtime/entry.hpp
 carven/runtime/outcome.hpp
 carven/runtime/callable.hpp
 carven/runtime/unreachable.hpp
-carven/std/testing/testing.hpp
+carven/runtime/testing.hpp
 ```
 
 `carven/runtime/runtime.hpp` aggregates runtime leaves for direct consumers.
@@ -130,9 +164,11 @@ names, helper selections, and representation layouts are implementation details.
 Use support headers matching the compiler that generated the artifacts.
 
 `passing.hpp` supplies native parameter and transfer support; `entry.hpp`
-supplies process-argument ingress.
+supplies process-argument ingress. `testing.hpp` supplies inline-test execution
+contexts, failure records, and reporting in `carven::runtime`.
 
-`text.hpp` supplies UTF-8 views and validation; `string.hpp` supplies owning
+`utf.hpp` supplies UTF validation, scalar encoding and decoding, and native
+representation conversions. `text.hpp` supplies text views; `string.hpp` supplies owning
 String. Interpolation uses `format.hpp` and requires C++20 `<format>` support
 in the consumer's standard library. The consumer compiler checks format strings
 and the availability of formatters for native types.

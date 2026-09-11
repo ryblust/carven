@@ -351,6 +351,38 @@ auto resolve_type_value(
                      }}
                 )};
             },
+            [&](const ASTSliceType& view) noexcept -> AnalysisResult<ConstructionTypeRef> {
+                auto element = resolve_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    view.element_type,
+                    resolve_extent
+                );
+                if (!element) {
+                    return std::unexpected(element.error());
+                }
+                auto checked = require_source_value_type(
+                    draft,
+                    *element,
+                    module_id,
+                    syntax.type(view.element_type).span,
+                    "slice element"
+                );
+                if (!checked) {
+                    return std::unexpected(checked.error());
+                }
+                if (const auto* concrete = std::get_if<TypeID>(&*checked)) {
+                    return ConstructionTypeRef {
+                        draft.intern_type({.value = SliceTypeValue {.element = *concrete}})
+                    };
+                }
+                return ConstructionTypeRef {draft.append_construction_type(
+                    {.value = ConstructionSliceTypeValue {.element = *checked}}
+                )};
+            },
             [&](const ASTArrayType& array) noexcept -> AnalysisResult<ConstructionTypeRef> {
                 auto element = resolve_source_type(
                     draft,
@@ -597,7 +629,8 @@ auto resolve_failure_types(
                                   || std::same_as<Value, ClosureTypeValue>
                                   || std::same_as<Value, CallableViewTypeValue>
                                   || std::same_as<Value, CppTypeValue>
-                                  || std::same_as<Value, PointerTypeValue>,
+                                  || std::same_as<Value, PointerTypeValue>
+                                  || std::same_as<Value, SliceTypeValue>,
                               "unhandled non-nominal failure type"
                           );
                           return false;

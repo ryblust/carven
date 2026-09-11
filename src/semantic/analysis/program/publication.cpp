@@ -3,8 +3,8 @@ module carven:semantic.analysis.program.publication.impl;
 import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
-import :semantic.analysis.types.contents;
 import :semantic.analysis.validation;
+import :semantic.semir.contents;
 import :semantic.semir.publication;
 import std;
 

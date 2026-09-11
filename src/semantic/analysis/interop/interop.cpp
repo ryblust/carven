@@ -32,7 +32,6 @@ auto is_cpp_scalar_type(BuiltinType type) noexcept -> bool {
         case Void:
         case String:
         case Str:
-        case StrBytesView:
         case StrCharsView:
         case EntryArgs:    return false;
     }

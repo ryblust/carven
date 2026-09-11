@@ -239,6 +239,15 @@ public:
         return result(known);
     }
 
+    auto finish_slice_call(
+        SliceIntrinsic,
+        Value,
+        std::span<const ASTCallArgument>,
+        Span
+    ) const noexcept -> Value {
+        return unavailable();
+    }
+
     auto finish_text_call(
         TextIntrinsic,
         std::optional<Value>,

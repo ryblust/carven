@@ -25,7 +25,8 @@ auto prepare_ownership_body_facts(
     auto prepared_patterns = std::flat_set<PatternID>();
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
         const auto contents = types[expression.type.resolved().index()];
-        if (contents.closure_owner || contents.callable_view || contents.string_owner) {
+        if (!expression.selects_storage()
+            && (contents.closure_owner || contents.callable_view || contents.storage_owner)) {
             facts.temporaries.emplace(
                 std::addressof(expression),
                 add(expression.type.resolved(), expression.origin, expression.lifetime)

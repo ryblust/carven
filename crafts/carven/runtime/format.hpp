@@ -1,6 +1,6 @@
 #pragma once
 
-#include <carven/runtime/string.hpp>
+#include "string.hpp"
 
 #include <format>
 #include <string_view>

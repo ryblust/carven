@@ -405,7 +405,10 @@ auto realize_operation(
                 );
             },
             [&](const SemIndex& value) noexcept -> TargetExpr {
-                if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)) {
+                if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)
+                    && !std::holds_alternative<SliceTypeValue>(
+                        context.semantic().types().type(value.source->type.resolved()).value
+                    )) {
                     return call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeCheckedArrayIndex),
                         target_expressions(std::move(operands[0]), std::move(operands[1]))
@@ -427,6 +430,20 @@ auto realize_operation(
                     intrinsic_expression(TargetSymbol::RuntimeFormat),
                     std::move(operands)
                 );
+            },
+            [&](const SemSliceIntrinsic& value) noexcept -> TargetExpr {
+                if (value.intrinsic == SliceIntrinsic::FromArray) {
+                    return call_expression(
+                        intrinsic_expression(TargetSymbol::RuntimeAsSlice),
+                        std::move(operands)
+                    );
+                }
+                auto receiver = std::move(operands.front());
+                operands.erase(operands.begin());
+                const auto* const name = value.intrinsic == SliceIntrinsic::Len ? "size"
+                    : value.intrinsic == SliceIntrinsic::IsEmpty                ? "empty"
+                                                                                : "slice";
+                return call_member(std::move(receiver), name, std::move(operands));
             },
             [&](const SemTextIntrinsic& value) noexcept -> TargetExpr {
                 if ((value.intrinsic == TextIntrinsic::Bytes

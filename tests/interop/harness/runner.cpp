@@ -16,7 +16,7 @@ auto terminated(int signal) noexcept -> void {
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
 auto main(int argc, char** argv) noexcept -> int {
     if (argc == 1) {
-        return carven::testing::run_generated_tests();
+        return carven::runtime::run_generated_tests();
     }
     if (argc != 2) {
         return 1;
@@ -34,6 +34,14 @@ auto main(int argc, char** argv) noexcept -> int {
         api::shift(32);
     } else if (operation == "index") {
         api::index(1);
+    } else if (operation == "slice-index") {
+        api::slice_index(1);
+    } else if (operation == "slice-negative") {
+        api::slice_index(-1);
+    } else if (operation == "slice-range") {
+        api::slice_range(0, 2);
+    } else if (operation == "slice-reversed") {
+        api::slice_range(1, 0);
     } else if (operation == "unicode") {
         api::unicode();
     } else if (operation == "unicode-export") {

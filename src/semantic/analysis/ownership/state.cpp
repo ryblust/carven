@@ -15,11 +15,20 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
       facts(analysis.facts_for_body(input.body_id)),
       diagnosing(diagnosing),
       accesses(input.accesses),
-      text_readers(input.text_readers) {
+      storage_readers(input.storage_readers) {
     const auto bind = [&](std::span<const LocalBindingID> bindings,
                           std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
-            if (value.alias.has_value()) {
+            const auto* parameter = std::get_if<ParameterBindingStorage>(&body.binding(id).storage);
+            if (parameter != nullptr
+                && parameter->access == AccessMode::Read
+                && analysis.contents(body.binding(id).type).read_borrows_storage()) {
+                auto storage = value.storage;
+                if (storage.empty() && value.alias) {
+                    storage.push_back(*value.alias);
+                }
+                read_storage.emplace(id, std::move(storage));
+            } else if (value.alias.has_value()) {
                 aliases.emplace(id, *value.alias);
             }
         }
@@ -36,11 +45,6 @@ auto OwnershipBodyAnalyzer::object_type(std::size_t object) const noexcept -> Ty
 auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> ProgramOriginID {
     return object < input.objects.size() ? input.objects[object].origin
                                          : facts.locals[object - input.objects.size()].origin;
-}
-
-auto OwnershipBodyAnalyzer::temporary(const SemanticExpression& expression) const noexcept
-    -> std::size_t {
-    return input.objects.size() + facts.temporaries.at(std::addressof(expression));
 }
 
 auto OwnershipBodyAnalyzer::diagnose(
@@ -66,6 +70,12 @@ auto OwnershipBodyAnalyzer::outlives(std::size_t source, std::size_t destination
         );
 }
 
+auto OwnershipBodyAnalyzer::full_expression_storage(std::size_t object) const noexcept -> bool {
+    return object >= input.objects.size()
+        && body.lifetime_regions().region(facts.locals[object - input.objects.size()].lifetime).kind
+        == LifetimeRegionKind::FullExpression;
+}
+
 auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void {
     const auto found = facts.lifetime_objects.find(lifetime);
     if (found == facts.lifetime_objects.end()) {
@@ -78,11 +88,11 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     };
     const auto check = [&](const OwnershipRelationships& value,
                            const OwnershipState& state) noexcept {
-        for (const auto& loan : value.text_loans) {
+        for (const auto& loan : value.storage_loans) {
             if (!state.objects[loan.backing.object].available) {
                 diagnose(
                     DiagnosticCode::AccessBorrowConflict,
-                    "text view escapes the lifetime of its backing",
+                    "borrowed view escapes the lifetime of its backing",
                     loan.origin,
                     object_origin(loan.backing.object)
                 );
@@ -115,9 +125,6 @@ auto OwnershipBodyAnalyzer::retain(
     if (found != facts.temporaries.end()) {
         state.objects[input.objects.size() + found->second] =
             {.available = true, .taken = std::nullopt, .relationships = relationships};
-        // Text expression results travel through their consumers. Keeping an
-        // additional synthetic holder here would extend transient borrows.
-        state.objects[input.objects.size() + found->second].relationships.text_loans.clear();
     }
 }
 
@@ -158,11 +165,11 @@ auto OwnershipBodyAnalyzer::use(
     ProgramOriginID origin,
     bool direct
 ) noexcept -> void {
-    for (const auto& loan : relationships.text_loans) {
+    for (const auto& loan : relationships.storage_loans) {
         if (!state.objects[loan.backing.object].available) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
-                "text view has unavailable or expired backing",
+                "borrowed view has unavailable or expired backing",
                 origin,
                 loan.origin
             );
@@ -204,12 +211,12 @@ auto OwnershipBodyAnalyzer::store(
     ProgramOriginID origin
 ) noexcept -> void {
     use(relationships, state, origin);
-    check_text_write(state, target, origin);
-    for (const auto& loan : relationships.text_loans) {
+    check_storage_write(state, target, origin);
+    for (const auto& loan : relationships.storage_loans) {
         if (loan.backing.object == target.object || !outlives(loan.backing.object, target.object)) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
-                "text holder outlives its backing or creates a self reference",
+                "view holder outlives its backing or creates a self reference",
                 origin,
                 loan.origin
             );
@@ -249,7 +256,7 @@ auto OwnershipBodyAnalyzer::store(
         };
         std::erase_if(destination.relationships.callable_loans, replaced);
         std::erase_if(destination.relationships.captures, replaced);
-        std::erase_if(destination.relationships.text_loans, replaced);
+        std::erase_if(destination.relationships.storage_loans, replaced);
     }
     merge_relationships(destination.relationships, nest_relationships(relationships, target.path));
 }
@@ -267,6 +274,9 @@ auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noe
         return location(foreign->operands.front().expression);
     }
     if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
+        if (const auto found = read_storage.find(binding->binding); found != read_storage.end()) {
+            return found->second.size() == 1 ? std::optional(found->second.front()) : std::nullopt;
+        }
         return binding_place(binding->binding);
     }
     if (const auto* field = std::get_if<SemField>(&source.value)) {
@@ -277,6 +287,13 @@ auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noe
         return result;
     }
     if (const auto* index = std::get_if<SemIndex>(&source.value)) {
+        if (std::holds_alternative<SliceTypeValue>(
+                program.types().type(index->source->type.resolved()).value
+            )) {
+            // Elements live in the borrowed backing, not inside the slice value.
+            // Their internal relationships are projected by expression().
+            return std::nullopt;
+        }
         auto result = location(*index->source);
         if (result.has_value()) {
             result->path.push_back(constant_index(*index->index));
@@ -354,57 +371,37 @@ auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) con
     return std::nullopt;
 }
 
-auto OwnershipBodyAnalyzer::protect_text(const OwnershipRelationships& value) noexcept -> void {
-    text_readers.insert(text_readers.end(), value.text_loans.begin(), value.text_loans.end());
+auto OwnershipBodyAnalyzer::protect_storage(const OwnershipRelationships& value) noexcept -> void {
+    storage_readers
+        .insert(storage_readers.end(), value.storage_loans.begin(), value.storage_loans.end());
 }
 
-auto OwnershipBodyAnalyzer::restore_text_readers(std::size_t count) noexcept -> void {
-    text_readers.erase(
-        text_readers.begin() + static_cast<std::ptrdiff_t>(count),
-        text_readers.end()
+auto OwnershipBodyAnalyzer::restore_storage_readers(std::size_t count) noexcept -> void {
+    storage_readers.erase(
+        storage_readers.begin() + static_cast<std::ptrdiff_t>(count),
+        storage_readers.end()
     );
 }
 
-auto OwnershipBodyAnalyzer::check_text_write(
+auto OwnershipBodyAnalyzer::check_storage_write(
     const OwnershipState& state,
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
-    const auto check = [&](std::span<const OwnershipTextLoan> loans) noexcept {
+    const auto check = [&](std::span<const OwnershipStorageLoan> loans) noexcept {
         for (const auto& loan : loans) {
             if (overlaps(loan.backing, target)) {
                 diagnose(
                     DiagnosticCode::AccessBorrowConflict,
-                    "operation conflicts with a live text view",
+                    "operation conflicts with a live borrowed view",
                     origin,
                     loan.origin
                 );
             }
         }
     };
-    check(text_readers);
+    check(storage_readers);
     for (const auto& object : state.objects) {
-        check(object.relationships.text_loans);
+        check(object.relationships.storage_loans);
     }
-}
-
-auto OwnershipBodyAnalyzer::storage_backing(const SemanticExpression& source) const noexcept
-    -> std::optional<OwnershipPlace> {
-    if (const auto selected = location(source)) {
-        return selected;
-    }
-    if (const auto* field = std::get_if<SemField>(&source.value)) {
-        auto backing = storage_backing(*field->source);
-        if (backing) {
-            backing->path.push_back(field->field.field_index);
-        }
-        return backing;
-    }
-    if (std::holds_alternative<SemDereference>(source.value)) {
-        return std::nullopt;
-    }
-    const auto found = facts.temporaries.find(std::addressof(source));
-    return found == facts.temporaries.end()
-        ? std::nullopt
-        : std::optional(OwnershipPlace {input.objects.size() + found->second, {}});
 }

@@ -1,0 +1,64 @@
+import .validation using {UTF8Error, validator, push, error};
+import .scalar using char_to_u32;
+import <carven/runtime/utf.hpp>;
+
+export struct UTF8Encoded {
+    bytes: [u8; 4],
+    width: usize,
+}
+
+export enum UTF8Decode {
+    End,
+    Scalar(char, usize),
+}
+
+export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
+    if bytes.is_empty() { return .End; }
+    var state = validator();
+    var scalar: u32 = 0;
+    for byte in bytes {
+        push(&state, byte)?;
+        if state.offset == 1 {
+            if byte < 0x80 { scalar = byte as u32; }
+            else if byte < 0xe0 { scalar = (byte & 31) as u32; }
+            else if byte < 0xf0 { scalar = (byte & 15) as u32; }
+            else { scalar = (byte & 7) as u32; }
+        } else {
+            scalar = (scalar << 6) | ((byte & 63) as u32);
+        }
+        if state.remaining == 0 {
+            return .Scalar((scalar as ::carven::runtime::UnicodeScalarRepresentation) as char, state.offset);
+        }
+    }
+    throw error(state, .Truncated);
+}
+
+private fn continuation(value: u32, shift: u32) -> u8 {
+    let payload = (value >> shift) & 63;
+    return (0x80 | payload) as u8;
+}
+
+export fn encode_utf8(character: char) -> UTF8Encoded {
+    let value = char_to_u32(character);
+    var bytes: [u8; 4] = [0, 0, 0, 0];
+    if value <= 0x7f {
+        bytes[0] = value as u8;
+        return UTF8Encoded { bytes: bytes, width: 1 };
+    }
+    if value <= 0x7ff {
+        bytes[0] = (0xc0 | (value >> 6)) as u8;
+        bytes[1] = continuation(value, 0);
+        return UTF8Encoded { bytes: bytes, width: 2 };
+    }
+    if value <= 0xffff {
+        bytes[0] = (0xe0 | (value >> 12)) as u8;
+        bytes[1] = continuation(value, 6);
+        bytes[2] = continuation(value, 0);
+        return UTF8Encoded { bytes: bytes, width: 3 };
+    }
+    bytes[0] = (0xf0 | (value >> 18)) as u8;
+    bytes[1] = continuation(value, 12);
+    bytes[2] = continuation(value, 6);
+    bytes[3] = continuation(value, 0);
+    return UTF8Encoded { bytes: bytes, width: 4 };
+}

@@ -67,13 +67,16 @@ Payload enum factories, storage constructors, and projections are ordinary C++
 functions. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
 
-Read parameters, Read argument temporaries, and Read array-range bindings use
+Read parameters, Read argument temporaries, and Read range bindings preserve
+Carven array, String, and closure storage, including storage in Carven aggregate
+fields, through const references. The plan uses the resolved type-contents query
+shared with ownership analysis. Native C++ types and other types use
 `runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
-and destroyed types and a const reference otherwise. Its trait
-queries require complete definitions of value representations, which interface
-planning includes. A pointer representation is complete without completing its
-target; pointer dependencies request target declarations. Forming that target's
-type expression can still require complete definitions, such as Read parameter
+and destroyed types and a const reference otherwise. Native template arguments
+do not establish the instantiated type's storage contents. Interface planning
+includes complete definitions for these trait queries. A pointer representation
+is complete without completing its target; pointer dependencies request target
+declarations. Forming that target's type expression can still require complete definitions, such as Read parameter
 types in a callable signature. Declaration ordering includes these requirements;
 cycles in type formation remain C++ errors.
 
@@ -180,8 +183,8 @@ storage directly.
 Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
 source. Sequence sources use explicit Read or Write borrowing during realization.
-Arrays and text use C++ range-for iteration; text decodes UTF-8 in one sequential
-pass.
+Arrays, slices, and text use C++ range-for iteration; text decodes UTF-8 in one
+sequential pass.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains
@@ -202,9 +205,8 @@ end with body lowering.
 
 Composition uses execution and storage-read facts with C++ sequencing guarantees.
 An actual sequencing or control boundary completes preceding recipes in source
-order. Storage access preserves scalar Read snapshots and nontrivial Read aliases,
-including String storage. Write operands retain aliases; callees are selected
-before arguments. Structured regions deliver through explicit
+order. Storage access preserves scalar Read snapshots and Read aliases to owned
+storage. Write operands retain aliases; callees are selected before arguments. Structured regions deliver through explicit
 result destinations. Completion without a normal successor stops operand
 composition. Known short-circuit conditions select execution paths while retaining
 the condition's required execution.
@@ -382,7 +384,7 @@ string literals retain `std::string_view` realization.
 ## Owning text realization
 
 Builtin String lowers to the owner in `string.hpp`, with private `std::string`
-storage. `ReadArg<String>` preserves caller aliasing for named owners and
+storage. The shared Read storage policy preserves caller aliasing for named owners and
 projected fields/elements across sequencing and failure barriers. Text operations
 select runtime factories and members through target syntax and record their
 support-header dependencies. Write receivers remain places; range projections

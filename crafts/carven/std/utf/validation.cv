@@ -1,0 +1,86 @@
+export enum UTF8ErrorKind {
+    InvalidLead,
+    InvalidContinuation,
+    Overlong,
+    Surrogate,
+    TooLarge,
+    Truncated,
+}
+
+export struct UTF8Error {
+    kind: UTF8ErrorKind,
+    offset: usize,
+    sequence_start: usize,
+}
+
+export struct UTF8Validator {
+    remaining: u8,
+    lead: u8,
+    offset: usize,
+    sequence_start: usize,
+}
+
+export fn validator() -> UTF8Validator {
+    return UTF8Validator {
+        remaining: 0,
+        lead: 0,
+        offset: 0,
+        sequence_start: 0,
+    };
+}
+
+fn error(state: UTF8Validator, kind: UTF8ErrorKind) -> UTF8Error {
+    return UTF8Error {
+        kind: kind,
+        offset: state.offset,
+        sequence_start: state.sequence_start,
+    };
+}
+
+// A rejected byte leaves the caller's state unchanged.
+export fn push(&state: UTF8Validator, byte: u8) throw UTF8Error {
+    var next = state;
+    if next.remaining == 0 {
+        next.sequence_start = next.offset;
+        if byte < 0x80 {
+            next.lead = 0;
+        } else if byte >= 0xc2 && byte <= 0xdf {
+            next.remaining = 1;
+            next.lead = 0;
+        } else if byte >= 0xe0 && byte <= 0xef {
+            next.remaining = 2;
+            next.lead = byte;
+        } else if byte >= 0xf0 && byte <= 0xf4 {
+            next.remaining = 3;
+            next.lead = byte;
+        } else {
+            throw error(next, .InvalidLead);
+        }
+    } else {
+        if (byte & 0xc0) != 0x80 { throw error(next, .InvalidContinuation); }
+        if next.lead == 0xe0 && byte < 0xa0 { throw error(next, .Overlong); }
+        if next.lead == 0xed && byte >= 0xa0 { throw error(next, .Surrogate); }
+        if next.lead == 0xf0 && byte < 0x90 { throw error(next, .Overlong); }
+        if next.lead == 0xf4 && byte >= 0x90 { throw error(next, .TooLarge); }
+        next.lead = 0;
+        next.remaining -= 1;
+    }
+    next.offset += 1;
+    if next.remaining == 0 { next.sequence_start = next.offset; }
+    state = next;
+}
+
+// A block boundary can split a scalar; only finish declares EOF.
+export fn feed(&state: UTF8Validator, bytes: [u8]) throw UTF8Error {
+    for byte in bytes { push(&state, byte)?; }
+}
+
+export fn finish(state: UTF8Validator) throw UTF8Error {
+    if state.remaining != 0 { throw error(state, .Truncated); }
+}
+
+export fn validate_utf8(bytes: [u8]) throw UTF8Error {
+    var state = validator();
+    feed(&state, bytes)?;
+    finish(state)?;
+}

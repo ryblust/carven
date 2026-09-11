@@ -111,6 +111,9 @@ auto TargetRenderer::render_record_member(const TargetRecordMember& value) noexc
 auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& function) noexcept
     -> LayoutNodeID {
     auto prefix = std::string {};
+    if (function.maybe_unused) {
+        prefix += "[[maybe_unused]] ";
+    }
     if (function.friend_specifier) {
         prefix += "friend ";
     }

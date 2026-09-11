@@ -50,7 +50,6 @@ Checks:
   - 'portability-no-assembler'
   - 'portability-std-allocator-const'
   - 'portability-template-virtual-member-function'
-  - 'readability-qualified-auto'
 WarningsAsErrors: '*'
 HeaderFileExtensions:
   - 'h'
@@ -78,5 +77,4 @@ CheckOptions:
   misc-const-correctness.TransformPointersAsPointers: true
   misc-const-correctness.TransformPointersAsValues: false
   performance-move-const-arg.CheckTriviallyCopyableMove: true
-  readability-qualified-auto.AddConstToQualified: true
 ...

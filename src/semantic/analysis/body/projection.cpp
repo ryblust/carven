@@ -92,11 +92,15 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
     }
     auto element = std::optional<ConstructionTypeRef>();
     auto extent = std::optional<std::uint64_t>();
+    auto slice = false;
     if (const auto* concrete = std::get_if<TypeID>(&operand->type())) {
         const auto canonical = draft().type_copy(*concrete);
         if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             element = array->element;
             extent = array->extent;
+        } else if (const auto* view = std::get_if<SliceTypeValue>(&canonical.value)) {
+            element = view->element;
+            slice = true;
         }
     } else {
         const auto construction =
@@ -104,15 +108,21 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
         if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
             element = array->element;
             extent = array->extent;
+        } else if (const auto* view =
+                       std::get_if<ConstructionSliceTypeValue>(&construction.value)) {
+            element = view->element;
+            slice = true;
         }
     }
-    if (!element.has_value() || !extent.has_value()) {
-        return std::unexpected(
-            fail(span, DiagnosticCode::TypeNotIndexable, "indexing requires an array value")
-        );
+    if (!element.has_value()) {
+        return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeNotIndexable,
+            "indexing requires an array or slice value"
+        ));
     }
-    auto bounds = ArrayBoundsPolicy {RuntimeCheckedBounds {}};
-    if (index_value->constant.has_value()) {
+    auto bounds = IndexBoundsPolicy {RuntimeCheckedBounds {}};
+    if (extent && index_value->constant.has_value()) {
         const auto constant = draft().constant_copy(*index_value->constant);
         const auto* integer = std::get_if<IntegerConstant>(&constant.value);
         if (integer != nullptr) {
@@ -126,7 +136,7 @@ auto BodyElaborator::index_expression(const ASTIndexExpr& source, Span span) noe
             bounds = ProvenInBounds {};
         }
     }
-    if (auto* place = std::get_if<PlaceExpression>(&operand->storage)) {
+    if (auto* place = std::get_if<PlaceExpression>(&operand->storage); place != nullptr && !slice) {
         auto result = active_builder().make_place(
             place->root,
             *element,

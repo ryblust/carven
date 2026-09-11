@@ -82,6 +82,9 @@ private:
         }
         std::visit(
             Overloaded {
+                [&](const SliceTypeValue& value) noexcept {
+                    collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
+                },
                 [&](const PointerTypeValue& value) noexcept {
                     collect_type(value.target, TargetTypeCompleteness::Declaration, guard);
                 },

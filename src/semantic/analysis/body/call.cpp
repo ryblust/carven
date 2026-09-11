@@ -47,7 +47,8 @@ auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexc
                             || std::same_as<Value, ArrayTypeValue>
                             || std::same_as<Value, CallableViewTypeValue>
                             || std::same_as<Value, CppTypeValue>
-                            || std::same_as<Value, PointerTypeValue>,
+                            || std::same_as<Value, PointerTypeValue>
+                            || std::same_as<Value, SliceTypeValue>,
                         "unhandled non-owning callable type"
                     );
                 },
@@ -120,7 +121,7 @@ auto BodyElaborator::build_call_argument(
     const auto type = expected.value_or(built->type());
     auto pending_failures = take_pending_failures(*built);
     if (access_mode == AccessMode::Write) {
-        auto compatible_storage = require_writable_storage_type(built->type(), type, source.span);
+        auto compatible_storage = require_invariant_storage_type(built->type(), type, source.span);
         if (!compatible_storage.has_value()) {
             return std::unexpected(compatible_storage.error());
         }

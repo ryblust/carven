@@ -28,19 +28,6 @@ TEST_CASE("Runtime: text views expose bytes and Unicode scalar values") {
     CHECK_EQ(characters[3], U'\U0001f600');
 }
 
-TEST_CASE("Runtime: UTF-8 ingress validator rejects malformed scalar encodings") {
-    const auto rejects = [](std::string_view bytes) static noexcept {
-        return !carven::runtime::utf8_is_valid(bytes);
-    };
-    CHECK(carven::runtime::utf8_is_valid("plain"));
-    CHECK(carven::runtime::utf8_is_valid("\xc3\xa9\xe4\xbd\xa0"));
-    CHECK(rejects(std::string_view("\xc2", 1)));
-    CHECK(rejects(std::string_view("\xc0\x80", 2)));
-    CHECK(rejects(std::string_view("\xed\xa0\x80", 3)));
-    CHECK(rejects(std::string_view("\xf4\x90\x80\x80", 4)));
-    CHECK(rejects(std::string_view("\xe2\x28\xa1", 3)));
-}
-
 TEST_CASE("Runtime: empty text has no scalar to dereference") {
     const auto empty = carven::runtime::str_chars("");
     CHECK_FALSE(empty.begin() != empty.end());

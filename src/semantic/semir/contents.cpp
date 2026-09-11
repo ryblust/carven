@@ -1,12 +1,12 @@
-module carven:semantic.analysis.types.contents.impl;
+module carven:semantic.semir.contents.impl;
 
-import :semantic.analysis.types.contents;
+import :semantic.semir.contents;
 import :support.invariant;
 import :support.visit;
 import std;
 
 namespace {
-// This query is scoped to analysis after construction types have been solved.
+// Contents describe resolved types and do not traverse pointer targets.
 class TypeContentsQuery final {
 public:
     TypeContentsQuery(
@@ -42,26 +42,30 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
         return *cached;
     }
     // Recursive containment contributes no additional contents on this path.
-    cached = TypeContents {.closure_owner = false, .callable_view = false, .string_owner = false};
+    cached = TypeContents {.closure_owner = false, .callable_view = false, .storage_owner = false};
     const auto merge = [](TypeContents& destination, TypeContents source) static noexcept {
         destination.closure_owner |= source.closure_owner;
         destination.callable_view |= source.callable_view;
-        destination.string_owner |= source.string_owner;
+        destination.storage_owner |= source.storage_owner;
     };
     const auto result = std::visit(
         Overloaded {
             [](const ClosureTypeValue&) static noexcept -> TypeContents {
-                return {.closure_owner = true, .callable_view = false, .string_owner = false};
+                return {.closure_owner = true, .callable_view = false, .storage_owner = false};
             },
             [](const CallableViewTypeValue&) static noexcept -> TypeContents {
-                return {.closure_owner = false, .callable_view = true, .string_owner = false};
+                return {.closure_owner = false, .callable_view = true, .storage_owner = false};
             },
-            [&](const ArrayTypeValue& value) noexcept { return contents(value.element); },
+            [&](const ArrayTypeValue& value) noexcept {
+                auto result = contents(value.element);
+                result.storage_owner = true;
+                return result;
+            },
             [&](const StructTypeValue& value) noexcept {
                 auto result = TypeContents {
                     .closure_owner = false,
                     .callable_view = false,
-                    .string_owner = false
+                    .storage_owner = false
                 };
                 const auto& declaration = declarations.structure(value.structure);
                 for (const auto& field : declaration.fields) {
@@ -73,7 +77,7 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
                 auto result = TypeContents {
                     .closure_owner = false,
                     .callable_view = false,
-                    .string_owner = false
+                    .storage_owner = false
                 };
                 const auto& declaration = declarations.enumeration(value.enumeration);
                 for (const auto case_id : declaration.cases) {
@@ -84,31 +88,38 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
                 }
                 return result;
             },
+            [&](const SliceTypeValue& value) noexcept -> TypeContents {
+                return {
+                    .closure_owner = false,
+                    .callable_view = contents(value.element).callable_view,
+                    .storage_owner = false
+                };
+            },
             [](const PointerTypeValue&) static noexcept -> TypeContents {
-                return {.closure_owner = false, .callable_view = false, .string_owner = false};
+                return {.closure_owner = false, .callable_view = false, .storage_owner = false};
             },
             [](const BuiltinTypeValue& value) static noexcept -> TypeContents {
                 return {
                     .closure_owner = false,
                     .callable_view = false,
-                    .string_owner = value.kind == BuiltinType::String
+                    .storage_owner = value.kind == BuiltinType::String
                 };
             },
             [&](const CppTypeValue& value) noexcept -> TypeContents {
                 auto result = TypeContents {
                     .closure_owner = false,
                     .callable_view = false,
-                    .string_owner = false
+                    .storage_owner = false
                 };
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                     for (const auto argument : named->arguments) {
-                        merge(result, contents(argument));
+                        result.callable_view |= contents(argument).callable_view;
                     }
                 }
                 return result;
             },
             [](const FunctionTypeValue&) static noexcept -> TypeContents {
-                return {.closure_owner = false, .callable_view = false, .string_owner = false};
+                return {.closure_owner = false, .callable_view = false, .storage_owner = false};
             },
         },
         types.type(type).value

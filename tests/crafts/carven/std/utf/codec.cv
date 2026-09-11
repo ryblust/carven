@@ -1,0 +1,68 @@
+import std::utf.scalar using {UnicodeScalarError, char_from_u32, char_to_u32};
+import std::utf.codec using {decode_utf8, encode_utf8};
+import std::utf.validation using {UTF8Error, validate_utf8};
+
+test "UTF8: scalar conversion encoding and prefix decoding" {
+    try {
+        let character = char_from_u32(0x1f600)?;
+        check(char_to_u32(character) == 0x1f600);
+        let encoded = encode_utf8(character);
+        check(encoded.width == 4);
+        check(encoded.bytes[0] == 0xf0);
+        let decoded = decode_utf8(encoded.bytes.as_slice())?;
+        match decoded {
+            .End => { check(false); },
+            .Scalar(value, width) => { check(value == character); check(width == 4); },
+        }
+        let empty: [u8; 0] = [];
+        match decode_utf8(empty.as_slice())? {
+            .End => {},
+            .Scalar(_, _) => { check(false); },
+        }
+        let prefix: [u8; 2] = [0x61, 0xff];
+        match decode_utf8(prefix.as_slice())? {
+            .End => { check(false); },
+            .Scalar(value, width) => { check(value == 'a'); check(width == 1); },
+        }
+    } catch {
+        UTF8Error(_) => { check(false); },
+        UnicodeScalarError(_) => { check(false); },
+    }
+    var rejected = false;
+    try { let _ = char_from_u32(0xd800)?; }
+    catch { UnicodeScalarError(error) => { rejected = error.value == 0xd800; }, }
+    check(rejected);
+}
+
+test "UTF8: every Unicode scalar round trips through the public API" {
+    var scalar: u32 = 0;
+    while scalar <= 0x10ffff {
+        if scalar < 0xd800 || scalar > 0xdfff {
+            try {
+                let character = char_from_u32(scalar)?;
+                check(char_to_u32(character) == scalar);
+                let encoded = encode_utf8(character);
+                let bytes = encoded.bytes.as_slice().slice(0, encoded.width);
+                validate_utf8(bytes)?;
+                match decode_utf8(bytes)? {
+                    .End => { check(false); },
+                    .Scalar(value, width) => {
+                        check(value == character);
+                        check(width == encoded.width);
+                    },
+                }
+            } catch {
+                UTF8Error(_) => { check(false); },
+                UnicodeScalarError(_) => { check(false); },
+            }
+        }
+        scalar += 1;
+    }
+    let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
+    for value in invalid {
+        var rejected = false;
+        try { let _ = char_from_u32(value)?; }
+        catch { UnicodeScalarError(error) => { rejected = error.value == value; }, }
+        check(rejected);
+    }
+}

@@ -150,6 +150,12 @@ auto BodyElaborator::coerce_to(
         );
     }
 
+    if (slice_element(draft(), target)) {
+        // Reinterpreting a slice cannot perform the per-element adaptations
+        // available to an owning array copy.
+        return require_invariant_storage_type(built.type(), target, span);
+    }
+
     struct ArrayShape final {
         ConstructionTypeRef element;
         std::uint64_t extent;

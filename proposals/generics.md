@@ -35,9 +35,10 @@ C++ concrete declarations、templates 或混合表示继续是 lowering 选择�
 
 - keyword 集合中没有 `concept`、`impl`、`Self` 或 `where`；它们目前是普通
   identifiers；
-- top-level grammar 只有现有 concrete declarations 与 C++ source fragments，
-  declaration name、named type 与 call 均没有 generic clause；
-- `<`、`>` 与 `>>` 只属于当前 expression grammar；
+- top-level grammar 只有现有 concrete declarations 与 C++ source fragments；
+  Carven declaration 与 call 尚无 generic parameter/application clause；
+- named type 已支持 type arguments，`ptr<T>` 与 nested `>>` 也已有 type parsing；
+  这些 syntax 不构成 user-defined Carven generic declarations；
 - SemIRProgram nominal type 只记录 resolved declaration identity，call 也没有 type
   parameter、constraint、witness 或 instance representation；
 - dependency graph 只包含 concrete declaration dependency；

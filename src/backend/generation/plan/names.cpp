@@ -126,6 +126,9 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 [](const PointerTypeValue&) static noexcept {},
                 [](const StructTypeValue&) static noexcept {},
                 [](const EnumTypeValue&) static noexcept {},
+                [&](const SliceTypeValue& value) noexcept {
+                    self(value.element, destination, active_types);
+                },
                 [&](const ArrayTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },

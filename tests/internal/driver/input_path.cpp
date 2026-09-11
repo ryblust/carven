@@ -37,30 +37,24 @@ TEST_CASE("Input path: identifier-only hierarchy remains exact") {
     CHECK_EQ(double_underscore->value(), "__carven_internal.__value");
 }
 
-TEST_CASE("Input path: the standard craft domain is reserved for toolchain source") {
-    static constexpr auto reserved = std::to_array<std::string_view>({
-        "crafts/std/io.cv",
-        "crafts/vendor/../std/nested/value.cv",
-    });
-    for (const auto input : reserved) {
-        const auto result = derive_input_module_path(input);
-        CAPTURE(input);
-        REQUIRE_FALSE(result.has_value());
-        CHECK_EQ(
-            result.error(),
-            std::format(
-                "input '{}' resolves to the toolchain-reserved 'crafts.std' module domain",
-                input
-            )
-        );
-    }
+TEST_CASE("Input path: standard craft inputs follow ordinary path derivation") {
+    const auto direct = derive_input_module_path("crafts/carven/std/utf.cv");
+    const auto normalized = derive_input_module_path("crafts/vendor/../json/parser.cv");
+    REQUIRE(direct.has_value());
+    REQUIRE(normalized.has_value());
+    CHECK_EQ(direct->value(), "crafts.carven.std.utf");
+    CHECK_EQ(normalized->value(), "crafts.json.parser");
+}
 
-    const auto unprefixed = derive_input_module_path("std/io.cv");
-    const auto neighboring_craft = derive_input_module_path("crafts/stdx/io.cv");
-    REQUIRE(unprefixed.has_value());
-    REQUIRE(neighboring_craft.has_value());
-    CHECK_EQ(unprefixed->value(), "std.io");
-    CHECK_EQ(neighboring_craft->value(), "crafts.stdx.io");
+TEST_CASE("Input path: installed crafts preserve package-relative module identity") {
+    const auto installed = derive_input_module_path("/opt/toolchain/crafts/carven/std/utf.cv");
+    const auto local = derive_input_module_path("crafts/carven/std/utf.cv");
+    REQUIRE(installed.has_value());
+    REQUIRE(local.has_value());
+    CHECK_EQ(*installed, *local);
+    CHECK_EQ(installed->value(), "crafts.carven.std.utf");
+    CHECK_FALSE(derive_input_module_path("/opt/toolchain/other/std/utf.cv").has_value());
+    CHECK_FALSE(derive_input_module_path("/opt/toolchain/crafts/../outside.cv").has_value());
 }
 
 TEST_CASE("Input path: invalid module names identify the first offending component") {
@@ -108,7 +102,9 @@ TEST_CASE("Input path: invalid paths are rejected before source acquisition") {
         },
         std::pair {
             std::string_view("/absolute.cv"),
-            std::string_view("input '/absolute.cv' must be relative"),
+            std::string_view(
+                "input '/absolute.cv' must be relative or belong to a crafts directory"
+            ),
         },
         std::pair {
             std::string_view("../outside.cv"),
@@ -168,8 +164,12 @@ TEST_CASE("Input path: invalid paths are rejected before source acquisition") {
 TEST_CASE("Input path: drive-relative paths cannot escape the working directory") {
     const auto result = derive_input_module_path("C:escape.cv");
 
+    CHECK_FALSE(derive_input_module_path("C:prefix/crafts/carven/std/utf.cv").has_value());
     REQUIRE(!result.has_value());
-    CHECK_EQ(result.error(), "input 'C:escape.cv' must be relative");
+    CHECK_EQ(
+        result.error(),
+        "input 'C:escape.cv' must be relative or belong to a crafts directory"
+    );
 }
 #endif
 

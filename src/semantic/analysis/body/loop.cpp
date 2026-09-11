@@ -225,40 +225,43 @@ auto BodyElaborator::range_for_statement(
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
-        auto text = false;
+        auto read_only = false;
         if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
+            } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
+                element_type = slice->element;
+                read_only = true;
             } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
-                       builtin != nullptr
-                       && (builtin->kind == BuiltinType::StrBytesView
-                           || builtin->kind == BuiltinType::StrCharsView)) {
-                text = true;
-                element_type = draft().intern_builtin_type(
-                    builtin->kind == BuiltinType::StrBytesView ? BuiltinType::U8 : BuiltinType::Char
-                );
+                       builtin != nullptr && builtin->kind == BuiltinType::StrCharsView) {
+                read_only = true;
+                element_type = draft().intern_builtin_type(BuiltinType::Char);
             }
         } else {
             const auto construction =
                 draft().construction_type_copy(std::get<TypeTermID>(value->type()));
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 element_type = array->element;
+            } else if (const auto* slice =
+                           std::get_if<ConstructionSliceTypeValue>(&construction.value)) {
+                element_type = slice->element;
+                read_only = true;
             }
         }
         if (!element_type.has_value()) {
             return std::unexpected(fail(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
-                "range iterable must be an array or text iteration view"
+                "range iterable must be an array, slice, or character view"
             ));
         }
         if (header.write_marker.has_value()) {
-            if (text) {
+            if (read_only) {
                 return std::unexpected(fail(
                     *header.write_marker,
-                    DiagnosticCode::AccessTextRangeBinding,
-                    "text range bindings are read-only"
+                    DiagnosticCode::AccessViewRangeBinding,
+                    "view range bindings are read-only"
                 ));
             }
             const auto* place = std::get_if<PlaceExpression>(&value->storage);

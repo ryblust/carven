@@ -290,10 +290,7 @@ private:
     }
 
     auto names_storage(const ConstructionExpression& value) const noexcept -> bool {
-        return std::holds_alternative<SemBinding>(value.operation.value)
-            || std::holds_alternative<SemField>(value.operation.value)
-            || std::holds_alternative<SemIndex>(value.operation.value)
-            || std::holds_alternative<SemDereference>(value.operation.value);
+        return value.operation.selects_storage();
     }
 
     auto pending(const Recipe& recipe) const noexcept -> bool {

@@ -88,6 +88,11 @@ public:
                         child(operand.expression);
                     }
                 },
+                [&](Node<SemSliceIntrinsic>& value) noexcept {
+                    for (auto& operand : value.operands) {
+                        child(operand.expression);
+                    }
+                },
                 [&](Node<SemTextIntrinsic>& value) noexcept {
                     for (auto& operand : value.operands) {
                         child(operand.expression);

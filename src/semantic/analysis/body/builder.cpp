@@ -104,6 +104,11 @@ auto BodyBuilder::make_expression(
                     add(operand.expression);
                 }
             },
+            [&](const SemSliceIntrinsic& node) noexcept {
+                for (const auto& operand : node.operands) {
+                    add(operand.expression);
+                }
+            },
             [&](const SemTextIntrinsic& node) noexcept {
                 for (const auto& operand : node.operands) {
                     add(operand.expression);
