@@ -14,15 +14,26 @@ function main(target, name, diagnostics)
         configs = {includedirs = {generated, path.join(root, "tests", "interop"), path.join(root, "crafts")}},
     })
     local stderr = path.join(temporary, "stderr.log")
-    local code = os.execv(program, arguments, {try = true, timeout = 30000,
+    local code, run_error = os.execv(program, arguments, {try = true, timeout = 30000,
         stdout = path.join(temporary, "stdout.log"), stderr = stderr})
-    local errors = io.readfile(stderr) or ""
+    local errors = (io.readfile(stderr) or ""):gsub("\r\n", "\n")
+    -- Clang and clang-cl spell source locations differently.
+    errors = errors:gsub("%((%d+),(%d+)%)%s*:", ":%1:%2:")
     local context = name .. " (artifacts: " .. temporary .. "):\n" .. errors
-    assert(code ~= 0, "expected native compilation to fail: " .. context)
+    assert(code == 1, "expected native diagnostic rejection, got " .. tostring(code)
+        .. " (" .. tostring(run_error) .. "): " .. context)
     local primary
     if diagnostics.site == "source" then
         primary = errors:match("probe%.cv:%d+:%d+: error: ([^\n]+)")
-            or errors:match("probe%.cv%(%d+,%d+%): error: ([^\n]+)")
+        -- Standard-library template errors can attribute the call through a note.
+        if not primary and diagnostics.note then
+            for note in errors:gmatch("probe%.cv:%d+:%d+: note: ([^\n]+)") do
+                if note:find(diagnostics.note, 1, true) then
+                    primary = errors:match(": error: ([^\n]+)")
+                    break
+                end
+            end
+        end
         assert(primary, "missing diagnostic attributed to fixture: " .. context)
     elseif diagnostics.site == "header" then
         primary = errors:match(": error: ([^\n]+)") or ""

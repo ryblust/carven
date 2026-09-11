@@ -380,21 +380,21 @@ TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery")
     };
     auto* nested = std::get_if<SemTry>(&attempt.value);
     REQUIRE(nested != nullptr);
-    auto reject = false;
+    auto scenario = std::string_view();
     SUBCASE("completed tree is accepted") {}
     SUBCASE("nested region must be resolved") {
         nested->body->failures = BodyFailures(body.failures);
-        reject = true;
+        scenario = "nested region";
     }
     SUBCASE("catch metadata must be resolved") {
         nested->residual_failures = BodyFailures(body.failures);
-        reject = true;
+        scenario = "catch metadata";
     }
     SUBCASE("expression type must be resolved") {
         attempt.type = BodyType(prepared.builder.append_construction_type(
             {.value = ConstructionArrayTypeValue {.element = prepared.boolean_type, .extent = 1u}}
         ));
-        reject = true;
+        scenario = "expression type";
     }
     auto draft = std::move(body.builder)
                      .finish(
@@ -420,10 +420,8 @@ TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery")
             .region = std::move(draft.region),
         });
     };
-    if (reject) {
-        CHECK(expect_termination("semir-body-unresolved-fact", [&] noexcept {
-            static_cast<void>(deliver());
-        }));
+    if (!scenario.empty()) {
+        CHECK(expect_termination(scenario, [&] noexcept { static_cast<void>(deliver()); }));
     } else {
         const auto finalized = deliver();
         CHECK_EQ(finalized.identity(), identity);

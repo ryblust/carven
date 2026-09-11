@@ -1,74 +1,190 @@
---- a/rules/c++/modules/clang/builder.lua
-+++ b/rules/c++/modules/clang/builder.lua
-@@ -32,6 +32,11 @@
- import(".mapper")
- import(".builder", {inherit = true})
- 
-+function _use_clang_module_pipeline(target)
+--- /dev/null
++++ b/modules/private/action/build/content_depend.lua
+@@ -0,0 +1,78 @@
++-- Track input and output contents in dependency records.
++import("core.project.depend")
++
++function enabled(target)
 +    return target:policy("build.c++.modules.two_phases")
-+        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
++        and target:has_tool("cxx", "clang", "clangxx")
 +end
 +
- function _get_bmifile(target, module)
-     local has_reduced_bmi = support.get_modulesreducedbmiflag(target)
-     local has_two_phases = target:policy("build.c++.modules.two_phases")
-@@ -65,6 +70,9 @@
- 
-     local modules_reduced_bmi_flag = support.get_modulesreducedbmiflag(target)
-     local has_two_phases = target:policy("build.c++.modules.two_phases")
-+    local use_clang_module_pipeline = _use_clang_module_pipeline(target)
-+    local clang_version = support.get_clang_version(target)
-+    local use_reduced_bmi = use_clang_module_pipeline and clang_version and semver.compare(clang_version, "23.0") >= 0
-     local flags
-     if opt.bmi then
-         local module_outputflag = support.get_moduleoutputflag(target)
-@@ -72,7 +80,7 @@
-         flags = {"-x", "c++-module"}
- 
-         if not opt.objectfile then
--            table.insert(flags, "--precompile")
-+            table.insert(flags, use_reduced_bmi and "--precompile-reduced-bmi" or "--precompile")
-             if target:has_tool("cxx", "clang_cl") then
-                 table.join2(flags, "/clang:-o", "/clang:" .. module.bmifile)
-             end
-@@ -92,7 +100,7 @@
-         end
-     else
-         flags = {}
--        if not has_two_phases or not module.bmifile then
-+        if (use_clang_module_pipeline and support.has_module_extension(module.sourcefile)) or not has_two_phases or not module.bmifile then
-             flags = {"-x", "c++"}
-         end
-         local std = (module.name == "std" or module.name == "std.compat")
-@@ -171,7 +179,7 @@
- 
-     opt = opt or {}
-     local sourcefile = module.sourcefile
--    if not opt.bmi and opt.objectfile and module.bmifile then
-+    if not _use_clang_module_pipeline(target) and not opt.bmi and opt.objectfile and module.bmifile then
-         sourcefile = module.bmifile
++function fingerprint(file, refresh)
++    file = path.absolute(file)
++    _g.fingerprints = _g.fingerprints or {}
++    local result = not refresh and _g.fingerprints[file]
++    if not result then
++        result = os.isfile(file) and hash.xxhash128(file) or "missing"
++        _g.fingerprints[file] = result
++    end
++    return result
++end
++
++function normalize(files)
++    local result = {}
++    for _, file in ipairs(files) do
++        table.insert(result, path.absolute(file))
++    end
++    result = table.unique(result)
++    table.sort(result)
++    return result
++end
++
++function set_inputs(target, sourcefile, files)
++    local inputs = target:data("cxx.modules.inputs") or {}
++    inputs[sourcefile] = normalize(files)
++    target:data_set("cxx.modules.inputs", inputs)
++end
++
++function inputs(target, sourcefile)
++    local inputs = target:data("cxx.modules.inputs")
++    return inputs and inputs[sourcefile]
++end
++
++function values(files, values)
++    local parts = {}
++    for _, file in ipairs(files) do
++        table.insert(parts, file)
++        table.insert(parts, fingerprint(file))
++    end
++    local input_hash = #parts > 0 and hash.strhash128(table.concat(parts, "\0")) or "none"
++    return table.join({"content_depend.v3", input_hash, fingerprint(values[1])}, values)
++end
++
++function output_changed(info, output)
++    return not os.isfile(output) or info.outputhash ~= fingerprint(output)
++end
++
++-- Input paths and contents are already encoded in values. Compare those values
++-- with the native dependency API without rechecking file modification times.
++function is_changed(info, opt)
++    return opt.changed or output_changed(info, opt.output)
++        or depend.is_changed({values = info.values}, {values = opt.values})
++end
++
++function run(callback, opt)
++    local info = depend.load(opt.dependfile) or {}
++    opt.files = normalize(opt.files)
++    opt.values = values(opt.files, opt.values)
++    if not opt.dryrun and not is_changed(info, opt) then
++        return false
++    end
++    opt.changed = true
++    -- Save dependency records only after the callback succeeds.
++    local built = false
++    depend.on_changed(function ()
++        callback()
++        built = true
++        return {outputhash = fingerprint(opt.output, true)}
++    end, opt)
++    return built
++end
+--- a/modules/private/action/build/object.lua
++++ b/modules/private/action/build/object.lua
+@@ -26,6 +26,7 @@
+ import("private.cache.build_cache")
+ import("async.runjobs")
+ import("utils.progress")
++import("private.action.build.content_depend", {alias = "content_depend"})
+ import("private.service.distcc_build.client", {alias = "distcc_build_client"})
+
+ -- do build file
+@@ -61,8 +62,18 @@
+     -- but we cannot cache it in link stage, maybe some objectfiles will be updated.
+     -- @see https://github.com/xmake-io/xmake/issues/6089
+     local depvalues = {compinst:program(), compflags}
++    local depfiles = content_depend.inputs(target, sourcefile)
++    if depfiles then
++        depvalues = content_depend.values(depfiles, depvalues)
++    end
+     local lastmtime = os.isfile(objectfile) and os.mtime(dependfile) or 0
+-    if not dryrun and not depend.is_changed(dependinfo, {lastmtime = lastmtime, values = depvalues, timecache = true}) then
++    local changed
++    if depfiles then
++        changed = content_depend.is_changed(dependinfo, {output = objectfile, values = depvalues})
++    else
++        changed = depend.is_changed(dependinfo, {lastmtime = lastmtime, values = depvalues, timecache = true})
++    end
++    if not dryrun and not changed then
+         return
      end
-     local outputfile = ((opt.bmi and not opt.objectfile) or opt.headerunit) and module.bmifile or module.objectfile
+
+@@ -115,6 +126,11 @@
+         end
+         if target:has_sourcekind("cc") and pcoutputfile and not build_pch then
+             table.insert(dependinfo.files, pcoutputfile)
++        end
++        if depfiles then
++            dependinfo.files = depfiles
++            dependinfo.depfiles = nil
++            dependinfo.outputhash = content_depend.fingerprint(objectfile, true)
+         end
+         depend.save(dependinfo, dependfile)
+     end
+--- a/modules/private/action/build/link_objects.lua
++++ b/modules/private/action/build/link_objects.lua
+@@ -24,6 +24,7 @@
+ import("core.tool.compiler")
+ import("core.project.depend")
+ import("utils.progress")
++import("private.action.build.content_depend", {alias = "content_depend"})
+ import("build_object")
+ import("private.action.build.target", {alias = "target_buildutils"})
+
+@@ -36,7 +37,8 @@
+     local depfiles = target_buildutils.get_linkdepfiles(target)
+     local dryrun = option.get("dry-run")
+     local depvalues = {linkinst:program(), linkflags}
+-    depend.on_changed(function ()
++    local on_changed = content_depend.enabled(target) and content_depend.run or depend.on_changed
++    on_changed(function ()
+         local filename = target:filename()
+         if target:is_static() then
+             progress.show(opt.progress, "${color.build.target}archiving.$(mode) %s", filename)
+@@ -55,7 +57,7 @@
+         if not dryrun then
+             assert(linkinst:link(objectfiles, targetfile, {linkflags = linkflags}))
+         end
+-    end, {dependfile = target:dependfile(),
++    end, {dependfile = target:dependfile(), output = target:targetfile(),
+           lastmtime = os.mtime(target:targetfile()),
+           changed = target:is_rebuilt() or option.get("linkonly"),
+           values = depvalues, files = depfiles, dryrun = dryrun})
 --- a/rules/c++/modules/builder.lua
 +++ b/rules/c++/modules/builder.lua
-@@ -38,6 +38,51 @@
+@@ -20,6 +20,7 @@
+
+ -- imports
+ import("core.base.json")
++import("core.base.semver")
+ import("core.base.option")
+ import("core.base.hashset")
+ import("core.base.profiler")
+@@ -33,9 +34,57 @@
+ import("support")
+ import("scanner")
+ import("mapper")
++import("private.action.build.content_depend", {alias = "content_depend"})
+
+ function _builder(target)
      return support.import_implementation_of(target, "builder")
- end
--
++end
 +
 +function _use_clang_module_pipeline(target)
 +    return target:policy("build.c++.modules.two_phases")
 +        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
 +end
 +
-+function _append_imported_bmifiles(target, module, files, seen)
++function _append_imported_bmifiles(target, module, files, seen, direct_only)
 +    for dep_name, dep in pairs(module.deps or {}) do
 +        local imported = mapper.get(target, dep.headerunit and dep_name .. dep.key or dep_name)
 +        local bmifile = assert(imported.bmifile, "imported module has no BMI: " .. dep_name)
 +        if not seen[bmifile] then
 +            seen[bmifile] = true
 +            table.insert(files, bmifile)
-+            _append_imported_bmifiles(target, imported, files, seen)
++            if not direct_only then
++                _append_imported_bmifiles(target, imported, files, seen)
++            end
 +        end
 +    end
 +end
@@ -87,30 +203,27 @@
 +
 +    for _, sourcefile in ipairs(built_modules) do
 +        local module = mapper.get(target, sourcefile)
-+        module._carven_prune_leaf_bmi = _use_clang_module_pipeline(target)
++        module._prune_leaf_bmi = _use_clang_module_pipeline(target)
 +            and module.name ~= nil
 +            and not module.interface
 +            and not module.headerunit
 +            and not support.is_bmionly(target, sourcefile)
 +            and not imported_module_names[module.name]
-+        if module._carven_prune_leaf_bmi then
++        if module._prune_leaf_bmi then
 +            if opt.remove_bmifiles and not option.get("dry-run") and module.bmifile then
 +                os.tryrm(module.bmifile)
 +            end
 +        end
 +    end
-+end
-+
+ end
+
  -- generate meta module informations for package / other buildsystems import
- --
- -- e.g
-@@ -190,19 +235,34 @@
+@@ -190,19 +239,34 @@
          local compinst = compiler.load("cxx", {target = target})
          local compflags = compinst:compflags({sourcefile = module.sourcefile, target = target})
--
-+
+
 -        local dependfile = target:dependfile(module.bmifile or module.objectfile)
-+        local artifactfile = module._carven_prune_leaf_bmi and module.objectfile or (module.bmifile or module.objectfile)
++        local artifactfile = module._prune_leaf_bmi and module.objectfile or (module.bmifile or module.objectfile)
 +        local dependfile = target:dependfile(_use_clang_module_pipeline(target) and (artifactfile .. ".module") or artifactfile)
          local dependinfo = {}
          dependinfo.files = {module.sourcefile}
@@ -125,14 +238,13 @@
 +            -- Dependency records are saved while scheduling, before compilation finishes.
 +            -- Both outputs must be current when this module produces a BMI and object.
 +            dependinfo.lastmtime = os.mtime(artifactfile)
-+            if not bmionly and not module._carven_prune_leaf_bmi then
++            if not bmionly and not module._prune_leaf_bmi then
 +                dependinfo.lastmtime = math.min(dependinfo.lastmtime, os.mtime(module.objectfile))
 +            end
 +        else
 +            dependinfo.lastmtime = (os.isfile(artifactfile) and objectfile_exists) and os.mtime(dependfile) or 0
 +        end
--
-+
+
          local fileconfig = target:fileconfig(module.sourcefile)
          local from_package = fileconfig and fileconfig.from_package
          local is_std = path.basename(module.sourcefile) == "std" or path.basename(module.sourcefile) == "std.compat"
@@ -142,20 +254,19 @@
 +        if not _use_clang_module_pipeline(target) then
 +            old_dependinfo.files = {module.sourcefile}
 +        end
--
-+
+
          -- need build this object?
          local dryrun = option.get("dry-run")
-@@ -248,7 +308,7 @@
+@@ -248,7 +312,7 @@
      local _built_modules = {}
      for _, sourcefile in ipairs(built_modules) do
          local module = mapper.get(target, sourcefile)
 -        if module.name then
-+        if module.name and not module._carven_prune_leaf_bmi then
++        if module.name and not module._prune_leaf_bmi then
              table.insert(_built_modules, sourcefile)
          else
              if not support.is_bmionly(target, sourcefile) then
-@@ -272,19 +332,26 @@
+@@ -272,19 +336,26 @@
              local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, moduletype)
              table.insert(buildfilejobs, buildfilejob)
              jobgraph:add(buildfilejob, function(_, _, jobopt)
@@ -172,8 +283,7 @@
 +                builder.make_module_job(target, module, moduleopt)
              end)
              _merge_jobdeps(jobdeps, _get_jobdeps(target, module, jobgraph, buildfilejob))
--
-+
+
 -            -- if two phase compilation supported set jobdeps for objectfile job
 +            -- In the Clang module pipeline, the object is compiled
 +            -- directly from the source and only needs imported BMIs. It does not
@@ -189,7 +299,7 @@
              end
          end
      end)
-@@ -327,10 +394,11 @@
+@@ -327,10 +398,11 @@
                  local module = mapper.get(target, sourcefile)
                  local buildfilejob = _get_module_buildfilejob_for(target, sourcefile, "objectfile")
                  jobgraph:add(buildfilejob, function(_, _, jobopt)
@@ -205,16 +315,16 @@
                  end)
              end
          end
-@@ -459,7 +527,7 @@
+@@ -459,7 +531,7 @@
      local _built_modules = {}
      for _, sourcefile in ipairs(built_modules) do
          local module = mapper.get(target, sourcefile)
 -        if module.name then
-+        if module.name and not module._carven_prune_leaf_bmi then
++        if module.name and not module._prune_leaf_bmi then
              table.insert(_built_modules, sourcefile)
          end
      end
-@@ -717,6 +785,9 @@
+@@ -717,6 +789,9 @@
          local modules = scanner.get_modules(target)
          -- avoid building non referenced modules
          local built_modules, built_headerunits, _ = scanner.sort_modules_by_dependencies(target, modules, {jobgraph = target:policy("build.jobgraph")})
@@ -224,7 +334,7 @@
          local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
          if jobgraph.add_orders then -- jobgraph
              -- build headerunits
-@@ -787,3 +858,21 @@
+@@ -787,3 +862,34 @@
          profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
      end
  end
@@ -237,6 +347,19 @@
 +        local modules = scanner.get_modules(target)
 +        local built_modules = scanner.sort_modules_by_dependencies(target, modules, {jobgraph = target:policy("build.jobgraph")})
 +        _mark_prunable_leaf_modules(target, built_modules, {remove_bmifiles = true})
++        if content_depend.enabled(target) then
++            local clang_version = support.import_implementation_of(target, "support").get_clang_version(target)
++            local direct_only = target:policy("build.c++.modules.non_cascading_changes")
++                and clang_version and semver.compare(clang_version, "19.0") >= 0
++            for _, sourcefile in ipairs(built_modules) do
++                local module = mapper.get(target, sourcefile)
++                local reused, from = support.is_reused(target, sourcefile)
++                local record = assert(depend.load((reused and from or target):dependfile(sourcefile)))
++                local files = table.clone(assert(record.files))
++                _append_imported_bmifiles(target, module, files, {}, direct_only)
++                content_depend.set_inputs(target, sourcefile, files)
++            end
++        end
 +    end
 +    build_objectfiles(target, jobgraph, sourcebatch, opt)
 +    build_bmis(target, jobgraph, sourcebatch, opt)
@@ -246,16 +369,233 @@
 +-- jobs have already been added by build_module_pipeline in the before stage.
 +function skip_module_pipeline_objectfiles()
 +end
+--- a/rules/c++/modules/scanner.lua
++++ b/rules/c++/modules/scanner.lua
+@@ -31,6 +31,7 @@
+ import("support")
+ import("mapper")
+ import("stlheaders")
++import("private.action.build.content_depend", {alias = "content_depend"})
+
+ function _scanner(target)
+     return support.import_implementation_of(target, "scanner")
+@@ -437,7 +438,10 @@
+     profiler.enter(target:fullname(), "c++ modules", "scanner", "compute dag")
+     local localcache = support.localcache()
+     local memcache = support.memcache()
+-    local changed = memcache:get2(target:fullname(), "modules.changed")
++    local changed = content_depend.enabled(target) or memcache:get2(target:fullname(), "modules.changed")
++    if changed then
++        memcache:set2(target:fullname(), "modules.changed", true)
++    end
+
+     if changed then
+         localcache:set2(target:fullname(), "c++.modules", modules)
+@@ -534,7 +538,24 @@
+         local memcache = support.memcache()
+         local scangroup = get_scangroup_for(target)
+         local has_scanjob = false
++        local batchscan = content_depend.enabled(target) and _scanner(target).scan_dependencies_for
++        local owned = {}
++        if batchscan then
++            for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
++                if not support.is_reused(target, sourcefile) then
++                    table.insert(owned, sourcefile)
++                end
++            end
++        end
++        local batchjob = scangroup .. "/batch"
+         jobgraph:group(scangroup, function()
++            if batchscan and #owned > 0 then
++                jobgraph:add(batchjob, function(_, _, opt)
++                    progress.set_target(opt.progress, target)
++                    batchscan(target, owned, opt)
++                    memcache:set2(target:fullname(), "modules.changed", true)
++                end)
++            end
+             for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
+                 local reused, _ = support.is_reused(target, sourcefile)
+                 if not reused then
+@@ -543,8 +564,13 @@
+                         has_scanjob = true
+                         jobgraph:add(scanfilejob, function(_, _, opt)
+                             progress.set_target(opt.progress, target)
+-                            _do_scan(target, sourcefile, opt)
++                            if not batchscan then
++                                _do_scan(target, sourcefile, opt)
++                            end
+                         end)
++                        if batchscan then
++                            jobgraph:add_orders(batchjob, scanfilejob)
++                        end
+                     end
+                 end
+             end
+@@ -556,7 +582,7 @@
+                 local parsefilejob = get_parsefilejob_for(target, sourcefile)
+                 if not jobgraph:has(parsefilejob) then
+                     jobgraph:add(parsefilejob, function(_, _, opt)
+-                        local changed = memcache:get2(target:fullname(), "modules.changed")
++                        local changed = content_depend.enabled(target) or memcache:get2(target:fullname(), "modules.changed")
+                         if changed then
+                             modules = modules or {}
+                             local moduleinfo = assert(support.load_moduleinfo(target, sourcefile))
+--- a/rules/c++/modules/clang/builder.lua
++++ b/rules/c++/modules/clang/builder.lua
+@@ -31,6 +31,12 @@
+ import("support")
+ import(".mapper")
+ import(".builder", {inherit = true})
++import("private.action.build.content_depend", {alias = "content_depend"})
++
++function _use_clang_module_pipeline(target)
++    return target:policy("build.c++.modules.two_phases")
++        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
++end
+
+ function _get_bmifile(target, module)
+     local has_reduced_bmi = support.get_modulesreducedbmiflag(target)
+@@ -65,6 +71,9 @@
+
+     local modules_reduced_bmi_flag = support.get_modulesreducedbmiflag(target)
+     local has_two_phases = target:policy("build.c++.modules.two_phases")
++    local use_clang_module_pipeline = _use_clang_module_pipeline(target)
++    local clang_version = support.get_clang_version(target)
++    local use_reduced_bmi = use_clang_module_pipeline and clang_version and semver.compare(clang_version, "23.0") >= 0
+     local flags
+     if opt.bmi then
+         local module_outputflag = support.get_moduleoutputflag(target)
+@@ -72,7 +81,7 @@
+         flags = {"-x", "c++-module"}
+
+         if not opt.objectfile then
+-            table.insert(flags, "--precompile")
++            table.insert(flags, use_reduced_bmi and "--precompile-reduced-bmi" or "--precompile")
+             if target:has_tool("cxx", "clang_cl") then
+                 table.join2(flags, "/clang:-o", "/clang:" .. module.bmifile)
+             end
+@@ -92,7 +101,7 @@
+         end
+     else
+         flags = {}
+-        if not has_two_phases or not module.bmifile then
++        if (use_clang_module_pipeline and support.has_module_extension(module.sourcefile)) or not has_two_phases or not module.bmifile then
+             flags = {"-x", "c++"}
+         end
+         local std = (module.name == "std" or module.name == "std.compat")
+@@ -171,7 +180,7 @@
+
+     opt = opt or {}
+     local sourcefile = module.sourcefile
+-    if not opt.bmi and opt.objectfile and module.bmifile then
++    if not _use_clang_module_pipeline(target) and not opt.bmi and opt.objectfile and module.bmifile then
+         sourcefile = module.bmifile
+     end
+     local outputfile = ((opt.bmi and not opt.objectfile) or opt.headerunit) and module.bmifile or module.objectfile
+@@ -302,6 +311,22 @@
+     local dryrun = option.get("dry-run")
+     local enable_hash_comparison = target:policy("build.c++.modules.non_cascading_changes")
+
++    if content_depend.enabled(target) and not module.headerunit then
++        if not module.name and not support.has_module_extension(module.sourcefile) then
++            return -- The object build rule owns this translation unit.
++        end
++        local flags = _make_modulebuildflags(target, module, opt)
++        local compinst = target:compiler("cxx")
++        local compflags = table.join(compinst:compflags({sourcefile = module.sourcefile, target = target, sourcekind = "cxx"}), flags)
++        local output = opt.bmi and module.bmifile or module.objectfile
++        content_depend.run(function ()
++            _compile(target, flags, module, opt)
++        end, {dependfile = target:dependfile(output .. ".module"), output = output,
++              files = assert(content_depend.inputs(target, module.sourcefile)),
++              values = {compinst:program(), compflags}, changed = target:is_rebuilt(), dryrun = dryrun})
++        return
++    end
++
+     local build, because_of_dependencies = should_build(target, module)
+     local bmi = opt and opt.bmi
+     local objectfile = opt and opt.objectfile
+--- a/rules/c++/modules/clang/scanner.lua
++++ b/rules/c++/modules/clang/scanner.lua
+@@ -91,3 +91,68 @@
+     return changed
+ end
+
++
++-- Scan owned translation units together. Reused units keep their provider's
++-- scan job and dependency record.
++function scan_dependencies_for(target, sourcefiles, opt)
++    local scanner = assert(support.get_clang_scan_deps(target), "Clang module pipeline requires clang-scan-deps")
++    local compinst = target:compiler("cxx")
++    local commands, items, temporaries = {}, {}, {}
++    local database = os.tmpfile() .. ".json"
++    local depfile = os.tmpfile()
++    table.insert(temporaries, database)
++    table.insert(temporaries, depfile)
++    for index, sourcefile in ipairs(sourcefiles) do
++        local depkey = "carven_scan_" .. index
++        local flags = table.clone(compinst:compflags({sourcefile = sourcefile, target = target, sourcekind = "cxx"}))
++        table.remove_if(flags, function(_, flag)
++            return flag:startswith("-fmodule-file=") or flag:startswith("-fmodule-output=")
++                or flag:startswith("-fprebuilt-module-path=")
++        end)
++        local objectfile = target:objectfile(sourcefile)
++        table.insert(commands, {directory = os.curdir(), file = sourcefile, output = objectfile,
++            arguments = table.join({compinst:program(), "-x", "c++"}, flags,
++                {"-MD", "-MF", depfile, "-MT", depkey, "-c", sourcefile, "-o", objectfile})})
++        items[path.absolute(objectfile)] = {sourcefile = sourcefile, depkey = depkey}
++    end
++    json.savefile(database, commands)
++    try {
++        function ()
++            progress.show(opt.progress, "${clear}scanning.module.batch %s (%d units)", target:fullname(), #sourcefiles)
++            local args = {"-format=p1689", "-j", tostring(option.get("jobs") or os.default_njob()), "-compilation-database", database}
++            local stdout = os.iorunv(scanner, args)
++            local data = json.decode(stdout)
++            local parse_deps = import("core.tools.gcc.parse_deps", {anonymous = true})
++            -- clang-scan-deps retains every -MF stream until process exit.
++            -- Share one stream and identify each rule by its synthetic target.
++            local dependencies = {}
++            local depdata = io.readfile(depfile, {continuation = "\\"})
++            for line in depdata:gmatch("[^\r\n]+") do
++                local key = assert(line:match("^(carven_scan_%d+):"), "unexpected dependency target")
++                assert(not dependencies[key], "duplicate dependency target " .. key)
++                dependencies[key] = parse_deps(line, {target = target})
++            end
++            local pending, seen = {}, {}
++            for _, rule in ipairs(data.rules) do
++                local key = path.absolute(rule["primary-output"])
++                local item = assert(items[key], "scanner returned unexpected output " .. key)
++                assert(not seen[key], "scanner returned duplicate output " .. key)
++                seen[key] = true
++                local files = table.unique(table.join({item.sourcefile},
++                    assert(dependencies[item.depkey], "missing dependencies for " .. item.sourcefile)))
++                table.sort(files)
++                table.insert(pending, {path = target:dependfile(item.sourcefile),
++                    data = {moduleinfo = json.encode({version = data.version, revision = data.revision, rules = {rule}}, {pure = true, orderkeys = true}), files = files}})
++            end
++            assert(#pending == #sourcefiles, "scanner did not return every translation unit")
++            -- Publish only after the entire batch parsed successfully.
++            for _, record in ipairs(pending) do
++                io.save(record.path, record.data, {only_changed = true, orderkeys = true})
++            end
++        end,
++        finally {function(ok, errors)
++            for _, file in ipairs(temporaries) do os.tryrm(file) end
++            if not ok then raise(errors) end
++        end}
++    }
++end
 --- a/rules/c++/modules/xmake.lua
 +++ b/rules/c++/modules/xmake.lua
 @@ -52,8 +52,8 @@
      add_orders("c++.build.modules.scanner", "c++.build.modules.builder")
- 
+
      -- parallel build support to accelerate `xmake build` to build modules
 -    before_build_files("builder.build_bmis", {jobgraph = true, batch = true})
 -    on_build_files("builder.build_objectfiles", {jobgraph = true, batch = true})
 +    before_build_files("builder.build_module_pipeline", {jobgraph = true, batch = true})
 +    on_build_files("builder.skip_module_pipeline_objectfiles", {jobgraph = true, batch = true})
- 
+
      -- serial compilation only, usually used to support project generator
      before_buildcmd_files("builder.build_bmis")

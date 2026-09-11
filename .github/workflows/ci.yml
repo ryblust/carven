@@ -72,12 +72,12 @@ jobs:
       - name: Configure macOS
         if: runner.os == 'macOS'
         run: |
-          xmake f -y -m debug --sdk="$LLVM_ROOT" --build_tests=y --target_minver=26.0 \
+          xmake f -y -m debug --sdk="$LLVM_ROOT" --target_minver=26.0 \
             --ldflags="-L$LLVM_ROOT/lib/c++ -Wl,-rpath,$LLVM_ROOT/lib/c++"
 
       - name: Configure Linux
         if: runner.os == 'Linux'
-        run: xmake f -y -m debug --sdk="$LLVM_ROOT" --build_tests=y --runtimes=c++_shared --syslinks=c++abi
+        run: xmake f -y -m debug --sdk="$LLVM_ROOT" --runtimes=c++_shared --syslinks=c++abi
 
       - name: Build compiler
         run: xmake build -y

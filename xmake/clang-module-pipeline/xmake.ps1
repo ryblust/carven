@@ -20,8 +20,12 @@ $sourceProgramDir = $sourceInfo[0]
 $sourceVersion = $sourceInfo[1]
 
 $patchedFiles = @(
+    (Join-Path $sourceProgramDir "modules/private/action/build/object.lua")
+    (Join-Path $sourceProgramDir "modules/private/action/build/link_objects.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/clang/builder.lua")
+    (Join-Path $sourceProgramDir "rules/c++/modules/clang/scanner.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/builder.lua")
+    (Join-Path $sourceProgramDir "rules/c++/modules/scanner.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/xmake.lua")
     $patchFile
 )

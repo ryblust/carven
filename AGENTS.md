@@ -22,8 +22,8 @@ Use the repository wrapper `./xmakew` (`.\xmakew.ps1` on Windows) for normal
 local build, test, static-analysis, and clean commands. Stock Xmake is the local
 fallback when the wrapper cannot apply its versioned patch.
 
-Build before running any test. During implementation, run only the tests
-relevant to the current change.
+Build or update the local compiler before testing. During implementation, run
+only the tests relevant to the current change.
 
 ```shell
 ./xmakew build

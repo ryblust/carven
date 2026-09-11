@@ -858,7 +858,7 @@ TEST_CASE("SemIR declaration invariant: builder rejects cross-program module ref
 
 TEST_CASE("SemIR publication invariant: external names require valid structured paths") {
     const auto paths = std::vector<std::vector<std::string>> {{}, {"native", "class"}};
-    for (const auto& components : paths) {
+    for (const auto& [index, components] : paths | std::views::enumerate) {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
         auto builder = begin_compilation(sources, diagnostics, "external");
@@ -886,9 +886,11 @@ TEST_CASE("SemIR publication invariant: external names require valid structured 
              }}
         ));
         builder.finish_declaration_heads();
-        CHECK(expect_termination("semir-external-invalid-path", [&] noexcept {
-            static_cast<void>(std::move(builder).finish());
-        }));
+        CHECK(
+            expect_termination(std::format("semir-external-invalid-path-{}", index), [&] noexcept {
+                static_cast<void>(std::move(builder).finish());
+            })
+        );
     }
 }
 
@@ -1027,7 +1029,7 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
         if (scenario.valid) {
             publish_text();
         } else {
-            CHECK(expect_termination("semir-invalid-text-operation", publish_text));
+            CHECK(expect_termination(scenario.name, publish_text));
         }
     }
 }
@@ -1036,6 +1038,7 @@ TEST_CASE("SemIR publication: format constants result types and Read operands ar
     enum class FormatConstant { Text, Boolean, Foreign };
 
     struct Scenario final {
+        std::string_view name;
         BuiltinType result;
         AccessMode operand;
         FormatConstant constant;
@@ -1044,36 +1047,42 @@ TEST_CASE("SemIR publication: format constants result types and Read operands ar
 
     const auto scenarios = std::array {
         Scenario {
+            .name = "text constant and Read operand",
             .result = BuiltinType::String,
             .operand = AccessMode::Read,
             .constant = FormatConstant::Text,
             .valid = true
         },
         Scenario {
+            .name = "borrowed result",
             .result = BuiltinType::Str,
             .operand = AccessMode::Read,
             .constant = FormatConstant::Text,
             .valid = false
         },
         Scenario {
+            .name = "Write operand",
             .result = BuiltinType::String,
             .operand = AccessMode::Write,
             .constant = FormatConstant::Text,
             .valid = false
         },
         Scenario {
+            .name = "Take operand",
             .result = BuiltinType::String,
             .operand = AccessMode::Take,
             .constant = FormatConstant::Text,
             .valid = false
         },
         Scenario {
+            .name = "boolean constant",
             .result = BuiltinType::String,
             .operand = AccessMode::Read,
             .constant = FormatConstant::Boolean,
             .valid = false
         },
         Scenario {
+            .name = "foreign constant",
             .result = BuiltinType::String,
             .operand = AccessMode::Read,
             .constant = FormatConstant::Foreign,
@@ -1081,6 +1090,7 @@ TEST_CASE("SemIR publication: format constants result types and Read operands ar
         },
     };
     for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.name);
         const auto publish_format = [&]() noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -1178,7 +1188,7 @@ TEST_CASE("SemIR publication: format constants result types and Read operands ar
         if (scenario.valid) {
             publish_format();
         } else {
-            CHECK(expect_termination("semir-invalid-format", publish_format));
+            CHECK(expect_termination(scenario.name, publish_format));
         }
     }
 }

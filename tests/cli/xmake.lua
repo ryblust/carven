@@ -203,18 +203,12 @@ local function use_local_carven(target)
     target:values_set("carven.program", project.target("carven"):targetfile())
 end
 
-local case_names = {}
-for case_name in pairs(case_specs) do
-    table.insert(case_names, case_name)
-end
-table.sort(case_names)
-
 target("carven-test-cli")
     set_default(false)
     set_kind("phony")
     add_deps("carven", {inherit = false})
 
-    for _, case_name in ipairs(case_names) do
+    for _, case_name in ipairs(table.orderkeys(case_specs)) do
         add_tests(case_name, {group = "cli"})
     end
 
@@ -226,23 +220,17 @@ target("carven-test-cli")
         return harness(target, opt, case_specs)
     end)
 
-target("carven-test-cli-default-domain-a")
-    set_default(false)
-    set_kind("object")
-    add_rules("@carven/carven")
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++20")
-    add_files(path.join(xmake_rule_dir, "domain.cv"))
-    after_load(use_local_carven)
-
-target("carven-test-cli-default-domain-b")
-    set_default(false)
-    set_kind("object")
-    add_rules("@carven/carven")
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++20")
-    add_files(path.join(xmake_rule_dir, "domain.cv"))
-    after_load(use_local_carven)
+for _, domain in ipairs({"a", "b"}) do
+    target("carven-test-cli-default-domain-" .. domain)
+        set_default(false)
+        set_kind("object")
+        add_rules("@carven/carven")
+        set_values("carven.includedir", crafts_dir)
+        set_languages("c++20")
+        add_files(path.join(xmake_rule_dir, "domain.cv"))
+        after_load(use_local_carven)
+    target_end()
+end
 
 target("carven-test-cli-default-domain-isolation")
     set_default(false)
@@ -252,4 +240,4 @@ target("carven-test-cli-default-domain-isolation")
         "carven-test-cli-default-domain-b"
     )
     add_files(path.join(xmake_rule_dir, "main.cpp"))
-    add_tests("default-domain-isolation", {group = "cli"})
+    add_tests("default-domain-isolation", {group = "cli", run_timeout = 30000})

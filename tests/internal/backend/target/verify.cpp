@@ -113,8 +113,8 @@ TEST_CASE("Target type construction: children already belong to the unit") {
         TargetTestingFixture::type_id(builder.identity(), 0),
         TargetTestingFixture::type_id(builder.identity(), 7),
     };
-    for (const auto child : invalid) {
-        CHECK(expect_termination("target-type-child", [&] noexcept {
+    for (const auto [index, child] : invalid | std::views::enumerate) {
+        CHECK(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
             static_cast<void>(builder.intern_type(
                 TargetType {
                     .value =

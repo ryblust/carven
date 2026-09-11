@@ -33,10 +33,14 @@ struct SavedEnvironment final {
     std::string value;
 };
 
-struct ChildResult final {
-    bool launched;
-    bool successful_exit;
-};
+auto termination_event = HANDLE {};
+
+auto record_abort(int signal) noexcept -> void {
+    if (signal == SIGABRT && SetEvent(termination_event) != FALSE) {
+        std::_Exit(73);
+    }
+    std::_Exit(125);
+}
 
 auto save_environment(const char* name) noexcept -> SavedEnvironment {
     const auto* value = std::getenv(name);
@@ -154,12 +158,11 @@ auto current_test_case_name() noexcept -> std::optional<std::string_view> {
     return context->currentTest->m_name;
 }
 
-auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) noexcept
-    -> ChildResult {
+auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) noexcept -> bool {
     const auto executable = current_executable();
     const auto wide_test_case = utf8_to_wide(test_case);
     if (!executable.has_value() || !wide_test_case.has_value()) {
-        return {.launched = false, .successful_exit = false};
+        return false;
     }
 
     auto command = std::wstring();
@@ -184,7 +187,7 @@ auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) no
             &startup,
             &process
         )) {
-        return {.launched = false, .successful_exit = false};
+        return false;
     }
     CloseHandle(process.hThread);
 
@@ -193,15 +196,12 @@ auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) no
         static_cast<void>(TerminateProcess(process.hProcess, 1u));
         static_cast<void>(WaitForSingleObject(process.hProcess, INFINITE));
         CloseHandle(process.hProcess);
-        return {.launched = false, .successful_exit = false};
+        return false;
     }
     auto exit_code = DWORD {};
     const auto read_exit = GetExitCodeProcess(process.hProcess, &exit_code) != FALSE;
     CloseHandle(process.hProcess);
-    return {
-        .launched = read_exit,
-        .successful_exit = read_exit && exit_code == 0u,
-    };
+    return read_exit && exit_code == 73u;
 }
 
 auto expect_windows_termination(
@@ -217,9 +217,8 @@ auto expect_windows_termination(
             // The filtered child replays earlier assertions before reaching its scenario.
             return true;
         }
-        const auto event = inherited_event();
-        std::signal(SIGABRT, SIG_DFL);
-        if (event == nullptr || SetEvent(event) == FALSE) {
+        termination_event = inherited_event();
+        if (termination_event == nullptr || std::signal(SIGABRT, record_abort) == SIG_ERR) {
             std::_Exit(125);
         }
         action(context);
@@ -252,16 +251,12 @@ auto expect_windows_termination(
     }
 
     std::fflush(nullptr);
-    const auto child = run_child(*test_case, timeout);
+    const auto aborted = run_child(*test_case, timeout);
     const auto restored_event = restore_environment(event_environment, saved_event);
     const auto restored_scenario = restore_environment(scenario_environment, saved_scenario);
-    const auto entered_action = WaitForSingleObject(event, 0u) == WAIT_OBJECT_0;
+    const auto observed_abort = WaitForSingleObject(event, 0u) == WAIT_OBJECT_0;
     CloseHandle(event);
-    return child.launched
-        && !child.successful_exit
-        && entered_action
-        && restored_event
-        && restored_scenario;
+    return aborted && observed_abort && restored_event && restored_scenario;
 }
 
 #else
@@ -272,29 +267,15 @@ auto expect_posix_termination(
     std::chrono::milliseconds timeout
 ) noexcept -> bool {
     std::fflush(nullptr);
-    auto readiness = std::array<int, 2> {};
-    if (pipe(readiness.data()) != 0) {
-        return false;
-    }
     const auto child = fork();
     if (child == 0) {
-        static_cast<void>(close(readiness[0]));
-        std::signal(SIGABRT, SIG_DFL);
-        constexpr auto entered = char {'1'};
-        auto written = ssize_t {};
-        do {
-            written = write(readiness[1], &entered, sizeof(entered));
-        } while (written < 0 && errno == EINTR);
-        static_cast<void>(close(readiness[1]));
-        if (written != static_cast<ssize_t>(sizeof(entered))) {
+        if (std::signal(SIGABRT, SIG_DFL) == SIG_ERR) {
             _exit(125);
         }
         action(context);
         _exit(0);
     }
-    static_cast<void>(close(readiness[1]));
     if (child < 0) {
-        static_cast<void>(close(readiness[0]));
         return false;
     }
 
@@ -311,27 +292,12 @@ auto expect_posix_termination(
             do {
                 waited = waitpid(child, &status, 0);
             } while (waited < 0 && errno == EINTR);
-            static_cast<void>(close(readiness[0]));
             // A timeout is a harness failure, not evidence of expected termination.
             return false;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    if (waited != child) {
-        static_cast<void>(close(readiness[0]));
-        return false;
-    }
-    auto entered = char {};
-    auto read_count = ssize_t {};
-    do {
-        read_count = read(readiness[0], &entered, sizeof(entered));
-    } while (read_count < 0 && errno == EINTR);
-    static_cast<void>(close(readiness[0]));
-    const auto entered_action =
-        read_count == static_cast<ssize_t>(sizeof(entered)) && entered == '1';
-    const auto abnormal_exit =
-        WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0);
-    return entered_action && abnormal_exit;
+    return waited == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
 }
 
 #endif

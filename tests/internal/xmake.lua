@@ -7,4 +7,4 @@ target("carven-test-internal")
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cppm"))
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cpp"))
 
-    add_tests("internal", {group = "internal"})
+    add_tests("internal", {group = "internal", run_timeout = 60000})

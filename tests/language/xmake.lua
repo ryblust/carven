@@ -24,57 +24,54 @@ local function use_local_carven(target)
     target:values_set("carven.program", project.target("carven"):targetfile())
 end
 
-target("carven-test-language")
-    set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(table.unpack(language_sources))
-    after_load(use_local_carven)
-    add_tests("language", {group = "language"})
-
-target("carven-test-language-cxx23")
-    set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++23")
-    add_includedirs(language_dir)
-    add_files(table.unpack(language_sources))
-    after_load(use_local_carven)
-    add_tests("compatibility", {group = "language"})
-
 local entry_point_source = path.join(language_dir, "testing", "entry_point.cv")
-
-target("carven-test-language-entry-point")
-    set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(entry_point_source)
-    after_load(use_local_carven)
-    for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
-        add_tests(scenario, {group = "language"})
-    end
-    on_test(function (target, opt)
-        import("harness.entry", {rootdir = language_dir}).main(target, opt.name:match("([^/]+)$"))
-        return true
-    end)
-
 local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
-target("carven-test-language-reporting")
-    set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
-    set_values("carven.includedir", crafts_dir)
-    set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(reporting_source)
-    add_files(path.join(language_dir, "testing", "reporting_provider.cpp"))
-    after_load(use_local_carven)
-    add_tests("reporting", {group = "language"})
-    on_test(function (target)
-        import("harness.entry", {rootdir = language_dir}).main(target, "reporting")
-        return true
-    end)
+for _, mode in ipairs({
+    {standard = "c++20", suffix = ""},
+    {standard = "c++23", suffix = "-cxx23"},
+}) do
+    target("carven-test-language" .. mode.suffix)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "default"})
+        set_values("carven.includedir", crafts_dir)
+        set_languages(mode.standard)
+        add_includedirs(language_dir)
+        add_files(table.unpack(language_sources))
+        after_load(use_local_carven)
+        add_tests("language", {group = "language", run_timeout = 30000})
+    target_end()
+
+    target("carven-test-language-entry-point" .. mode.suffix)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_values("carven.includedir", crafts_dir)
+        set_languages(mode.standard)
+        add_includedirs(language_dir)
+        add_files(entry_point_source)
+        after_load(use_local_carven)
+        for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
+            add_tests(scenario, {group = "language"})
+        end
+        on_test(function (target, opt)
+            import("harness.entry", {rootdir = language_dir}).main(target, opt.name:match("([^/]+)$"))
+            return true
+        end)
+    target_end()
+
+    target("carven-test-language-reporting" .. mode.suffix)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_values("carven.includedir", crafts_dir)
+        set_languages(mode.standard)
+        add_includedirs(language_dir)
+        add_files(reporting_source)
+        add_files(path.join(language_dir, "testing", "reporting_provider.cpp"))
+        after_load(use_local_carven)
+        add_tests("reporting", {group = "language"})
+        on_test(function (target)
+            import("harness.entry", {rootdir = language_dir}).main(target, "reporting")
+            return true
+        end)
+    target_end()
+end

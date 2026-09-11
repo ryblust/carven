@@ -1,0 +1,6 @@
+target("carvend")
+    set_default(false)
+    set_kind("binary")
+    add_deps("carven-modules")
+    add_files(path.join(os.scriptdir(), "carvend.cpp"))
+target_end()

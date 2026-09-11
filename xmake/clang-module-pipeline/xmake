@@ -34,8 +34,12 @@ source_key=$(
     {
         printf '%s\n' "$source_program_dir" "$source_version"
         hash_sha256 \
+            "$source_program_dir/modules/private/action/build/object.lua" \
+            "$source_program_dir/modules/private/action/build/link_objects.lua" \
             "$source_program_dir/rules/c++/modules/clang/builder.lua" \
+            "$source_program_dir/rules/c++/modules/clang/scanner.lua" \
             "$source_program_dir/rules/c++/modules/builder.lua" \
+            "$source_program_dir/rules/c++/modules/scanner.lua" \
             "$source_program_dir/rules/c++/modules/xmake.lua" \
             "$patch_file"
     } | hash_sha256 | awk '{print $1}'

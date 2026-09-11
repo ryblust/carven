@@ -19,9 +19,7 @@ installed:
 The first command builds the compiler. The second compiles the examples to
 native executables; they use the local compiler and C++20. Replace
 `carven-example-receipt` with any target below. In PowerShell, use `.\xmakew.ps1`.
-The examples are enabled with the repository's `build_tests` option (on by
-default). Their executables are built explicitly, rather than by the default
-build.
+Examples are built explicitly or by `test -g examples`.
 
 The build uses the same Carven Xmake rule as the repository's generated tests.
 It may need to obtain that rule on initial configuration. For standalone C++

@@ -117,8 +117,7 @@ toolchain, and development documentation.
 
 ## Development
 
-Build the compiler before running tests, which use the local `carven` executable.
-Run the full test suite with:
+The default build selects the compiler. Build it before running the test suite:
 
 ```shell
 ./xmakew build
@@ -136,9 +135,13 @@ impossible type error occurs, clean and rebuild with the repository wrapper:
 ```
 
 If the wrapper cannot apply its versioned patch to the installed Xmake, use
-stock Xmake. Clean the existing build with the wrapper before switching:
+stock Xmake to clean and rebuild:
 
 ```shell
-./xmakew clean -a
+xmake clean -a
 xmake build
 ```
+
+Clean the build tree before changing the compiler, toolchain, or build pipeline.
+When the wrapper is usable, run `./xmakew clean -a` before switching to stock
+Xmake. On Windows, use `.\xmakew.ps1` in place of `./xmakew`.

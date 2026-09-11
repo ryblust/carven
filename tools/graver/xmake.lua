@@ -1,0 +1,6 @@
+target("graver")
+    set_default(false)
+    set_kind("binary")
+    add_deps("carven-modules")
+    add_files(path.join(os.scriptdir(), "graver.cpp"))
+target_end()
