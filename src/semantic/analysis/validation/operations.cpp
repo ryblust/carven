@@ -219,6 +219,45 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("short circuit requires boolean values");
                 }
             },
+            [&](const SemTestReport& value) noexcept {
+                if ((value.kind != TestReportKind::Fail
+                     && require_type(source.type.resolved()).value
+                         != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}})
+                    || (value.kind == TestReportKind::Fail) == value.condition.has_value()
+                    || (value.condition
+                        && require_type((*value.condition)->type.resolved()).value
+                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}})
+                    || (value.message
+                        && require_type((*value.message)->type.resolved()).value
+                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}})) {
+                    invariant_violation("invalid test report contract");
+                }
+            },
+            [&](const SemPrint& value) noexcept {
+                const auto newline =
+                    value.kind == PrintKind::Println || value.kind == PrintKind::Eprintln;
+                if ((!newline && value.operands.empty())
+                    || require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                    invariant_violation("invalid printing operation contract");
+                }
+                for (const auto& operand : value.operands) {
+                    const auto* type = std::get_if<BuiltinTypeValue>(
+                        &require_type(operand.expression.type.resolved()).value
+                    );
+                    if (operand.access != AccessMode::Read
+                        || type == nullptr
+                        || !(
+                            builtin_is_numeric(type->kind)
+                            || type->kind == BuiltinType::Bool
+                            || type->kind == BuiltinType::Char
+                            || type->kind == BuiltinType::Str
+                            || type->kind == BuiltinType::String
+                        )) {
+                        invariant_violation("invalid printing operand");
+                    }
+                }
+            },
             [&](const SemFormat& value) noexcept {
                 const auto& specification = program.constants().constant(value.format_string_id);
                 if (require_type(specification.type).value
@@ -293,12 +332,23 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         invariant_violation("text intrinsic operand access mismatch");
                     }
                     const auto& type = require_type(operand.expression.type.resolved()).value;
+                    if (value.intrinsic == TextIntrinsic::FromUTF8Unchecked) {
+                        const auto* slice = std::get_if<SliceTypeValue>(&type);
+                        if (slice == nullptr
+                            || require_type(slice->element).value
+                                != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::U8}}) {
+                            invariant_violation("UTF-8 construction requires a byte slice");
+                        }
+                        continue;
+                    }
                     const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
                     const auto query = value.intrinsic == TextIntrinsic::Len
                         || value.intrinsic == TextIntrinsic::IsEmpty
                         || value.intrinsic == TextIntrinsic::Bytes
                         || value.intrinsic == TextIntrinsic::Chars;
-                    const auto expected = value.intrinsic == TextIntrinsic::FromStr || index == 1
+                    const auto expected = value.intrinsic == TextIntrinsic::FromU32Unchecked
+                        ? BuiltinType::U32
+                        : value.intrinsic == TextIntrinsic::FromStr || index == 1
                         ? (value.intrinsic == TextIntrinsic::Push ? BuiltinType::Char
                                                                   : BuiltinType::Str)
                         : BuiltinType::String;

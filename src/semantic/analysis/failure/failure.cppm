@@ -80,7 +80,6 @@ public:
     auto operator=(const FrozenFailureConstraints&) -> FrozenFailureConstraints& = delete;
     auto operator=(FrozenFailureConstraints&&) -> FrozenFailureConstraints& = delete;
     ~FrozenFailureConstraints() = default;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto provenance_owner() const noexcept -> ProvenanceIdentity;
     auto terms() const noexcept -> const ImmutableProgramTable<FailureTerm, FailureTermID>&;
@@ -108,7 +107,6 @@ public:
     auto operator=(const FailureConstraintStore&) -> FailureConstraintStore& = delete;
     auto operator=(FailureConstraintStore&&) -> FailureConstraintStore& = delete;
     ~FailureConstraintStore() = default;
-
     auto add_empty_term() noexcept -> FailureTermID;
     auto add_concrete_term(std::vector<TypeID> members) noexcept -> FailureTermID;
     auto add_union_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
@@ -125,7 +123,6 @@ public:
         FailureTermID source
     ) noexcept -> void;
     auto equate(FailureTermID left, FailureTermID right) noexcept -> void;
-
     auto require_empty(
         FailureTermID term,
         ProgramOriginID origin,
@@ -141,7 +138,6 @@ public:
     auto require_equal(FailureTermID left, FailureTermID right, ProgramOriginID origin) noexcept
         -> void;
     auto require_declared_contract(FailureTermID actual, ProgramOriginID origin) noexcept -> void;
-
     auto finish() && noexcept -> FrozenFailureConstraints;
 
 private:
@@ -164,7 +160,6 @@ public:
         DeclarationConstructionView declarations,
         CompilationProvenanceReader provenance
     ) noexcept;
-
     auto name(TypeID type) const noexcept -> std::string;
 
 private:
@@ -180,7 +175,6 @@ public:
     auto operator=(const FailureSolution&) -> FailureSolution& = delete;
     auto operator=(FailureSolution&&) -> FailureSolution& = default;
     ~FailureSolution() = default;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(FailureTermID term) const noexcept -> bool;
     auto failure_set(FailureTermID term) const noexcept -> FailureSetID;

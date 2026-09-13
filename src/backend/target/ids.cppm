@@ -180,7 +180,6 @@ public:
     TargetPlanTable(const TargetPlanTable&) = delete;
     TargetPlanTable(TargetPlanTable&&) = default;
     ~TargetPlanTable() = default;
-
     auto operator=(const TargetPlanTable&) -> TargetPlanTable& = delete;
     auto operator=(TargetPlanTable&&) -> TargetPlanTable& = delete;
 
@@ -223,11 +222,8 @@ public:
         : plan_identity(identity) {}
 
     TargetPlanTableBuilder(const TargetPlanTableBuilder&) = delete;
-
     TargetPlanTableBuilder(TargetPlanTableBuilder&&) = default;
-
     ~TargetPlanTableBuilder() = default;
-
     auto operator=(const TargetPlanTableBuilder&) -> TargetPlanTableBuilder& = delete;
     auto operator=(TargetPlanTableBuilder&&) -> TargetPlanTableBuilder& = delete;
 

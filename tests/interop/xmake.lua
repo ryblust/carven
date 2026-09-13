@@ -1,28 +1,25 @@
 local interop_dir = path.join(os.projectdir(), "tests", "interop")
 local crafts_dir = path.join(os.projectdir(), "crafts")
 
-local scalar_boundary_sources = {
-    path.join(interop_dir, "scalar_boundary", "scalars.cv"),
-    path.join(interop_dir, "scalar_boundary", "api_consumer.cpp"),
-}
-
-local provider_form_sources = {
-    path.join(interop_dir, "provider_forms", "consumer.cv"),
-    path.join(interop_dir, "provider_forms", "header_bridge.cv"),
-    path.join(interop_dir, "provider_forms", "linked_provider.cpp"),
-}
-
-local interop_sources = table.join(scalar_boundary_sources, provider_form_sources)
-table.insert(interop_sources, path.join(interop_dir, "interpolation", "*.cv"))
-table.insert(interop_sources, path.join(interop_dir, "pointers", "*.cv"))
-table.insert(interop_sources, path.join(interop_dir, "pointers", "interface.cpp"))
-table.insert(interop_sources, path.join(interop_dir, "runtime_headers", "*.cpp"))
-table.insert(interop_sources, path.join(interop_dir, "unicode_contract", "export_argument.cv"))
-table.insert(interop_sources, path.join(interop_dir, "cpp_names", "*.cv"))
-table.insert(interop_sources, path.join(interop_dir, "cpp_names", "interface.cpp"))
-table.insert(interop_sources, path.join(interop_dir, "cpp_names", "escaped_api.cpp"))
-table.insert(interop_sources, path.join(interop_dir, "cpp_names", "global_interface.cpp"))
-table.insert(interop_sources, path.join(interop_dir, "discarded", "operations.cv"))
+local interop_sources = {}
+for _, domain in ipairs({
+    "bindings",
+    "discarded_results",
+    "interpolation",
+    "lifetimes",
+    "pointers",
+    "providers",
+    "runtime_headers",
+    "scalars",
+    "text",
+}) do
+    for _, extension in ipairs({"cv", "cpp"}) do
+        local pattern = path.join(interop_dir, domain, "*." .. extension)
+        if #os.files(pattern) > 0 then
+            table.insert(interop_sources, pattern)
+        end
+    end
+end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 
 local rejection_cases = {
@@ -72,7 +69,7 @@ for _, mode in ipairs({
         set_languages(mode.standard)
         set_exceptions("cxx")
         add_includedirs(crafts_dir)
-        add_files(path.join(interop_dir, "exception_boundary", "terminate.cpp"))
+        add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
         for _, operation in ipairs({
             "copy", "move", "failure", "function", "object",
             "string-allocate", "string-copy",
@@ -108,7 +105,7 @@ target("carven-test-interop-print")
     add_rules("@carven/carven", {tests = "default"})
 
     set_languages("c++23")
-    add_files(path.join(interop_dir, "output", "print.cv"))
+    add_files(path.join(interop_dir, "printing", "print.cv"))
 
     add_tests("output", {group = "interop"})
     on_test(function (target)

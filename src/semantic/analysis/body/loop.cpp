@@ -390,7 +390,6 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
             [](const ASTAssignment&) static noexcept { return true; },
             [](const ASTUpdate&) static noexcept { return true; },
             [](const ASTExprStatement&) static noexcept { return true; },
-            [](const ASTTestOperationStmt&) static noexcept { return true; },
             [](const ASTControlTransfer&) static noexcept { return true; },
             [](const ASTMatchForm&) static noexcept { return true; },
             [](const ASTTryForm&) static noexcept { return true; },
@@ -419,9 +418,6 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
                 }
                 append_expression(*built, ast.expression(value.expression).span);
                 return {};
-            },
-            [&](const ASTTestOperationStmt& value) noexcept {
-                return test_statement(value, source.span);
             },
             [&](const ASTControlTransfer& value) noexcept { return transfer_statement(value); },
             [&](const ASTWhileStmt& value) noexcept { return while_statement(value, source.span); },

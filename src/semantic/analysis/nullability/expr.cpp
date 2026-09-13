@@ -203,6 +203,24 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                     set_value({});
                 }
             },
+            [&](const SemTestReport& value) noexcept {
+                if (value.condition) {
+                    static_cast<void>(evaluate(**value.condition));
+                }
+                if (value.message) {
+                    static_cast<void>(evaluate(**value.message));
+                }
+                if (flow.normal && value.kind == TestReportKind::Fail) {
+                    flow.exits.push_back({NullTransfer::Return, std::move(flow.normal->state)});
+                    flow.normal.reset();
+                }
+            },
+            [&](const SemPrint& value) noexcept {
+                for (const auto& operand : value.operands) {
+                    static_cast<void>(evaluate(operand.expression));
+                }
+                set_value({});
+            },
             [&](const SemFormat& value) noexcept {
                 for (const auto& operand : value.operands) {
                     static_cast<void>(evaluate(operand.expression));

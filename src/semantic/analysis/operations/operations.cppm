@@ -31,6 +31,9 @@ using CastDecision = std::expected<CastKind, OperationDiagnostic>;
 using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
 using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
+auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionTypeRef>;
+
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
 

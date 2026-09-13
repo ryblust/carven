@@ -1,32 +1,25 @@
 import .orders using quote;
 import .catalog using { QuantityError, OutOfStock };
 import .delivery using DeliveryError;
-import "console.hpp" using example::print;
 
 fn report(label: str, quantity: i32, available: i32, zone: i32) {
-    print(label);
+    println(label);
     try {
         let total = quote(quantity, available, zone)?;
-        print("Quote in cents:");
-        print(total);
+        println("Quote in cents:", total);
     } catch {
         QuantityError(.NonPositive(value)) | QuantityError(.TooLarge(value)) => {
-            print("Quantity must be between 1 and 100:");
-            print(value);
+            println("Quantity must be between 1 and 100:", value);
         },
         OutOfStock(error) => {
-            print("Requested:");
-            print(error.requested);
-            print("Available:");
-            print(error.available);
+            println("Requested:", error.requested);
+            println("Available:", error.available);
         },
         DeliveryError(.UnknownZone(zone)) => {
-            print("Unknown zone:");
-            print(zone);
+            println("Unknown zone:", zone);
         },
         DeliveryError(.Unavailable(zone)) => {
-            print("No carrier for zone:");
-            print(zone);
+            println("No carrier for zone:", zone);
         },
     }
 }

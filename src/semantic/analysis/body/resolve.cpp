@@ -17,136 +17,17 @@ public:
         const FailureSetStore& failure_sets,
         CompilationProvenanceReader provenance,
         AnalysisDiagnostics diagnostics
-    ) noexcept
-        : types(types),
-          failures(failures),
-          failure_sets(failure_sets),
-          provenance(provenance),
-          diagnostics(diagnostics) {}
-
+    ) noexcept;
     auto warning(DiagnosticCode code, std::string message, ProgramOriginID origin) const noexcept
-        -> void {
-        diagnostics.warning(DiagnosticBuilder(code, std::move(message))
-                                .primary(provenance.source_span(origin))
-                                .build());
-    }
-
-    auto operator()(ConstructionTypeRef type) const noexcept -> TypeID {
-        return types.resolve(type);
-    }
-
-    auto operator()(BodyType& type) const noexcept -> void {
-        type = BodyType(types.resolve(type.construction()));
-    }
-
-    auto operator()(BodyFailures& term) const noexcept -> void {
-        term = BodyFailures(failures.failure_set(term.term()));
-    }
-
-    auto operator()(SemanticExpression& value) const noexcept -> void {
-        (*this)(value.type);
-        (*this)(value.failures);
-        while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
-            if (types.resolve(adoption->source->type.construction()) != value.type.resolved()) {
-                break;
-            }
-            // Equal canonical arrays need no adaptation or independent temporary.
-            // The consumer still determines whether this source is copied or read.
-            auto source = std::move(*adoption->source);
-            value.constant = source.constant;
-            value.value = std::move(source.value);
-        }
-        if (auto* call = std::get_if<SemCall>(&value.value)) {
-            (*this)(call->callee_failures);
-        }
-        if (auto* attempt = std::get_if<SemTry>(&value.value)) {
-            (*this)(*attempt);
-        }
-    }
-
-    auto operator()(SemanticRegion& value) const noexcept -> void { (*this)(value.failures); }
-
-    auto operator()(SemTry& value) const noexcept -> void {
-        const auto protected_failures = failures.failure_set(value.protected_failures.term());
-        if (!failure_sets.failure_set(protected_failures).members.empty()) {
-            for (auto& arm : value.arms) {
-                const auto accepted =
-                    failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
-                auto useful = false;
-                for (auto& alternative : arm.alternatives) {
-                    const auto matches = std::visit(
-                        Overloaded {
-                            [&](CatchAllPattern) noexcept { return !accepted.members.empty(); },
-                            [&](const SemTypedCatchPattern& pattern) noexcept {
-                                return std::ranges::contains(
-                                    accepted.members,
-                                    types.resolve(pattern.type.construction())
-                                );
-                            },
-                        },
-                        alternative.pattern
-                    );
-                    alternative.reachable = alternative.reachable && matches;
-                    useful = useful || alternative.reachable;
-                }
-                if (!useful) {
-                    warning(
-                        DiagnosticCode::EffectCatchArmUnreachable,
-                        "catch arm cannot match any remaining protected failure",
-                        arm.origin
-                    );
-                } else {
-                    for (const auto& alternative : arm.alternatives) {
-                        if (!alternative.reachable) {
-                            warning(
-                                DiagnosticCode::EffectCatchAlternativeUnreachable,
-                                "catch alternative cannot match a remaining protected failure",
-                                alternative.origin
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        (*this)(value.protected_failures);
-        (*this)(value.residual_failures);
-        for (auto& arm : value.arms) {
-            (*this)(arm.accepted_failures);
-            for (auto& alternative : arm.alternatives) {
-                if (auto* typed = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                    (*this)(typed->type);
-                }
-            }
-        }
-    }
-
-    auto operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding {
-        return {
-            .name = value.name,
-            .type = (*this)(value.type),
-            .lifetime = value.lifetime,
-            .storage = value.storage,
-            .origin = value.origin,
-        };
-    }
-
-    auto operator()(ElaboratedPattern&& value) const noexcept -> Pattern {
-        return {
-            .type = (*this)(value.type),
-            .value = std::visit(
-                Overloaded {
-                    [&](ElaboratedTypeConstraintPattern pattern) noexcept -> PatternValue {
-                        return TypeConstraintPattern {.type = (*this)(pattern.type)};
-                    },
-                    [](auto&& pattern) static noexcept -> PatternValue {
-                        return std::forward<decltype(pattern)>(pattern);
-                    },
-                },
-                std::move(value.value)
-            ),
-            .origin = value.origin,
-        };
-    }
+        -> void;
+    auto operator()(ConstructionTypeRef type) const noexcept -> TypeID;
+    auto operator()(BodyType& type) const noexcept -> void;
+    auto operator()(BodyFailures& term) const noexcept -> void;
+    auto operator()(SemanticExpression& value) const noexcept -> void;
+    auto operator()(SemanticRegion& value) const noexcept -> void;
+    auto operator()(SemTry& value) const noexcept -> void;
+    auto operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding;
+    auto operator()(ElaboratedPattern&& value) const noexcept -> Pattern;
 
 private:
     const TypeResolution& types;
@@ -155,6 +36,148 @@ private:
     CompilationProvenanceReader provenance;
     AnalysisDiagnostics diagnostics;
 };
+
+BodyResolver::BodyResolver(
+    const TypeResolution& types,
+    const FailureSolution& failures,
+    const FailureSetStore& failure_sets,
+    CompilationProvenanceReader provenance,
+    AnalysisDiagnostics diagnostics
+) noexcept
+    : types(types),
+      failures(failures),
+      failure_sets(failure_sets),
+      provenance(provenance),
+      diagnostics(diagnostics) {}
+
+auto BodyResolver::warning(
+    DiagnosticCode code,
+    std::string message,
+    ProgramOriginID origin
+) const noexcept -> void {
+    diagnostics.warning(
+        DiagnosticBuilder(code, std::move(message)).primary(provenance.source_span(origin)).build()
+    );
+}
+
+auto BodyResolver::operator()(ConstructionTypeRef type) const noexcept -> TypeID {
+    return types.resolve(type);
+}
+
+auto BodyResolver::operator()(BodyType& type) const noexcept -> void {
+    type = BodyType(types.resolve(type.construction()));
+}
+
+auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
+    term = BodyFailures(failures.failure_set(term.term()));
+}
+
+auto BodyResolver::operator()(SemanticExpression& value) const noexcept -> void {
+    (*this)(value.type);
+    (*this)(value.failures);
+    while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
+        if (types.resolve(adoption->source->type.construction()) != value.type.resolved()) {
+            break;
+        }
+        // Equal canonical arrays need no adaptation or independent temporary.
+        // The consumer still determines whether this source is copied or read.
+        auto source = std::move(*adoption->source);
+        value.constant = source.constant;
+        value.value = std::move(source.value);
+    }
+    if (auto* call = std::get_if<SemCall>(&value.value)) {
+        (*this)(call->callee_failures);
+    }
+    if (auto* attempt = std::get_if<SemTry>(&value.value)) {
+        (*this)(*attempt);
+    }
+}
+
+auto BodyResolver::operator()(SemanticRegion& value) const noexcept -> void {
+    (*this)(value.failures);
+}
+
+auto BodyResolver::operator()(SemTry& value) const noexcept -> void {
+    const auto protected_failures = failures.failure_set(value.protected_failures.term());
+    if (!failure_sets.failure_set(protected_failures).members.empty()) {
+        for (auto& arm : value.arms) {
+            const auto accepted =
+                failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
+            auto useful = false;
+            for (auto& alternative : arm.alternatives) {
+                const auto matches = std::visit(
+                    Overloaded {
+                        [&](CatchAllPattern) noexcept { return !accepted.members.empty(); },
+                        [&](const SemTypedCatchPattern& pattern) noexcept {
+                            return std::ranges::contains(
+                                accepted.members,
+                                types.resolve(pattern.type.construction())
+                            );
+                        },
+                    },
+                    alternative.pattern
+                );
+                alternative.reachable = alternative.reachable && matches;
+                useful = useful || alternative.reachable;
+            }
+            if (!useful) {
+                warning(
+                    DiagnosticCode::EffectCatchArmUnreachable,
+                    "catch arm cannot match any remaining protected failure",
+                    arm.origin
+                );
+            } else {
+                for (const auto& alternative : arm.alternatives) {
+                    if (!alternative.reachable) {
+                        warning(
+                            DiagnosticCode::EffectCatchAlternativeUnreachable,
+                            "catch alternative cannot match a remaining protected failure",
+                            alternative.origin
+                        );
+                    }
+                }
+            }
+        }
+    }
+    (*this)(value.protected_failures);
+    (*this)(value.residual_failures);
+    for (auto& arm : value.arms) {
+        (*this)(arm.accepted_failures);
+        for (auto& alternative : arm.alternatives) {
+            if (auto* typed = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                (*this)(typed->type);
+            }
+        }
+    }
+}
+
+auto BodyResolver::operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding {
+    return {
+        .name = value.name,
+        .type = (*this)(value.type),
+        .lifetime = value.lifetime,
+        .storage = value.storage,
+        .origin = value.origin,
+    };
+}
+
+auto BodyResolver::operator()(ElaboratedPattern&& value) const noexcept -> Pattern {
+    return {
+        .type = (*this)(value.type),
+        .value = std::visit(
+            Overloaded {
+                [&](ElaboratedTypeConstraintPattern pattern) noexcept -> PatternValue {
+                    return TypeConstraintPattern {.type = (*this)(pattern.type)};
+                },
+                [](auto&& pattern) static noexcept -> PatternValue {
+                    return std::forward<decltype(pattern)>(pattern);
+                },
+            },
+            std::move(value.value)
+        ),
+        .origin = value.origin,
+    };
+}
 
 } // namespace
 

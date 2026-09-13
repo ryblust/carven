@@ -40,28 +40,20 @@ From the repository root:
 
 ```text
 Standard delivery
-Quote in cents:
-800
+Quote in cents: 800
 Alternate carrier
-Quote in cents:
-1200
+Quote in cents: 1200
 Stock shortage
-Requested:
-6
-Available:
-5
+Requested: 6
+Available: 5
 Invalid quantity
-Quantity must be between 1 and 100:
-0
+Quantity must be between 1 and 100: 0
 Oversized order
-Quantity must be between 1 and 100:
-101
+Quantity must be between 1 and 100: 101
 Unknown destination
-Unknown zone:
-9
+Unknown zone: 9
 Unavailable destination
-No carrier for zone:
-3
+No carrier for zone: 3
 ```
 
 Quantities are checked before multiplication and capped at 100. The example

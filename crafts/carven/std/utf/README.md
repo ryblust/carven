@@ -1,4 +1,8 @@
-# UTF-8 standard library
+# UTF standard library
+
+The `utf` library provides Unicode and UTF encoding support. It currently
+implements Unicode scalar conversion and UTF-8 encoding, decoding, validation,
+and text construction.
 
 Import a capability module, such as `import std::utf.text using to_string;`.
 The [Xmake integration](../../../../docs/toolchain.md#build-integration) supplies
@@ -25,11 +29,10 @@ the official package sources and native include path.
 | `feed(&state: UTF8Validator, bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
 | `finish(state: UTF8Validator) throw UTF8Error` | Declare logical EOF |
 
-Arrays create byte views explicitly with `as_slice()`. Text exposes `[u8]`
+Array arguments create byte views implicitly; `as_slice()` is also available. Text exposes `[u8]`
 through `.bytes`. `from_utf8` returns a view into the input: the caller must keep
-the backing array or String alive and unchanged while using that view. Its native
-representation conversion does not establish a compiler-tracked return borrow.
-Carven still checks known input borrows during the call.
+the backing array or String alive and unchanged while using that view. Carven
+tracks the returned view and rejects conflicting mutation and escaping borrows.
 
 Prefer `to_string` when storing or returning text with an independent lifetime.
 It validates and copies the bytes. Use `from_utf8` to avoid the copy when the
@@ -41,7 +44,7 @@ import std::utf.validation using UTF8Error;
 
 fn example() -> String throw UTF8Error {
     let bytes: [u8; 4] = [0xf0, 0x9f, 0x98, 0x80];
-    return to_string(bytes.as_slice())?;
+    return to_string(bytes)?;
 }
 ```
 
@@ -72,11 +75,12 @@ no input.
 
 The modules in this directory own the public types and UTF algorithms.
 Whole-buffer validation, incremental validation, and prefix decoding share the
-byte transition in `push`. [runtime/utf.hpp](../../runtime/utf.hpp) provides UTF
-primitives and checked representation conversions at the C++ boundary. Runtime
-text and String facilities use the same primitives.
+byte transition in `push`. After validation, builtin unchecked constructors
+establish characters and borrowed text without repeating validation. The compiler
+tracks text backing and selects runtime support; these modules do not import
+runtime headers.
 
 `tests/crafts/carven/std/utf/` checks public results, every valid Unicode scalar,
 invalid byte classes, and chunk boundaries. Run it with
 `./xmakew test -g crafts`; one C++20 binary uses the generated default test entry.
-Compiler diagnostic tests check known Carven input borrows at the public API.
+Compiler diagnostic tests check returned text borrows at the public API.

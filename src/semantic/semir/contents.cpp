@@ -1,6 +1,8 @@
 module carven:semantic.semir.contents.impl;
 
 import :semantic.semir.contents;
+import :semantic.semir.decl;
+import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -142,4 +144,8 @@ auto compute_type_contents(
         facts.push_back(query.contents(id));
     }
     return facts;
+}
+
+auto TypeContents::read_borrows_storage() const noexcept -> bool {
+    return storage_owner || closure_owner;
 }

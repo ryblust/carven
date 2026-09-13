@@ -1,5 +1,3 @@
-import "console.hpp" using example::print;
-
 struct Stock {
     units: i32,
 }
@@ -15,12 +13,9 @@ fn main() {
     restock(&stock, 3);
     let snapshot = stock;
     restock(&stock, 2);
-    print("Snapshot:");
-    print(snapshot.units);
-    print("Dispatched:");
-    print(dispatch(&&stock));
+    println("Snapshot:", snapshot.units);
+    println("Dispatched:", dispatch(&&stock));
     // Take transfers the owner; stock is unavailable until assigned again.
     stock = Stock { units: 1 };
-    print("Replacement stock:");
-    print(stock.units);
+    println("Replacement stock:", stock.units);
 }

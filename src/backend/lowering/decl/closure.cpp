@@ -83,7 +83,7 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
         TargetMemberFunctionDecl {
             .name = TargetOperatorName::Call,
             .parameters = std::move(parameters),
-            .result = context.outcome_type(callable.signature),
+            .result = context.callable_result(callable_id),
             .form = TargetMemberFunctionDeclaration {},
             .maybe_unused = false,
             .static_specifier = false,
@@ -117,7 +117,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     auto inputs = BodyRealizationInputs {
         .parameters = {},
         .captures = {},
-        .exit = CallableBodyExit {.signature = callable.signature},
+        .exit = CallableBodyExit {.callable_id = callable_id},
     };
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < body.inputs().captures.size(); ++index) {
@@ -151,7 +151,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
             .owner = context.closure_type_name(callable_id),
             .name = TargetOperatorName::Call,
             .parameters = std::move(parameters),
-            .result = context.outcome_type(callable.signature),
+            .result = context.callable_result(callable_id),
             .body = std::move(lowered.statements),
             .const_qualified = true,
         }}

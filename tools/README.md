@@ -1,12 +1,9 @@
 # Carven tools
 
-This directory contains placeholder executables for two tools:
+This directory contains two tools under development:
 
 - `graver/`: source formatter.
 - `carvend/`: language server.
-
-Each executable prints an unimplemented message to stderr and exits with status
-`1`. Both depend on `carven-modules` and are excluded from default builds.
 
 Build and run explicitly from the repository root:
 

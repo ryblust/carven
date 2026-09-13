@@ -132,7 +132,6 @@ public:
     auto source_id() const noexcept -> SourceID;
     auto tokens() const noexcept -> std::span<const Token>;
     auto literal_value(std::size_t token_index) const noexcept -> const TokenLiteralValue&;
-
     auto reserve_tokens(std::size_t count) noexcept -> void;
     auto append_token(TokenKind kind, Span span) noexcept -> void;
     auto append_literal_token(Span span, TokenLiteralValue value) noexcept -> void;

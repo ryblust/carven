@@ -59,13 +59,11 @@ LLVM/Clang and libc++ 23.1.0. Generated programs and support headers use C++20.
 Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
 repository commands.
 
-The repository's Hello World imports a C++ standard-library function directly:
+The repository's Hello World uses the builtin `println`:
 
 ```cv
-import <cstdio> using std::printf;
-
 fn main() {
-    printf(c"Hello World\n");
+    println("Hello World");
 }
 ```
 
@@ -153,7 +151,7 @@ dependencies remain ordinary build configuration. See the
   and [C++ Backend](docs/backend.md)
 - **Develop the repository:** [Testing](docs/testing.md) and
   [C++ Conventions](docs/conventions.md), with
-  [module build details](xmake/clang-module-pipeline/README.md)
+  [Xmake support](xmake/README.md)
 - **Explore the design:** [Design Principles](docs/principles.md),
   [Proposals](proposals/), and [Learning Notes](notes/)
 

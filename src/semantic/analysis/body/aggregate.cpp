@@ -63,6 +63,9 @@ auto BodyElaborator::array_expression(
             }
         }
     }
+    if (expected && !expected_element) {
+        expected_element = slice_element(draft(), *expected);
+    }
     if (array.element_ids.empty() && !expected_element.has_value()) {
         return std::unexpected(fail(
             span,
@@ -114,7 +117,7 @@ auto BodyElaborator::array_expression(
     if (!element_type.has_value()) {
         invariant_violation("empty expected array lost its element type");
     }
-    const auto type = expected_element.has_value()
+    const auto type = expected_element.has_value() && !slice_element(draft(), *expected)
         ? *expected
         : ConstructionTypeRef {draft().append_construction_type(
               ConstructionType {
@@ -132,7 +135,6 @@ auto BodyElaborator::array_expression(
     );
     return BuiltExpression {
         .storage = std::move(value),
-
         .pending_failures = std::move(pending_failures),
         .completes = completes,
     };
@@ -222,6 +224,16 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
         completes &= value->completes;
         append_pending_failures(pending_failures, take_pending_failures(*value));
         if (!compatible(value->type(), declaration.fields[index].type)
+            && !(
+                value->type()
+                    == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::String))
+                && declaration.fields[index].type
+                    == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::Str))
+            )
+            && !(
+                array_element(draft(), value->type())
+                && slice_element(draft(), declaration.fields[index].type)
+            )
             && !pointer_narrows(draft(), value->type(), declaration.fields[index].type)
             && !(
                 is_cpp_type(value->type()) && pointer_shape(draft(), declaration.fields[index].type)
@@ -331,9 +343,9 @@ auto BodyElaborator::construction_expression(const ASTConstructionExpr& source, 
         origin(span),
         SemStruct {.structure = structure->structure, .fields = std::move(fields)}
     );
+
     return BuiltExpression {
         .storage = std::move(value),
-
         .pending_failures = std::move(pending_failures),
         .completes = completes,
     };

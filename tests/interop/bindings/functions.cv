@@ -1,0 +1,94 @@
+import "bindings/provider.hpp" using native::{
+    record,
+    observed,
+    reset,
+    pair,
+    argument_access,
+    AccessProbe,
+    identity,
+    Owner,
+    consume,
+    live,
+    copies,
+    moves,
+    reset_owner_counts,
+};
+
+import "bindings/provider.hpp" using plain;
+
+test "C++ calls: arguments preserve evaluation order" {
+    reset();
+    check(plain(17) == 17);
+    let result = pair(record(1), record(2));
+    check(result == 12);
+    check(observed() == 12);
+}
+
+test "C++ access: receivers preserve binding mutability" {
+    let immutable = AccessProbe {};
+    var mutable = AccessProbe {};
+    check(immutable.access() == 1);
+    check(mutable.access() == 2);
+}
+
+test "C++ access: Read and Write select distinct reference overloads" {
+    var value = 7;
+    check(argument_access(value) == 1);
+    check(value == 7);
+    check(argument_access(&value) == 2);
+    check(value == 8);
+}
+
+test "C++ results: returned references materialize owned values" {
+    var value = 8;
+    let snapshot = identity(value);
+    value = 9;
+    check(snapshot == 8);
+    let captured = [snapshot]() -> i32 => snapshot;
+    check(captured() == 8);
+}
+
+test "C++ owners: copies moves and destruction preserve lifetime" {
+    check(live() == 0);
+    reset_owner_counts();
+    if true {
+        let owner = Owner { 42 };
+        let copy = owner;
+        check(live() == 2);
+        check(copies() == 1);
+        check(moves() == 0);
+        check(copy.read() == 42);
+        check(consume(&&owner) == 42);
+        check(copies() == 1);
+        check(moves() >= 1);
+    }
+    check(live() == 0);
+}
+
+test "C++ calls: selections and callable values preserve their call forms" {
+    reset();
+    check((::native::receiver().invoke)(record(2)) == 2);
+    check(observed() == 12);
+    let object = ::native::Receiver {};
+    check((object.invoke)(3, 4) == 7);
+    check(object.callback(5) == 5);
+    var callback = ::native::callable();
+    callback.offset = 1;
+    check(callback(6) == 7);
+    check((::native::argument_access)(7) == 1);
+}
+
+test "C++ lifetimes: condition temporaries end before the selected branch" {
+    check(live() == 0);
+    if ((Owner { 4 }.read() as i32) == 4) && (live() == 1) {
+        check(live() == 0);
+    } else {
+        check(false);
+    }
+    if ((Owner { 4 }.read() as i32) == 4) && false {
+        check(false);
+    }
+    check(live() == 0);
+    let _ = ((Owner { 4 }.read() as i32) == 4) && false;
+    check(live() == 0);
+}

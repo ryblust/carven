@@ -86,11 +86,8 @@ template<typename Value, typename ID>
 class ImmutableProgramTable final {
 public:
     ImmutableProgramTable(const ImmutableProgramTable&) = delete;
-
     ImmutableProgramTable(ImmutableProgramTable&&) noexcept = default;
-
     ~ImmutableProgramTable() = default;
-
     auto operator=(const ImmutableProgramTable&) -> ImmutableProgramTable& = delete;
     auto operator=(ImmutableProgramTable&&) -> ImmutableProgramTable& = delete;
 
@@ -139,11 +136,8 @@ public:
         : program_identity(owner) {}
 
     MutableProgramTable(const MutableProgramTable&) = delete;
-
     MutableProgramTable(MutableProgramTable&&) noexcept = default;
-
     ~MutableProgramTable() = default;
-
     auto operator=(const MutableProgramTable&) -> MutableProgramTable& = delete;
     auto operator=(MutableProgramTable&&) -> MutableProgramTable& = delete;
 
@@ -214,11 +208,8 @@ public:
         : program_identity(owner) {}
 
     ReservedProgramTable(const ReservedProgramTable&) = delete;
-
     ReservedProgramTable(ReservedProgramTable&&) noexcept = default;
-
     ~ReservedProgramTable() = default;
-
     auto operator=(const ReservedProgramTable&) -> ReservedProgramTable& = delete;
     auto operator=(ReservedProgramTable&&) -> ReservedProgramTable& = delete;
 
@@ -317,11 +308,8 @@ template<typename Value, typename ID>
 class ImmutableBodyTable final {
 public:
     ImmutableBodyTable(const ImmutableBodyTable&) = delete;
-
     ImmutableBodyTable(ImmutableBodyTable&&) noexcept = default;
-
     ~ImmutableBodyTable() = default;
-
     auto operator=(const ImmutableBodyTable&) -> ImmutableBodyTable& = delete;
     auto operator=(ImmutableBodyTable&&) -> ImmutableBodyTable& = delete;
 
@@ -380,11 +368,8 @@ public:
         : body_identity(owner) {}
 
     MutableBodyTable(const MutableBodyTable&) = delete;
-
     MutableBodyTable(MutableBodyTable&&) noexcept = default;
-
     ~MutableBodyTable() = default;
-
     auto operator=(const MutableBodyTable&) -> MutableBodyTable& = delete;
     auto operator=(MutableBodyTable&&) -> MutableBodyTable& = delete;
 

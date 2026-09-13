@@ -327,7 +327,6 @@ auto Parser::parse_test() noexcept -> std::optional<std::pair<Span, ASTTestDecl>
     if (!name.has_value()) {
         return std::nullopt;
     }
-    const auto test_context = enter_test_statement_context(true);
     const auto body = parse_ordinary_block();
     if (!body) {
         return std::nullopt;

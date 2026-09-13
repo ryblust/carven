@@ -22,13 +22,30 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
     expressions.emplace_back();
     auto value = std::visit(
         Overloaded {
+            [&](const SemTestReport& item) noexcept -> ConstructionExpressionValue {
+                auto condition = std::optional<ConstructionExpressionID>();
+                auto message = std::optional<ConstructionExpressionID>();
+                if (item.condition) {
+                    condition = expression(**item.condition);
+                }
+                if (item.message) {
+                    message = expression(**item.message);
+                }
+                return ConstructionTestReport {
+                    .kind = item.kind,
+                    .condition = condition,
+                    .message = message,
+                    .condition_source = item.condition_source
+                };
+            },
             [&](const auto&) noexcept -> ConstructionExpressionValue {
                 auto inputs = operands(source);
                 auto failure = std::optional<ConstructionFallible>();
                 if (const auto* call = std::get_if<SemCall>(&source.value); call != nullptr
-                    && !semantic.failure_sets()
-                            .failure_set(call->callee_failures.resolved())
-                            .members.empty()) {
+                    && (!semantic.failure_sets()
+                             .failure_set(call->callee_failures.resolved())
+                             .members.empty()
+                        || semantic.may_stop_test(call->callee->type.resolved()))) {
                     failure = ConstructionFallible {
                         .failures = call->callee_failures.resolved(),
                         .destination = failure_exit
@@ -176,7 +193,7 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
             .executes_operation = rule.action == EvaluationAction::Required,
             .requires_execution = execution,
             .reads_storage = reads,
-            .exits_test = source.exits_test,
+            .exits_test = semantic.may_stop_test(source),
             .failures = source.failures.resolved(),
             .value = std::move(value)
         }

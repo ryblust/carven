@@ -19,25 +19,16 @@ public:
     BodyStore(const BodyStore&) = delete;
     BodyStore(BodyStore&&) = default;
     ~BodyStore() = default;
-
     auto operator=(const BodyStore&) -> BodyStore& = delete;
     auto operator=(BodyStore&&) -> BodyStore& = delete;
-
-    auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
-
-    auto contains(BodyID id) const noexcept -> bool { return rows.contains(id); }
-
-    auto body(BodyID id) const noexcept -> const SemIRBody& { return rows.get(id); }
-
-    auto entries() const noexcept -> IDTableEntries<BodyID, SemIRBody, ProgramIdentity> {
-        return rows.entries();
-    }
-
-    auto size() const noexcept -> std::size_t { return rows.size(); }
+    auto owner() const noexcept -> ProgramIdentity;
+    auto contains(BodyID id) const noexcept -> bool;
+    auto body(BodyID id) const noexcept -> const SemIRBody&;
+    auto entries() const noexcept -> IDTableEntries<BodyID, SemIRBody, ProgramIdentity>;
+    auto size() const noexcept -> std::size_t;
 
 private:
-    explicit BodyStore(ImmutableProgramTable<SemIRBody, BodyID> values) noexcept
-        : rows(std::move(values)) {}
+    explicit BodyStore(ImmutableProgramTable<SemIRBody, BodyID> values) noexcept;
 
     ImmutableProgramTable<SemIRBody, BodyID> rows;
 
@@ -49,25 +40,16 @@ public:
     TestStore(const TestStore&) = delete;
     TestStore(TestStore&&) = default;
     ~TestStore() = default;
-
     auto operator=(const TestStore&) -> TestStore& = delete;
     auto operator=(TestStore&&) -> TestStore& = delete;
-
-    auto owner() const noexcept -> ProgramIdentity { return rows.owner(); }
-
-    auto contains(TestID id) const noexcept -> bool { return rows.contains(id); }
-
-    auto test(TestID id) const noexcept -> const TestDeclaration& { return rows.get(id); }
-
-    auto entries() const noexcept -> IDTableEntries<TestID, TestDeclaration, ProgramIdentity> {
-        return rows.entries();
-    }
-
-    auto size() const noexcept -> std::size_t { return rows.size(); }
+    auto owner() const noexcept -> ProgramIdentity;
+    auto contains(TestID id) const noexcept -> bool;
+    auto test(TestID id) const noexcept -> const TestDeclaration&;
+    auto entries() const noexcept -> IDTableEntries<TestID, TestDeclaration, ProgramIdentity>;
+    auto size() const noexcept -> std::size_t;
 
 private:
-    explicit TestStore(ImmutableProgramTable<TestDeclaration, TestID> values) noexcept
-        : rows(std::move(values)) {}
+    explicit TestStore(ImmutableProgramTable<TestDeclaration, TestID> values) noexcept;
 
     ImmutableProgramTable<TestDeclaration, TestID> rows;
 
@@ -79,32 +61,21 @@ public:
     SemIRProgram(const SemIRProgram&) = delete;
     SemIRProgram(SemIRProgram&&) noexcept = default;
     ~SemIRProgram() = default;
-
     auto operator=(const SemIRProgram&) -> SemIRProgram& = delete;
     auto operator=(SemIRProgram&&) -> SemIRProgram& = delete;
-
-    auto identity() const noexcept -> ProgramIdentity { return program_identity; }
-
-    auto provenance() const noexcept -> CompilationProvenanceView {
-        return compilation_provenance.view();
-    }
-
-    auto types() const noexcept -> const CanonicalTypeStore& { return type_store; }
-
-    auto constants() const noexcept -> const ConstantStore& { return constant_store; }
-
-    auto failure_sets() const noexcept -> const FailureSetStore& { return failure_set_store; }
-
-    auto callable_signatures() const noexcept -> const CallableSignatureStore& {
-        return callable_signature_store;
-    }
-
-    auto declarations() const noexcept -> const DeclarationStore& { return declaration_store; }
-
-    auto bodies() const noexcept -> const BodyStore& { return body_store; }
-
-    auto tests() const noexcept -> const TestStore& { return test_store; }
-
+    auto identity() const noexcept -> ProgramIdentity;
+    auto provenance() const noexcept -> CompilationProvenanceView;
+    auto types() const noexcept -> const CanonicalTypeStore&;
+    auto constants() const noexcept -> const ConstantStore&;
+    auto failure_sets() const noexcept -> const FailureSetStore&;
+    auto callable_signatures() const noexcept -> const CallableSignatureStore&;
+    auto declarations() const noexcept -> const DeclarationStore&;
+    auto bodies() const noexcept -> const BodyStore&;
+    auto tests() const noexcept -> const TestStore&;
+    auto may_stop_test(CallableID callable_id) const noexcept -> bool;
+    auto may_stop_test(TypeID type) const noexcept -> bool;
+    auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
+    auto may_stop_test(const SemanticExpression& expression) const noexcept -> bool;
 
 private:
     SemIRProgram(
@@ -116,7 +87,8 @@ private:
         CallableSignatureStore callable_signatures,
         DeclarationStore declarations,
         BodyStore bodies,
-        TestStore tests
+        TestStore tests,
+        std::vector<bool> test_stops
     ) noexcept;
 
     ProgramIdentity program_identity;
@@ -128,6 +100,7 @@ private:
     DeclarationStore declaration_store;
     BodyStore body_store;
     TestStore test_store;
+    std::vector<bool> test_stops;
 
     friend class ProgramDraft;
 };

@@ -23,7 +23,6 @@ struct SyntaxProgramParts final {
     SyntaxProgramParts(const SyntaxProgramParts&) = delete;
     SyntaxProgramParts(SyntaxProgramParts&&) = default;
     ~SyntaxProgramParts() = default;
-
     auto operator=(const SyntaxProgramParts&) -> SyntaxProgramParts& = delete;
     auto operator=(SyntaxProgramParts&&) -> SyntaxProgramParts& = delete;
 
@@ -37,13 +36,11 @@ public:
     SyntaxProgram(const SyntaxProgram&) = delete;
     SyntaxProgram(SyntaxProgram&&) = default;
     ~SyntaxProgram() = default;
-
     auto operator=(const SyntaxProgram&) -> SyntaxProgram& = delete;
     auto operator=(SyntaxProgram&&) -> SyntaxProgram& = delete;
-
-    auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
+    auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
-    auto resolved_imports(ProgramModuleID module_id) const noexcept
+    auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;
     auto resolved_import_graph() const noexcept
         -> std::span<const std::vector<ResolvedModuleImport>>;

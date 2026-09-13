@@ -112,69 +112,10 @@ auto Parser::starts_unambiguous_statement() const noexcept -> bool {
         || check(TokenKind::While)
         || check(TokenKind::For)
         || check(TokenKind::PlusPlus)
-        || check(TokenKind::MinusMinus)
-        || test_operation_starts_here();
-}
-
-auto Parser::test_operation_starts_here() const noexcept -> bool {
-    if (!test_statements_enabled
-        || !check(TokenKind::Identifier)
-        || !check_next(TokenKind::LeftParen)) {
-        return false;
-    }
-    const auto name = slice(source, current().span);
-    return name == "check" || name == "require" || name == "fail";
-}
-
-auto Parser::parse_test_operation_statement() noexcept -> std::optional<ASTStmtID> {
-    if (!test_operation_starts_here()) {
-        return std::nullopt;
-    }
-    const auto checkpoint = begin_speculation();
-    const auto keyword = consume();
-    const auto name = slice(source, keyword.span);
-    const auto kind = name == "check" ? ASTTestOperationKind::Check
-        : name == "require"           ? ASTTestOperationKind::Require
-                                      : ASTTestOperationKind::Fail;
-    expect(TokenKind::LeftParen, "expected '(' after test operation");
-    auto arguments = std::vector<ASTExprID>();
-    {
-        const auto depth = enter_depth(expression_nesting);
-        while (!failed && !check(TokenKind::RightParen)) {
-            const auto argument = parse_expression();
-            if (!argument) {
-                break;
-            }
-            arguments.push_back(*argument);
-            if (!match(TokenKind::Comma)) {
-                break;
-            }
-            if (check(TokenKind::RightParen)) {
-                break;
-            }
-        }
-    }
-    expect(TokenKind::RightParen, "expected ')' after test operation arguments");
-    if (failed || !check(TokenKind::Semicolon)) {
-        finish_speculation(checkpoint, false);
-        return std::nullopt;
-    }
-    const auto semicolon = consume();
-    finish_speculation(checkpoint, true);
-    return builder.append_statement({
-        .span = join(keyword.span, semicolon.span),
-        .value = ASTTestOperationStmt {
-            .kind = kind,
-            .keyword_span = keyword.span,
-            .arguments = std::move(arguments),
-        },
-    });
+        || check(TokenKind::MinusMinus);
 }
 
 auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
-    if (const auto operation = parse_test_operation_statement()) {
-        return operation;
-    }
     if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
         const auto declaration = parse_variable_declaration_head();
         if (!declaration) {

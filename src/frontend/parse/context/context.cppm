@@ -73,7 +73,6 @@ private:
     std::uint32_t expression_nesting = 0;
     std::uint32_t block_boundary_depth = 0;
     std::uint32_t syntax_nesting = 0;
-    bool test_statements_enabled = false;
 
     static constexpr std::uint32_t maximum_syntax_nesting = 512;
 
@@ -93,28 +92,10 @@ private:
         friend class Parser;
     };
 
-    class TestStatementContextGuard final {
-    public:
-        TestStatementContextGuard(const TestStatementContextGuard&) = delete;
-        auto operator=(const TestStatementContextGuard&) noexcept
-            -> TestStatementContextGuard& = delete;
-        ~TestStatementContextGuard() noexcept;
-
-    private:
-        TestStatementContextGuard(bool& context, bool enabled) noexcept;
-
-        bool* context;
-        bool prior;
-
-        friend class Parser;
-    };
-
     static auto enter_depth(std::uint32_t& depth) noexcept -> DepthGuard;
     auto enter_syntax_nesting() noexcept -> DepthGuard;
-    auto enter_test_statement_context(bool enabled) noexcept -> TestStatementContextGuard;
     auto preflight_delimiter_nesting() noexcept -> bool;
     auto synchronize_top_level_item() noexcept -> void;
-
     auto at_end() const noexcept -> bool;
     auto current() const noexcept -> Token;
     auto check(TokenKind kind) const noexcept -> bool;
@@ -151,7 +132,6 @@ private:
     auto parse_constant(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTConstantDecl>>;
     auto parse_test() noexcept -> std::optional<std::pair<Span, ASTTestDecl>>;
-
     auto parse_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_sequence_type() noexcept -> std::optional<ASTTypeID>;
@@ -163,8 +143,6 @@ private:
     auto parse_ordinary_block() noexcept -> std::optional<ASTBlockID>;
     auto parse_branch_block() noexcept -> std::optional<ASTBranchBlockID>;
     auto starts_unambiguous_statement() const noexcept -> bool;
-    auto test_operation_starts_here() const noexcept -> bool;
-    auto parse_test_operation_statement() noexcept -> std::optional<ASTStmtID>;
     auto parse_statement() noexcept -> std::optional<ASTStmtID>;
     auto parse_variable_declaration_head() noexcept -> std::optional<ASTVariableDecl>;
     static auto assignment_operator(TokenKind kind) noexcept
@@ -176,7 +154,6 @@ private:
     auto parse_for_statement() noexcept -> std::optional<ASTStmtID>;
     auto parse_for_header() noexcept -> std::optional<ASTForHeader>;
     auto parse_for_step() noexcept -> std::optional<ASTForStep>;
-
     auto parse_expression() noexcept -> std::optional<ASTExprID>;
     template<typename ParseOperand>
     auto parse_left_associative(
@@ -205,7 +182,6 @@ private:
     auto parse_lambda_expression() noexcept -> std::optional<ASTExprID>;
     auto construction_allowed_here() const noexcept -> bool;
     auto try_parse_construction() noexcept -> std::optional<ASTExprID>;
-
     auto parse_expression_before_block() noexcept -> std::optional<ASTExprID>;
     auto parse_if_form() noexcept -> std::optional<ASTIfForm>;
     auto parse_match_form() noexcept -> std::optional<ASTMatchForm>;

@@ -1,5 +1,6 @@
 module carven:semantic.analysis.body.construction.impl;
 
+
 import :diagnostics.builder;
 import :diagnostics.code;
 import :frontend.ast.control;
@@ -381,4 +382,59 @@ auto BodyElaborator::require_invariant_storage_type(
         );
     }
     return {};
+}
+
+auto BuiltExpression::is_function_reference() const noexcept -> bool {
+    const auto* expression = std::get_if<SemanticExpression>(&storage);
+    return expression != nullptr && std::holds_alternative<SemCallable>(expression->value);
+}
+
+auto BuiltExpression::expression() const noexcept -> const SemanticExpression& {
+    if (const auto* value = std::get_if<SemanticExpression>(&storage)) {
+        return *value;
+    }
+    return std::get<PlaceExpression>(storage).expression;
+}
+
+auto BuiltExpression::type() const noexcept -> const ConstructionTypeRef& {
+    return expression().type.construction();
+}
+
+auto BuiltExpression::constant() const noexcept -> std::optional<ConstantID> {
+    return expression().constant;
+}
+
+BodyFullExpressionSuspension::BodyFullExpressionSuspension(
+    std::optional<LifetimeRegionID>& active
+) noexcept
+    : slot(std::addressof(active)),
+      saved(std::exchange(active, std::nullopt)) {}
+
+BodyFullExpressionSuspension::~BodyFullExpressionSuspension() noexcept {
+    *slot = saved;
+}
+
+BodyReferencePathGuard::BodyReferencePathGuard(bool& active, bool path_is_reachable) noexcept
+    : slot(std::addressof(active)),
+      saved(std::exchange(active, active && path_is_reachable)) {}
+
+BodyReferencePathGuard::~BodyReferencePathGuard() noexcept {
+    *slot = saved;
+}
+
+BodyBatchElaborator::BodyBatchElaborator(
+    ProgramDraft& builder,
+    AnalysisCatalogView catalog_view,
+    ImportUsage& usage
+) noexcept
+    : draft(std::addressof(builder)),
+      catalog_data(catalog_view),
+      imports(std::addressof(usage)),
+      functions(catalog_view.function_count()),
+      states(catalog_view.function_count(), Unvisited {}) {
+    for (const auto& symbol : catalog_view.symbols()) {
+        if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
+            functions[function->function.index()] = std::addressof(symbol);
+        }
+    }
 }

@@ -67,7 +67,6 @@ class LayoutDocument final {
 public:
     LayoutDocument(const LayoutDocument&) = delete;
     LayoutDocument(LayoutDocument&&) = default;
-
     auto operator=(const LayoutDocument&) -> LayoutDocument& = delete;
     auto operator=(LayoutDocument&&) -> LayoutDocument& = default;
 
@@ -84,7 +83,6 @@ private:
 class LayoutBuilder final {
 public:
     LayoutBuilder() noexcept;
-
     auto empty() const noexcept -> LayoutNodeID;
     auto text(std::string_view value) noexcept -> LayoutNodeID;
     auto raw(std::string_view bytes) noexcept -> LayoutNodeID;

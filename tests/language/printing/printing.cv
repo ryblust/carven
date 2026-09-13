@@ -1,0 +1,48 @@
+fn output_number(output: fn(i32) -> void, value: i32) {
+    output(value);
+}
+
+fn next_value(&value: i32) -> i32 {
+    value += 1;
+    return value;
+}
+
+fn output_pair(output: fn(str, i32) -> void) {
+    output("count:", 3);
+}
+
+fn replace_text(&text: String) -> i32 {
+    text = "after";
+    return 1;
+}
+
+fn main() {
+    print("text: ");
+    println(String::from_str("你好😀"));
+    println(42);
+    println(true);
+    println('我');
+    println(1.25);
+    println("a\0b");
+    println("{unchanged}");
+    let value = 7;
+    println(f"value={value:04}");
+    output_number(println, 9);
+    let output: fn(str) -> void = print;
+    output("done");
+    println();
+    eprint(String::from_str("error: "));
+    eprintln(-3);
+    eprintln();
+    print("mixed:", 42, true, '我', 1.25, String::from_str("owned"));
+    println();
+    println("{value}", value, "a\0b", "");
+    output_pair(println);
+    var counter = 0;
+    println(next_value(&counter), next_value(&counter), next_value(&counter));
+    println(counter);
+    var text: String = "before";
+    println(text, replace_text(&text));
+    eprint("error:", -4);
+    eprintln("status:", false);
+}

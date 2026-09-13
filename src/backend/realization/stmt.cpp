@@ -24,9 +24,11 @@ auto BodyRealizer::emit_return(
     }
     if (std::holds_alternative<LoweringReturnResult>(result)) {
         if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
-            const auto& signature =
-                context.semantic().callable_signatures().signature(callable->signature);
-            if (!context.plan().failure_abi().members(signature.failures).empty()) {
+            const auto& signature = context.semantic().callable_signatures().signature(
+                context.semantic().declarations().callable(callable->callable_id).signature
+            );
+            if (!context.plan().failure_abi().members(signature.failures).empty()
+                || context.semantic().may_stop_test(callable->callable_id)) {
                 auto arguments = std::vector<TargetExpr>();
                 if (value.has_value()) {
                     if (context.is_void(signature.result)) {
@@ -49,7 +51,7 @@ auto BodyRealizer::emit_return(
                 }
                 value = call_expression(
                     static_member_expression(
-                        context.outcome_type(callable->signature),
+                        context.callable_result(callable->callable_id),
                         TargetIdentifier::from_spelling(
                             context.is_void(signature.result) ? "success" : "success_from"
                         )
@@ -102,7 +104,7 @@ auto BodyRealizer::emit_failure(
             TargetReturnStmt {
                 .expression = call_expression(
                     static_member_expression(
-                        context.outcome_type(callable->signature),
+                        context.callable_result(callable->callable_id),
                         TargetIdentifier::from_spelling("failure")
                     ),
                     target_expressions(std::move(value))
@@ -218,7 +220,10 @@ auto BodyRealizer::result_expression(
                        .failure_abi()
                        .members(context.semantic()
                                     .callable_signatures()
-                                    .signature(callable->signature)
+                                    .signature(context.semantic()
+                                                   .declarations()
+                                                   .callable(callable->callable_id)
+                                                   .signature)
                                     .failures)
                        .empty())) {
             literal = RealizationLiteralContext::TargetTyped;
@@ -295,11 +300,6 @@ auto BodyRealizer::statement(
             [&](const ConstructionRangeLoop& value) noexcept {
                 lower_range(owner, value, destination);
             },
-            [&](const ConstructionTestReport& value) noexcept {
-                auto report = LoweringStmtBuilder();
-                lower_report(value, source.origin, report);
-                destination.scope(std::move(report));
-            }
         },
         source.value
     );
@@ -318,7 +318,6 @@ auto BodyRealizer::lower_report(
     ProgramOriginID origin,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    uses_test_context = true;
     auto should_report = bool_expression(true);
     if (value.condition) {
         auto condition = destination.accept(
@@ -384,15 +383,12 @@ auto BodyRealizer::lower_report(
         return;
     }
     report.emit(statement_expression(call_member(
-        name_expression(TargetNameAllocator::test_context()),
+        call_expression(intrinsic_expression(TargetSymbol::RuntimeCurrentTest), {}),
         "report_failure",
         std::move(arguments)
     )));
     if (value.kind != TestReportKind::Check) {
-        report.terminate(
-            generated_statement(TargetReturnStmt {.expression = std::nullopt}),
-            LoweringExitTarget {LoweringExitKind::Test, 0}
-        );
+        emit_test_exit(report);
     }
     if (!value.condition) {
         destination.append(std::move(report));
@@ -406,4 +402,35 @@ auto BodyRealizer::lower_report(
         origin,
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
+}
+
+auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void {
+    auto result = std::optional<TargetExpr>();
+    if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
+        if (!context.semantic().may_stop_test(callable->callable_id)) {
+            invariant_violation("test exit absent from callable transport");
+        }
+        result = call_expression(
+            static_member_expression(
+                context.callable_result(callable->callable_id),
+                TargetIdentifier::from_spelling("failure")
+            ),
+            target_expressions(
+                TargetExpr {
+                    .value = TargetConstructionExpr {
+                        .type = context.intrinsic_type(TargetSymbol::RuntimeTestStopped),
+                        .initializer = {}
+                    }
+                }
+            )
+        );
+    }
+    destination.terminate(
+        generated_statement(TargetReturnStmt {.expression = std::move(result)}),
+        LoweringExitTarget {
+            std::holds_alternative<TestBodyExit>(inputs.exit) ? LoweringExitKind::Test
+                                                              : LoweringExitKind::FunctionReturn,
+            0
+        }
+    );
 }

@@ -1,0 +1,42 @@
+import "bindings/global_base.hpp";
+import "bindings/global_provider.hpp";
+
+struct GlobalPoint {
+    local: i32,
+}
+
+fn global_calculate() -> i32 => ::global_calculate(5) as i32;
+
+fn make_global() -> ::GlobalPoint => ::GlobalPoint { 1, 2 };
+
+struct GlobalRows {
+    values: ::std::vector<::std::vector<::GlobalPoint>>,
+}
+
+fn global_rows() -> GlobalRows {
+    return GlobalRows {
+        values: ::std::vector<::std::vector<::GlobalPoint>> {
+            ::std::vector<::GlobalPoint> { ::global_point() },
+        },
+    };
+}
+
+test "C++ global names: explicit roots bypass Carven names" {
+    check(global_calculate() == 10);
+    let global_calculate = 9;
+    check(::global_calculate(global_calculate) == 18);
+    let point: ::GlobalPoint = make_global() as ::GlobalPoint;
+    check(::global_native::sum(point) == 3);
+    let local = GlobalPoint { local: 8 };
+    check(local.local == 8);
+}
+
+test "C++ global names: implementation fragments can provide declarations" {
+    check(::global_fragment_value() == 23);
+}
+
+#[cpp] ---
+inline auto global_fragment_value() noexcept -> int {
+    return 23;
+}
+---

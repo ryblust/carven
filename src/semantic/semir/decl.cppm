@@ -181,12 +181,9 @@ public:
     DeclarationStore(const DeclarationStore&) = delete;
     DeclarationStore(DeclarationStore&&) = default;
     ~DeclarationStore() = default;
-
     auto operator=(const DeclarationStore&) -> DeclarationStore& = delete;
     auto operator=(DeclarationStore&&) -> DeclarationStore& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
-
     auto contains(ModuleID id) const noexcept -> bool;
     auto contains(FunctionID id) const noexcept -> bool;
     auto contains(StructID id) const noexcept -> bool;
@@ -194,7 +191,6 @@ public:
     auto contains(EnumCaseID id) const noexcept -> bool;
     auto contains(ModuleConstantID id) const noexcept -> bool;
     auto contains(CallableID id) const noexcept -> bool;
-
     auto module_decl(ModuleID id) const noexcept -> const ModuleDeclaration&;
     auto function(FunctionID id) const noexcept -> const FunctionDeclaration&;
     auto structure(StructID id) const noexcept -> const StructDeclaration&;
@@ -204,7 +200,6 @@ public:
     auto callable(CallableID id) const noexcept -> const CallableDeclaration&;
     auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
     auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
-
     auto modules() const noexcept -> IDTableEntries<ModuleID, ModuleDeclaration, ProgramIdentity>;
     auto functions() const noexcept
         -> IDTableEntries<FunctionID, FunctionDeclaration, ProgramIdentity>;
@@ -256,7 +251,6 @@ public:
     auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
-
     auto module_count() const noexcept -> std::size_t;
     auto function_count() const noexcept -> std::size_t;
     auto struct_count() const noexcept -> std::size_t;
@@ -289,12 +283,9 @@ public:
     DeclarationBuilder(const DeclarationBuilder&) = delete;
     DeclarationBuilder(DeclarationBuilder&&) = default;
     ~DeclarationBuilder() = default;
-
     auto operator=(const DeclarationBuilder&) -> DeclarationBuilder& = delete;
     auto operator=(DeclarationBuilder&&) -> DeclarationBuilder& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
-
     auto reserve_module() noexcept -> ModuleID;
     auto reserve_function() noexcept -> FunctionID;
     auto reserve_struct() noexcept -> StructID;
@@ -302,7 +293,6 @@ public:
     auto reserve_enum_case() noexcept -> EnumCaseID;
     auto reserve_module_constant() noexcept -> ModuleConstantID;
     auto reserve_callable() noexcept -> CallableID;
-
     auto define(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
     auto define(FunctionID id, FunctionDeclaration declaration) noexcept -> void;
     auto define(StructID id, ConstructionStructDeclaration declaration) noexcept -> void;
@@ -311,15 +301,12 @@ public:
     auto define(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept -> void;
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
-
     auto finish_heads() noexcept -> DeclarationConstructionView;
     auto construction_view() const noexcept -> DeclarationConstructionView;
-
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
     auto define_callable_signature(CallableID id, CallableSignatureID signature) noexcept -> void;
     auto finish_callable_signatures() noexcept -> void;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
-
     auto seal(const TypeResolution& type_resolution) && noexcept -> DeclarationStore;
 
 private:

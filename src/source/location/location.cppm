@@ -19,7 +19,6 @@ struct std::formatter<SourceLocation> final {
 class LineIndex final {
 public:
     explicit LineIndex(std::string_view text) noexcept;
-
     auto location(std::uint32_t offset) const noexcept -> SourceLocation;
 
 private:

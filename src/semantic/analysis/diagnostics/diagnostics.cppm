@@ -21,14 +21,10 @@ private:
 class AnalysisDiagnostics final {
 public:
     explicit AnalysisDiagnostics(DiagnosticSink& sink) noexcept;
-
     auto error(Diagnostic diagnostic) const noexcept -> AnalysisFailure;
     auto warning(Diagnostic diagnostic) const noexcept -> void;
     auto has_errors() const noexcept -> bool;
-
-    auto failure() const noexcept -> std::optional<AnalysisFailure> {
-        return has_errors() ? std::optional(AnalysisFailure {}) : std::nullopt;
-    }
+    auto failure() const noexcept -> std::optional<AnalysisFailure>;
 
 private:
     DiagnosticSink* diagnostic_sink;

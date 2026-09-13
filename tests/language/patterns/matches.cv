@@ -1,0 +1,76 @@
+fn classify(value: i32) -> i32 {
+    return match value {
+        -1 => 0,
+        0 | 1 => 1,
+        _ => {
+            let doubled = value * 2;
+            doubled
+        },
+    };
+}
+
+fn preserve_outer_binding(value: i32, carven_match_subject: i32) -> i32 {
+    return match value {
+        _ => carven_match_subject,
+    };
+}
+
+fn __identity(__value: i32) -> i32 => __value;
+
+fn mutate_and_reject(&value: i32) -> bool {
+    value = 2;
+    return false;
+}
+
+fn record_evaluation(&calls: i32) -> bool {
+    calls += 1;
+    return true;
+}
+
+fn next_match_subject(&calls: i32) -> bool => record_evaluation(&calls);
+
+test "Pattern matching: matches support statement value and binding forms" {
+    var selected: i32 = 0;
+    match classify(0) {
+        1 => { selected = 1; },
+        _ => { selected = -1; },
+    }
+
+    check(selected == 1);
+    check(classify(3) == 6);
+    check(preserve_outer_binding(7, 42) == 42);
+    check(__identity(9) == 9);
+
+    var subject_evaluations = 0;
+    var guard_evaluations = 0;
+    let dead_arm_result = match next_match_subject(&subject_evaluations) {
+        false => 1,
+        true => 2,
+        _ if record_evaluation(&guard_evaluations) => 3,
+    };
+    check(dead_arm_result == 2);
+    check(subject_evaluations == 1);
+    check(guard_evaluations == 0);
+    check(record_evaluation(&guard_evaluations));
+
+    let guarded_binding = match 1 {
+        candidate if candidate == 0 => 10,
+        1 => 20,
+        _ => 30,
+    };
+    check(guarded_binding == 20);
+
+    var mutable_subject: i32 = 1;
+    var other: i32 = 0;
+    let mutation_result = match mutable_subject {
+        1 if mutate_and_reject(&other) => 10,
+        1 => {
+            mutable_subject = 3;
+            20
+        },
+        _ => 30,
+    };
+    check(mutation_result == 20);
+    check(other == 2);
+    check(mutable_subject == 3);
+}

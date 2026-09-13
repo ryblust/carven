@@ -421,6 +421,16 @@ auto realize_operation(
                     }
                 };
             },
+            [](const SemTestReport&) static noexcept -> TargetExpr {
+                invariant_violation("test report requires control-flow realization");
+            },
+            [&](const SemPrint& value) noexcept -> TargetExpr {
+                const auto symbol = value.kind == PrintKind::Print ? TargetSymbol::RuntimePrint
+                    : value.kind == PrintKind::Println             ? TargetSymbol::RuntimePrintln
+                    : value.kind == PrintKind::Eprint              ? TargetSymbol::RuntimeEprint
+                                                                   : TargetSymbol::RuntimeEprintln;
+                return call_expression(intrinsic_expression(symbol), std::move(operands));
+            },
             [&](const SemFormat& value) noexcept -> TargetExpr {
                 operands.insert(
                     operands.begin(),
@@ -469,6 +479,18 @@ auto realize_operation(
                                 context.lower_type(source.type.resolved()),
                                 TargetIdentifier::from_spelling("from_str")
                             ),
+                            std::move(operands)
+                        );
+                    case TextIntrinsic::FromU32Unchecked:
+                        return TargetExpr {
+                            .value = TargetStaticCastExpr {
+                                .type = context.lower_type(source.type.resolved()),
+                                .operand = target_child(std::move(operands[0]))
+                            }
+                        };
+                    case TextIntrinsic::FromUTF8Unchecked:
+                        return call_expression(
+                            intrinsic_expression(TargetSymbol::RuntimeUTF8Text),
                             std::move(operands)
                         );
                     case TextIntrinsic::AsStr:

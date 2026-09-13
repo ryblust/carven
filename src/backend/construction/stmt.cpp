@@ -134,22 +134,7 @@ auto BodyConstructionBuilder::statement(const SemanticStatement& source) noexcep
                 };
                 return ConstructionScope {.region = identity};
             },
-            [&](const SemTestReport& item) noexcept -> ConstructionStatementValue {
-                auto condition = std::optional<ConstructionExpressionID>();
-                auto message = std::optional<ConstructionExpressionID>();
-                if (item.condition) {
-                    condition = expression(*item.condition);
-                }
-                if (item.message) {
-                    message = expression(*item.message);
-                }
-                return ConstructionTestReport {
-                    .kind = item.kind,
-                    .condition = condition,
-                    .message = message,
-                    .condition_source = item.condition_source
-                };
-            }
+
         },
         source.value
     );

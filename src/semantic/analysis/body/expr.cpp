@@ -367,7 +367,7 @@ auto BodyElaborator::expression(
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
-    auto result = materialize_selection(std::move(*selected));
+    auto result = materialize_selection(std::move(*selected), expected);
     if (result.has_value()
         && does_not_complete(*result)
         && expected.has_value()

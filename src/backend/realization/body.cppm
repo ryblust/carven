@@ -8,7 +8,7 @@ import :semantic.semir;
 import std;
 
 struct CallableBodyExit final {
-    CallableSignatureID signature;
+    CallableID callable_id;
 };
 
 struct TestBodyExit final {};
@@ -24,7 +24,6 @@ struct BodyRealizationInputs final {
 struct LoweredBody final {
     std::vector<TargetStmt> statements;
     std::vector<bool> referenced_parameters;
-    bool uses_test_context;
 };
 
 auto realize_body(

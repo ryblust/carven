@@ -62,7 +62,7 @@ when building.
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
-assertions across supported build modes.
+assertions across the C++ standard modes in the test matrix.
 
 Apply the following C++ modes:
 
@@ -73,12 +73,16 @@ Apply the following C++ modes:
 | Interop programs, native rejection and termination contracts | C++20 and C++23 |
 | Crafts public APIs | C++20 baseline |
 | Examples | C++20 baseline |
-| C++23 print | C++23 |
+| Builtin printing | C++20 and C++23 implementations |
+| Native C++23 print API | C++23 |
 
-C++20 is the generated-source baseline. Declare shared sources once in each
-group's `xmake.lua` and apply the modes listed above. Entry tests cover default
+C++20 is the generated-source baseline. C++20 and C++23 builds check compilation
+and behavior under each consumer standard mode, including standard-library
+capability branches. Declare shared sources once in each group's `xmake.lua` and
+apply the modes listed above. Entry tests cover default
 and explicit entries, success and failure status, reported failures, and cleanup.
 
+Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
 `interop`. Internal tests use doctest; generated programs use Carven's testing
@@ -143,12 +147,17 @@ scenario name within its test case.
 Runtime cost and compilation time are measured separately. The manual workload
 in `xmake/build_pulse.lua` measures fresh build throughput, module scaling,
 and private-edit locality. `xmake/analysis_pulse.lua` measures call-chain
-ordering and structured loop depth. Their contracts are in `xmake/benchmarks.md`.
+ordering and structured loop depth. Their measurement contracts are in the
+[Xmake support README](../xmake/README.md#performance-pulses).
 
 ## Organization
 
 Each group owns its `xmake.lua`. Cases follow the repository directory and C++
-conventions. The internal harness owns process-based invariant termination.
+conventions. Topic directories name the rule being tested; individual
+features and scenarios belong in filenames and case names. Language tests group
+type operations under `types`, text under `text`, and functions and callable views
+under `functions`. Interop `bindings` covers C++ declaration lookup and use;
+`lifetimes` covers native construction, transfer, and cleanup. The internal harness owns process-based invariant termination.
 Process harnesses bound execution time. The CLI harness records stdout and
 stderr for each step, preserves failed fixtures, and removes successful temporary
 directories.

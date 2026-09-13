@@ -1,6 +1,6 @@
 #pragma once
 
-#include "entry_lifetime.hpp"
+#include "harness/lifetime.hpp"
 
 #include <cstdint>
 
@@ -20,3 +20,17 @@ extern "C" auto cv_test_reporting_observed_flags() noexcept -> std::uint32_t {
 }
 
 auto cv_test_reporting_verify() noexcept -> void;
+
+class ReportingOwner final {
+public:
+    explicit ReportingOwner(std::int32_t bit) noexcept
+        : bit(bit) {}
+
+    ReportingOwner(const ReportingOwner&) = delete;
+    auto operator=(const ReportingOwner&) -> ReportingOwner& = delete;
+
+    ~ReportingOwner() { cv_test_reporting_mark(bit); }
+
+private:
+    std::int32_t bit;
+};

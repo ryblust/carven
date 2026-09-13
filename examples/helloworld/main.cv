@@ -1,5 +1,3 @@
-import <cstdio> using std::printf;
-
 fn main() {
-    printf(c"Hello World\n");
+    println("Hello World");
 }

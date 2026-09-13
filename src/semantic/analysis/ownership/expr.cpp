@@ -310,7 +310,27 @@ auto OwnershipBodyAnalyzer::expression(
                         flow.normal->storage = std::move(storage);
                     }
                 },
-                [&](const SemFormat& value) noexcept {
+                [&](const SemTestReport& value) noexcept {
+                    if (value.condition.has_value()) {
+                        evaluate(**value.condition);
+                    }
+                    if (value.message.has_value()) {
+                        evaluate(**value.message);
+                    }
+                    const auto known = value.condition.has_value()
+                        ? constant_truth(**value.condition)
+                        : std::optional(false);
+                    if (flow.normal && value.kind != TestReportKind::Check && known != true) {
+                        flow.exits.push_back({OwnershipTestStopped {}, flow.normal->state});
+                    }
+                    if (value.kind == TestReportKind::Fail
+                        || (value.kind == TestReportKind::Require && known == false)) {
+                        flow.normal.reset();
+                    }
+                },
+                [&]<typename Output>(const Output& value) noexcept
+                    requires (std::same_as<Output, SemPrint> || std::same_as<Output, SemFormat>)
+                {
                     const auto previous_accesses = accesses.size();
                     const auto previous_readers = storage_readers.size();
                     for (const auto& operand : value.operands) {
@@ -387,7 +407,8 @@ auto OwnershipBodyAnalyzer::expression(
                             break;
                         }
                         if (index == 0
-                            && (value.intrinsic == TextIntrinsic::AsStr
+                            && (value.intrinsic == TextIntrinsic::FromUTF8Unchecked
+                                || value.intrinsic == TextIntrinsic::AsStr
                                 || value.intrinsic == TextIntrinsic::Bytes
                                 || value.intrinsic == TextIntrinsic::Chars)) {
                             if (program.types().type(operand.expression.type.resolved()).value
@@ -775,8 +796,8 @@ auto OwnershipBodyAnalyzer::expression(
                 [&](const SemTry& value) noexcept {
                     flow = attempt(value, std::move(flow.normal->state));
                 },
-            },
-            source.value
+                },
+                source.value
         );
     }
     if (flow.normal.has_value()) {

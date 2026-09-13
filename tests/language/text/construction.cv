@@ -1,0 +1,100 @@
+enum State {
+    Idle,
+    Running = 4,
+}
+
+test "Text: empty and embedded NUL literals preserve their contents" {
+    let empty: str = "";
+    check(empty.is_empty());
+    check(empty.len() == 0usize);
+    var empty_count = 0usize;
+    for scalar in empty.chars {
+        let _ = scalar;
+        empty_count += 1usize;
+    }
+    check(empty_count == 0usize);
+
+    let text: str = "\0a\0";
+    check(text.len() == 3usize);
+    var byte_count = 0usize;
+    var nul_count = 0usize;
+    for byte in text.bytes {
+        byte_count += 1usize;
+        if byte == 0u8 {
+            nul_count += 1usize;
+        }
+    }
+    check(byte_count == 3usize);
+    check(nul_count == 2usize);
+}
+
+fn bump(&value: i32) {
+    ++value;
+}
+
+test "Conversions: casts binding access and UTF-8 text work together" {
+    var value = 41;
+    bump(&value);
+    check(value == 42);
+
+    const raw = State::Running as u8;
+    check(raw == 4u8);
+    check((value as i64) == 42i64);
+
+    let text: str = "aé你😀";
+    check(text.len() == 10usize);
+    check(!text.is_empty());
+
+    var byte_count = 0usize;
+    var first_byte: u8 = 0u8;
+    for byte in text.bytes {
+        if byte_count == 0usize {
+            first_byte = byte;
+        }
+        byte_count += 1usize;
+    }
+    check(byte_count == 10usize);
+    check(first_byte == 97u8);
+
+    var scalar_count = 0usize;
+    var first_scalar: char = '\0';
+    for scalar in text.chars {
+        if scalar_count == 0usize {
+            first_scalar = scalar;
+        }
+        scalar_count += 1usize;
+    }
+    check(scalar_count == 4usize);
+    check(first_scalar == 'a');
+}
+
+fn scalar_number(value: char) -> u32 => value as u32;
+
+test "Conversions: explicit char to u32 preserves Unicode scalar values" {
+    const supplementary = '😀' as u32;
+    check(supplementary == 0x1f600u32);
+    check(scalar_number('\0') == 0u32);
+    check(scalar_number('我') == 0x6211u32);
+    check(scalar_number('😀') == supplementary);
+}
+
+fn scalar_from_number(value: u32) -> char => char::from_u32_unchecked(value);
+fn text_from_bytes(bytes: [u8]) -> str => str::from_utf8_unchecked(bytes);
+
+test "Text: unchecked construction preserves valid input and borrowing" {
+    check(scalar_from_number(0) == '\0');
+    check(scalar_from_number(0x6211) == '我');
+    check(scalar_from_number(0x10ffff) == '\u{10ffff}');
+    let bytes: [u8; 5] = [65, 0, 0xe6, 0x88, 0x91];
+    let text = text_from_bytes(bytes);
+    check(text == "A\0我");
+    check(text_from_bytes([]).is_empty());
+    check(text_from_bytes([65]) == "A");
+    var storage: String = "hello";
+    if true {
+        let view = str::from_utf8_unchecked(storage.bytes);
+        check(view == "hello");
+    }
+    storage.clear();
+    check(storage.is_empty());
+}

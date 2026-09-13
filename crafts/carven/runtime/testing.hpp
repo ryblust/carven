@@ -9,6 +9,8 @@
 
 namespace carven::runtime {
 
+struct TestStopped final {};
+
 namespace detail {
 
 [[noreturn]] inline auto testing_contract_error() noexcept -> void {
@@ -60,6 +62,12 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
 
 } // namespace detail
 
+class TestContext;
+
+namespace detail {
+inline thread_local TestContext* active_test_context = nullptr;
+} // namespace detail
+
 class TestContext final {
 public:
     explicit TestContext(TestReporter source_reporter = nullptr) noexcept
@@ -69,6 +77,8 @@ public:
         if (active.has_value()) {
             detail::testing_contract_error();
         }
+        previous_context = detail::active_test_context;
+        detail::active_test_context = this;
         active = ActiveTestCase {.module_name = module_name, .case_name = case_name};
     }
 
@@ -76,6 +86,8 @@ public:
         if (!active.has_value()) {
             detail::testing_contract_error();
         }
+        detail::active_test_context = previous_context;
+        previous_context = nullptr;
         active.reset();
     }
 
@@ -114,9 +126,17 @@ private:
         std::string_view case_name;
     };
 
+    TestContext* previous_context = nullptr;
     TestReporter reporter;
     bool failed = false;
     std::optional<ActiveTestCase> active;
 };
+
+inline auto current_test() noexcept -> TestContext& {
+    if (detail::active_test_context == nullptr) {
+        detail::testing_contract_error();
+    }
+    return *detail::active_test_context;
+}
 
 } // namespace carven::runtime

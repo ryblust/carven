@@ -1,0 +1,44 @@
+fn record(&trace: i32, marker: i32) -> i32 {
+    trace = trace * 10 + marker;
+    return marker;
+}
+
+enum Value {
+    Number(i32),
+    Pair(i32, i32),
+}
+
+fn next_value(&calls: i32) -> Value {
+    calls += 1;
+    return .Number(21);
+}
+
+fn describe_next(&calls: i32) -> i32 {
+    return match next_value(&calls) {
+        .Number(number) => number,
+        _ => 0,
+    };
+}
+
+fn second(value: Value) -> i32 {
+    return match value {
+        .Pair(_, item) => item,
+        _ => 0,
+    };
+}
+
+test "Enums: sum construction and matching evaluate once from left to right" {
+    var trace = 0;
+    let ordered: Value = .Pair(
+        record(&trace, 1),
+        record(&trace, 2),
+    );
+    let observed = trace;
+    check(second(ordered) == 2);
+    check(observed == 12);
+
+    var calls = 0;
+    check(describe_next(&calls) == 21);
+    let match_evaluations = calls;
+    check(match_evaluations == 1);
+}

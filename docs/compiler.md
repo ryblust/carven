@@ -38,6 +38,7 @@ captures and solved failure sets.
 `analysis.program` owns `ProgramDraft` and declaration/body reservations.
 Its consuming `finish()` checks reservation completeness, solves failures and
 types, and finalizes callable signatures, declarations, and bodies in that order.
+It then computes test-stop effects per callable before publishing the program.
 Body completion resolves type and failure facts in the owned operation tree and
 finalizes binding and pattern tables. Identity array adoptions are removed while
 preserving the source storage and the consumer's access.
@@ -117,7 +118,14 @@ select integer bounds or a sequence expression.
 Text construction, queries, borrowing, and mutation publish distinct operations
 with ordered typed operands and explicit access. Publication verifies arity,
 operand/result types, and Write-place requirements. Construction and mutation
-require evaluation even when their results are discarded.
+require evaluation even when their results are discarded. Contextual String
+literals and `str as String` publish `FromStr`; contextual String-to-str borrowing
+publishes `AsStr`, sharing the explicit APIs' ownership and lowering paths.
+Contextual array-to-slice borrowing publishes `SliceIntrinsic::FromArray`,
+sharing `as_slice()` storage checks and lowering. Unchecked scalar and UTF-8
+construction publish text intrinsics with `u32` and byte-slice inputs respectively.
+UTF-8 construction preserves the input storage loans; content validity is a caller
+precondition, not a compiler proof or a dependency on standard-library errors.
 
 Interpolation syntax retains text, hole expressions, format fragments, and source
 spans. Semantic construction numbers the holes, including dynamic format arguments,
@@ -126,9 +134,18 @@ C++ validates format options. Publication checks the constant reference, operand
 access, and String result type. Formatting requires execution; its operands use
 the ordinary failure and loan traversal, and its result has independent storage.
 
+Builtin names use ordinary lookup. Direct calls publish `SemPrint` or
+`SemTestReport` expressions; a builtin used as a value materializes a stateless
+callable with its expected signature. Test-stop analysis follows direct calls
+by callable identity and conservatively admits test stop through callable views.
+
 Bindings carry their role and access. Scope and full-expression boundaries
 record lifetimes. Function return, failure propagation, loop transfer, and test
 exit retain their destinations. Nested callables have separate boundaries.
+
+Call argument binding validates Take against the source operand and records
+its ownership transfer before target-type conversion. A conversion may produce
+a value or borrow, but does not replace the source access requirement.
 
 Match distinguishes a source place from an owned temporary. Pattern owners and
 guards retain their order. Constant-inactive source is validated but contributes
@@ -248,7 +265,8 @@ Unfinished calls retain direct place and borrowed-target accesses. Array
 iteration retains its source owner. Match guards additionally require stable
 subject storage. Branches merge only real successors; loops include entry,
 backedges, and exits. Diagnostic witnesses do not distinguish execution states.
-Return and failure states have caller consumers; test termination has none.
+Return, failure, and test-stop states have separate transfer paths. Test stop
+propagates through Carven calls to the active test body.
 Equal callable-view copies retain their target relationships rather than borrowing
 the intermediate view storage. Expired callable backing is diagnosed before any
 attempt to interpret its former capture state.

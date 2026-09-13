@@ -311,30 +311,32 @@ TEST_CASE("SemIR body invariant: body-local references reject foreign owners") {
     }));
 }
 
-TEST_CASE("SemIR body invariant: test operations cannot occur in an ordinary function") {
+TEST_CASE("SemIR body: test operations carry an internal exit through ordinary functions") {
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
     auto prepared = prepare_function(sources, diagnostics);
     auto body = body_fixture(prepared);
+    auto operation = boolean_expression(prepared, body);
+    operation.constant.reset();
+    operation.exits_test = true;
+    operation.value = SemTestReport {
+        .kind = TestReportKind::Fail,
+        .condition = std::nullopt,
+        .message = std::nullopt,
+        .condition_source = std::nullopt
+    };
     auto statements = std::vector<SemanticStatement>();
     statements.push_back(
-        SemanticStatement {
-            .origin = prepared.origin,
-            .lifetime = body.lifetime,
-            .value = SemTestReport {
-                .kind = TestReportKind::Fail,
-                .condition = std::nullopt,
-                .message = std::nullopt,
-                .condition_source = std::nullopt
-            }
-        }
+        {.origin = prepared.origin,
+         .lifetime = body.lifetime,
+         .value = SemExpressionStatement {std::move(operation)}}
     );
     auto result = boolean_expression(prepared, body);
     [[maybe_unused]] const auto resolved =
         finish_body(prepared, std::move(body), std::move(statements), std::move(result));
-    CHECK(expect_termination("structured-test-operation-owner", [&] noexcept {
-        static_cast<void>(std::move(prepared.builder).finish());
-    }));
+    const auto program = std::move(prepared.builder).finish();
+    REQUIRE(program.has_value());
+    CHECK(program->may_stop_test(prepared.callable));
 }
 
 TEST_CASE("SemIR body: external calls require their declared result query") {

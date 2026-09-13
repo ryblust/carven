@@ -10,6 +10,7 @@ import :frontend.ast.tree;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.decl;
+import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
@@ -251,4 +252,271 @@ auto resolve_declarations(
     ImportUsage& import_usage
 ) noexcept -> AnalysisResult<void> {
     return DeclResolver(draft, catalog, import_usage).run();
+}
+
+DeclResolver::DeclResolver(
+    ProgramDraft& target,
+    AnalysisCatalogView source_catalog,
+    ImportUsage& usage
+) noexcept
+    : draft(target),
+      catalog(source_catalog),
+      import_usage(usage),
+      states(source_catalog.symbols().size(), Unvisited {}),
+      structures(source_catalog.struct_count()),
+      enumerations(source_catalog.enum_count()),
+      enum_cases(source_catalog.enum_case_count()),
+      module_constants(source_catalog.symbols().size()),
+      cpp_import_origins(source_catalog.function_count()) {}
+
+auto DeclResolver::run() noexcept -> AnalysisResult<void> {
+    for (const auto& symbol : catalog.symbols()) {
+        static_cast<void>(resolve(symbol.symbol_id, symbol.module_id, symbol.declaration_span));
+    }
+    for (const auto& symbol : catalog.symbols()) {
+        if (!std::holds_alternative<CatalogEnumForm>(symbol.form)) {
+            continue;
+        }
+        static_cast<void>(validate_enum_codes(symbol));
+    }
+    if (std::ranges::any_of(states, [](const State& state) noexcept {
+            return std::holds_alternative<Unvisited>(state)
+                || std::holds_alternative<Resolving>(state);
+        })) {
+        invariant_violation("declaration resolution left a non-terminal symbol state");
+    }
+    if (const auto failure = draft.diagnostics().failure()) {
+        return std::unexpected(*failure);
+    }
+    finish_capabilities();
+    finish_declarations();
+    return {};
+}
+
+auto DeclResolver::module_declaration(ProgramModuleID id) const noexcept -> ModuleID {
+    const auto* record = catalog.find_module(id);
+    if (record == nullptr) {
+        invariant_violation("declaration references an unknown source module");
+    }
+    return record->declaration;
+}
+
+auto DeclResolver::diagnose_cycle(
+    const CatalogSymbol& target,
+    ProgramModuleID requester,
+    Span origin
+) noexcept -> AnalysisFailure {
+    const auto first = std::ranges::find(active_path, target.symbol_id);
+    if (first == active_path.end()) {
+        invariant_violation("resolving declaration is absent from its active path");
+    }
+    auto diagnostic = DiagnosticBuilder(DiagnosticCode::ConstCycle, "declaration dependency cycle");
+    diagnostic.primary(
+        locate(declaration_source_id(draft, requester), origin),
+        "this dependency closes the cycle"
+    );
+    for (auto edge = first; edge != active_path.end(); ++edge) {
+        const auto& declaration = require_catalog_symbol(catalog, *edge);
+        diagnostic.related(
+            locate(
+                declaration_source_id(draft, declaration.module_id),
+                declaration.declaration_span
+            ),
+            edge == first ? std::format("cycle starts at declaration '{}'", declaration.name)
+                          : std::format("cycle passes through declaration '{}'", declaration.name)
+        );
+    }
+    return draft.diagnostics().error(diagnostic.build());
+}
+
+auto DeclResolver::resolve(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
+    -> AnalysisResult<void> {
+    const auto& symbol = require_catalog_symbol(catalog, id);
+    auto& state = states[id.index()];
+    if (std::holds_alternative<Resolved>(state)) {
+        return {};
+    }
+    if (const auto* failed = std::get_if<Failed>(&state)) {
+        return std::unexpected(failed->failure);
+    }
+    if (std::holds_alternative<Resolving>(state)) {
+        const auto failure = diagnose_cycle(symbol, requester, origin);
+        state = Failed {.failure = failure};
+        return std::unexpected(failure);
+    }
+
+    state = Resolving {};
+    active_path.push_back(id);
+    auto result = resolve_fresh(symbol);
+    active_path.pop_back();
+    if (const auto* failed = std::get_if<Failed>(&state)) {
+        return std::unexpected(failed->failure);
+    }
+    if (!result.has_value()) {
+        const auto failure = result.error();
+        state = Failed {.failure = failure};
+        return std::unexpected(failure);
+    }
+    state = Resolved {};
+    return {};
+}
+
+auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void> {
+    if (const auto* form = std::get_if<CatalogEnumCaseForm>(&symbol.form)) {
+        return resolve_enum_case(symbol, *form);
+    }
+    const auto syntax = draft.syntax_tree(symbol.module_id).view();
+    const auto& item = syntax.item(symbol.item_id);
+    return std::visit(
+        Overloaded {
+            [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<void> {
+                const auto* source = std::get_if<ASTFunctionDecl>(&item.value);
+                if (source == nullptr) {
+                    invariant_violation("function catalog row does not match source syntax");
+                }
+                return resolve_function(symbol, form, syntax, *source, item.span);
+            },
+            [&](const CatalogStructForm& form) noexcept -> AnalysisResult<void> {
+                const auto* source = std::get_if<ASTStructDecl>(&item.value);
+                if (source == nullptr) {
+                    invariant_violation("struct catalog row does not match source syntax");
+                }
+                return resolve_struct(symbol, form, syntax, *source, item.span);
+            },
+            [&](const CatalogEnumForm& form) noexcept -> AnalysisResult<void> {
+                const auto* source = std::get_if<ASTEnumDecl>(&item.value);
+                if (source == nullptr) {
+                    invariant_violation("enum catalog row does not match source syntax");
+                }
+                return resolve_enum(symbol, form, syntax, *source, item.span);
+            },
+            [&](const CatalogConstantForm& form) noexcept -> AnalysisResult<void> {
+                const auto* source = std::get_if<ASTConstantDecl>(&item.value);
+                if (source == nullptr) {
+                    invariant_violation("constant catalog row does not match source syntax");
+                }
+                return resolve_module_constant(symbol, form, syntax, *source, item.span);
+            },
+            [](const CatalogEnumCaseForm&) static noexcept -> AnalysisResult<void> {
+                invariant_violation("enum case entered top-level declaration resolution");
+            },
+        },
+        symbol.form
+    );
+}
+
+auto DeclResolver::select_symbol(
+    ProgramModuleID module_id,
+    std::string_view name,
+    Span origin
+) noexcept -> AnalysisResult<const CatalogSymbol*> {
+    const auto candidates = catalog.lookup(module_id, name);
+    if (candidates.empty()) {
+        return std::unexpected(declaration_failure(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::NameUnresolved,
+            std::format("unresolved name '{}'", name)
+        ));
+    }
+    if (candidates.size() != 1uz) {
+        auto diagnostic = DiagnosticBuilder(
+            DiagnosticCode::NameAmbiguous,
+            std::format("name '{}' is provided by more than one wildcard import", name)
+        );
+        diagnostic.primary(
+            locate(declaration_source_id(draft, module_id), origin),
+            "ambiguous reference"
+        );
+        for (const auto& candidate : candidates) {
+            const auto& selected = require_catalog_symbol(catalog, candidate.symbol_id);
+            diagnostic.related(
+                locate(declaration_source_id(draft, selected.module_id), selected.declaration_span),
+                std::format(
+                    "candidate from '{}'",
+                    draft.module_path_copy(selected.module_id).value()
+                )
+            );
+        }
+        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+    }
+    const auto& selected = candidates.front();
+    if (selected.import_binding.has_value()) {
+        import_usage.record(*selected.import_binding);
+    }
+    return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
+}
+
+auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span) noexcept
+    -> AnalysisResult<ResolvedConstantName> {
+    return resolver.resolve_constant_name(module, name, span);
+}
+
+auto DeclResolver::ConstantScope::resolve_enum_qualifier(ASTExprID expression) noexcept
+    -> AnalysisResult<std::optional<TypeID>> {
+    return resolver.resolve_enum_qualifier(module, syntax, expression);
+}
+
+auto DeclResolver::ConstantScope::resolve_enum_case(
+    TypeID type,
+    std::string_view name,
+    Span span
+) noexcept -> AnalysisResult<ResolvedEnumCase> {
+    return resolver.resolve_constant_enum_case(module, type, name, span);
+}
+
+auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept
+    -> AnalysisResult<ConstructionTypeRef> {
+    return resolver.resolve_type(module, syntax, type);
+}
+
+auto DeclResolver::ConstantScope::supports_equality(ConstructionTypeRef type) noexcept -> bool {
+    auto visiting = std::flat_set<TypeID>();
+    return resolver.supports_equality(type, visiting);
+}
+
+auto DeclResolver::ConstantScope::is_numeric_enum(TypeID type) const noexcept -> bool {
+    const auto canonical = resolver.draft.type_copy(type);
+    const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
+    return nominal != nullptr
+        && nominal->enumeration.index() < resolver.enumerations.size()
+        && resolver.enumerations[nominal->enumeration.index()].has_value()
+        && std::holds_alternative<NumericEnumRepresentation>(
+               resolver.enumerations[nominal->enumeration.index()]->representation
+        );
+}
+
+auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
+    -> AnalysisResult<ConstructionTypeRef> {
+    auto scope = ConstantScope {*this, module_id, syntax};
+    const auto extent = [&](ASTExprID expression) noexcept {
+        return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+    };
+    return resolve_source_type(draft, catalog, import_usage, module_id, syntax, type, extent);
+}
+
+auto DeclResolver::resolve_value_type(
+    ProgramModuleID module_id,
+    ASTView syntax,
+    ASTTypeID type,
+    std::string_view role
+) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    auto resolved = resolve_type(module_id, syntax, type);
+    if (!resolved.has_value()) {
+        return std::unexpected(resolved.error());
+    }
+    return require_source_value_type(draft, *resolved, module_id, syntax.type(type).span, role);
+}
+
+auto DeclResolver::resolve_failures(
+    ProgramModuleID module_id,
+    ASTView syntax,
+    const ASTThrowClause& clause
+) noexcept -> AnalysisResult<std::vector<TypeID>> {
+    auto scope = ConstantScope {*this, module_id, syntax};
+    const auto extent = [&](ASTExprID expression) noexcept {
+        return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+    };
+    return resolve_failure_types(draft, catalog, import_usage, module_id, syntax, clause, extent);
 }

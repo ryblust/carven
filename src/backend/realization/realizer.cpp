@@ -1,9 +1,15 @@
 module carven:backend.realization.realizer.impl;
 
+import :backend.construction;
 import :backend.generation.names;
 import :backend.lowering.context;
+import :backend.realization.body;
+import :backend.realization.composition;
+import :backend.realization.constant;
 import :backend.realization.decl;
+import :backend.realization.pattern;
 import :backend.realization.realizer;
+import :backend.target.expr;
 import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
@@ -76,7 +82,6 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),
-        .uses_test_context = uses_test_context
     };
 }
 
@@ -98,4 +103,8 @@ auto BodyRealizer::region(ConstructionRegionID id, const LoweringResultDestinati
         }
     }
     return statements;
+}
+
+auto BodyRealizer::exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget {
+    return {kind, next_exit++};
 }

@@ -7,7 +7,11 @@ and build integration for this checkout.
 
 Compiler implementation uses C++26 with exceptions and RTTI disabled. The
 validated host is LLVM/Clang and libc++ 23.1.0. Generated programs and installed
-crafts use C++20. Host-only features stay within the compiler implementation.
+crafts have a C++20 minimum baseline. The consumer project selects its C++
+standard. Generated code and runtime support may use newer available facilities
+through capability-dependent implementations that preserve the same Carven
+semantic contract and functionality. Host-only features stay within the compiler
+implementation.
 
 The native consumer build selects exception support for its sources and
 providers according to their C++ requirements. A `#[cpp]` fragment containing
@@ -151,6 +155,7 @@ carven/runtime/text.hpp
 carven/runtime/utf.hpp
 carven/runtime/string.hpp
 carven/runtime/format.hpp
+carven/runtime/print.hpp
 carven/runtime/entry.hpp
 carven/runtime/outcome.hpp
 carven/runtime/callable.hpp
@@ -171,7 +176,9 @@ contexts, failure records, and reporting in `carven::runtime`.
 representation conversions. `text.hpp` supplies text views; `string.hpp` supplies owning
 String. Interpolation uses `format.hpp` and requires C++20 `<format>` support
 in the consumer's standard library. The consumer compiler checks format strings
-and the availability of formatters for native types.
+and the availability of formatters for native types. `print.hpp` supplies stdout
+and stderr printing, selecting the C++20 implementation or available C++23 library
+print support without changing the consumer's selected standard.
 
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte

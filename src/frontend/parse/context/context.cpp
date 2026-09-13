@@ -43,20 +43,6 @@ auto Parser::enter_depth(std::uint32_t& depth) noexcept -> DepthGuard {
     return DepthGuard(&depth);
 }
 
-Parser::TestStatementContextGuard::TestStatementContextGuard(bool& context, bool enabled) noexcept
-    : context(&context),
-      prior(context) {
-    context = enabled;
-}
-
-Parser::TestStatementContextGuard::~TestStatementContextGuard() noexcept {
-    *context = prior;
-}
-
-auto Parser::enter_test_statement_context(bool enabled) noexcept -> TestStatementContextGuard {
-    return TestStatementContextGuard(test_statements_enabled, enabled);
-}
-
 auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
     if (!preflight_delimiter_nesting()) {
         return std::unexpected(std::move(diagnostics));

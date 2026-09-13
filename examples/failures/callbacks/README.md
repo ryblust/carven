@@ -6,8 +6,7 @@ callable interface, which lists their possible failure types.
 
 ## Read main.cv
 
-The console import comes first, followed by the `InvalidAmount` and
-`LimitExceeded` records. `positive` declares only `InvalidAmount`.
+The `InvalidAmount` and `LimitExceeded` records come first. `positive` declares only `InvalidAmount`.
 `process` accepts a callable view whose signature allows `InvalidAmount + LimitExceeded`, and propagates the
 selected policy's failure with `?`. A smaller failure set fits that wider view;
 no conversion between the failure payload types is needed.
@@ -35,22 +34,16 @@ From the repository root:
 
 ```text
 Basic policy
-Accepted:
-8
+Accepted: 8
 Rejected by basic policy
-Amount must be positive:
-0
+Amount must be positive: 0
 Captured policy
-Accepted:
-4
+Accepted: 4
 Rejected by captured policy
-Requested:
-8
-Policy limit:
-5
+Requested: 8
+Policy limit: 5
 Invalid input through captured policy
-Amount must be positive:
--2
+Amount must be positive: -2
 ```
 
 ## Explore the contract

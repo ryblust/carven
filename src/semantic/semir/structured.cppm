@@ -9,23 +9,11 @@ import std;
 
 class BodyType final {
 public:
-    explicit BodyType(ConstructionTypeRef value) noexcept
-        : value(value) {}
-
-    explicit BodyType(TypeID value) noexcept
-        : value(value) {}
-
-    explicit BodyType(TypeTermID value) noexcept
-        : value(value) {}
-
-    auto construction() const noexcept -> const ConstructionTypeRef& { return value; }
-
-    auto resolved() const noexcept -> TypeID {
-        if (const auto* type = std::get_if<TypeID>(&value)) {
-            return *type;
-        }
-        invariant_violation("body type has not been resolved");
-    }
+    explicit BodyType(ConstructionTypeRef value) noexcept;
+    explicit BodyType(TypeID value) noexcept;
+    explicit BodyType(TypeTermID value) noexcept;
+    auto construction() const noexcept -> const ConstructionTypeRef&;
+    auto resolved() const noexcept -> TypeID;
 
 private:
     ConstructionTypeRef value;
@@ -33,25 +21,10 @@ private:
 
 class BodyFailures final {
 public:
-    explicit BodyFailures(FailureTermID value) noexcept
-        : value(value) {}
-
-    explicit BodyFailures(FailureSetID value) noexcept
-        : value(value) {}
-
-    auto term() const noexcept -> FailureTermID {
-        if (const auto* term = std::get_if<FailureTermID>(&value)) {
-            return *term;
-        }
-        invariant_violation("resolved body failures have no construction term");
-    }
-
-    auto resolved() const noexcept -> FailureSetID {
-        if (const auto* failures = std::get_if<FailureSetID>(&value)) {
-            return *failures;
-        }
-        invariant_violation("body failures have not been resolved");
-    }
+    explicit BodyFailures(FailureTermID value) noexcept;
+    explicit BodyFailures(FailureSetID value) noexcept;
+    auto term() const noexcept -> FailureTermID;
+    auto resolved() const noexcept -> FailureSetID;
 
 private:
     std::variant<FailureTermID, FailureSetID> value;
@@ -142,6 +115,20 @@ struct SemIndex final {
     OwnedSemanticExpression source;
     OwnedSemanticExpression index;
     IndexBoundsPolicy bounds;
+};
+
+enum class PrintKind { Print, Println, Eprint, Eprintln };
+
+struct SemTestReport final {
+    TestReportKind kind;
+    std::optional<OwnedSemanticExpression> condition;
+    std::optional<OwnedSemanticExpression> message;
+    std::optional<ProgramSpellingID> condition_source;
+};
+
+struct SemPrint final {
+    PrintKind kind;
+    std::vector<SemCallArgument> operands;
 };
 
 struct SemFormat final {
@@ -258,6 +245,8 @@ struct SemanticExpression final {
         SemIndex,
         SemTextIntrinsic,
         SemSliceIntrinsic,
+        SemPrint,
+        SemTestReport,
         SemFormat,
         SemCall,
         SemClosure,
@@ -271,12 +260,7 @@ struct SemanticExpression final {
 
     // A Read can retain this expression's selected object. Consuming a value
     // still creates independent destination storage through the normal use rules.
-    auto selects_storage() const noexcept -> bool {
-        return std::holds_alternative<SemBinding>(value)
-            || std::holds_alternative<SemField>(value)
-            || std::holds_alternative<SemIndex>(value)
-            || std::holds_alternative<SemDereference>(value);
-    }
+    auto selects_storage() const noexcept -> bool;
 };
 
 struct SemanticRegion final {
@@ -381,13 +365,6 @@ struct SemRangeLoop final {
     OwnedSemanticRegion body;
 };
 
-struct SemTestReport final {
-    TestReportKind kind;
-    std::optional<SemanticExpression> condition;
-    std::optional<SemanticExpression> message;
-    std::optional<ProgramSpellingID> condition_source;
-};
-
 struct SemanticStatement final {
     ProgramOriginID origin;
     LifetimeRegionID lifetime;
@@ -402,7 +379,6 @@ struct SemanticStatement final {
         SemAssign,
         SemLoop,
         SemRangeLoop,
-        SemTestReport,
         OwnedSemanticRegion>
         value;
 };
@@ -475,38 +451,18 @@ struct SemIRBodyData final {
 class SemIRBody final {
 public:
     explicit SemIRBody(SemIRBodyData data) noexcept;
-
-    auto id() const noexcept -> BodyID { return data.id; }
-
-    auto kind() const noexcept -> BodyKind { return data.kind; }
-
-    auto identity() const noexcept -> BodyIdentity { return data.lifetime_regions.owner(); }
-
-    auto provenance_identity() const noexcept -> ProvenanceIdentity {
-        return data.provenance_identity;
-    }
-
-    auto inputs() const noexcept -> const BodyInputs& { return data.inputs; }
-
-    auto lifetime_regions() const noexcept -> const LifetimeRegionTree& {
-        return data.lifetime_regions;
-    }
-
-    auto bindings() const noexcept { return data.bindings.entries(); }
-
-    auto patterns() const noexcept { return data.patterns.entries(); }
-
-    auto pattern_table() const noexcept -> const ImmutableBodyTable<Pattern, PatternID>& {
-        return data.patterns;
-    }
-
-    auto binding(LocalBindingID id) const noexcept -> const LocalBinding& {
-        return data.bindings.get(id);
-    }
-
-    auto pattern(PatternID id) const noexcept -> const Pattern& { return data.patterns.get(id); }
-
-    auto region() const noexcept -> const SemanticRegion& { return data.region; }
+    auto id() const noexcept -> BodyID;
+    auto kind() const noexcept -> BodyKind;
+    auto identity() const noexcept -> BodyIdentity;
+    auto provenance_identity() const noexcept -> ProvenanceIdentity;
+    auto inputs() const noexcept -> const BodyInputs&;
+    auto lifetime_regions() const noexcept -> const LifetimeRegionTree&;
+    auto bindings() const noexcept -> IDTableEntries<LocalBindingID, LocalBinding, BodyIdentity>;
+    auto patterns() const noexcept -> IDTableEntries<PatternID, Pattern, BodyIdentity>;
+    auto pattern_table() const noexcept -> const ImmutableBodyTable<Pattern, PatternID>&;
+    auto binding(LocalBindingID id) const noexcept -> const LocalBinding&;
+    auto pattern(PatternID id) const noexcept -> const Pattern&;
+    auto region() const noexcept -> const SemanticRegion&;
 
 private:
     SemIRBodyData data;

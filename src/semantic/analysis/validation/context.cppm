@@ -10,10 +10,7 @@ import std;
 
 class BodyContractVerifier final {
 public:
-    BodyContractVerifier(const SemIRBody& source, const SemIRProgram& semantic) noexcept
-        : body(source),
-          program(semantic) {}
-
+    BodyContractVerifier(const SemIRBody& source, const SemIRProgram& semantic) noexcept;
     auto verify() noexcept -> void;
 
 private:

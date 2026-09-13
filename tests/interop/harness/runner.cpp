@@ -1,5 +1,5 @@
-#include <carven/api/tests/interop/discarded/operations.hpp>
-#include <carven/api/tests/interop/unicode_contract/export_argument.hpp>
+#include <carven/api/tests/interop/discarded_results/operations.hpp>
+#include <carven/api/tests/interop/scalars/export_argument.hpp>
 
 #include <carven/generated/carven-test-runner.hpp>
 
@@ -22,7 +22,7 @@ auto main(int argc, char** argv) noexcept -> int {
         return 1;
     }
     std::signal(SIGABRT, terminated);
-    namespace api = carven::api::tests::interop::discarded::operations;
+    namespace api = carven::api::tests::interop::discarded_results::operations;
     const auto operation = std::string_view(argv[1]);
     if (operation == "divide") {
         api::divide(0);
@@ -45,7 +45,7 @@ auto main(int argc, char** argv) noexcept -> int {
     } else if (operation == "unicode") {
         api::unicode();
     } else if (operation == "unicode-export") {
-        carven::api::tests::interop::unicode_contract::export_argument::accept_unicode_scalar(
+        carven::api::tests::interop::scalars::export_argument::accept_unicode_scalar(
             static_cast<char32_t>(0xd800)
         );
     }

@@ -1,0 +1,81 @@
+fn record(&trace: i32, marker: i32) -> i32 {
+    trace = trace * 10 + marker;
+    return marker;
+}
+
+fn pair(left: i32, right: i32) -> i32 => left * 10 + right;
+
+struct RecordedPair {
+    first: i32,
+    second: i32,
+}
+
+fn recorded_one(&trace: i32) -> i32 => record(&trace, 1);
+
+fn recorded_two(&trace: i32) -> i32 => record(&trace, 2);
+
+fn source_first(&trace: i32, operand: i32) -> i32 => pair(record(&trace, 3), operand);
+
+fn identity(value: i32) -> i32 => value;
+
+fn reserved_identifier(__value: i32) -> i32 => __value;
+
+fn next_value(&value: i32) -> i32 {
+    value += 1;
+    return value;
+}
+
+fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
+    return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 + g * 1000000 + h * 10000000;
+}
+
+test "Evaluation: predecessor reads survive later effects across a wide argument list" {
+    var value = 1;
+    let result = eight_values(
+        value, value, next_value(&value), value, value, next_value(&value), value, value
+    );
+    check(result == 33322211);
+    check(value == 3);
+}
+
+test "Evaluation: call arguments evaluate from left to right" {
+    var trace = 0;
+    let ordered = pair(
+        record(&trace, 1),
+        record(&trace, 2),
+    );
+    let observed = trace;
+
+    check(ordered == 12);
+    check(observed == 12);
+
+    trace = 0;
+    let invoked = (if record(&trace, 1) > 0 {
+        identity
+    } else {
+        identity
+    })(recorded_two(&trace) + 0);
+    let callback_order = trace;
+    check(invoked == 2);
+    check(callback_order == 12);
+
+    trace = 0;
+    let aggregated = [recorded_one(&trace), recorded_two(&trace) + 0];
+    let aggregate_order = trace;
+    check(aggregated[0] == 1);
+    check(aggregated[1] == 2);
+    check(aggregate_order == 12);
+
+    trace = 0;
+    let constructed = RecordedPair { recorded_one(&trace), recorded_two(&trace) + 0 };
+    let construction_order = trace;
+    check(constructed.first == 1);
+    check(constructed.second == 2);
+    check(construction_order == 12);
+
+    trace = 0;
+    check(source_first(&trace, 4) == 34);
+    let source_first_order = trace;
+    check(source_first_order == 3);
+    check(reserved_identifier(5) == 5);
+}

@@ -2,8 +2,8 @@ module carven:frontend.program.verify.impl;
 
 import :frontend.ast.ids;
 import :frontend.ast.storage;
-import :frontend.program;
 import :frontend.program.verify;
+import :frontend.program;
 import :source.provenance.ids;
 import :source.provenance.verify;
 import :source.text;
@@ -23,47 +23,11 @@ auto verification_error(SyntaxProgramErrorKind kind, std::string message) noexce
 
 class SyntaxTreeOwnershipVerifier final {
 public:
-    SyntaxTreeOwnershipVerifier(ASTView syntax_value, std::string_view module_path_value) noexcept
-        : syntax(syntax_value),
-          module_path(module_path_value),
-          claimed_expressions(syntax.expressions().size()),
-          claimed_types(syntax.types().size()),
-          claimed_statements(syntax.statements().size()),
-          claimed_patterns(syntax.patterns().size()),
-          claimed_blocks(syntax.blocks().size()),
-          claimed_branch_blocks(syntax.branch_blocks().size()),
-          claimed_items(syntax.items().size()),
-          claimed_module_imports(syntax.module_imports().size()) {}
-
-    auto verify() noexcept -> std::expected<void, SyntaxProgramError> {
-        for (const auto import_id : syntax.ast_module().module_imports) {
-            claim(import_id);
-        }
-        for (const auto item_id : syntax.ast_module().items) {
-            claim(item_id);
-        }
-        if (failure.has_value()) {
-            return std::unexpected(std::move(*failure));
-        }
-        if (!all_claimed(claimed_expressions, "expression")
-            || !all_claimed(claimed_types, "type")
-            || !all_claimed(claimed_statements, "statement")
-            || !all_claimed(claimed_patterns, "pattern")
-            || !all_claimed(claimed_blocks, "block")
-            || !all_claimed(claimed_branch_blocks, "branch block")
-            || !all_claimed(claimed_items, "item")
-            || !all_claimed(claimed_module_imports, "module import")) {
-            return std::unexpected(std::move(*failure));
-        }
-        return {};
-    }
+    SyntaxTreeOwnershipVerifier(ASTView syntax_value, std::string_view module_path_value) noexcept;
+    auto verify() noexcept -> std::expected<void, SyntaxProgramError>;
 
 private:
-    auto fail(SyntaxProgramErrorKind kind, std::string message) noexcept -> void {
-        if (!failure.has_value()) {
-            failure = SyntaxProgramError {.kind = kind, .message = std::move(message)};
-        }
-    }
+    auto fail(SyntaxProgramErrorKind kind, std::string message) noexcept -> void;
 
     template<typename ID, typename Node>
     auto claim_node(
@@ -105,52 +69,16 @@ private:
         visit_ast_topology(nodes[id.index()], [&](auto field) noexcept { claim(field); });
     }
 
-    auto all_claimed(std::span<const std::uint8_t> claims, std::string_view kind) noexcept -> bool {
-        if (std::ranges::all_of(claims, [](std::uint8_t claimed) static noexcept {
-                return claimed != 0;
-            })) {
-            return true;
-        }
-        fail(
-            SyntaxProgramErrorKind::InvalidRootOwnership,
-            std::format("syntax tree for module '{}' contains an unowned {}", module_path, kind)
-        );
-        return false;
-    }
-
-    auto claim(Span) noexcept -> void {}
-
-    auto claim(ASTExprID id) noexcept -> void {
-        claim_node(id, claimed_expressions, syntax.expressions(), "expression");
-    }
-
-    auto claim(ASTTypeID id) noexcept -> void {
-        claim_node(id, claimed_types, syntax.types(), "type");
-    }
-
-    auto claim(ASTStmtID id) noexcept -> void {
-        claim_node(id, claimed_statements, syntax.statements(), "statement");
-    }
-
-    auto claim(ASTPatternID id) noexcept -> void {
-        claim_node(id, claimed_patterns, syntax.patterns(), "pattern");
-    }
-
-    auto claim(ASTBlockID id) noexcept -> void {
-        claim_node(id, claimed_blocks, syntax.blocks(), "block");
-    }
-
-    auto claim(ASTBranchBlockID id) noexcept -> void {
-        claim_node(id, claimed_branch_blocks, syntax.branch_blocks(), "branch block");
-    }
-
-    auto claim(ASTItemID id) noexcept -> void {
-        claim_node(id, claimed_items, syntax.items(), "item");
-    }
-
-    auto claim(ASTModuleImportID id) noexcept -> void {
-        claim_node(id, claimed_module_imports, syntax.module_imports(), "module import");
-    }
+    auto all_claimed(std::span<const std::uint8_t> claims, std::string_view kind) noexcept -> bool;
+    auto claim(Span) noexcept -> void;
+    auto claim(ASTExprID id) noexcept -> void;
+    auto claim(ASTTypeID id) noexcept -> void;
+    auto claim(ASTStmtID id) noexcept -> void;
+    auto claim(ASTPatternID id) noexcept -> void;
+    auto claim(ASTBlockID id) noexcept -> void;
+    auto claim(ASTBranchBlockID id) noexcept -> void;
+    auto claim(ASTItemID id) noexcept -> void;
+    auto claim(ASTModuleImportID id) noexcept -> void;
 
     ASTView syntax;
     std::string_view module_path;
@@ -164,6 +92,101 @@ private:
     std::vector<std::uint8_t> claimed_module_imports;
     std::optional<SyntaxProgramError> failure;
 };
+
+SyntaxTreeOwnershipVerifier::SyntaxTreeOwnershipVerifier(
+    ASTView syntax_value,
+    std::string_view module_path_value
+) noexcept
+    : syntax(syntax_value),
+      module_path(module_path_value),
+      claimed_expressions(syntax.expressions().size()),
+      claimed_types(syntax.types().size()),
+      claimed_statements(syntax.statements().size()),
+      claimed_patterns(syntax.patterns().size()),
+      claimed_blocks(syntax.blocks().size()),
+      claimed_branch_blocks(syntax.branch_blocks().size()),
+      claimed_items(syntax.items().size()),
+      claimed_module_imports(syntax.module_imports().size()) {}
+
+auto SyntaxTreeOwnershipVerifier::verify() noexcept -> std::expected<void, SyntaxProgramError> {
+    for (const auto import_id : syntax.ast_module().module_imports) {
+        claim(import_id);
+    }
+    for (const auto item_id : syntax.ast_module().items) {
+        claim(item_id);
+    }
+    if (failure.has_value()) {
+        return std::unexpected(std::move(*failure));
+    }
+    if (!all_claimed(claimed_expressions, "expression")
+        || !all_claimed(claimed_types, "type")
+        || !all_claimed(claimed_statements, "statement")
+        || !all_claimed(claimed_patterns, "pattern")
+        || !all_claimed(claimed_blocks, "block")
+        || !all_claimed(claimed_branch_blocks, "branch block")
+        || !all_claimed(claimed_items, "item")
+        || !all_claimed(claimed_module_imports, "module import")) {
+        return std::unexpected(std::move(*failure));
+    }
+    return {};
+}
+
+auto SyntaxTreeOwnershipVerifier::fail(SyntaxProgramErrorKind kind, std::string message) noexcept
+    -> void {
+    if (!failure.has_value()) {
+        failure = SyntaxProgramError {.kind = kind, .message = std::move(message)};
+    }
+}
+
+auto SyntaxTreeOwnershipVerifier::all_claimed(
+    std::span<const std::uint8_t> claims,
+    std::string_view kind
+) noexcept -> bool {
+    if (std::ranges::all_of(claims, [](std::uint8_t claimed) static noexcept {
+            return claimed != 0;
+        })) {
+        return true;
+    }
+    fail(
+        SyntaxProgramErrorKind::InvalidRootOwnership,
+        std::format("syntax tree for module '{}' contains an unowned {}", module_path, kind)
+    );
+    return false;
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(Span) noexcept -> void {}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTExprID id) noexcept -> void {
+    claim_node(id, claimed_expressions, syntax.expressions(), "expression");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTTypeID id) noexcept -> void {
+    claim_node(id, claimed_types, syntax.types(), "type");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTStmtID id) noexcept -> void {
+    claim_node(id, claimed_statements, syntax.statements(), "statement");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTPatternID id) noexcept -> void {
+    claim_node(id, claimed_patterns, syntax.patterns(), "pattern");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTBlockID id) noexcept -> void {
+    claim_node(id, claimed_blocks, syntax.blocks(), "block");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTBranchBlockID id) noexcept -> void {
+    claim_node(id, claimed_branch_blocks, syntax.branch_blocks(), "branch block");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTItemID id) noexcept -> void {
+    claim_node(id, claimed_items, syntax.items(), "item");
+}
+
+auto SyntaxTreeOwnershipVerifier::claim(ASTModuleImportID id) noexcept -> void {
+    claim_node(id, claimed_module_imports, syntax.module_imports(), "module import");
+}
 
 auto verify_resolved_imports(
     const SyntaxProgram& program,

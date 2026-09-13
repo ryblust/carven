@@ -15,6 +15,7 @@ import :support.visit;
 import std;
 
 namespace {
+
 auto builtin_type(const CanonicalTypeStore& types, TypeID type) noexcept
     -> std::optional<BuiltinType> {
     const auto* value = std::get_if<BuiltinTypeValue>(&types.type(type).value);
@@ -600,7 +601,9 @@ auto decide_builtin_cast(
     const auto source_integer = source_builtin.has_value() && builtin_is_integer(*source_builtin);
     const auto target_integer = target_builtin.has_value() && builtin_is_integer(*target_builtin);
     auto kind = std::optional<CastKind>();
-    if (source_integer && target_integer) {
+    if (source_builtin == BuiltinType::Char && target_builtin == BuiltinType::U32) {
+        kind = CastKind::CharToU32;
+    } else if (source_integer && target_integer) {
         kind = CastKind::IntegerToInteger;
     } else if (source_integer && target_builtin == BuiltinType::Bool) {
         kind = CastKind::IntegerToBool;
@@ -739,6 +742,12 @@ auto decide_binary_operator(
         invariant_violation("non-logical binary operator has no SemIR operation");
     }
     return decide_binary_operator(draft, *semantic, left, right, true, equality_capable);
+}
+
+auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionTypeRef> {
+    const auto array = array_shape(draft, type);
+    return array ? std::optional(array->element) : std::nullopt;
 }
 
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept

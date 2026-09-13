@@ -1,0 +1,5 @@
+import "providers/providers.hpp";
+
+import(cpp) fn header_twice(value: i32) -> i32;
+
+export fn twice_via_header(value: i32) -> i32 => header_twice(value);

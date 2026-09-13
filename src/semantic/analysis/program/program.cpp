@@ -1,6 +1,14 @@
 module carven:semantic.analysis.program.impl;
 
+import :diagnostics.sink;
+import :frontend.ast.tree;
+import :frontend.program;
+import :semantic.analysis.diagnostics;
+import :semantic.analysis.failure;
 import :semantic.analysis.program;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import std;
 
@@ -20,23 +28,23 @@ ProgramDraft::ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink) noexc
           std::move(parts.resolved_import_graph)
       ) {}
 
-auto ProgramDraft::syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree& {
-    if (!owns(module_id)) {
+auto ProgramDraft::syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree& {
+    if (!owns(id)) {
         invariant_violation("semantic syntax lookup used a foreign module identity");
     }
-    return storage.syntax_by_module[module_id.index()];
+    return storage.syntax_by_module[id.index()];
 }
 
 auto ProgramDraft::syntax_trees() const noexcept -> std::span<const SyntaxTree> {
     return storage.syntax_by_module;
 }
 
-auto ProgramDraft::resolved_imports(ProgramModuleID module_id) const noexcept
+auto ProgramDraft::resolved_imports(ProgramModuleID id) const noexcept
     -> std::span<const ResolvedModuleImport> {
-    if (!owns(module_id)) {
+    if (!owns(id)) {
         invariant_violation("semantic import lookup used a foreign module identity");
     }
-    return storage.resolved_import_graph[module_id.index()];
+    return storage.resolved_import_graph[id.index()];
 }
 
 auto ProgramDraft::module_count() const noexcept -> std::size_t {
@@ -492,9 +500,8 @@ auto ProgramDraft::source_slice_copy(ProgramSourceID source, Span span) const no
     return reader.source_slice_copy(source, span);
 }
 
-auto ProgramDraft::source_slice_copy(ProgramModuleID module_id, Span span) const noexcept
-    -> std::string {
-    return source_slice_copy(module_source(module_id), span);
+auto ProgramDraft::source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string {
+    return source_slice_copy(module_source(id), span);
 }
 
 auto ProgramDraft::intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID {
@@ -615,3 +622,45 @@ auto ProgramDraft::require_declarations_available(std::string_view operation) co
     -> void {
     require_state(State::Bodies, operation);
 }
+
+auto BodyReservation::id() const noexcept -> BodyID {
+    return body_id;
+}
+
+auto BodyReservation::kind() const noexcept -> BodyKind {
+    return body_kind;
+}
+
+BodyReservation::BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept
+    : body_id(id),
+      body_kind(kind),
+      provenance_identity(provenance) {}
+
+auto ProgramDraft::identity() const noexcept -> ProgramIdentity {
+    return program_identity;
+}
+
+auto ProgramDraft::provenance_identity() const noexcept -> ProvenanceIdentity {
+    return provenance_appender.reader().identity();
+}
+
+auto ProgramDraft::diagnostics() const noexcept -> AnalysisDiagnostics {
+    return analysis_diagnostics;
+}
+
+ProgramDraft::ConstructionStorage::ConstructionStorage(
+    ProgramIdentity identity,
+    ProvenanceIdentity provenance,
+    std::vector<SyntaxTree> syntax,
+    ResolvedModuleImportGraph imports
+) noexcept
+    : syntax_by_module(std::move(syntax)),
+      resolved_import_graph(std::move(imports)),
+      types(identity),
+      constants(identity, provenance),
+      failure_sets(identity),
+      callable_signatures(identity),
+      construction_types(identity),
+      declarations(identity, provenance),
+      failure_constraints(identity, provenance),
+      test_slots(identity) {}

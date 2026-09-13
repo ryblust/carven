@@ -69,7 +69,20 @@ auto interpret_literal(
             diagnostic.has_value() ? std::string(diagnostic->message) : "invalid literal value"
         ));
     }
-    return site.constant(site.draft().intern_constant(std::move(*fact)), span);
+    auto value = site.constant(site.draft().intern_constant(std::move(*fact)), span);
+    if (std::holds_alternative<StringLiteralValue>(source.value)
+        && expected
+        && *expected
+            == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))) {
+        return site.finish_text(
+            TextIntrinsic::FromStr,
+            site.draft().intern_builtin_type(BuiltinType::String),
+            std::move(value),
+            std::nullopt,
+            span
+        );
+    }
+    return value;
 }
 
 template<typename Site>
@@ -352,6 +365,17 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     if (site.external(site.type(*operand)) || site.external(*target)) {
         return site.external_cast(*target, std::move(*operand), span);
     }
+    if (site.type(*operand)
+            == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::Str))
+        && *target == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))) {
+        return site.finish_text(
+            TextIntrinsic::FromStr,
+            site.draft().intern_builtin_type(BuiltinType::String),
+            std::move(*operand),
+            std::nullopt,
+            span
+        );
+    }
     const auto decision = decide_cast(
         site.draft(),
         site.type(*operand),
@@ -488,20 +512,28 @@ auto interpret_text(
 }
 
 template<typename Site>
-auto string_qualifier(Site& site, ASTExprID expression) noexcept -> bool {
+auto text_qualifier(Site& site, ASTExprID expression) noexcept -> std::string_view {
     const auto* name = std::get_if<ASTNameExpr>(&site.syntax().expression(expression).value);
-    return name != nullptr && site.spelling(name->name_span) == "String";
+    if (name != nullptr) {
+        const auto spelling = site.spelling(name->name_span);
+        for (const auto candidate : {"String", "str", "char"}) {
+            if (spelling == candidate) {
+                return candidate;
+            }
+        }
+    }
+    return {};
 }
 
 template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
     -> AnalysisResult<typename Site::Result> {
     if (source.op == ASTMemberOperator::Scope) {
-        if (string_qualifier(site, source.operand_id)) {
+        if (!text_qualifier(site, source.operand_id).empty()) {
             return std::unexpected(site.fail(
                 source.name_span,
                 DiagnosticCode::TypeMethodCall,
-                "String factories must be called directly"
+                "text factories must be called directly"
             ));
         }
         auto type = site.resolve_enum_qualifier(source.operand_id);
@@ -578,21 +610,35 @@ auto interpret_call(
     }
     if (const auto* member = std::get_if<ASTMemberExpr>(&callee.value)) {
         if (member->op == ASTMemberOperator::Scope) {
-            if (string_qualifier(site, member->operand_id)) {
+            if (const auto qualifier = text_qualifier(site, member->operand_id);
+                !qualifier.empty()) {
                 const auto name = site.spelling(member->name_span);
-                if (name != "new" && name != "from_str") {
+                auto selected = std::optional<TextIntrinsic>();
+                if (qualifier == "String" && name == "new") {
+                    selected = TextIntrinsic::New;
+                }
+                if (qualifier == "String" && name == "from_str") {
+                    selected = TextIntrinsic::FromStr;
+                }
+                if (qualifier == "str" && name == "from_utf8_unchecked") {
+                    selected = TextIntrinsic::FromUTF8Unchecked;
+                }
+                if (qualifier == "char" && name == "from_u32_unchecked") {
+                    selected = TextIntrinsic::FromU32Unchecked;
+                }
+                if (!selected) {
                     return std::unexpected(site.fail(
                         member->name_span,
                         DiagnosticCode::TypeMethodCall,
-                        "String has no such factory"
+                        "text type has no such factory"
                     ));
                 }
-                const auto intrinsic = name == "new" ? TextIntrinsic::New : TextIntrinsic::FromStr;
+                const auto intrinsic = *selected;
                 if (source.arguments.size() != text_intrinsic_arity(intrinsic)) {
                     return std::unexpected(site.fail(
                         span,
                         DiagnosticCode::TypeMethodCallArity,
-                        "String factory argument count does not match"
+                        "text factory argument count does not match"
                     ));
                 }
                 return site.finish_text_call(intrinsic, std::nullopt, source.arguments, span);

@@ -20,43 +20,51 @@ public:
     SyntaxProgramBuilder(
         CompilationProvenance provenance_value,
         ResolvedModuleImportGraph import_graph
-    ) noexcept
-        : provenance(std::move(provenance_value)),
-          resolved_import_graph(std::move(import_graph)) {}
-
+    ) noexcept;
     SyntaxProgramBuilder(const SyntaxProgramBuilder&) = delete;
     SyntaxProgramBuilder(SyntaxProgramBuilder&&) = default;
     ~SyntaxProgramBuilder() = default;
-
     auto operator=(const SyntaxProgramBuilder&) -> SyntaxProgramBuilder& = delete;
     auto operator=(SyntaxProgramBuilder&&) -> SyntaxProgramBuilder& = delete;
-
-    auto define_module_syntax(ProgramModuleID module_id, SyntaxTree syntax_tree) noexcept -> void {
-        const auto expected_module_id = provenance.view().module_id_at(syntax_by_module.size());
-        if (expected_module_id != module_id) {
-            invariant_violation("syntax modules must be defined in provenance module order");
-        }
-        syntax_by_module.push_back(std::move(syntax_tree));
-    }
-
-    auto finish() && noexcept -> SyntaxProgram {
-        auto program = SyntaxProgram(SyntaxProgramParts(
-            std::move(provenance),
-            std::move(syntax_by_module),
-            std::move(resolved_import_graph)
-        ));
-        const auto verification = verify_syntax_program(program);
-        if (!verification.has_value()) {
-            invariant_violation(verification.error().message);
-        }
-        return program;
-    }
+    auto define_module_syntax(ProgramModuleID module_id, SyntaxTree syntax_tree) noexcept -> void;
+    auto finish() && noexcept -> SyntaxProgram;
 
 private:
     CompilationProvenance provenance;
     std::vector<SyntaxTree> syntax_by_module;
     ResolvedModuleImportGraph resolved_import_graph;
 };
+
+SyntaxProgramBuilder::SyntaxProgramBuilder(
+    CompilationProvenance provenance_value,
+    ResolvedModuleImportGraph import_graph
+) noexcept
+    : provenance(std::move(provenance_value)),
+      resolved_import_graph(std::move(import_graph)) {}
+
+auto SyntaxProgramBuilder::define_module_syntax(
+    ProgramModuleID module_id,
+    SyntaxTree syntax_tree
+) noexcept -> void {
+    const auto expected_module_id = provenance.view().module_id_at(syntax_by_module.size());
+    if (expected_module_id != module_id) {
+        invariant_violation("syntax modules must be defined in provenance module order");
+    }
+    syntax_by_module.push_back(std::move(syntax_tree));
+}
+
+auto SyntaxProgramBuilder::finish() && noexcept -> SyntaxProgram {
+    auto program = SyntaxProgram(SyntaxProgramParts(
+        std::move(provenance),
+        std::move(syntax_by_module),
+        std::move(resolved_import_graph)
+    ));
+    const auto verification = verify_syntax_program(program);
+    if (!verification.has_value()) {
+        invariant_violation(verification.error().message);
+    }
+    return program;
+}
 
 namespace {
 

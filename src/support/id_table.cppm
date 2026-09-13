@@ -12,7 +12,6 @@ public:
     IDTable(const IDTable&) = delete;
     IDTable(IDTable&&) = default;
     ~IDTable() = default;
-
     auto operator=(const IDTable&) -> IDTable& = delete;
     auto operator=(IDTable&&) -> IDTable& = default;
 
@@ -81,7 +80,6 @@ public:
     ReservedTable(const ReservedTable&) = delete;
     ReservedTable(ReservedTable&&) = default;
     ~ReservedTable() = default;
-
     auto operator=(const ReservedTable&) -> ReservedTable& = delete;
     auto operator=(ReservedTable&&) -> ReservedTable& = default;
 

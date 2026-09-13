@@ -1,5 +1,3 @@
-import "console.hpp" using example::print;
-
 struct InvalidAmount {
     amount: i32,
 }
@@ -21,21 +19,17 @@ fn process(amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + LimitExceed
 
 fn report(label: str, amount: i32,
     policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded) {
-    print(label);
+    println(label);
     try {
         let accepted = process(amount, policy)?;
-        print("Accepted:");
-        print(accepted);
+        println("Accepted:", accepted);
     } catch {
         InvalidAmount(error) => {
-            print("Amount must be positive:");
-            print(error.amount);
+            println("Amount must be positive:", error.amount);
         },
         LimitExceeded(error) => {
-            print("Requested:");
-            print(error.amount);
-            print("Policy limit:");
-            print(error.limit);
+            println("Requested:", error.amount);
+            println("Policy limit:", error.limit);
         },
     }
 }

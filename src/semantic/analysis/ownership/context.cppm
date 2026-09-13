@@ -27,14 +27,8 @@ struct OwnershipCallableLoan final {
     ProgramOriginID origin;
     bool direct_only;
 
-    auto operator<=>(const OwnershipCallableLoan& other) const noexcept {
-        return std::tie(holder, backing, callable, direct_only)
-            <=> std::tie(other.holder, other.backing, other.callable, other.direct_only);
-    }
-
-    auto operator==(const OwnershipCallableLoan& other) const noexcept -> bool {
-        return (*this <=> other) == 0;
-    }
+    auto operator<=>(const OwnershipCallableLoan& other) const noexcept -> std::strong_ordering;
+    auto operator==(const OwnershipCallableLoan& other) const noexcept -> bool;
 };
 
 struct OwnershipCapture final {
@@ -42,13 +36,8 @@ struct OwnershipCapture final {
     OwnershipPlace target;
     ProgramOriginID origin;
 
-    auto operator<=>(const OwnershipCapture& other) const noexcept {
-        return std::tie(holder, target) <=> std::tie(other.holder, other.target);
-    }
-
-    auto operator==(const OwnershipCapture& other) const noexcept -> bool {
-        return (*this <=> other) == 0;
-    }
+    auto operator<=>(const OwnershipCapture& other) const noexcept -> std::strong_ordering;
+    auto operator==(const OwnershipCapture& other) const noexcept -> bool;
 };
 
 // Only known Carven backing creates a storage loan. An empty set makes no claim
@@ -58,13 +47,8 @@ struct OwnershipStorageLoan final {
     OwnershipPlace backing;
     ProgramOriginID origin;
 
-    auto operator<=>(const OwnershipStorageLoan& other) const noexcept {
-        return std::tie(holder, backing) <=> std::tie(other.holder, other.backing);
-    }
-
-    auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool {
-        return (*this <=> other) == 0;
-    }
+    auto operator<=>(const OwnershipStorageLoan& other) const noexcept -> std::strong_ordering;
+    auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool;
 };
 
 struct OwnershipRelationships final {
@@ -79,9 +63,7 @@ struct OwnershipObjectState final {
     std::optional<ProgramOriginID> taken;
     OwnershipRelationships relationships;
 
-    auto operator==(const OwnershipObjectState& other) const noexcept -> bool {
-        return available == other.available && relationships == other.relationships;
-    }
+    auto operator==(const OwnershipObjectState& other) const noexcept -> bool;
 };
 
 struct OwnershipState final {
@@ -98,12 +80,18 @@ struct OwnershipFailure final {
     OwnershipRelationships value;
 };
 
+struct OwnershipTestStopped final {};
+
 struct OwnershipBreak final {};
 
 struct OwnershipContinue final {};
 
-using OwnershipExitPayload =
-    std::variant<OwnershipReturn, OwnershipFailure, OwnershipBreak, OwnershipContinue>;
+using OwnershipExitPayload = std::variant<
+    OwnershipReturn,
+    OwnershipFailure,
+    OwnershipTestStopped,
+    OwnershipBreak,
+    OwnershipContinue>;
 
 struct OwnershipExit final {
     OwnershipExitPayload payload;
@@ -140,9 +128,7 @@ struct OwnershipExternalObject final {
     ProgramOriginID origin;
     OwnershipObjectState state;
 
-    auto operator==(const OwnershipExternalObject& other) const noexcept -> bool {
-        return type == other.type && state == other.state;
-    }
+    auto operator==(const OwnershipExternalObject& other) const noexcept -> bool;
 };
 
 // Call queries retain only objects reachable from their inputs, with object
@@ -160,6 +146,7 @@ struct OwnershipCallInput final {
 };
 
 struct OwnershipCallCompletion final {
+    bool test_stopped;
     std::optional<TypeID> failure;
     OwnershipState state;
     OwnershipRelationships value;

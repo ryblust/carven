@@ -20,17 +20,11 @@ struct PlaceExpression final {
 class BodyBuilder final {
 public:
     BodyBuilder(BodyReservation reservation, ProgramDraft& draft) noexcept;
-
-    auto identity() const noexcept -> BodyIdentity { return body_identity; }
-
-    auto id() const noexcept -> BodyID { return body_id; }
-
-    auto kind() const noexcept -> BodyKind { return body_kind; }
-
-    auto set_lifetime(LifetimeRegionID lifetime) noexcept -> void { active_lifetime = lifetime; }
-
-    auto lifetime() const noexcept -> LifetimeRegionID { return active_lifetime.value(); }
-
+    auto identity() const noexcept -> BodyIdentity;
+    auto id() const noexcept -> BodyID;
+    auto kind() const noexcept -> BodyKind;
+    auto set_lifetime(LifetimeRegionID lifetime) noexcept -> void;
+    auto lifetime() const noexcept -> LifetimeRegionID;
     auto add_lifetime_region(
         std::optional<LifetimeRegionID>,
         LifetimeRegionKind,
@@ -59,11 +53,7 @@ public:
     ) noexcept -> BoundStorage;
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
-
-    auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>& {
-        return patterns;
-    }
-
+    auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>&;
     auto place_access(const PlaceExpression&) const noexcept -> AccessMode;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
     auto make_place(

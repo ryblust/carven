@@ -79,7 +79,8 @@ auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexc
 auto BodyElaborator::build_call_argument(
     ASTExprID source_id,
     AccessMode access_mode,
-    std::optional<ConstructionTypeRef> expected
+    std::optional<ConstructionTypeRef> expected,
+    std::optional<DiagnosticCode> mismatch_code
 ) noexcept -> AnalysisResult<BuiltCallArgument> {
     const auto& source = ast.expression(source_id);
     auto operand_id = source_id;
@@ -119,6 +120,11 @@ auto BodyElaborator::build_call_argument(
         return std::unexpected(built.error());
     }
     const auto type = expected.value_or(built->type());
+    if (mismatch_code && !is_cpp_type(built->type()) && !compatible(built->type(), type)) {
+        return std::unexpected(
+            fail(source.span, *mismatch_code, "argument does not match the required parameter type")
+        );
+    }
     auto pending_failures = take_pending_failures(*built);
     if (access_mode == AccessMode::Write) {
         auto compatible_storage = require_invariant_storage_type(built->type(), type, source.span);
@@ -151,11 +157,19 @@ auto BodyElaborator::build_call_argument(
             "Take requires the same complete ptr type"
         ));
     }
+    // Declaration references acquire callable storage during conversion.
+    if (access_mode == AccessMode::Take && !built->is_function_reference()) {
+        auto taken = consume_value(*built, source.span, AccessMode::Take);
+        if (!taken) {
+            return std::unexpected(taken.error());
+        }
+        built->storage = std::move(*taken);
+    }
     auto coerced = coerce_to(*built, type, source.span);
     if (!coerced.has_value()) {
         return std::unexpected(coerced.error());
     }
-    auto value = consume_value(*built, source.span, access_mode);
+    auto value = consume_value(*built, source.span, AccessMode::Read);
     if (!value.has_value()) {
         return std::unexpected(value.error());
     }
@@ -216,6 +230,56 @@ auto BodyElaborator::call_expression(
     }();
     if (!selected_callee.has_value()) {
         return std::unexpected(selected_callee.error());
+    }
+    if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
+        builtin->span = span;
+        auto argument_spans = std::vector<Span>();
+        auto arguments = std::vector<SemCallArgument>();
+        auto parameters = std::vector<ConstructionCallableParameter>();
+        auto pending = BodyPendingFailureTerms();
+        auto completes = true;
+        for (const auto& argument : source.arguments) {
+            const auto condition = arguments.empty()
+                && (builtin->function == BuiltinFunction::Check
+                    || builtin->function == BuiltinFunction::Require);
+            if (condition) {
+                builtin->condition_source = draft().intern_spelling(
+                    draft().source_slice_copy(
+                        source_module_id,
+                        ast.expression(argument.expression).span
+                    )
+                );
+            }
+            const auto argument_span = ast.expression(argument.expression).span;
+            argument_spans.push_back(argument_span);
+            auto built = build_call_argument(
+                argument.expression,
+                AccessMode::Read,
+                condition ? std::optional<ConstructionTypeRef>(
+                                draft().intern_builtin_type(BuiltinType::Bool)
+                            )
+                          : std::nullopt,
+                condition ? std::optional(DiagnosticCode::TestConditionType) : std::nullopt
+            );
+            if (!built) {
+                return std::unexpected(built.error());
+            }
+            parameters.push_back(
+                {AccessMode::Read, built->argument.expression.type.construction()}
+            );
+            append_pending_failures(pending, built->pending_failures);
+            completes &= built->completes;
+            arguments.push_back(std::move(built->argument));
+        }
+        auto valid = validate_builtin(*builtin, parameters, argument_spans);
+        if (!valid) {
+            return std::unexpected(valid.error());
+        }
+        return BuiltExpression {
+            .storage = builtin_operation(active_builder(), *builtin, std::move(arguments)),
+            .pending_failures = std::move(pending),
+            .completes = completes && builtin->function != BuiltinFunction::Fail
+        };
     }
     if (std::holds_alternative<CppSelection>(*selected_callee)
         || is_cpp_type(std::get<BuiltExpression>(*selected_callee).type())) {

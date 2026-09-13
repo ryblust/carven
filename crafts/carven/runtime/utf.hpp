@@ -144,8 +144,6 @@ constexpr auto checked_unicode_scalar(char32_t value) noexcept -> char32_t {
     return value;
 }
 
-using UnicodeScalarRepresentation = char32_t;
-
 // Requires valid UTF-8. The returned text borrows the input storage.
 inline auto utf8_text(Slice<std::uint8_t> bytes) noexcept -> std::string_view {
     return bytes.empty()

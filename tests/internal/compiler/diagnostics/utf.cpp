@@ -59,18 +59,23 @@ public:
 
 } // namespace
 
-TEST_CASE("UTF craft: source arguments retain Carven type and storage checks") {
+TEST_CASE("UTF craft: returned text retains input storage") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "named input slice retains its backing",
+        {.name = "returned text cannot borrow a local array",
          .source =
-             "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let bytes = a.as_slice(); let text = from_utf8(bytes)?; a[0] = 66; }",
+             "fn bad() -> str throw UTF8Error { let a: [u8; 1] = [65]; return from_utf8(a)?; }",
+         .code = "CV-ACCESS-BORROW-CONFLICT",
+         .primary_text = "a"},
+        {.name = "returned text retains an otherwise unnamed input view",
+         .source =
+             "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let text = from_utf8(a)?; a[0] = 66; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "a[0] = 66"},
-        {.name = "input slice cannot outlive a temporary",
-         .source =
-             "fn bad() throw UTF8Error { let bytes = [65 as u8].as_slice(); let text = from_utf8(bytes)?; }",
+        {.name = "returned text cannot retain a temporary array",
+         .source = "fn bad() throw UTF8Error { let text = from_utf8([65])?; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let bytes = [65 as u8].as_slice()"},
+         .primary_text = "let text = from_utf8([65])?"},
+
     });
     for (const auto& item : cases) {
         CAPTURE(item.name);
@@ -90,4 +95,31 @@ TEST_CASE("UTF craft: source arguments retain Carven type and storage checks") {
         REQUIRE(diagnostic->attachment.primary.has_value());
         CHECK_EQ(fixture.sources.slice(diagnostic->attachment.primary->span), item.primary_text);
     }
+}
+
+TEST_CASE("Compiler diagnostics: unchecked text construction checks types and backing") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "scalar input must be u32",
+         .source = "fn bad(v: i32) { let c = char::from_u32_unchecked(v); }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "v"},
+        {.name = "text input must contain bytes",
+         .source = "fn bad(v: [i32]) { let s = str::from_utf8_unchecked(v); }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "v"},
+        {.name = "text construction requires one argument",
+         .source = "fn bad() { let s = str::from_utf8_unchecked(); }",
+         .code = "CV-TYPE-METHOD-CALL-ARITY",
+         .primary_text = "str::from_utf8_unchecked()"},
+        {.name = "text construction cannot return local storage",
+         .source = "fn bad() -> str { let a: [u8; 1] = [65]; return str::from_utf8_unchecked(a); }",
+         .code = "CV-ACCESS-BORROW-CONFLICT",
+         .primary_text = "a"},
+        {.name = "borrowed text prevents String mutation",
+         .source =
+             "fn bad() { var s: String = \"hello\"; let text = str::from_utf8_unchecked(s.bytes); s.clear(); }",
+         .code = "CV-ACCESS-BORROW-CONFLICT",
+         .primary_text = "s.clear()"},
+    });
+    check_compiler_errors(cases);
 }

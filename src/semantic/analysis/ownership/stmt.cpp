@@ -157,20 +157,6 @@ auto OwnershipBodyAnalyzer::statement(
             [&](const SemRangeLoop& value) noexcept {
                 result = range(value, std::move(result.normal->state));
             },
-            [&](const SemTestReport& value) noexcept {
-                if (value.condition.has_value()) {
-                    evaluate(*value.condition);
-                }
-                if (value.message.has_value()) {
-                    evaluate(*value.message);
-                }
-                const auto known = value.condition.has_value() ? constant_truth(*value.condition)
-                                                               : std::optional(false);
-                if (value.kind == TestReportKind::Fail
-                    || (value.kind == TestReportKind::Require && known == false)) {
-                    result.normal.reset();
-                }
-            },
             [&](const OwnedSemanticRegion& value) noexcept {
                 result = region(*value, std::move(result.normal->state));
             },

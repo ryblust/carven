@@ -123,10 +123,8 @@ public:
     AnalysisCatalog(const AnalysisCatalog&) = delete;
     AnalysisCatalog(AnalysisCatalog&& other) = default;
     ~AnalysisCatalog() = default;
-
     auto operator=(const AnalysisCatalog&) -> AnalysisCatalog& = delete;
     auto operator=(AnalysisCatalog&& other) -> AnalysisCatalog& = default;
-
     auto view() const noexcept -> AnalysisCatalogView;
 
 private:
@@ -154,7 +152,7 @@ public:
     auto modules() const noexcept -> std::span<const CatalogModule>;
     auto symbols() const noexcept -> std::span<const CatalogSymbol>;
     auto imports() const noexcept -> std::span<const CatalogImportBinding>;
-    auto find_module(ProgramModuleID module_id) const noexcept -> const CatalogModule*;
+    auto find_module(ProgramModuleID id) const noexcept -> const CatalogModule*;
     auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
     auto function_symbol(FunctionID id) const noexcept -> CatalogSymbolID;
     auto struct_symbol(StructID id) const noexcept -> CatalogSymbolID;
@@ -167,8 +165,7 @@ public:
     auto enum_case_count() const noexcept -> std::size_t;
     auto cpp_selection(ProgramModuleID module_id, std::string_view name) const noexcept
         -> std::span<const std::size_t>;
-    auto cpp_imports(ProgramModuleID module_id) const noexcept
-        -> std::span<const CatalogCppBinding>;
+    auto cpp_imports(ProgramModuleID id) const noexcept -> std::span<const CatalogCppBinding>;
     auto lookup(ProgramModuleID module_id, std::string_view name) const noexcept
         -> std::span<const CatalogLookupCandidate>;
 

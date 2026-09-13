@@ -2,7 +2,12 @@ module carven:semantic.analysis.body.builder.impl;
 
 import :semantic.analysis.body.builder;
 import :semantic.analysis.program;
+import :semantic.semir.body;
 import :semantic.semir.decl;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.table;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -98,6 +103,20 @@ auto BodyBuilder::make_expression(
             [&](const SemIndex& node) noexcept {
                 add(*node.source);
                 add(*node.index);
+            },
+            [&](const SemTestReport& value) noexcept {
+                if (value.condition) {
+                    add(**value.condition);
+                }
+                if (value.message) {
+                    add(**value.message);
+                }
+                exits_test |= value.kind != TestReportKind::Check;
+            },
+            [&](const SemPrint& node) noexcept {
+                for (const auto& operand : node.operands) {
+                    add(operand.expression);
+                }
             },
             [&](const SemFormat& node) noexcept {
                 for (const auto& operand : node.operands) {
@@ -269,4 +288,29 @@ auto BodyBuilder::cpp_place(
     );
     expression.category = SemanticValueCategory::Place;
     return {.root = root, .expression = std::move(expression)};
+}
+
+auto BodyBuilder::identity() const noexcept -> BodyIdentity {
+    return body_identity;
+}
+
+auto BodyBuilder::id() const noexcept -> BodyID {
+    return body_id;
+}
+
+auto BodyBuilder::kind() const noexcept -> BodyKind {
+    return body_kind;
+}
+
+auto BodyBuilder::set_lifetime(LifetimeRegionID lifetime) noexcept -> void {
+    active_lifetime = lifetime;
+}
+
+auto BodyBuilder::lifetime() const noexcept -> LifetimeRegionID {
+    return active_lifetime.value();
+}
+
+auto BodyBuilder::pattern_table() const noexcept
+    -> const MutableBodyTable<ElaboratedPattern, PatternID>& {
+    return patterns;
 }

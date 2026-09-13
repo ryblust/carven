@@ -63,21 +63,20 @@ auto TargetClosureCatalog::owner(CallableID callable) const noexcept -> ModuleID
     return *result;
 }
 
-auto TargetClosureCatalog::production(ModuleID module_id) const noexcept
-    -> std::span<const CallableID> {
+auto TargetClosureCatalog::production(ModuleID id) const noexcept -> std::span<const CallableID> {
     return semantic_row(
         production_definitions,
         semantic_identity,
-        module_id,
+        id,
         "target closure catalog used an unknown module"
     );
 }
 
-auto TargetClosureCatalog::tests(ModuleID module_id) const noexcept -> std::span<const CallableID> {
+auto TargetClosureCatalog::tests(ModuleID id) const noexcept -> std::span<const CallableID> {
     return semantic_row(
         test_definitions,
         semantic_identity,
-        module_id,
+        id,
         "target closure catalog used an unknown module"
     );
 }
@@ -341,11 +340,11 @@ auto TargetNamePlan::test_function(TestID test) const noexcept -> const TargetId
     );
 }
 
-auto TargetNamePlan::module_runner(ModuleID module_id) const noexcept -> const TargetIdentifier& {
+auto TargetNamePlan::module_runner(ModuleID id) const noexcept -> const TargetIdentifier& {
     return semantic_row(
         target_module_runners,
         source_identity,
-        module_id,
+        id,
         "target name plan used unknown module runner"
     );
 }

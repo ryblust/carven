@@ -176,19 +176,6 @@ auto BodyElaborator::append_statement(
                 );
                 add_region(*node.body);
             },
-            [&](const SemTestReport& node) noexcept {
-                if (node.condition.has_value()) {
-                    add(*node.condition);
-                }
-                if (node.message.has_value()) {
-                    add(*node.message);
-                }
-                statement_exits_test |= node.kind == TestReportKind::Fail;
-                if (node.kind == TestReportKind::Require) {
-                    const auto known = known_boolean_constant(draft(), node.condition->constant);
-                    statement_exits_test |= !known.has_value() || !*known;
-                }
-            },
             [&](const OwnedSemanticRegion& node) noexcept { add_region(*node); },
         },
         value

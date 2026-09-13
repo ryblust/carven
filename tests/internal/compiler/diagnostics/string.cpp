@@ -11,7 +11,7 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "named view blocks mutation",
          .source =
-             "fn invalid() { var s = String::from_str(\"abc\"); let v = s.as_str(); s.push('!'); }",
+             "fn invalid() { var s = String::from_str(\"abc\"); let v: str = s; s.push('!'); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.push('!')"},
         {.name = "view copy keeps backing",
@@ -30,18 +30,23 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "&&"},
         {.name = "self append is rejected",
-         .source = "fn invalid() { var s = String::from_str(\"abc\"); s.append(s.as_str()); }",
+         .source = "fn invalid() { var s = String::from_str(\"abc\"); s.append(s); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.append(s.as_str())"},
+         .primary_text = "s.append(s)"},
+        {.name = "printing retains an earlier view while evaluating later arguments",
+         .source =
+             "fn mutate(&s: String) -> str { s.clear(); return \"\"; } fn bad() { var s: String = \"abc\"; println(s.as_str(), mutate(&s)); }",
+         .code = "CV-ACCESS-BORROW-CONFLICT",
+         .primary_text = "s.clear()"},
         {.name = "pending view argument protects owner",
          .source =
-             "fn consume(v: str, &&s: String) {} fn invalid() { var s = String::from_str(\"abc\"); consume(s.as_str(), &&s); }",
+             "fn consume(v: str, &&s: String) {} fn invalid() { var s = String::from_str(\"abc\"); consume(s, &&s); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "&&s"},
         {.name = "temporary view cannot initialize holder",
-         .source = "fn invalid() { let v = String::from_str(\"abc\").as_str(); }",
+         .source = "fn invalid() { let v: str = String::from_str(\"abc\"); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let v = String::from_str(\"abc\").as_str()"},
+         .primary_text = "let v: str = String::from_str(\"abc\")"},
         {.name = "stored range protects owner",
          .source =
              "fn invalid() { var s = String::from_str(\"abc\"); let range = s.chars; s.clear(); }",
@@ -54,7 +59,7 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
          .primary_text = "s.clear()"},
         {.name = "aggregate view protects owner",
          .source =
-             "struct View { text: str } fn invalid() { var s = String::from_str(\"abc\"); let v = View { text: s.as_str() }; s.clear(); }",
+             "struct View { text: str } fn invalid() { var s = String::from_str(\"abc\"); let v = View { text: s }; s.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "unknown array index overlaps",
@@ -115,42 +120,42 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
 TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "local return",
-         .source = "fn bad() -> str { let s = String::new(); return s.as_str(); }",
+         .source = "fn bad() -> str { let s = String::new(); return s; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "s"},
         {.name = "Take return",
-         .source = "fn bad(&&s: String) -> str { return s.as_str(); }",
+         .source = "fn bad(&&s: String) -> str { return s; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "s"},
         {.name = "local throw",
          .source =
-             "struct E { text: str } fn bad() throw E { let s = String::new(); throw E { text: s.as_str() }; }",
+             "struct E { text: str } fn bad() throw E { let s = String::new(); throw E { text: s }; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "s"},
         {.name = "local protected throw",
          .source =
-             "struct E { text: str } fn bad() { try { let s = String::new(); throw E { text: s.as_str() }; } catch { E(e) => { let _ = e.text.len(); }, } }",
+             "struct E { text: str } fn bad() { try { let s = String::new(); throw E { text: s }; } catch { E(e) => { let _ = e.text.len(); }, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "s"},
         {.name = "caught original holder",
          .source =
-             "struct E { text: str } fn bad() { var s = String::new(); try { throw E { text: s.as_str() }; } catch { E(_) => { s.clear(); }, } }",
+             "struct E { text: str } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) => { s.clear(); }, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "guard original holder",
          .source =
-             "struct E { text: str } fn modify(&s: String) -> bool { s.clear(); return false; } fn bad() { var s = String::new(); try { throw E { text: s.as_str() }; } catch { E(_) if modify(&s) => {}, E(_) => {}, } }",
+             "struct E { text: str } fn modify(&s: String) -> bool { s.clear(); return false; } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) if modify(&s) => {}, E(_) => {}, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "handler local return",
          .source =
-             "struct E {} fn bad() -> str { return try { throw E {}; \"\" } catch { E(_) => { let s = String::new(); s.as_str() }, }; }",
+             "struct E {} fn bad() -> str { return try { throw E {}; \"\" } catch { E(_) => { let s = String::new(); s }, }; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "{ let s = String::new(); s }"},
         {.name = "Write output local",
-         .source = "fn bad(&v: str) { let s = String::new(); v = s.as_str(); }",
+         .source = "fn bad(&v: str) { let s = String::new(); v = s; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "v = s.as_str()"},
+         .primary_text = "v = s"},
         {.name = "comparison pending view",
          .source =
              "fn mutate(&s: String) -> str { s.clear(); return \"\"; } fn bad() { var s = String::new(); let b = s.as_str() == mutate(&s); }",
@@ -166,14 +171,10 @@ TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries"
              "fn bad() { var s = String::new(); let v = s.as_str(); let c = [v]() { return v.len(); }; s.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
-        {.name = "implicit construction",
-         .source = "fn bad() { let s: String = \"a\"; }",
+        {.name = "str values require explicit owning conversion",
+         .source = "fn bad(value: str) { let s: String = value; }",
          .code = "CV-TYPE-MISMATCH",
-         .primary_text = "\"a\""},
-        {.name = "implicit borrowing",
-         .source = "fn read(v: str) {} fn bad() { read(String::new()); }",
-         .code = "CV-TYPE-MISMATCH",
-         .primary_text = "String::new()"},
+         .primary_text = "value"},
         {.name = "constant String",
          .source = "const s = String::new();",
          .code = "CV-CONST-INITIALIZER",
@@ -217,7 +218,7 @@ TEST_CASE("Compiler diagnostics: callable adaptation retains captured text loans
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "view into a closure-owned String prevents closure Take",
-         .source = "fn make(s: String) => [s]() -> str { return s.as_str(); }; "
+         .source = "fn make(s: String) => [s]() -> str { return s; }; "
                    "fn invalid() { let closure = make(String::new()); let v = closure(); "
                    "let moved = &&closure; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
@@ -231,12 +232,12 @@ TEST_CASE("Compiler diagnostics: String relationships survive joins and projecte
         {.name = "branch join retains either backing",
          .source =
              "fn invalid(choose: bool) { var first = String::new(); var second = String::new(); "
-             "let view = if choose { first.as_str() } else { second.as_str() }; first.clear(); }",
+             "let view: str = if choose { first } else { second }; first.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "first.clear()"},
         {.name = "loop join retains holder from an earlier iteration",
          .source = "fn invalid(again: bool) { var owner = String::new(); var view: str = \"\"; "
-                   "while again { owner.clear(); view = owner.as_str(); } }",
+                   "while again { owner.clear(); view = owner; } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "owner.clear()"},
         {.name = "copying an owning field does not rebase another field's view",
@@ -253,11 +254,10 @@ TEST_CASE("Compiler diagnostics: String relationships survive joins and projecte
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "owner.clear()"},
         {.name = "failure from temporary Read backing cannot survive the call statement",
-         .source =
-             "struct E { view: str } fn fail(s: String) throw E { throw E { view: s.as_str() }; } "
-             "fn invalid() { try { fail(String::new())?; } catch { E(_) => {}, } }",
+         .source = "struct E { view: str } fn fail(s: String) throw E { throw E { view: s }; } "
+                   "fn invalid() { try { fail(String::new())?; } catch { E(_) => {}, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
+         .primary_text = "s"},
     });
     check_compiler_errors(cases);
 }

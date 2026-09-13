@@ -17,10 +17,8 @@ public:
     TargetUnit(const TargetUnit&) = delete;
     TargetUnit(TargetUnit&&) noexcept = default;
     ~TargetUnit() = default;
-
     auto operator=(const TargetUnit&) -> TargetUnit& = delete;
     auto operator=(TargetUnit&&) -> TargetUnit& = delete;
-
     auto identity() const noexcept -> TargetUnitIdentity;
     auto type(TargetTypeID id) const noexcept -> const TargetType&;
     auto type_count() const noexcept -> std::size_t;

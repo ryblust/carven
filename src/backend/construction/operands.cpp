@@ -50,6 +50,12 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 add(*value.source, ConstructionUse::Place);
                 add(*value.index, ConstructionUse::OperandValue);
             },
+            [](const SemTestReport&) static noexcept {},
+            [&](const SemPrint& value) noexcept {
+                for (const auto& input : value.operands) {
+                    result.push_back(argument(input));
+                }
+            },
             [&](const SemFormat& value) noexcept {
                 for (const auto& input : value.operands) {
                     result.push_back(argument(input));
@@ -71,7 +77,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
             },
             [&](const SemArrayAdopt& value) noexcept {
-                add(*value.source, ConstructionUse::Place);
+                add(*value.source, ConstructionUse::ConstPlace);
             },
             [&](const SemStruct& value) noexcept {
                 for (const auto& field : value.fields) {
@@ -91,7 +97,19 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
             },
             [&](const SemBorrowCallable& value) noexcept {
-                add(*value.source, ConstructionUse::Place);
+                auto use = ConstructionUse::ConstPlace;
+                const auto& type = semantic.types().type(value.source->type.resolved()).value;
+                if (std::holds_alternative<SemCallable>(value.source->value)
+                    || value.source->type.resolved() == source.type.resolved()) {
+                    use = ConstructionUse::Consume;
+                } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
+                    const auto body_id =
+                        semantic.declarations().body_for_callable(closure->callable);
+                    if (semantic.bodies().body(*body_id).inputs().captures.empty()) {
+                        use = ConstructionUse::Consume;
+                    }
+                }
+                add(*value.source, use);
             },
             [&](const SemTake& value) noexcept { add(*value.place, ConstructionUse::Place); },
             [&](const SemCpp& value) noexcept {

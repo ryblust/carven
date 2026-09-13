@@ -1,0 +1,822 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    consume_owner,
+    observe_owner,
+    mark,
+    reset,
+    matches,
+    FixedOwner,
+    ResultMaker,
+    CopyOwner,
+    PatternOwner,
+    event,
+};
+
+enum Failure {
+    Stop,
+}
+
+fn returning() -> i32 {
+    let owner = Owner { 1 };
+    return 7;
+}
+
+fn fixed_success() -> FixedOwner throw Failure => FixedOwner { 41 };
+
+fn fixed_plain() -> FixedOwner => FixedOwner { 42 };
+
+struct FixedBox {
+    value: FixedOwner,
+}
+
+fn boxed_after_loop(selected: bool, skip: bool) -> FixedBox {
+    return FixedBox { value: if (selected) {
+        for var n = 0; n < 2; n += 1 {
+            mark(n + 1);
+            if skip { continue; }
+            break;
+        }
+        FixedOwner { 51 }
+    } else { FixedOwner { 52 } } };
+}
+
+test "Lifetimes: loop-local transfers preserve direct branch construction" {
+    reset();
+    if true {
+        let box = boxed_after_loop(true, false);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("1 51 9 -51 "));
+    reset();
+    if true {
+        let box = boxed_after_loop(true, true);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("1 2 51 9 -51 "));
+    reset();
+    if true {
+        let box = boxed_after_loop(false, false);
+        check(box.value.probe(0, 0));
+    }
+    check(matches("52 9 -52 "));
+}
+
+test "Lifetimes: failing results and callable adaptation directly construct fixed owners" {
+    reset();
+    try {
+        fixed_success()?.probe(0, 0);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("41 9 -41 "));
+    reset();
+    let callback: fn() -> FixedOwner throw Failure = fixed_plain;
+    try {
+        callback()?.probe(0, 0);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("42 9 -42 "));
+}
+
+fn failing() -> i32 throw Failure {
+    let owner = Owner { 2 };
+    throw Failure::Stop;
+}
+
+test "Lifetimes: selected lexical regions destroy in reverse construction order" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = Owner { 2 };
+        mark(9);
+    }
+    mark(8);
+    check(matches("1 2 9 -2 -1 8 "));
+}
+
+test "Lifetimes: condition evaluation ends before branch execution" {
+    reset();
+    if (Owner { 1 }.probe() as bool) {
+        mark(9);
+    }
+    check(matches("1 11 -1 9 "));
+    reset();
+    if (Owner { 2 }.probe() as bool) && false { mark(9); }
+    check(matches("2 12 -2 "));
+}
+
+test "Lifetimes: return and failure leave their owning lexical region" {
+    reset();
+    check(returning() == 7);
+    mark(9);
+    check(matches("1 -1 9 "));
+    reset();
+    try {
+        let _ = failing()?;
+    } catch {
+        Failure(_) => { mark(9); },
+    }
+    check(matches("2 -2 9 "));
+}
+
+fn short_circuit(flag: bool) -> bool {
+    return (flag && (Owner { 1 }.probe() as bool)) && (matches("1 11 ") as bool);
+}
+
+test "Lifetimes: short circuit temporaries live through the full expression" {
+    reset();
+    check(short_circuit(true));
+    check(matches("1 11 -1 "));
+    reset();
+    check(!short_circuit(false));
+    check(matches(""));
+}
+
+fn step(&n: i32) {
+    mark(9);
+    n += 1;
+}
+
+test "Lifetimes: loop bodies finish before continue steps and break" {
+    reset();
+    for var n = 0; n < 2; step(&n) {
+        let owner = Owner { 1 };
+        if n == 0 { continue; }
+        break;
+    }
+    check(matches("1 -1 9 1 -1 "));
+}
+
+fn selected(flag: bool) -> Owner => if flag { Owner { 1 } } else { Owner { 2 } };
+
+test "Lifetimes: branch return constructs nonassignable owners directly" {
+    reset();
+    if true {
+        let owner = selected(true);
+        check(matches("1 "));
+    }
+    check(matches("1 -1 "));
+    reset();
+    if true {
+        let owner = selected(false);
+        check(matches("2 "));
+    }
+    check(matches("2 -2 "));
+}
+
+test "Lifetimes: moving a local owner occurs once at its consumer" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = &&first;
+        check(matches("1 101 "));
+    }
+    check(matches("1 101 -1 -1 "));
+}
+
+test "Lifetimes: Take completes before later call operands" {
+    reset();
+    if true {
+        let owner = Owner { 1 };
+        consume_owner(&&owner, event(2));
+        check(matches("1 101 2 9 -1 "));
+    }
+    check(matches("1 101 2 9 -1 -1 "));
+}
+
+test "Lifetimes: handler owners finish before the following statement" {
+    reset();
+    try {
+        let protected = Owner { 1 };
+        let _ = failing()?;
+    } catch {
+        Failure(_) => {
+            let handler = Owner { 3 };
+            mark(9);
+        },
+    }
+    mark(8);
+    check(matches("1 2 -2 -1 3 9 -3 8 "));
+}
+
+fn ordered_short_circuit(flag: bool) -> bool {
+    return (flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool))
+        && (matches("1 2 3 9 ") as bool);
+}
+
+test "Lifetimes: conditional construction survives ordered full expression operands" {
+    reset();
+    check(ordered_short_circuit(true));
+    check(matches("1 2 3 9 -1 "));
+    reset();
+    check(!ordered_short_circuit(false));
+    check(matches(""));
+    if ordered_short_circuit(true) { mark(8); }
+    check(matches("1 2 3 9 -1 8 "));
+}
+
+fn observed(value: bool) -> bool {
+    mark(8);
+    return value;
+}
+
+fn nested_owners(flag: bool) -> bool {
+    return observed((Owner { 1 }.probe() as bool)
+        && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool)));
+}
+
+test "Lifetimes: nested conditional operands destroy owners in reverse construction order" {
+    reset();
+    check(nested_owners(true));
+    check(matches("1 11 2 3 4 9 8 -2 -1 "));
+    reset();
+    check(!nested_owners(false));
+    check(matches("1 11 8 -1 "));
+}
+
+fn initialization_argument(succeeds: bool) -> i32 throw Failure {
+    mark(2);
+    if !succeeds { throw Failure::Stop; }
+    return 4;
+}
+
+fn initialize_fixed(succeeds: bool) throw Failure {
+    let value = ResultMaker { 1 }.make(initialization_argument(succeeds)?);
+    mark(8);
+    let _ = value.probe(0, 0);
+}
+
+test "Lifetimes: initialization temporaries finish before an immovable binding is used" {
+    reset();
+    try {
+        initialize_fixed(true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 4 -1 8 9 -4 "));
+    reset();
+    try {
+        initialize_fixed(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 -1 7 "));
+}
+
+fn probe_fixed_receiver(succeeds: bool) throw Failure {
+    let _ = ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0);
+    mark(8);
+}
+
+fn probe_conditional_fixed_receiver(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected && (
+        ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0) as bool
+    );
+    mark(8);
+}
+
+test "Lifetimes: nested receiver temporaries span fallible argument evaluation" {
+    reset();
+    try {
+        probe_fixed_receiver(true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 3 2 9 -3 -1 8 "));
+    reset();
+    try {
+        probe_fixed_receiver(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 3 2 -3 -1 7 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(false, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(true, true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 3 2 9 -3 -1 8 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(true, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 3 2 -3 -1 7 "));
+}
+
+fn probe_conditional_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected && (
+        ::lifetime_probe::receiver_reference()
+            .probe(initialization_argument(succeeds)?) as bool
+    );
+    mark(8);
+}
+
+fn probe_conditional_const_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected && (
+        ::lifetime_probe::receiver_const_reference()
+            .probe(initialization_argument(succeeds)?) as bool
+    );
+    mark(8);
+}
+
+test "Lifetimes: conditional native references borrow noncopyable receivers" {
+    reset();
+    try {
+        probe_conditional_reference(false, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_reference(true, true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 9 8 "));
+    reset();
+    try {
+        probe_conditional_reference(true, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 7 "));
+
+    reset();
+    try {
+        probe_conditional_const_reference(false, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_const_reference(true, true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 9 8 "));
+    reset();
+    try {
+        probe_conditional_const_reference(true, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 2 7 "));
+}
+
+fn owned_outcome(flag: bool) -> Owner throw Failure {
+    if flag { return Owner { 1 }; }
+    throw Failure::Stop;
+}
+
+test "Lifetimes: discarded outcomes destroy success owners and propagate failures" {
+    reset();
+    try {
+        owned_outcome(true)?;
+    } catch {
+        Failure(_) => { mark(8); },
+    }
+    mark(9);
+    check(matches("1 -1 9 "));
+    reset();
+    try {
+        owned_outcome(false)?;
+    } catch {
+        Failure(_) => { mark(8); },
+    }
+    mark(9);
+    check(matches("8 9 "));
+}
+
+fn root_outcome_with_owners(flag: bool) throw Failure {
+    let first = Owner { 2 };
+    owned_outcome(flag)?;
+    let second = Owner { 3 };
+    fixed_success()?;
+    mark(9);
+}
+
+test "Lifetimes: direct root outcomes complete before surrounding lexical owners" {
+    reset();
+    try {
+        root_outcome_with_owners(true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("2 1 -1 3 41 -41 9 -3 -2 "));
+    reset();
+    try {
+        root_outcome_with_owners(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("2 -2 7 "));
+}
+
+enum PatternOwners {
+    Pair(PatternOwner, PatternOwner, i32, i32),
+}
+
+fn accept_pattern(accepted: bool) -> bool {
+    mark(9);
+    return accepted;
+}
+
+fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 {
+    return match value {
+        .Pair(chosen, _, 0 | 1, 0 | 1)
+        | .Pair(_, chosen, 2 | 3, 2 | 3)
+        | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
+        .Pair(_, _, _, _) => -1,
+    };
+}
+
+test "Lifetimes: pattern alternatives commit only the selected binding before one guard" {
+    let value = PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 2, 2);
+    reset();
+    check(selected_pattern_owner(value, true) == 2);
+    check(matches("102 9 -2 "));
+    reset();
+    check(selected_pattern_owner(value, false) == -1);
+    check(matches("102 9 -2 "));
+}
+
+fn copy_initialized(flag: bool) throw Failure {
+    var original = CopyOwner { 1 };
+    let copied = if flag {
+        let branch_owner = Owner { 3 };
+        initialization_argument(true)?;
+        original
+    } else {
+        initialization_argument(false)?;
+        original
+    };
+    mark(8);
+}
+
+test "Lifetimes: deferred copies preserve native constructor selection" {
+    reset();
+    try {
+        copy_initialized(true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("1 3 2 101 -3 8 -1 -1 "));
+}
+
+fn void_consumer(owner: Owner, value: i32) {
+    observe_owner(owner, value);
+}
+
+fn forward_void_lifetime() {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+fn forward_void_failure() throw Failure {
+    let local = Owner { 4 };
+    return void_consumer(
+        Owner { 5 },
+        if true { throw Failure::Stop; } else { throw Failure::Stop; }
+    );
+}
+
+test "Lifetimes: void return operands clean up before returning locals" {
+    reset();
+    forward_void_lifetime();
+    check(matches("1 2 3 9 -2 -1 "));
+    reset();
+    try {
+        forward_void_failure()?;
+    } catch {
+        Failure(_) => { mark(8); },
+    }
+    check(matches("4 5 -5 -4 8 "));
+}
+
+fn forward_void_outcome() throw Failure {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+test "Lifetimes: void forwarding into Outcome preserves operand cleanup" {
+    reset();
+    try {
+        forward_void_outcome()?;
+    } catch {
+        Failure(_) => { mark(8); },
+    }
+    check(matches("1 2 3 9 -2 -1 "));
+}
+
+fn discard_short_circuit(flag: bool) {
+    let _ = flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool);
+    mark(8);
+}
+
+test "Lifetimes: discarded short circuit operands execute once and finish before successors" {
+    reset();
+    discard_short_circuit(false);
+    check(matches("8 "));
+    reset();
+    discard_short_circuit(true);
+    check(matches("1 2 3 9 -1 8 "));
+}
+
+fn owning_callback(marker: i32) => [marker](&&owner: Owner) => observe_owner(owner, marker);
+
+test "Lifetimes: closure parameters construct directly from owned temporaries" {
+    reset();
+    let captured = owning_callback(9);
+    captured(&&Owner { 1 });
+    check(matches("1 9 -1 "));
+    reset();
+    let stateless = [](&&value: Owner) => observe_owner(value, 9);
+    stateless(&&Owner { 2 });
+    check(matches("2 9 -2 "));
+}
+
+fn conditional_outcome(flag: bool) -> bool throw Failure {
+    return (flag && (owned_outcome(true)?.probe() as bool))
+        && (matches("1 11 ") as bool);
+}
+
+fn conditional_branch_owner(flag: bool) -> bool {
+    return (flag && ((if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } })
+        .probe(event(5), event(6)) as bool)) && (matches("3 5 6 9 ") as bool);
+}
+
+fn conditional_failure(flag: bool) -> bool throw Failure {
+    return (Owner { 1 }.probe() as bool)
+        && (flag && (owned_outcome(false)?.probe() as bool));
+}
+
+test "Lifetimes: joined outcomes and branch values retain full expression owners" {
+    reset();
+    try {
+        check(conditional_outcome(true)?);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("1 11 -1 "));
+    reset();
+    try {
+        check(!conditional_outcome(false)?);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches(""));
+    reset();
+    check(conditional_branch_owner(true));
+    check(matches("3 5 6 9 -3 "));
+    reset();
+    check(!conditional_branch_owner(false));
+    check(matches(""));
+    reset();
+    try {
+        let _ = conditional_failure(true)?;
+    } catch {
+        Failure(_) => { mark(8); },
+    }
+    check(matches("1 11 -1 8 "));
+}
+
+fn probe_literal_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected && (
+        ::lifetime_probe::receiver_from_literal(1)
+            .probe(initialization_argument(succeeds)?) as bool
+    );
+    mark(8);
+}
+
+fn probe_ordered_literal_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected && (
+        ::lifetime_probe::receiver_from_literal(1, event(5))
+            .probe(initialization_argument(succeeds)?) as bool
+    );
+    mark(8);
+}
+
+test "Lifetimes: native Read literals preserve query category before later effects" {
+    reset();
+    try {
+        probe_literal_reference(false, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_literal_reference(true, true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("3 2 9 8 "));
+    reset();
+    try {
+        probe_literal_reference(true, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("3 2 7 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(false, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(true, true)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("5 3 2 9 8 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(true, false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(matches("5 3 2 7 "));
+}
+
+fn array_source_step(succeeds: bool) -> i32 throw Failure {
+    ::lifetime_probe::mutate_array_source();
+    if !succeeds { throw Failure::Stop; }
+    return 2;
+}
+
+fn collect_native_references(succeeds: bool) -> i32 throw Failure {
+    let values = [
+        ::lifetime_probe::array_source(1),
+        ::lifetime_probe::array_source(array_source_step(succeeds)?),
+    ];
+    mark(8);
+    return (values[0].id as i32) * 10 + (values[1].id as i32);
+}
+
+fn collect_const_native_references(succeeds: bool) -> i32 throw Failure {
+    let values = [
+        ::lifetime_probe::const_array_source(1),
+        ::lifetime_probe::const_array_source(array_source_step(succeeds)?),
+    ];
+    mark(8);
+    return (values[0].id as i32) * 10 + (values[1].id as i32);
+}
+
+test "Lifetimes: native array elements snapshot references before later mutation and failure" {
+    ::lifetime_probe::reset_array_sources();
+    try {
+        check(collect_native_references(true)? == 12);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 12 8 "));
+    ::lifetime_probe::reset_array_sources();
+    try {
+        collect_native_references(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 7 "));
+
+    ::lifetime_probe::reset_array_sources();
+    try {
+        check(collect_const_native_references(true)? == 12);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 12 8 "));
+    ::lifetime_probe::reset_array_sources();
+    try {
+        collect_const_native_references(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 7 "));
+}
+
+fn take_scalar_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value: i32 = 1;
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
+        as i32;
+}
+
+fn take_pointer_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value: ptr<&i32> = ::lifetime_probe::native_take_address();
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
+        as i32;
+}
+
+fn take_owner_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value = ::lifetime_probe::NativeTakeOwner {};
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
+        as i32;
+}
+
+test "Lifetimes: native Take selects rvalue overloads before and after operand stabilization" {
+    ::lifetime_probe::reset_native_take();
+    let scalar: i32 = 1;
+    check((::lifetime_probe::choose_native_take(&&scalar) as i32) == 2);
+    let pointer: ptr<&i32> = ::lifetime_probe::native_take_address();
+    check((::lifetime_probe::choose_native_take(&&pointer) as i32) == 2);
+    let owner = ::lifetime_probe::NativeTakeOwner {};
+    check((::lifetime_probe::choose_native_take(&&owner) as i32) == 2);
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("6 6 6 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_scalar_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_scalar_before_failure(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 7 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_pointer_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_pointer_before_failure(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 7 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_owner_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_owner_before_failure(false)?;
+    } catch {
+        Failure(_) => { mark(7); },
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 7 "));
+}
+
+struct ReturnedOwner {
+    native: ::lifetime_probe::NativeTakeOwner,
+    text: String,
+}
+
+fn copy_taken_native(&&value: ::lifetime_probe::NativeTakeOwner)
+    -> ::lifetime_probe::NativeTakeOwner => value;
+
+fn copy_taken_record(&&value: ReturnedOwner) -> ReturnedOwner => value;
+
+test "Lifetimes: named return operands copy native and aggregate values" {
+    ::lifetime_probe::reset_native_take();
+    let native = ::lifetime_probe::NativeTakeOwner {};
+    let _ = copy_taken_native(&&native);
+    check(::lifetime_probe::native_take_copy_count() == 1);
+
+    ::lifetime_probe::reset_native_take();
+    let record = ReturnedOwner {
+        native: ::lifetime_probe::NativeTakeOwner {},
+        text: String::from_str("owned"),
+    };
+    let returned = copy_taken_record(&&record);
+    check(::lifetime_probe::native_take_copy_count() == 1);
+    check(returned.text.as_str() == "owned");
+}

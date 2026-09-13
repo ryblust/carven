@@ -11,10 +11,8 @@ public:
     ProgramSourceSnapshot(const ProgramSourceSnapshot&) = delete;
     ProgramSourceSnapshot(ProgramSourceSnapshot&&) = default;
     ~ProgramSourceSnapshot() = default;
-
     auto operator=(const ProgramSourceSnapshot&) -> ProgramSourceSnapshot& = delete;
     auto operator=(ProgramSourceSnapshot&&) -> ProgramSourceSnapshot& = default;
-
     auto manager_source_id() const noexcept -> SourceID;
     auto display_origin() const noexcept -> std::string_view;
     auto text() const noexcept -> std::string_view;
@@ -74,10 +72,8 @@ class CompilationProvenanceStorage final {
     CompilationProvenanceStorage(const CompilationProvenanceStorage&) = delete;
     CompilationProvenanceStorage(CompilationProvenanceStorage&&) noexcept = default;
     ~CompilationProvenanceStorage() = default;
-
     auto operator=(const CompilationProvenanceStorage&) -> CompilationProvenanceStorage& = delete;
     auto operator=(CompilationProvenanceStorage&&) -> CompilationProvenanceStorage& = delete;
-
     auto source_id_at(std::size_t index) const noexcept -> ProgramSourceID;
     auto module_id_at(std::size_t index) const noexcept -> ProgramModuleID;
     auto spelling_id_at(std::size_t index) const noexcept -> ProgramSpellingID;
@@ -90,8 +86,6 @@ class CompilationProvenanceStorage final {
     auto contains(ProgramModuleID id) const noexcept -> bool;
     auto contains(ProgramSpellingID id) const noexcept -> bool;
     auto contains(ProgramOriginID id) const noexcept -> bool;
-
-
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
 
     ProvenanceIdentity provenance_identity;
@@ -112,10 +106,8 @@ public:
     CompilationProvenance(const CompilationProvenance&) = delete;
     CompilationProvenance(CompilationProvenance&&) noexcept = default;
     ~CompilationProvenance() = default;
-
     auto operator=(const CompilationProvenance&) -> CompilationProvenance& = delete;
     auto operator=(CompilationProvenance&&) -> CompilationProvenance& = delete;
-
     auto view() const noexcept -> CompilationProvenanceView;
 
 private:
@@ -139,20 +131,20 @@ public:
     auto module_id_at(std::size_t index) const noexcept -> ProgramModuleID;
     auto spelling_id_at(std::size_t index) const noexcept -> ProgramSpellingID;
     auto origin_id_at(std::size_t index) const noexcept -> ProgramOriginID;
-    auto source_snapshot(ProgramSourceID source_id) const noexcept -> const ProgramSourceSnapshot&;
-    auto module_record(ProgramModuleID module_id) const noexcept -> const ProgramModule&;
+    auto source_snapshot(ProgramSourceID id) const noexcept -> const ProgramSourceSnapshot&;
+    auto module_record(ProgramModuleID id) const noexcept -> const ProgramModule&;
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
-    auto spelling(ProgramSpellingID spelling_id) const noexcept -> std::string_view;
-    auto origin(ProgramOriginID origin_id) const noexcept -> const ProgramOrigin&;
+    auto spelling(ProgramSpellingID id) const noexcept -> std::string_view;
+    auto origin(ProgramOriginID id) const noexcept -> const ProgramOrigin&;
     auto source_snapshots() const noexcept -> std::span<const ProgramSourceSnapshot>;
     auto module_records() const noexcept -> std::span<const ProgramModule>;
     auto spellings() const noexcept -> std::span<const std::string>;
     auto origins() const noexcept -> std::span<const ProgramOrigin>;
-    auto source_origin(ProgramOriginID origin_id) const noexcept -> ProgramSourceOrigin;
-    auto source_span(ProgramOriginID origin_id) const noexcept -> SourceSpan;
-    auto slice(ProgramOriginID origin_id) const noexcept -> std::string_view;
-    auto location(ProgramOriginID origin_id) const noexcept -> SourceLocation;
+    auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
+    auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
+    auto slice(ProgramOriginID id) const noexcept -> std::string_view;
+    auto location(ProgramOriginID id) const noexcept -> SourceLocation;
 
 private:
     explicit CompilationProvenanceView(const CompilationProvenanceStorage& storage) noexcept;
@@ -183,21 +175,21 @@ public:
     auto module_count() const noexcept -> std::size_t;
     auto spelling_count() const noexcept -> std::size_t;
     auto origin_count() const noexcept -> std::size_t;
-    auto source_manager_id(ProgramSourceID source_id) const noexcept -> SourceID;
-    auto source_display_origin_copy(ProgramSourceID source_id) const noexcept -> std::string;
-    auto source_size(ProgramSourceID source_id) const noexcept -> std::size_t;
-    auto source_slice_copy(ProgramSourceID source_id, Span span) const noexcept -> std::string;
-    auto source_location(ProgramSourceID source_id, Span span) const noexcept -> SourceLocation;
-    auto module_source(ProgramModuleID module_id) const noexcept -> ProgramSourceID;
-    auto module_path_copy(ProgramModuleID module_id) const noexcept -> CanonicalModulePath;
+    auto source_manager_id(ProgramSourceID id) const noexcept -> SourceID;
+    auto source_display_origin_copy(ProgramSourceID id) const noexcept -> std::string;
+    auto source_size(ProgramSourceID id) const noexcept -> std::size_t;
+    auto source_slice_copy(ProgramSourceID id, Span span) const noexcept -> std::string;
+    auto source_location(ProgramSourceID id, Span span) const noexcept -> SourceLocation;
+    auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
+    auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
-    auto spelling_copy(ProgramSpellingID spelling_id) const noexcept -> std::string;
-    auto origin_copy(ProgramOriginID origin_id) const noexcept -> ProgramOrigin;
-    auto source_origin(ProgramOriginID origin_id) const noexcept -> ProgramSourceOrigin;
-    auto source_span(ProgramOriginID origin_id) const noexcept -> SourceSpan;
-    auto slice_copy(ProgramOriginID origin_id) const noexcept -> std::string;
-    auto location(ProgramOriginID origin_id) const noexcept -> SourceLocation;
+    auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
+    auto origin_copy(ProgramOriginID id) const noexcept -> ProgramOrigin;
+    auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
+    auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
+    auto slice_copy(ProgramOriginID id) const noexcept -> std::string;
+    auto location(ProgramOriginID id) const noexcept -> SourceLocation;
 
 private:
     explicit CompilationProvenanceReader(const CompilationProvenanceStorage& storage) noexcept;
@@ -214,10 +206,8 @@ public:
     CompilationProvenanceAppender(const CompilationProvenanceAppender&) = delete;
     CompilationProvenanceAppender(CompilationProvenanceAppender&&) noexcept = default;
     ~CompilationProvenanceAppender() = default;
-
     auto operator=(const CompilationProvenanceAppender&) -> CompilationProvenanceAppender& = delete;
     auto operator=(CompilationProvenanceAppender&&) -> CompilationProvenanceAppender& = delete;
-
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_origin(ProgramOrigin origin) noexcept -> ProgramOriginID;
     auto module_count() const noexcept -> std::size_t;
@@ -235,10 +225,8 @@ public:
     CompilationProvenanceBuilder(const CompilationProvenanceBuilder&) = delete;
     CompilationProvenanceBuilder(CompilationProvenanceBuilder&&) noexcept = default;
     ~CompilationProvenanceBuilder() = default;
-
     auto operator=(const CompilationProvenanceBuilder&) -> CompilationProvenanceBuilder& = delete;
     auto operator=(CompilationProvenanceBuilder&&) -> CompilationProvenanceBuilder& = delete;
-
     auto intern_source_snapshot(SourceView source) noexcept -> ProgramSourceID;
     auto append_module(ProgramModule program_module) noexcept -> ProgramModuleID;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;

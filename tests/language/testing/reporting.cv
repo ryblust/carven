@@ -51,3 +51,72 @@ fn main() -> i32 {
     cv_test_reporting_verify();
     return 29;
 }
+
+fn stop_in_helper(action: fn() -> void) -> i32 {
+    let owner = ::ReportingOwner(10);
+    action();
+    cv_test_reporting_mark(11);
+    return 42;
+}
+
+test "Testing: callback failure leaves helpers and cleans up" {
+    let owner = ::ReportingOwner(12);
+    let stop: fn() -> void = fail;
+    let value = stop_in_helper(stop);
+    cv_test_reporting_mark(13);
+    check(value == 42);
+}
+
+struct ReportingFailure {}
+
+fn stop_with_failure_view(action: fn() -> void throw ReportingFailure) -> i32 throw ReportingFailure {
+    action()?;
+    cv_test_reporting_mark(14);
+    return 1;
+}
+
+test "Testing: test exit bypasses typed catches and widened views" {
+    let stop: fn() -> void = fail;
+    let widened: fn() -> void throw ReportingFailure = stop;
+    let value = try { stop_with_failure_view(widened)? } catch {
+        _ => { cv_test_reporting_mark(15); 2 },
+    };
+    cv_test_reporting_mark(16);
+    check(value == 1);
+}
+
+test "Testing: runner continues after failed helpers" {
+    cv_test_reporting_mark(17);
+    let assertion: fn(bool, String) -> void = check;
+    assertion(true, "owned test message");
+}
+
+fn stop_in_result() -> i32 { return fail("no result"); }
+
+test "Testing: a non-completing builtin can occupy a result position" {
+    let value = stop_in_result();
+    cv_test_reporting_mark(18);
+    check(value == 0);
+}
+
+fn require_in_helper(value: bool) {
+    let owner = ::ReportingOwner(19);
+    require(value);
+    cv_test_reporting_mark(20);
+}
+
+test "Testing: require failure leaves helpers and the current test" {
+    let owner = ::ReportingOwner(21);
+    require_in_helper(false);
+    cv_test_reporting_mark(22);
+}
+
+test "Testing: temporary messages survive direct and callable reports" {
+    check(false, String::from_str("direct temporary message with enough text for owned storage"));
+    require(false, String::from_str("explicit temporary message with enough text for owned storage").as_str());
+}
+
+test "Testing: callable reports retain temporary messages" {
+    let assertion: fn(bool, String) -> void = check;
+    assertion(false, String::from_str("callable temporary message with enough text for owned storage"));
+}

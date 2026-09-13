@@ -31,7 +31,7 @@ From the repository root:
 | [Order quote](composition/) | Combine stock and delivery rules | Cross-module failure sets, private inference, composite `?`, guarded recovery, `rethrow`, enum patterns |
 | [Configuration](recovery/) | Select and validate a port | Recovery that can fail, translating an interface, nested payload patterns, value-form `try` |
 | [Policies](callbacks/) | Apply caller-selected admission rules | Failure contracts on callable views, inferred closure effects, widening from a smaller set |
-| [Native parser](../interop/import/) | Adapt `std::stoi` | C++ exceptions handled in C++, then explicit Carven failure construction |
+| [Native parser](../interop/cpp_calls/) | Adapt `std::stoi` | C++ exceptions handled in C++, then explicit Carven failure construction |
 
 Each directory includes its reading path, full output, and small experiments.
 The source files are the executable examples; the explanations link to them

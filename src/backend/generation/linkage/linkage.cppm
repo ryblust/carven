@@ -7,7 +7,6 @@ class LinkageDomainID final {
 public:
     auto hex() const noexcept -> std::string;
     auto namespace_identifier() const noexcept -> std::string;
-
     auto operator==(const LinkageDomainID&) const noexcept -> bool = default;
 
 private:

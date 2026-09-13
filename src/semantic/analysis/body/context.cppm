@@ -57,23 +57,10 @@ struct BuiltExpression final {
     bool takeable = true;
     bool completes = true;
 
-    auto is_function_reference() const noexcept -> bool {
-        const auto* expression = std::get_if<SemanticExpression>(&storage);
-        return expression != nullptr && std::holds_alternative<SemCallable>(expression->value);
-    }
-
-    auto expression() const noexcept -> const SemanticExpression& {
-        if (const auto* value = std::get_if<SemanticExpression>(&storage)) {
-            return *value;
-        }
-        return std::get<PlaceExpression>(storage).expression;
-    }
-
-    auto type() const noexcept -> const ConstructionTypeRef& {
-        return expression().type.construction();
-    }
-
-    auto constant() const noexcept -> std::optional<ConstantID> { return expression().constant; }
+    auto is_function_reference() const noexcept -> bool;
+    auto expression() const noexcept -> const SemanticExpression&;
+    auto type() const noexcept -> const ConstructionTypeRef&;
+    auto constant() const noexcept -> std::optional<ConstantID>;
 };
 
 struct CppMemberSelection final {
@@ -86,7 +73,15 @@ struct CppSelection final {
     Span span;
 };
 
-using SelectedExpression = std::variant<BuiltExpression, CppSelection>;
+enum class BuiltinFunction { Print, Println, Eprint, Eprintln, Check, Require, Fail };
+
+struct BuiltinSelection final {
+    BuiltinFunction function;
+    Span span;
+    std::optional<ProgramSpellingID> condition_source;
+};
+
+using SelectedExpression = std::variant<BuiltExpression, CppSelection, BuiltinSelection>;
 
 struct BuiltCallArgument final {
     SemCallArgument argument;
@@ -142,16 +137,12 @@ struct BodyPatternBindingStorage final {
 
 class BodyFullExpressionSuspension final {
 public:
-    explicit BodyFullExpressionSuspension(std::optional<LifetimeRegionID>& active) noexcept
-        : slot(std::addressof(active)),
-          saved(std::exchange(active, std::nullopt)) {}
-
+    explicit BodyFullExpressionSuspension(std::optional<LifetimeRegionID>& active) noexcept;
     BodyFullExpressionSuspension(const BodyFullExpressionSuspension&) = delete;
     BodyFullExpressionSuspension(BodyFullExpressionSuspension&&) = delete;
     auto operator=(const BodyFullExpressionSuspension&) -> BodyFullExpressionSuspension& = delete;
     auto operator=(BodyFullExpressionSuspension&&) -> BodyFullExpressionSuspension& = delete;
-
-    ~BodyFullExpressionSuspension() noexcept { *slot = saved; }
+    ~BodyFullExpressionSuspension() noexcept;
 
 private:
     std::optional<LifetimeRegionID>* slot;
@@ -160,16 +151,12 @@ private:
 
 class BodyReferencePathGuard final {
 public:
-    BodyReferencePathGuard(bool& active, bool path_is_reachable) noexcept
-        : slot(std::addressof(active)),
-          saved(std::exchange(active, active && path_is_reachable)) {}
-
+    BodyReferencePathGuard(bool& active, bool path_is_reachable) noexcept;
     BodyReferencePathGuard(const BodyReferencePathGuard&) = delete;
     BodyReferencePathGuard(BodyReferencePathGuard&&) = delete;
     auto operator=(const BodyReferencePathGuard&) -> BodyReferencePathGuard& = delete;
     auto operator=(BodyReferencePathGuard&&) -> BodyReferencePathGuard& = delete;
-
-    ~BodyReferencePathGuard() noexcept { *slot = saved; }
+    ~BodyReferencePathGuard() noexcept;
 
 private:
     bool* slot;
@@ -247,7 +234,6 @@ public:
         bool accepts_catch_residual,
         bool test_body
     ) noexcept;
-
     auto add_parameter(
         const ASTFunctionParameter& source,
         const ConstructionCallableParameter& contract
@@ -267,7 +253,6 @@ private:
     auto spelling(Span span) const noexcept -> std::string;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
     auto warn(Span span, DiagnosticCode code, std::string message) noexcept -> void;
-
     auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef>;
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
         -> AnalysisResult<ConstructionTypeRef>;
@@ -286,7 +271,6 @@ private:
     ) noexcept -> AnalysisResult<void>;
     auto require_bool(BuiltExpression& expression, Span span) noexcept
         -> AnalysisResult<SemanticExpression>;
-
     auto active_builder() noexcept -> BodyBuilder&;
     auto begin_full_expression(Span span) noexcept -> void;
     auto end_full_expression(Span span) noexcept -> void;
@@ -300,7 +284,6 @@ private:
         BodyPendingFailureTerms pending = {},
         std::optional<ConstantID> constant = std::nullopt
     ) noexcept -> BuiltExpression;
-
     auto mark_noncompleting(BuiltExpression value) noexcept -> BuiltExpression;
     auto append_statement(
         decltype(SemanticStatement::value) value,
@@ -328,7 +311,6 @@ private:
         bool value_form,
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<BuiltExpression>;
-
     auto push_frame(Span span) noexcept -> void;
     auto pop_frame(bool diagnose = true) noexcept -> void;
     auto diagnose_unused(const BodyLocalFrame& frame) noexcept -> void;
@@ -338,7 +320,6 @@ private:
     auto use_local(std::string_view name) noexcept -> BodyLocalStorage*;
     auto find_global(std::string_view name, Span span) noexcept
         -> AnalysisResult<const CatalogSymbol*>;
-
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
     auto dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
@@ -360,7 +341,6 @@ private:
         std::optional<Span> propagation_span
     ) noexcept -> void;
     auto failure_context_for_current_path() const noexcept -> const BodyFailureContext&;
-
     auto expression(
         ASTExprID id,
         std::optional<ConstructionTypeRef> expected = std::nullopt,
@@ -371,8 +351,10 @@ private:
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<SelectedExpression>;
-    auto materialize_selection(SelectedExpression selected) noexcept
-        -> AnalysisResult<BuiltExpression>;
+    auto materialize_selection(
+        SelectedExpression selected,
+        std::optional<ConstructionTypeRef> expected = std::nullopt
+    ) noexcept -> AnalysisResult<BuiltExpression>;
     auto cpp_projection(
         BuiltExpression receiver,
         CppOperation operation,
@@ -394,6 +376,21 @@ private:
         -> AnalysisResult<BuiltExpression>;
     auto select_cpp_name(const ASTCppNameExpr& name, Span span) noexcept
         -> AnalysisResult<SelectedExpression>;
+    auto validate_builtin(
+        BuiltinSelection selection,
+        std::span<const ConstructionCallableParameter> parameters,
+        std::span<const Span> argument_spans
+    ) noexcept -> AnalysisResult<void>;
+    auto builtin_operation(
+        BodyBuilder& builder,
+        BuiltinSelection selection,
+        std::vector<SemCallArgument> arguments
+    ) noexcept -> SemanticExpression;
+    auto builtin_callable(
+        BuiltinSelection selection,
+        std::span<const ConstructionCallableParameter> parameters,
+        std::span<const Span> argument_spans = {}
+    ) noexcept -> AnalysisResult<BuiltExpression>;
     auto select_name(const ASTNameExpr& name, Span span) noexcept
         -> AnalysisResult<SelectedExpression>;
     auto array_expression(
@@ -471,13 +468,10 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> expected
     ) noexcept -> AnalysisResult<BuiltExpression>;
-
     auto statement(ASTStmtID id) noexcept -> AnalysisResult<void>;
     auto variable_statement(const ASTVariableDecl& source) noexcept -> AnalysisResult<void>;
     auto assignment_statement(const ASTAssignment& source) noexcept -> AnalysisResult<void>;
     auto update_statement(const ASTUpdate& source) noexcept -> AnalysisResult<void>;
-    auto test_statement(const ASTTestOperationStmt& source, Span span) noexcept
-        -> AnalysisResult<void>;
     auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisResult<void>;
     auto while_statement(const ASTWhileStmt& source, Span span) noexcept -> AnalysisResult<void>;
     auto for_statement(const ASTForStmt& source, Span span) noexcept -> AnalysisResult<void>;
@@ -505,13 +499,13 @@ private:
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
-
     auto callable_contract(BuiltExpression& callee, Span span) noexcept
         -> AnalysisResult<ConstructionCallableContract>;
     auto build_call_argument(
         ASTExprID source,
         AccessMode access,
-        std::optional<ConstructionTypeRef> expected
+        std::optional<ConstructionTypeRef> expected,
+        std::optional<DiagnosticCode> mismatch_code = std::nullopt
     ) noexcept -> AnalysisResult<BuiltCallArgument>;
 
     BodyBatchElaborator* batch;
@@ -541,21 +535,8 @@ public:
         ProgramDraft& builder,
         AnalysisCatalogView catalog_view,
         ImportUsage& usage
-    ) noexcept
-        : draft(std::addressof(builder)),
-          catalog_data(catalog_view),
-          imports(std::addressof(usage)),
-          functions(catalog_view.function_count()),
-          states(catalog_view.function_count(), Unvisited {}) {
-        for (const auto& symbol : catalog_view.symbols()) {
-            if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
-                functions[function->function.index()] = std::addressof(symbol);
-            }
-        }
-    }
-
+    ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
-
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisResult<void>;
 

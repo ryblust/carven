@@ -710,7 +710,6 @@ auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
     if (check(TokenKind::Throw)) {
         throw_clause = parse_throw_clause();
     }
-    const auto test_context = enter_test_statement_context(false);
     const auto body = parse_callable_body();
     if (!body || failed) {
         return std::nullopt;

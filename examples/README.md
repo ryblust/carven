@@ -28,23 +28,23 @@ These directories share the repository build; they are not independent packages.
 
 ## Reading order
 
-The sequence starts with a source file and imports, then declarations and values,
+The sequence starts with an entry point and output, then modules, declarations and values,
 access, and composed behavior. The failure-contract series follows the same
 progression from providers to their callers.
 
 | Direction | Program | Target | What to follow |
 | --- | --- | --- | --- |
-| First program | [Hello World](helloworld/) | `carven-example-hello-world` | Direct standard-library import and C string literal |
+| First program | [Hello World](helloworld/) | `carven-example-hello-world` | Entry point, string literal, and builtin output |
 | Modules | [Shipping](modules/) | `carven-example-shipping` | Relative imports and private constants |
 | Basics | [Receipt](basics/) | `carven-example-receipt` | Values, records, arrays, loops, functions |
 | Ownership | [Inventory](ownership/) | `carven-example-inventory` | Read, Write, Take, copying and reassignment |
-| Owning text | [Greeting](strings/) | `carven-example-strings` | UTF-8 String, independent copies, explicit borrowing |
+| Owning text | [Greeting](strings/) | `carven-example-strings` | UTF-8 String, independent copies, and scoped borrowing |
 | Failures | [Booking](failures/basic/) | `carven-example-booking` | Failure payloads, propagation and handling |
 | Composition | [Order quote](failures/composition/) | `carven-example-order-quote` | Multiple failure types, guards and rethrow |
 | Recovery | [Configuration](failures/recovery/) | `carven-example-configuration` | Fallible recovery, translation and nested patterns |
 | Callbacks | [Policies](failures/callbacks/) | `carven-example-policies` | Inferred closure failures and callable widening |
-| C++ calls | [Native parser](interop/import/) | `carven-example-native-parser` | Header imports and native exception recovery |
-| C++ host | [Pricing library](interop/export/) | `carven-example-cpp-host` | Exported functions and generated public headers |
+| C++ calls | [Native parser](interop/cpp_calls/) | `carven-example-native-parser` | Header imports and native exception recovery |
+| C++ host | [Pricing library](interop/cpp_host/) | `carven-example-cpp-host` | Exported functions and generated public headers |
 
 Within a program, read imports and provider modules, then type and constant
 declarations, helper functions, and the entry point. Each directory gives the
@@ -52,11 +52,11 @@ file order. Change the small inputs in `main` and run the target after rebuildin
 The output check uses the documented inputs, so restore them before running the
 example test group.
 
-Hello World calls `std::printf` directly. The other Carven-entry examples use
-C++ console output through two C++ `print` overloads from [support/console.hpp](support/console.hpp):
-one for text and one for i32. This shared helper only prints values; the task's
-logic stays in the example. The native parser examines the same header-import
-mechanism in more detail.
+Carven-entry examples use builtin `println` for output. It accepts scalar and
+text values without imports, separates arguments with spaces, and appends a
+newline. For example, `println("Total in cents:", total)` prints a label and
+value on one line. The native parser demonstrates
+C++ header imports; the pricing library demonstrates a C++ host.
 
 For an introduction to individual concepts, read the [tutorial](../docs/tutorial.md).
 The [documentation index](../docs/README.md) lists language and tool references.

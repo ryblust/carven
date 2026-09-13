@@ -92,18 +92,6 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             [&](const SemRangeLoop& value) noexcept {
                 flow = range(value, std::move(flow.normal->state));
             },
-            [&](const SemTestReport& value) noexcept {
-                // Assertions are consumers of bool, not proof-producing conditions.
-                if (value.condition) {
-                    evaluate(*value.condition);
-                }
-                if (value.message) {
-                    evaluate(*value.message);
-                }
-                if (value.kind == TestReportKind::Fail) {
-                    transfer(NullTransfer::Return);
-                }
-            },
             [&](const OwnedSemanticRegion& value) noexcept {
                 flow = region(*value, std::move(flow.normal->state));
             },

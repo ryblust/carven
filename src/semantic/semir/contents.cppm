@@ -11,7 +11,7 @@ struct TypeContents final {
 
     // Read preserves the identity of Carven-owned storage. Other representations
     // use the native copy/destruction policy without inventing owned contents.
-    auto read_borrows_storage() const noexcept -> bool { return storage_owner || closure_owner; }
+    auto read_borrows_storage() const noexcept -> bool;
 };
 
 auto compute_type_contents(

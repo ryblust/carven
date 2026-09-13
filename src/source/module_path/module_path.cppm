@@ -32,15 +32,12 @@ class CanonicalModulePath final {
 public:
     static auto from_value(std::string_view value) noexcept
         -> std::expected<CanonicalModulePath, CanonicalModulePathError>;
-
     static auto from_components(std::span<const std::string_view> components) noexcept
         -> std::expected<CanonicalModulePath, CanonicalModulePathError>;
-
     auto value() const noexcept -> std::string_view;
     auto components() const noexcept -> std::span<const std::string>;
     auto module_domain_prefix() const noexcept -> ModuleDomainPrefix;
     auto domain_relative_components() const noexcept -> std::span<const std::string>;
-
     auto operator==(const CanonicalModulePath&) const noexcept -> bool;
     auto operator<=>(const CanonicalModulePath&) const noexcept -> std::strong_ordering;
 

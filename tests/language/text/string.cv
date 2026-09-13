@@ -1,0 +1,232 @@
+struct TextPair {
+    first: String,
+    second: String,
+}
+
+struct TextView {
+    text: str,
+}
+
+struct MixedText {
+    owner: String,
+    view: str,
+}
+
+enum TextChoice {
+    View(str),
+    Owned(String),
+}
+
+fn view_of(text: String) -> str => text;
+fn own(text: str) -> String => text as String;
+fn pair_size(first: String, &&second: String) -> usize => first.len() + second.len();
+fn scalar_then_take(first: usize, &&second: String) -> usize => first + second.len();
+
+fn output_view(text: String, &output: str) {
+    output = text;
+}
+
+fn release_then_push(&view: str, &owner: String) {
+    view = "";
+    owner.push('!');
+}
+
+fn recursive_view(text: String, count: i32) -> str {
+    if count == 0 { return text; }
+    return recursive_view(text, count - 1);
+}
+
+fn read_with_write_alias(text: String, &alias: String) -> usize {
+    let size = text.len();
+    alias.push('!');
+    return size;
+}
+
+test "String: builtin factories UTF-8 and independent value ownership" {
+    var empty = (String::new)();
+    check(empty.is_empty());
+    empty.push('A');
+    empty.push('é');
+    empty.push('我');
+    empty.push('😀');
+    empty.push('\0');
+    check(empty.len() == 11usize);
+    check(empty.as_str() == "Aé我😀\0");
+    var copy = empty;
+    empty.clear();
+    check(empty.is_empty());
+    copy.append("é");
+    check(copy.len() == 14usize);
+    check(copy != String::from_str("Aé我😀\0é"));
+    let moved = &&copy;
+    check(moved == own("Aé我😀\0é"));
+    var scalars = 0usize;
+    for c in moved.chars {
+        let _ = c;
+        scalars += 1usize;
+    }
+    check(scalars == 7usize);
+    var bytes = 0usize;
+    for b in moved.bytes {
+        let _ = b;
+        bytes += 1usize;
+    }
+    check(bytes == moved.len());
+    check(String::from_str("﻿").len() == 3usize);
+}
+
+test "String: holders end by scope replacement and independent consumption" {
+    var text: String = "abc";
+    if true {
+        let view = view_of(text);
+        check(view == "abc");
+    }
+    text.push('!');
+    var view = text.as_str();
+    view = "";
+    text = text.as_str() as String;
+    text = text;
+    check(text == "abc!");
+    check(pair_size(String::from_str(text), &&text) == 8usize);
+    var second = own("xy");
+    check(scalar_then_take(second.len(), &&second) == 4usize);
+    var third = own("last");
+    var output: str = "";
+    output_view(third, &output);
+    check(output == "last");
+    release_then_push(&output, &third);
+    check(third == "last!");
+    check(read_with_write_alias(third, &third) == 5usize);
+    check(third == "last!!");
+}
+
+test "String: aggregate storage captures branches recursive calls and retained ranges" {
+    var pair = TextPair { first: own("one"), second: own("two") };
+    if true {
+        let v = pair.first.as_str();
+        pair.second.push('!');
+        check(v == "one");
+    }
+    var array = [own("a"), own("b")];
+    array[1].append("c");
+    check(array[1] == "bc");
+    let view = TextView { text: pair.first };
+    let mixed = MixedText { owner: pair.first, view: view.text };
+    check(mixed.owner.as_str() == mixed.view);
+    let choice = TextChoice::View(recursive_view(pair.first, 2));
+    let size: usize = match choice { .View(v) => v.len(), .Owned(s) => s.len() };
+    check(size == 3usize);
+    let closure = [view]() -> usize => view.text.len();
+    check(closure() == 3usize);
+    var count = 0usize;
+    for c in view_of("a我😀").chars {
+        let _ = c;
+        count += 1usize;
+    }
+    check(count == 3usize);
+}
+
+fn take_view(&&view: str) -> usize => view.len();
+fn recursive_str(view: str, count: i32) -> str {
+    if count == 0 { return view; }
+    return recursive_str(view, count - 1);
+}
+fn selected_view(first: String, second: String, choose: bool) -> str {
+    return if choose { first } else { second };
+}
+fn capture_view(view: str) => [view]() -> usize => view.len();
+
+test "String: transferred views recursive str and selected results retain the right backing" {
+    var text: String = "abc";
+    let taken = text.as_str();
+    check(take_view(&&taken) == 3usize);
+    text.push('!');
+    let other: String = "other";
+    if true {
+        let view = recursive_str(text, 3);
+        let selected = selected_view(text, other, false);
+        check(view == "abc!");
+        check(selected == "other");
+        let captured = capture_view(view);
+        check(captured() == 4usize);
+    }
+    text.clear();
+    let String = 7;
+    let builtin: String = "builtin";
+    check(String == 7);
+    check(builtin.len() == 7usize);
+}
+
+fn text_closure(text: String) => [text]() -> str => text;
+
+test "String: a returned view can borrow the owning value in a closure" {
+    var original: String = "captured owner";
+    let closure = text_closure(original);
+    original.clear();
+    let view = closure();
+    check(view == "captured owner");
+}
+
+test "String: Take parameters keep owning storage even for a read-only body" {
+    let consume = [](&&text: String) -> usize => text.len();
+    let text: String = "taken";
+    check(consume(&&text) == 5usize);
+}
+
+fn literal_string() -> String { return "123"; }
+fn grouped_string() -> String => (("456"));
+fn text_length(text: str) -> usize => text.len();
+
+test "String: contextual literals and explicit copies own independent text" {
+    var owner: String = "我\0abc";
+    let copy = view_of(owner) as String;
+    owner.clear();
+    check(copy == "我\0abc");
+    check(literal_string() == "123");
+    check(grouped_string() == "456");
+    let pair = TextPair { first: "one", second: "two" };
+    let values: [String; 2] = ["a", ("b")];
+    check(pair.first == "one");
+    check(values[1] == "b");
+    owner = "changed";
+    check(owner == "changed");
+    let make: fn() -> String = []() => "closure";
+    check(make() == "closure");
+    check(pair_size("first", &&owner) == 12usize);
+}
+
+test "String: contextual views retain owners and temporary call arguments" {
+    var owner: String = "hello";
+    if true {
+        let view: str = owner;
+        let views: [str; 2] = [owner, "literal"];
+        check(view == "hello");
+        check(views[0] == "hello");
+        check(text_length(owner) == 5usize);
+        check(text_length(literal_string()) == 3usize);
+        let read: fn(str) -> usize = text_length;
+        check(read(owner) == 5usize);
+    }
+    owner.clear();
+    check(owner.is_empty());
+}
+
+fn taken_text_length(&&text: str) -> usize => text.len();
+
+test "String: Take conversion delivers a borrowed view of the transferred value" {
+    let text: String = "transferred text";
+    check(taken_text_length(&&text) == 16);
+}
+
+test "String: temporary backing survives range and match consumption" {
+    var bytes = 0;
+    for byte in String::from_str("temporary text longer than small string storage").bytes {
+        check(byte > 0);
+        bytes += 1;
+    }
+    check(bytes == 47);
+    match String::from_str("temporary text longer than small string storage").as_str() {
+        "temporary text longer than small string storage" => { check(true); },
+        _ => { fail("temporary match subject lost its contents"); },
+    }
+}

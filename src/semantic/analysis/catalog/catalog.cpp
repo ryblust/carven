@@ -220,13 +220,11 @@ auto AnalysisCatalogView::imports() const noexcept -> std::span<const CatalogImp
     return catalog->import_bindings;
 }
 
-auto AnalysisCatalogView::find_module(ProgramModuleID module_id) const noexcept
-    -> const CatalogModule* {
-    if (module_id.index() >= catalog->modules.size()
-        || catalog->modules[module_id.index()].module_id != module_id) {
+auto AnalysisCatalogView::find_module(ProgramModuleID id) const noexcept -> const CatalogModule* {
+    if (id.index() >= catalog->modules.size() || catalog->modules[id.index()].module_id != id) {
         return nullptr;
     }
-    return std::addressof(catalog->modules[module_id.index()]);
+    return std::addressof(catalog->modules[id.index()]);
 }
 
 auto AnalysisCatalogView::symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol* {
@@ -335,13 +333,12 @@ auto AnalysisCatalogView::cpp_selection(
                                      : std::span<const std::size_t>(found->second);
 }
 
-auto AnalysisCatalogView::cpp_imports(ProgramModuleID module_id) const noexcept
+auto AnalysisCatalogView::cpp_imports(ProgramModuleID id) const noexcept
     -> std::span<const CatalogCppBinding> {
-    if (module_id.index() >= catalog->modules.size()
-        || catalog->modules[module_id.index()].module_id != module_id) {
+    if (id.index() >= catalog->modules.size() || catalog->modules[id.index()].module_id != id) {
         invariant_violation("C++ import lookup used an invalid module");
     }
-    return catalog->cpp_bindings[module_id.index()];
+    return catalog->cpp_bindings[id.index()];
 }
 
 auto build_analysis_catalog(ProgramDraft& draft) noexcept

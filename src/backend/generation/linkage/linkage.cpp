@@ -16,52 +16,11 @@ constexpr auto module_namespace_tag = std::string_view("carven-module-namespace-
 
 class Sha256 final {
 public:
-    auto append(std::span<const std::uint8_t> bytes) noexcept -> void {
-        total_bytes += bytes.size();
-        for (const auto byte : bytes) {
-            pending[pending_size++] = byte;
-            if (pending_size == pending.size()) {
-                compress(pending);
-                pending_size = 0;
-            }
-        }
-    }
-
-    auto append(std::string_view text) noexcept -> void {
-        append(std::span(reinterpret_cast<const std::uint8_t*>(text.data()), text.size()));
-    }
-
-    auto append_u64(std::uint64_t value) noexcept -> void {
-        auto bytes = std::array<std::uint8_t, 8> {};
-        for (auto index = 0uz; index < bytes.size(); ++index) {
-            bytes[bytes.size() - index - 1] = static_cast<std::uint8_t>(value >> (index * 8));
-        }
-        append(bytes);
-    }
-
-    auto append_field(std::string_view value) noexcept -> void {
-        append_u64(value.size());
-        append(value);
-    }
-
-    auto finish() noexcept -> std::array<std::uint8_t, 32> {
-        const auto bit_count = total_bytes * 8;
-        append(std::array<std::uint8_t, 1> {0x80});
-        while (pending_size != 56) {
-            append(std::array<std::uint8_t, 1> {0});
-        }
-        append_u64(bit_count);
-
-        auto digest = std::array<std::uint8_t, 32> {};
-        for (auto word_index = 0uz; word_index < state.size(); ++word_index) {
-            const auto word = state[word_index];
-            for (auto byte_index = 0uz; byte_index < 4; ++byte_index) {
-                digest[word_index * 4 + byte_index] =
-                    static_cast<std::uint8_t>(word >> ((3 - byte_index) * 8));
-            }
-        }
-        return digest;
-    }
+    auto append(std::span<const std::uint8_t> bytes) noexcept -> void;
+    auto append(std::string_view text) noexcept -> void;
+    auto append_u64(std::uint64_t value) noexcept -> void;
+    auto append_field(std::string_view value) noexcept -> void;
+    auto finish() noexcept -> std::array<std::uint8_t, 32>;
 
 private:
     static constexpr auto round_constants = std::array<std::uint32_t, 64> {
@@ -103,42 +62,7 @@ private:
         return std::rotr(value, 17) ^ std::rotr(value, 19) ^ (value >> 10);
     }
 
-    auto compress(std::span<const std::uint8_t, 64> block) noexcept -> void {
-        auto schedule = std::array<std::uint32_t, 64> {};
-        for (auto index = 0uz; index < 16; ++index) {
-            schedule[index] = (static_cast<std::uint32_t>(block[index * 4]) << 24)
-                | (static_cast<std::uint32_t>(block[index * 4 + 1]) << 16)
-                | (static_cast<std::uint32_t>(block[index * 4 + 2]) << 8)
-                | static_cast<std::uint32_t>(block[index * 4 + 3]);
-        }
-        for (auto index = 16uz; index < schedule.size(); ++index) {
-            schedule[index] = small_sigma_1(schedule[index - 2]) + schedule[index - 7]
-                + small_sigma_0(schedule[index - 15]) + schedule[index - 16];
-        }
-
-        auto [a, b, c, d, e, f, g, h] = state;
-        for (auto index = 0uz; index < schedule.size(); ++index) {
-            const auto temporary_1 =
-                h + large_sigma_1(e) + choose(e, f, g) + round_constants[index] + schedule[index];
-            const auto temporary_2 = large_sigma_0(a) + majority(a, b, c);
-            h = g;
-            g = f;
-            f = e;
-            e = d + temporary_1;
-            d = c;
-            c = b;
-            b = a;
-            a = temporary_1 + temporary_2;
-        }
-        state[0] += a;
-        state[1] += b;
-        state[2] += c;
-        state[3] += d;
-        state[4] += e;
-        state[5] += f;
-        state[6] += g;
-        state[7] += h;
-    }
+    auto compress(std::span<const std::uint8_t, 64> block) noexcept -> void;
 
     std::array<std::uint32_t, 8> state {
         0x6a09e667u,
@@ -154,6 +78,90 @@ private:
     std::size_t pending_size = 0;
     std::uint64_t total_bytes = 0;
 };
+
+auto Sha256::append(std::span<const std::uint8_t> bytes) noexcept -> void {
+    total_bytes += bytes.size();
+    for (const auto byte : bytes) {
+        pending[pending_size++] = byte;
+        if (pending_size == pending.size()) {
+            compress(pending);
+            pending_size = 0;
+        }
+    }
+}
+
+auto Sha256::append(std::string_view text) noexcept -> void {
+    append(std::span(reinterpret_cast<const std::uint8_t*>(text.data()), text.size()));
+}
+
+auto Sha256::append_u64(std::uint64_t value) noexcept -> void {
+    auto bytes = std::array<std::uint8_t, 8> {};
+    for (auto index = 0uz; index < bytes.size(); ++index) {
+        bytes[bytes.size() - index - 1] = static_cast<std::uint8_t>(value >> (index * 8));
+    }
+    append(bytes);
+}
+
+auto Sha256::append_field(std::string_view value) noexcept -> void {
+    append_u64(value.size());
+    append(value);
+}
+
+auto Sha256::finish() noexcept -> std::array<std::uint8_t, 32> {
+    const auto bit_count = total_bytes * 8;
+    append(std::array<std::uint8_t, 1> {0x80});
+    while (pending_size != 56) {
+        append(std::array<std::uint8_t, 1> {0});
+    }
+    append_u64(bit_count);
+
+    auto digest = std::array<std::uint8_t, 32> {};
+    for (auto word_index = 0uz; word_index < state.size(); ++word_index) {
+        const auto word = state[word_index];
+        for (auto byte_index = 0uz; byte_index < 4; ++byte_index) {
+            digest[word_index * 4 + byte_index] =
+                static_cast<std::uint8_t>(word >> ((3 - byte_index) * 8));
+        }
+    }
+    return digest;
+}
+
+auto Sha256::compress(std::span<const std::uint8_t, 64> block) noexcept -> void {
+    auto schedule = std::array<std::uint32_t, 64> {};
+    for (auto index = 0uz; index < 16; ++index) {
+        schedule[index] = (static_cast<std::uint32_t>(block[index * 4]) << 24)
+            | (static_cast<std::uint32_t>(block[index * 4 + 1]) << 16)
+            | (static_cast<std::uint32_t>(block[index * 4 + 2]) << 8)
+            | static_cast<std::uint32_t>(block[index * 4 + 3]);
+    }
+    for (auto index = 16uz; index < schedule.size(); ++index) {
+        schedule[index] = small_sigma_1(schedule[index - 2]) + schedule[index - 7]
+            + small_sigma_0(schedule[index - 15]) + schedule[index - 16];
+    }
+
+    auto [a, b, c, d, e, f, g, h] = state;
+    for (auto index = 0uz; index < schedule.size(); ++index) {
+        const auto temporary_1 =
+            h + large_sigma_1(e) + choose(e, f, g) + round_constants[index] + schedule[index];
+        const auto temporary_2 = large_sigma_0(a) + majority(a, b, c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + temporary_1;
+        d = c;
+        c = b;
+        b = a;
+        a = temporary_1 + temporary_2;
+    }
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+    state[5] += f;
+    state[6] += g;
+    state[7] += h;
+}
 
 auto identity128(Sha256 digest) noexcept -> std::array<std::uint8_t, 16> {
     const auto full = digest.finish();

@@ -3,6 +3,7 @@ module carven:backend.realization.pattern.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
+import :backend.realization.composition;
 import :backend.realization.constant;
 import :backend.realization.pattern;
 import :backend.target.builder;
@@ -201,3 +202,12 @@ auto PatternRealizer::match(
         pattern.value
     );
 }
+
+PatternRealizer::PatternRealizer(
+    ModuleLowering& context,
+    TargetNameAllocator& names,
+    const SemIRBody& body
+) noexcept
+    : context(context),
+      names(names),
+      body(body) {}

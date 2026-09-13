@@ -14,6 +14,7 @@ These documents describe Carven in this checkout.
 | Build generated C++ | [Toolchain and artifacts](toolchain.md) | Native requirements, artifact paths, compilation, linking, and build integration |
 | Work on semantic analysis | [Compiler architecture](compiler.md) | Semantic construction, analysis, publication, internal ownership, and dependencies |
 | Work on code generation | [C++ generation](backend.md) | C++ representation, target construction, lowering, and emission |
+| Maintain build support | [Xmake support](../xmake/README.md) | Build wrappers, formatting, generated-code analysis configuration, and performance measurements |
 | Validate changes | [Testing](testing.md) | Test placement, assertions, and validation commands |
 | Write repository C++ | [Conventions](conventions.md) | Source organization and C++ rules |
 | Evaluate a design | [Principles](principles.md) | Criteria for language and implementation decisions |

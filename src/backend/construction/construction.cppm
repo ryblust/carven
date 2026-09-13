@@ -130,12 +130,20 @@ struct ConstructionTry final {
     std::vector<ConstructionCatchArm> arms;
 };
 
+struct ConstructionTestReport final {
+    TestReportKind kind;
+    std::optional<ConstructionExpressionID> condition;
+    std::optional<ConstructionExpressionID> message;
+    std::optional<ProgramSpellingID> condition_source;
+};
+
 using ConstructionExpressionValue = std::variant<
     ConstructionOperation,
     ConstructionShortCircuit,
     ConstructionConditional,
     ConstructionMatch,
-    ConstructionTry>;
+    ConstructionTry,
+    ConstructionTestReport>;
 
 struct ConstructionExpression final {
     const SemanticExpression& operation;
@@ -214,13 +222,6 @@ struct ConstructionRangeLoop final {
     ConstructionRegionID body;
 };
 
-struct ConstructionTestReport final {
-    TestReportKind kind;
-    std::optional<ConstructionExpressionID> condition;
-    std::optional<ConstructionExpressionID> message;
-    std::optional<ProgramSpellingID> condition_source;
-};
-
 using ConstructionStatementValue = std::variant<
     ConstructionReturn,
     ConstructionLoopTransfer,
@@ -231,8 +232,7 @@ using ConstructionStatementValue = std::variant<
     ConstructionAssign,
     ConstructionScope,
     ConstructionLoop,
-    ConstructionRangeLoop,
-    ConstructionTestReport>;
+    ConstructionRangeLoop>;
 
 struct ConstructionStatement final {
     LifetimeRegionID lifetime;
@@ -253,32 +253,12 @@ public:
     BodyConstruction(BodyConstruction&&) = default;
     auto operator=(const BodyConstruction&) -> BodyConstruction& = delete;
     auto operator=(BodyConstruction&&) -> BodyConstruction& = delete;
-
-    auto body() const noexcept -> BodyID { return body_id; }
-
-    auto root() const noexcept -> ConstructionRegionID { return root_region; }
-
-    auto expression(ConstructionExpressionID id) const noexcept -> const ConstructionExpression& {
-        if (id.owner() != body_id || id.index() >= expressions.size()) {
-            invariant_violation(
-                "construction expression belongs to another body or is out of range"
-            );
-        }
-        return expressions[id.index()];
-    }
-
-    auto region(ConstructionRegionID id) const noexcept -> const ConstructionRegion& {
-        if (id.owner() != body_id || id.index() >= regions.size()) {
-            invariant_violation("construction region belongs to another body or is out of range");
-        }
-        return regions[id.index()];
-    }
-
-    auto expression_values() const noexcept -> std::span<const ConstructionExpression> {
-        return expressions;
-    }
-
-    auto region_values() const noexcept -> std::span<const ConstructionRegion> { return regions; }
+    auto body() const noexcept -> BodyID;
+    auto root() const noexcept -> ConstructionRegionID;
+    auto expression(ConstructionExpressionID id) const noexcept -> const ConstructionExpression&;
+    auto region(ConstructionRegionID id) const noexcept -> const ConstructionRegion&;
+    auto expression_values() const noexcept -> std::span<const ConstructionExpression>;
+    auto region_values() const noexcept -> std::span<const ConstructionRegion>;
 
 private:
     BodyConstruction(
@@ -286,11 +266,7 @@ private:
         ConstructionRegionID root,
         std::vector<ConstructionExpression> expressions,
         std::vector<ConstructionRegion> regions
-    ) noexcept
-        : body_id(body),
-          root_region(root),
-          expressions(std::move(expressions)),
-          regions(std::move(regions)) {}
+    ) noexcept;
 
     BodyID body_id;
     ConstructionRegionID root_region;

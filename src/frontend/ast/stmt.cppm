@@ -60,18 +60,6 @@ struct ASTExprStatement final {
     ASTExprID expression;
 };
 
-enum class ASTTestOperationKind {
-    Check,
-    Require,
-    Fail,
-};
-
-struct ASTTestOperationStmt final {
-    ASTTestOperationKind kind;
-    Span keyword_span;
-    std::vector<ASTExprID> arguments;
-};
-
 struct ASTForInitializer final {
     Span span;
     std::variant<std::monostate, ASTVariableDecl, ASTAssignment, ASTExprID> value;
@@ -125,7 +113,6 @@ struct ASTStmt final {
         ASTAssignment,
         ASTUpdate,
         ASTExprStatement,
-        ASTTestOperationStmt,
         ASTControlTransfer,
         ASTWhileStmt,
         ASTForStmt,

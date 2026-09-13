@@ -42,10 +42,6 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     if (!body.inputs().parameters.empty() || !body.inputs().captures.empty()) {
         invariant_violation("test body unexpectedly has callable inputs");
     }
-    auto parameters = target_parameters({
-        .name = TargetNameAllocator::test_context(),
-        .type = context.reference_type(context.intrinsic_type(TargetSymbol::TestingContext)),
-    });
     auto lowered = lower_body(
         context,
         test.body,
@@ -55,15 +51,12 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
             .exit = TestBodyExit {},
         }
     );
-    if (!lowered.uses_test_context) {
-        parameters.front().name.reset();
-    }
     return source_item(
         context.semantic(),
         test.origin,
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().test_function(id)},
-            .parameters = std::move(parameters),
+            .parameters = {},
             .result = context.intrinsic_type(TargetSymbol::Void),
             .form =
                 TargetFreeFunctionDefinition {
@@ -100,10 +93,8 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         ));
         body.push_back(generated_statement(
             TargetExprStmt {
-                .expression = call_expression(
-                    name_expression(context.names().test_function(id)),
-                    target_expressions(name_expression(TargetNameAllocator::test_context()))
-                ),
+                .expression =
+                    call_expression(name_expression(context.names().test_function(id)), {}),
             }
         ));
         body.push_back(generated_statement(

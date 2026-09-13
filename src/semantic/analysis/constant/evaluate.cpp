@@ -660,6 +660,14 @@ auto evaluate_cast_constant_value(
             return ConstantFact {.type = result, .value = F64Constant {.value = value}};
         }
     }
+    if (const auto* character = std::get_if<CharacterConstant>(&operand.value)) {
+        if (kind == CastKind::CharToU32
+            && source_builtin != nullptr
+            && source_builtin->kind == BuiltinType::Char
+            && *target == BuiltinType::U32) {
+            return constant_integer(result, IntegerConstant::from_parts(character->scalar, false));
+        }
+    }
     if (const auto* boolean = std::get_if<BooleanConstant>(&operand.value)) {
         if (kind == CastKind::BoolToInteger
             && source_builtin != nullptr
@@ -722,6 +730,8 @@ auto evaluate_text_intrinsic_constant_value(
         case TextIntrinsic::IsEmpty: return constant_boolean(draft, result, bytes.empty());
         case TextIntrinsic::New:
         case TextIntrinsic::FromStr:
+        case TextIntrinsic::FromUTF8Unchecked:
+        case TextIntrinsic::FromU32Unchecked:
         case TextIntrinsic::AsStr:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:

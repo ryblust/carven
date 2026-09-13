@@ -35,8 +35,8 @@ struct TargetClosureCatalog final {
     std::vector<CallableID> definition_order;
 
     auto owner(CallableID callable) const noexcept -> ModuleID;
-    auto production(ModuleID module_id) const noexcept -> std::span<const CallableID>;
-    auto tests(ModuleID module_id) const noexcept -> std::span<const CallableID>;
+    auto production(ModuleID id) const noexcept -> std::span<const CallableID>;
+    auto tests(ModuleID id) const noexcept -> std::span<const CallableID>;
 };
 
 class TargetNamePlan final {
@@ -60,9 +60,9 @@ public:
     TargetNamePlan(const TargetNamePlan&) = delete;
     TargetNamePlan(TargetNamePlan&&) = default;
     ~TargetNamePlan() = default;
+
     auto operator=(const TargetNamePlan&) -> TargetNamePlan& = delete;
     auto operator=(TargetNamePlan&&) -> TargetNamePlan& = delete;
-
     auto semantic_owner() const noexcept -> ProgramIdentity;
     auto module_names(ModuleID id) const noexcept -> const TargetModuleNames&;
     auto generated_namespace() const noexcept -> const TargetName&;
@@ -81,7 +81,7 @@ public:
     auto closure_owner(CallableID id) const noexcept -> ModuleID;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto test_function(TestID test) const noexcept -> const TargetIdentifier&;
-    auto module_runner(ModuleID module_id) const noexcept -> const TargetIdentifier&;
+    auto module_runner(ModuleID id) const noexcept -> const TargetIdentifier&;
 
 private:
     auto entity_name(ModuleID active_module, const TargetEntityName& entity) const noexcept
@@ -113,12 +113,11 @@ public:
     FailureABI(const FailureABI&) = delete;
     FailureABI(FailureABI&&) = default;
     ~FailureABI() = default;
+
     auto operator=(const FailureABI&) -> FailureABI& = delete;
     auto operator=(FailureABI&&) -> FailureABI& = delete;
-
     auto semantic_owner() const noexcept -> ProgramIdentity;
     auto members(FailureSetID set) const noexcept -> std::span<const TypeID>;
-
 
 private:
     ProgramIdentity source_identity;
@@ -199,7 +198,6 @@ public:
     ~TargetPlan() = default;
     auto operator=(const TargetPlan&) -> TargetPlan& = delete;
     auto operator=(TargetPlan&&) -> TargetPlan& = delete;
-
     auto semantic_identity() const noexcept -> ProgramIdentity;
     auto identity() const noexcept -> TargetPlanIdentity;
     auto names() const noexcept -> const TargetNamePlan&;
@@ -236,13 +234,11 @@ class PlannedCompilation final {
 public:
     static auto build(SemIRProgram semantic, const TargetPlanningRequest& request) noexcept
         -> PlannedCompilation;
-
     PlannedCompilation(const PlannedCompilation&) = delete;
     PlannedCompilation(PlannedCompilation&& other) noexcept = default;
     ~PlannedCompilation() = default;
     auto operator=(const PlannedCompilation&) -> PlannedCompilation& = delete;
     auto operator=(PlannedCompilation&&) -> PlannedCompilation& = delete;
-
     auto semantic() const noexcept -> const SemIRProgram&;
     auto target() const noexcept -> const TargetPlan&;
 
@@ -254,27 +250,34 @@ private:
 };
 
 auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalog;
+
 auto plan_names(
     const SemIRProgram& semantic,
     const LinkageDomainID& linkage,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan;
+
 auto plan_failure_abi(const SemIRProgram& semantic) noexcept -> FailureABI;
 
 auto target_source_origin(CompilationProvenanceView provenance, ProgramOriginID origin) noexcept
     -> TargetSourceOrigin;
+
 auto plan_artifacts(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
     const TargetClosureCatalog& closures,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID>;
+
 auto module_implementation_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
+
 auto interface_component_logical_path(std::span<const std::string> anchor_components) noexcept
     -> std::string;
+
 auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
+
 auto materialize_directives(
     const TargetPlan& plan,
     TargetArtifactID artifact,

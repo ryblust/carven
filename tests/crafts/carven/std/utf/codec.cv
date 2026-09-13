@@ -9,18 +9,18 @@ test "UTF8: scalar conversion encoding and prefix decoding" {
         let encoded = encode_utf8(character);
         check(encoded.width == 4);
         check(encoded.bytes[0] == 0xf0);
-        let decoded = decode_utf8(encoded.bytes.as_slice())?;
+        let decoded = decode_utf8(encoded.bytes)?;
         match decoded {
             .End => { check(false); },
             .Scalar(value, width) => { check(value == character); check(width == 4); },
         }
         let empty: [u8; 0] = [];
-        match decode_utf8(empty.as_slice())? {
+        match decode_utf8(empty)? {
             .End => {},
             .Scalar(_, _) => { check(false); },
         }
         let prefix: [u8; 2] = [0x61, 0xff];
-        match decode_utf8(prefix.as_slice())? {
+        match decode_utf8(prefix)? {
             .End => { check(false); },
             .Scalar(value, width) => { check(value == 'a'); check(width == 1); },
         }

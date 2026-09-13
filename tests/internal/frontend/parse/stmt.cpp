@@ -175,7 +175,7 @@ TEST_CASE("Parser: control transfer uses dedicated alternatives") {
     check_invalid("fn invalid() { #[cpp] ---\nnative();\n---\n}");
 }
 
-TEST_CASE("Parser: inline-test operations are contextual statements and lambdas clear context") {
+TEST_CASE("Parser: builtin names use ordinary calls in every context") {
     static constexpr auto text = std::string_view(
         "test \"context\" {\n"
         " check(true, \"root\");\n"
@@ -192,18 +192,14 @@ TEST_CASE("Parser: inline-test operations are contextual statements and lambdas 
     const auto& body = ast.block(test.body);
     REQUIRE_EQ(body.statements.size(), 5u);
 
-    const auto& root_operation = get<ASTTestOperationStmt>(ast.statement(body.statements[0]));
-    CHECK_EQ(root_operation.kind, ASTTestOperationKind::Check);
+    const auto& root_statement = get<ASTExprStatement>(ast.statement(body.statements[0]));
+    const auto& root_operation = get<ASTCallExpr>(ast.expression(root_statement.expression));
     REQUIRE_EQ(root_operation.arguments.size(), 2u);
-    CHECK_EQ(slice(text, root_operation.keyword_span), "check");
 
     const auto& conditional = get<ASTIfForm>(ast.statement(body.statements[1]));
     const auto& branch = ast.branch_block(conditional.branches.front().body);
     REQUIRE_EQ(branch.statements.size(), 1u);
-    CHECK_EQ(
-        get<ASTTestOperationStmt>(ast.statement(branch.statements.front())).kind,
-        ASTTestOperationKind::Require
-    );
+    CHECK(is<ASTExprStatement>(ast.statement(branch.statements.front())));
 
     const auto& nested = get<ASTVariableDecl>(ast.statement(body.statements[2]));
     REQUIRE(nested.initializer.has_value());
@@ -215,10 +211,7 @@ TEST_CASE("Parser: inline-test operations are contextual statements and lambdas 
     const auto& value = get<ASTVariableDecl>(ast.statement(body.statements[3]));
     REQUIRE(value.initializer.has_value());
     CHECK(is<ASTCallExpr>(ast.expression(*value.initializer)));
-    CHECK_EQ(
-        get<ASTTestOperationStmt>(ast.statement(body.statements[4])).kind,
-        ASTTestOperationKind::Fail
-    );
+    CHECK(is<ASTExprStatement>(ast.statement(body.statements[4])));
 
     const auto& production = get<ASTFunctionDecl>(item(result, 1));
     const auto& production_body =

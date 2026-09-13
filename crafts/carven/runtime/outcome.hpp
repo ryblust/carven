@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <exception>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -160,5 +161,16 @@ public:
 private:
     State state;
 };
+
+template<typename Result, typename... Failures>
+auto unwrap_native_result(Outcome<Result, Failures...>&& outcome) noexcept -> Result {
+    const auto success = outcome.success_if();
+    if (success == nullptr) {
+        std::terminate();
+    }
+    if constexpr (!std::is_void_v<Result>) {
+        return std::move(success->value);
+    }
+}
 
 } // namespace carven::runtime

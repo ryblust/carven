@@ -1,0 +1,249 @@
+import "types/pointers.hpp";
+
+struct Node {
+    value: i32,
+    next: ptr<&Node>,
+}
+
+struct Scene {
+    mesh: ptr<&i32>,
+}
+
+enum Choice {
+    Some(ptr<&i32>),
+    Empty,
+}
+
+const empty_callable: ptr<fn() -> i32> = nullptr;
+const writable_empty: ptr<&i32> = nullptr;
+const narrowed_empty: ptr<i32> = writable_empty;
+
+fn read(p: ptr<i32>) -> i32 {
+    if p == nullptr { return -1; }
+    return *p;
+}
+
+fn replace(&p: ptr<&i32>, q: ptr<&i32>) {
+    p = q;
+}
+
+fn transfer(&&p: ptr<&i32>) -> ptr<&i32> => p;
+
+fn set(&value: i32) {
+    value = 44;
+}
+
+fn narrowed(p: ptr<&i32>) -> ptr<i32> => p;
+
+test "Pointers: binding slots and target modes are independent" {
+    let fixed_write: ptr<&i32> = ::pointer_values::get();
+    let fixed_read: ptr<i32> = fixed_write;
+    var movable_write: ptr<&i32> = fixed_write;
+    var movable_read: ptr<i32> = fixed_write;
+    if fixed_write == nullptr { fail("missing provider address"); }
+    *fixed_write = 11;
+    set(&*fixed_write);
+    check(read(fixed_read) == 44);
+    replace(&movable_write, ::pointer_values::other());
+    movable_read = movable_write;
+    check(read(movable_read) == 20);
+    check(narrowed(fixed_write) == fixed_read);
+    let saved = fixed_write;
+    let moved = transfer(&&saved);
+    check(moved == fixed_write);
+    check(empty_callable == nullptr);
+    check(narrowed_empty == writable_empty);
+    let cast_empty = (nullptr) as ptr<i32>;
+    check(cast_empty == (nullptr));
+}
+
+test "Pointers: recursive Carven targets and shallow aggregate copies preserve modes" {
+    var node = Node { value: 7, next: nullptr };
+    let p: ptr<&Node> = ::pointer_values::address(&node);
+    if p != nullptr {
+        p->value = 9;
+        p->next = p;
+        let next = p->next;
+        if next != nullptr { next->value = 12; }
+    }
+    check(node.value == 12);
+    let scene = Scene { mesh: ::pointer_values::get() };
+    let copy = scene;
+    if copy.mesh != nullptr { *copy.mesh = 55; }
+    check(read(scene.mesh) == 55);
+    let read_only: ptr<Node> = p;
+    if read_only != nullptr {
+        let copied_node = *read_only;
+        check(copied_node.value == 12);
+    }
+}
+
+test "Pointers: nested addresses retain the next layer's target permissions" {
+    var inner: ptr<&i32> = ::pointer_values::get();
+    let outer: ptr<ptr<&i32>> = ::pointer_values::address(&inner);
+    if outer != nullptr {
+        let saved = *outer;
+        if saved != nullptr { *saved = 66; }
+    }
+    check(read(inner) == 66);
+}
+
+test "Pointers: fields arrays enums captures and local control preserve values" {
+    let p: ptr<&i32> = ::pointer_values::get();
+    let values: [ptr<i32>; 2] = [p, nullptr];
+    if values[0] != nullptr { check(*values[0] == read(p)); }
+    let selected: ptr<i32> = if true { p } else { nullptr };
+    if selected != nullptr && *selected > 0 { check(true); }
+    check(selected == nullptr || *selected > 0);
+    let callback = [p]() -> i32 {
+        if p == nullptr { return -1; }
+        return *p;
+    };
+    check(callback() == read(p));
+    let choice = Choice::Some(p);
+    match choice {
+        .Some(saved) => { if saved != nullptr { check(*saved > 0); } },
+        .Empty => { fail("wrong case"); },
+    }
+    for value in values {
+        if value != nullptr { check(*value > 0); }
+    }
+    var slot = p;
+    while slot != nullptr {
+        *slot = 81;
+        slot = nullptr;
+    }
+    check(slot == nullptr);
+}
+
+fn joined(p: ptr<i32>, flag: bool) -> i32 {
+    if !(p != nullptr) { return 0; }
+    var slot: ptr<i32> = nullptr;
+    if flag { slot = p; } else { slot = p; }
+    return *slot;
+}
+
+fn break_proof(p: ptr<i32>) -> i32 {
+    while true {
+        if p == nullptr { return 0; }
+        break;
+    }
+    return *p;
+}
+
+fn clear_value(&p: ptr<&i32>) -> i32 {
+    p = nullptr;
+    return 37;
+}
+
+fn add_two(&values: [i32; 2]) {
+    for &value in values {
+        value += 2;
+    }
+}
+
+test "Pointers: normal branch and loop exits retain only their valid proofs" {
+    let p: ptr<&i32> = ::pointer_values::get();
+    check(joined(p, true) == read(p));
+    check(joined(p, false) == read(p));
+    check(break_proof(p) == read(p));
+    var slot = p;
+    if slot == nullptr { fail("missing provider address"); }
+    let saved: ptr<i32> = slot;
+    *slot = clear_value(&slot);
+    check(slot == nullptr);
+    check(*saved == 37);
+    var array: [i32; 2] = [1, 2];
+    let sequence: ptr<&[i32; 2]> = ::pointer_values::address(&array);
+    if sequence != nullptr { add_two(&*sequence); }
+    check(array[0] == 3);
+    check(array[1] == 4);
+}
+
+test "Pointers: capture rebinding leaves independent saved addresses intact" {
+    var slot: ptr<&i32> = ::pointer_values::get();
+    let clear = [&slot]() {
+        slot = nullptr;
+    };
+    if slot == nullptr { fail("missing provider address"); }
+    let saved = slot;
+    clear();
+    *saved = 39;
+    check(slot == nullptr);
+    let mutate = [saved]() {
+        if saved != nullptr { *saved = 40; }
+    };
+    mutate();
+    check(*saved == 40);
+    let handles: [ptr<&i32>; 2] = [saved, nullptr];
+    let index = 0usize;
+    let selected = handles[index];
+    if selected != nullptr { check(*selected == 40); }
+}
+
+struct PointerFailure {}
+
+fn null_is_failure(p: ptr<i32>) -> i32 throw PointerFailure {
+    if p == nullptr { throw PointerFailure {}; }
+    return *p;
+}
+
+fn caught_proof(p: ptr<i32>, fail_first: bool) -> i32 {
+    try {
+        if fail_first { throw PointerFailure {}; }
+        if p == nullptr { return 0; }
+    } catch {
+        PointerFailure(_) => { if p == nullptr { return 0; } },
+    }
+    return *p;
+}
+
+test "Pointers: failure exits and iteration retain their contracts" {
+    let p: ptr<&i32> = ::pointer_values::get();
+    check(caught_proof(p, false) == read(p));
+    check(caught_proof(p, true) == read(p));
+    try {
+        check(null_is_failure(p)? == read(p));
+    } catch {
+        PointerFailure(_) => { fail("unexpected null"); },
+    }
+    var caught = false;
+    try {
+        let value = null_is_failure(nullptr)?;
+    } catch {
+        PointerFailure(_) => { caught = true; },
+    }
+    check(caught);
+    var slots: [ptr<&i32>; 2] = [p, p];
+    for &slot in slots {
+        slot = nullptr;
+    }
+    check(slots[0] == nullptr && slots[1] == nullptr);
+    let saved: ptr<&i32> = p;
+    for var i = 0; i < 2; i += 1 {
+        if saved == nullptr { continue; }
+        *saved = 42;
+    }
+    check(read(p) == 42);
+}
+
+fn no_effect() {}
+
+fn pair(left: ptr<i32>, &&right: ptr<i32>) -> bool => left == right;
+
+test "Pointers: local Write iteration does not expose storage after the loop" {
+    let p: ptr<i32> = ::pointer_values::get();
+    var slots: [ptr<i32>; 1] = [p];
+    for &slot in slots {
+        slot = p;
+    }
+    if slots[0] == nullptr { fail("missing address"); }
+    no_effect();
+    check(*slots[0] == read(p));
+    let copied = p;
+    check(pair(copied, &&copied));
+    let writer: ptr<&i32> = ::pointer_values::get();
+    let selected: ptr<i32> = if true { p } else { (if false { writer } else { nullptr }) };
+    let nested: [[ptr<i32>; 1]; 2] = [[p], [writer]];
+    check(selected == nested[1][0]);
+}

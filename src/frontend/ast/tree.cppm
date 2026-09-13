@@ -22,7 +22,6 @@ public:
     SyntaxTree(SyntaxTree&&) = default;
     auto operator=(const SyntaxTree&) -> SyntaxTree& = delete;
     auto operator=(SyntaxTree&&) -> SyntaxTree& = default;
-
     auto view() const noexcept -> ASTView;
 
 private:

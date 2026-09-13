@@ -1,6 +1,4 @@
 import .validation using {UTF8Error, validator, push, error};
-import .scalar using char_to_u32;
-import <carven/runtime/utf.hpp>;
 
 export struct UTF8Encoded {
     bytes: [u8; 4],
@@ -27,7 +25,7 @@ export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
         if state.remaining == 0 {
-            return .Scalar((scalar as ::carven::runtime::UnicodeScalarRepresentation) as char, state.offset);
+            return .Scalar(char::from_u32_unchecked(scalar), state.offset);
         }
     }
     throw error(state, .Truncated);
@@ -39,7 +37,7 @@ private fn continuation(value: u32, shift: u32) -> u8 {
 }
 
 export fn encode_utf8(character: char) -> UTF8Encoded {
-    let value = char_to_u32(character);
+    let value = character as u32;
     var bytes: [u8; 4] = [0, 0, 0, 0];
     if value <= 0x7f {
         bytes[0] = value as u8;

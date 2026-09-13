@@ -1,0 +1,44 @@
+fn record(&trace: i32, marker: i32) -> i32 {
+    trace = trace * 10 + marker;
+    return marker;
+}
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn sum(&&pair: Pair) -> i32 => pair.left + pair.right;
+
+fn combine(&&left: Pair, &&right: Pair) -> i32 => left.left + right.left;
+
+test "Ownership: Take transfers ownership preserves order and permits var restoration" {
+    let first = Pair { left: 20, right: 22 };
+    check(sum(&&first) == 42);
+
+    var reusable = Pair { left: 1, right: 2 };
+    check(sum(&&reusable) == 3);
+    reusable = Pair { left: 19, right: 23 };
+    check(sum(&&reusable) == 42);
+
+    var trace = 0;
+    let combined = combine(
+        &&Pair { left: record(&trace, 1), right: 0 },
+        &&Pair { left: record(&trace, 2), right: 0 },
+    );
+    let observed = trace;
+    check(combined == 3);
+    check(observed == 12);
+}
+
+fn restore_pair(&&pair: Pair) -> Pair => Pair { left: pair.left + 1, right: pair.right };
+
+fn combine_completed(value: i32, &&owner: i32) -> i32 => value + owner;
+
+test "Ownership: completed results release access and RHS consumption restores" {
+    let scalar = 10;
+    check(combine_completed(scalar + 1, &&scalar) == 21);
+    var pair = Pair { left: 20, right: 21 };
+    pair = restore_pair(&&pair);
+    check(pair.left + pair.right == 42);
+}

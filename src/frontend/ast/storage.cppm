@@ -21,7 +21,6 @@ class ASTStorage final {
 public:
     ASTStorage(const ASTStorage&) = delete;
     ASTStorage(ASTStorage&&) = default;
-
     auto operator=(const ASTStorage&) -> ASTStorage& = delete;
     auto operator=(ASTStorage&&) -> ASTStorage& = default;
 
@@ -498,10 +497,6 @@ private:
     }
 
     auto visit(const ASTExprStatement& value) noexcept -> void { visit(value.expression); }
-
-    auto visit(const ASTTestOperationStmt& value) noexcept -> void {
-        visit_fields(value.keyword_span, value.arguments);
-    }
 
     auto visit(const ASTForInitializer& value) noexcept -> void {
         visit_fields(value.span, value.value);

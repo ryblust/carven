@@ -217,3 +217,20 @@ TEST_CASE("Functions: expression body returns retain expansion provenance") {
     REQUIRE(std::holds_alternative<ProgramExpansionOrigin>(origin.value));
     CHECK_EQ(program.provenance().slice(statement.origin), "=>");
 }
+
+TEST_CASE("Semantic control: test stop follows concrete calls independently of signatures") {
+    const auto program = analyze_test_program(
+        "fn stop() { fail(); }\n"
+        "fn forward() { stop(); }\n"
+        "fn ordinary() {}\n"
+        "private import(cpp) fn native();\n"
+        "fn call_view(action: fn() -> void) { action(); }\n"
+    );
+    const auto callables = test_function_callables(program);
+    REQUIRE(callables.size() == 5uz);
+    CHECK(program.may_stop_test(callables[0]));
+    CHECK(program.may_stop_test(callables[1]));
+    CHECK_FALSE(program.may_stop_test(callables[2]));
+    CHECK_FALSE(program.may_stop_test(callables[3]));
+    CHECK(program.may_stop_test(callables[4]));
+}

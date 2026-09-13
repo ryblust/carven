@@ -48,12 +48,6 @@ The notation has the following meaning:
 Productions describe token sequences. Whitespace and comments are discarded by
 lexical analysis except inside literals and opaque C++ source fragments.
 
-Statement parsing also carries a test context. A `test-block` enables it;
-structurally nested loop and control-flow blocks inherit it, and a lambda body
-disables it for that body. When enabled, the `statement` production admits a
-`test-operation-statement`. This context is a formal grammar parameter omitted
-from nonterminal names for readability.
-
 ## 2. Lexical Grammar
 
 ### 2.1 Source Text
@@ -446,25 +440,14 @@ scope. `private` and `export` may prefix the declaration through the common
 test-declaration = "test", STRING_LITERAL, test-block;
 
 test-block = "{", { statement }, "}";
-
-test-operation-statement = test-operation-name,
-                           "(", [ argument-list ], ")", ";";
-
-test-operation-name = "check" | "require" | "fail";
 ```
 
 A test declaration is a top-level item and cannot follow `export`. It has no
 parameter or result syntax.
 
-`check`, `require`, and `fail` remain `IDENTIFIER` tokens rather than reserved
-keywords. At a statement boundary with test context enabled, the exact form
-above is a `test-operation-statement`. The argument list uses the ordinary
-expression and trailing-comma rules. Argument count is a semantic constraint.
-
-A same-spelled form that is not the complete semicolon-terminated statement
-above is parsed through the ordinary expression grammar. Inside a test context,
-the complete statement form is contextual syntax even if an ordinary callable
-with the same spelling is visible.
+`check`, `require`, `fail`, and the printing names are ordinary identifiers.
+Their calls use the ordinary expression grammar in tests, functions, and lambdas.
+Name resolution and argument constraints are semantic rules.
 
 ## 4. Types
 
@@ -538,9 +521,7 @@ statement = variable-declaration
           | assignment-statement
           | update-statement
           | expression-statement
-          | control-flow-statement
-          | test-operation-statement
-            where test context is enabled;
+          | control-flow-statement;
 
 assignment-statement = assignment-form, ";";
 
@@ -554,8 +535,7 @@ control-flow-statement = if-form | match-form | try-form;
 A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning
 of a statement is terminated by its own structure.
 
-`test-operation-statement` is a contextual statement alternative. In
-particular, the grammar has no standalone `{ ... }` block statement.
+The grammar has no standalone `{ ... }` block statement.
 
 ### 5.3 Assignment and Update Forms
 
@@ -934,9 +914,6 @@ lookup.
   `branch-block` is a `branch-result` candidate.
 - A trailing `if-form`, `match-form`, or `try-form` without `;` occupies the role
   required by its branch position.
-- In test context, an exact `check(...) ;`, `require(...) ;`, or `fail(...) ;`
-  at a statement boundary is a test operation before ordinary expression-
-  statement parsing is considered. Source lambda bodies clear that context.
 
 ### 10.2 Branch Parsing
 

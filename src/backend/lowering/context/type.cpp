@@ -134,7 +134,7 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
     std::unreachable();
 }
 
-auto ModuleLowering::function_type(CallableSignatureID id) noexcept -> TargetType {
+auto ModuleLowering::function_type(CallableSignatureID id, bool stops_test) noexcept -> TargetType {
     const auto& signature = semantic().callable_signatures().signature(id);
     auto parameters = std::vector<TargetTypeID>();
     parameters.reserve(signature.parameters.size());
@@ -145,18 +145,19 @@ auto ModuleLowering::function_type(CallableSignatureID id) noexcept -> TargetTyp
         .value =
             TargetFunctionType {
                 .parameters = std::move(parameters),
-                .result = lower_signature_result(id),
+                .result = lower_signature_result(id, stops_test),
             },
         .const_qualified = false,
     };
 }
 
-auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> TargetTypeID {
+auto ModuleLowering::lower_signature_result(CallableSignatureID id, bool stops_test) noexcept
+    -> TargetTypeID {
     if (id.owner() != semantic().identity()
         || id.index() >= semantic().callable_signatures().size()) {
         invariant_violation("module lowering received an unknown callable signature");
     }
-    const auto [entry, inserted] = signature_result_cache.try_emplace(id);
+    const auto [entry, inserted] = signature_result_cache.try_emplace(std::pair(id, stops_test));
     auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
@@ -167,11 +168,14 @@ auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> 
     const auto& signature = semantic().callable_signatures().signature(id);
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
-        if (failures.empty()) {
+        if (failures.empty() && !stops_test) {
             return lower_type(signature.result);
         }
         auto arguments = std::vector<TargetTypeID> {lower_type(signature.result)};
-        arguments.reserve(failures.size() + 1);
+        arguments.reserve(failures.size() + 2);
+        if (stops_test) {
+            arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped));
+        }
         for (const auto member : failures) {
             arguments.push_back(lower_type(member));
         }
@@ -188,8 +192,15 @@ auto ModuleLowering::lower_signature_result(CallableSignatureID id) noexcept -> 
     return result;
 }
 
-auto ModuleLowering::outcome_type(CallableSignatureID signature) noexcept -> TargetTypeID {
-    return lower_signature_result(signature);
+auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetTypeID {
+    return lower_signature_result(
+        semantic().declarations().callable(callable_id).signature,
+        semantic().may_stop_test(callable_id)
+    );
+}
+
+auto ModuleLowering::call_result(TypeID type) noexcept -> TargetTypeID {
+    return lower_signature_result(semantic().call_signature(type), semantic().may_stop_test(type));
 }
 
 auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
@@ -313,7 +324,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
             },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {
                 const auto& callable = semantic().declarations().callable(value.callable);
-                return function_type(callable.signature);
+                return function_type(callable.signature, semantic().may_stop_test(value.callable));
             },
             [&](const ClosureTypeValue& value) noexcept -> TargetType {
                 return {
@@ -327,7 +338,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 };
             },
             [&](const CallableViewTypeValue& value) noexcept -> TargetType {
-                return function_type(value.signature);
+                return function_type(value.signature, true);
             },
         },
         semantic().types().type(id).value

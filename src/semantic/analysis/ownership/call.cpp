@@ -36,7 +36,8 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
     initialize(body.inputs().captures, input.captures);
     auto flow = region(body.region(), std::move(state));
     auto result = std::vector<OwnershipCallCompletion>();
-    const auto complete = [&](std::optional<TypeID> failure,
+    const auto complete = [&](bool test_stopped,
+                              std::optional<TypeID> failure,
                               OwnershipState state,
                               OwnershipRelationships value) noexcept {
         auto valid = true;
@@ -83,9 +84,11 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
         if (!valid) {
             return;
         }
-        const auto found = std::ranges::find(result, failure, &OwnershipCallCompletion::failure);
+        const auto found = std::ranges::find_if(result, [&](const auto& answer) noexcept {
+            return answer.test_stopped == test_stopped && answer.failure == failure;
+        });
         if (found == result.end()) {
-            result.push_back({failure, std::move(state), std::move(value)});
+            result.push_back({test_stopped, failure, std::move(state), std::move(value)});
         } else {
             join_ownership_state(found->state, state);
             merge_relationships(found->value, value);
@@ -103,16 +106,19 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
                 invariant_violation("normal callable exit did not deliver its result");
             }
         }
-        complete(std::nullopt, std::move(flow.normal->state), std::move(flow.normal->value));
+        complete(false, std::nullopt, std::move(flow.normal->state), std::move(flow.normal->value));
     }
     for (auto& exit : flow.exits) {
         std::visit(
             Overloaded {
                 [&](OwnershipReturn& value) noexcept {
-                    complete(std::nullopt, std::move(exit.state), std::move(value.value));
+                    complete(false, std::nullopt, std::move(exit.state), std::move(value.value));
                 },
                 [&](OwnershipFailure& value) noexcept {
-                    complete(value.type, std::move(exit.state), std::move(value.value));
+                    complete(false, value.type, std::move(exit.state), std::move(value.value));
+                },
+                [&](OwnershipTestStopped&) noexcept {
+                    complete(true, std::nullopt, std::move(exit.state), {});
                 },
                 [](const auto&) static noexcept {
                     invariant_violation("loop transfer escaped its callable");
@@ -127,7 +133,9 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
             normalize_relationships(object.relationships);
         }
     }
-    std::ranges::sort(result, {}, &OwnershipCallCompletion::failure);
+    std::ranges::sort(result, {}, [](const auto& answer) static noexcept {
+        return std::pair(answer.test_stopped, answer.failure);
+    });
     return result;
 }
 
@@ -279,7 +287,9 @@ auto OwnershipBodyAnalyzer::call(
             returned.objects[sources[index]] = std::move(object);
         }
         const auto value = restore_facts(std::move(answer.value));
-        if (answer.failure.has_value()) {
+        if (answer.test_stopped) {
+            result.exits.push_back({OwnershipTestStopped {}, std::move(returned)});
+        } else if (answer.failure.has_value()) {
             result.exits.push_back(
                 {OwnershipFailure {*answer.failure, value}, std::move(returned)}
             );

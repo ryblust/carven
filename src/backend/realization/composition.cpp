@@ -1,10 +1,12 @@
 module carven:backend.realization.composition.impl;
 
 import :backend.realization.composition;
-import :backend.target;
 import :backend.target.expr;
+import :backend.target.ids;
+import :backend.target.name;
 import :backend.target.origin;
 import :backend.target.stmt;
+import :backend.target;
 import :support.invariant;
 import :support.unique_indirect;
 import std;
@@ -141,4 +143,60 @@ auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yi
             .arguments = {}
         }
     };
+}
+
+auto LoweringExitSummary::contains(LoweringExitTarget target) const noexcept -> bool {
+    return std::ranges::contains(targets, target);
+}
+
+auto LoweringExitSummary::add(LoweringExitTarget target) noexcept -> void {
+    if (!contains(target)) {
+        targets.push_back(target);
+    }
+}
+
+auto LoweringExitSummary::merge(const LoweringExitSummary& other) noexcept -> void {
+    for (const auto target : other.targets) {
+        add(target);
+    }
+}
+
+auto LoweringExitSummary::consume(LoweringExitTarget target) noexcept -> bool {
+    return std::erase(targets, target) != 0;
+}
+
+LoweringStmtBuilder::LoweringStmtBuilder() noexcept
+    : lowered {
+          .statements = {},
+          .normal = LoweringCompleted {},
+          .exits = {},
+          .has_declarations = false
+      } {}
+
+auto LoweringStmtBuilder::continues() const noexcept -> bool {
+    return lowered.normal.has_value();
+}
+
+auto LoweringStmtBuilder::empty() const noexcept -> bool {
+    return lowered.statements.empty();
+}
+
+auto LoweringStmtBuilder::owns_storage() const noexcept -> bool {
+    return lowered.has_declarations;
+}
+
+auto LoweringStmtBuilder::exits() const noexcept -> const LoweringExitSummary& {
+    return lowered.exits;
+}
+
+auto LoweringStmtBuilder::record_exits(const LoweringExitSummary& exits) noexcept -> void {
+    lowered.exits.merge(exits);
+}
+
+auto LoweringStmtBuilder::consume_exit(LoweringExitTarget target) noexcept -> bool {
+    return lowered.exits.consume(target);
+}
+
+auto LoweringStmtBuilder::finish() && noexcept -> std::vector<TargetStmt> {
+    return std::move(lowered.statements);
 }

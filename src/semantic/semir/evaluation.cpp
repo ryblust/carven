@@ -89,6 +89,16 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     ? operands(*value.operand)
                     : required;
             },
+            [&](const SemTestReport& value) noexcept {
+                return EvaluationRule {
+                    .action = EvaluationAction::Required,
+                    .operands = {
+                        value.condition ? &**value.condition : nullptr,
+                        value.message ? &**value.message : nullptr
+                    }
+                };
+            },
+            [&](const SemPrint&) noexcept { return required; },
             [&](const SemFormat&) noexcept { return required; },
             [&](const SemSliceIntrinsic& value) noexcept {
                 return value.intrinsic == SliceIntrinsic::Slice

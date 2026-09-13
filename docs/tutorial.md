@@ -207,10 +207,13 @@ Other builtin types include `bool`, `char`, `str`, fixed-width integers,
 `isize`, `usize`, and `f32`. Explicit numeric conversion uses `as`, for example
 `quantity as i64`. Ordinary numeric values do not implicitly change type.
 
-String literals use double quotes and have type `str`, a non-owning UTF-8 view.
-Characters use single quotes. `String::from_str("hello")` creates an owning copy;
-`owner.as_str()` borrows a view from it. That view must remain within the owner's
-lifetime and prevents mutation while the borrow remains live.
+String literals use double quotes and default to `str`, a non-owning UTF-8 view.
+A String context, such as `let text: String = "hello"`, creates an owning value.
+An existing view can be copied with `view as String`. String values borrow
+automatically in `str` contexts; `.as_str()` also creates an explicit view.
+Borrowed views must remain within their owners' lifetimes and prevent mutation
+while the borrow remains live. `String::from_str(text)` is also available for
+explicit owning construction. Characters use single quotes.
 
 For either text type, `text.len()` counts UTF-8 bytes and `text.is_empty()` tests
 for empty text. `text.bytes` and `text.chars` can be traversed in a loop.

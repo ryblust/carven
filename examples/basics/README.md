@@ -1,6 +1,6 @@
 # Calculate a receipt
 
-Read `main.cv` in source order. The console import supplies `print`. `Item`
+Read `main.cv` in source order. `Item`
 groups price and quantity, and `subtotal` reads an item without transferring
 ownership. Amounts use integer cents.
 
@@ -19,8 +19,7 @@ From the repository root:
 Expected output:
 
 ```text
-Total in cents:
-860
+Total in cents: 860
 ```
 
 Try adding a third item to the array. Its extent is inferred from the literal;

@@ -8,7 +8,6 @@ import std;
 class DiagnosticBuilder final {
 public:
     DiagnosticBuilder(DiagnosticCode code, std::string message) noexcept;
-
     auto primary(SourceSpan span, std::string message = {}) noexcept -> DiagnosticBuilder&;
     auto related(SourceSpan span, std::string message = {}) noexcept -> DiagnosticBuilder&;
     auto note(std::string message, std::optional<SourceSpan> span = std::nullopt) noexcept

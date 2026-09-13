@@ -42,10 +42,31 @@ auto BodyElaborator::cpp_result_type(
     );
 }
 
-auto BodyElaborator::materialize_selection(SelectedExpression selected) noexcept
-    -> AnalysisResult<BuiltExpression> {
+auto BodyElaborator::materialize_selection(
+    SelectedExpression selected,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisResult<BuiltExpression> {
     if (auto* built = std::get_if<BuiltExpression>(&selected)) {
         return std::move(*built);
+    }
+    if (const auto* builtin = std::get_if<BuiltinSelection>(&selected)) {
+        if (expected) {
+            if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
+                const auto type = draft().construction_type_copy(*term);
+                if (const auto* view =
+                        std::get_if<ConstructionCallableViewTypeValue>(&type.value)) {
+                    if (view->result
+                        == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::Void))) {
+                        return builtin_callable(*builtin, view->parameters);
+                    }
+                }
+            }
+        }
+        return std::unexpected(fail(
+            builtin->span,
+            DiagnosticCode::TypeNotCallable,
+            "builtin value requires an expected callable signature returning void"
+        ));
     }
     auto& selection = std::get<CppSelection>(selected);
     if (auto* name = std::get_if<CppNameReference>(&selection.target)) {

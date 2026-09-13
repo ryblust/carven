@@ -1,6 +1,6 @@
 # Restock and dispatch inventory
 
-Read `main.cv` in source order: the console import, the `Stock` record,
+Read `main.cv` in source order: the `Stock` record,
 `restock` with a Write parameter, and `dispatch` with a Take parameter. Then
 follow the `stock` binding through `main`:
 
@@ -24,12 +24,9 @@ From the repository root:
 Expected output:
 
 ```text
-Snapshot:
-7
-Dispatched:
-9
-Replacement stock:
-1
+Snapshot: 7
+Dispatched: 9
+Replacement stock: 1
 ```
 
 Try reading `stock.units` immediately after dispatch and before reassignment;

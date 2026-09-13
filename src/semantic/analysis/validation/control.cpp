@@ -1,5 +1,13 @@
 module carven:semantic.analysis.validation.control.impl;
+
+import :semantic.analysis.operations;
 import :semantic.analysis.validation.context;
+import :semantic.analysis.validation;
+import :semantic.semir.constant;
+import :semantic.semir.program;
+import :semantic.semir.traversal;
+import :support.invariant;
+import :support.visit;
 import std;
 
 auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noexcept -> void {
@@ -59,11 +67,6 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noe
                                 invariant_violation("throw payload type mismatch");
                             }
                         },
-                        [&](const SemTestReport&) noexcept {
-                            if (body.kind() != BodyKind::Test) {
-                                invariant_violation("ordinary body contains a test exit");
-                            }
-                        },
                         [](const auto&) static noexcept {},
                     },
                     statement.value
@@ -86,3 +89,10 @@ auto BodyContractVerifier::verify() noexcept -> void {
         require_body_failure_set(body.region().failures.resolved());
     }
 }
+
+BodyContractVerifier::BodyContractVerifier(
+    const SemIRBody& source,
+    const SemIRProgram& semantic
+) noexcept
+    : body(source),
+      program(semantic) {}

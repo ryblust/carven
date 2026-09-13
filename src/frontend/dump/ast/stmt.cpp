@@ -181,35 +181,6 @@ auto ASTDumper::render_statement(
                     "expression "
                 );
             },
-            [&](const ASTTestOperationStmt& operation) noexcept {
-                const auto* kind = operation.kind == ASTTestOperationKind::Check
-                    ? "check"
-                    : (operation.kind == ASTTestOperationKind::Require ? "require" : "fail");
-                append_line(
-                    prefix,
-                    is_last,
-                    std::format(
-                        "TestOperationStatement {} {}",
-                        kind,
-                        format_dump_span(statement.span)
-                    )
-                );
-                const auto nested_prefix = child_prefix(prefix, is_last);
-                render_span_field(
-                    nested_prefix,
-                    operation.arguments.empty(),
-                    "keyword",
-                    operation.keyword_span
-                );
-                for (auto index = 0uz; index < operation.arguments.size(); ++index) {
-                    render_expression(
-                        operation.arguments[index],
-                        nested_prefix,
-                        index + 1 == operation.arguments.size(),
-                        std::format("argument[{}] ", index)
-                    );
-                }
-            },
             [&](const ASTControlTransfer& transfer) noexcept {
                 render_control_transfer(transfer, prefix, is_last, statement.span);
             },

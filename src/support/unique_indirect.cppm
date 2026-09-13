@@ -13,7 +13,6 @@ public:
     constexpr UniqueIndirect(const UniqueIndirect&) = delete;
     constexpr UniqueIndirect(UniqueIndirect&&) = default;
     constexpr ~UniqueIndirect() = default;
-
     constexpr auto operator=(const UniqueIndirect&) -> UniqueIndirect& = delete;
     constexpr auto operator=(UniqueIndirect&&) -> UniqueIndirect& = default;
 

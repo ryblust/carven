@@ -15,161 +15,15 @@ public:
         TargetUnitIdentity unit_identity,
         std::span<const TargetType> source_types,
         const TargetUnitSections& source_sections
-    ) noexcept
-        : identity(unit_identity),
-          types(source_types),
-          sections(source_sections),
-          visited_types(source_types.size(), false) {}
-
-    auto collect() noexcept -> std::vector<TargetDirective> {
-        if (!traverse_target_unit(sections, *this)) {
-            invariant_violation("target dependency traversal failed");
-        }
-        return headers | std::views::transform([](const std::string& header) noexcept {
-                   return TargetDirective {.bytes = std::format("#include <{}>", header)};
-               })
-            | std::ranges::to<std::vector>();
-    }
-
-    auto visit_type(TargetTypeID id) noexcept -> bool {
-        if (id.owner() != identity || id.index() >= types.size()) {
-            invariant_violation("target dependency traversal reached an invalid type ID");
-        }
-        if (visited_types[id.index()]) {
-            return true;
-        }
-        visited_types[id.index()] = true;
-        const auto& value = types[id.index()].value;
-        std::visit(
-            Overloaded {
-                [](const TargetDecltypeType&) static noexcept {},
-                [](const TargetNamedType&) static noexcept {},
-                [&](const TargetIntrinsicType& intrinsic) noexcept {
-                    visit_symbol(intrinsic.symbol);
-                },
-                [&](const TargetArrayType&) noexcept { include("array"); },
-                [&](const TargetFunctionType&) noexcept {
-                    visit_symbol(TargetSymbol::RuntimeFunctionRef);
-                },
-                [](const TargetPointerType&) static noexcept {},
-                [](const TargetReferenceType&) static noexcept {},
-            },
-            value
-        );
-        return visit_target_type_children(value, *this);
-    }
-
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-        std::visit(
-            Overloaded {
-                [](const TargetNameExpr&) static noexcept {},
-                [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
-                    visit_symbol(intrinsic.symbol);
-                },
-                [&](const TargetLiteralExpr& literal) noexcept {
-                    const auto* string = std::get_if<TargetStringLiteral>(&literal.value);
-                    if (string != nullptr && string->kind == TargetStringLiteralKind::StringView) {
-                        include("string_view");
-                    }
-                },
-                [](const TargetPrefixExpr&) static noexcept {},
-                [](const TargetBinaryExpr&) static noexcept {},
-                [](const TargetConditionalExpr&) static noexcept {},
-                [](const TargetCallExpr&) static noexcept {},
-                [&](const TargetArrayExpr&) noexcept { include("array"); },
-                [](const TargetConstructionExpr&) static noexcept {},
-                [](const TargetIndexExpr&) static noexcept {},
-                [](const TargetMemberExpr&) static noexcept {},
-                [](const TargetScopeMemberExpr&) static noexcept {},
-                [](const TargetStaticMemberExpr&) static noexcept {},
-                [](const TargetStaticCastExpr&) static noexcept {},
-                [](const TargetLambdaExpr&) static noexcept {},
-            },
-            expression.value
-        );
-        return true;
-    }
-
-    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-        if (std::holds_alternative<TargetUnreachableStmt>(statement.value)) {
-            include("carven/runtime/unreachable.hpp");
-        }
-        if (std::holds_alternative<TargetRuntimeTrapStmt>(statement.value)) {
-            include("cstdlib");
-        }
-        return true;
-    }
+    ) noexcept;
+    auto collect() noexcept -> std::vector<TargetDirective>;
+    auto visit_type(TargetTypeID id) noexcept -> bool;
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
+    auto enter_statement(const TargetStmt& statement) noexcept -> bool;
 
 private:
-    auto include(std::string_view header) noexcept -> void { headers.insert(std::string(header)); }
-
-    auto visit_symbol(TargetSymbol symbol) noexcept -> void {
-        switch (symbol) {
-            case TargetSymbol::StdInt8:
-            case TargetSymbol::StdInt16:
-            case TargetSymbol::StdInt32:
-            case TargetSymbol::StdInt64:
-            case TargetSymbol::StdUInt8:
-            case TargetSymbol::StdUInt16:
-            case TargetSymbol::StdUInt32:
-            case TargetSymbol::StdUInt64:           include("cstdint"); break;
-            case TargetSymbol::StdPtrdiff:
-            case TargetSymbol::StdSize:             include("cstddef"); break;
-            case TargetSymbol::StdExitFailure:      include("cstdlib"); break;
-            case TargetSymbol::RuntimeOutcome:      include("carven/runtime/outcome.hpp"); break;
-            case TargetSymbol::RuntimeFormat:       include("carven/runtime/format.hpp"); return;
-            case TargetSymbol::RuntimeAsSlice:
-            case TargetSymbol::RuntimeSlice:        include("carven/runtime/slice.hpp"); return;
-            case TargetSymbol::RuntimeString:       include("carven/runtime/string.hpp"); return;
-            case TargetSymbol::RuntimeStrCharsView:
-            case TargetSymbol::RuntimeStrBytes:
-            case TargetSymbol::RuntimeStrChars:
-            case TargetSymbol::RuntimeCheckedUnicodeScalar:
-                include("carven/runtime/text.hpp");
-                break;
-            case TargetSymbol::RuntimeEntryArgs:      include("carven/runtime/entry.hpp"); break;
-            case TargetSymbol::RuntimeDeferredResult: include("carven/runtime/lifetime.hpp"); break;
-            case TargetSymbol::RuntimeReadArg:
-            case TargetSymbol::RuntimeTransfer:       include("carven/runtime/passing.hpp"); break;
-            case TargetSymbol::RuntimeFunctionRef:    include("carven/runtime/callable.hpp"); break;
-            case TargetSymbol::RuntimeIntegerNegate:
-            case TargetSymbol::RuntimeIntegerAdd:
-            case TargetSymbol::RuntimeIntegerSubtract:
-            case TargetSymbol::RuntimeIntegerMultiply:
-            case TargetSymbol::RuntimeIntegerDivide:
-            case TargetSymbol::RuntimeIntegerRemainder:
-            case TargetSymbol::RuntimeIntegerLeftShift:
-            case TargetSymbol::RuntimeIntegerRightShift:
-                include("carven/runtime/numeric.hpp");
-                break;
-            case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
-            case TargetSymbol::StdRemoveCVRef:
-            case TargetSymbol::StdAddConst:
-            case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
-            case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
-            case TargetSymbol::StdAddressof:             include("memory"); break;
-            case TargetSymbol::StdGetIf:
-            case TargetSymbol::StdVariant:               include("variant"); break;
-            case TargetSymbol::StdDeclval:
-            case TargetSymbol::StdForward:
-            case TargetSymbol::StdMove:                  include("utility"); break;
-            case TargetSymbol::StdNullopt:
-            case TargetSymbol::StdOptional:              include("optional"); break;
-            case TargetSymbol::StdStringView:            include("string_view"); break;
-            case TargetSymbol::TestingContext:
-            case TargetSymbol::TestingReporter: include("carven/runtime/testing.hpp"); break;
-            case TargetSymbol::Auto:
-            case TargetSymbol::DecltypeAuto:
-            case TargetSymbol::Void:
-            case TargetSymbol::Bool:
-            case TargetSymbol::Char:
-            case TargetSymbol::Int:
-            case TargetSymbol::CChar:
-            case TargetSymbol::Float:
-            case TargetSymbol::Double:
-            case TargetSymbol::StdNullptr:      break;
-        }
-    }
+    auto include(std::string_view header) noexcept -> void;
+    auto visit_symbol(TargetSymbol symbol) noexcept -> void;
 
     TargetUnitIdentity identity;
     std::span<const TargetType> types;
@@ -177,6 +31,172 @@ private:
     std::vector<bool> visited_types;
     std::flat_set<std::string> headers;
 };
+
+TargetDependencyCollector::TargetDependencyCollector(
+    TargetUnitIdentity unit_identity,
+    std::span<const TargetType> source_types,
+    const TargetUnitSections& source_sections
+) noexcept
+    : identity(unit_identity),
+      types(source_types),
+      sections(source_sections),
+      visited_types(source_types.size(), false) {}
+
+auto TargetDependencyCollector::collect() noexcept -> std::vector<TargetDirective> {
+    if (!traverse_target_unit(sections, *this)) {
+        invariant_violation("target dependency traversal failed");
+    }
+    return headers | std::views::transform([](const std::string& header) noexcept {
+               return TargetDirective {.bytes = std::format("#include <{}>", header)};
+           })
+        | std::ranges::to<std::vector>();
+}
+
+auto TargetDependencyCollector::visit_type(TargetTypeID id) noexcept -> bool {
+    if (id.owner() != identity || id.index() >= types.size()) {
+        invariant_violation("target dependency traversal reached an invalid type ID");
+    }
+    if (visited_types[id.index()]) {
+        return true;
+    }
+    visited_types[id.index()] = true;
+    const auto& value = types[id.index()].value;
+    std::visit(
+        Overloaded {
+            [](const TargetDecltypeType&) static noexcept {},
+            [](const TargetNamedType&) static noexcept {},
+            [&](const TargetIntrinsicType& intrinsic) noexcept { visit_symbol(intrinsic.symbol); },
+            [&](const TargetArrayType&) noexcept { include("array"); },
+            [&](const TargetFunctionType&) noexcept {
+                visit_symbol(TargetSymbol::RuntimeFunctionRef);
+            },
+            [](const TargetPointerType&) static noexcept {},
+            [](const TargetReferenceType&) static noexcept {},
+        },
+        value
+    );
+    return visit_target_type_children(value, *this);
+}
+
+auto TargetDependencyCollector::enter_expression(
+    const TargetExpr& expression,
+    TargetExpressionRole
+) noexcept -> bool {
+    std::visit(
+        Overloaded {
+            [](const TargetNameExpr&) static noexcept {},
+            [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
+                visit_symbol(intrinsic.symbol);
+            },
+            [&](const TargetLiteralExpr& literal) noexcept {
+                const auto* string = std::get_if<TargetStringLiteral>(&literal.value);
+                if (string != nullptr && string->kind == TargetStringLiteralKind::StringView) {
+                    include("string_view");
+                }
+            },
+            [](const TargetPrefixExpr&) static noexcept {},
+            [](const TargetBinaryExpr&) static noexcept {},
+            [](const TargetConditionalExpr&) static noexcept {},
+            [](const TargetCallExpr&) static noexcept {},
+            [&](const TargetArrayExpr&) noexcept { include("array"); },
+            [](const TargetConstructionExpr&) static noexcept {},
+            [](const TargetIndexExpr&) static noexcept {},
+            [](const TargetMemberExpr&) static noexcept {},
+            [](const TargetScopeMemberExpr&) static noexcept {},
+            [](const TargetStaticMemberExpr&) static noexcept {},
+            [](const TargetStaticCastExpr&) static noexcept {},
+            [](const TargetLambdaExpr&) static noexcept {},
+        },
+        expression.value
+    );
+    return true;
+}
+
+auto TargetDependencyCollector::enter_statement(const TargetStmt& statement) noexcept -> bool {
+    if (std::holds_alternative<TargetUnreachableStmt>(statement.value)) {
+        include("carven/runtime/unreachable.hpp");
+    }
+    if (std::holds_alternative<TargetRuntimeTrapStmt>(statement.value)) {
+        include("cstdlib");
+    }
+    return true;
+}
+
+auto TargetDependencyCollector::include(std::string_view header) noexcept -> void {
+    headers.insert(std::string(header));
+}
+
+auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> void {
+    switch (symbol) {
+        case TargetSymbol::StdInt8:
+        case TargetSymbol::StdInt16:
+        case TargetSymbol::StdInt32:
+        case TargetSymbol::StdInt64:
+        case TargetSymbol::StdUInt8:
+        case TargetSymbol::StdUInt16:
+        case TargetSymbol::StdUInt32:
+        case TargetSymbol::StdUInt64:                 include("cstdint"); break;
+        case TargetSymbol::StdPtrdiff:
+        case TargetSymbol::StdSize:                   include("cstddef"); break;
+        case TargetSymbol::StdExitFailure:            include("cstdlib"); break;
+        case TargetSymbol::RuntimeTestStopped:
+        case TargetSymbol::RuntimeCurrentTest:        include("carven/runtime/testing.hpp"); return;
+        case TargetSymbol::RuntimeUnwrapNativeResult:
+        case TargetSymbol::RuntimeOutcome:            include("carven/runtime/outcome.hpp"); break;
+        case TargetSymbol::RuntimePrint:
+        case TargetSymbol::RuntimePrintln:
+        case TargetSymbol::RuntimeEprint:
+        case TargetSymbol::RuntimeEprintln:           include("carven/runtime/print.hpp"); return;
+        case TargetSymbol::RuntimeFormat:             include("carven/runtime/format.hpp"); return;
+        case TargetSymbol::RuntimeAsSlice:
+        case TargetSymbol::RuntimeSlice:              include("carven/runtime/slice.hpp"); return;
+        case TargetSymbol::RuntimeUTF8Text:           include("carven/runtime/utf.hpp"); return;
+        case TargetSymbol::RuntimeString:             include("carven/runtime/string.hpp"); return;
+        case TargetSymbol::RuntimeStrCharsView:
+        case TargetSymbol::RuntimeStrBytes:
+        case TargetSymbol::RuntimeStrChars:
+        case TargetSymbol::RuntimeCheckedUnicodeScalar: include("carven/runtime/text.hpp"); break;
+        case TargetSymbol::RuntimeEntryArgs:            include("carven/runtime/entry.hpp"); break;
+        case TargetSymbol::RuntimeDeferredResult:    include("carven/runtime/lifetime.hpp"); break;
+        case TargetSymbol::RuntimeReadArg:
+        case TargetSymbol::RuntimeTransfer:          include("carven/runtime/passing.hpp"); break;
+        case TargetSymbol::RuntimeFunctionRef:       include("carven/runtime/callable.hpp"); break;
+        case TargetSymbol::RuntimeIntegerNegate:
+        case TargetSymbol::RuntimeIntegerAdd:
+        case TargetSymbol::RuntimeIntegerSubtract:
+        case TargetSymbol::RuntimeIntegerMultiply:
+        case TargetSymbol::RuntimeIntegerDivide:
+        case TargetSymbol::RuntimeIntegerRemainder:
+        case TargetSymbol::RuntimeIntegerLeftShift:
+        case TargetSymbol::RuntimeIntegerRightShift: include("carven/runtime/numeric.hpp"); break;
+        case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
+        case TargetSymbol::StdRemoveCVRef:
+        case TargetSymbol::StdAddConst:
+        case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
+        case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
+        case TargetSymbol::StdAddressof:             include("memory"); break;
+        case TargetSymbol::StdGetIf:
+        case TargetSymbol::StdVariant:               include("variant"); break;
+        case TargetSymbol::StdDeclval:
+        case TargetSymbol::StdForward:
+        case TargetSymbol::StdMove:                  include("utility"); break;
+        case TargetSymbol::StdNullopt:
+        case TargetSymbol::StdOptional:              include("optional"); break;
+        case TargetSymbol::StdStringView:            include("string_view"); break;
+        case TargetSymbol::TestingContext:
+        case TargetSymbol::TestingReporter:          include("carven/runtime/testing.hpp"); break;
+        case TargetSymbol::Auto:
+        case TargetSymbol::DecltypeAuto:
+        case TargetSymbol::Void:
+        case TargetSymbol::Bool:
+        case TargetSymbol::Char:
+        case TargetSymbol::Int:
+        case TargetSymbol::CChar:
+        case TargetSymbol::Float:
+        case TargetSymbol::Double:
+        case TargetSymbol::StdNullptr:               break;
+    }
+}
 
 } // namespace
 

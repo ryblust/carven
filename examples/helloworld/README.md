@@ -1,9 +1,7 @@
 # Hello World
 
-Read `main.cv` from top to bottom. `import <cstdio> using std::printf;`
-introduces the C++ standard output function. `main` calls it with a `c"..."`
-literal, which supplies a `const char*`. An ordinary Carven string has type
-`str`, represented in C++ by `std::string_view`.
+`main` calls the builtin `println` with an ordinary string literal. It writes
+`Hello World` followed by a newline. No import is needed.
 
 From the repository root:
 

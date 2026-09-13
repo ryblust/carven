@@ -162,39 +162,15 @@ public:
     TypeResolution(const TypeResolution&) = delete;
     TypeResolution(TypeResolution&&) = default;
     ~TypeResolution() = default;
-
     auto operator=(const TypeResolution&) -> TypeResolution& = delete;
     auto operator=(TypeResolution&&) -> TypeResolution& = delete;
-
-    auto owner() const noexcept -> ProgramIdentity { return program_identity; }
-
-    auto contains(TypeTermID term) const noexcept -> bool {
-        return term.owner() == program_identity
-            && static_cast<std::size_t>(term.index()) < resolved_types.size();
-    }
-
+    auto owner() const noexcept -> ProgramIdentity;
+    auto contains(TypeTermID term) const noexcept -> bool;
     auto type(TypeTermID term) const noexcept -> TypeID;
-
-    auto resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
-        return std::visit(
-            [&](auto id) noexcept -> TypeID {
-                if (id.owner() != owner()) {
-                    invariant_violation("type resolution used a foreign identity");
-                }
-                if constexpr (std::same_as<decltype(id), TypeID>) {
-                    return id;
-                } else {
-                    return type(id);
-                }
-            },
-            reference
-        );
-    }
+    auto resolve(ConstructionTypeRef reference) const noexcept -> TypeID;
 
 private:
-    TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
-        : program_identity(identity),
-          resolved_types(std::move(types)) {}
+    TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept;
 
     ProgramIdentity program_identity;
     std::vector<TypeID> resolved_types;
@@ -207,10 +183,8 @@ public:
     CanonicalTypeStore(const CanonicalTypeStore&) = delete;
     CanonicalTypeStore(CanonicalTypeStore&&) = default;
     ~CanonicalTypeStore() = default;
-
     auto operator=(const CanonicalTypeStore&) -> CanonicalTypeStore& = delete;
     auto operator=(CanonicalTypeStore&&) -> CanonicalTypeStore& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(TypeID id) const noexcept -> bool;
     auto type(TypeID id) const noexcept -> const CanonicalType&;
@@ -233,10 +207,8 @@ public:
     CanonicalTypeStoreBuilder(const CanonicalTypeStoreBuilder&) = delete;
     CanonicalTypeStoreBuilder(CanonicalTypeStoreBuilder&&) = default;
     ~CanonicalTypeStoreBuilder() = default;
-
     auto operator=(const CanonicalTypeStoreBuilder&) -> CanonicalTypeStoreBuilder& = delete;
     auto operator=(CanonicalTypeStoreBuilder&&) -> CanonicalTypeStoreBuilder& = delete;
-
     auto intern(const CanonicalType& type) noexcept -> TypeID;
     auto intern_builtin(BuiltinType type) noexcept -> TypeID;
     auto copy(TypeID id) const noexcept -> CanonicalType;
@@ -261,10 +233,8 @@ public:
     FailureSetStore(const FailureSetStore&) = delete;
     FailureSetStore(FailureSetStore&&) = default;
     ~FailureSetStore() = default;
-
     auto operator=(const FailureSetStore&) -> FailureSetStore& = delete;
     auto operator=(FailureSetStore&&) -> FailureSetStore& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(FailureSetID id) const noexcept -> bool;
     auto failure_set(FailureSetID id) const noexcept -> const FailureSet&;
@@ -285,10 +255,8 @@ public:
     FailureSetStoreBuilder(const FailureSetStoreBuilder&) = delete;
     FailureSetStoreBuilder(FailureSetStoreBuilder&&) = default;
     ~FailureSetStoreBuilder() = default;
-
     auto operator=(const FailureSetStoreBuilder&) -> FailureSetStoreBuilder& = delete;
     auto operator=(FailureSetStoreBuilder&&) -> FailureSetStoreBuilder& = delete;
-
     auto intern(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_set() noexcept -> FailureSetID;
     auto copy(FailureSetID id) const noexcept -> FailureSet;
@@ -304,10 +272,8 @@ public:
     CallableSignatureStore(const CallableSignatureStore&) = delete;
     CallableSignatureStore(CallableSignatureStore&&) = default;
     ~CallableSignatureStore() = default;
-
     auto operator=(const CallableSignatureStore&) -> CallableSignatureStore& = delete;
     auto operator=(CallableSignatureStore&&) -> CallableSignatureStore& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(CallableSignatureID id) const noexcept -> bool;
     auto signature(CallableSignatureID id) const noexcept -> const CallableSignature&;
@@ -331,10 +297,8 @@ public:
     CallableSignatureStoreBuilder(const CallableSignatureStoreBuilder&) = delete;
     CallableSignatureStoreBuilder(CallableSignatureStoreBuilder&&) = default;
     ~CallableSignatureStoreBuilder() = default;
-
     auto operator=(const CallableSignatureStoreBuilder&) -> CallableSignatureStoreBuilder& = delete;
     auto operator=(CallableSignatureStoreBuilder&&) -> CallableSignatureStoreBuilder& = delete;
-
     auto intern(CallableSignature signature) noexcept -> CallableSignatureID;
     auto copy(CallableSignatureID id) const noexcept -> CallableSignature;
     auto owner() const noexcept -> ProgramIdentity;
@@ -350,10 +314,8 @@ public:
     ConstructionTypeStore(const ConstructionTypeStore&) = delete;
     ConstructionTypeStore(ConstructionTypeStore&&) = default;
     ~ConstructionTypeStore() = default;
-
     auto operator=(const ConstructionTypeStore&) -> ConstructionTypeStore& = delete;
     auto operator=(ConstructionTypeStore&&) -> ConstructionTypeStore& = delete;
-
     auto append(ConstructionType type) noexcept -> TypeTermID;
     auto copy(TypeTermID id) const noexcept -> ConstructionType;
     auto owner() const noexcept -> ProgramIdentity;

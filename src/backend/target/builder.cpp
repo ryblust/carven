@@ -14,88 +14,97 @@ namespace {
 
 class TypeLookup final {
 public:
-    TypeLookup(TargetUnitIdentity identity, std::size_t count) noexcept
-        : identity(identity),
-          count(count) {}
-
-    auto key(const TargetType& type) noexcept -> std::size_t {
-        mix(type.value.index());
-        mix(type.const_qualified);
-        std::visit(
-            Overloaded {
-                [&](const TargetNamedType& value) noexcept {
-                    name(value.name);
-                    for (const auto& segment : value.nested) {
-                        mix(std::hash<std::string_view>()(segment.name.spelling()));
-                        mix(segment.type_argument_ids.size());
-                    }
-                },
-                [&](const TargetIntrinsicType& value) noexcept {
-                    mix(static_cast<std::size_t>(value.symbol));
-                },
-                [&](const TargetArrayType& value) noexcept { mix(value.extent.magnitude); },
-                [&](const TargetReferenceType& value) noexcept {
-                    mix(value.const_qualified);
-                    mix(value.rvalue);
-                },
-                [](const TargetFunctionType&) static noexcept {},
-                [](const TargetPointerType&) static noexcept {},
-                [](const TargetDecltypeType&) static noexcept {},
-            },
-            type.value
-        );
-        static_cast<void>(visit_target_type_children(type.value, *this));
-        return hash;
-    }
-
-    auto visit_type(TargetTypeID child) noexcept -> bool {
-        if (child.owner() != identity || child.index() >= count) {
-            invariant_violation("target type child is foreign or has not been constructed");
-        }
-        mix(child.index());
-        return true;
-    }
-
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-        mix(expression.value.index());
-        std::visit(
-            [&](const auto& value) noexcept {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, TargetNameExpr>) {
-                    name(value.name);
-                } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
-                    mix(static_cast<std::size_t>(value.symbol));
-                } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
-                    const auto* member = std::get_if<TargetIdentifier>(&value.name);
-                    if (member != nullptr) {
-                        mix(std::hash<std::string_view>()(member->spelling()));
-                    }
-                } else if constexpr (std::same_as<Value, TargetPrefixExpr>
-                                     || std::same_as<Value, TargetBinaryExpr>) {
-                    mix(static_cast<std::size_t>(value.op));
-                }
-            },
-            expression.value
-        );
-        return true;
-    }
+    TypeLookup(TargetUnitIdentity identity, std::size_t count) noexcept;
+    auto key(const TargetType& type) noexcept -> std::size_t;
+    auto visit_type(TargetTypeID child) noexcept -> bool;
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 
 private:
-    auto mix(std::size_t value) noexcept -> void {
-        hash ^= value + 0x9e3779b9uz + (hash << 6u) + (hash >> 2u);
-    }
-
-    auto name(const TargetName& value) noexcept -> void {
-        mix(value.is_globally_qualified());
-        for (const auto& component : value.components()) {
-            mix(std::hash<std::string_view>()(component.spelling()));
-        }
-    }
+    auto mix(std::size_t value) noexcept -> void;
+    auto name(const TargetName& value) noexcept -> void;
 
     TargetUnitIdentity identity;
     std::size_t count;
     std::size_t hash = 0uz;
 };
+
+TypeLookup::TypeLookup(TargetUnitIdentity identity, std::size_t count) noexcept
+    : identity(identity),
+      count(count) {}
+
+auto TypeLookup::key(const TargetType& type) noexcept -> std::size_t {
+    mix(type.value.index());
+    mix(type.const_qualified);
+    std::visit(
+        Overloaded {
+            [&](const TargetNamedType& value) noexcept {
+                name(value.name);
+                for (const auto& segment : value.nested) {
+                    mix(std::hash<std::string_view>()(segment.name.spelling()));
+                    mix(segment.type_argument_ids.size());
+                }
+            },
+            [&](const TargetIntrinsicType& value) noexcept {
+                mix(static_cast<std::size_t>(value.symbol));
+            },
+            [&](const TargetArrayType& value) noexcept { mix(value.extent.magnitude); },
+            [&](const TargetReferenceType& value) noexcept {
+                mix(value.const_qualified);
+                mix(value.rvalue);
+            },
+            [](const TargetFunctionType&) static noexcept {},
+            [](const TargetPointerType&) static noexcept {},
+            [](const TargetDecltypeType&) static noexcept {},
+        },
+        type.value
+    );
+    static_cast<void>(visit_target_type_children(type.value, *this));
+    return hash;
+}
+
+auto TypeLookup::visit_type(TargetTypeID child) noexcept -> bool {
+    if (child.owner() != identity || child.index() >= count) {
+        invariant_violation("target type child is foreign or has not been constructed");
+    }
+    mix(child.index());
+    return true;
+}
+
+auto TypeLookup::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+    -> bool {
+    mix(expression.value.index());
+    std::visit(
+        [&](const auto& value) noexcept {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, TargetNameExpr>) {
+                name(value.name);
+            } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
+                mix(static_cast<std::size_t>(value.symbol));
+            } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
+                const auto* member = std::get_if<TargetIdentifier>(&value.name);
+                if (member != nullptr) {
+                    mix(std::hash<std::string_view>()(member->spelling()));
+                }
+            } else if constexpr (std::same_as<Value, TargetPrefixExpr>
+                                 || std::same_as<Value, TargetBinaryExpr>) {
+                mix(static_cast<std::size_t>(value.op));
+            }
+        },
+        expression.value
+    );
+    return true;
+}
+
+auto TypeLookup::mix(std::size_t value) noexcept -> void {
+    hash ^= value + 0x9e3779b9uz + (hash << 6u) + (hash >> 2u);
+}
+
+auto TypeLookup::name(const TargetName& value) noexcept -> void {
+    mix(value.is_globally_qualified());
+    for (const auto& component : value.components()) {
+        mix(std::hash<std::string_view>()(component.spelling()));
+    }
+}
 
 } // namespace
 

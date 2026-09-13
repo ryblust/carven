@@ -40,17 +40,13 @@ From the repository root:
 
 ```text
 Primary setting
-Port:
-443
+Port: 443
 Backup setting
-Port:
-9000
+Port: 9000
 Built-in default
-Port:
-8080
+Port: 8080
 Invalid primary is not hidden
-Bad digit at byte:
-1
+Bad digit at byte: 1
 Invalid backup propagates
 Port must be between 1 and 65535
 Zero is not a port

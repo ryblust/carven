@@ -45,7 +45,6 @@ public:
     TargetNameAllocator() = default;
     // The enclosing names remain immutable and outlive this allocator.
     explicit TargetNameAllocator(const std::flat_set<std::string>& enclosing) noexcept;
-
     auto source(std::string_view spelling, std::string_view enclosing_class = {}) const noexcept
         -> TargetIdentifier;
     auto alias_scope(TargetScopeID source, TargetScopeID target) noexcept -> void;
@@ -61,7 +60,6 @@ public:
     ) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind, TargetScopeID scope) noexcept -> TargetIdentifier;
-
     static auto public_identifier(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto fixed(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto generated_namespace() noexcept -> TargetName;

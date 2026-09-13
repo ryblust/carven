@@ -1,10 +1,10 @@
 # Owned text
 
-Read `main.cv` from its console import to the `greeting` function, then `main`.
+Read the `greeting` function in `main.cv`, then `main`.
 `greeting` returns an owning `String` from `f"Hello, {name}!"`.
 
-`main` first constructs the message and saves an independent copy. It borrows
-`.as_str()` inside a scope for console output. That view ends before `clear`
+`main` first constructs the message and saves an independent copy. The annotation
+`let view: str = message` borrows a view inside a scope for output. That view ends before `clear`
 modifies the owner. `append` adds the replacement text; the saved copy retains
 the greeting. The final interpolation uses `04x` to format a hexadecimal ID.
 
@@ -28,5 +28,5 @@ Hello, 世界!
 Bytes: 14, ID: 002a
 ```
 
-Change the greeting text and observe the byte count. The console helper takes
-`str`, so the example explicitly borrows each String with `.as_str()`.
+Change the greeting text and observe the byte count. Builtin `println` accepts
+both `str` and `String`, including interpolation results.

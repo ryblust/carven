@@ -11,7 +11,6 @@ struct UTF8Sequence final {
 class UTF8Decoder final {
 public:
     static auto decode(std::string_view text, std::size_t offset) noexcept -> UTF8Sequence;
-
     static auto is_valid(std::string_view text) noexcept -> bool;
 };
 

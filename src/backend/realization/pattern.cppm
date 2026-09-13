@@ -31,11 +31,7 @@ public:
         ModuleLowering& context,
         TargetNameAllocator& names,
         const SemIRBody& body
-    ) noexcept
-        : context(context),
-          names(names),
-          body(body) {}
-
+    ) noexcept;
     auto prepare(
         std::span<const PatternBindingType> bindings,
         LoweringStmtBuilder& destination

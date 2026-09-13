@@ -1,11 +1,10 @@
 import .validation using {UTF8Error, validate_utf8};
-import <carven/runtime/utf.hpp>;
 
 export fn from_utf8(bytes: [u8]) -> str throw UTF8Error {
     validate_utf8(bytes)?;
-    return ::carven::runtime::utf8_text(bytes) as str;
+    return str::from_utf8_unchecked(bytes);
 }
 
 export fn to_string(bytes: [u8]) -> String throw UTF8Error {
-    return String::from_str(from_utf8(bytes)?);
+    return from_utf8(bytes)? as String;
 }

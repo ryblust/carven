@@ -12,7 +12,6 @@ public:
     static auto zero() noexcept -> IntegerConstant;
     static auto from_signed(std::int64_t source) noexcept -> IntegerConstant;
     static auto from_parts(std::uint64_t magnitude, bool negative) noexcept -> IntegerConstant;
-
     auto magnitude() const noexcept -> std::uint64_t;
     auto negative() const noexcept -> bool;
     auto as_signed() const noexcept -> std::optional<std::int64_t>;
@@ -98,10 +97,8 @@ public:
     ConstantStore(const ConstantStore&) = delete;
     ConstantStore(ConstantStore&&) = default;
     ~ConstantStore() = default;
-
     auto operator=(const ConstantStore&) -> ConstantStore& = delete;
     auto operator=(ConstantStore&&) -> ConstantStore& = delete;
-
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(ConstantID id) const noexcept -> bool;
     auto constant(ConstantID id) const noexcept -> const ConstantFact&;
@@ -122,10 +119,8 @@ public:
     ConstantStoreBuilder(const ConstantStoreBuilder&) = delete;
     ConstantStoreBuilder(ConstantStoreBuilder&&) = default;
     ~ConstantStoreBuilder() = default;
-
     auto operator=(const ConstantStoreBuilder&) -> ConstantStoreBuilder& = delete;
     auto operator=(ConstantStoreBuilder&&) -> ConstantStoreBuilder& = delete;
-
     auto intern(ConstantFact fact) noexcept -> ConstantID;
     auto copy(ConstantID id) const noexcept -> ConstantFact;
     auto owner() const noexcept -> ProgramIdentity;

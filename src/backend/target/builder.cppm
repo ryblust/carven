@@ -16,13 +16,10 @@ public:
     TargetUnitBuilder(const TargetUnitBuilder&) = delete;
     TargetUnitBuilder(TargetUnitBuilder&&) noexcept = default;
     ~TargetUnitBuilder() = default;
-
     auto operator=(const TargetUnitBuilder&) -> TargetUnitBuilder& = delete;
     auto operator=(TargetUnitBuilder&&) -> TargetUnitBuilder& = delete;
-
     auto identity() const noexcept -> TargetUnitIdentity;
     auto intern_type(TargetType type) noexcept -> TargetTypeID;
-
     auto finish(TargetUnitSections sections, TargetDirectiveInputs directives = {}) && noexcept
         -> TargetUnit;
 

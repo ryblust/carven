@@ -53,18 +53,6 @@ TEST_CASE("Compiler diagnostics: names failures preserve code and precise span")
             .code = "CV-NAME-DUPLICATE-PARAMETER",
             .primary_text = "value",
         },
-        {
-            .name = "production has no implicit check name",
-            .source = "fn invalid() { check(true); }",
-            .code = "CV-NAME-UNRESOLVED",
-            .primary_text = "check",
-        },
-        {
-            .name = "lambda clears inline-test context",
-            .source = "test \"invalid\" { let callback = []() { check(true); }; }",
-            .code = "CV-NAME-UNRESOLVED",
-            .primary_text = "check",
-        },
     });
     check_compiler_errors(cases);
 }

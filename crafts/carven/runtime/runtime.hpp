@@ -7,6 +7,7 @@
 #include "lifetime.hpp"
 #include "numeric.hpp"
 #include "outcome.hpp"
+#include "print.hpp"
 #include "testing.hpp"
 #include "text.hpp"
 #include "string.hpp"

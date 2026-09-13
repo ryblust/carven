@@ -1,5 +1,3 @@
-import "console.hpp" using example::print;
-
 struct Item {
     price_cents: i32,
     quantity: i32,
@@ -16,6 +14,5 @@ fn main() {
     for item in items {
         total += subtotal(item);
     }
-    print("Total in cents:");
-    print(total);
+    println("Total in cents:", total);
 }

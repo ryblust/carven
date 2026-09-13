@@ -16,11 +16,11 @@ SyntaxProgramParts::SyntaxProgramParts(
 SyntaxProgram::SyntaxProgram(SyntaxProgramParts storage_value) noexcept
     : storage(std::move(storage_value)) {}
 
-auto SyntaxProgram::syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree& {
-    if (!storage.provenance.view().contains(module_id)) {
+auto SyntaxProgram::syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree& {
+    if (!storage.provenance.view().contains(id)) {
         invariant_violation("syntax lookup used a foreign or invalid module identity");
     }
-    return storage.syntax_by_module[module_id.index()];
+    return storage.syntax_by_module[id.index()];
 }
 
 auto SyntaxProgram::syntax_trees() const noexcept -> std::span<const SyntaxTree> {
@@ -28,12 +28,12 @@ auto SyntaxProgram::syntax_trees() const noexcept -> std::span<const SyntaxTree>
     return storage.syntax_by_module;
 }
 
-auto SyntaxProgram::resolved_imports(ProgramModuleID module_id) const noexcept
+auto SyntaxProgram::resolved_imports(ProgramModuleID id) const noexcept
     -> std::span<const ResolvedModuleImport> {
-    if (!storage.provenance.view().contains(module_id)) {
+    if (!storage.provenance.view().contains(id)) {
         invariant_violation("resolved import lookup used a foreign or invalid module identity");
     }
-    return storage.resolved_import_graph[module_id.index()];
+    return storage.resolved_import_graph[id.index()];
 }
 
 auto SyntaxProgram::resolved_import_graph() const noexcept

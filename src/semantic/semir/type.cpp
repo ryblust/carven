@@ -1,5 +1,10 @@
 module carven:semantic.semir.type.impl;
 
+import :semantic.semir.delegation;
+import :semantic.semir.identity;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.table;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
@@ -429,3 +434,32 @@ auto ConstructionTypeStore::owner() const noexcept -> ProgramIdentity {
 auto ConstructionTypeStore::size() const noexcept -> std::size_t {
     return rows.size();
 }
+
+auto TypeResolution::owner() const noexcept -> ProgramIdentity {
+    return program_identity;
+}
+
+auto TypeResolution::contains(TypeTermID term) const noexcept -> bool {
+    return term.owner() == program_identity
+        && static_cast<std::size_t>(term.index()) < resolved_types.size();
+}
+
+auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
+    return std::visit(
+        [&](auto id) noexcept -> TypeID {
+            if (id.owner() != owner()) {
+                invariant_violation("type resolution used a foreign identity");
+            }
+            if constexpr (std::same_as<decltype(id), TypeID>) {
+                return id;
+            } else {
+                return type(id);
+            }
+        },
+        reference
+    );
+}
+
+TypeResolution::TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
+    : program_identity(identity),
+      resolved_types(std::move(types)) {}

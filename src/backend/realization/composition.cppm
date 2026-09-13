@@ -21,25 +21,10 @@ struct LoweringExitTarget final {
 struct LoweringExitSummary final {
     std::vector<LoweringExitTarget> targets;
 
-    auto contains(LoweringExitTarget target) const noexcept -> bool {
-        return std::ranges::contains(targets, target);
-    }
-
-    auto add(LoweringExitTarget target) noexcept -> void {
-        if (!contains(target)) {
-            targets.push_back(target);
-        }
-    }
-
-    auto merge(const LoweringExitSummary& other) noexcept -> void {
-        for (const auto target : other.targets) {
-            add(target);
-        }
-    }
-
-    auto consume(LoweringExitTarget target) noexcept -> bool {
-        return std::erase(targets, target) != 0;
-    }
+    auto contains(LoweringExitTarget target) const noexcept -> bool;
+    auto add(LoweringExitTarget target) noexcept -> void;
+    auto merge(const LoweringExitSummary& other) noexcept -> void;
+    auto consume(LoweringExitTarget target) noexcept -> bool;
 };
 
 template<typename T>
@@ -112,30 +97,13 @@ auto returns_result(const LoweringResultDestination& result) noexcept -> bool {
 
 class LoweringStmtBuilder final {
 public:
-    LoweringStmtBuilder() noexcept
-        : lowered {
-              .statements = {},
-              .normal = LoweringCompleted {},
-              .exits = {},
-              .has_declarations = false
-          } {}
-
-    auto continues() const noexcept -> bool { return lowered.normal.has_value(); }
-
-    auto empty() const noexcept -> bool { return lowered.statements.empty(); }
-
-    auto owns_storage() const noexcept -> bool { return lowered.has_declarations; }
-
-    auto exits() const noexcept -> const LoweringExitSummary& { return lowered.exits; }
-
-    auto record_exits(const LoweringExitSummary& exits) noexcept -> void {
-        lowered.exits.merge(exits);
-    }
-
-    auto consume_exit(LoweringExitTarget target) noexcept -> bool {
-        return lowered.exits.consume(target);
-    }
-
+    LoweringStmtBuilder() noexcept;
+    auto continues() const noexcept -> bool;
+    auto empty() const noexcept -> bool;
+    auto owns_storage() const noexcept -> bool;
+    auto exits() const noexcept -> const LoweringExitSummary&;
+    auto record_exits(const LoweringExitSummary& exits) noexcept -> void;
+    auto consume_exit(LoweringExitTarget target) noexcept -> bool;
     auto emit(TargetStmt statement, bool continues = true) noexcept -> void;
     auto terminate(TargetStmt statement, LoweringExitTarget target) noexcept -> void;
     auto append(LoweringStmtBuilder source) noexcept -> void;
@@ -179,8 +147,7 @@ public:
 
     auto result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
     auto result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
-
-    auto finish() && noexcept -> std::vector<TargetStmt> { return std::move(lowered.statements); }
+    auto finish() && noexcept -> std::vector<TargetStmt>;
 
 private:
     Lowered<LoweringCompleted> lowered;

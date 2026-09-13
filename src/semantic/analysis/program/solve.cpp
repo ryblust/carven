@@ -2,8 +2,58 @@ module carven:semantic.analysis.program.solve.impl;
 
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.program;
+import :semantic.semir.traversal;
 import :support.invariant;
 import std;
+
+namespace {
+
+auto solve_test_stops(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations,
+    const BodyStore& bodies
+) noexcept -> std::vector<bool> {
+    auto stops = std::vector<bool>(
+        static_cast<std::size_t>(std::ranges::distance(declarations.callables())),
+        false
+    );
+    auto changed = true;
+    while (changed) {
+        changed = false;
+        for (const auto entry : declarations.callables()) {
+            const auto body_id = callable_body_id(entry.value);
+            if (!body_id || stops[entry.id.index()]) {
+                continue;
+            }
+            auto exits = false;
+            visit_semantic_nodes(
+                bodies.body(*body_id).region(),
+                [&](const SemanticExpression& expression) noexcept {
+                    if (const auto* report = std::get_if<SemTestReport>(&expression.value)) {
+                        exits |= report->kind != TestReportKind::Check;
+                    }
+                    if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                        const auto& type = types.type(call->callee->type.resolved()).value;
+                        if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
+                            exits |= stops[function->callable.index()];
+                        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
+                            exits |= stops[closure->callable.index()];
+                        } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
+                            exits = true;
+                        }
+                    }
+                }
+            );
+            if (exits) {
+                stops[entry.id.index()] = true;
+                changed = true;
+            }
+        }
+    }
+    return stops;
+}
+
+} // namespace
 
 auto ProgramDraft::verify_body(
     const SemIRBody& body,
@@ -98,6 +148,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     }
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
+    auto test_stops = solve_test_stops(types, declarations, final_bodies);
     return SemIRProgram(
         program_identity,
         std::move(provenance_appender).finish(),
@@ -107,7 +158,8 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         std::move(signatures),
         std::move(declarations),
         std::move(final_bodies),
-        std::move(final_tests)
+        std::move(final_tests),
+        std::move(test_stops)
     );
 }
 

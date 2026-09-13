@@ -62,14 +62,12 @@ private:
         LoweringStmtBuilder& destination,
         std::optional<TargetTypeID> factory_result = std::nullopt
     ) noexcept -> void;
-
     auto initialize_binding(
         const ConstructionInitialize& source,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto assign(const ConstructionAssign& source, LoweringStmtBuilder& destination) noexcept
         -> void;
-
     auto statement(const ConstructionStatement& source, ConstructionRegionID owner) noexcept
         -> Lowered<LoweringCompleted>;
     auto region(ConstructionRegionID source, const LoweringResultDestination& result) noexcept
@@ -134,6 +132,7 @@ private:
         ProgramOriginID origin,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
+    auto emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void;
     auto emit_return(
         std::optional<TargetExpr> value,
         LoweringStmtBuilder& destination,
@@ -205,10 +204,7 @@ private:
     };
 
     std::map<ConstructionRegionID, LoopContinuation> loops;
-    bool uses_test_context = false;
     std::size_t next_exit = 1;
 
-    auto exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget {
-        return {kind, next_exit++};
-    }
+    auto exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget;
 };

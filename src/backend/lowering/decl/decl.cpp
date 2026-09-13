@@ -184,6 +184,12 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
         name_expression(context.global_function_name(function)),
         std::move(arguments)
     );
+    if (context.semantic().may_stop_test(source.callable)) {
+        call = call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeUnwrapNativeResult),
+            target_expressions(std::move(call))
+        );
+    }
     auto body = std::vector<TargetStmt>();
     if (context.is_void(semantic_signature.result)) {
         body.push_back(generated_statement(
@@ -341,7 +347,8 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
     const auto& callable = context.semantic().declarations().callable(function.callable);
     const auto& signature = context.semantic().callable_signatures().signature(callable.signature);
     auto status = integer_expression(0);
-    if (context.plan().failure_abi().members(signature.failures).empty()) {
+    if (context.plan().failure_abi().members(signature.failures).empty()
+        && !context.semantic().may_stop_test(function.callable)) {
         body.push_back(generated_statement(TargetExprStmt {.expression = std::move(call)}));
     } else {
         auto names = context.make_callable_name_allocator();

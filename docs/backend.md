@@ -153,6 +153,28 @@ snapshot. `NativeTake` additionally retains the queried rvalue argument category
 Borrowing a native call result and acquiring an owning value therefore have
 different storage and delivery contracts.
 
+## Builtin calls and test exit
+
+`SemPrint` lowers to runtime printing calls; `SemTestReport` lowers to reporting
+and conditional test exit. A concrete callable whose published effect admits
+test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views
+use the same transport, with result adaptation lifting ordinary returns.
+Unaffected concrete callables retain their ordinary return representation.
+
+Calls check `TestStopped` before projecting success or dispatching typed failures.
+Propagation returns through each Carven frame, preserving C++ scope cleanup;
+the test body consumes the exit by returning to its runner. `TestStopped` is
+internal transport and is absent from Carven failure sets.
+
+The runner activates a thread-local `TestContext` for each case. Report operations
+use that context. Native export facades unwrap successful outcomes and terminate
+on a test stop. Arbitrary C++ callbacks do not participate in Carven propagation.
+
+Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
+otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection
+belongs to consumer compilation and does not change source semantics or the user's
+selected C++ standard.
+
 ## Evaluation and values
 
 Function-body lowering composes `Lowered<T>` results containing target statements,
@@ -197,6 +219,11 @@ Source and full-expression scopes preserve lifetimes.
 A recipe retains an unevaluated operation and its operands, or a completed target
 expression or stable result. Recipes are temporary realization state. Operation
 emission consumes their prepared operands through `realize_operation`.
+
+Before delivering a residual expression, its frame retains temporary backing
+needed by borrowed operands. Reports, match subjects, and range sources use the
+same operand delivery path. Nested consumption within one source lifetime shares
+the frame; retained storage follows that lifetime's cleanup scope.
 
 Recipes borrow the ordered operand contracts from body construction. Completion
 produces a saved result, a residual target expression, or completed evaluation
@@ -404,3 +431,9 @@ passes the formatted buffer through `String::from_utf8` and is `noexcept`.
 Ownership analysis establishes borrowing validity before lowering. Runtime views
 carry no owner metadata. String owners, pending operands, retained range sources,
 closure captures, and Outcome payloads use ordinary construction and cleanup frames.
+
+Unchecked character construction lowers to a C++ cast to the character
+representation. Unchecked UTF-8 construction calls `utf8_text` from `utf.hpp`
+to create a view over the input bytes. Neither operation validates content;
+semantic ownership analysis preserves the text's input backing before lowering.
+The backend supplies runtime includes without a source-level header import.

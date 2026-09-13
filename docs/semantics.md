@@ -32,6 +32,7 @@ This document defines the validity and observable behavior of Carven programs.
   - [Patterns and matches](#patterns-and-matches)
 - [Failure contracts](#failure-contracts)
 - [C++ interoperation](#c-interoperation)
+- [Printing](#printing)
 - [Entry points, tests, and diagnostics](#entry-points-tests-and-diagnostics)
   - [Entry points and tests](#entry-points-and-tests)
   - [Diagnostics](#diagnostics)
@@ -167,9 +168,9 @@ extent. Slices are identified by their element type. Function-view types include
 parameter access, parameter types, success result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
-The defined exceptions are contextual numeric literals, compatible callable-to-view
-adoption, and narrowing `ptr<&T>` to `ptr<T>`. There are no general implicit numeric promotions, structural
-conversions, truthiness conversions, or opaque dynamically typed values.
+Contextual conversions are defined in the numeric, text, slice, callable, and
+pointer sections below. There are no general implicit numeric promotions,
+structural conversions, truthiness conversions, or opaque dynamically typed values.
 
 `void` is the absence of a value. It may describe a callable's success result,
 but cannot be a parameter type, structure field, array element, runtime binding
@@ -198,7 +199,7 @@ The following are supported sources of context:
 | Lambda parameter and result | Expected callable view, subject to explicit annotations |
 
 Grouping passes an existing expected type to its operand. Contextual numeric
-literals and enum cases use that context as specified in their sections.
+and string literals and enum cases use that context as specified in their sections.
 Context does not change a binding's declared type. An admitted value conversion
 can produce the expected type. Context does not supply an omitted call access
 marker or insert a capture.
@@ -307,11 +308,13 @@ When neither type is external C++, `expression as Type` accepts exactly:
 - conversions in either direction between an integer and `bool`;
 - an integer to `f32` or `f64`;
 - `f32` to `f64`;
-- a numeric enum value to any integer type.
+- a numeric enum value to any integer type;
+- `char` to `u32`;
+- `str` to `String`, producing an independent owning copy.
 
 It rejects narrowing `f64` to `f32`, floating-point to integer or `bool`,
-`bool` to floating-point, integer to enum, conversions between `char` and a
-numeric type, and non-identity `str` conversions.
+`bool` to floating-point, integer to enum, other conversions between `char` and a
+numeric type, and `String` to `str` through `as`.
 
 Integer-to-`bool` yields `false` for zero and `true` for every nonzero value,
 including negative values. `bool`-to-integer yields zero for `false` and one for
@@ -340,7 +343,12 @@ operations, including their handling of zero divisors.
 
 `[T]` is a copyable, nonowning, read-only view of contiguous elements. `[T; N]`
 denotes a fixed array. An array creates a view explicitly through
-`array.as_slice()`; there is no implicit array-to-slice conversion.
+`array.as_slice()`. When a destination requires `[T]`, an array `[T; N]`
+implicitly creates the same borrowed view. This applies to bindings, assignments,
+arguments, returns, and aggregate elements. Element types remain invariant;
+Write arguments require an actual slice slot. Array literals use the expected
+slice element type, including empty literals. Without a slice destination,
+an array remains an array. Conversion does not extend backing lifetimes.
 
 Slices provide `len() -> usize`, `is_empty() -> bool`, read-only integer
 indexing, Read iteration, and `slice(start: usize, end: usize) -> [T]` with a
@@ -359,14 +367,16 @@ backing follows existing expression and retained-loop rules; storing a view
 does not extend its lifetime.
 
 The [UTF library](../crafts/carven/std/utf/README.md) supplies validation and text
-construction from `[u8]`. Its borrowed results follow the
-[native access and lifetime contract](#external-access-and-lifetime).
+construction from `[u8]`. Borrowed text retains the input storage relationship
+and follows the same lifetime and mutation checks as slices.
 
 ### Unicode text
 
 `char` is one immutable, copyable Unicode scalar value. It supports equality,
 inequality, and matching, but not numeric arithmetic, ordering, truthiness, or
-numeric conversion.
+implicit numeric conversion. The explicit conversion `character as u32` yields
+its Unicode scalar number. The UTF library provides checked integer-to-char
+conversion.
 
 `str` is an immutable, copyable, value-passed UTF-8 view represented by a pointer
 and byte length. Length defines its contents, including internal NUL bytes;
@@ -388,6 +398,21 @@ The `chars` view type cannot be spelled and supports only Read range iteration
 and inferred value bindings. Byte views support all slice operations. User structures may declare same-named fields because member
 resolution depends on the receiver type.
 
+
+### Unchecked text construction
+
+`char::from_u32_unchecked(value: u32) -> char` requires a Unicode scalar value:
+at most U+10FFFF, excluding U+D800 through U+DFFF.
+`str::from_utf8_unchecked(bytes: [u8]) -> str` requires valid UTF-8 and borrows
+the input storage without copying or allocating. Both are builtin factories
+called directly through their type names; no runtime header import is needed.
+
+These operations do not validate content. The caller must satisfy their content
+preconditions; violating them is outside the language's valid text contract.
+Carven checks argument types and tracks the returned text's backing through
+ordinary borrow analysis. Construction does not extend the backing lifetime.
+Use the UTF standard library's checked functions for input that has not been
+validated. Validation algorithms and their error types belong to that library.
 
 ### Owning String and text borrowing
 
@@ -419,12 +444,24 @@ The dot receiver supplies its access, while ordinary arguments follow the usual
 explicit-marker rules. Factories and methods require direct calls, including
 grouped direct calls; they do not produce first-class method values.
 
-Literals remain `str`. Construction and borrowing are explicit; there is no
-implicit allocation or String-to-str conversion, mixed String/str equality,
-String constant, String literal pattern, indexing, ordering, truthiness,
-concatenation, direct iteration, or access to C++ container members. `String(...)`,
-`String { ... }`, and non-identity `as` conversions between String and str are
-invalid. Iterate `s.bytes` or `s.chars` instead.
+String literals default to `str`. In a `String` context, a literal constructs an
+owning value; this applies to annotated bindings, assignments, arguments, returns,
+and aggregate initializers. Grouping preserves that context. An existing `str`
+value requires `text as String` or `String::from_str(text)` to create an independent
+owning copy.
+
+A `String` value in a `str` destination context creates a borrowed view with the
+same lifetime and ownership constraints as `.as_str()`. Write arguments still
+require matching storage types. Without a `str` context, `let copy = owner`
+retains String value semantics; `let view = owner.as_str()` explicitly creates a
+view. Borrowing neither allocates nor extends the owner's lifetime.
+
+Equality requires operands of the same type; a string literal on the right can
+adopt a String left operand's type through ordinary operand context. String
+constants, String literal patterns, indexing, ordering, truthiness, concatenation,
+direct iteration, and access to C++ container members are unsupported.
+`String(...)`, `String { ... }`, and `String as str` are invalid. Iterate `s.bytes`
+or `s.chars` instead.
 
 Copying String creates independently owned content. Whole-owner Take transfers
 the value and makes its source unavailable. Read String parameters alias the
@@ -433,7 +470,7 @@ Carven value rules. Borrowing does not extend a String owner's lifetime.
 
 A borrowed view keeps referring to its original storage when copied or passed
 through aggregates, captures, functions, Write outputs, branches, loops, and
-failure payloads. Owning copies made by `from_str` and extracted `u8`/`char`
+failure payloads. Owning copies made by `as String` or `from_str` and extracted `u8`/`char`
 values are independent of the source. A named value holding a view keeps the
 borrow until that value is replaced, taken, or leaves scope; its last use does
 not end the borrow.
@@ -452,10 +489,10 @@ finishes, including evaluation of its remaining operands. An independent result
 ends that borrow when no other view remains. For example:
 
 ```carven
-var text = String::from_str("hello");
-text = String::from_str(text.as_str());
+var text: String = "hello";
+text = text.as_str() as String;
 let snapshot = text;
-text.append(snapshot.as_str());
+text.append(snapshot);
 ```
 
 The RHS copy finishes before assignment writes. Similarly,
@@ -1340,6 +1377,13 @@ names still denote existing C++ names and are validated without encoding.
 A function/namespace prefix collision anywhere in the compilation's public API
 tree is invalid.
 
+Module paths determine the nested namespaces under `carven::api`. Directory
+names may be C++ keywords: a component named `export` becomes
+`cv_escaped_6578706f7274` in C++, while its Carven name remains unchanged.
+C++ callers use the names declared in the generated API header. For APIs
+intended for handwritten C++ callers, prefer module path components and
+exported function names that retain their spelling under this encoding.
+
 ### Native exception boundary
 
 C++ exceptions are outside Carven failure sets. Carven does not translate them
@@ -1362,6 +1406,33 @@ Native handlers may be defined in headers, linked C++ sources, or top-level
 `#[cpp]` fragments under their C++ contracts. Fragments retain their
 implementation-only placement and do not enclose generated Carven bodies.
 
+
+## Printing
+
+`print`, `println`, `eprint`, and `eprintln` are builtin
+callables; they need no import and follow ordinary name lookup and shadowing.
+They accept one or more Read builtin scalars or text values (`str` or `String`)
+and return `void`. Arguments are evaluated once, from left to right. Values are
+separated by one space; `println` and `eprintln` append one newline.
+`println()` and `eprintln()` also accept no argument to write a newline. Output
+goes to stdout or stderr respectively. No typed failure or `?` is required.
+As with interpolation, scalar Read values are saved and String Read values alias
+their owners. Text views retain their backing throughout argument evaluation
+and printing.
+
+Text is printed verbatim, including embedded NUL bytes. Scalars use their default
+C++ format representation; a Carven `char` prints its UTF-8 text. Formatting is
+explicit through existing interpolation, for example `println(f"{value:04}")`.
+Text arguments are not interpreted as format strings: `println("{value}", 3)`
+prints `{value} 3` followed by a newline.
+
+Buffering and flushing follow the selected C++ standard-library facilities,
+with no extra flush per call. Native formatting or output failure terminates
+through the runtime's non-throwing contract.
+
+Printing values can use an expected signature, for example
+`let output: fn(str, i32) -> void = println;`, and pass through ordinary callable
+views. The expected signature fixes the parameter count and types.
 
 ## Entry points, tests, and diagnostics
 
@@ -1398,8 +1469,11 @@ must be unique within their module and cannot be `main`. Tests participate in
 parsing and semantic analysis regardless of whether the compiler is asked to
 emit test artifacts. A test must handle every failure.
 
-`check`, `require`, and `fail` are contextual test-operation statements, not
-module symbols or callable values:
+`check`, `require`, and `fail` are builtin callables using ordinary name lookup.
+Local bindings, module declarations, and explicit imports shadow builtin names
+in every expression position. A C++ namespace wildcard is a fallback for otherwise
+unresolved names; it does not hide known builtins. An explicit native selection can
+shadow a builtin. Test operations are available in helpers and lambdas:
 
 ```text
 check(condition);
@@ -1411,16 +1485,16 @@ fail(message);
 ```
 
 The `condition` must have the exact Carven type `bool`; the optional `message`
-must have the exact Carven type `str`. Invalid counts use
+must have Carven type `str` or `String`. Invalid counts use
 `CV-TEST-ARGUMENT-COUNT`, invalid conditions use
 `CV-TEST-CONDITION-TYPE`, and invalid messages use `CV-TEST-MESSAGE-TYPE`.
 
-The contextual form is available throughout a test body and its structurally
-nested loop, `if`, `match`, `try`, and catch blocks. A source function or lambda
-body is a separate callable boundary and receives no implicit testing names
-or test transfer. Outside the exact standalone contextual form, the same
-spelling participates in ordinary name lookup. Within a test, the exact
-standalone form is always the test operation.
+A builtin used as a value requires an expected concrete `fn(...) -> void`
+signature, for example `let stop: fn() -> void = fail;`. It then follows ordinary
+callable-view borrowing and failure-widening rules. No testing context argument
+is exposed to source code. The runner supplies the current test context for the
+synchronous Carven call chain; using test operations without an active test
+violates the runtime contract.
 
 Arguments are evaluated eagerly, exactly once, and from left to right:
 condition first, then message. The message is evaluated even when the condition
@@ -1428,10 +1502,14 @@ succeeds. A failed `check` reports and falls through. A failed `require`
 reports and exits the whole current test, while a successful `require` falls
 through. `fail` reports and exits the whole current test. Test exit is distinct
 from return, loop transfer, and failure transfer, and is not caught by `try`.
+It propagates through Carven helpers and callable views. Normal local cleanup runs before the
+runner continues to the next test. External C++ calls do not participate in this
+transport; a test stop cannot unwind through arbitrary native callbacks.
 
 Each failed operation reports the original `.cv` display origin, the 1-based
 line of its operation name, its operation kind, and an optional runtime
-message. `check` and `require` additionally report the complete condition
+message. For a builtin bound as a callable value, the source origin is its
+binding expression. Direct `check` and `require` calls additionally report the complete condition
 source: the original UTF-8 byte slice of the condition expression span,
 including parentheses, whitespace, line breaks, and comments. `fail` reports
 without a condition. The runtime reporter controls the presentation of these
@@ -1461,9 +1539,9 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-LINT-UNUSED-LOCAL` | Warning | A named local binding is unused |
 | `CV-LINT-UNUSED-PARAMETER` | Warning | A named parameter is unused |
 | `CV-MATCH-DUPLICATE-ALTERNATIVE` | Error | An or-pattern contains a repeated or subsumed alternative |
-| `CV-TEST-ARGUMENT-COUNT` | Error | A contextual test operation has the wrong argument count |
+| `CV-TEST-ARGUMENT-COUNT` | Error | A builtin test operation has the wrong argument count |
 | `CV-TEST-CONDITION-TYPE` | Error | A `check` or `require` condition is not exactly `bool` |
-| `CV-TEST-MESSAGE-TYPE` | Error | A test message is not exactly `str` |
+| `CV-TEST-MESSAGE-TYPE` | Error | A test message is neither `str` nor `String` |
 | `CV-TYPE-VISIBILITY-LEAK` | Error | A declaration surface exposes a narrower nominal identity |
 
 The table is a partial lookup for current diagnostics. Human-readable messages,

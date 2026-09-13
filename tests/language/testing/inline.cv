@@ -1,18 +1,14 @@
-import "testing/inline.hpp";
-
 fn private_answer() -> i32 => 42;
 
-fn check(value: bool) -> bool => value;
+fn ordinary_check(value: bool) -> bool => value;
 
-private import(cpp) fn cv_test_inline_reset_trace();
-private import(cpp) fn cv_test_inline_condition(digit: i32, value: bool) -> bool;
-private import(cpp) fn cv_test_inline_mark(digit: i32);
-private import(cpp) fn cv_test_inline_trace() -> i32;
+fn traced_condition(&trace: i32, digit: i32, value: bool) -> bool {
+    trace = trace * 10 + digit;
+    return value;
+}
 
-fn traced_condition(digit: i32, value: bool) -> bool => cv_test_inline_condition(digit, value);
-
-fn traced_message(digit: i32, value: str) -> str {
-    cv_test_inline_mark(digit);
+fn traced_message(&trace: i32, digit: i32, value: str) -> str {
+    trace = trace * 10 + digit;
     return value;
 }
 
@@ -22,13 +18,13 @@ test "Testing: inline tests access module-private declarations" {
 }
 
 test "Testing: inline-test operands are eager, ordered, and evaluated once" {
-    cv_test_inline_reset_trace();
-    check(traced_condition(1, true), traced_message(2, "check message"));
-    require(traced_condition(3, true), traced_message(4, "require message"));
-    check(cv_test_inline_trace() == 1234);
+    var trace = 0;
+    check(traced_condition(&trace, 1, true), traced_message(&trace, 2, "check message"));
+    require(traced_condition(&trace, 3, true), traced_message(&trace, 4, "require message"));
+    check(trace == 1234);
 }
 
-test "Testing: inline-test context reaches control blocks but not lambdas" {
+test "Testing: test calls compose with control blocks and lambdas" {
     if true {
         check(true);
     }
@@ -39,8 +35,9 @@ test "Testing: inline-test context reaches control blocks but not lambdas" {
         1 => { check(true); },
         _ => { fail("unselected arm"); },
     }
-    let callback = []() => check(true);
-    let ordinary = check(callback());
+    let callback = []() { check(true); };
+    callback();
+    let ordinary = ordinary_check(true);
     check(ordinary);
 }
 
@@ -70,4 +67,17 @@ test "Testing: test exits do not participate in value-region merges" {
     check(selected_if == 11);
     check(selected_match == 22);
     check(selected_try == 33);
+}
+
+test "Testing: local callable names shadow builtins in every position" {
+    let assertion: fn(bool) -> void = check;
+    let check = [](value: bool) -> bool { return !value; };
+    let fail = []() -> i32 { return 17; };
+    let println = [](value: i32) -> i32 { return value + 1; };
+    assertion(check(false));
+    check(false);
+    assertion(fail() == 17);
+    fail();
+    assertion(println(4) == 5);
+    println(4);
 }

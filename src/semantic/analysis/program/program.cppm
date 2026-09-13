@@ -15,19 +15,13 @@ public:
     BodyReservation(const BodyReservation&) = delete;
     BodyReservation(BodyReservation&&) noexcept = default;
     ~BodyReservation() = default;
-
     auto operator=(const BodyReservation&) -> BodyReservation& = delete;
     auto operator=(BodyReservation&&) -> BodyReservation& = delete;
-
-    auto id() const noexcept -> BodyID { return body_id; }
-
-    auto kind() const noexcept -> BodyKind { return body_kind; }
+    auto id() const noexcept -> BodyID;
+    auto kind() const noexcept -> BodyKind;
 
 private:
-    BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept
-        : body_id(id),
-          body_kind(kind),
-          provenance_identity(provenance) {}
+    BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept;
 
     BodyID body_id;
     BodyKind body_kind;
@@ -46,29 +40,20 @@ struct PendingFunctionContract final {
 class ProgramDraft final {
 public:
     static auto begin(SyntaxProgram&& syntax, DiagnosticSink& sink) noexcept -> ProgramDraft;
-
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
     ~ProgramDraft() = default;
-
     auto operator=(const ProgramDraft&) -> ProgramDraft& = delete;
     auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
-
-    auto identity() const noexcept -> ProgramIdentity { return program_identity; }
-
-    auto provenance_identity() const noexcept -> ProvenanceIdentity {
-        return provenance_appender.reader().identity();
-    }
-
-    auto diagnostics() const noexcept -> AnalysisDiagnostics { return analysis_diagnostics; }
-
-    auto syntax_tree(ProgramModuleID module_id) const noexcept -> const SyntaxTree&;
+    auto identity() const noexcept -> ProgramIdentity;
+    auto provenance_identity() const noexcept -> ProvenanceIdentity;
+    auto diagnostics() const noexcept -> AnalysisDiagnostics;
+    auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
-    auto resolved_imports(ProgramModuleID module_id) const noexcept
+    auto resolved_imports(ProgramModuleID id) const noexcept
         -> std::span<const ResolvedModuleImport>;
     auto module_count() const noexcept -> std::size_t;
     auto provenance_module_at(std::size_t index) const noexcept -> ProgramModuleID;
-
     auto owns(ProgramModuleID id) const noexcept -> bool;
     auto owns(ProgramSpellingID id) const noexcept -> bool;
     auto owns(ProgramOriginID id) const noexcept -> bool;
@@ -78,12 +63,11 @@ public:
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
-    auto source_slice_copy(ProgramModuleID module_id, Span span) const noexcept -> std::string;
+    auto source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
-
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto intern_builtin_type(BuiltinType type) noexcept -> TypeID;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
@@ -94,7 +78,6 @@ public:
     auto empty_failure_set() noexcept -> FailureSetID;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
     auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
-
     auto reserve_module_declaration() noexcept -> ModuleID;
     auto reserve_function_declaration() noexcept -> FunctionID;
     auto reserve_struct_declaration() noexcept -> StructID;
@@ -120,7 +103,6 @@ public:
     auto complete_function_result(CallableID id, ConstructionTypeRef result) noexcept -> void;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
-
     auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
     auto construction_struct_declaration_copy(StructID id) const noexcept
@@ -147,7 +129,6 @@ public:
     auto enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID>;
     auto module_constant_declaration_ids() const noexcept -> std::vector<ModuleConstantID>;
     auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
-
     auto add_empty_failure_term() noexcept -> FailureTermID;
     auto add_concrete_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
     auto add_union_failure_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
@@ -186,14 +167,11 @@ public:
     ) noexcept -> void;
     auto require_declared_failure_contract(FailureTermID actual, ProgramOriginID origin) noexcept
         -> void;
-
     auto finish_declaration_heads() noexcept -> void;
-
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
     auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
     auto reserve_test() noexcept -> TestID;
     auto define_test(TestID id, TestDeclaration test) noexcept -> void;
-
     auto finish() && noexcept -> AnalysisResult<SemIRProgram>;
 
 private:
@@ -224,17 +202,7 @@ private:
             ProvenanceIdentity provenance,
             std::vector<SyntaxTree> syntax,
             ResolvedModuleImportGraph imports
-        ) noexcept
-            : syntax_by_module(std::move(syntax)),
-              resolved_import_graph(std::move(imports)),
-              types(identity),
-              constants(identity, provenance),
-              failure_sets(identity),
-              callable_signatures(identity),
-              construction_types(identity),
-              declarations(identity, provenance),
-              failure_constraints(identity, provenance),
-              test_slots(identity) {}
+        ) noexcept;
 
         std::vector<SyntaxTree> syntax_by_module;
         ResolvedModuleImportGraph resolved_import_graph;

@@ -50,7 +50,6 @@ private:
     auto checkpoint() const noexcept -> Checkpoint;
     auto rewind(Checkpoint checkpoint) noexcept -> void;
     auto finish(ASTModule ast_module) && noexcept -> SyntaxTree;
-
     auto validate(Span span) const noexcept -> void;
     auto validate(ASTExprID id) const noexcept -> void;
     auto validate(ASTTypeID id) const noexcept -> void;

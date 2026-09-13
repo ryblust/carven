@@ -83,6 +83,19 @@ public:
                     child(*value.source);
                     child(*value.index);
                 },
+                [&](Node<SemTestReport>& value) noexcept {
+                    if (value.condition.has_value()) {
+                        child(**value.condition);
+                    }
+                    if (value.message.has_value()) {
+                        child(**value.message);
+                    }
+                },
+                [&](Node<SemPrint>& value) noexcept {
+                    for (auto& operand : value.operands) {
+                        child(operand.expression);
+                    }
+                },
                 [&](Node<SemFormat>& value) noexcept {
                     for (auto& operand : value.operands) {
                         child(operand.expression);
@@ -196,14 +209,6 @@ public:
                             value.source
                         );
                         child(*value.body);
-                    },
-                    [&](Node<SemTestReport>& value) noexcept {
-                        if (value.condition.has_value()) {
-                            child(*value.condition);
-                        }
-                        if (value.message.has_value()) {
-                            child(*value.message);
-                        }
                     },
                     [&](Node<OwnedSemanticRegion>& value) noexcept { child(*value); },
                 },

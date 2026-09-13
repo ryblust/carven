@@ -1,20 +1,17 @@
 import .settings using { ConfigError, port_or_default };
-import "console.hpp" using example::print;
 
 fn report(label: str, primary: str, backup: str) {
-    print(label);
+    println(label);
     try {
         let port = port_or_default(primary, backup)?;
-        print("Port:");
-        print(port);
+        println("Port:", port);
     } catch {
-        ConfigError(.Missing) => { print("No port configured"); },
+        ConfigError(.Missing) => { println("No port configured"); },
         ConfigError(.Invalid(.BadDigit(position))) => {
-            print("Bad digit at byte:");
-            print(position as i32);
+            println("Bad digit at byte:", position as i32);
         },
         ConfigError(.Invalid(.OutOfRange)) => {
-            print("Port must be between 1 and 65535");
+            println("Port must be between 1 and 65535");
         },
     }
 }

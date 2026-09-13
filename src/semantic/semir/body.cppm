@@ -29,42 +29,17 @@ struct LifetimeRegion final {
 
 class LifetimeRegionTree final {
 public:
-    explicit LifetimeRegionTree(ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> rows) noexcept
-        : region_rows(std::move(rows)) {}
-
+    explicit LifetimeRegionTree(ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> rows) noexcept;
     LifetimeRegionTree(const LifetimeRegionTree&) = delete;
     LifetimeRegionTree(LifetimeRegionTree&&) = default;
     ~LifetimeRegionTree() = default;
-
     auto operator=(const LifetimeRegionTree&) -> LifetimeRegionTree& = delete;
     auto operator=(LifetimeRegionTree&&) -> LifetimeRegionTree& = delete;
-
-    auto owner() const noexcept -> BodyIdentity { return region_rows.owner(); }
-
-    auto contains(LifetimeRegionID id) const noexcept -> bool { return region_rows.contains(id); }
-
-    auto region(LifetimeRegionID id) const noexcept -> const LifetimeRegion& {
-        return region_rows.get(id);
-    }
-
-    auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool {
-        if (!contains(outer) || !contains(inner)) {
-            invariant_violation("lifetime relation received a foreign region");
-        }
-        auto current = std::optional {inner};
-        while (current.has_value()) {
-            if (*current == outer) {
-                return true;
-            }
-            current = region(*current).parent;
-        }
-        return false;
-    }
-
-    auto entries() const noexcept
-        -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity> {
-        return region_rows.entries();
-    }
+    auto owner() const noexcept -> BodyIdentity;
+    auto contains(LifetimeRegionID id) const noexcept -> bool;
+    auto region(LifetimeRegionID id) const noexcept -> const LifetimeRegion&;
+    auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool;
+    auto entries() const noexcept -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity>;
 
 private:
     ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> region_rows;
@@ -181,6 +156,7 @@ enum class CastKind {
     IntegerToFloating,
     FloatingWiden,
     EnumToInteger,
+    CharToU32,
 };
 
 enum class SliceIntrinsic { FromArray, Len, IsEmpty, Slice };
@@ -192,6 +168,8 @@ enum class TextIntrinsic {
     Chars,
     New,
     FromStr,
+    FromUTF8Unchecked,
+    FromU32Unchecked,
     AsStr,
     Append,
     Push,
@@ -206,16 +184,18 @@ constexpr auto text_intrinsic_writes(TextIntrinsic intrinsic) noexcept -> bool {
 
 constexpr auto text_intrinsic_arity(TextIntrinsic intrinsic) noexcept -> std::size_t {
     switch (intrinsic) {
-        case TextIntrinsic::New:     return 0;
+        case TextIntrinsic::New:               return 0;
         case TextIntrinsic::Append:
-        case TextIntrinsic::Push:    return 2;
+        case TextIntrinsic::Push:              return 2;
         case TextIntrinsic::Len:
         case TextIntrinsic::IsEmpty:
         case TextIntrinsic::Bytes:
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromStr:
+        case TextIntrinsic::FromUTF8Unchecked:
+        case TextIntrinsic::FromU32Unchecked:
         case TextIntrinsic::AsStr:
-        case TextIntrinsic::Clear:   return 1;
+        case TextIntrinsic::Clear:             return 1;
     }
     std::unreachable();
 }
@@ -223,16 +203,18 @@ constexpr auto text_intrinsic_arity(TextIntrinsic intrinsic) noexcept -> std::si
 constexpr auto text_intrinsic_builtin_result(TextIntrinsic intrinsic) noexcept
     -> std::optional<BuiltinType> {
     switch (intrinsic) {
-        case TextIntrinsic::Bytes:   return std::nullopt;
-        case TextIntrinsic::Len:     return BuiltinType::Usize;
-        case TextIntrinsic::IsEmpty: return BuiltinType::Bool;
-        case TextIntrinsic::Chars:   return BuiltinType::StrCharsView;
+        case TextIntrinsic::Bytes:             return std::nullopt;
+        case TextIntrinsic::Len:               return BuiltinType::Usize;
+        case TextIntrinsic::IsEmpty:           return BuiltinType::Bool;
+        case TextIntrinsic::Chars:             return BuiltinType::StrCharsView;
         case TextIntrinsic::New:
-        case TextIntrinsic::FromStr: return BuiltinType::String;
-        case TextIntrinsic::AsStr:   return BuiltinType::Str;
+        case TextIntrinsic::FromStr:           return BuiltinType::String;
+        case TextIntrinsic::AsStr:
+        case TextIntrinsic::FromUTF8Unchecked: return BuiltinType::Str;
+        case TextIntrinsic::FromU32Unchecked:  return BuiltinType::Char;
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:
-        case TextIntrinsic::Clear:   return BuiltinType::Void;
+        case TextIntrinsic::Clear:             return BuiltinType::Void;
     }
     std::unreachable();
 }

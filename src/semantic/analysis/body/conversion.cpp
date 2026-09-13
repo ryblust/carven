@@ -104,6 +104,38 @@ auto BodyElaborator::coerce_to(
     if (built.type() == target) {
         return {};
     }
+    if (built.type() == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::String))
+        && target == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::Str))) {
+        auto site = BodyExpressionSite(*this);
+        auto converted = site.finish_text(
+            TextIntrinsic::AsStr,
+            draft().intern_builtin_type(BuiltinType::Str),
+            std::move(built),
+            std::nullopt,
+            span
+        );
+        if (!converted) {
+            return std::unexpected(converted.error());
+        }
+        built = std::move(*converted);
+        return {};
+    }
+    if (const auto element = array_element(draft(), built.type())) {
+        if (const auto target_element = slice_element(draft(), target)) {
+            auto invariant = require_invariant_storage_type(*element, *target_element, span);
+            if (!invariant) {
+                return std::unexpected(invariant.error());
+            }
+            auto site = BodyExpressionSite(*this);
+            auto converted =
+                site.finish_slice_call(SliceIntrinsic::FromArray, std::move(built), {}, span);
+            if (!converted) {
+                return std::unexpected(converted.error());
+            }
+            built = std::move(*converted);
+            return {};
+        }
+    }
     if (pointer_narrows(draft(), built.type(), target)) {
         auto source = consume_value(built, span, AccessMode::Read);
         if (!source) {

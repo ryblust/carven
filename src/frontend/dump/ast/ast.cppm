@@ -24,7 +24,6 @@ auto render_ast_dump(const SourceManager& sources, const SyntaxTree& syntax_tree
 class ASTDumper final {
 public:
     ASTDumper(ASTView ast, std::string_view source_text, std::string_view source_origin) noexcept;
-
     auto render() noexcept -> std::string;
 
 private:
@@ -321,7 +320,6 @@ private:
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
-
     auto render_named_type_children(
         const ASTNamedType& named,
         std::string_view prefix,

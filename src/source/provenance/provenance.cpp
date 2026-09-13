@@ -192,20 +192,20 @@ auto CompilationProvenanceView::origin_id_at(std::size_t index) const noexcept -
     return provenance_storage.origin_id_at(index);
 }
 
-auto CompilationProvenanceView::source_snapshot(ProgramSourceID source_id) const noexcept
+auto CompilationProvenanceView::source_snapshot(ProgramSourceID id) const noexcept
     -> const ProgramSourceSnapshot& {
-    if (!contains(source_id)) {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return provenance_storage.sources[source_id.index()];
+    return provenance_storage.sources[id.index()];
 }
 
-auto CompilationProvenanceView::module_record(ProgramModuleID module_id) const noexcept
+auto CompilationProvenanceView::module_record(ProgramModuleID id) const noexcept
     -> const ProgramModule& {
-    if (!contains(module_id)) {
+    if (!contains(id)) {
         invariant_violation("program module lookup used a foreign or invalid identity");
     }
-    return provenance_storage.modules[module_id.index()];
+    return provenance_storage.modules[id.index()];
 }
 
 auto CompilationProvenanceView::find_program_module(const CanonicalModulePath& path) const noexcept
@@ -218,20 +218,18 @@ auto CompilationProvenanceView::find_program_module(const CanonicalModulePath& p
     return module_id_at(static_cast<std::size_t>(found - modules.begin()));
 }
 
-auto CompilationProvenanceView::spelling(ProgramSpellingID spelling_id) const noexcept
-    -> std::string_view {
-    if (!contains(spelling_id)) {
+auto CompilationProvenanceView::spelling(ProgramSpellingID id) const noexcept -> std::string_view {
+    if (!contains(id)) {
         invariant_violation("program spelling lookup used a foreign or invalid identity");
     }
-    return provenance_storage.spellings[spelling_id.index()];
+    return provenance_storage.spellings[id.index()];
 }
 
-auto CompilationProvenanceView::origin(ProgramOriginID origin_id) const noexcept
-    -> const ProgramOrigin& {
-    if (!contains(origin_id)) {
+auto CompilationProvenanceView::origin(ProgramOriginID id) const noexcept -> const ProgramOrigin& {
+    if (!contains(id)) {
         invariant_violation("program origin lookup used a foreign or invalid identity");
     }
-    return provenance_storage.origins[origin_id.index()];
+    return provenance_storage.origins[id.index()];
 }
 
 auto CompilationProvenanceView::source_snapshots() const noexcept
@@ -264,15 +262,13 @@ auto CompilationProvenanceView::source_span(ProgramOriginID id) const noexcept -
     };
 }
 
-auto CompilationProvenanceView::slice(ProgramOriginID origin_id) const noexcept
-    -> std::string_view {
-    const auto source = source_origin(origin_id);
+auto CompilationProvenanceView::slice(ProgramOriginID id) const noexcept -> std::string_view {
+    const auto source = source_origin(id);
     return source_snapshot(source.source_id).slice(source.span);
 }
 
-auto CompilationProvenanceView::location(ProgramOriginID origin_id) const noexcept
-    -> SourceLocation {
-    const auto source = source_origin(origin_id);
+auto CompilationProvenanceView::location(ProgramOriginID id) const noexcept -> SourceLocation {
+    const auto source = source_origin(id);
     return source_snapshot(source.source_id).location(source.span);
 }
 
@@ -337,65 +333,58 @@ auto CompilationProvenanceReader::origin_count() const noexcept -> std::size_t {
     return provenance_storage.origins.size();
 }
 
-auto CompilationProvenanceReader::source_manager_id(ProgramSourceID source_id) const noexcept
-    -> SourceID {
-    if (!contains(source_id)) {
+auto CompilationProvenanceReader::source_manager_id(ProgramSourceID id) const noexcept -> SourceID {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return provenance_storage.sources[source_id.index()].manager_source_id();
+    return provenance_storage.sources[id.index()].manager_source_id();
 }
 
-auto CompilationProvenanceReader::source_display_origin_copy(
-    ProgramSourceID source_id
-) const noexcept -> std::string {
-    if (!contains(source_id)) {
+auto CompilationProvenanceReader::source_display_origin_copy(ProgramSourceID id) const noexcept
+    -> std::string {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return std::string(provenance_storage.sources[source_id.index()].display_origin());
+    return std::string(provenance_storage.sources[id.index()].display_origin());
 }
 
-auto CompilationProvenanceReader::source_size(ProgramSourceID source_id) const noexcept
-    -> std::size_t {
-    if (!contains(source_id)) {
+auto CompilationProvenanceReader::source_size(ProgramSourceID id) const noexcept -> std::size_t {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return provenance_storage.sources[source_id.index()].size();
+    return provenance_storage.sources[id.index()].size();
 }
 
-auto CompilationProvenanceReader::source_slice_copy(
-    ProgramSourceID source_id,
-    Span span
-) const noexcept -> std::string {
-    if (!contains(source_id)) {
+auto CompilationProvenanceReader::source_slice_copy(ProgramSourceID id, Span span) const noexcept
+    -> std::string {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return std::string(provenance_storage.sources[source_id.index()].slice(span));
+    return std::string(provenance_storage.sources[id.index()].slice(span));
 }
 
-auto CompilationProvenanceReader::source_location(
-    ProgramSourceID source_id,
-    Span span
-) const noexcept -> SourceLocation {
-    if (!contains(source_id)) {
+auto CompilationProvenanceReader::source_location(ProgramSourceID id, Span span) const noexcept
+    -> SourceLocation {
+    if (!contains(id)) {
         invariant_violation("program source lookup used a foreign or invalid identity");
     }
-    return provenance_storage.sources[source_id.index()].location(span);
+    return provenance_storage.sources[id.index()].location(span);
 }
 
-auto CompilationProvenanceReader::module_source(ProgramModuleID module_id) const noexcept
+auto CompilationProvenanceReader::module_source(ProgramModuleID id) const noexcept
     -> ProgramSourceID {
-    if (!contains(module_id)) {
+    if (!contains(id)) {
         invariant_violation("program module lookup used a foreign or invalid identity");
     }
-    return provenance_storage.modules[module_id.index()].source_id;
+    return provenance_storage.modules[id.index()].source_id;
 }
 
-auto CompilationProvenanceReader::module_path_copy(ProgramModuleID module_id) const noexcept
+auto CompilationProvenanceReader::module_path_copy(ProgramModuleID id) const noexcept
     -> CanonicalModulePath {
-    if (!contains(module_id)) {
+    if (!contains(id)) {
         invariant_violation("program module lookup used a foreign or invalid identity");
     }
-    return provenance_storage.modules[module_id.index()].path;
+    return provenance_storage.modules[id.index()].path;
 }
 
 auto CompilationProvenanceReader::find_program_module(
@@ -409,20 +398,19 @@ auto CompilationProvenanceReader::find_program_module(
     return module_id_at(static_cast<std::size_t>(found - modules.begin()));
 }
 
-auto CompilationProvenanceReader::spelling_copy(ProgramSpellingID spelling_id) const noexcept
+auto CompilationProvenanceReader::spelling_copy(ProgramSpellingID id) const noexcept
     -> std::string {
-    if (!contains(spelling_id)) {
+    if (!contains(id)) {
         invariant_violation("program spelling lookup used a foreign or invalid identity");
     }
-    return provenance_storage.spellings[spelling_id.index()];
+    return provenance_storage.spellings[id.index()];
 }
 
-auto CompilationProvenanceReader::origin_copy(ProgramOriginID origin_id) const noexcept
-    -> ProgramOrigin {
-    if (!contains(origin_id)) {
+auto CompilationProvenanceReader::origin_copy(ProgramOriginID id) const noexcept -> ProgramOrigin {
+    if (!contains(id)) {
         invariant_violation("program origin lookup used a foreign or invalid identity");
     }
-    return provenance_storage.origins[origin_id.index()];
+    return provenance_storage.origins[id.index()];
 }
 
 auto CompilationProvenanceReader::source_origin(ProgramOriginID id) const noexcept
@@ -435,15 +423,13 @@ auto CompilationProvenanceReader::source_span(ProgramOriginID id) const noexcept
     return {.source_id = source_manager_id(source.source_id), .span = source.span};
 }
 
-auto CompilationProvenanceReader::slice_copy(ProgramOriginID origin_id) const noexcept
-    -> std::string {
-    const auto source = source_origin(origin_id);
+auto CompilationProvenanceReader::slice_copy(ProgramOriginID id) const noexcept -> std::string {
+    const auto source = source_origin(id);
     return source_slice_copy(source.source_id, source.span);
 }
 
-auto CompilationProvenanceReader::location(ProgramOriginID origin_id) const noexcept
-    -> SourceLocation {
-    const auto source = source_origin(origin_id);
+auto CompilationProvenanceReader::location(ProgramOriginID id) const noexcept -> SourceLocation {
+    const auto source = source_origin(id);
     return source_location(source.source_id, source.span);
 }
 

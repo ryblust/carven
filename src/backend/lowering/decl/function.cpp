@@ -126,7 +126,7 @@ auto lower_cpp_import(
     return TargetFunctionDecl {
         .name = TargetName {context.names().function_identifier(function_id)},
         .parameters = std::move(parameters),
-        .result = context.lower_type(semantic_signature.result),
+        .result = context.callable_result(function.callable),
         .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
                                        .body = std::move(body),
@@ -158,7 +158,7 @@ auto lower_carven_function(
     auto inputs = BodyRealizationInputs {
         .parameters = {},
         .captures = {},
-        .exit = CallableBodyExit {.signature = callable.signature},
+        .exit = CallableBodyExit {.callable_id = function.callable},
     };
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
@@ -191,7 +191,7 @@ auto lower_carven_function(
     return TargetFunctionDecl {
         .name = TargetName {context.names().function_identifier(function_id)},
         .parameters = std::move(parameters),
-        .result = context.outcome_type(callable.signature),
+        .result = context.callable_result(function.callable),
         .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
                                        .body = std::move(statements),
