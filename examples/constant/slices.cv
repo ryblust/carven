@@ -1,0 +1,18 @@
+import .arrays using squares;
+
+const table: [i32] = squares(3);
+const selected = table[2];
+
+fn table_view() -> [i32] => table;
+
+fn run_slices() {
+    let view = table_view();
+    println("Selected:", selected);
+    println("Entries:", view.len());
+    for value in view {
+        println(value);
+    }
+    var offset = 10;
+    let current = squares(offset);
+    println("Runtime:", current[0], current[1], current[2], current[3]);
+}

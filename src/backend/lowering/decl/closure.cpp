@@ -6,7 +6,6 @@ import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
-import :backend.realization.body;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -114,7 +113,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     if (body.inputs().parameters.size() != signature.parameters.size()) {
         invariant_violation("closure body inputs do not match its target signature");
     }
-    auto inputs = BodyRealizationInputs {
+    auto inputs = BodyLoweringInputs {
         .parameters = {},
         .captures = {},
         .exit = CallableBodyExit {.callable_id = callable_id},

@@ -134,61 +134,107 @@ ConstantStoreBuilder::ConstantStoreBuilder(
     ProgramIdentity owner,
     ProvenanceIdentity provenance
 ) noexcept
-    : provenance_identity(provenance),
-      rows(owner) {}
+    : program_identity(owner),
+      provenance_identity(provenance) {}
+
+auto constant_children(const ConstantValue& value) noexcept
+    -> std::optional<std::span<const ConstantID>> {
+    return std::visit(
+        [](const auto& stored) static noexcept -> std::optional<std::span<const ConstantID>> {
+            using Value = std::remove_cvref_t<decltype(stored)>;
+            if constexpr (std::same_as<Value, PayloadEnumConstant>) {
+                return stored.payload;
+            } else if constexpr (std::same_as<Value, StructConstant>) {
+                return stored.fields;
+            } else if constexpr (std::same_as<Value, ArrayConstant>
+                                 || std::same_as<Value, SliceConstant>) {
+                return stored.elements;
+            }
+            return std::nullopt;
+        },
+        value
+    );
+}
 
 auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
-    require_owner(fact.type.owner(), rows.owner(), "constant fact used a foreign type");
+    require_owner(fact.type.owner(), program_identity, "constant fact used a foreign type");
+    auto hash = static_cast<std::size_t>(fact.type.index());
+    const auto mix = [&](std::uint64_t value) noexcept {
+        hash ^=
+            std::hash<std::uint64_t>()(value) + 0x9e3779b97f4a7c15ull + (hash << 6u) + (hash >> 2u);
+    };
+    mix(fact.value.index());
     std::visit(
-        [this](const auto& value) noexcept {
+        [&](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, StringConstant>) {
                 if (value.value.owner() != provenance_identity) {
                     invariant_violation("string constant used a foreign spelling");
                 }
-            } else if constexpr (std::same_as<Value, NumericEnumConstant>) {
+                mix(value.value.index());
+            } else if constexpr (std::same_as<Value, IntegerConstant>) {
+                mix(value.magnitude());
+                mix(value.negative());
+            } else if constexpr (std::same_as<Value, BooleanConstant>) {
+                mix(value.value);
+            } else if constexpr (std::same_as<Value, CharacterConstant>) {
+                mix(value.scalar);
+            } else if constexpr (std::same_as<Value, F32Constant>) {
+                mix(std::bit_cast<std::uint32_t>(value.value));
+            } else if constexpr (std::same_as<Value, F64Constant>) {
+                mix(std::bit_cast<std::uint64_t>(value.value));
+            } else if constexpr (std::same_as<Value, NumericEnumConstant>
+                                 || std::same_as<Value, PayloadEnumConstant>) {
                 require_owner(
                     value.enum_case.owner(),
-                    rows.owner(),
-                    "numeric enum constant used a foreign enum case"
+                    program_identity,
+                    "constant used a foreign enum case"
                 );
-            } else if constexpr (std::same_as<Value, PayloadEnumConstant>) {
-                require_owner(
-                    value.enum_case.owner(),
-                    rows.owner(),
-                    "payload enum constant used a foreign enum case"
-                );
-                for (const auto child : value.payload) {
-                    require_owner(
-                        child.owner(),
-                        rows.owner(),
-                        "payload enum constant used a foreign constant"
-                    );
+                mix(value.enum_case.index());
+                if constexpr (std::same_as<Value, NumericEnumConstant>) {
+                    mix(value.value.magnitude());
+                    mix(value.value.negative());
                 }
-            } else {
-                static_assert(
-                    std::same_as<Value, IntegerConstant>
-                    || std::same_as<Value, BooleanConstant>
-                    || std::same_as<Value, NullPointerConstant>
-                    || std::same_as<Value, F32Constant>
-                    || std::same_as<Value, F64Constant>
-                    || std::same_as<Value, CharacterConstant>
-                );
             }
         },
         fact.value
     );
-    return rows.intern(std::move(fact));
+    if (const auto children = constant_children(fact.value)) {
+        for (const auto child : *children) {
+            static_cast<void>(constant(child));
+            mix(child.index());
+        }
+    }
+    const auto [begin, end] = index.equal_range(hash);
+    for (auto entry = begin; entry != end; ++entry) {
+        if (constant(entry->second) == fact) {
+            return entry->second;
+        }
+    }
+    if (rows.size() == std::numeric_limits<std::uint32_t>::max()) {
+        resource_limit_exceeded("constant store exhausted its 32-bit identity space");
+    }
+    const auto id = ConstantID(program_identity, static_cast<std::uint32_t>(rows.size()));
+    rows.push_back(std::move(fact));
+    index.emplace(hash, id);
+    return id;
 }
 
-auto ConstantStoreBuilder::copy(ConstantID id) const noexcept -> ConstantFact {
-    return rows.copy(id);
+auto ConstantStoreBuilder::constant(ConstantID id) const noexcept -> const ConstantFact& {
+    if (id.owner() != program_identity || id.index() >= rows.size()) {
+        invariant_violation("constant lookup used a foreign or unavailable constant");
+    }
+    return rows[id.index()];
 }
 
 auto ConstantStoreBuilder::owner() const noexcept -> ProgramIdentity {
-    return rows.owner();
+    return program_identity;
 }
 
 auto ConstantStoreBuilder::seal() && noexcept -> ConstantStore {
-    return ConstantStore(std::move(rows).seal());
+    auto sealed = MutableProgramTable<ConstantFact, ConstantID>(program_identity);
+    for (auto& fact : rows) {
+        sealed.add(std::move(fact));
+    }
+    return ConstantStore(std::move(sealed).seal());
 }

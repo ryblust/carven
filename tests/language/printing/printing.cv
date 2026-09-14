@@ -16,6 +16,11 @@ fn replace_text(&text: String) -> i32 {
     return 1;
 }
 
+fn record_output_flag(&counter: i32) -> bool {
+    counter += 10;
+    return true;
+}
+
 fn main() {
     print("text: ");
     println(String::from_str("你好😀"));
@@ -45,4 +50,12 @@ fn main() {
     println(text, replace_text(&text));
     eprint("error:", -4);
     eprintln("status:", false);
+    counter = 0;
+    println(next_value(&counter), record_output_flag(&counter) && false, counter);
+    println(counter);
+    text = "before";
+    println(42, f"{text}", replace_text(&text));
+    text = "before";
+    println(42, text, replace_text(&text));
+    println(18446744073709551615u64, -9223372036854775808i64);
 }

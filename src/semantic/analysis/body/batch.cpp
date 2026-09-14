@@ -12,15 +12,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.constant.admission;
+import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -87,6 +88,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
 }
 
 auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
+    auto static_tests = std::vector<BodyID>();
     for (const auto& source_module : catalog_data.modules()) {
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
@@ -108,6 +110,7 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
             draft->define_test(
                 test_form->test,
                 TestDeclaration {
+                    .is_const = test.is_const,
                     .module_id = source_module.declaration,
                     .name = draft->intern_spelling(test.name),
                     .origin = draft->append_source_origin(
@@ -133,8 +136,21 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
             if (!body.has_value()) {
                 return std::unexpected(body.error());
             }
+            if (test.is_const) {
+                static_tests.push_back(body_id);
+                auto admitted = validate_constant_test(*draft, *body);
+                if (!admitted) {
+                    return admitted;
+                }
+            }
             draft->add_body_draft(std::move(*body));
         }
+    }
+    for (const auto body : static_tests) {
+        static_cast<void>(evaluate_constant_test(*draft, requests, body));
+    }
+    if (const auto failure = draft->diagnostics().failure()) {
+        return std::unexpected(*failure);
     }
     return {};
 }
@@ -144,6 +160,11 @@ auto BodyBatchElaborator::ensure_function_signature(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisResult<void> {
+    auto completed = requests.ensure_declaration(catalog_data.function_symbol(id), requester, span);
+    if (!completed) {
+        return completed;
+    }
+
     const auto declaration = draft->function_declaration_copy(id);
     if (!draft->pending_function_contract_copy(declaration.callable).has_value()) {
         return {};
@@ -170,6 +191,42 @@ auto BodyBatchElaborator::ensure_function_signature(
     return complete_function(id);
 }
 
+auto BodyBatchElaborator::ensure_function_body(
+    FunctionID id,
+    ProgramModuleID requester,
+    Span span
+) noexcept -> AnalysisResult<BodyID> {
+    auto completed = ensure_function_signature(id, requester, span);
+    if (!completed) {
+        return std::unexpected(completed.error());
+    }
+    if (std::holds_alternative<Analyzing>(states.at(id.index()))) {
+        return std::unexpected(draft->diagnostics().error(
+            DiagnosticBuilder(
+                DiagnosticCode::ConstEvaluation,
+                "constant evaluation depends on an unfinished function body"
+            )
+                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                .build()
+        ));
+    }
+    completed = complete_function(id);
+    if (!completed) {
+        return std::unexpected(completed.error());
+    }
+    if (!body_ids.at(id.index())) {
+        return std::unexpected(draft->diagnostics().error(
+            DiagnosticBuilder(
+                DiagnosticCode::ConstAdmission,
+                "constant evaluation requires a Carven function body"
+            )
+                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                .build()
+        ));
+    }
+    return *body_ids.at(id.index());
+}
+
 auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisResult<void> {
     auto& state = states.at(id.index());
     if (std::holds_alternative<Complete>(state)) {
@@ -181,6 +238,21 @@ auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisR
     if (!std::holds_alternative<Unvisited>(state)) {
         invariant_violation("function body completion reentered without a signature dependency");
     }
+
+    const auto& symbol = *functions.at(id.index());
+    auto completed =
+        requests.ensure_declaration(symbol.symbol_id, symbol.module_id, symbol.declaration_span);
+    if (!completed) {
+        state = Failed {.failure = completed.error()};
+        return completed;
+    }
+    if (std::holds_alternative<Complete>(state)) {
+        return {};
+    }
+    if (const auto* failed = std::get_if<Failed>(&state)) {
+        return std::unexpected(failed->failure);
+    }
+
     state = Analyzing {};
     active_path.push_back(id);
     auto result = elaborate_function(id);
@@ -223,6 +295,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         invariant_violation("source function parameters differ from resolved callable contract");
     }
     auto reservation = draft->reserve_body(BodyKind::Function);
+    body_ids.at(id.index()) = reservation.id();
     draft->complete_callable(
         declaration.callable,
         FunctionBodyImplementation {.body = reservation.id()}
@@ -259,6 +332,12 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
             validate_cpp_boundary_result(*draft, symbol.module_id, ast, function, result);
         if (!boundary.has_value()) {
             return std::unexpected(boundary.error());
+        }
+    }
+    if (declaration.is_const) {
+        auto admitted = validate_constant_function(*draft, id, *body);
+        if (!admitted) {
+            return std::unexpected(admitted.error());
         }
     }
     draft->add_body_draft(std::move(*body));

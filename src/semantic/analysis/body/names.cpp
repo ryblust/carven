@@ -12,15 +12,14 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -118,7 +117,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 const auto declaration =
                     draft().module_constant_declaration_copy(constant.constant);
                 auto value = active_builder().make_expression(
-                    draft().constant_copy(declaration.value).type,
+                    draft().constant(declaration.value).type,
                     active_builder().lifetime(),
                     origin(span),
                     SemConstant {.constant = declaration.value}
@@ -276,11 +275,17 @@ auto BodyElaborator::builtin_operation(
             default:                        std::unreachable();
         }
     }();
+    for (auto& operand : operands) {
+        operand.expression.constant = builder.known_constant(operand.expression);
+    }
     return builder.make_expression(
         result_type,
         builder.lifetime(),
         site,
-        SemPrint {print_kind, std::move(operands)}
+        SemPrint {
+            .kind = print_kind,
+            .operands = std::move(operands),
+        }
     );
 }
 

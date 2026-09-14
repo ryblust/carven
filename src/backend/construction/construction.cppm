@@ -1,5 +1,6 @@
 module carven:backend.construction;
 
+import :backend.preparation;
 import :semantic.semir;
 import :support.invariant;
 import std;
@@ -48,9 +49,12 @@ enum class ConstructionUse {
     NativeTake
 };
 
+enum class ConstructionDemand { Effects, Value };
+
 struct ConstructionOperand final {
     ConstructionExpressionID expression;
     ConstructionUse use;
+    ConstructionDemand demand = ConstructionDemand::Value;
 };
 
 struct ConstructionFunctionExit final {};
@@ -74,6 +78,7 @@ struct ConstructionFallible final {
 struct ConstructionOperation final {
     std::vector<ConstructionOperand> operands;
     std::optional<ConstructionFallible> failure;
+    std::unique_ptr<OperationPreparation> preparation;
 };
 
 struct ConstructionShortCircuit final {

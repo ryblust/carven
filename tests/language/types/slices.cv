@@ -256,3 +256,41 @@ test "Slices: Take conversion delivers the transferred array storage" {
     let values = [17, 23];
     check(taken_slice_first(&&values) == 17);
 }
+
+private fn slice_extent_array(&trace: i32) -> [i32; 4] {
+    trace = trace * 10 + 1;
+    return [10, 20, 30, 40];
+}
+
+private fn slice_extent_mark(&trace: i32, digit: i32) -> bool {
+    trace = trace * 10 + digit;
+    return true;
+}
+
+test "Slices: known lengths preserve receiver and bound evaluation" {
+    var trace = 0;
+    check(slice_extent_array(&trace).as_slice().len() == 4);
+    check(trace == 1);
+    trace = 0;
+    let rendered = f"{slice_extent_array(&trace).as_slice().slice(
+        (slice_extent_mark(&trace, 2) && false) as usize,
+        ((slice_extent_mark(&trace, 3) && false) as usize) + 2
+    ).len()}";
+    check(rendered == String::from_str("2"));
+    check(trace == 123);
+    trace = 0;
+    slice_extent_array(&trace).as_slice().slice(0, 2).len();
+    check(trace == 1);
+}
+
+test "Slices: immutable extent facts do not follow mutable view slots" {
+    let first = [1, 2, 3, 4];
+    let second = [5, 6];
+    let original: [i32] = first;
+    let copy = original;
+    check(copy.len() == 4);
+    var selected: [i32] = first;
+    selected = second;
+    check(selected.len() == 2);
+    check(selected.slice(2, 2).is_empty());
+}

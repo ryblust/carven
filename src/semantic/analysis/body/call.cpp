@@ -12,16 +12,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expression_site;
-import :semantic.analysis.body.pipeline;
+import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.interpret;
+import :semantic.analysis.expr.operand;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -29,10 +29,9 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexcept
+auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
-    const auto& built = (callee);
-    if (const auto* concrete = std::get_if<TypeID>(&built.type())) {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft().type_copy(*concrete);
         auto callable = std::optional<CallableID>();
         std::visit(
@@ -59,8 +58,7 @@ auto BodyElaborator::callable_contract(BuiltExpression& callee, Span span) noexc
             return draft().construction_callable_contract_copy(*callable);
         }
     } else {
-        const auto construction =
-            draft().construction_type_copy(std::get<TypeTermID>(built.type()));
+        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
         if (const auto* view =
                 std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
             return ConstructionCallableContract {
@@ -83,39 +81,18 @@ auto BodyElaborator::build_call_argument(
     std::optional<DiagnosticCode> mismatch_code
 ) noexcept -> AnalysisResult<BuiltCallArgument> {
     const auto& source = ast.expression(source_id);
-    auto operand_id = source_id;
-    auto explicit_access = std::optional<ASTAccessMode>();
-    if (const auto* access = std::get_if<ASTAccessExpr>(&source.value)) {
-        explicit_access = access->mode;
-        operand_id = access->operand_id;
-    }
-    const auto required_ast = [&]() noexcept {
-        switch (access_mode) {
-            case AccessMode::Read:  return ASTAccessMode::Read;
-            case AccessMode::Write: return ASTAccessMode::Write;
-            case AccessMode::Take:  return ASTAccessMode::Take;
-        }
-        std::unreachable();
-    }();
-    if (access_mode != AccessMode::Read
-        && (!explicit_access.has_value() || *explicit_access != required_ast)) {
+    const auto selected = call_argument_operand(ast, source_id);
+    if (selected.access != access_mode) {
         return std::unexpected(fail(
             source.span,
             DiagnosticCode::AccessCallMismatch,
             access_mode == AccessMode::Write ? "Write parameter requires an explicit Write argument"
-                                             : "Take parameter requires an explicit Take argument"
+                : access_mode == AccessMode::Take
+                ? "Take parameter requires an explicit Take argument"
+                : "argument access marker differs from the parameter"
         ));
     }
-    if (access_mode == AccessMode::Read
-        && explicit_access.has_value()
-        && *explicit_access != ASTAccessMode::Read) {
-        return std::unexpected(fail(
-            source.span,
-            DiagnosticCode::AccessCallMismatch,
-            "argument access marker differs from the parameter"
-        ));
-    }
-    auto built = expression(operand_id, expected);
+    auto built = expression(selected.expression, expected);
     if (!built.has_value()) {
         return std::unexpected(built.error());
     }
@@ -127,7 +104,7 @@ auto BodyElaborator::build_call_argument(
     }
     auto pending_failures = take_pending_failures(*built);
     if (access_mode == AccessMode::Write) {
-        auto compatible_storage = require_invariant_storage_type(built->type(), type, source.span);
+        auto compatible_storage = require_invariant_type(built->type(), type, source.span);
         if (!compatible_storage.has_value()) {
             return std::unexpected(compatible_storage.error());
         }
@@ -186,8 +163,10 @@ auto BodyElaborator::enum_case_reference(
     Span span,
     Span case_span
 ) noexcept -> AnalysisResult<BuiltExpression> {
-    auto site = BodyExpressionSite(*this);
-    return interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false);
+    auto site = BodyExprSite(*this);
+    return require_body_expression(
+        interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false)
+    );
 }
 
 auto BodyElaborator::call_expression(
@@ -209,8 +188,8 @@ auto BodyElaborator::call_expression(
                         .value = EnumTypeValue {.enumeration = enum_case->owner},
                     }
                 );
-                auto site = BodyExpressionSite(*this);
-                return interpret_enum_case(
+                auto site = BodyExprSite(*this);
+                return require_body_expression(interpret_enum_case(
                     site,
                     type,
                     text,
@@ -218,7 +197,7 @@ auto BodyElaborator::call_expression(
                     source.arguments,
                     span,
                     true
-                );
+                ));
             }
         }
     }
@@ -288,7 +267,7 @@ auto BodyElaborator::call_expression(
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
     auto pending_failures = take_pending_failures(*callee);
-    auto contract = callable_contract(*callee, ast.expression(source.callee).span);
+    auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {
         return std::unexpected(contract.error());
     }

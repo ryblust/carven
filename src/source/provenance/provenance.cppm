@@ -91,7 +91,7 @@ class CompilationProvenanceStorage final {
     ProvenanceIdentity provenance_identity;
     std::vector<ProgramSourceSnapshot> sources;
     std::vector<ProgramModule> modules;
-    std::vector<std::string> spellings;
+    std::deque<std::string> spellings;
     std::vector<ProgramOrigin> origins;
 
     friend class CompilationProvenance;
@@ -139,7 +139,7 @@ public:
     auto origin(ProgramOriginID id) const noexcept -> const ProgramOrigin&;
     auto source_snapshots() const noexcept -> std::span<const ProgramSourceSnapshot>;
     auto module_records() const noexcept -> std::span<const ProgramModule>;
-    auto spellings() const noexcept -> std::span<const std::string>;
+    auto spellings() const noexcept -> const std::deque<std::string>&;
     auto origins() const noexcept -> std::span<const ProgramOrigin>;
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
     auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
@@ -157,9 +157,8 @@ private:
     friend class CompilationProvenanceReader;
 };
 
-// A construction-time reader deliberately returns only values. It may observe
-// storage that is still growing, so exposing references, spans, or string views
-// here would let callers retain borrows across a reallocation.
+// Growing tables return values. Spellings use stable storage and may be borrowed
+// until their owner is moved or sealed.
 class CompilationProvenanceReader final {
 public:
     auto identity() const noexcept -> ProvenanceIdentity;
@@ -184,6 +183,8 @@ public:
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto find_program_module(const CanonicalModulePath& path) const noexcept
         -> std::optional<ProgramModuleID>;
+    // Spelling borrows survive appends; moving the owner ends the borrow.
+    auto spelling(ProgramSpellingID id) const noexcept -> std::string_view;
     auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
     auto origin_copy(ProgramOriginID id) const noexcept -> ProgramOrigin;
     auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;

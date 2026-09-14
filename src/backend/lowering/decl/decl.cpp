@@ -2,7 +2,6 @@ module carven:backend.lowering.decl.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
-import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
@@ -243,7 +242,7 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
     }
     for (const auto nominal : schedule.private_nominal_order) {
         append_items(
-            result.private_items,
+            result.private_declarations,
             lower_declaration(
                 context,
                 std::visit(
@@ -262,7 +261,7 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
             continue;
         }
         const auto type_name = context.closure_type_name(callable);
-        result.private_items.push_back(compiler_item(
+        result.private_declarations.push_back(compiler_item(
             TargetDecl {TargetStructForwardDecl {
                 .name = type_name.components().back(),
             }},
@@ -278,14 +277,14 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
         functions.push_back(*function);
         if (declarations.function(*function).visibility == DeclarationVisibility::Module) {
             append_items(
-                result.private_items,
+                result.private_declarations,
                 lower_declaration(context, DeclarationRef {*function}, true)
             );
         }
     }
     for (const auto callable : schedule.closure_definitions) {
         if (!std::ranges::contains(schedule.interface_closures, callable)) {
-            result.private_items.push_back(lower_closure_type(context, callable));
+            result.private_declarations.push_back(lower_closure_type(context, callable));
         }
     }
     for (const auto callable : schedule.closure_definitions) {

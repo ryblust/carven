@@ -6,20 +6,30 @@ import :frontend.program;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.analysis.program;
+import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
 
-auto ProgramDraft::begin(SyntaxProgram&& syntax, DiagnosticSink& sink) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink);
+auto ProgramDraft::begin(
+    SyntaxProgram&& syntax,
+    DiagnosticSink& sink,
+    ConstantOutput output
+) noexcept -> ProgramDraft {
+    return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output));
 }
 
-ProgramDraft::ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink) noexcept
+ProgramDraft::ProgramDraft(
+    SyntaxProgramParts parts,
+    DiagnosticSink& sink,
+    ConstantOutput output
+) noexcept
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
+      output(std::move(output)),
       state(State::Declarations),
       storage(
           program_identity,
@@ -89,12 +99,17 @@ auto ProgramDraft::type_copy(TypeID type) const noexcept -> CanonicalType {
     return storage.types.copy(type);
 }
 
+auto ProgramDraft::read_borrows_storage(TypeID type) const noexcept -> bool {
+    return query_type_contents(storage.types, storage.declarations.construction_view(), type)
+        .read_borrows_storage();
+}
+
 auto ProgramDraft::intern_constant(ConstantFact fact) noexcept -> ConstantID {
     return storage.constants.intern(std::move(fact));
 }
 
-auto ProgramDraft::constant_copy(ConstantID constant) const noexcept -> ConstantFact {
-    return storage.constants.copy(constant);
+auto ProgramDraft::constant(ConstantID constant) const noexcept -> const ConstantFact& {
+    return storage.constants.constant(constant);
 }
 
 auto ProgramDraft::intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID {
@@ -156,6 +171,7 @@ auto ProgramDraft::define_declaration(ModuleID id, ModuleDeclaration declaration
 auto ProgramDraft::define_declaration(FunctionID id, FunctionDeclaration declaration) noexcept
     -> void {
     require_state(State::Declarations, "define function declaration");
+    static_cast<void>(storage.functions_by_callable.try_emplace(declaration.callable, id));
     storage.declarations.define(id, declaration);
 }
 
@@ -209,7 +225,6 @@ auto ProgramDraft::define_pending_function_contract(
 
 auto ProgramDraft::pending_function_contract_copy(CallableID id) const noexcept
     -> std::optional<PendingFunctionContract> {
-    require_declarations_available("read pending function contract");
     if (id.owner() != program_identity) {
         invariant_violation("pending function contract used a foreign callable");
     }
@@ -220,7 +235,6 @@ auto ProgramDraft::pending_function_contract_copy(CallableID id) const noexcept
 
 auto ProgramDraft::complete_function_result(CallableID id, ConstructionTypeRef result) noexcept
     -> void {
-    require_state(State::Bodies, "complete function result");
     auto& pending = storage.pending_function_contracts;
     const auto found = pending.find(id);
     if (found == pending.end()) {
@@ -240,52 +254,68 @@ auto ProgramDraft::complete_function_result(CallableID id, ConstructionTypeRef r
 
 auto ProgramDraft::append_body_callable(ConstructionCallableContract contract) noexcept
     -> CallableID {
-    require_state(State::Bodies, "append body callable");
     return storage.declarations.append_body_callable(std::move(contract));
 }
 
 auto ProgramDraft::complete_callable(CallableID id, CallableImplementation implementation) noexcept
     -> void {
-    require_state(State::Bodies, "complete callable");
     storage.declarations.complete_callable(id, implementation);
 }
 
 auto ProgramDraft::module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration {
-    require_declarations_available("read module declaration");
     return storage.declarations.construction_view().module_decl(id);
 }
 
 auto ProgramDraft::function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration {
-    require_declarations_available("read function declaration");
     return storage.declarations.construction_view().function(id);
+}
+
+auto ProgramDraft::function_for_callable(CallableID id) const noexcept
+    -> std::optional<FunctionID> {
+    if (id.owner() != program_identity) {
+        invariant_violation("function lookup used a foreign callable");
+    }
+    const auto found = storage.functions_by_callable.find(id);
+    return found == storage.functions_by_callable.end() ? std::nullopt
+                                                        : std::optional(found->second);
 }
 
 auto ProgramDraft::construction_struct_declaration_copy(StructID id) const noexcept
     -> ConstructionStructDeclaration {
-    require_declarations_available("read construction struct declaration");
     return storage.declarations.construction_view().structure(id);
 }
 
+auto ProgramDraft::struct_field_types(StructID structure) const noexcept
+    -> std::optional<std::vector<TypeID>> {
+    const auto declaration = construction_struct_declaration_copy(structure);
+    auto result = std::vector<TypeID>();
+    result.reserve(declaration.fields.size());
+    for (const auto& field : declaration.fields) {
+        const auto* type = std::get_if<TypeID>(&field.type);
+        if (type == nullptr) {
+            return std::nullopt;
+        }
+        result.push_back(*type);
+    }
+    return result;
+}
+
 auto ProgramDraft::enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration {
-    require_declarations_available("read construction enum declaration");
     return storage.declarations.construction_view().enumeration(id);
 }
 
 auto ProgramDraft::construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
     -> ConstructionEnumCaseDeclaration {
-    require_declarations_available("read construction enum-case declaration");
     return storage.declarations.construction_view().enum_case(id);
 }
 
 auto ProgramDraft::module_constant_declaration_copy(ModuleConstantID id) const noexcept
     -> ModuleConstantDeclaration {
-    require_declarations_available("read construction module-constant declaration");
     return storage.declarations.construction_view().module_constant(id);
 }
 
 auto ProgramDraft::construction_callable_contract_copy(CallableID id) const noexcept
     -> ConstructionCallableContract {
-    require_declarations_available("read construction callable contract");
     return storage.declarations.construction_view().callable_contract(id);
 }
 
@@ -295,73 +325,59 @@ auto ProgramDraft::construction_failure_term_copy(FailureTermID failures) const 
 }
 
 auto ProgramDraft::module_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read module declaration count");
     return storage.declarations.construction_view().module_count();
 }
 
 auto ProgramDraft::function_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read function declaration count");
     return storage.declarations.construction_view().function_count();
 }
 
 auto ProgramDraft::struct_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read struct declaration count");
     return storage.declarations.construction_view().struct_count();
 }
 
 auto ProgramDraft::enum_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read enum declaration count");
     return storage.declarations.construction_view().enum_count();
 }
 
 auto ProgramDraft::enum_case_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read enum-case declaration count");
     return storage.declarations.construction_view().enum_case_count();
 }
 
 auto ProgramDraft::module_constant_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read module-constant declaration count");
     return storage.declarations.construction_view().module_constant_count();
 }
 
 auto ProgramDraft::callable_declaration_count() const noexcept -> std::size_t {
-    require_declarations_available("read callable declaration count");
     return storage.declarations.construction_view().callable_count();
 }
 
 auto ProgramDraft::module_declaration_ids() const noexcept -> std::vector<ModuleID> {
-    require_declarations_available("read module declaration identities");
     return storage.declarations.construction_view().module_ids();
 }
 
 auto ProgramDraft::function_declaration_ids() const noexcept -> std::vector<FunctionID> {
-    require_declarations_available("read function declaration identities");
     return storage.declarations.construction_view().function_ids();
 }
 
 auto ProgramDraft::struct_declaration_ids() const noexcept -> std::vector<StructID> {
-    require_declarations_available("read struct declaration identities");
     return storage.declarations.construction_view().struct_ids();
 }
 
 auto ProgramDraft::enum_declaration_ids() const noexcept -> std::vector<EnumID> {
-    require_declarations_available("read enum declaration identities");
     return storage.declarations.construction_view().enum_ids();
 }
 
 auto ProgramDraft::enum_case_declaration_ids() const noexcept -> std::vector<EnumCaseID> {
-    require_declarations_available("read enum-case declaration identities");
     return storage.declarations.construction_view().enum_case_ids();
 }
 
 auto ProgramDraft::module_constant_declaration_ids() const noexcept
     -> std::vector<ModuleConstantID> {
-    require_declarations_available("read module-constant declaration identities");
     return storage.declarations.construction_view().module_constant_ids();
 }
 
 auto ProgramDraft::callable_declaration_ids() const noexcept -> std::vector<CallableID> {
-    require_declarations_available("read callable declaration identities");
     return storage.declarations.construction_view().callable_ids();
 }
 
@@ -469,12 +485,20 @@ auto ProgramDraft::source_span(ProgramOriginID id) const noexcept -> SourceSpan 
     return provenance_appender.reader().source_span(id);
 }
 
+auto ProgramDraft::spelling(ProgramSpellingID id) const noexcept -> std::string_view {
+    return provenance_appender.reader().spelling(id);
+}
+
 auto ProgramDraft::spelling_copy(ProgramSpellingID id) const noexcept -> std::string {
     return provenance_appender.reader().spelling_copy(id);
 }
 
 auto ProgramDraft::origin_slice_copy(ProgramOriginID id) const noexcept -> std::string {
     return provenance_appender.reader().slice_copy(id);
+}
+
+auto ProgramDraft::source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin {
+    return provenance_appender.reader().source_origin(id);
 }
 
 auto ProgramDraft::module_source(ProgramModuleID id) const noexcept -> ProgramSourceID {
@@ -560,26 +584,33 @@ auto ProgramDraft::finish_declaration_heads() noexcept -> void {
 }
 
 auto ProgramDraft::reserve_body(BodyKind kind) noexcept -> BodyReservation {
-    require_state(State::Bodies, "reserve body");
     if (storage.bodies.size() == std::numeric_limits<std::uint32_t>::max()) {
         resource_limit_exceeded("body reservations exhausted their 32-bit identity space");
     }
     const auto id = BodyID(program_identity, static_cast<std::uint32_t>(storage.bodies.size()));
-    storage.bodies.push_back({kind, std::nullopt, std::nullopt});
+    storage.bodies.push_back({kind, std::nullopt, nullptr});
     return BodyReservation(id, kind, provenance_appender.reader().identity());
 }
 
 auto ProgramDraft::add_body_draft(StructuredBodyDraft body) noexcept -> void {
-    require_state(State::Bodies, "add body draft");
     const auto id = body.id;
     if (id.owner() != program_identity
         || id.index() >= storage.bodies.size()
         || body.lifetime_regions.owner().program() != program_identity
         || body.provenance_identity != provenance_appender.reader().identity()
-        || storage.bodies[id.index()].definition.has_value()) {
+        || storage.bodies[id.index()].definition != nullptr) {
         invariant_violation("body draft disagreed with its program reservation");
     }
-    storage.bodies[id.index()].definition.emplace(std::move(body));
+    storage.bodies[id.index()].definition = std::make_unique<StructuredBodyDraft>(std::move(body));
+}
+
+auto ProgramDraft::body_draft(BodyID id) const noexcept -> const StructuredBodyDraft& {
+    if (id.owner() != program_identity
+        || id.index() >= storage.bodies.size()
+        || storage.bodies[id.index()].definition == nullptr) {
+        invariant_violation("body query requires a completed body in this draft");
+    }
+    return *storage.bodies[id.index()].definition;
 }
 
 auto ProgramDraft::reserve_test() noexcept -> TestID {
@@ -616,11 +647,6 @@ auto ProgramDraft::require_state(State expected, std::string_view operation) con
     if (state != expected) {
         invariant_violation(std::format("invalid compilation lifecycle operation: {}", operation));
     }
-}
-
-auto ProgramDraft::require_declarations_available(std::string_view operation) const noexcept
-    -> void {
-    require_state(State::Bodies, operation);
 }
 
 auto BodyReservation::id() const noexcept -> BodyID {
@@ -664,3 +690,21 @@ ProgramDraft::ConstructionStorage::ConstructionStorage(
       declarations(identity, provenance),
       failure_constraints(identity, provenance),
       test_slots(identity) {}
+
+auto ProgramDraft::create_evaluation_root_identity() noexcept -> BodyIdentity {
+    if (next_evaluation_root == std::numeric_limits<std::uint32_t>::max()) {
+        resource_limit_exceeded("evaluation root identity space exhausted");
+    }
+    return BodyIdentity(
+        program_identity,
+        next_evaluation_root++,
+        BodyIdentityDomain::EvaluationRoot
+    );
+}
+
+auto ProgramDraft::write_output(ConstantOutputStream stream, std::string_view bytes) const noexcept
+    -> void {
+    if (output) {
+        output(stream, bytes);
+    }
+}

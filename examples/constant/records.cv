@@ -1,0 +1,27 @@
+struct Entry {
+    name: str,
+    code: i32,
+}
+
+const catalog: [Entry] = entries(10);
+const selected = catalog[1].code;
+
+const fn entries(offset: i32) -> [Entry; 3] {
+    var result = [Entry { "import", 0 }, Entry { "const", 0 }, Entry { "struct", 0 }];
+    for index in 0..3 {
+        result[index].code = offset + index;
+    }
+    return result;
+}
+
+fn catalog_view() -> [Entry] => catalog;
+
+fn run_records() {
+    println("Selected:", selected);
+    for entry in catalog_view() {
+        println(entry.name, entry.code);
+    }
+    var offset = 20;
+    let current = entries(offset);
+    println("Runtime:", current[1].name, current[1].code);
+}

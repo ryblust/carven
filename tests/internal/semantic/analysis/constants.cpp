@@ -55,3 +55,18 @@ TEST_CASE("Semantic constants: known results do not broaden static syntax") {
     );
     CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstInitializer));
 }
+
+TEST_CASE("Constant roots: arithmetic intermediates and extent results are not retained") {
+    const auto program = analyze_test_program(R"(
+        const answer = (11 + 22) + 44;
+        fn accept(value: [i32; (12 + 23) + 45]) {}
+    )");
+    for (const auto [id, fact] : program.constants().entries()) {
+        static_cast<void>(id);
+        if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
+            CHECK(integer->as_signed() != 33);
+            CHECK(integer->as_signed() != 35);
+            CHECK(integer->as_signed() != 80);
+        }
+    }
+}

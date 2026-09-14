@@ -1,0 +1,114 @@
+import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
+    CopyTrivial,
+    Self,
+    Tracked,
+    Guard,
+    reset,
+    matches,
+    move_count,
+};
+
+private struct Failure {}
+private struct PayloadFailure { payload: Tracked }
+
+private fn copy_result(value: i32) -> CopyTrivial throw Failure => CopyTrivial { value };
+private fn forward_copy(value: i32) -> CopyTrivial throw Failure => copy_result(value)?;
+private fn self_result() -> Self throw Failure => Self {};
+private fn forward_self() -> Self throw Failure => self_result()?;
+
+test "Tail outcomes: native trivial copies do not invoke observable move constructors" {
+    reset();
+    let captured = 43;
+    let closure = [captured]() => copy_result(captured)?;
+    try {
+        check(forward_copy(41)?.get() == 41);
+        check(closure()?.get() == 43);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(move_count() == 0);
+}
+
+test "Tail outcomes: success payloads retain their original construction identity" {
+    let captured = 1;
+    let closure = [captured]() -> Self throw Failure {
+        let _ = captured;
+        return self_result()?;
+    };
+    try {
+        check(!(forward_self()?.at_construction_address() as bool));
+        check(!(closure()?.at_construction_address() as bool));
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+}
+
+private fn tracked_result(value: i32) -> Tracked throw Failure => Tracked { value };
+
+private fn forward_tracked(value: i32) -> Tracked throw Failure {
+    let local = Guard { 1 };
+    return tracked_result(value)?;
+}
+
+test "Tail outcomes: success transfer preserves source and function-local cleanup" {
+    reset();
+    try {
+        check(forward_tracked(41)?.get() == 41);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("G1 c41 m41 s-41 g1 r41 d41 "));
+
+    reset();
+    let captured = 43;
+    let closure = [captured]() -> Tracked throw Failure {
+        let local = Guard { 2 };
+        return tracked_result(captured)?;
+    };
+    try {
+        check(closure()?.get() == 43);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("G2 c43 m43 s-43 g2 r43 d43 "));
+}
+
+private fn borrowed_result(guard: Guard, value: i32) -> Tracked throw Failure {
+    return Tracked { value };
+}
+
+private fn forward_borrowed() -> Tracked throw Failure {
+    let local = Guard { 1 };
+    return borrowed_result(Guard { 2 }, 47)?;
+}
+
+test "Tail outcomes: borrowed argument temporaries outlive result transfer" {
+    reset();
+    try {
+        check(forward_borrowed()?.get() == 47);
+    } catch {
+        Failure(_) => { fail("unexpected failure"); },
+    }
+    check(matches("G1 G2 c47 m47 s-47 g2 g1 r47 d47 "));
+}
+
+private fn rejected_result(guard: Guard, value: i32) -> i32 throw PayloadFailure {
+    throw PayloadFailure { payload: Tracked { value } };
+}
+
+private fn forward_rejected() -> i32 throw PayloadFailure {
+    let local = Guard { 1 };
+    return rejected_result(Guard { 2 }, 53)?;
+}
+
+test "Tail outcomes: failure payload transfer preserves borrowed argument cleanup" {
+    reset();
+    try {
+        let _ = forward_rejected()?;
+        fail("expected payload failure");
+    } catch {
+        PayloadFailure(error) => { check(error.payload.get() == 53); },
+    }
+    // Catch storage receives the failure before the named pattern copies it.
+    check(matches("G1 G2 c53 m53 s-53 m53 s-53 g2 g1 m53 s-53 p53 r53 d53 d53 "));
+}

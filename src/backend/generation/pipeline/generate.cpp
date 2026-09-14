@@ -1,7 +1,7 @@
 module carven:backend.generate.impl;
 
+import :backend.emission.emit;
 import :backend.emission.render;
-import :backend.emit;
 import :backend.generate;
 import :backend.generation.plan;
 import :backend.generation.request;

@@ -101,8 +101,6 @@ auto BodyRealizer::lower_range(
 
     auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
-    const auto limit = names.fresh(TargetTemporaryNameKind::Operand);
-    const auto owner = names.fresh(TargetTemporaryNameKind::Owner);
     auto begin = scope.accept(operand({
         .expression = first,
         .use = integer != nullptr               ? ConstructionUse::OperandValue
@@ -114,15 +112,6 @@ auto BodyRealizer::lower_range(
         return;
     }
     if (integer == nullptr) {
-        scope.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::RvalueReference,
-                .maybe_unused = false,
-                .name = owner,
-                .type = context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = std::move(*begin)
-            }
-        ));
         loops.emplace(
             identity,
             LoopContinuation {
@@ -146,7 +135,7 @@ auto BodyRealizer::lower_range(
                 .name = value.binding.has_value() ? binding_names.at(*value.binding) : index,
                 .type = value.binding.has_value()
                     ? (value.access == AccessMode::Write
-                           ? context.lower_type(metadata.binding(*value.binding).type)
+                           ? context.intrinsic_type(TargetSymbol::Auto)
                            : context.lower_parameter(
                                  CallableParameter {
                                      .access = AccessMode::Read,
@@ -154,7 +143,7 @@ auto BodyRealizer::lower_range(
                                  }
                              ))
                     : context.intrinsic_type(TargetSymbol::Auto),
-                .range = name_expression(owner),
+                .range = std::move(*begin),
                 .body = std::move(iteration).finish()
             }
         ));
@@ -162,31 +151,31 @@ auto BodyRealizer::lower_range(
         return;
     }
     const auto index_type = context.lower_type(construction.expression(first).type);
-    scope.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::ConstValue,
-            .maybe_unused = false,
-            .name = owner,
-            .type = index_type,
-            .initializer = std::move(*begin)
+    const auto retain_bound = [&](ConstructionExpressionID id, TargetExpr expression) noexcept {
+        const auto& source = construction.expression(id);
+        if (!source.reads_storage && !source.requires_execution) {
+            return expression;
         }
-    ));
-    auto initial = name_expression(owner);
+        const auto name = names.fresh(TargetTemporaryNameKind::Operand);
+        scope.emit(generated_statement(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstValue,
+                .maybe_unused = false,
+                .name = name,
+                .type = index_type,
+                .initializer = std::move(expression)
+            }
+        ));
+        return name_expression(name);
+    };
+    auto initial = retain_bound(first, std::move(*begin));
     auto upper = read_value(expression(integer->end), scope);
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;
     }
+    auto limit = retain_bound(integer->end, std::move(*upper));
     auto element = name_expression(index);
-    scope.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::ConstValue,
-            .maybe_unused = false,
-            .name = limit,
-            .type = index_type,
-            .initializer = std::move(*upper)
-        }
-    ));
     loops.emplace(
         identity,
         LoopContinuation {
@@ -238,7 +227,7 @@ auto BodyRealizer::lower_range(
             .condition = binary_expression(
                 name_expression(index),
                 TargetBinaryOperator::Less,
-                name_expression(limit)
+                std::move(limit)
             ),
             .steps = std::move(steps),
             .body = std::move(iteration).finish(),

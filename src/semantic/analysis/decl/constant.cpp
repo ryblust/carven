@@ -7,10 +7,9 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.decl;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
@@ -61,10 +60,10 @@ auto DeclResolver::resolve_module_constant(
         declaration.initializer,
         declared_type
     );
-    if (!result.has_value()) {
-        return std::unexpected(result.error());
-    }
-    if (!std::holds_alternative<ConstantID>(*result)) {
+    if (!result) {
+        if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
+            return std::unexpected(*diagnostic);
+        }
         return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
@@ -73,7 +72,8 @@ auto DeclResolver::resolve_module_constant(
             "constant initializer is not a supported compile-time value"
         ));
     }
-    auto fact = draft.constant_copy(std::get<ConstantID>(*result));
+    const auto constant = *result;
+    const auto& fact = draft.constant(constant);
     const auto selected = declared_type.value_or(ConstructionTypeRef {fact.type});
     auto value_type = require_source_value_type(
         draft,
@@ -96,7 +96,9 @@ auto DeclResolver::resolve_module_constant(
             "constant initializer is not a supported compile-time value"
         ));
     }
-    fact.type = *concrete;
+    if (fact.type != *concrete) {
+        invariant_violation("constant declaration lost its evaluated contextual type");
+    }
     if (form.constant.index() >= module_constants.size()) {
         invariant_violation("module constant identity is outside its reserved table");
     }
@@ -105,7 +107,7 @@ auto DeclResolver::resolve_module_constant(
         .name = draft.intern_spelling(symbol.name),
         .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
-        .value = draft.intern_constant(std::move(fact)),
+        .value = constant,
     };
     return {};
 }
@@ -114,7 +116,7 @@ auto DeclResolver::resolve_constant_name(
     ProgramModuleID module_id,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<ResolvedConstantName> {
+) noexcept -> AnalysisResult<std::optional<ConstantID>> {
     auto selected = select_symbol(module_id, name, origin);
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
@@ -128,15 +130,9 @@ auto DeclResolver::resolve_constant_name(
         if (!declaration.has_value()) {
             invariant_violation("resolved module constant has no declaration fact");
         }
-        return ResolvedConstantName {
-            .type = draft.constant_copy(declaration->value).type,
-            .constant = declaration->value,
-        };
+        return declaration->value;
     }
-    return ResolvedConstantName {
-        .type = draft.intern_builtin_type(BuiltinType::Void),
-        .constant = std::nullopt,
-    };
+    return std::nullopt;
 }
 
 auto DeclResolver::resolve_enum_qualifier(

@@ -1,0 +1,3 @@
+fn probe(value: i32) {
+    let result = f"{7}/{value:Q}";
+}

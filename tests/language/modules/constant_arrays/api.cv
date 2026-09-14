@@ -1,0 +1,7 @@
+import .values using { advance, seed, };
+
+export const published: [i32; 3] = answer();
+
+export const fn answer() -> [i32; 3] => advance(seed, 3);
+
+export const selected: i32 = published[1];

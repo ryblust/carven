@@ -42,6 +42,12 @@ auto main(int argc, char** argv) noexcept -> int {
         api::slice_range(0, 2);
     } else if (operation == "slice-reversed") {
         api::slice_range(1, 0);
+    } else if (operation == "slice-known-length") {
+        api::slice_known_length();
+    } else if (operation == "slice-known-empty") {
+        api::slice_known_empty();
+    } else if (operation == "slice-known-format") {
+        api::slice_known_format();
     } else if (operation == "unicode") {
         api::unicode();
     } else if (operation == "unicode-export") {

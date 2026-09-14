@@ -2,8 +2,8 @@
 
 These rules apply to project-authored C++ in `src/`, `tests/`, and `crafts/`.
 Vendored source and fixtures that preserve an external interface follow their
-owning format. Generated code follows the output baseline below; source-layout
-and style rules do not apply to generated artifacts.
+owning format. Generated artifacts follow the C++ baseline below; the remaining
+source-layout and style rules apply to handwritten code.
 
 ## C++ baseline
 
@@ -22,11 +22,15 @@ and style rules do not apply to generated artifacts.
 - An owner directory contains files for one responsibility. A branch directory
   contains subdirectories. Split owners only into independently understandable
   responsibilities.
+- Use directory levels to express ownership and dependency boundaries. Keep an
+  owner's entry, state, and implementation slices in the same directory.
 - Mixed file and directory layouts are permitted at the repository root, the
   `src/` compiler entry boundary, and where required by build metadata,
   test-group harnesses, or fixtures whose layout is under test.
 - Place a contract and its implementation together. A contract may have
   multiple implementation slices within the same owner directory.
+- Split files by coherent operations, algorithms, or contracts. Define state
+  ownership and dependency direction across implementation slices.
 
 ## Modules and visibility
 
@@ -35,6 +39,10 @@ and style rules do not apply to generated artifacts.
 - Use `.cppm` for contract partitions and `.cpp` for implementation partitions.
   Implementation partition names end in `.impl`. File stems match the final
   module segment before `.impl`.
+- Partition names use the owning responsibility and the file's role. Collapse a
+  repeated owner name at its entry: `frontend/parse/parse.cppm` is
+  `frontend.parse`, while `frontend/parse/parser.cppm` is
+  `frontend.parse.parser`.
 - Put imports in one block after the module declaration. Order partitions
   lexically and put `import std;` last. Import only dependencies used by the
   unit. An implementation partition imports its contract.
@@ -65,6 +73,11 @@ and style rules do not apply to generated artifacts.
 - Use the same domain vocabulary in directories, module partitions, types,
   operations, and tests. Use `decl`, `expr`, and `stmt` for those concepts in
   directory names, module segments, and file stems.
+- Use concise names that are precise in context. Omit domain qualifiers already
+  supplied by the parent directory, as in `constant/root.cppm`. Retain qualifiers
+  needed to distinguish responsibilities.
+- Name types and APIs for their roles at use sites. Update names, callers, and
+  architecture documentation when responsibilities change.
 - Name builders for their results and analyzers for their scope. Name
   implementation slices for their responsibility. Do not introduce plural long
   forms merely to distinguish an owner from its vocabulary.
@@ -102,9 +115,11 @@ and style rules do not apply to generated artifacts.
   mutable access to the pointee.
 - Use designated initializers in declaration order for non-empty project
   records, empty braces for fieldless values, and braces for container literals.
-- Supply required construction facts explicitly. Default member initializers
-  express option defaults or initial producer-private state, not missing
-  required facts or unfinished analysis.
+- Declare transparent record fields without default member initializers and
+  explicitly initialize every field at construction sites, including booleans.
+  Use a default member initializer only when a shared default is required by
+  the type's contract. Classes may initialize their private execution state in
+  members.
 - When an integer literal's type is intentional, use a lowercase literal suffix
   such as `u`, `ll`, `ull`, or `uz` instead of constructing a fixed-width alias
   solely to type the literal.

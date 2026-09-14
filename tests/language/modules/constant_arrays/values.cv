@@ -1,0 +1,9 @@
+export const seed: [i32; 3] = [2, 4, 6];
+
+export const fn advance(values: [i32; 3], amount: i32) -> [i32; 3] {
+    var result = values;
+    for index in 0..3 {
+        result[index] += amount;
+    }
+    return result;
+}

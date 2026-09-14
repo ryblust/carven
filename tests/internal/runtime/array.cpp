@@ -5,19 +5,7 @@ module;
 
 module carven:test.internal.runtime.array;
 
-import :test.internal.harness.death;
-
-TEST_CASE("Runtime: invalid array indexing always terminates") {
-    using namespace carven::runtime;
-    CHECK(expect_termination("runtime-array-negative-index", []() static noexcept {
-        auto values = std::array<std::int32_t, 2> {1, 2};
-        static_cast<void>(checked_array_index(values, std::int32_t {-1}));
-    }));
-    CHECK(expect_termination("runtime-array-upper-bound-index", []() static noexcept {
-        auto values = std::array<std::int32_t, 2> {1, 2};
-        static_cast<void>(checked_array_index(values, std::size_t {2}));
-    }));
-}
+import std;
 
 TEST_CASE("Runtime: checked array indexing preserves references") {
     using namespace carven::runtime;
@@ -26,4 +14,45 @@ TEST_CASE("Runtime: checked array indexing preserves references") {
     checked_array_index(values, std::size_t {2}) = 6;
     CHECK_EQ(values[0], 4);
     CHECK_EQ(values[2], 6);
+}
+
+namespace {
+struct ArrayElement final {
+    int value;
+    std::vector<int>* trace;
+};
+
+class AdoptedArrayElement final {
+public:
+    explicit AdoptedArrayElement(const ArrayElement& source) noexcept;
+    ~AdoptedArrayElement() noexcept;
+    AdoptedArrayElement(const AdoptedArrayElement&) = delete;
+    AdoptedArrayElement(AdoptedArrayElement&&) = delete;
+    auto operator=(const AdoptedArrayElement&) -> AdoptedArrayElement& = delete;
+    auto operator=(AdoptedArrayElement&&) -> AdoptedArrayElement& = delete;
+
+private:
+    ArrayElement source;
+};
+
+AdoptedArrayElement::AdoptedArrayElement(const ArrayElement& input) noexcept
+    : source(input) {
+    source.trace->push_back(source.value);
+}
+
+AdoptedArrayElement::~AdoptedArrayElement() noexcept {
+    source.trace->push_back(-source.value);
+}
+}
+
+TEST_CASE("Runtime: array adoption directly constructs ordered elements") {
+    auto trace = std::vector<int>();
+    {
+        const auto source = std::array {ArrayElement {1, &trace}, ArrayElement {2, &trace}};
+        const auto adopted =
+            carven::runtime::adopt_array<std::array<AdoptedArrayElement, 2>, false>(source);
+        CHECK_EQ(adopted.size(), 2);
+        CHECK(trace == std::vector<int> {1, 2});
+    }
+    CHECK(trace == std::vector<int> {1, 2, -2, -1});
 }

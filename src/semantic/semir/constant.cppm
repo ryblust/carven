@@ -72,6 +72,23 @@ struct PayloadEnumConstant final {
     auto operator==(const PayloadEnumConstant&) const noexcept -> bool = default;
 };
 
+// Fields are stored in declaration order; ConstantFact retains the nominal type.
+struct StructConstant final {
+    std::vector<ConstantID> fields;
+    auto operator==(const StructConstant&) const noexcept -> bool = default;
+};
+
+struct ArrayConstant final {
+    std::vector<ConstantID> elements;
+    auto operator==(const ArrayConstant&) const noexcept -> bool = default;
+};
+
+// Frozen contents describe persistent read-only storage without host addresses.
+struct SliceConstant final {
+    std::vector<ConstantID> elements;
+    auto operator==(const SliceConstant&) const noexcept -> bool = default;
+};
+
 using ConstantValue = std::variant<
     IntegerConstant,
     BooleanConstant,
@@ -81,13 +98,19 @@ using ConstantValue = std::variant<
     F64Constant,
     CharacterConstant,
     NumericEnumConstant,
-    PayloadEnumConstant>;
+    PayloadEnumConstant,
+    StructConstant,
+    ArrayConstant,
+    SliceConstant>;
 
 struct ConstantFact final {
     TypeID type;
     ConstantValue value;
     auto operator==(const ConstantFact&) const noexcept -> bool = default;
 };
+
+auto constant_children(const ConstantValue& value) noexcept
+    -> std::optional<std::span<const ConstantID>>;
 
 auto normalize_integer_cast(IntegerConstant source, BuiltinType target) noexcept -> IntegerConstant;
 auto integer_constant_fits(IntegerConstant constant, BuiltinType type) noexcept -> bool;
@@ -122,11 +145,14 @@ public:
     auto operator=(const ConstantStoreBuilder&) -> ConstantStoreBuilder& = delete;
     auto operator=(ConstantStoreBuilder&&) -> ConstantStoreBuilder& = delete;
     auto intern(ConstantFact fact) noexcept -> ConstantID;
-    auto copy(ConstantID id) const noexcept -> ConstantFact;
+    // Borrows survive interning and end when this owner is moved or sealed.
+    auto constant(ConstantID id) const noexcept -> const ConstantFact&;
     auto owner() const noexcept -> ProgramIdentity;
     auto seal() && noexcept -> ConstantStore;
 
 private:
+    ProgramIdentity program_identity;
     ProvenanceIdentity provenance_identity;
-    MutableProgramTable<ConstantFact, ConstantID> rows;
+    std::deque<ConstantFact> rows;
+    std::unordered_multimap<std::size_t, ConstantID> index;
 };

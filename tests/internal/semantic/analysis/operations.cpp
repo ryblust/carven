@@ -14,9 +14,9 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.literal;
 import :frontend.program.parse;
-import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.evaluation.operation;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -308,7 +308,7 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
     REQUIRE(method.has_value());
     REQUIRE(method->has_value());
     CHECK_EQ(**method, TextIntrinsic::IsEmpty);
-    CHECK_EQ(text_intrinsic_builtin_result(**method), BuiltinType::Bool);
+    CHECK_EQ(text_intrinsic_contract(**method).result, TextIntrinsicType {BuiltinType::Bool});
     const auto non_text_method =
         decide_text_method(compilation, ConstructionTypeRef {i32}, "len", 0uz);
     REQUIRE(non_text_method.has_value());
@@ -326,7 +326,7 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
     CHECK_EQ(method_as_property.error().code, DiagnosticCode::TypeTextProperty);
     const auto property = decide_text_property("bytes");
     REQUIRE(property.has_value());
-    CHECK_FALSE(text_intrinsic_builtin_result(*property).has_value());
+    CHECK(std::holds_alternative<TextIntrinsicShape>(text_intrinsic_contract(*property).result));
 }
 
 TEST_CASE("Semantic operations: construction types expose their exact recursive shape") {

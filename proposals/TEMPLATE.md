@@ -1,113 +1,82 @@
 # <Proposal title>
 
-- **Status:** Exploration | Draft | Accepted | Deferred — <reactivation condition> | Superseded — <replacement>
+- **Status:** Exploration | Draft | Accepted | Deferred | Superseded
 - **Implementation:** Not started | In progress | Partial | Complete | Not applicable
-- **Scope:** <the design domain owned by this proposal>
-- **Depends on:** None | <whole-proposal prerequisites>
+- **Scope:** <design domain>
+- **Depends on:** <whole-proposal prerequisites; omit when there are none>
 
-Use the sections that contain useful information and keep them in the order
-shown here. Omit empty sections. Distinguish current repository behavior,
-settled but unimplemented design, and candidates throughout the document.
+Use the sections that contain useful information. Distinguish current behavior,
+accepted design, and candidates. Deferred status needs a reactivation condition;
+Superseded status names the replacement.
 
 ## Summary
 
-State the problem, intended outcome, current maturity, and scope boundary in a
-few paragraphs. For a mixed-maturity domain, add a compact map:
-
-| Slice | Maturity | Current frontier |
-| --- | --- | --- |
-| <design slice> | Accepted | <stable decision or implementation handoff> |
-| <design slice> | Exploration | <first open decision> |
-| <design slice> | Deferred | <DEFER identifier or reactivation condition> |
+State the problem, intended outcome, and remaining work in a few paragraphs.
+For a mixed-maturity domain, a compact table can identify each slice's maturity
+and next decision.
 
 ## Context
 
-Give the current facts and terminology needed to understand the proposal.
-References provide evidence but do not replace this explanation.
+Explain the current behavior and constraints needed to understand the design.
+Keep the proposal understandable without following references.
 
 ## Goals and non-goals
 
-### Goals
-
-- <outcome this proposal intends to establish>
-
-### Non-goals
-
-- <adjacent concern outside this proposal>
-
-These lists define the proposal boundary, not an implementation task list.
+List intended outcomes and adjacent concerns outside the scope. Omit rules
+already explained in the design and implementation tasks listed below.
 
 ## Design
 
-Present the coherent design rather than a history of the discussion. For a
-language feature, move from the user model and observable semantics to compiler
-facts and target realization. Label unsettled examples and candidates where
-they appear.
-
-For mixed-maturity work, mark each design slice explicitly, for example:
-
-**Maturity:** Accepted semantics; source spelling remains open.
+Describe observable behavior before compiler representation and lowering.
+Explain consequential choices where they are introduced. Label unsettled syntax
+and candidates, including examples.
 
 ## Decision record
 
-Record consequential settled choices under stable identifiers. The complete
-design belongs above; this section is an index with concise rationale.
+Use stable identifiers for consequential accepted choices. Keep the complete
+contract in Design; this table is a short summary. Omit it when numbered design
+sections already serve that purpose.
 
-| ID | Decision | Design | Rationale |
-| --- | --- | --- | --- |
-| `DEC-01` | <settled choice> | [Owning section](#design) | <reason> |
+| ID | Decision and reason |
+| --- | --- |
+| `DEC-01` | <choice and concise reason> |
 
 ## Open decisions
 
-Order open questions by dependency and name the first unblocked item:
+Order questions by dependency. Identify the next unblocked item, if one exists.
 
-**Next discussion:** `OPEN-01`
-
-### OPEN-01 — <one concrete design question>
+### OPEN-01 — <concrete question>
 
 - **Status:** Active | Blocked
-- **Depends on:** None | <prerequisites>
-- **Blocked by:** None | <unsatisfied prerequisite>
-- **Activation condition:** Active now | <event that clears the block>
-- **Why it matters:** <observable consequence>
-- **Constraints:** <facts an answer must preserve>
-- **Options:** <known choices and tradeoffs, or Unknown>
+- **Depends on:** <relevant decisions or external prerequisites; omit if none>
+- **Activation condition:** <event that clears a block; omit for active work>
+- **Question:** <choice to make and its observable consequence>
+- **Constraints:** <rules the answer must preserve>
+- **Options:** <known alternatives and tradeoffs>
 - **Closure condition:** <decision or evidence needed>
 
-`Depends on` orders related decisions. `Blocked by` names an unmet prerequisite.
-`Activation condition` names the observable event that makes a blocked decision
-active. When the design space is not yet known, record `Options: Unknown` and
-the evidence needed to identify candidates.
+Omit a field when its information is already clear. If alternatives are unknown,
+state what example or evidence will identify them. Add a separate blocker only
+when the dependency and activation condition do not explain it.
 
 ## Deferred work
 
-Use one stable identifier for each independently reactivatable direction.
+### DEFER-01 — <independently reactivatable direction>
 
-### DEFER-01 — <inactive direction>
+- **Reason deferred:** <why it is outside the active scope>
+- **Depends on:** <prerequisites; omit if none>
+- **Reactivation condition:** <observable need and evidence>
 
-- **Reason deferred:** <why it is outside the active frontier>
-- **Depends on:** None | <prerequisites>
-- **Reactivation condition:** <observable condition>
-
-Candidate tables, research questions, and collected evidence may follow these
-fields when they help a later reader resume the work.
+Retain technical questions needed to resume the design. External reading lists
+and experiment histories belong in the archive.
 
 ## Implementation
 
-Describe delivery boundaries, dependency order, and permanent-document handoff
-after the design is actionable. Keep unsettled design in `Open decisions` and
-inactive directions in `Deferred work`. Avoid schedules, assignees, test counts,
-and private task queues.
+Describe delivery order and the source, compiler, runtime, and documentation
+work needed for each accepted slice. Identify unresolved decisions that block it.
 
 ## Validation
 
-State the evidence needed at the proposal's current maturity: source examples,
-rejected programs and diagnostics, semantic edge cases, generated-C++ checks,
-interoperability tests, measurements, or experiments that close open decisions.
-
-## References
-
-- <permanent documentation, implementation, tests, related proposals, notes, or primary sources>
-
-The proposal remains the self-contained design record; references provide
-supporting evidence.
+State the evidence required: source examples, rejected programs and diagnostics,
+semantic edge cases, generated-C++ checks, interoperability tests, or measurements.
+Tie experiments to the specific decision or claim they test.

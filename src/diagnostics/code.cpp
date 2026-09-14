@@ -47,12 +47,16 @@ namespace {
     X(ConstEnumCase, "CV-CONST-ENUM-CASE", Error, "Invalid enum case constant.")                   \
     X(ConstEnumOverflow, "CV-CONST-ENUM-OVERFLOW", Error, "Enum case constant overflow.")          \
     X(ConstEnumRange, "CV-CONST-ENUM-RANGE", Error, "Enum case constant is out of range.")         \
+    X(ConstEvaluation, "CV-CONST-EVALUATION", Error, "Constant function evaluation failed.")       \
     X(ConstExportedType,                                                                           \
       "CV-CONST-EXPORTED-TYPE",                                                                    \
       Error,                                                                                       \
       "Exported constant is missing its declared type.")                                           \
+    X(ConstAdmission, "CV-CONST-ADMISSION", Error, "Invalid constant execution contract.")         \
     X(ConstInitializer, "CV-CONST-INITIALIZER", Error, "Invalid constant initializer.")            \
     X(ConstIndexBounds, "CV-CONST-INDEX-BOUNDS", Error, "Constant array index is out of bounds.")  \
+    X(ConstLimit, "CV-CONST-LIMIT", Error, "Constant evaluation resource limit exceeded.")         \
+    X(ConstTest, "CV-CONST-TEST", Error, "Compile-time test failed.")                              \
     X(ConstLiteralRange, "CV-CONST-LITERAL-RANGE", Error, "Constant literal is out of range.")     \
     X(ConstNegativeArrayExtent, "CV-CONST-NEGATIVE-ARRAY-EXTENT", Error, "Negative array extent.") \
     X(ConstOverflow, "CV-CONST-OVERFLOW", Error, "Constant arithmetic overflow.")                  \
@@ -179,7 +183,6 @@ namespace {
       "CV-TYPE-CONSTRUCT-DUPLICATE-FIELD",                                                         \
       Error,                                                                                       \
       "Duplicate field initializer.")                                                              \
-    X(TypeConstructField, "CV-TYPE-CONSTRUCT-FIELD", Error, "Invalid field initializer type.")     \
     X(TypeConstructNotStruct,                                                                      \
       "CV-TYPE-CONSTRUCT-NOT-STRUCT",                                                              \
       Error,                                                                                       \

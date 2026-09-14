@@ -304,11 +304,11 @@ TEST_CASE("Semantic availability: nested terminating loops preserve transfers") 
 
 TEST_CASE("Semantic calls: recursive view replacement updates caller loans") {
     const auto left = std::string(
-        "fn left(again: bool, &selected: fn() -> i32, replacement: fn() -> i32) { "
+        "fn left(again: bool, &selected: fn() -> i32, replacement: fn() -> i32) -> void { "
         "if again { right(false, &selected, replacement); } else { selected = replacement; } }"
     );
     const auto right = std::string(
-        "fn right(again: bool, &selected: fn() -> i32, replacement: fn() -> i32) { "
+        "fn right(again: bool, &selected: fn() -> i32, replacement: fn() -> i32) -> void { "
         "if again { left(false, &selected, replacement); } else { selected = replacement; } }"
     );
     for (const auto reverse : {false, true}) {

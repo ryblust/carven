@@ -122,6 +122,12 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
     if (result == nullptr) {
         invariant_violation("catalog lookup returned an invalid symbol");
     }
+
+    auto completed = batch->requests.ensure_declaration(result->symbol_id, source_module_id, span);
+    if (!completed) {
+        return std::unexpected(completed.error());
+    }
+
     return result;
 }
 

@@ -5,8 +5,9 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.constant.root;
+import :semantic.analysis.construction.requests;
 import :semantic.analysis.decl.context;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
@@ -23,9 +24,14 @@ public:
     DeclResolver(
         ProgramDraft& target,
         AnalysisCatalogView source_catalog,
-        ImportUsage& usage
+        ImportUsage& usage,
+        ConstructionRequests& requests
     ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
+    auto ensure_available(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
+        -> AnalysisResult<void>;
+    auto prepare_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisResult<void>;
 
 private:
     struct Unvisited final {};
@@ -58,12 +64,17 @@ private:
         ASTView syntax;
 
         auto resolve_name(std::string_view name, Span span) noexcept
-            -> AnalysisResult<ResolvedConstantName>;
+            -> AnalysisResult<std::optional<ConstantID>>;
+        auto resolve_function(std::string_view name, Span span) noexcept
+            -> AnalysisResult<std::optional<FunctionID>>;
+        auto construction_requests() noexcept -> ConstructionRequests&;
         auto resolve_enum_qualifier(ASTExprID expression) noexcept
             -> AnalysisResult<std::optional<TypeID>>;
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
             -> AnalysisResult<ResolvedEnumCase>;
         auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef>;
+        auto resolve_construction_type(const ASTConstructionType& type) noexcept
+            -> AnalysisResult<ConstructionTypeRef>;
         auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
         auto is_numeric_enum(TypeID type) const noexcept -> bool;
     };
@@ -115,7 +126,7 @@ private:
         ProgramModuleID module_id,
         std::string_view name,
         Span origin
-    ) noexcept -> AnalysisResult<ResolvedConstantName>;
+    ) noexcept -> AnalysisResult<std::optional<ConstantID>>;
     auto resolve_enum_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
@@ -131,12 +142,24 @@ private:
         -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
     auto finish_capabilities() noexcept -> void;
+    auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;
+    auto publish_declaration(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
+    auto prepare_type_dependencies(
+        ConstructionTypeRef type,
+        ProgramModuleID requester,
+        Span span,
+        std::flat_set<TypeID>& visiting,
+        std::vector<CatalogSymbolID>& prepared
+    ) noexcept -> AnalysisResult<void>;
 
     ProgramDraft& draft;
     AnalysisCatalogView catalog;
     ImportUsage& import_usage;
+    ConstructionRequests& requests;
+    bool heads_finished;
     std::vector<State> states;
+    std::vector<bool> published;
     std::vector<CatalogSymbolID> active_path;
     std::vector<std::optional<ConstructionStructDeclaration>> structures;
     std::vector<std::optional<EnumDeclaration>> enumerations;

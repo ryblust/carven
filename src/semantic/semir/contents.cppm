@@ -18,3 +18,10 @@ auto compute_type_contents(
     const CanonicalTypeStore& types,
     const DeclarationStore& declarations
 ) noexcept -> std::vector<TypeContents>;
+
+// Referenced declaration fields must have completed concrete types.
+auto query_type_contents(
+    const CanonicalTypeStoreBuilder& types,
+    DeclarationConstructionView declarations,
+    TypeID type
+) noexcept -> TypeContents;

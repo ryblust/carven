@@ -1,0 +1,75 @@
+import .orders using {
+    quote, line_total, delivery_fee,
+    QuantityError, OutOfStock, DeliveryError, CarrierLookupError,
+};
+
+fn report(label: str, quantity: i32, available: i32, zone: i32) {
+    println(label);
+    try {
+        let total = quote(quantity, available, zone)?;
+        println("Quote in cents:", total);
+    } catch {
+        QuantityError(.NonPositive(value)) | QuantityError(.TooLarge(value)) => {
+            println("Quantity must be between 1 and 100:", value);
+        },
+        OutOfStock(error) => {
+            println("Requested:", error.requested);
+            println("Available:", error.available);
+        },
+        CarrierLookupError(error) => { println("Carrier lookup failed for zone:", error.zone); },
+        DeliveryError(.UnknownZone(zone)) => {
+            println("Unknown zone:", zone);
+        },
+        DeliveryError(.Unavailable(zone)) => {
+            println("No carrier for zone:", zone);
+        },
+    }
+}
+
+fn run_composition() {
+    report("Standard delivery", 2, 5, 1);
+    report("Alternate carrier", 2, 5, 2);
+    report("Stock shortage", 6, 5, 1);
+    report("Invalid quantity", 0, 5, 1);
+    report("Oversized order", 101, 200, 1);
+    report("Unknown destination", 2, 5, 9);
+    report("Unavailable destination", 2, 5, 3);
+    report("Recovery lookup fails", 2, 5, 4);
+    report_sequence(2);
+    report_sequence(6);
+    report_short_circuit(false);
+    report_short_circuit(true);
+}
+
+private fn checked_total(&trace: i32, quantity: i32) -> i32 {
+    trace = trace * 10 + 1;
+    return line_total(quantity, 5)?;
+}
+
+private fn checked_delivery(&trace: i32) -> i32 {
+    trace = trace * 10 + 2;
+    return delivery_fee(1)?;
+}
+
+private fn report_sequence(quantity: i32) {
+    var trace = 0;
+    let total = try {
+        (checked_total(&trace, quantity) + checked_delivery(&trace))?
+    } catch {
+        QuantityError(_) | OutOfStock(_) | DeliveryError(_) => -1,
+    };
+    println("Expression total:", total);
+    println("Evaluation trace:", trace);
+}
+
+private fn report_short_circuit(needs_delivery: bool) {
+    var trace = 0;
+    let affordable = try {
+        (needs_delivery && checked_delivery(&trace) < 500)?
+    } catch {
+        DeliveryError(_) => false,
+    };
+    let accepted = if affordable { 1 } else { 0 };
+    println("Delivery affordable:", accepted);
+    println("Delivery trace:", trace);
+}

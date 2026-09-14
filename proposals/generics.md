@@ -1,4 +1,4 @@
-# 泛型与静态约束
+# Generics and static capabilities
 
 - **Status:** Draft
 - **Implementation:** Not started
@@ -9,51 +9,26 @@
 
 ## Summary
 
-本文定义 Carven 泛型与静态约束的 source semantics。Type-generic syntax、
-definition-site checking、local inference、`concept`/`impl`、associated type、
-coherence、impl locality 与 generic instance identity 已经裁定，但尚未实现。
+This proposal defines type parameters, definition-site checking, local inference,
+static capabilities, associated types, coherence, and generic instance identity.
+These semantics are accepted and unimplemented.
 
-实现前仍需关闭两项设计：显式 C++ boundary function 如何进入 closed instance graph，以及
-如何从语言级无限 instance expansion 中区分合法递归和 compiler resource limit。
-C++ concrete declarations、templates 或混合表示继续是 lowering 选择，不构成 source
-语义。
-
-| Slice | Maturity | Current frontier |
-| --- | --- | --- |
-| Parametric generic core | Accepted | 实现仍等待 `OPEN-01`、`OPEN-02` |
-| Static capability and evidence | Accepted | 等待 parametric core |
-| Associated types and coherence | Accepted | 等待 capability implementation |
-| Closed instance graph | Exploration | `OPEN-01` 因 generic import/export publication contract 尚未定义而 blocked |
-| Target realization | Accepted freedom | 由完整 semantic facts 驱动 |
-| Advanced generic facilities | Deferred | `DEFER-01` 至 `DEFER-11` |
+Two decisions block implementation: generic C++ boundary participation (`OPEN-01`)
+and finite instance expansion (`OPEN-02`). Lowering may use concrete C++
+declarations, templates, erasure, or a combination after semantic analysis.
+Advanced facilities remain under `DEFER-01` through `DEFER-11`.
 
 ## Context
 
-### 当前实现
+Carven currently compiles a closed batch of modules with concrete declarations,
+canonical module paths, module-domain visibility, and direct lookup. It has no
+user-defined generic declarations, concept requirements, impl evidence, or
+generic instance graph. `concept`, `impl`, `Self`, and `where` are ordinary
+identifiers today.
 
-当前仓库没有 Carven generic declaration 或 static constraint：
-
-- keyword 集合中没有 `concept`、`impl`、`Self` 或 `where`；它们目前是普通
-  identifiers；
-- top-level grammar 只有现有 concrete declarations 与 C++ source fragments；
-  Carven declaration 与 call 尚无 generic parameter/application clause；
-- named type 已支持 type arguments，`ptr<T>` 与 nested `>>` 也已有 type parsing；
-  这些 syntax 不构成 user-defined Carven generic declarations；
-- SemIRProgram nominal type 只记录 resolved declaration identity，call 也没有 type
-  parameter、constraint、witness 或 instance representation；
-- dependency graph 只包含 concrete declaration dependency；
-- 当前 unit-local Target lowering 已能为 array、failure transport 与 runtime helper 生成 C++ template
-  application，但那是 compiler-selected target mechanism，不是 source 泛型；
-- compilation 是显式的 closed module batch，并已有 canonical module path、
-  module-domain visibility 与 direct lookup 边界。
-
-因此没有旧 generic source surface 需要兼容。实现应以完整 vertical slice 加入
-grammar、AST、SemIRProgram、instance graph、diagnostics 与 lowering，而不是先放置未使用的
-scaffolding。
-
-### 问题与 semantic authority
-
-泛型需要把一组 static type arguments 映射为确定的 Carven declaration 或 type：
+Named type arguments, builtin `ptr<T>`, and nested `>>` parsing already exist.
+Target lowering also uses C++ templates for arrays, failures, and runtime helpers.
+Source generics require additional syntax and semantic facts.
 
 ```text
 generic declaration + normalized arguments + required static facts
@@ -62,42 +37,21 @@ generic declaration + normalized arguments + required static facts
                   one resolved Carven instance
 ```
 
-Generic body 的 name、call、member、operator、constraint、access 与 failure meaning
-必须在 Carven analysis 中关闭，不能等待 C++ substitution、overload resolution、
-ADL 或 SFINAE。反过来，语言也不应为了避免 C++ template 而承诺一种固定
-monomorphization table、cache、artifact layout 或 generated spelling。
-
-静态约束只在 body 需要非普遍 operation 时出现。仅保存、传递或返回 `T` 的代码
-不应等待完整 capability system。
-
-### 既有边界
-
-- Ordinary Carven semantics 在 target lowering 前完成。
-- Generic support 不自动引入 runtime descriptor、registry、erased carrier、
-  allocation、initialization 或 indirect dispatch。
-- Compile-time-only type facts在所有受影响 operation 与 representation 确定后可以擦除。
-- Ordinary concrete、inspectable C++ 是默认 target 方向，但不是稳定 ABI 或
-  generated spelling contract。
+Carven analysis resolves the meaning of names, calls, members, operators,
+constraints, access, and failures. Capability constraints are needed when a body
+uses operations beyond those available for every admitted type. The parametric
+core can support storage, forwarding, and return of `T` independently.
 
 ## Goals and non-goals
 
-### Goals
+The initial scope covers type-parameterized functions, transparent structs, and
+enums; checked generic bodies; bounded local inference; canonical static
+evidence; and a finite instance graph.
 
-- 表达 type-parameterized function、transparent struct 与 enum。
-- 在 definition site 完整检查 generic body。
-- 以 bounded local inference 得到唯一 type substitution。
-- 使用一套 static capability/evidence model 表达额外 operation guarantees。
-- 在 closed compilation 中形成有限、确定、canonical 的 concrete instance graph。
-- 保持 C++ target mechanism 可替换且不参与 source meaning。
-
-### Non-goals
-
-- Const/value generics、generic lambda 或 type-level execution。
-- Dynamic interface value、runtime type erasure 或自动 reflection。
-- Package resolution、serialized generic body、binary-only distribution、
-  stable ABI 或 persistent instance cache。
-- C++ specialization、SFINAE、ADL、implicit candidate ranking 或第二套 template
-  language。
+Value parameters, generic lambdas, type-level execution, dynamic interfaces,
+reflection, binary-only distribution, stable ABI, and persistent caches are
+outside this scope. Generics add no implicit allocation, runtime descriptors,
+registries, initialization, or indirect dispatch.
 
 ## Design
 
@@ -105,20 +59,21 @@ monomorphization table、cache、artifact layout 或 generated spelling。
 
 **Maturity:** Accepted semantics.
 
-Generic declaration 只依赖 type parameter 的普遍规则与显式 capability 检查一次。
-Body 中每个 operation 在 generic SemIRProgram 中已有确定 meaning；unused invalid body 也产生
-diagnostic，错误不取决于第一个 caller。
+Check each generic body once against universal type rules and its declared
+capabilities. Every operation has a resolved meaning even if the declaration is
+unused; an invalid body is diagnosed at its definition.
 
-Generic SemIRProgram 可以保存 parameterized types、resolved requirement operations 与 symbolic
-associated projections，但不能保存 unresolved body 等待 application site 或 C++
-substitution 重新解释。Application site 只完成 inference、argument validation、
-constraint satisfaction、唯一 evidence selection 与 concrete instance formation。
+Generic SemIRProgram may retain parameterized types, resolved requirement
+operations, and symbolic associated projections. Application sites perform
+inference, argument validation, constraint satisfaction, canonical evidence
+selection, and instance formation. They do not reinterpret the body, and C++
+substitution does not determine its validity.
 
 ### Parametric generic core
 
 **Maturity:** Accepted semantics.
 
-第一阶段 type parameters 覆盖 generic functions、transparent structs 与 enums：
+The first phase supports generic functions, transparent structs, and enums:
 
 ```carven
 fn identity<T>(value: T) -> T {
@@ -130,10 +85,10 @@ struct Box<T> {
 }
 ```
 
-这类 declaration 仍需遵守 access、copy/Take、storage cycle、construction、
-visibility 与 published audience closure。Unconstrained body 只能使用对任意合法 `T`
-成立的 core operations；closed compilation 知道当前所有 applications，不会使以下
-declaration 合法：
+These declarations obey ordinary access, copy/Take, storage-cycle, construction,
+visibility, and published-audience rules. An unconstrained body may use only
+operations valid for every admitted `T`. Knowing all current applications does
+not validate an otherwise unsupported operation:
 
 ```carven
 fn equal<T>(left: T, right: T) -> bool {
@@ -141,14 +96,15 @@ fn equal<T>(left: T, right: T) -> bool {
 }
 ```
 
-如果 equality 不是 universal capability，body 必须声明对应 guarantee。`concept`/
-`impl` 是 parametric core 上的 static capability layer，而不是 `Box<T>` 的前置条件。
+If equality is not universal, this body requires an explicit capability.
+`concept` and `impl` provide that additional layer; simple parametric declarations
+such as `Box<T>` do not require capability dispatch.
 
 ### Type-generic syntax
 
 **Maturity:** Accepted syntax and parsing contract.
 
-Declaration 与 type application 都使用 name-adjacent `<...>`：
+Declarations and applications use `<...>` after the name:
 
 ```carven
 fn wrap<T>(value: T) -> Box<T> { ... }
@@ -159,22 +115,22 @@ let inferred = wrap(1);
 let explicit = wrap<i32>(1);
 ```
 
-第一阶段 clause 非空，每一项都是 type，parameter names 唯一；comma-separated list
-允许 trailing comma。Explicit function application 必须提供全部 arguments；省略
-clause 才推断全部 arguments。Partial、placeholder、named arguments 与 const/value
-parameters 不在本阶段。
+Clauses are nonempty, comma-separated type lists with optional trailing commas.
+Parameter names are unique. An explicit function application supplies all type
+arguments; omitting the clause requests inference for all of them. Partial,
+placeholder, named, and value arguments are outside the first phase.
 
-Expression parser 仅按 tokens 决定：callee 后完整 `<...>` 紧接 `(...)` 固定为
-generic-call shape，否则 `<` 进入 comparison grammar。Parser 不查询 symbol table，
-semantic failure 后也不 fallback。因此 `a < b > (c)` 是 generic call；比较必须写成
-`(a < b) > c`。
+Parsing uses tokens only. A complete `<...>` after a callee followed by `(...)`
+forms a generic call; otherwise `<` enters comparison grammar. Semantic failure
+does not trigger reparsing. Thus `a < b > (c)` is a generic call, while
+`(a < b) > c` expresses the comparison.
 
 ### Local type argument inference
 
 **Maturity:** Accepted semantics.
 
-省略 explicit clause 时，compiler 从 public signature、call arguments 与 expression
-已有的 immediate expected result type 求唯一 substitution：
+Infer a unique substitution from the public signature, actual arguments, and
+immediate expected result type:
 
 ```carven
 fn identity<T>(value: T) -> T { return value; }
@@ -186,20 +142,22 @@ let third: i32 = make();
 consume_i32(make());
 ```
 
-Inference 不读取 body、已有 instances 或“哪个 type 恰好有 impl”，也不依赖 C++
-deduction。Capability 在唯一 substitution 后只过滤 invalid application，不制造 type
-candidates。缺少信息、冲突或不唯一时在 call site 诊断并要求 explicit arguments。
+Inference uses bounded local unification, including `T = i32`,
+`Box<T> = Box<i32>`, conflicting bindings, and recursive substitutions. Expected
+types may propagate through existing local expression contexts. Insufficient,
+conflicting, or ambiguous information produces a call-site diagnostic requiring
+explicit arguments.
 
-Solver 只需 bounded local unification，包括 `T = i32`、`Box<T> = Box<i32>`、
-conflicting binding 与 recursive substitution。Expected type 可以沿 nested expression
-的现有 local channel 传播；需要跨 declaration、statement、call site 或 instance graph
-fixed point 的 source 必须增加 annotation。
+The solver does not inspect bodies, existing instances, available impls, or C++
+deduction. Capabilities validate an already inferred substitution. Programs that
+need a fixed point across declarations, statements, call sites, or the instance
+graph require annotations.
 
 ### Unified static capability model
 
 **Maturity:** Accepted semantics.
 
-Generic body 使用非普遍 operation 时声明 static guarantee：
+A generic body declares capabilities for operations beyond universal type rules:
 
 ```carven
 concept Comparable {
@@ -209,41 +167,42 @@ concept Comparable {
 fn choose<T: Comparable>(left: T, right: T) -> T { ... }
 ```
 
-Carven 只有一套 capability requirement/evidence model。Compiler-derived property 与
-source `impl` 共用 satisfaction path、diagnostics 与 resolved-operation representation；
-区别只由 capability identity 规定谁能产生 evidence。Compiler-derived evidence 可以
-视为 synthesized impl，但不建立第二套 solver 或 dispatch。
+Compiler-derived properties and source `impl` evidence share satisfaction,
+diagnostics, and resolved-operation representation. The capability identity
+defines which producers may supply evidence. Compiler-derived evidence can be
+represented as a synthesized impl within this same model.
 
-`concept` 是 compile-time contract，不是 runtime value、nominal value type、subtyping
-或 vtable。Dynamic interface 保持独立 intent。
+A `concept` is a compile-time contract. It has no runtime value representation
+and introduces neither subtyping nor a dynamic interface.
 
 ### Concept and impl declarations
 
 **Maturity:** Accepted syntax and semantics.
 
-`concept` 是具名 module declaration。`private concept`、bare `concept` 与
-`export concept` 分别具有 Module、ModuleDomain 与 Compilation visibility。Identity
-由 canonical module path 与 declaration identity 决定。Concept 只能进入 bounds、
-impl head、projection 与 concept-qualified operation selection，不是 ordinary value type。
+A concept is a named module declaration identified by canonical module path and
+declaration identity. `private concept`, bare `concept`, and `export concept`
+have Module, ModuleDomain, and Compilation visibility respectively. Concepts
+appear in bounds, impl heads, projections, and qualified operation selection.
 
-Requirements 是以 `;` 结束的 callable signatures；operation 与 associated names 在
-一个 member space 内唯一且不 overload。Empty body 合法，表示 marker capability。
+Callable requirements end in `;`. Operation and associated-type names share one
+namespace with unique names and no overloading. An empty body declares a marker
+capability.
 
-`impl` 是 anonymous semantic declaration，没有 source name、visibility modifier、
-import、re-export 或 activation。合法 impl 一旦进入 compilation 就成为
-compilation-wide canonical evidence。Body 必须恰好实现每项 requirement；missing、
-extra、duplicate 与 substitution 后 signature mismatch 均诊断。
+An `impl` is an anonymous semantic declaration with no source name, visibility
+modifier, import, re-export, or local activation. A valid impl contributes
+canonical evidence throughout the compilation. It must implement every
+requirement exactly once; missing, extra, duplicate, and signature-mismatched
+members are diagnosed after substitution.
 
-`concept` 与 `impl` 是 contextual keywords：parser 只在 top-level declaration position
-及 `private`/`export` 后的 declaration position 识别，不加入 global keyword set，
-也不查询 symbol table。
+`concept` and `impl` are contextual keywords recognized at top-level declaration
+positions, including after `private` or `export`. They are not global keywords,
+and parsing does not consult the symbol table.
 
 ### Function-shaped concept operations
 
 **Maturity:** Accepted semantics.
 
-第一阶段 requirement 使用显式参数的 function shape，impl 精确实现但不注入 member
-lookup：
+Initial requirements are functions with explicit parameters:
 
 ```carven
 concept Comparable {
@@ -259,31 +218,28 @@ fn minimum<T: Comparable>(left: T, right: T) -> T {
 }
 ```
 
-Concept-qualified selection 以 resolved concept identity 为唯一 lookup anchor，不进行
-ADL、free-function search，也不让 `left.less(right)` 在 generic 与 concrete context
-获得不同 meaning。Parameter access、result 与 failure contract 都是 ordinary callable
-facts，impl 在 `Self` substitution 后精确匹配。
+The resolved concept is the lookup anchor for a qualified operation. Impl
+operations do not enter member lookup, ADL, or free-function search. This keeps
+selection consistent in generic and concrete contexts. Parameter access, result,
+and failure contracts are ordinary callable facts, matched exactly after
+substituting `Self`.
 
 ### Contextual Self
 
 **Maturity:** Accepted syntax and semantics.
 
-`Self` 是 implementing type 的 contextual placeholder：
+`Self` denotes the implementing type inside a concept or its impl. Evidence
+selects that type in a requirement; an impl normalizes `Self` to its target.
+Signature conformance is checked after substitution.
 
-- 只在 concept 与对应 impl context 中有特殊 type meaning；
-- concept requirement 中由 evidence target 决定；
-- impl 中规范化为 target type；
-- signature conformance 在 substitution 后检查；
-- future value receiver 使用 `self`，与 type spelling `Self` 分工。
-
-它不表示 runtime type、C++ pointer、implicit object address 或 nominal declaration，
-也不加入 global keyword set。
+`Self` is a contextual type placeholder, distinct from a value receiver `self`.
+It introduces no nominal type, object address, pointer, or global keyword.
 
 ### Conjunctive bounds
 
 **Maturity:** Accepted syntax and semantics.
 
-第一阶段 constraint 紧邻 type parameter，`+` 表示有限静态合取：
+Bounds follow the type parameter. `+` expresses finite static conjunction:
 
 ```carven
 fn minimum<T: Equality + Comparable>(left: T, right: T) -> T { ... }
@@ -291,16 +247,19 @@ fn minimum<T: Equality + Comparable>(left: T, right: T) -> T { ... }
 impl<T: Equality + Debug> Debug for Box<T> { ... }
 ```
 
-Bound order 不影响 semantics，duplicate capability 诊断。Capability names 通过 ordinary
-direct lookup 可见；local inference 先确定 substitution，再逐一验证 evidence。`+`
-不建立 inheritance、subtyping、runtime composition 或 combined evidence identity。
-第一阶段没有 `where`、disjunction、negation、refinement 或 general constraint logic。
+Bound order has no semantic effect; duplicate capabilities are diagnosed.
+Ordinary direct lookup resolves capability names. Inference determines the
+substitution before checking each evidence obligation.
+
+Conjunction creates no combined evidence identity, inheritance, subtyping, or
+runtime composition. The initial scope excludes `where`, disjunction, negation,
+refinement, and general constraint logic.
 
 ### Minimal associated types
 
 **Maturity:** Accepted semantics and syntax.
 
-Associated type 表达由 implementing type 的唯一 canonical evidence 决定的 output：
+An associated type is an output determined by canonical evidence:
 
 ```carven
 concept Iterator {
@@ -312,13 +271,14 @@ impl<T> Iterator for VecIterator<T> {
 }
 ```
 
-Concept associated names 唯一；impl 必须恰好提供一份 definition。Definition 可引用
-impl type parameters，但没有 associated parameters、default、bounds、const 或 general
-equations。
+Associated names are unique, and each impl supplies exactly one definition per
+requirement. Definitions may use impl type parameters. Associated parameters,
+defaults, bounds, constants, and general equations remain outside this phase.
 
-Projection 在 application substitution 后、lowering 前函数式规范化。Cycle 或无法
-normalization 是 Carven diagnostic，不能留给 C++ dependent types。外部唯一 normal form
-是 `Concept::Associated<SelfType>`：
+After application substitution, projections normalize through unique evidence
+before lowering. Cycles and failed normalization produce Carven diagnostics.
+The external form is `Concept::Associated<SelfType>`. This abbreviated consumer
+assumes an `Iterator::next` requirement and an `Option` declaration:
 
 ```carven
 fn first<I: Iterator>(iterator: I) -> Option<Iterator::Item<I>> {
@@ -326,28 +286,30 @@ fn first<I: Iterator>(iterator: I) -> Option<Iterator::Item<I>> {
 }
 ```
 
-不存在 `I::Item`、`<I as Concept>::Item` 或 `Concept<I>::Item` shorthand。
+The proposed phase does not include `I::Item`, `<I as Concept>::Item`, or
+`Concept<I>::Item` shorthand.
 
 ### Strong global coherence
 
 **Maturity:** Accepted semantics.
 
-一次 closed compilation 中，每组 resolved `(capability identity, concrete semantic
-arguments)` 最多一份 applicable evidence。Compiler-derived 与 source evidence 在同一
-coherence domain。
+Each resolved `(capability identity, concrete semantic arguments)` has at most
+one applicable evidence in a closed compilation. Compiler-derived and source
+evidence share this coherence domain.
 
-Conflicts 不因不同 modules、lexical imports、当前没有 application 或一份 unused 而合法。
-可能同时匹配的 generic impl 也拒绝；第一阶段没有 specialization、priority 或
-declaration-order tie-break。Capability satisfaction 不 import 或 activate impl。
-需要多种策略的 API 应使用显式 strategy value/type，而不是 caller-selected hidden witness。
+Reject overlapping evidence even across modules or when no current application
+uses it. Generic impls that may both match are also rejected. Imports do not
+activate evidence, and the first phase has no specialization, priority, or
+declaration-order tie-break. APIs needing multiple strategies use explicit
+strategy values or types.
 
 ### Impl module domain and anchored head
 
 **Maturity:** Accepted semantics.
 
-Impl defining module 必须与 capability declaration，或 normalized target 的 outermost
-nominal declaration，位于同一个 module domain；同时仍须通过 ordinary direct lookup
-合法命名 external capability/type。
+An impl's module must share a module domain with either the capability declaration
+or the normalized target's outermost nominal declaration. Ordinary direct lookup
+must also permit naming the capability and type:
 
 ```carven
 impl LocalCapability for ExternalType { ... } // capability domain: allowed
@@ -355,95 +317,91 @@ impl ExternalCapability for LocalType { ... } // nominal-head domain: allowed
 impl ExternalCapability for ExternalType { ... } // neither: rejected
 ```
 
-Parameterized target 的 head 是 normalized outer nominal constructor。Alias 不产生新
-head；builtin、array 与 function 没有 source nominal head。
+Normalize aliases before identifying the target head. Aliases introduce no head;
+builtins, arrays, and functions have no source nominal head.
 
-第一阶段 generic impl 必须有 concrete nominal head，可在 head arguments 中使用 bounded
-type parameters：
+Initial generic impls require a concrete nominal head, with bounded parameters
+permitted in its arguments:
 
 ```carven
 impl<T: Debug> Debug for Box<T> { ... }
 ```
 
-Bare parameter blanket impl 拒绝：
+Bare-parameter blanket impls are rejected:
 
 ```carven
 impl<T: Debug> Printable for T { ... }
 ```
 
-Anchored head 让 candidates 先按 capability 与 nominal head 有限索引，再做 local
-argument unification 与 bound validation。
+Index candidates by capability and nominal head, then apply local argument
+unification and bound validation. This bounds candidate lookup.
 
 ### Generic instance identity
 
 **Maturity:** Accepted semantics.
 
-Concrete generic nominal identity 是：
+Concrete generic nominal types and callable applications use this key:
 
 ```text
 (generic declaration identity, normalized semantic arguments)
 ```
 
-Declaration identity 包含 canonical module path；import alias、filesystem spelling、
-generated C++ name 与 target representation 不改变 identity。Alias 先展开，associated
-projection 先规范化，因此 projection 得到 `u8` 时，`Box<Projection>` 与 `Box<u8>`
-是同一 semantic instance。
+Declaration identity includes the canonical module path. Expand aliases and
+normalize associated projections first: a projection resolving to `u8` makes
+`Box<Projection>` the same instance as `Box<u8>`.
 
-Callable application 使用同一 key。Canonical evidence 是 semantic/lowering dependency，
-但不是 caller-selected hidden instance-identity argument。本规则不承诺 interning table、
-hash、cache、single emitted text、template-id、mangled name 或 artifact location。
+Canonical evidence is a semantic and lowering dependency, not a hidden
+caller-selected identity argument. Import aliases, filesystem spelling,
+generated names, and target representation do not change identity. Storage,
+interning, hashing, caches, emitted-text deduplication, mangling, and artifact
+location remain implementation choices.
 
 ### Visibility and source composition
 
 **Maturity:** Accepted boundary.
 
-跨 module 使用 generic declaration 时，同一次 closed compilation 必须保留完成 checking
-与 instance formation 所需的 resolved signature、constraints、body operations 或等价
-semantic facts。本提案不选择其 private storage 或传输形式。
+Cross-module use requires the resolved signatures, constraints, body operations,
+or equivalent semantic facts needed for checking and instance formation in the
+same closed compilation. Their private storage and transport remain open.
 
-Witness 与 declaration identity 使用 canonical module path、module-domain visibility 与
-direct lookup，不从 generated C++ 或 link result 恢复。
+Evidence and declaration identity use canonical module paths, module-domain
+visibility, and direct lookup. Generated C++ and linking do not reconstruct
+missing source facts.
 
 ### Target realization freedom
 
-**Maturity:** Accepted lowering freedom; the first concrete representation is
-selected only after `OPEN-01` and `OPEN-02`.
+**Maturity:** Accepted lowering freedom; the first representation is selected
+after `OPEN-01` and `OPEN-02`.
 
-Lowering 可以为实际 semantic instances 生成 ordinary concrete C++ declarations、使用
-C++ templates 表示一组已完成 checking 的同构 instances、擦除已经不影响 operation 与
-representation 的 compile-time distinctions，或混合这些方式控制 compile time、code size
-与 artifact dependencies。
+Lowering may emit concrete declarations, use C++ templates for checked instances,
+erase distinctions that no longer affect operations or representation, or combine
+these approaches to control compilation cost, code size, and dependencies.
 
-Generic parameters、normalized arguments、constraints、canonical evidence 与
-instance selection 都是 Carven semantic inputs，不因此成为 target entities。
-Concrete application 已经关闭后，这些结构可以只参与 checking、normalization 与
-realization selection，随后在 generated C++ 中完全消失。没有 source requirement
-规定每个 generic declaration、concept、impl 或 semantic instance 必须对应 C++
-template、concept、witness object、descriptor 或独立 emitted type。
-
-Source 不观察 monomorphization，且不会因 backend 选择获得 overload、specialization、
-runtime metadata、dispatch 或 ABI guarantee。如果 generated C++ substitution 仍决定某个
-Carven call 是否存在或选择哪个 implementation，semantic closure 尚未完成。
+Generic parameters, normalized arguments, constraints, evidence, and instance
+selection are semantic inputs. They need no one-to-one runtime or emitted entity.
+All choices preserve observable behavior and confer no additional overload,
+specialization, metadata, dispatch, or ABI guarantees. C++ substitution cannot
+decide whether a Carven call exists or which implementation it selects.
 
 ## Decision record
 
-| ID | Decision | Design | Rationale |
-| --- | --- | --- | --- |
-| `GEN-01` | Generic bodies are checked at definition site. | [Definition-site contract](#definition-site-contract) | Keeps source meaning and diagnostics independent of callers and C++ substitution. |
-| `GEN-02` | Type-parameterized functions, transparent structs, and enums form the parametric core. | [Parametric generic core](#parametric-generic-core) | Useful parametric code does not require capability dispatch. |
-| `GEN-03` | Declarations and applications use non-empty `<...>` type clauses with token-only parsing. | [Type-generic syntax](#type-generic-syntax) | Gives one syntax without semantic parser fallback. |
-| `GEN-04` | Omitted arguments use bounded local inference from signatures, arguments, and immediate expected type. | [Local type argument inference](#local-type-argument-inference) | Avoids global solving and acceptance instability. |
-| `GEN-05` | Compiler and source evidence share one static capability model. | [Unified static capability model](#unified-static-capability-model) | Prevents duplicate constraint and dispatch systems. |
-| `GEN-06` | `concept` is named; `impl` is anonymous compilation-wide canonical evidence. | [Concept and impl declarations](#concept-and-impl-declarations) | Separates visible contracts from non-activatable witnesses. |
-| `GEN-07` | Initial concept operations are explicit function-shaped requirements selected through the concept. | [Function-shaped concept operations](#function-shaped-concept-operations) | Avoids ADL and context-dependent member lookup. |
-| `GEN-08` | `Self` is a contextual implementing-type placeholder. | [Contextual Self](#contextual-self) | Expresses recursive signatures without importing C++ object semantics. |
-| `GEN-09` | `+` in bounds is finite conjunction only. | [Conjunctive bounds](#conjunctive-bounds) | Meets current composition needs without a constraint logic language. |
-| `GEN-10` | Minimal associated types normalize through unique evidence before lowering. | [Minimal associated types](#minimal-associated-types) | Supports capability-determined outputs without caller ambiguity. |
-| `GEN-11` | Evidence obeys strong compilation-wide coherence. | [Strong global coherence](#strong-global-coherence) | Gives every obligation one stable meaning. |
-| `GEN-12` | Source impls obey module-domain locality and require an anchored nominal head. | [Impl module domain and anchored head](#impl-module-domain-and-anchored-head) | Keeps candidate search and overlap finite and deterministic. |
-| `GEN-13` | Generic instance identity uses declaration identity plus normalized semantic arguments. | [Generic instance identity](#generic-instance-identity) | Decouples Carven type identity from target representation. |
-| `GEN-14` | Cross-module generic use preserves the resolved semantic facts required for checking and instance formation. | [Visibility and source composition](#visibility-and-source-composition) | Generic meaning cannot be reconstructed from generated C++ or link results. |
-| `GEN-15` | Concrete declarations, C++ templates, erasure, and mixed target forms remain observationally equivalent lowering choices. | [Target realization freedom](#target-realization-freedom) | Source semantics must not lock the compiler to monomorphization or target templates. |
+| ID | Decision and reason |
+| --- | --- |
+| `GEN-01` | Check bodies at definition site for caller-independent meaning and diagnostics. |
+| `GEN-02` | Functions, transparent structs, and enums form a parametric core independent of capability dispatch. |
+| `GEN-03` | Nonempty `<...>` type clauses use token-only parsing with no semantic fallback. |
+| `GEN-04` | Infer a unique substitution locally from signatures, arguments, and immediate expected types. |
+| `GEN-05` | Compiler and source evidence share satisfaction, diagnostics, and resolved operations. |
+| `GEN-06` | Concepts are named contracts; anonymous impls provide compilation-wide canonical evidence. |
+| `GEN-07` | Explicit function-shaped requirements use concept-qualified lookup consistently. |
+| `GEN-08` | Contextual `Self` names the implementing type in requirements and impls. |
+| `GEN-09` | `+` combines bounds by finite static conjunction. |
+| `GEN-10` | Associated types normalize through unique evidence before lowering. |
+| `GEN-11` | Compilation-wide coherence gives each obligation at most one applicable evidence. |
+| `GEN-12` | Module-domain locality and anchored nominal heads bound impl lookup and overlap checking. |
+| `GEN-13` | Declaration identity and normalized semantic arguments identify an instance independently of target form. |
+| `GEN-14` | Cross-module use retains resolved facts needed for checking and instance formation. |
+| `GEN-15` | Concrete declarations, templates, erasure, and mixed forms remain equivalent lowering choices. |
 
 ## Open decisions
 
@@ -457,7 +415,7 @@ Carven call 是否存在或选择哪个 implementation，semantic closure 尚未
   declarations; generic instance publication is not defined.
 - **Activation condition:** Representative generic `import(cpp)` or
   `export(cpp)` use requires a finite instance and symbol contract.
-- **Why it matters:** C++ boundary participation must not create unrecorded
+- **Question:** C++ boundary participation must not create unrecorded
   applications, instances, conversions, or evidence outside the closed
   semantic graph.
 - **Constraints:** C++ names, deduction, overload resolution, and substitution
@@ -474,10 +432,9 @@ Carven call 是否存在或选择哪个 implementation，semantic closure 尚未
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`, `GEN-13`
-- **Blocked by:** `OPEN-01`
 - **Activation condition:** Every external generic entry point is represented in
   the closed graph.
-- **Why it matters:** The compiler must distinguish valid recursion, invalid
+- **Question:** The compiler must distinguish valid recursion, invalid
   by-value storage cycles, infinite argument growth, and implementation
   resource exhaustion.
 - **Constraints:** The rule cannot delegate to C++ template-depth failure;
@@ -620,14 +577,3 @@ Validation must cover:
   compiler resource limits;
 - C++20/C++23 compile, link, and run without fixing concrete/template target
   shape or private generated names.
-
-## References
-
-- [Carven semantics](../docs/semantics.md)
-- [Carven compiler model](../docs/compiler.md)
-- [Carven backend](../docs/backend.md)
-- [Carven design principles](../docs/principles.md)
-- [Classes and dynamic polymorphism](classes.md)
-- [Operator capabilities](operators.md)
-- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)
-- [Proposal roadmap](roadmap.md)

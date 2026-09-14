@@ -26,6 +26,7 @@ $patchedFiles = @(
     (Join-Path $sourceProgramDir "rules/c++/modules/clang/scanner.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/builder.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/scanner.lua")
+    (Join-Path $sourceProgramDir "rules/c++/modules/support.lua")
     (Join-Path $sourceProgramDir "rules/c++/modules/xmake.lua")
     $patchFile
 )

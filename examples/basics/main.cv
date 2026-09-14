@@ -1,18 +1,42 @@
+enum Discount {
+    None,
+    Percent(i32),
+}
+
 struct Item {
+    name: str,
     price_cents: i32,
     quantity: i32,
+    discount: Discount,
 }
 
 fn subtotal(item: Item) -> i32 => item.price_cents * item.quantity;
 
+fn savings(item: Item) -> i32 {
+    return match item.discount {
+        .None => 0,
+        .Percent(percent) => subtotal(item) * percent / 100,
+    };
+}
+
 fn main() {
     let items = [
-        Item { price_cents: 250, quantity: 2 },
-        Item { price_cents: 120, quantity: 3 },
+        Item { name: "Notebook", price_cents: 250, quantity: 2, discount: Discount::None },
+        Item { name: "Pencil", price_cents: 120, quantity: 3, discount: Discount::Percent(10) },
     ];
-    var total: i32 = 0;
+    var gross: i32 = 0;
+    var saved: i32 = 0;
     for item in items {
-        total += subtotal(item);
+        let amount = subtotal(item);
+        let reduction = savings(item);
+        gross += amount;
+        saved += reduction;
+        println(item.name, "x", item.quantity);
+        println("  Subtotal in cents:", amount);
+        println("  Discount in cents:", reduction);
+        println("  Line total in cents:", amount - reduction);
     }
-    println("Total in cents:", total);
+    println("Subtotal in cents:", gross);
+    println("Savings in cents:", saved);
+    println("Total in cents:", gross - saved);
 }

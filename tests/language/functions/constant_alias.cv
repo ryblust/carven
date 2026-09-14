@@ -1,0 +1,130 @@
+const fn observe_text(text: String, marker: i32) -> String => f"{text}:{marker}";
+
+const fn constant_format_alias() -> String {
+    var text: String = "a";
+    return f"{text}:{if true { text.append("b"); 7 } else { 0 }}";
+}
+
+const fn constant_call_alias() -> String {
+    var text: String = "a";
+    return observe_text(text, if true { text.append("b"); 7 } else { 0 });
+}
+
+const fn constant_scalar_snapshot() -> String {
+    var value = 1;
+    return f"{value}:{if true { value = 2; value } else { 0 }}";
+}
+
+const fn constant_binary_snapshot() -> bool {
+    var text: String = "a";
+    return text == if true {
+        text.append("b");
+        String::from_str("a")
+    } else {
+        String::new()
+    };
+}
+
+const fn constant_compound_snapshot() -> i32 {
+    var value = 1;
+    value += if true { value = 10; 2 } else { 0 };
+    return value;
+}
+
+const fn constant_match_guard() -> i32 {
+    var subject = 1;
+    var other = 0;
+    return match subject {
+        candidate if if true { other = candidate + 1; false } else { true } => 10,
+        1 => other,
+        _ => 30,
+    };
+}
+
+const fn constant_string_identity(text: String) -> String => text as String;
+
+const fn constant_view_scope() -> String {
+    var text: String = "a";
+    var copy = String::new();
+    if true {
+        let view = text.as_str();
+        copy = String::from_str(view);
+    }
+    text.append("b");
+    return f"{copy}:{text}";
+}
+
+const fn constant_extend_owned(&&text: String) -> String {
+    var result = &&text;
+    result.append("b");
+    return result;
+}
+
+const fn constant_restore_taken() -> String {
+    var text: String = "a";
+    let first = &&text;
+    text = String::from_str("b");
+    text = constant_extend_owned(&&text);
+    return f"{first}:{text}";
+}
+
+const fn constant_read_view(text: str) -> usize => text.len();
+
+enum DeferredValue {
+    Value(i32),
+}
+
+const fn constant_value() -> i32 => 7;
+
+test "Const functions: Read aliases and operand snapshots retain runtime observation points" {
+    const formatted = constant_format_alias();
+    const called = constant_call_alias();
+    const scalar = constant_scalar_snapshot();
+    const binary = constant_binary_snapshot();
+    const compound = constant_compound_snapshot();
+    const matched = constant_match_guard();
+    check(formatted == "ab:7");
+    check(constant_format_alias().as_str() == formatted);
+    check(called == "ab:7");
+    check(constant_call_alias().as_str() == called);
+    check(scalar == "1:2");
+    check(constant_scalar_snapshot().as_str() == scalar);
+    check(binary);
+    check(constant_binary_snapshot() == binary);
+    check(compound == 3);
+    check(constant_compound_snapshot() == compound);
+    check(matched == 2);
+    check(constant_match_guard() == matched);
+}
+
+test "Const functions: independent String ownership survives casts scopes and Take restoration" {
+    const identity = constant_string_identity("identity");
+    const scoped = constant_view_scope();
+    const restored = constant_restore_taken();
+    check(identity == "identity");
+    check(constant_string_identity("identity").as_str() == identity);
+    check(scoped == "a:ab");
+    check(constant_view_scope().as_str() == scoped);
+    check(restored == "a:bb");
+    check(constant_restore_taken().as_str() == restored);
+}
+
+test "Const functions: initializer composition preserves types and skips unused execution" {
+    const length = constant_read_view(constant_string_identity("borrowed"));
+    check(length == 8usize);
+    check(constant_read_view(constant_string_identity("borrowed")) == length);
+
+    const direct_length = constant_string_identity("abc").len();
+    const empty = constant_string_identity("").is_empty();
+    const equal = constant_string_identity("abc") == "abc";
+    check(direct_length == 3usize);
+    check(constant_string_identity("abc").len() == direct_length);
+    check(empty);
+    check(constant_string_identity("").is_empty() == empty);
+    check(equal);
+    check((constant_string_identity("abc") == "abc") == equal);
+
+    const ignored = false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0));
+    check(!ignored);
+    check((false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0))) == ignored);
+}

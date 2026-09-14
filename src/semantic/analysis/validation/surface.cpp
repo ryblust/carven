@@ -24,12 +24,10 @@ public:
         std::string_view description
     ) noexcept;
     auto check(TypeID type) noexcept -> AnalysisResult<void>;
-    auto check_constant(ConstantID id) noexcept -> AnalysisResult<void>;
 
 private:
     auto validate(TypeID type) noexcept -> void;
     auto validate_signature(CallableSignatureID id) noexcept -> void;
-    auto validate_constant(ConstantID id) noexcept -> void;
 
     auto validate_nominal(const auto& nominal) noexcept -> void {
         const auto allowed = nominal.visibility == DeclarationVisibility::Compilation
@@ -72,7 +70,6 @@ private:
     std::optional<AnalysisFailure> failure;
     std::flat_set<TypeID> visited_types;
     std::flat_set<CallableSignatureID> visited_signatures;
-    std::flat_set<ConstantID> visited_constants;
 };
 
 DeclarationSurfaceValidator::DeclarationSurfaceValidator(
@@ -92,12 +89,6 @@ DeclarationSurfaceValidator::DeclarationSurfaceValidator(
 
 auto DeclarationSurfaceValidator::check(TypeID type) noexcept -> AnalysisResult<void> {
     validate(type);
-    return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
-                               : AnalysisResult<void>();
-}
-
-auto DeclarationSurfaceValidator::check_constant(ConstantID id) noexcept -> AnalysisResult<void> {
-    validate_constant(id);
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
                                : AnalysisResult<void>();
 }
@@ -154,19 +145,6 @@ auto DeclarationSurfaceValidator::validate_signature(CallableSignatureID id) noe
     validate(signature.result);
     for (const auto member : program.failure_sets().failure_set(signature.failures).members) {
         validate(member);
-    }
-}
-
-auto DeclarationSurfaceValidator::validate_constant(ConstantID id) noexcept -> void {
-    if (!visited_constants.insert(id).second) {
-        return;
-    }
-    const auto& constant = program.constants().constant(id);
-    validate(constant.type);
-    if (const auto* payload = std::get_if<PayloadEnumConstant>(&constant.value)) {
-        for (const auto child : payload->payload) {
-            validate_constant(child);
-        }
     }
 }
 
@@ -275,7 +253,7 @@ auto validate_declaration_surfaces(
             constant.value.origin,
             "module constant"
         );
-        retain_failure(validator.check_constant(constant.value.value));
+        retain_failure(validator.check(program.constants().constant(constant.value.value).type));
     }
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
                                : AnalysisResult<void>();

@@ -9,7 +9,6 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.decl;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
@@ -35,6 +34,15 @@ auto DeclResolver::resolve_function(
 ) noexcept -> AnalysisResult<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto entry = symbol.name == "main" && !cpp_import;
+    if (function.const_span && (cpp_import || entry)) {
+        return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            *function.const_span,
+            DiagnosticCode::ConstAdmission,
+            cpp_import ? "const fn requires a Carven body" : "the entry function cannot be const fn"
+        ));
+    }
     if (entry && function.parameters.size() > 1uz) {
         return std::unexpected(declaration_failure(
             draft,
@@ -118,9 +126,7 @@ auto DeclResolver::resolve_function(
     }
 
     const auto* body = std::get_if<ASTFunctionBody>(&function.implementation);
-    const auto infer_result = !function.result_type.has_value()
-        && body != nullptr
-        && std::holds_alternative<ASTExpressionBody>(body->body);
+    const auto infer_result = !function.result_type.has_value() && body != nullptr;
     auto result = std::optional<ConstructionTypeRef>();
     if (!infer_result) {
         result = draft.intern_builtin_type(BuiltinType::Void);
@@ -179,6 +185,7 @@ auto DeclResolver::resolve_function(
                       declaration_source_origin(draft, symbol.module_id, function.cpp_export->span)
                   )
                 : std::nullopt,
+            .is_const = function.const_span.has_value(),
         }
     );
     if (result.has_value()) {

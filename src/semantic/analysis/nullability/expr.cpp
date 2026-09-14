@@ -222,6 +222,9 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 set_value({});
             },
             [&](const SemFormat& value) noexcept {
+                if (value.receiver) {
+                    static_cast<void>(evaluate(**value.receiver));
+                }
                 for (const auto& operand : value.operands) {
                     static_cast<void>(evaluate(operand.expression));
                 }

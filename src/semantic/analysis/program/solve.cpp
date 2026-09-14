@@ -102,7 +102,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         || !input.declarations.construction_view().callable_implementations_complete()
         || !std::ranges::all_of(
             input.bodies,
-            [](const auto& slot) static noexcept { return slot.definition.has_value(); }
+            [](const auto& slot) static noexcept { return slot.definition != nullptr; }
         )
         || !input.test_slots.all_defined()) {
         invariant_violation("construction solving began with incomplete reservations");

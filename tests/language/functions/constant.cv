@@ -1,0 +1,99 @@
+const factorial_six = factorial(6);
+const generated_label: str = make_label(4);
+const combined_label = decorate(make_label(2));
+const short_and = false && positive(1);
+const short_or = true || positive(0);
+
+const fn factorial(value: i32) -> i32 {
+    if value <= 1 {
+        return 1;
+    }
+    return value * factorial(value - 1);
+}
+
+const fn positive(value: i32) -> bool => value > 0;
+
+const fn extent() -> usize => 3usize;
+
+const fn make_label(count: i32) -> String {
+    var result = String::new();
+    for index in 0..count {
+        let piece = f"{index:02}";
+        result.append(piece.as_str());
+        if index + 1 < count {
+            result.push(',');
+        }
+    }
+    return result;
+}
+
+const fn decorate(value: String) -> String => f"[{value}]";
+
+const fn loops() -> i32 {
+    var result = 0;
+    var index = 0;
+    while index < 3 {
+        result += index;
+        ++index;
+    }
+    for var index = 0; index < 8; ++index {
+        if index == 2 {
+            continue;
+        }
+        if index == 5 {
+            break;
+        }
+        result += index;
+    }
+    return result;
+}
+
+const fn classified(value: i32) -> str {
+    return match value {
+        0 => "zero",
+        1 | 2 => "small",
+        _ => "large",
+    };
+}
+
+const fn unicode() -> String {
+    var value: String = "discard";
+    value.clear();
+    value.push('我');
+    value.append("\0😀");
+    return value;
+}
+
+const fn formatted(value: i32, width: i32) -> String => f"{{{value:0{width}x}}}";
+
+const fn wrap_at_runtime(value: u8) -> u8 => value + 1u8;
+
+test "Const functions: recursion, local state and ranges share ordinary runtime bodies" {
+    const total = loops();
+    check(total == 11);
+    check(loops() == total);
+    check(factorial_six == 720);
+    check(factorial(6) == factorial_six);
+    check(!short_and);
+    check(short_or);
+    let values: [i32; extent()] = [1, 2, 3];
+    check(values[2] == 3);
+    const category = classified(2);
+    check(category == "small");
+    check(classified(2) == category);
+    check(wrap_at_runtime(255u8) == 0u8);
+}
+
+test "Const functions: owning text freezes only at the constant initializer boundary" {
+    check(generated_label == "00,01,02,03");
+    let runtime_label = make_label(4);
+    check(runtime_label.as_str() == generated_label);
+    check(combined_label == "[00,01]");
+    const scalar_text = formatted(42, 4);
+    check(scalar_text == "{002a}");
+    check(formatted(42, 4).as_str() == scalar_text);
+    const unicode_text = unicode();
+    check(unicode_text == "我\0😀");
+    check(unicode_text.len() == 8usize);
+    check(unicode().as_str() == unicode_text);
+}

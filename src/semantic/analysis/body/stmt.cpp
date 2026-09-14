@@ -12,16 +12,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expression_site;
-import :semantic.analysis.body.pipeline;
+import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.constant.literal;
+import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -48,7 +48,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     }
     const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
     if (source.kind == ASTBindingKind::Const) {
-        auto scope = BodyExpressionSite(*this);
+        auto scope = BodyExprSite(*this);
         auto result = evaluate_constant_expression(
             draft(),
             source_module_id,
@@ -57,25 +57,25 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             *source.initializer,
             declared
         );
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
-        }
-        const auto* constant = std::get_if<ConstantID>(&*result);
-        if (constant == nullptr) {
+        if (!result) {
+            if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
+                return std::unexpected(*diagnostic);
+            }
             return std::unexpected(fail(
                 source.span,
                 DiagnosticCode::ConstInitializer,
                 "const initializer is not a proven Carven constant"
             ));
         }
+        const auto constant = *result;
         if (named == nullptr) {
             return {};
         }
         return bind_local(
             named->name_span,
             BodyLocalStorage {
-                .storage = *constant,
-                .type = draft().constant_copy(*constant).type,
+                .storage = constant,
+                .type = draft().constant(constant).type,
                 .takeable = false,
                 .unused_candidate = std::nullopt,
             },
@@ -112,6 +112,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         writable,
         origin(binding_target_span(source.target))
     );
+    body_builder.remember_initializer(storage.binding, *value);
     append_statement(SemInitialize {storage.binding, std::move(*value)}, origin(source.span));
     if (named == nullptr) {
         return {};
@@ -310,10 +311,11 @@ auto BodyElaborator::return_statement(
     }
     auto value = std::optional<SemanticExpression>();
     if (operand.has_value()) {
-        auto built = expression(*operand, result_type);
+        auto built = expression(*operand, infer_result ? std::nullopt : result_type);
         if (!built.has_value()) {
             return std::unexpected(built.error());
         }
+        const auto completes = !does_not_complete(*built);
         if (result_type.has_value()
             && is_void_type(draft(), *result_type)
             && !is_void_type(draft(), built->type())
@@ -324,16 +326,38 @@ auto BodyElaborator::return_statement(
                 "void callable requires a void return operand"
             ));
         }
-        if (!result_type.has_value()) {
-            auto inferred = infer_value_type(*built, ast.expression(*operand).span);
-            if (!inferred.has_value()) {
-                return std::unexpected(inferred.error());
-            }
-            result_type = *inferred;
-        } else {
-            auto coerced = coerce_to(*built, *result_type, ast.expression(*operand).span);
-            if (!coerced.has_value()) {
-                return std::unexpected(coerced.error());
+        if (!does_not_complete(*built)) {
+            if (!result_type.has_value()) {
+                auto inferred = infer_value_type(*built, ast.expression(*operand).span);
+                if (!inferred.has_value()) {
+                    return std::unexpected(inferred.error());
+                }
+                result_type = *inferred;
+            } else {
+                if (infer_result) {
+                    auto inferred = infer_value_type(*built, ast.expression(*operand).span);
+                    if (!inferred) {
+                        return std::unexpected(inferred.error());
+                    }
+                    if ((is_cpp_type(*inferred) || is_cpp_type(*result_type))
+                        && *inferred != *result_type) {
+                        return std::unexpected(fail(
+                            ast.expression(*operand).span,
+                            DiagnosticCode::TypeMismatch,
+                            "inferred native return types differ; specify a result type"
+                        ));
+                    }
+                    auto compatible = require_invariant_type(
+                        *inferred, *result_type, ast.expression(*operand).span
+                    );
+                    if (!compatible) {
+                        return std::unexpected(compatible.error());
+                    }
+                }
+                auto coerced = coerce_to(*built, *result_type, ast.expression(*operand).span);
+                if (!coerced.has_value()) {
+                    return std::unexpected(coerced.error());
+                }
             }
         }
         if (is_void_type(draft(), built->type())) {
@@ -348,6 +372,11 @@ auto BodyElaborator::return_statement(
                 return std::unexpected(consumed.error());
             }
             value = std::move(*consumed);
+        }
+        if (!completes) {
+            append_statement(SemExpressionStatement {std::move(*value)}, origin(span));
+            reachable = false;
+            return {};
         }
     } else {
         if (!result_type.has_value()) {

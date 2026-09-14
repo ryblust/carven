@@ -487,6 +487,49 @@ auto validate_publication_facts(
                     }
                     return true;
                 },
+                [&](const StructConstant& value) noexcept {
+                    const auto* structure = std::get_if<StructTypeValue>(&canonical);
+                    if (structure == nullptr || !declarations.contains(structure->structure)) {
+                        return false;
+                    }
+                    const auto& fields = declarations.structure(structure->structure).fields;
+                    if (fields.size() != value.fields.size()) {
+                        return false;
+                    }
+                    for (const auto [child, field] : std::views::zip(value.fields, fields)) {
+                        if (!constants.contains(child)
+                            || constants.constant(child).type != field.type) {
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+                [&](const ArrayConstant& value) noexcept {
+                    const auto* array = std::get_if<ArrayTypeValue>(&canonical);
+                    if (array == nullptr || array->extent != value.elements.size()) {
+                        return false;
+                    }
+                    for (const auto child : value.elements) {
+                        if (!constants.contains(child)
+                            || constants.constant(child).type != array->element) {
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+                [&](const SliceConstant& value) noexcept {
+                    const auto* slice = std::get_if<SliceTypeValue>(&canonical);
+                    if (slice == nullptr) {
+                        return false;
+                    }
+                    for (const auto child : value.elements) {
+                        if (!constants.contains(child)
+                            || constants.constant(child).type != slice->element) {
+                            return false;
+                        }
+                    }
+                    return true;
+                },
             },
             fact.value
         );

@@ -1,0 +1,45 @@
+import "exceptions/provider.hpp";
+
+export(cpp) fn discard_precomputed() {
+    f"{42:4096}";
+}
+
+export(cpp) fn discard_mixed(value: i32) {
+    f"{42:4096}{value}";
+}
+
+export(cpp) fn discard_character(value: i32) {
+    f"{42} {value:c}";
+}
+
+export(cpp) fn discard_localized(value: i32) {
+    f"{42} {value:L}";
+}
+
+export(cpp) fn print_precomputed() {
+    println(42, f"{7:4096}");
+}
+
+export(cpp) fn print_native_failure(invalid_utf8: bool) {
+    println(42, f"{::make_format_probe(invalid_utf8)}");
+}
+
+export(cpp) fn append_precomputed() {
+    var result = String::new();
+    result.append_format(f"{42:4096}");
+}
+
+export(cpp) fn append_dynamic(value: i32) {
+    var result = String::new();
+    result.append_format(f"{value:4096}");
+}
+
+export(cpp) fn append_width(width: i32) {
+    var result: String = "prefix:";
+    result.append_format(f"{7:{width}}");
+}
+
+export(cpp) fn append_native_failure(invalid_utf8: bool) {
+    var result: String = "prefix:";
+    result.append_format(f"{::make_format_probe(invalid_utf8)}");
+}

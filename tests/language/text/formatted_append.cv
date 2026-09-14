@@ -1,0 +1,171 @@
+struct AppendError {
+    code: i32,
+}
+
+fn next_append_value(&counter: i32) -> i32 {
+    counter += 1;
+    return counter;
+}
+
+fn change_append_source(&source: String) -> i32 {
+    source.clear();
+    source.append("after我\0value");
+    return 7;
+}
+
+fn record_append_flag(&trace: i32, digit: i32) -> bool {
+    trace = trace * 10 + digit;
+    return true;
+}
+
+fn fail_append_value(&effects: i32) -> i32 throw AppendError {
+    effects += 1;
+    throw AppendError { code: effects };
+}
+
+const fn append_labels(count: i32) -> String {
+    var result: String = "items:";
+    for index in 0..count {
+        result.append_format(f"[{index:02}]");
+    }
+    return result;
+}
+
+const fn append_padded(value: i32, width: i32) -> String {
+    var result = String::new();
+    result.append_format(f"<{value:0{width}x}>我\0{'😀'}");
+    return result;
+}
+
+const appended_labels = append_labels(4);
+const appended_padded = append_padded(42, 4);
+
+struct AppendPair {
+    first: String,
+    second: String,
+}
+
+const fn append_current_length() -> String {
+    var text: String = "abc";
+    text.append_format(f"/{text.len()}");
+    text.append_format(f"{if true { text = String::from_str("new"); 7 } else { 0 }}");
+    return text;
+}
+
+const appended_current_length = append_current_length();
+
+test "Formatted append: destination queries and independent projections remain available" {
+    var text: String = "abc";
+    text.append_format(f"/{text.len()}");
+    check(text == "abc/3");
+    var pair = AppendPair { first: String::new(), second: "value" };
+    pair.first.append_format(f"{pair.second}");
+    check(pair.first == "value");
+    var array = [String::new(), String::from_str("other")];
+    array[0].append_format(f"{array[1]}");
+    check(array[0] == "other");
+    check(appended_current_length == "new7");
+    check(append_current_length().as_str() == appended_current_length);
+}
+
+test "Formatted append: literal known and grouped interpolation extend existing text" {
+    var result: String = "prefix:";
+    result.append_format(f"");
+    result.append_format((f"{{{42:04}}}/{true}/{'我'}\0{'😀'}"));
+    check(result == "prefix:{0042}/true/我\0😀");
+    let saved = result;
+    result.append_format(f"!");
+    check(saved == "prefix:{0042}/true/我\0😀");
+    check(result == "prefix:{0042}/true/我\0😀!");
+    let owned = f"{saved}";
+    result.clear();
+    check(owned == saved);
+}
+
+test "Formatted append: scalar snapshots and String reads preserve hole evaluation order" {
+    var result: String = "prefix:";
+    var counter = 2;
+    result.append_format(f"{counter}/{next_append_value(&counter)}/{counter}");
+    check(result == "prefix:2/3/3");
+    check(counter == 3);
+    var source: String = "before text exceeding a small string buffer";
+    result.clear();
+    result.append_format(f"{source}/{change_append_source(&source)}");
+    check(result == "after我\0value/7");
+    source.clear();
+    check(result == "after我\0value/7");
+    result.clear();
+    result.append_format(f"{String::from_str("temporary backing exceeding a small string buffer").as_str()}");
+    check(result == "temporary backing exceeding a small string buffer");
+}
+
+test "Formatted append: known contents retain effects and runtime specifications" {
+    var trace = 0;
+    var result = String::new();
+    result.append_format(f"{record_append_flag(&trace, 1) && false}/{record_append_flag(&trace, 2) || true}");
+    check(result == "false/true");
+    check(trace == 12);
+    var width = 7;
+    var precision = 2;
+    var price = 1.25;
+    result.append_format(f"/{42:04}/{price:{width}.{precision}f}/{f"inner {7}"}");
+    check(result == "false/true/0042/   1.25/inner 7");
+}
+
+test "Formatted append: a failing hole skips later holes and destination mutation" {
+    var result: String = "unchanged";
+    var effects = 0;
+    let failure = try {
+        result.append_format(f"prefix/{fail_append_value(&effects)?}/{next_append_value(&effects)}");
+        0
+    } catch {
+        AppendError(error) => error.code,
+    };
+    check(failure == 1);
+    check(effects == 1);
+    check(result == "unchanged");
+}
+
+test "Formatted append: receiver failure and completed hole mutations keep their order" {
+    var values = [String::from_str("unchanged")];
+    var effects = 0;
+    let receiver_failure = try {
+        values[fail_append_value(&effects)? as usize].append_format(f"{next_append_value(&effects)}");
+        0
+    } catch {
+        AppendError(error) => error.code,
+    };
+    check(receiver_failure == 1);
+    check(effects == 1);
+    check(values[0] == "unchanged");
+    var result: String = "before";
+    let hole_failure = try {
+        result.append_format(f"{change_append_source(&result)}/{fail_append_value(&effects)?}");
+        0
+    } catch {
+        AppendError(error) => error.code,
+    };
+    check(hole_failure == 2);
+    check(result == "after我\0value");
+}
+
+test "Formatted append: const functions and runtime execution produce the same text" {
+    check(appended_labels == "items:[00][01][02][03]");
+    check(append_labels(4).as_str() == appended_labels);
+    check(append_labels(0) == "items:");
+    check(appended_padded == "<002a>我\0😀");
+    check(append_padded(42, 4).as_str() == appended_padded);
+    const zero_width = append_padded(-7, 0);
+    check(zero_width == "<-7>我\0😀");
+    check(append_padded(-7, 0).as_str() == zero_width);
+    var dynamic = 40;
+    dynamic += 2;
+    var result = String::new();
+    for index in 0..128 {
+        result.append_format(f"[{dynamic:04}:{index}]我");
+    }
+    check(result.len() > 1024usize);
+    let saved = result;
+    result.clear();
+    check(saved.len() > 1024usize);
+}

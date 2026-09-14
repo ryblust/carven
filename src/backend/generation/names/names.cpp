@@ -3,6 +3,16 @@ module carven:backend.generation.names.impl;
 import :backend.generation.names;
 import std;
 
+auto TargetNameAllocator::artifact_storage_namespace(std::size_t ordinal) noexcept
+    -> TargetIdentifier {
+    return fixed(std::format("constant_data_{}", ordinal));
+}
+
+auto TargetNameAllocator::constant_storage_identifier(std::size_t ordinal) noexcept
+    -> TargetIdentifier {
+    return fixed(std::format("value_{}", ordinal));
+}
+
 namespace {
 
 auto implementation_reserved(std::string_view spelling) noexcept -> bool {

@@ -1,8 +1,29 @@
 module carven:backend.lowering.body;
 
 import :backend.lowering.context;
-import :backend.realization.body;
+import :backend.target.name;
+import :backend.target.stmt;
 import :semantic.semir;
+import std;
 
-auto lower_body(ModuleLowering& context, BodyID body_id, BodyRealizationInputs inputs) noexcept
+struct CallableBodyExit final {
+    CallableID callable_id;
+};
+
+struct TestBodyExit final {};
+
+using BodyExit = std::variant<CallableBodyExit, TestBodyExit>;
+
+struct BodyLoweringInputs final {
+    std::vector<TargetIdentifier> parameters;
+    std::vector<TargetIdentifier> captures;
+    BodyExit exit;
+};
+
+struct LoweredBody final {
+    std::vector<TargetStmt> statements;
+    std::vector<bool> referenced_parameters;
+};
+
+auto lower_body(ModuleLowering& context, BodyID body_id, BodyLoweringInputs inputs) noexcept
     -> LoweredBody;

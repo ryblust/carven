@@ -53,7 +53,7 @@ public:
         std::vector<std::optional<TargetEntityName>> closure_types,
         std::vector<TargetIdentifier> enum_cases,
         std::vector<std::optional<TargetPayloadEnumNames>> payload_enums,
-        std::vector<TargetIdentifier> test_functions,
+        std::vector<std::optional<TargetIdentifier>> test_functions,
         std::vector<TargetIdentifier> module_runners
     ) noexcept;
 
@@ -99,7 +99,7 @@ private:
     std::vector<std::optional<TargetEntityName>> target_closure_type_names;
     std::vector<TargetIdentifier> target_enum_case_names;
     std::vector<std::optional<TargetPayloadEnumNames>> target_payload_enums;
-    std::vector<TargetIdentifier> target_test_functions;
+    std::vector<std::optional<TargetIdentifier>> target_test_functions;
     std::vector<TargetIdentifier> target_module_runners;
 };
 

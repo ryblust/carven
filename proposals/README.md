@@ -1,80 +1,48 @@
 # Proposals
 
-`proposals/` is Carven's design workspace and decision archive. A proposal
-separates current repository facts, settled design, open questions, deferred
-directions, implementation state, and validation. It does not define current
-language or compiler behavior.
+This directory holds unfinished designs and accepted work awaiting implementation.
+Current language and compiler contracts belong in `docs/`.
 
-## Workspace layout
+## Contents
 
-The workspace uses a flat layout. Each design domain is represented by as few
-root-level Markdown files as its independent decisions require. Workspace
-guidance lives in `README.md`, `TEMPLATE.md`, and `roadmap.md`.
+- [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
+- [roadmap.md](roadmap.md): priorities and dependencies across domains.
+- Other Markdown files: one design domain's unfinished work, keeping related
+  syntax, semantics, compiler representation, and lowering together.
 
-```text
-proposals/
-    README.md
-    TEMPLATE.md
-    roadmap.md
-    <design-domain>.md
-```
+## Status
 
-`README.md` defines this workspace. `TEMPLATE.md` defines the shared proposal
-shape. `roadmap.md` records ordering and dependencies across proposal domains.
-Each other Markdown file records one proposal domain or one retained decision.
+Design maturity and implementation progress are recorded separately.
 
-Use the shortest unambiguous filename for the domain. Keep syntax, semantics,
-compiler facts, lowering, and backend choices together when they implement one
-design authority. Split a domain only when each part can be decided and
-implemented independently; record the dependency in the roadmap. Reusable
-research may also be summarized in `notes/`, while the proposal remains
-self-contained.
+| Design status | Meaning |
+| --- | --- |
+| Exploration | The problem and viable choices are being established. |
+| Draft | A design exists with required choices still open; slices may differ in maturity. |
+| Accepted | Required active decisions are closed and implementation can proceed. |
+| Deferred | Work is paused with a reason and reactivation condition. |
+| Superseded | A named proposal replaces the design. |
 
-## Proposal structure
+Implementation uses `Not started`, `In progress`, `Partial`, `Complete`, or
+`Not applicable`. Record whole-proposal status at the top and slice-specific
+status with the slice.
 
-Active proposals start from [the template](TEMPLATE.md), which gives the
-recommended reading order and metadata. Omit a section when it has no
-information for the reader. A completed proposal may become a shorter decision
-record after implementation and documentation handoff.
+## Maintenance
 
-Each section records only information available at the proposal's current
-maturity. Do not invent alternatives or delivery work to fill a template.
-
-`Decision record` contains consequential settled choices and rationale under
-stable identifiers. `Open decisions` orders unresolved questions by dependency
-and identifies the next unblocked question. `Deferred work` preserves valid but
-inactive directions under stable `DEFER-*` identifiers. `Design` remains the
-readable specification; the decision record may be a compact index into it.
-
-One open or deferred identifier covers one dependency set and activation
-condition. Top-level metadata describes the whole proposal; slice-specific
-status and dependencies stay with the slice. `Design` records the selected
-behavior, while `Implementation` records delivery.
-
-Change the shared structure when repeated use shows that a kind of information
-has no clear home or that a section impairs readability.
-
-## Lifecycle
-
-Proposal status describes design maturity independently of implementation
-progress:
-
-- **Exploration** — the problem, boundary, and viable choices are being
-  established. `Design` may explicitly point to the first open decision.
-- **Draft** — a coherent design exists, or the domain has mixed-maturity
-  slices, while one or more required active choices remain open.
-- **Accepted** — all required active design decisions are closed and
-  implementation may proceed. Valid inactive directions may remain in
-  `Deferred work`.
-- **Deferred** — work is paused with a recorded reason and reactivation
-  condition. The document preserves the current design and open frontier.
-- **Superseded** — another proposal replaces the design and is named in the
-  status metadata.
-
-Implementation progress is recorded separately as `Not started`, `In
-progress`, `Partial`, `Complete`, or `Not applicable`.
-
-An active proposal remains here while it has unresolved design work or accepted
-scope awaiting handoff. Once it is fully implemented and documented, it leaves
-the active proposal set. Git history normally preserves the rationale; retain
-an archived proposal when that rationale has continuing project value.
+- Describe behavior, rationale, and constraints in concise, neutral prose with
+  one consistent language. Distinguish current behavior, accepted design, and
+  candidates, including provisional syntax.
+- Preserve design reasoning, methods, practical guidance, and validation criteria
+  when condensing text. Keep accepted decisions and identifiers stable; a changed
+  decision explicitly supersedes its predecessor.
+- Keep each rule in its design section. Order open questions by dependency and
+  give independently deferred directions separate identifiers and reactivation
+  conditions. Omit empty sections, redundant fields, and personal task queues.
+- Make proposals understandable on their own; link only for necessary contracts
+  or evidence. Keep directly relevant research conclusions, and archive reading
+  excerpts, source inventories, experiment histories, and discarded prototypes.
+  Independent technical articles developed from research may belong in `notes/`.
+- Split domains when their parts can be decided and delivered independently.
+- Remove a proposal once implementation and permanent documentation are complete.
+  For mixed scopes, retain a short implemented foundation and the unfinished work.
+  Git history and external archives preserve historical material; repository
+  documents must remain usable without access to those archives.

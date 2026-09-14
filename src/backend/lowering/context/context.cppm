@@ -2,6 +2,7 @@ module carven:backend.lowering.context;
 
 import :backend.generation.names;
 import :backend.generation.plan;
+import :backend.lowering.constant.storage;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -34,6 +35,7 @@ public:
     auto require_cpp_environment(ModuleID provider, CppEnvironmentRequirement requirement) noexcept
         -> void;
     auto finish(TargetUnitSections sections) && noexcept -> TargetUnit;
+    auto constant_storage() noexcept -> ConstantStorage&;
 
 private:
     auto record_provider_interface(ModuleID active, ModuleID provider) noexcept -> void;
@@ -43,6 +45,8 @@ private:
     TargetUnitBuilder target_builder;
     std::flat_set<TargetArtifactID> lowering_dependencies;
     std::flat_map<ModuleID, CppEnvironmentRequirement> cpp_environments;
+    ConstantStorage constants;
+
 
     auto materialize_cpp_environments(
         TargetUnitSections& sections,
@@ -73,6 +77,7 @@ public:
     auto closure_type_name(CallableID id) noexcept -> TargetName;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
     auto name_allocator() noexcept -> TargetNameAllocator&;
+    auto constant_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
     auto named_type(TargetName name, bool constant = false) noexcept -> TargetTypeID;

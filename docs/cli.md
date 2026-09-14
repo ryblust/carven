@@ -73,8 +73,8 @@ order with a heading of this form:
 ==> logical/path <==
 ```
 
-This output is intended for inspection rather than as a machine protocol or a
-direct C++ compiler input stream.
+The headings make this an inspection format. Compile the files written by a
+filesystem destination when building generated C++.
 
 ## Test emission
 
@@ -138,5 +138,14 @@ carven dump ast path/to/file.cv
 `dump tokens` prints the token stream after lexing. Lexical diagnostics are
 reported on standard error and make the command fail. `dump ast` lexes and
 parses the source, then prints the syntax tree when both stages succeed. Dump
-formatting is developer inspection output rather than a stable machine
-protocol.
+formatting is intended for inspection and may change between compiler versions.
+
+## Compile-time program output
+
+Required constant execution and `const test` may use the builtin print operations.
+The driver sends `print`/`println` to stdout and `eprint`/`eprintln` to stderr.
+With `--stdout`, all compile-time program output goes to stderr so stdout contains
+only generated artifacts. Output is emitted as execution proceeds, including on
+compilations that later fail. Parsing and dump commands do not execute tests.
+An incremental build that reuses generated artifacts does not rerun Carven or
+replay compile-time output.

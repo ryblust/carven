@@ -1,4 +1,11 @@
 local case_specs = {
+    ["commands/static_execution"] = {
+        inputs = {"input.cv"},
+        steps = {
+            {args = {"input.cv", "-o", "emit"}, stdout = "stdout.txt", stderr = "stderr.txt"},
+            {args = {"input.cv", "--stdout"}, stderr = "combined.txt", stdout_contains = {"==> input.cpp <=="}},
+        },
+    },
     ["commands/dump"] = {
         inputs = {"input.cv", "lexical_error.cv", "syntax_error.cv"},
         steps = {

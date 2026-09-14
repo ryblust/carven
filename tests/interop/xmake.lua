@@ -31,9 +31,14 @@ local rejection_cases = {
         note = "'ReadArg'", line_contains = "ReadArg<Node>",
     },
     ["interpolation/invalid_specification"] = {"format", "format", site = "source"},
+    ["interpolation/mixed_invalid_specification"] = {"format", "format", site = "source"},
+    ["interpolation/append_invalid_specification"] = {"format", "format", site = "source"},
     ["interpolation/wrong_type"] = {"format", "format", site = "source"},
     ["interpolation/unicode_char_is_text"] = {"format", "format", site = "source"},
     ["interpolation/missing_formatter"] = {
+        "format", "formatter", site = "source", note = "std::basic_format_string",
+    },
+    ["interpolation/append_missing_formatter"] = {
         "format", "formatter", site = "source", note = "std::basic_format_string",
     },
 }
@@ -51,7 +56,12 @@ for _, mode in ipairs({
         add_files(table.unpack(interop_sources))
 
         add_tests("behavior", {group = "interop"})
-        for _, operation in ipairs({"divide", "remainder", "shift", "width", "index", "slice-index", "slice-negative", "slice-range", "slice-reversed", "unicode", "unicode-export"}) do
+        for _, operation in ipairs({
+            "divide", "remainder", "shift", "width", "index",
+            "slice-index", "slice-negative", "slice-range", "slice-reversed",
+            "slice-known-length", "slice-known-empty", "slice-known-format",
+            "unicode", "unicode-export"
+        }) do
             add_tests(operation, {group = "interop"})
         end
         on_test(function (target, opt)
@@ -66,20 +76,34 @@ for _, mode in ipairs({
     target("carven-test-interop-exception-boundary" .. mode.suffix)
         set_default(false)
         set_kind("binary")
+        add_rules("@carven/carven")
         set_languages(mode.standard)
         set_exceptions("cxx")
-        add_includedirs(crafts_dir)
+        add_includedirs(crafts_dir, interop_dir)
         add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
+        add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
         for _, operation in ipairs({
             "copy", "move", "failure", "function", "object",
             "string-allocate", "string-copy",
-            "format-width", "format-throw", "format-utf8", "format-allocate"
+            "format-width", "format-throw", "format-utf8", "format-allocate",
+            "precomputed-format-allocate", "mixed-format-allocate",
+            "format-character-utf8", "format-locale-utf8",
+            "append-format-throw", "append-format-utf8", "append-format-allocate",
+            "append-precomputed-allocate", "append-format-width",
+            "print-inner-allocate", "print-inner-throw", "print-inner-utf8", "print-later-throw"
         }) do
             add_tests(operation, {group = "interop"})
         end
         on_test(function (target, opt)
             local operation = opt.name:match("([^/]+)$")
-            import("harness.process", {rootdir = interop_dir})(target, {operation}, 73, operation)
+            local prefixes = {
+                ["print-inner-allocate"] = "",
+                ["print-inner-throw"] = "",
+                ["print-inner-utf8"] = "",
+                ["print-later-throw"] = "42 ",
+            }
+            import("harness.process", {rootdir = interop_dir})(
+                target, {operation}, 73, operation, prefixes[operation])
             return true
         end)
     target_end()

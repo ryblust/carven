@@ -1,8 +1,8 @@
 module carven:backend.realization.binding.impl;
 
 import :backend.generation.plan;
+import :backend.lowering.constant;
 import :backend.lowering.context;
-import :backend.realization.constant;
 import :backend.realization.realizer;
 import :backend.target.builder;
 import :backend.target.expr;
@@ -33,7 +33,10 @@ auto BodyRealizer::declare_binding(
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
     const auto& owner = std::get<OwnerBindingStorage>(binding.storage);
-    const auto type = context.lower_type(binding.type);
+    // A typed aggregate initializer already fixes its exact native value type.
+    const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value)
+        ? context.intrinsic_type(TargetSymbol::Auto)
+        : context.lower_type(binding.type);
     destination.emit(generated_statement(
         TargetVariableStmt {
             .binding = owner.writable || taken_bindings.contains(id)

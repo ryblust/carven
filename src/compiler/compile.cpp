@@ -7,20 +7,22 @@ import :compiler.compile;
 import :compiler.request;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.evaluation.output;
 import :source.manager;
 import std;
 
 auto compile(
     const SourceManager& sources,
     CompilationRequest compilation,
-    const TargetPlanningRequest& generation
+    const TargetPlanningRequest& generation,
+    const ConstantOutput& output
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
     auto syntax = parse_program(sources, compilation);
     if (!syntax.has_value()) {
         return std::unexpected(std::move(syntax.error()));
     }
 
-    auto semantic = analyze(std::move(*syntax));
+    auto semantic = analyze(std::move(*syntax), output);
     if (!semantic.has_value()) {
         return std::unexpected(std::move(semantic.error()));
     }

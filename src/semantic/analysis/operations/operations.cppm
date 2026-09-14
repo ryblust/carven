@@ -31,8 +31,33 @@ using CastDecision = std::expected<CastKind, OperationDiagnostic>;
 using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
 using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
+struct StructureInitializer final {
+    std::uint32_t declaration_index;
+    ASTExprID expression;
+};
+
+auto select_structure_initializers(
+    const ProgramDraft& draft,
+    ProgramModuleID module,
+    const ASTConstructionExpr& source,
+    std::span<const ConstructionStructField> fields
+) noexcept -> AnalysisResult<std::vector<StructureInitializer>>;
+
+struct SequenceShape final {
+    ConstructionTypeRef element;
+    std::optional<std::uint64_t> extent;
+};
+
+auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<SequenceShape>;
+
 auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
+auto array_literal_element(
+    const ProgramDraft& draft,
+    std::optional<ConstructionTypeRef> expected,
+    std::size_t extent
+) noexcept -> std::expected<std::optional<ConstructionTypeRef>, OperationDiagnostic>;
 
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;

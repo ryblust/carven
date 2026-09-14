@@ -234,3 +234,24 @@ TEST_CASE("Semantic control: test stop follows concrete calls independently of s
     CHECK_FALSE(program.may_stop_test(callables[3]));
     CHECK(program.may_stop_test(callables[4]));
 }
+
+TEST_CASE("Semantic control: native invocations inherit argument completion") {
+    const auto invocations = std::array {
+        "::native_call(if {} {{ fail(\"stop\"); }} else {{ 1 }})",
+        "::Native {{ if {} {{ fail(\"stop\"); }} else {{ 1 }} }}",
+    };
+    for (const auto invocation : invocations) {
+        CAPTURE(invocation);
+        const auto body = [&](std::string_view condition) noexcept {
+            return std::format(
+                "private fn run() -> i32 {{ {}; }}",
+                std::vformat(invocation, std::make_format_args(condition))
+            );
+        };
+        static_cast<void>(analyze_test_program(body("true")));
+        CHECK(contains_diagnostic_code(
+            analyze_test_errors(body("false")),
+            DiagnosticCode::FlowMissingReturn
+        ));
+    }
+}

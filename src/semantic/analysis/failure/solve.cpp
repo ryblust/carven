@@ -313,7 +313,7 @@ auto solve_failure_constraints(
                         failure = diagnostics.error(
                             DiagnosticBuilder(
                                 DiagnosticCode::TypeMismatch,
-                                "writable callable storage requires identical failure contracts"
+                                "callable types require identical failure contracts"
                             )
                                 .primary(provenance.source_span(requirement.origin))
                                 .build()

@@ -1,5 +1,6 @@
 module carven:semantic.semir.traversal;
 
+import :semantic.semir.children;
 import :semantic.semir.structured;
 import :support.visit;
 import std;
@@ -23,138 +24,7 @@ public:
         const auto child = [&](auto& value) noexcept {
             (*this)(value);
         };
-        std::visit(
-            Overloaded {
-                [](Node<SemConstant>&) static noexcept {},
-                [](Node<SemBinding>&) static noexcept {},
-                [](Node<SemCallable>&) static noexcept {},
-                [](Node<SemEnumConstructor>&) static noexcept {},
-                [&](Node<SemCpp>& value) noexcept {
-                    for (auto& operand : value.operands) {
-                        child(operand.expression);
-                    }
-                },
-                [&](Node<SemCppCall>& value) noexcept {
-                    std::visit(
-                        Overloaded {
-                            [](Node<CppNameReference>&) static noexcept {},
-                            [&](Node<CppMemberCallee<SemCppOperand>>& callee) noexcept {
-                                child(*callee.receiver.expression);
-                            },
-                            [&](Node<SemCppOperand>& callee) noexcept {
-                                child(*callee.expression);
-                            },
-                        },
-                        value.callee
-                    );
-                    for (auto& argument : value.arguments) {
-                        child(argument.expression);
-                    }
-                },
-                [&](Node<SemArray>& value) noexcept {
-                    for (auto& element : value.elements) {
-                        child(element);
-                    }
-                },
-                [&](Node<SemArrayAdopt>& value) noexcept { child(*value.source); },
-                [&](Node<SemStruct>& value) noexcept {
-                    for (auto& field : value.fields) {
-                        child(field.value);
-                    }
-                },
-                [&](Node<SemEnumCase>& value) noexcept {
-                    for (auto& element : value.payload) {
-                        child(element);
-                    }
-                },
-                [&](Node<SemUnary>& value) noexcept { child(*value.operand); },
-                [&](Node<SemBinary>& value) noexcept {
-                    child(*value.left);
-                    child(*value.right);
-                },
-                [&](Node<SemShortCircuit>& value) noexcept {
-                    child(*value.left);
-                    child(*value.right);
-                },
-                [&](Node<SemCast>& value) noexcept { child(*value.operand); },
-                [&](Node<SemDereference>& value) noexcept { child(*value.source); },
-                [&](Node<SemField>& value) noexcept { child(*value.source); },
-                [&](Node<SemIndex>& value) noexcept {
-                    child(*value.source);
-                    child(*value.index);
-                },
-                [&](Node<SemTestReport>& value) noexcept {
-                    if (value.condition.has_value()) {
-                        child(**value.condition);
-                    }
-                    if (value.message.has_value()) {
-                        child(**value.message);
-                    }
-                },
-                [&](Node<SemPrint>& value) noexcept {
-                    for (auto& operand : value.operands) {
-                        child(operand.expression);
-                    }
-                },
-                [&](Node<SemFormat>& value) noexcept {
-                    for (auto& operand : value.operands) {
-                        child(operand.expression);
-                    }
-                },
-                [&](Node<SemSliceIntrinsic>& value) noexcept {
-                    for (auto& operand : value.operands) {
-                        child(operand.expression);
-                    }
-                },
-                [&](Node<SemTextIntrinsic>& value) noexcept {
-                    for (auto& operand : value.operands) {
-                        child(operand.expression);
-                    }
-                },
-                [&](Node<SemCall>& value) noexcept {
-                    child(*value.callee);
-                    for (auto& argument : value.arguments) {
-                        child(argument.expression);
-                    }
-                },
-                [&](Node<SemClosure>& value) noexcept {
-                    for (auto& capture : value.captures) {
-                        child(capture.expression);
-                    }
-                },
-                [&](Node<SemBorrowCallable>& value) noexcept { child(*value.source); },
-                [&](Node<SemTake>& value) noexcept { child(*value.place); },
-                [&](Node<SemPropagate>& value) noexcept { child(*value.operand); },
-                [&](Node<SemIf>& value) noexcept {
-                    for (auto& branch : value.branches) {
-                        child(branch.condition);
-                        child(branch.body);
-                    }
-                    if (value.otherwise.has_value()) {
-                        child(**value.otherwise);
-                    }
-                },
-                [&](Node<SemMatch>& value) noexcept {
-                    child(*value.subject);
-                    for (auto& arm : value.arms) {
-                        if (arm.guard.has_value()) {
-                            child(*arm.guard);
-                        }
-                        child(arm.body);
-                    }
-                },
-                [&](Node<SemTry>& value) noexcept {
-                    child(*value.body);
-                    for (auto& arm : value.arms) {
-                        if (arm.guard.has_value()) {
-                            child(*arm.guard);
-                        }
-                        child(arm.body);
-                    }
-                },
-            },
-            expression.value
-        );
+        visit_semantic_children(expression.value, child);
         if constexpr (requires { visitor.leave(expression); }) {
             visitor.leave(expression);
         }

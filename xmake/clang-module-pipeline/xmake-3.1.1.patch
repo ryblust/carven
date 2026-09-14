@@ -334,7 +334,7 @@
          local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
          if jobgraph.add_orders then -- jobgraph
              -- build headerunits
-@@ -787,3 +862,34 @@
+@@ -787,3 +862,36 @@
          profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
      end
  end
@@ -354,7 +354,9 @@
 +            for _, sourcefile in ipairs(built_modules) do
 +                local module = mapper.get(target, sourcefile)
 +                local reused, from = support.is_reused(target, sourcefile)
-+                local record = assert(depend.load((reused and from or target):dependfile(sourcefile)))
++                local owner = reused and from or target
++                local records = owner:data("cxx.modules.scan_records")
++                local record = assert(records and records[sourcefile] or depend.load(owner:dependfile(sourcefile)))
 +                local files = table.clone(assert(record.files))
 +                _append_imported_bmifiles(target, module, files, {}, direct_only)
 +                content_depend.set_inputs(target, sourcefile, files)
@@ -517,7 +519,7 @@
      local objectfile = opt and opt.objectfile
 --- a/rules/c++/modules/clang/scanner.lua
 +++ b/rules/c++/modules/clang/scanner.lua
-@@ -91,3 +91,68 @@
+@@ -91,3 +91,70 @@
      return changed
  end
 
@@ -562,7 +564,7 @@
 +                assert(not dependencies[key], "duplicate dependency target " .. key)
 +                dependencies[key] = parse_deps(line, {target = target})
 +            end
-+            local pending, seen = {}, {}
++            local pending, seen, records = {}, {}, {}
 +            for _, rule in ipairs(data.rules) do
 +                local key = path.absolute(rule["primary-output"])
 +                local item = assert(items[key], "scanner returned unexpected output " .. key)
@@ -571,14 +573,16 @@
 +                local files = table.unique(table.join({item.sourcefile},
 +                    assert(dependencies[item.depkey], "missing dependencies for " .. item.sourcefile)))
 +                table.sort(files)
-+                table.insert(pending, {path = target:dependfile(item.sourcefile),
++                table.insert(pending, {sourcefile = item.sourcefile, path = target:dependfile(item.sourcefile),
 +                    data = {moduleinfo = json.encode({version = data.version, revision = data.revision, rules = {rule}}, {pure = true, orderkeys = true}), files = files}})
 +            end
 +            assert(#pending == #sourcefiles, "scanner did not return every translation unit")
 +            -- Publish only after the entire batch parsed successfully.
 +            for _, record in ipairs(pending) do
 +                io.save(record.path, record.data, {only_changed = true, orderkeys = true})
++                records[record.sourcefile] = record.data
 +            end
++            target:data_set("cxx.modules.scan_records", records)
 +        end,
 +        finally {function(ok, errors)
 +            for _, file in ipairs(temporaries) do os.tryrm(file) end
@@ -599,3 +603,19 @@
 
      -- serial compilation only, usually used to support project generator
      before_buildcmd_files("builder.build_bmis")
+--- a/rules/c++/modules/support.lua
++++ b/rules/c++/modules/support.lua
+@@ -306,9 +306,11 @@
+     local reused, from = is_reused(target, sourcefile)
+     local dependfile = reused and from:dependfile(sourcefile) or target:dependfile(sourcefile)
+
+-    local is_file = os.isfile(dependfile)
++    local records = (reused and from or target):data("cxx.modules.scan_records")
++    local record = records and records[sourcefile]
++    local is_file = record ~= nil or os.isfile(dependfile)
+     if is_file then
+-        local data = io.load(dependfile)
++        local data = record or io.load(dependfile)
+         if data then
+             local moduleinfo = json.decode(data.moduleinfo)
+             moduleinfo.sourcefile = sourcefile

@@ -58,6 +58,9 @@ struct PointerTypeValue final {
     constexpr auto operator==(const PointerTypeValue&) const noexcept -> bool = default;
 };
 
+auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
+    -> bool;
+
 struct ArrayTypeValue final {
     TypeID element;
     std::uint64_t extent;

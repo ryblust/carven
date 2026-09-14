@@ -120,6 +120,9 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
             if (plan().read_borrows_storage(parameter.type)) {
                 return reference_type(base, true);
             }
+            if (builtin != nullptr) {
+                return intrinsic_type(builtin_symbol(builtin->kind), true);
+            }
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {

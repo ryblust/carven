@@ -118,6 +118,7 @@ auto DeclarationReferenceCollector::collect_type(
     }
     std::visit(
         Overloaded {
+
             [&](const SliceTypeValue& value) noexcept {
                 collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
             },
@@ -195,10 +196,12 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                 }
             },
             [&](ModuleConstantID id) noexcept {
+                const auto type = semantic.constants()
+                                      .constant(semantic.declarations().module_constant(id).value)
+                                      .type;
+                const auto* slice = std::get_if<SliceTypeValue>(&semantic.types().type(type).value);
                 collect_type(
-                    semantic.constants()
-                        .constant(semantic.declarations().module_constant(id).value)
-                        .type,
+                    slice ? slice->element : type,
                     TargetTypeCompleteness::CompleteDefinition,
                     guard
                 );

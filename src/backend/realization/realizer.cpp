@@ -2,10 +2,10 @@ module carven:backend.realization.realizer.impl;
 
 import :backend.construction;
 import :backend.generation.names;
+import :backend.lowering.body;
+import :backend.lowering.constant;
 import :backend.lowering.context;
-import :backend.realization.body;
 import :backend.realization.composition;
-import :backend.realization.constant;
 import :backend.realization.decl;
 import :backend.realization.pattern;
 import :backend.realization.realizer;
@@ -20,7 +20,7 @@ import std;
 BodyRealizer::BodyRealizer(
     ModuleLowering& source_context,
     const BodyConstruction& construction,
-    BodyRealizationInputs target_inputs
+    BodyLoweringInputs target_inputs
 ) noexcept
     : context(source_context),
       construction(construction),

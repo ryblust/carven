@@ -381,6 +381,7 @@ private:
         visit_fields(
             value.visibility,
             value.cpp_export,
+            value.const_span,
             value.name_span,
             value.parameters,
             value.result_type,

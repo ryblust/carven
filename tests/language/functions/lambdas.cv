@@ -179,3 +179,23 @@ fn invoke_taken_callback(&&callback: fn(i32) -> i32) -> i32 => callback(1);
 test "Callable views: Take materializes declaration values" {
     check(invoke_taken_callback(&&first) == first(1));
 }
+
+test "Callable arrays: nested captured elements retain their backing" {
+    var count = 0;
+    let closure = [&count]() { count += 1; return count; };
+    let owners = [[closure], [closure]];
+    let callbacks: [[fn() -> i32; 1]; 2] = owners;
+    check(callbacks[0][0]() == 1);
+    check(callbacks[1][0]() == 2);
+    check(callbacks[0][0]() == 3);
+}
+
+test "Callable arrays: nested stateless adoption evaluates its source once" {
+    var count = 0;
+    let callbacks: [[fn() -> i32; 1]; 1] = [&count]() {
+        count += 1;
+        return [[[]() => 17]];
+    }();
+    check(count == 1);
+    check(callbacks[0][0]() == 17);
+}

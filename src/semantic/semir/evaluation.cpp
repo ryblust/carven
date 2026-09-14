@@ -101,9 +101,14 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             [&](const SemPrint&) noexcept { return required; },
             [&](const SemFormat&) noexcept { return required; },
             [&](const SemSliceIntrinsic& value) noexcept {
-                return value.intrinsic == SliceIntrinsic::Slice
-                    ? required
-                    : operands(value.operands.front().expression);
+                switch (value.intrinsic) {
+                    case SliceIntrinsic::Slice:     return required;
+                    case SliceIntrinsic::FromArray:
+                    case SliceIntrinsic::Len:
+                    case SliceIntrinsic::IsEmpty:
+                        return operands(value.operands.front().expression);
+                }
+                std::unreachable();
             },
             [&](const SemTextIntrinsic& value) noexcept {
                 return text_intrinsic_writes(value.intrinsic)

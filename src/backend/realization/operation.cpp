@@ -2,8 +2,10 @@ module carven:backend.realization.operation.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
+import :backend.lowering.constant;
 import :backend.lowering.context;
-import :backend.realization.constant;
+import :backend.preparation;
+import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.target.expr;
 import :backend.target.symbol;
@@ -37,18 +39,31 @@ auto realize_callable_adaptation(
     TypeID from,
     TypeID to
 ) noexcept -> TargetExpr {
-    const auto& type = context.semantic().types().type(from);
-    if (const auto* closure = std::get_if<ClosureTypeValue>(&type.value)) {
+    const auto& types = context.semantic().types();
+    auto leaf = from;
+    while (const auto* array = std::get_if<ArrayTypeValue>(&types.type(leaf).value)) {
+        leaf = array->element;
+    }
+    auto stateless = false;
+    if (const auto* closure = std::get_if<ClosureTypeValue>(&types.type(leaf).value)) {
         const auto body_id = context.semantic().declarations().body_for_callable(closure->callable);
-        if (context.semantic().bodies().body(*body_id).inputs().captures.empty()) {
-            return call_expression(
-                static_member_expression(
-                    context.lower_type(to),
-                    TargetIdentifier::from_spelling("from_stateless")
-                ),
-                target_expressions(std::move(input))
-            );
-        }
+        stateless = context.semantic().bodies().body(*body_id).inputs().captures.empty();
+    }
+    if (std::holds_alternative<ArrayTypeValue>(types.type(to).value)) {
+        return template_call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeAdoptArray),
+            {context.lower_type(to), stateless},
+            target_expressions(std::move(input))
+        );
+    }
+    if (stateless) {
+        return call_expression(
+            static_member_expression(
+                context.lower_type(to),
+                TargetIdentifier::from_spelling("from_stateless")
+            ),
+            target_expressions(std::move(input))
+        );
     }
     return TargetExpr {
         .value = TargetConstructionExpr {
@@ -282,6 +297,7 @@ auto native_operation(
 auto realize_operation(
     ModuleLowering& context,
     const SemanticExpression& source,
+    const OperationPreparation* preparation,
     std::vector<TargetExpr> operands
 ) noexcept -> TargetExpr {
     auto result = std::visit(
@@ -425,6 +441,28 @@ auto realize_operation(
                 invariant_violation("test report requires control-flow realization");
             },
             [&](const SemPrint& value) noexcept -> TargetExpr {
+                const auto* prepared = std::get_if<PreparedPrint>(preparation);
+                if (prepared != nullptr) {
+                    auto selected = std::vector<TargetExpr>();
+                    auto next = 0uz;
+                    for (const auto& text : prepared->operand_text) {
+                        if (text) {
+                            selected.push_back(
+                                TargetExpr {
+                                    .value = TargetLiteralExpr {
+                                        .value = TargetStringLiteral {
+                                            .bytes = *text,
+                                            .kind = TargetStringLiteralKind::StringView
+                                        }
+                                    }
+                                }
+                            );
+                        } else {
+                            selected.push_back(std::move(operands.at(next++)));
+                        }
+                    }
+                    operands = std::move(selected);
+                }
                 const auto symbol = value.kind == PrintKind::Print ? TargetSymbol::RuntimePrint
                     : value.kind == PrintKind::Println             ? TargetSymbol::RuntimePrintln
                     : value.kind == PrintKind::Eprint              ? TargetSymbol::RuntimeEprint
@@ -432,39 +470,31 @@ auto realize_operation(
                 return call_expression(intrinsic_expression(symbol), std::move(operands));
             },
             [&](const SemFormat& value) noexcept -> TargetExpr {
-                operands.insert(
-                    operands.begin(),
-                    constant_expression(context, value.format_string_id)
-                );
-                return call_expression(
-                    intrinsic_expression(TargetSymbol::RuntimeFormat),
-                    std::move(operands)
-                );
+                const auto* prepared = std::get_if<PreparedFormat>(preparation);
+                if (prepared == nullptr) {
+                    invariant_violation("formatting requires an implementation preparation");
+                }
+                return realize_format(context, source, value, *prepared, std::move(operands));
             },
             [&](const SemSliceIntrinsic& value) noexcept -> TargetExpr {
-                if (value.intrinsic == SliceIntrinsic::FromArray) {
-                    return call_expression(
-                        intrinsic_expression(TargetSymbol::RuntimeAsSlice),
-                        std::move(operands)
-                    );
+                const auto method = [&](const char* name) noexcept -> TargetExpr {
+                    auto receiver = std::move(operands.front());
+                    operands.erase(operands.begin());
+                    return call_member(std::move(receiver), name, std::move(operands));
+                };
+                switch (value.intrinsic) {
+                    case SliceIntrinsic::FromArray:
+                        return call_expression(
+                            intrinsic_expression(TargetSymbol::RuntimeAsSlice),
+                            std::move(operands)
+                        );
+                    case SliceIntrinsic::Len:     return method("size");
+                    case SliceIntrinsic::IsEmpty: return method("empty");
+                    case SliceIntrinsic::Slice:   return method("slice");
                 }
-                auto receiver = std::move(operands.front());
-                operands.erase(operands.begin());
-                const auto* const name = value.intrinsic == SliceIntrinsic::Len ? "size"
-                    : value.intrinsic == SliceIntrinsic::IsEmpty                ? "empty"
-                                                                                : "slice";
-                return call_member(std::move(receiver), name, std::move(operands));
+                std::unreachable();
             },
             [&](const SemTextIntrinsic& value) noexcept -> TargetExpr {
-                if ((value.intrinsic == TextIntrinsic::Bytes
-                     || value.intrinsic == TextIntrinsic::Chars)
-                    && context.semantic()
-                            .types()
-                            .type(value.operands[0].expression.type.resolved())
-                            .value
-                        == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
-                    operands[0] = call_member(std::move(operands[0]), "as_str", {});
-                }
                 switch (value.intrinsic) {
                     case TextIntrinsic::New:
                         return TargetExpr {
@@ -509,12 +539,12 @@ auto realize_operation(
                         return call_member(std::move(operands[0]), "empty", {});
                     case TextIntrinsic::Bytes:
                         return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeStrBytes),
+                            intrinsic_expression(TargetSymbol::RuntimeTextBytes),
                             target_expressions(std::move(operands[0]))
                         );
                     case TextIntrinsic::Chars:
                         return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeStrChars),
+                            intrinsic_expression(TargetSymbol::RuntimeTextChars),
                             target_expressions(std::move(operands[0]))
                         );
                 }

@@ -293,7 +293,7 @@ TEST_CASE("Target builder: type queries retain call structure across table growt
         auto nested = TargetExpr {
             .value = TargetCallExpr {
                 .callee = UniqueIndirect(name("g")),
-                .template_argument_type_ids = {},
+                .template_arguments = {},
                 .arguments = std::move(arguments),
             }
         };
@@ -308,7 +308,7 @@ TEST_CASE("Target builder: type queries retain call structure across table growt
                     .value =
                         TargetCallExpr {
                             .callee = UniqueIndirect(name("f")),
-                            .template_argument_type_ids = {},
+                            .template_arguments = {},
                             .arguments = std::move(outer),
                         }
                 }

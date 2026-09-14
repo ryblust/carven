@@ -269,8 +269,11 @@ auto expect_posix_termination(
     std::fflush(nullptr);
     const auto child = fork();
     if (child == 0) {
-        if (std::signal(SIGABRT, SIG_DFL) == SIG_ERR) {
-            _exit(125);
+        // The forked action must not run the parent's doctest crash handler.
+        for (const auto signal : {SIGABRT, SIGTERM, SIGSEGV, SIGILL, SIGFPE, SIGINT}) {
+            if (std::signal(signal, SIG_DFL) == SIG_ERR) {
+                _exit(125);
+            }
         }
         action(context);
         _exit(0);

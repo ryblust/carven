@@ -1,0 +1,19 @@
+import .api using { answer, published, selected, };
+import .values using { advance, seed, };
+
+const local = advance(answer(), seed[0]);
+
+test "Modules: constant arrays preserve values across imported functions and declarations" {
+    check(published[0] == 5);
+    check(selected == 7);
+    check(local[2] == 11);
+    var copy = published;
+    let independent = copy;
+    copy[0] = 99;
+    let view = independent.as_slice();
+    var index = 0;
+    check(view[index] == 5);
+    check(published[0] == 5);
+    let runtime = answer();
+    check(runtime == independent);
+}

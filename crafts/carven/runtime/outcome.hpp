@@ -1,5 +1,8 @@
 #pragma once
 
+#include "passing.hpp"
+#include "unreachable.hpp"
+
 #include <concepts>
 #include <exception>
 #include <type_traits>
@@ -28,6 +31,9 @@ namespace detail {
 
 template<typename Needle, typename... Haystack>
 concept ContainsExact = (std::same_as<Needle, Haystack> || ...);
+
+template<typename Value>
+concept TransferConstructible = requires (Value& value) { Value(transfer(value)); };
 
 template<typename... Types>
 struct UniqueTypes final : std::true_type {};
@@ -94,6 +100,20 @@ class Outcome final {
     constexpr explicit Outcome(std::in_place_type_t<Failure>, Value&& value) noexcept
         : state(std::in_place_type<Failure>, std::forward<Value>(value)) {}
 
+    template<typename Failure, typename... Rest>
+    constexpr auto propagate_failure() noexcept -> Outcome {
+        if (auto* value = failure_if<Failure>()) {
+            return failure(transfer(*value));
+        }
+        if constexpr (sizeof...(Rest) > 0) {
+            return propagate_failure<Rest...>();
+        } else {
+            // Construction is noexcept and assignment is unavailable, so an
+            // Outcome always contains one of its declared alternatives.
+            unreachable();
+        }
+    }
+
 public:
     Outcome() = delete;
     Outcome(const Outcome&) = delete;
@@ -138,6 +158,22 @@ public:
     static constexpr auto failure(Value&& value) noexcept -> Outcome {
         using Failure = std::remove_cvref_t<Value>;
         return Outcome(std::in_place_type<Failure>, std::forward<Value>(value));
+    }
+
+    // Reconstruct the active alternative using the source-language transfer
+    // policy. The caller retains the materialized source and its cleanup scope.
+    constexpr auto propagate() && noexcept -> Outcome
+        requires (std::is_void_v<Result> || detail::TransferConstructible<Result>)
+        && (detail::TransferConstructible<Failures> && ...)
+    {
+        if (auto* value = success_if()) {
+            if constexpr (std::is_void_v<Result>) {
+                return success();
+            } else {
+                return success_from([&]() noexcept -> Result { return transfer(value->value); });
+            }
+        }
+        return propagate_failure<Failures...>();
     }
 
     constexpr auto success_if() & noexcept -> Success* { return std::get_if<Success>(&state); }

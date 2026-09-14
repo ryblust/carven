@@ -1,11 +1,17 @@
 #pragma once
 
-#include "text.hpp"
+#include "utf.hpp"
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace carven::runtime {
+
+// The formatting header defines the private bridge for formatting storage access.
+class StringFormatAccess;
+class Writer;
 
 // Views borrow current storage; the owner must remain alive and unchanged for each borrow.
 // from_str and append require valid UTF-8; push requires a Unicode scalar.
@@ -27,9 +33,7 @@ public:
     // Native producers cross the UTF-8 boundary before transferring their storage.
     static constexpr auto from_utf8(std::string bytes) noexcept -> String {
         checked_utf8(bytes);
-        auto result = String();
-        result.storage = std::move(bytes);
-        return result;
+        return String(std::move(bytes));
     }
 
     constexpr auto size() const noexcept -> std::size_t { return storage.size(); }
@@ -40,19 +44,26 @@ public:
 
     constexpr auto append(std::string_view text) noexcept -> void { storage.append(text); }
 
+    constexpr auto clear() noexcept -> void { storage.clear(); }
+
     constexpr auto push(char32_t scalar) noexcept -> void {
         const auto encoded = encode_valid_utf8(scalar);
         append(std::string_view(encoded.bytes.data(), encoded.width));
     }
-
-    constexpr auto clear() noexcept -> void { storage.clear(); }
 
     constexpr auto operator==(const String& other) const noexcept -> bool {
         return storage == other.storage;
     }
 
 private:
+    // Only validated ingress and proven formatting may adopt native storage.
+    explicit constexpr String(std::string&& bytes) noexcept
+        : storage(std::move(bytes)) {}
+
     std::string storage;
+
+    friend class StringFormatAccess;
+    friend class Writer;
 };
 
 } // namespace carven::runtime

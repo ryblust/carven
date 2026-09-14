@@ -1,6 +1,7 @@
 module carven:semantic.semir.structured;
 
 import :semantic.semir.body;
+import :semantic.semir.format;
 import :semantic.semir.ids;
 import :semantic.semir.type;
 import :support.invariant;
@@ -132,13 +133,17 @@ struct SemPrint final {
 };
 
 struct SemFormat final {
-    ConstantID format_string_id;
+    FormatSpec specification;
+    // Complete source order, independently of any later implementation selection.
     std::vector<SemCallArgument> operands;
+    std::optional<OwnedSemanticExpression> receiver;
 };
 
 struct SemSliceIntrinsic final {
     SliceIntrinsic intrinsic;
     std::vector<SemCallArgument> operands;
+    // Length on normal completion does not prove that checked slicing succeeds.
+    std::optional<std::uint64_t> result_extent;
 };
 
 struct SemTextIntrinsic final {

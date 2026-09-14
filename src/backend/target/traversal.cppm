@@ -266,8 +266,11 @@ auto traverse_target_expression(
             [&](TargetTraversalNode<Node, TargetCallExpr>& value) noexcept {
                 return traverse_target_expression(*value.callee, visitor)
                     && std::ranges::all_of(
-                           value.template_argument_type_ids,
-                           [&](TargetTypeID id) noexcept { return visit_target_type(visitor, id); }
+                           value.template_arguments,
+                           [&](const TargetTemplateArgument& argument) noexcept {
+                               const auto* type = std::get_if<TargetTypeID>(&argument);
+                               return type == nullptr || visit_target_type(visitor, *type);
+                           }
                     )
                     && traverse_target_expressions(value.arguments, visitor);
             },
@@ -616,6 +619,10 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
                 const auto* definition = std::get_if<TargetFreeFunctionDefinition>(&value.form);
                 return definition == nullptr
                     || traverse_target_callable_body(definition->body, visitor);
+            },
+            [&](const TargetVariableDecl& value) noexcept {
+                return visit_target_type(visitor, value.type)
+                    && traverse_target_expression(value.initializer, visitor);
             },
             [&](const TargetOutOfClassMemberDefinition& value) noexcept {
                 return traverse_target_parameters(value.parameters, visitor)

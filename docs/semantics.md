@@ -22,6 +22,7 @@ This document defines the validity and observable behavior of Carven programs.
 - [Bindings, access, and mutation](#bindings-access-and-mutation)
 - [Functions and callable values](#functions-and-callable-values)
   - [Functions and calls](#functions-and-calls)
+  - [Constant functions](#constant-functions)
   - [Lambdas and callable views](#lambdas-and-callable-views)
 - [Aggregates](#aggregates)
   - [Structures and arrays](#structures-and-arrays)
@@ -45,8 +46,8 @@ A compilation is one closed compiler boundary supplied by the driver or build
 system. Its module catalog is exactly the explicit source-input batch. Every
 source input has one canonical module path, a nonempty sequence of components matching
 `[A-Za-z_][A-Za-z0-9_]*`, including keyword spellings.
-Path derivation from host filenames is driver policy rather than language
-semantics.
+Deriving canonical module paths from host filenames is driver policy; the
+language rules operate on the resulting paths.
 
 A leading canonical path of `crafts.<name>.<path>` belongs to the module domain
 anchored by `crafts.<name>`. All other canonical paths belong to the unprefixed
@@ -107,9 +108,9 @@ source fragments. Function, structure, enum, and constant names share one module
 namespace. Duplicate module declarations are invalid; function overloading is
 not supported.
 
-Nominal identities and declaration signatures are elaborated across the closed
-compilation before function and test bodies are checked. Required constant
-facts participate in the same dependency graph. Declaration order
+Nominal and callable identities are collected across the closed compilation.
+Declaration signatures, required constant facts, and any function bodies needed
+for constant execution are completed through their dependencies. Declaration order
 therefore does not control whether a module declaration can be named; valid
 forward constant dependencies and forward or mutually recursive function calls
 are supported. A cycle among constant-required facts is invalid.
@@ -164,8 +165,8 @@ f32 f64
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
-extent. Slices are identified by their element type. Function-view types include
-parameter access, parameter types, success result, and failure set.
+extent. Slices are identified by their element type. Function-view types include parameter access, parameter types, success
+result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
 Contextual conversions are defined in the numeric, text, slice, callable, and
@@ -249,20 +250,30 @@ identifier, so top-level `const _ = ...;` is invalid.
 Module-constant initialization is elaborated from resolved declaration
 dependencies rather than source order. Every successful use selects the same
 normalized value; a dependency cycle produces `CV-CONST-CYCLE`. A module
-constant has Read access only and is compile-time-only, with no runtime storage,
-address, or linkage.
+constant has Read access only and introduces no runtime binding, source address,
+or linkage. A frozen slice's contents have static backing storage; that storage
+does not give the source declaration an identity.
 
 ### Constant expressions
 
-A `const` initializer must be proven by Carven; target acceptance is not enough.
-Constant facts include scalar and string literals, numeric enum cases,
-resolved local and module constants, grouping, supported casts, supported pure
-unary and binary operations, constant `str.len()` and `str.is_empty()`, and
-payload-case construction whose payloads are all constant. General calls,
-ordinary aggregate construction, and control-flow expressions are not Carven
-constant expressions. Local and module constant declarations are
-compile-time-only; their later uses denote the selected normalized value without
-creating a runtime binding or lambda capture.
+Carven evaluates each `const` initializer during semantic analysis. Constant
+facts include scalar and string literals, numeric enum cases, resolved local and
+module constants, grouping, supported casts, supported pure unary and binary
+operations, constant `str.len()` and `str.is_empty()`, and payload-case
+construction whose payloads are all constant. Direct interpolation within the
+supported builtin subset, pure String construction and text queries, and direct
+calls to constant functions with constant arguments can also produce a constant.
+Owning text can be passed between these expressions; only the completed
+initializer freezes its result to `str`. Fixed-array literals, struct
+construction, indexing, and field access also produce constants for the
+aggregate types admitted by constant functions. Equality composes through their
+elements and fields. Arrays retain `[T; N]`; structs retain their nominal type.
+An explicit `[T]` constant annotation or `as_slice()` in a constant initializer
+retains a completed array as a frozen slice. Its `len`, `is_empty`, indexing,
+and `slice` queries can also produce constants. Ordinary calls and direct
+control-flow expressions are not Carven constant expressions. Local and module
+constant declarations are compile-time-only; their later uses denote the
+selected normalized value without creating a runtime binding or lambda capture.
 
 A constant integer cast to an `N`-bit integer reduces the mathematical value
 modulo `2^N`. An unsigned target is that residue; a signed target interprets the
@@ -366,9 +377,44 @@ Extracting an element also retains any borrows inside that element. Temporary
 backing follows existing expression and retained-loop rules; storing a view
 does not extend its lifetime.
 
-The [UTF library](../crafts/carven/std/utf/README.md) supplies validation and text
+The UTF standard library supplies validation and text
 construction from `[u8]`. Borrowed text retains the input storage relationship
 and follows the same lifetime and mutation checks as slices.
+
+### Frozen constant slices
+
+A constant initializer can retain a completed array as `[T]`,
+using an explicit annotation or `as_slice()`:
+
+```carven
+const table: [i32] = [2, 4, 6];
+const middle = table.slice(1, 3);
+const count = middle.len();
+fn table_view() -> [i32] => table;
+```
+
+The elements have static backing storage, so these views can be copied, stored,
+and returned independently of the scope containing their constant declaration.
+The declaration and its backing have no source-level address identity; native
+code must not rely on different uses or generated artifacts sharing an address.
+Empty slices retain their element type. Indexing and half-open subslicing are
+checked during constant evaluation; invalid evaluated bounds produce a diagnostic.
+
+Elements use the constant aggregate subset: integers, `bool`, `char`, `str`,
+and recursively supported fixed arrays and structs. Element types are preserved:
+`[Entry; N]` becomes `[Entry]`, and `[[i32; 2]; N]` becomes `[[i32; 2]]`.
+Struct fields keep their declared types. There is no recursive conversion of
+owning fields or nested arrays to views. Slice comparison remains unsupported.
+
+Array results of `const fn` can reach this initializer boundary.
+Slice parameters, locals, and operations inside `const fn` remain outside its
+execution subset.
+Ordinary runtime array-to-slice conversions still borrow their source storage;
+known contents alone do not extend that storage's lifetime.
+
+Retaining an array and constructing a constant subslice charge their number of
+element references against the initializer's 524,288-element work budget. The
+source array retains its existing value-size and nesting limits.
 
 ### Unicode text
 
@@ -434,6 +480,7 @@ address stability, trailing NUL, and allocation count are unspecified.
 | `s.as_str()` | Read receiver; borrowed `str` |
 | `s.bytes` / `s.chars` | Read receiver; borrowed byte/scalar range |
 | `s.append(text: str)` | Write receiver, Read text; `void` |
+| `s.append_format(f"...")` | Write receiver, Read interpolation holes; `void` |
 | `s.push(value: char)` | Write receiver, Read scalar; `void` |
 | `s.clear()` | Write receiver; `void` |
 
@@ -457,8 +504,10 @@ retains String value semantics; `let view = owner.as_str()` explicitly creates a
 view. Borrowing neither allocates nor extends the owner's lifetime.
 
 Equality requires operands of the same type; a string literal on the right can
-adopt a String left operand's type through ordinary operand context. String
-constants, String literal patterns, indexing, ordering, truthiness, concatenation,
+adopt a String left operand's type through ordinary operand context. Constant
+expressions and functions can construct owning String values, but a constant initializer freezes
+an owning text result to `str`; there is no stored owning String constant.
+String literal patterns, indexing, ordering, truthiness, concatenation,
 direct iteration, and access to C++ container members are unsupported.
 `String(...)`, `String { ... }`, and `String as str` are invalid. Iterate `s.bytes`
 or `s.chars` instead.
@@ -528,8 +577,9 @@ and unrepresentable lengths terminate.
 
 ### String interpolation
 
-`f"..."` always produces an independent owning `String`, including `f""` and
-text without holes. Ordinary string literals remain `str`.
+An `f"..."` expression produces an independent owning `String`, including `f""`
+and text without holes. `String.append_format` consumes this syntax directly as
+formatting content, as described below. Ordinary string literals remain `str`.
 
 ```carven
 f"Hello, {name}!"
@@ -542,8 +592,11 @@ f"{value:{width}.{precision}f}"
 A hole contains an ordinary expression and an optional `:` format specification.
 Formatting follows `std::format` rules for escaped braces, alignment, width,
 precision, and type options. Dynamic width and precision holes contain Carven
-expressions. The C++ compiler
-checks the resulting format string and formatter availability. Custom C++
+expressions. Carven may precompute supported builtin formatting for all or part
+of an ordinary interpolation or directly perform supported integer conversions,
+while preserving these formatting rules, owning results, and required operand
+evaluation. Other format checks
+and formatter availability are delegated to the C++ compiler. Custom C++
 formatters receive their format specifications through the same mechanism.
 
 Hole expressions, including dynamic format arguments, are evaluated once in
@@ -555,17 +608,47 @@ views keep their backing borrowed throughout hole evaluation and formatting.
 The result is independent of its inputs; named views keep their usual lifetimes.
 
 `String` uses standard string formatting. A `char` is encoded as UTF-8 and also
-uses standard string formatting, including width and precision. Other values use
+uses standard string formatting, including width and precision. Integer formatting
+follows the corresponding standard integer formatter's rules. Other values use
 their C++ representation and corresponding `std::formatter`; Carven supplies no
 aggregate, enum, or callable formatting protocol.
 
 Interpolation supports ordinary expression composition and failure propagation.
 An early failure skips later holes and formatting, retaining completed effects
 and destroying temporary values. Discarding the result still executes formatting.
-Interpolation is excluded from constant
-declarations, literal patterns, and positions requiring an ordinary literal.
+Direct interpolation and interpolation in constant functions use the same
+supported builtin formatting subset in required constant contexts. For example,
+`const title = f"build-{42:04}";` produces static `str` text, and
+`const bytes = f"{'我'}".len();` produces `3usize`. Nested calls, `String::new()`,
+`String::from_str(...)`, `.as_str()`, `.len()` and `.is_empty()` compose before
+initializer completion. Each constant interpolation is limited to 1 MiB of
+result text; unsupported formatting is diagnosed without runtime fallback.
+Interpolation remains excluded from literal patterns and positions requiring
+an ordinary literal. Ordinary runtime interpolation retains String ownership.
 
-Formatting preserves internal NUL and validates the completed output as UTF-8.
+`destination.append_format(f"...")` appends formatted content to an existing
+writable String and returns `void`. It requires exactly one direct interpolation;
+grouping is allowed, but a String value, plain literal, or argument access marker
+is not accepted. The method does not construct an intermediate source-level
+String from the interpolation.
+
+The receiver is selected once before the holes. All holes then follow the Read
+evaluation and observation rules above, before appending begins. Formatting inputs
+must not borrow or alias the destination's storage during formatting; this includes
+String Read aliases. Existing views also prevent mutation, even when the content
+is known or empty. Scalar queries such as `text.append_format(f"{text.len()}")`
+can supply a snapshot without borrowing text storage. Native callers and formatter
+providers must preserve this separation through indirect aliases and reentrant calls.
+
+A failing receiver or hole skips the append and later operands, preserving completed
+effects, including mutations performed by earlier holes. Once formatting begins,
+there is no rollback guarantee on termination. The method is also available in
+constant functions under the same formatting subset and execution budgets.
+
+Formatting preserves internal NUL and produces valid UTF-8 on normal completion.
+The compiler may omit the final UTF-8 scan when operand types and supported static
+specifications prove the output valid. Other outputs retain runtime validation;
+this implementation choice does not change the source operation's contract.
 Invalid UTF-8, allocation failure, and runtime formatting errors terminate;
 they do not introduce typed failures. C++ formatter retention and reentry remain
 provider/caller responsibilities. Callable-view and Write-capture boundary
@@ -783,11 +866,19 @@ or general lifetime-extension syntax.
 
 ### Functions and calls
 
-Every ordinary function parameter requires an explicit type. In a block-bodied
-function, omitted result syntax means `void`. In an expression-bodied function
-(`fn increment(a: i32) => a + 1;`), it infers the result from the body expression,
-without using the caller's expected type. An explicit result annotation supplies
-the expected type and is checked against the expression. Parameter names must be
+Every ordinary function parameter requires an explicit type. A function with a
+body may omit its result type. Block and expression bodies infer it from return
+operands, without using the caller's expected type. Each operand is typed
+independently; inferred result types must agree, including nested callable failure
+contracts. Returns that cannot complete normally contribute no result type.
+Native returns must have the same Carven type identity; an explicit result type
+is required when determining compatibility needs C++ type resolution.
+Return order does not supply type context to later operands. An
+explicit result annotation supplies the expected type to every return operand.
+A body without return operands infers `void`; bare returns also require `void`.
+Normal completion of a value-returning body requires a return on every path.
+Result-inference dependency cycles require an explicit result type to break the
+cycle. A declaration without a body defaults to `void` when no result type is written. Parameter names must be
 unique. A call requires the exact
 arity, access marker, and compatible argument type declared by the callable.
 The callee is evaluated first, then arguments are evaluated once from left to
@@ -813,9 +904,110 @@ Function declarations may refer to later declarations because function identitie
 and heads are collected before bodies. Expression-body results are completed on
 demand before a dependent function reference is used. A cycle that requires an
 unfinished result is rejected with `CV-TYPE-RESULT-INFERENCE-CYCLE`; add an
-explicit `-> T` to break the signature dependency. Operator constraints, constant
-branches, and caller context do not solve such cycles. Typed failure contracts
-are part of callable compatibility.
+explicit `-> T` to break the signature dependency. Result completion uses
+declaration signatures and body inference; operator constraints, constant
+branches, and caller context do not resolve a signature cycle.
+
+### Constant functions
+
+`const fn` makes a named Carven function eligible for execution by Carven in a
+required constant context, including local and module constant initializers and
+array extents. Arguments must be constant and follow the declared type and
+access rules. A call in an ordinary runtime expression remains an ordinary
+function call, even when all arguments happen to be known.
+
+```carven
+const fn label(count: i32) -> String {
+    var result = String::new();
+    for index in 0..count {
+        result.append_format(f"{index:02}");
+    }
+    return result;
+}
+
+const name: str = label(3); // "000102", with no runtime String owner
+const fn decorate(value: String) -> String => f"[{value}]";
+const decorated = decorate(label(3)); // "[000102]"
+```
+
+Parameters use Read or Take access and have builtin integer, `bool`, `char`,
+`str`, `String`, or supported fixed-array and struct types. Results use these types or
+`void`; a void result cannot initialize a constant. Ordinary result annotation
+and inference rules apply.
+The entry function and `import(cpp)` functions cannot be `const fn`.
+
+Every definition is checked, including uncalled functions and inactive branches.
+The admitted operations are supported scalar arithmetic, comparisons, logical
+operations and casts; local initialization, assignment and Take; `if`, `match`,
+`while`, C-style loops, integer ranges and fixed-array range loops;
+`return`, `break` and `continue`;
+and direct calls to other constant functions. Match supports builtin subjects
+with literal, binding, wildcard and or patterns, including guards. Recursion is
+allowed when signatures and bodies can be completed without a construction
+dependency cycle.
+
+Text operations include `String::new`, `String::from_str`, the equivalent
+`str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
+`push`, `clear`, and interpolation. Constant formatting accepts default integer, bool, char and
+text formatting, plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with
+decimal width and optional zero padding. Supported dynamic width expressions
+are evaluated before formatting. Other format specifications cannot be executed
+as constants, even if valid for runtime formatting.
+
+Fixed arrays support construction, indexing, element assignment, equality,
+independent copies, Read and Write iteration, whole-binding Take, and function
+parameters and results.
+Structs support positional and named construction, field access and assignment,
+equality, independent copies, whole-binding Take, and parameters and results.
+Fields and array elements may be integers, `bool`, `char`, `str`, or recursively
+supported fixed arrays and structs. Construction evaluates initializers in source
+order. Freezing preserves nominal identity, array extents, and every field and
+element type; it does not convert owning String fields or elements to `str`.
+Empty array literals require an expected element type.
+
+Read array arguments and structs containing array storage observe their contents
+after all arguments have evaluated. Scalars and supported structs without array
+storage are snapshotted at their argument position. Field and index projections
+follow the rule for the selected value's type.
+Slice operations, including `as_slice().len()`, are unsupported inside `const fn`.
+Completed array results can become frozen slices at a constant initializer;
+runtime copies can use the ordinary slice API and borrowing rules.
+
+String values retain owning copy and Take behavior within and between constant
+function calls. Read String operands observe their contents after all arguments
+or interpolation holes have evaluated, following the ordinary evaluation order.
+Only the completed constant initializer freezes an owning result into immutable
+`str` bytes. Consequently `const text = label(3)` has type `str`, and an explicit
+`String` annotation on that constant is invalid.
+
+Constant execution rejects native operations,
+Write parameters or arguments, typed failures, `throw`, `try` and propagation,
+floating types and operations, enums, pointers, slices, callable
+values and indirect calls. Text byte or character iteration and unchecked text
+construction are also excluded. Local mutable scalar, String, and supported
+aggregate storage is allowed. Ordinary type, access, ownership and lifetime
+validation still applies; storing a text view in a struct does not prolong its backing.
+
+Integer operations during required constant execution use checked constant
+arithmetic: overflow, division by zero and invalid shifts produce diagnostics.
+Ordinary runtime calls retain the runtime integer rules, including wrapping
+arithmetic. Short-circuiting and control flow select what executes, while all
+source remains subject to definition admission.
+
+Each evaluated call tree has a budget of 100,000 execution steps and 128 nested
+calls. Text construction is limited to 1 MiB per value and 8 MiB of accumulated
+text construction and copying work. Appending charges the added bytes, and
+queries do not copy their receiver. This is a work budget, not a live-memory limit.
+An aggregate value is limited to 65,536 array-element and struct-field slots
+across its nested aggregates and 64 aggregate levels. A call tree permits
+524,288 accumulated slot constructions and copies. Direct aggregate initializers
+use the same value limits and a bounded construction-work budget.
+Constant format specifications additionally have bounded
+nesting. Exhausting a budget diagnoses the constant evaluation; it does not
+fall back to runtime execution. Definition violations use `CV-CONST-ADMISSION`,
+execution-specific failures use `CV-CONST-EVALUATION`, and budget failures use
+`CV-CONST-LIMIT`; existing type, arithmetic and dependency diagnostics remain
+applicable.
 
 ### Lambdas and callable views
 
@@ -873,13 +1065,16 @@ A lambda parameter may omit its type only when an expected callable view
 supplies the parameter type at that position. Without such an expected view,
 every parameter requires an explicit type. An explicit lambda result type fixes
 the result. Otherwise an expected callable view supplies it; with no expected
-view, return operands determine the result, including `void`. The inferred or
+view, return operands independently determine one consistent result, including
+`void`, using the same rules as ordinary functions. The inferred or
 expected signature is checked against the body before the closure type is completed.
 These rules apply equally to block and expression bodies.
 
 Source `fn(...) -> R throw E + F` denotes a non-owning callable view. Parameter
 access, parameter types, and success result match exactly. A source callable
-may have a smaller failure set than the expected view. Direct closure calls
+may have a smaller failure set than the expected view. Array adaptation applies
+these rules recursively to element types, including zero-length arrays. Failure
+contracts inside parameter and success-result types remain identical. Direct closure calls
 retain their concrete closure type.
 
 A callable view may be a parameter or local value, including local aggregate
@@ -892,12 +1087,18 @@ evaluated once. A named capturing closure may initialize a local view while its 
 scope.
 
 Adopting a capturing closure as a callable view borrows the closure object; it
-does not copy its captures or acquire ownership. Copying a view copies its
-target description and preserves its backing requirement. While the view's
+does not copy its captures or acquire ownership. Copying a view of the same type
+copies its target description and preserves its backing requirement. While the view's
 loan remains active, its closure owner cannot be taken. Ending an inner scope
 containing the borrowers permits a later Take of the still-live owner.
 Assigning a capturing target through a Write parameter of callable-view type
 is rejected; the parameter does not establish a sufficient backing lifetime.
+
+Widening an existing view to a larger failure set borrows that view's storage.
+The source view must remain alive, and rebinding it changes the target observed
+through the wider view. The same rule applies to element-wise array widening.
+This differs from adapting a concrete callable directly to the wider contract,
+which does not introduce an intermediate view borrow.
 
 #### Invocation and snapshots
 
@@ -949,12 +1150,12 @@ callable adoption are separate forms.
 
 An array type has one element type and a constant nonnegative extent. A
 zero-length array type is valid and still carries its element type. Without an
-expected array type, an array literal must be nonempty; its element type is
-inferred from an unambiguous element, its extent is the element count, and every
-element must be compatible. With an expected array type, each element is
-checked in that element context and the literal must have exactly the declared
-extent. Consequently `[]` is valid only with an expected `[T; 0]` type; it does
-not request target-language value initialization.
+expected array or slice type, an array literal must be nonempty; its element
+type is inferred from an unambiguous element, its extent is the element count,
+and every element must be compatible. An expected `[T; N]` supplies the element
+type and requires exactly N elements. An expected `[T]` supplies the element
+type and borrows the resulting array under ordinary lifetime rules. Empty `[]`
+is valid with either an expected `[T; 0]` or `[T]`.
 
 Array indexing accepts an integer index. A constant negative index or one
 greater than or equal to the extent is diagnosed before lowering. A dynamic
@@ -1108,18 +1309,18 @@ it does not participate in runtime arm selection.
 
 Carven models recoverable failure as a typed control effect represented to
 source users by callable failure contracts. Failure values are copyable nominal
-structures or enums. A failure contract denotes one exact closed mathematical
-set: member spelling order and declaration order are not observable. An
-explicit clause may name each failure type only once; `throw E + E` is invalid,
-not a request to deduplicate entries. An explicit `throw` clause is an upper bound on a callable body. Module-private
-non-entry functions and lambdas that omit it infer the least fixed-point failure set
-across forward calls, direct recursion, and mutual recursion. A published
-function—bare or exported—with a nonempty actual set must state an explicit
-`throw` contract; omitting it produces
-`CV-EFFECT-THROW-PUBLISHED`. Entry functions also require an explicit `throw`
-contract for outward failures, regardless of declaration visibility. Tests must
-handle every failure and cannot expose a failure contract. Failure types in a
-published contract must be visible to that contract's audience.
+structures or enums. A failure contract denotes a closed set of types; member
+spelling order and declaration order do not affect it. An explicit clause may
+name each failure type only once; `throw E + E` is invalid. An explicit `throw`
+clause is an upper bound on a callable body. Module-private non-entry functions
+and lambdas that omit it infer the least fixed-point failure set across forward
+calls, direct recursion, and mutual recursion. A published function—bare or
+exported—with a nonempty actual set must state an explicit `throw` contract;
+omitting it produces `CV-EFFECT-THROW-PUBLISHED`. Entry functions also require
+an explicit `throw` contract for outward failures, regardless of declaration
+visibility. Tests must handle every failure and cannot expose a failure
+contract. Failure types in a published contract must be visible to that
+contract's audience.
 
 A value with pending failures cannot be consumed where an ordinary completed
 value is required. Postfix `?` consumes the pending failures of its operand at
@@ -1213,9 +1414,9 @@ function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
 not Carven compile-time constants and do not participate in pattern coverage or
 failure-set construction. Native compilation checks constructor availability.
-Intermediate storage can add native construction requirements; the
-[toolchain construction limitation](toolchain.md#construction-limitation) identifies
-the affected aggregate initializers.
+When an earlier aggregate component is saved across a later fallible initializer,
+final construction requires copying or moving it from that storage. An immovable
+component can therefore fail native compilation after successful Carven analysis.
 
 ### C string literals
 
@@ -1420,6 +1621,15 @@ As with interpolation, scalar Read values are saved and String Read values alias
 their owners. Text views retain their backing throughout argument evaluation
 and printing.
 
+Direct printing is admitted in `const fn` and `const test` for the types supported
+by constant execution. Required constant execution delivers output synchronously
+to the compiler host; runtime calls use the runtime streams. Declaring a function
+`const fn` does not itself execute it. Optional precomputation does not produce
+compile-time output or remove required runtime printing. Printing follows the
+same argument, separator, newline, and text rules in both stages. Output bytes
+consume the root's cumulative text-work budget. Completed output remains observable
+if later execution fails.
+
 Text is printed verbatim, including embedded NUL bytes. Scalars use their default
 C++ format representation; a Carven `char` prints its UTF-8 text. Formatting is
 explicit through existing interpolation, for example `println(f"{value:04}")`.
@@ -1468,6 +1678,25 @@ A test is a module-local named body with no parameters or result. Test names
 must be unique within their module and cannot be `main`. Tests participate in
 parsing and semantic analysis regardless of whether the compiler is asked to
 emit test artifacts. A test must handle every failure.
+
+`const test "name" { ... }` explicitly selects compile-time execution. Its body
+uses the constant-execution operation and type subset, including direct calls to
+`const fn`, printing, and test operations. Unsupported operations are rejected
+throughout the body, including untaken branches. Each static test executes once
+after body construction during semantic analysis, regardless of test artifact
+selection. Tests follow the compilation batch's module order and source order
+within each module. Each test has a fresh execution budget and local storage. Failed-check diagnostic
+text consumes the same cumulative text-work budget as output and text construction.
+Passing static tests generate no test functions or runtime runner entries.
+Ordinary `test` bodies retain runtime execution.
+
+Static `check` failures are compilation errors and execution continues. Failed
+`require` and `fail` stop the current test, including nested Carven calls; the
+next static test still executes. Execution errors and resource exhaustion also
+stop the current test. Test operations in a required constant initializer have
+no active test and are rejected when executed. Static execution validates the
+executed semantic operations; generated C++ and native behavior require runtime
+tests.
 
 `check`, `require`, and `fail` are builtin callables using ordinary name lookup.
 Local bindings, module declarations, and explicit imports shadow builtin names
@@ -1523,6 +1752,10 @@ The following table lists selected semantic diagnostics in the current compiler:
 | --- | --- | --- |
 | `CV-CONST-CYCLE` | Error | Required constant facts form a dependency cycle |
 | `CV-CONST-EXPORTED-TYPE` | Error | An exported module constant omits its explicit type |
+| `CV-CONST-ADMISSION` | Error | A constant function, test, or call violates the constant-execution admission contract |
+| `CV-CONST-EVALUATION` | Error | Required constant function execution cannot produce a supported result |
+| `CV-CONST-LIMIT` | Error | Constant execution exceeds a resource budget |
+| `CV-CONST-TEST` | Error | A static test reports failure, or a test operation executes without an active static test |
 | `CV-CPP-BOUNDARY` | Error | An `import(cpp)` or `export(cpp)` function violates the supported declaration shape |
 | `CV-CPP-CARRIER` | Error | A C++ boundary parameter or result has no supported scalar boundary type |
 | `CV-CPP-IDENTIFIER` | Error | A C++ API path or global provider name cannot be represented by generated C++ |

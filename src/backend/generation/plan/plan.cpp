@@ -93,7 +93,7 @@ TargetNamePlan::TargetNamePlan(
     std::vector<std::optional<TargetEntityName>> closure_types,
     std::vector<TargetIdentifier> enum_cases,
     std::vector<std::optional<TargetPayloadEnumNames>> payload_enums,
-    std::vector<TargetIdentifier> test_functions,
+    std::vector<std::optional<TargetIdentifier>> test_functions,
     std::vector<TargetIdentifier> module_runners
 ) noexcept
     : source_identity(semantic_identity),
@@ -332,12 +332,16 @@ auto TargetNamePlan::payload_enum(EnumID enumeration) const noexcept
 }
 
 auto TargetNamePlan::test_function(TestID test) const noexcept -> const TargetIdentifier& {
-    return semantic_row(
+    const auto& name = semantic_row(
         target_test_functions,
         source_identity,
         test,
         "target name plan used unknown test"
     );
+    if (!name) {
+        invariant_violation("static test has no target function");
+    }
+    return *name;
 }
 
 auto TargetNamePlan::module_runner(ModuleID id) const noexcept -> const TargetIdentifier& {

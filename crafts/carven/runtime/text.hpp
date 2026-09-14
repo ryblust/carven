@@ -1,5 +1,7 @@
 #pragma once
 
+#include "slice.hpp"
+#include "string.hpp"
 #include "utf.hpp"
 
 #include <cstddef>
@@ -60,16 +62,31 @@ private:
     std::string_view text;
 };
 
-inline auto str_bytes(std::string_view text) noexcept -> Slice<std::uint8_t> {
+inline auto text_bytes(std::string_view text) noexcept -> Slice<std::uint8_t> {
     return Slice<std::uint8_t>(
         std::span(reinterpret_cast<const std::uint8_t*>(text.data()), text.size())
     );
 }
 
 // The borrowed range must contain valid UTF-8.
-constexpr auto str_chars(std::string_view text) noexcept -> StrCharsView {
+constexpr auto text_chars(std::string_view text) noexcept -> StrCharsView {
     return StrCharsView(text);
 }
 
+// Views borrow the String's current storage; its owner must remain alive and unchanged.
+inline auto text_bytes(const String& text) noexcept -> Slice<std::uint8_t> {
+    return text_bytes(text.as_str());
+}
+
+constexpr auto text_chars(const String& text) noexcept -> StrCharsView {
+    return text_chars(text.as_str());
+}
+
+// Requires valid UTF-8. The returned text borrows the input storage.
+inline auto utf8_text(Slice<std::uint8_t> bytes) noexcept -> std::string_view {
+    return bytes.empty()
+        ? std::string_view {}
+        : std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
 
 } // namespace carven::runtime

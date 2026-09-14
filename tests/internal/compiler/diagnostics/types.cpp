@@ -142,7 +142,7 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
             .name = "construction field type",
             .source = "struct Record { value: i32 } "
                       "fn invalid() -> Record { return Record { value: true }; }",
-            .code = "CV-TYPE-CONSTRUCT-FIELD",
+            .code = "CV-TYPE-MISMATCH",
             .primary_text = "true",
         },
         {
@@ -338,6 +338,44 @@ TEST_CASE("Compiler diagnostics: expression body result contracts preserve sourc
          .source = "fn wrong() { let f = [](a) => a; }",
          .code = "CV-LAMBDA-SIGNATURE-INFERENCE",
          .primary_text = "a"},
+    });
+    check_compiler_errors(cases);
+}
+
+TEST_CASE("Compiler diagnostics: callable result inference is independent of body syntax") {
+    constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "native return widths require a declared common result",
+         .source = "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return a; } return b; }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "b"},
+        {.name = "reversing native returns does not select a different result",
+         .source = "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return b; } return a; }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "a"},
+        {.name = "block result dependency cycle",
+         .source = "fn first() { return second(); } fn second() { return first(); }",
+         .code = "CV-TYPE-RESULT-INFERENCE-CYCLE",
+         .primary_text = "first"},
+        {.name = "inferred value result requires complete returns",
+         .source = "fn partial(flag: bool) { if flag { return 1; } }",
+         .code = "CV-FLOW-MISSING-RETURN",
+         .primary_text = "{ if flag { return 1; } }"},
+        {.name = "earlier return does not contextually convert later literal",
+         .source = "fn inconsistent(flag: bool) { if flag { return 1u8; } return 2; }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "2"},
+        {.name = "reversing returns preserves the type conflict",
+         .source = "fn inconsistent(flag: bool) { if flag { return 2; } return 1u8; }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "1u8"},
+        {.name = "lambda follows the same independent return rule",
+         .source = "fn outer() { let f = [](flag: bool) { if flag { return 1u8; } return 2; }; }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "2"},
+        {.name = "bare return conflicts with inferred value",
+         .source = "fn inconsistent(flag: bool) { if flag { return 1; } return; }",
+         .code = "CV-TYPE-MISSING-RETURN-VALUE",
+         .primary_text = "return;"},
     });
     check_compiler_errors(cases);
 }

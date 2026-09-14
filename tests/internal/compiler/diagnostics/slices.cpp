@@ -161,3 +161,25 @@ TEST_CASE("Compiler diagnostics: slices retain storage and nested borrows") {
     });
     check_compiler_errors(cases);
 }
+
+TEST_CASE("Compiler diagnostics: slice methods enforce their operand contracts") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "array borrowing takes no arguments",
+         .source = "fn bad(a: [i32; 1]) { a.as_slice(0usize); }",
+         .code = "CV-TYPE-METHOD-CALL-ARITY",
+         .primary_text = "a.as_slice(0usize)"},
+        {.name = "slice length takes no arguments",
+         .source = "fn bad(a: [i32]) { a.len(0usize); }",
+         .code = "CV-TYPE-METHOD-CALL-ARITY",
+         .primary_text = "a.len(0usize)"},
+        {.name = "slice requires both bounds",
+         .source = "fn bad(a: [i32]) { a.slice(0usize); }",
+         .code = "CV-TYPE-METHOD-CALL-ARITY",
+         .primary_text = "a.slice(0usize)"},
+        {.name = "slice bounds require usize",
+         .source = "fn bad(a: [i32]) { a.slice(false, 1usize); }",
+         .code = "CV-TYPE-MISMATCH",
+         .primary_text = "false"},
+    });
+    check_compiler_errors(cases);
+}

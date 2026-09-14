@@ -19,6 +19,27 @@ import :source.text;
 import :test.internal.frontend.parse.fixture;
 import std;
 
+TEST_CASE("Parser: const functions retain their qualifier and ordinary callable bodies") {
+    static constexpr auto text = std::string_view(
+        "const fn twice(value: i32) -> i32 => value * 2;\n"
+        "private const fn label() -> String { return f\"answer {42}\"; }\n"
+        "export const fn exported(value: u32) -> u32 { return value; }\n"
+        "const answer = twice(21);\n"
+        "fn ordinary() -> i32 => 42;\n"
+    );
+    const auto result = parse_valid(text);
+    for (const auto index : {0uz, 1uz, 2uz}) {
+        const auto& declaration = function(result, index);
+        REQUIRE(declaration.const_span.has_value());
+        CHECK_EQ(slice(text, *declaration.const_span), "const");
+        CHECK(is<ASTFunctionBody>(declaration.implementation));
+    }
+    CHECK(is<ASTPrivateDeclarationVisibility>(function(result, 1).visibility));
+    CHECK(is<ASTExportDeclarationVisibility>(function(result, 2).visibility));
+    CHECK(is<ASTConstantDecl>(result.view().item(root(result).items[3])));
+    CHECK_FALSE(function(result, 4).const_span.has_value());
+}
+
 TEST_CASE("Parser: module root separates imports from ordered top-level items") {
     static constexpr auto text = std::string_view(
         "import math.vector using { Vector, dot, };\n"

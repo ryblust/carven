@@ -241,7 +241,7 @@ auto CompilationProvenanceView::module_records() const noexcept -> std::span<con
     return provenance_storage.modules;
 }
 
-auto CompilationProvenanceView::spellings() const noexcept -> std::span<const std::string> {
+auto CompilationProvenanceView::spellings() const noexcept -> const std::deque<std::string>& {
     return provenance_storage.spellings;
 }
 
@@ -398,12 +398,17 @@ auto CompilationProvenanceReader::find_program_module(
     return module_id_at(static_cast<std::size_t>(found - modules.begin()));
 }
 
-auto CompilationProvenanceReader::spelling_copy(ProgramSpellingID id) const noexcept
-    -> std::string {
+auto CompilationProvenanceReader::spelling(ProgramSpellingID id) const noexcept
+    -> std::string_view {
     if (!contains(id)) {
         invariant_violation("program spelling lookup used a foreign or invalid identity");
     }
     return provenance_storage.spellings[id.index()];
+}
+
+auto CompilationProvenanceReader::spelling_copy(ProgramSpellingID id) const noexcept
+    -> std::string {
+    return std::string(spelling(id));
 }
 
 auto CompilationProvenanceReader::origin_copy(ProgramOriginID id) const noexcept -> ProgramOrigin {

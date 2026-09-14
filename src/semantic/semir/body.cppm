@@ -3,7 +3,9 @@ module carven:semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
+import :semantic.semir.slice;
 import :semantic.semir.table;
+import :semantic.semir.text;
 import :semantic.semir.type;
 import :source.provenance.ids;
 import :support.invariant;
@@ -159,65 +161,6 @@ enum class CastKind {
     CharToU32,
 };
 
-enum class SliceIntrinsic { FromArray, Len, IsEmpty, Slice };
-
-enum class TextIntrinsic {
-    Len,
-    IsEmpty,
-    Bytes,
-    Chars,
-    New,
-    FromStr,
-    FromUTF8Unchecked,
-    FromU32Unchecked,
-    AsStr,
-    Append,
-    Push,
-    Clear,
-};
-
-constexpr auto text_intrinsic_writes(TextIntrinsic intrinsic) noexcept -> bool {
-    return intrinsic == TextIntrinsic::Append
-        || intrinsic == TextIntrinsic::Push
-        || intrinsic == TextIntrinsic::Clear;
-}
-
-constexpr auto text_intrinsic_arity(TextIntrinsic intrinsic) noexcept -> std::size_t {
-    switch (intrinsic) {
-        case TextIntrinsic::New:               return 0;
-        case TextIntrinsic::Append:
-        case TextIntrinsic::Push:              return 2;
-        case TextIntrinsic::Len:
-        case TextIntrinsic::IsEmpty:
-        case TextIntrinsic::Bytes:
-        case TextIntrinsic::Chars:
-        case TextIntrinsic::FromStr:
-        case TextIntrinsic::FromUTF8Unchecked:
-        case TextIntrinsic::FromU32Unchecked:
-        case TextIntrinsic::AsStr:
-        case TextIntrinsic::Clear:             return 1;
-    }
-    std::unreachable();
-}
-
-constexpr auto text_intrinsic_builtin_result(TextIntrinsic intrinsic) noexcept
-    -> std::optional<BuiltinType> {
-    switch (intrinsic) {
-        case TextIntrinsic::Bytes:             return std::nullopt;
-        case TextIntrinsic::Len:               return BuiltinType::Usize;
-        case TextIntrinsic::IsEmpty:           return BuiltinType::Bool;
-        case TextIntrinsic::Chars:             return BuiltinType::StrCharsView;
-        case TextIntrinsic::New:
-        case TextIntrinsic::FromStr:           return BuiltinType::String;
-        case TextIntrinsic::AsStr:
-        case TextIntrinsic::FromUTF8Unchecked: return BuiltinType::Str;
-        case TextIntrinsic::FromU32Unchecked:  return BuiltinType::Char;
-        case TextIntrinsic::Append:
-        case TextIntrinsic::Push:
-        case TextIntrinsic::Clear:             return BuiltinType::Void;
-    }
-    std::unreachable();
-}
 
 enum class TestReportKind {
     Check,

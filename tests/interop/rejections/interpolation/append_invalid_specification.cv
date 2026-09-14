@@ -1,0 +1,4 @@
+fn probe(value: i32) {
+    var result = String::new();
+    result.append_format(f"{7}/{value:Q}");
+}

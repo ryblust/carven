@@ -1,0 +1,16 @@
+import .api using { answer, label, published, };
+import .values using extent;
+
+const frozen_label = label();
+
+test "Modules: const functions complete forward bodies across imported modules" {
+    const local_answer = answer();
+    let values: [i32; extent()] = [published, local_answer, answer()];
+    check(values[0] == 42);
+    check(values[1] == 42);
+    check(values[2] == 42);
+    check(frozen_label == "value-0042\0我😀");
+    let runtime_label = label();
+    check(runtime_label.as_str() == frozen_label);
+    check(runtime_label.len() == 18usize);
+}

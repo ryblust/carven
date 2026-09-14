@@ -7,10 +7,9 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.decl;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
@@ -119,7 +118,7 @@ auto DeclResolver::finish_capabilities() noexcept -> void {
     }
 }
 
-auto DeclResolver::finish_declarations() noexcept -> void {
+auto DeclResolver::publish_modules() noexcept -> void {
     for (const auto& module_record : catalog.modules()) {
         const auto syntax = draft.syntax_tree(module_record.module_id).view();
         const auto& source = syntax.ast_module();
@@ -187,7 +186,13 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         }
         draft.define_declaration(module_record.declaration, std::move(declaration));
     }
+}
+
+auto DeclResolver::finish_declarations() noexcept -> void {
     for (const auto& symbol : catalog.symbols()) {
+        if (published[symbol.symbol_id.index()]) {
+            continue;
+        }
         std::visit(
             Overloaded {
                 [](const CatalogFunctionForm&) static noexcept {},
@@ -232,9 +237,12 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         );
     }
     draft.finish_declaration_heads();
+    heads_finished = true;
     for (const auto& symbol : catalog.symbols()) {
         const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
-        if (form == nullptr || !cpp_import_origins[form->callable.index()].has_value()) {
+        if (form == nullptr
+            || !cpp_import_origins[form->callable.index()].has_value()
+            || published[symbol.symbol_id.index()]) {
             continue;
         }
         draft.complete_callable(
@@ -246,28 +254,26 @@ auto DeclResolver::finish_declarations() noexcept -> void {
     }
 }
 
-auto resolve_declarations(
-    ProgramDraft& draft,
-    AnalysisCatalogView catalog,
-    ImportUsage& import_usage
-) noexcept -> AnalysisResult<void> {
-    return DeclResolver(draft, catalog, import_usage).run();
-}
-
 DeclResolver::DeclResolver(
     ProgramDraft& target,
     AnalysisCatalogView source_catalog,
-    ImportUsage& usage
+    ImportUsage& usage,
+    ConstructionRequests& requests
 ) noexcept
     : draft(target),
       catalog(source_catalog),
       import_usage(usage),
+      requests(requests),
+      heads_finished(false),
       states(source_catalog.symbols().size(), Unvisited {}),
+      published(source_catalog.symbols().size(), false),
       structures(source_catalog.struct_count()),
       enumerations(source_catalog.enum_count()),
       enum_cases(source_catalog.enum_case_count()),
       module_constants(source_catalog.symbols().size()),
-      cpp_import_origins(source_catalog.function_count()) {}
+      cpp_import_origins(source_catalog.function_count()) {
+    publish_modules();
+}
 
 auto DeclResolver::run() noexcept -> AnalysisResult<void> {
     for (const auto& symbol : catalog.symbols()) {
@@ -449,8 +455,38 @@ auto DeclResolver::select_symbol(
 }
 
 auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span) noexcept
-    -> AnalysisResult<ResolvedConstantName> {
+    -> AnalysisResult<std::optional<ConstantID>> {
     return resolver.resolve_constant_name(module, name, span);
+}
+
+auto DeclResolver::ConstantScope::resolve_function(std::string_view name, Span span) noexcept
+    -> AnalysisResult<std::optional<FunctionID>> {
+    if (resolver.catalog.lookup(module, name).empty()) {
+        return std::optional<FunctionID>();
+    }
+    auto selected = resolver.select_symbol(module, name, span);
+    if (!selected) {
+        return std::unexpected(selected.error());
+    }
+    const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
+    if (function == nullptr) {
+        return std::optional<FunctionID>();
+    }
+    auto result = resolver.ensure_available((*selected)->symbol_id, module, span);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+
+    result = resolver.requests.ensure_function_signature(function->function, module, span);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+
+    return std::optional(function->function);
+}
+
+auto DeclResolver::ConstantScope::construction_requests() noexcept -> ConstructionRequests& {
+    return resolver.requests;
 }
 
 auto DeclResolver::ConstantScope::resolve_enum_qualifier(ASTExprID expression) noexcept
@@ -464,6 +500,30 @@ auto DeclResolver::ConstantScope::resolve_enum_case(
     Span span
 ) noexcept -> AnalysisResult<ResolvedEnumCase> {
     return resolver.resolve_constant_enum_case(module, type, name, span);
+}
+
+auto DeclResolver::ConstantScope::resolve_construction_type(
+    const ASTConstructionType& type
+) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    const auto extent = [&](ASTExprID expression) noexcept {
+        return evaluate_array_extent(resolver.draft, module, syntax, *this, expression);
+    };
+    auto result = resolve_source_construction_type(
+        resolver.draft,
+        resolver.catalog,
+        resolver.import_usage,
+        module,
+        syntax,
+        type,
+        extent
+    );
+    if (result) {
+        auto prepared = resolver.requests.ensure_type(*result, module, type.span);
+        if (!prepared) {
+            return std::unexpected(prepared.error());
+        }
+    }
+    return result;
 }
 
 auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept

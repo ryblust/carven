@@ -129,6 +129,7 @@ using ASTFunctionImplementation = std::variant<ASTFunctionBody, ASTCppImportForm
 struct ASTFunctionDecl final {
     ASTDeclarationVisibility visibility;
     std::optional<ASTCppExportForm> cpp_export;
+    std::optional<Span> const_span;
     Span name_span;
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;
@@ -144,6 +145,7 @@ struct ASTConstantDecl final {
 };
 
 struct ASTTestDecl final {
+    bool is_const;
     Span keyword_span;
     Span name_span;
     std::string name;

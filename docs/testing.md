@@ -54,15 +54,18 @@ when building.
 
 | Group | Boundary | Evidence |
 | --- | --- | --- |
-| `internal` | Compiler modules and runtime facilities | Semantic rules, diagnostics, representation invariants, planning, serialization, and runtime operations |
+| `internal` | Compiler modules and runtime support | Semantic rules, diagnostics, representation invariants, planning, serialization, and runtime operations |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
 | `crafts` | Public source-package APIs | Library results, errors, state transitions, and algorithms |
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, source fragments, native calls, Unicode checks, and header self-containment |
 | `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
-Place each case in the group that owns the tested boundary. Reuse fixtures and
-assertions across the C++ standard modes in the test matrix.
+Place each case in the group that owns the tested boundary. Specify accepted
+behavior, rejected inputs, and representation invariants from the current contract.
+Reuse fixtures and assertions across the C++ standard modes in the test matrix.
+Each matrix dimension covers a distinct contract or supported execution mode.
+Merge cases that repeat the same input class, execution path, and observation.
 
 Apply the following C++ modes:
 
@@ -82,11 +85,23 @@ capability branches. Declare shared sources once in each group's `xmake.lua` and
 apply the modes listed above. Entry tests cover default
 and explicit entries, success and failure status, reported failures, and cleanup.
 
+Execution-selection tests use valid, terminating operands and assert call counts
+or execution traces. Internal constant-execution tests can observe calls through
+`ConstantExecutionContext`. Invalid-input and resource-limit cases separately
+assert their diagnostics.
+
+Resource-accounting cases exercise actual construction, copying, calls, and queries
+with small inputs at accepted and rejected limits. Source-level cases use production
+defaults to check diagnostics, source locations, and call traces. Large inputs serve
+scale-dependent contracts such as stack depth or retained-storage growth.
+
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
 `interop`. Internal tests use doctest; generated programs use Carven's testing
-support.
+support. `const test` checks execute during Carven compilation and do not generate
+runtime test functions. Use them for compiler-executed behavior; retain runtime
+cases for C++ generation, runtime support, and native integration.
 
 User-facing programs live under `examples/`. Their output checks belong to the
 `examples` group; diagnostic and termination cases belong to the test suites.
@@ -94,10 +109,8 @@ User-facing programs live under `examples/`. Their output checks belong to the
 Crafts public API tests live under `tests/crafts/<craft>/`, mirroring the package
 module hierarchy. The group uses one C++20 binary and Carven's generated default
 inline-test entry. Production sources are supplied by the package rule; the target
-adds test sources explicitly. Compiler diagnostics remain in `internal`, language
-semantics in `language`, native contracts in `interop`, and compiler process
-contracts in `cli`. The Crafts target builds through the same package rule used
-by application targets.
+adds test sources explicitly. Application and Crafts test targets use the same
+package rule.
 
 ## Assertions
 
@@ -144,10 +157,10 @@ them. Use the internal death-test harness to check SIGABRT at terminating
 boundaries. Give each input, including loop iterations and subcases, a distinct
 scenario name within its test case.
 
-Runtime cost and compilation time are measured separately. The manual workload
-in `xmake/build_pulse.lua` measures fresh build throughput, module scaling,
-and private-edit locality. `xmake/analysis_pulse.lua` measures call-chain
-ordering and structured loop depth. Their measurement contracts are in the
+Runtime cost and compilation time are measured separately.
+`xmake/build_pulse.lua` measures fresh build throughput, module scaling, and
+private-edit locality. `xmake/analysis_pulse.lua` measures call-chain ordering
+and structured loop depth. Run instructions and sampling options are in the
 [Xmake support README](../xmake/README.md#performance-pulses).
 
 ## Organization
@@ -191,6 +204,6 @@ generated interfaces, within the consumer target. These units instantiate
 interfaces; behavioral assertions belong in the corresponding runtime or
 generated-program tests.
 
-Runtime exception boundaries are tested in isolated C++ consumer processes.
-These checks require the throwing operation to execute and reach the installed
-termination handler, establishing the runtime's `noexcept` contract.
+Test runtime exception boundaries in isolated C++ consumer processes. Require the
+throwing operation to execute and reach the installed termination handler. Catch
+exceptions outside the runtime call and report escaped exceptions as test failures.

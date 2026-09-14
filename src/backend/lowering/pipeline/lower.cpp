@@ -130,6 +130,17 @@ auto lower_module(
     const auto& schedule = artifact.schedule;
     auto module_context = context.module_context(schedule.module_id);
     auto lowered = lower_module_schedule(module_context, schedule);
+    auto declarations = std::vector<TargetItem>();
+    if (!lowered.private_declarations.empty()) {
+        declarations.push_back(namespace_item(
+            context.plan().names().module_names(schedule.module_id).module_namespace_name,
+            target_items(namespace_item(std::nullopt, std::move(lowered.private_declarations))),
+            TargetCompilerReason::ArtifactScaffolding,
+            false
+        ));
+    }
+    auto body = wrap_linkage_namespaces(context, std::move(declarations));
+    append_items(body, context.constant_storage().take());
     auto module_items = std::vector<TargetItem>();
     context.require_cpp_environment(schedule.module_id, CppEnvironmentRequirement::Using);
     if (!lowered.private_items.empty()) {
@@ -155,9 +166,10 @@ auto lower_module(
             std::move(lowered.cpp_export_facades)
         ));
     }
+    append_items(body, wrap_linkage_namespaces(context, std::move(root)));
     return {
         .preamble = std::move(lowered.source_fragments),
-        .body = wrap_linkage_namespaces(context, std::move(root)),
+        .body = std::move(body),
         .epilogue = std::move(epilogue),
     };
 }

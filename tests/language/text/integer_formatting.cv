@@ -1,0 +1,41 @@
+fn decimal_record(value: i64) -> String => f"[{value:020d}]";
+fn bit_record(value: u8) -> String => f"{value:b}|{value:B}|{value:o}|{value:x}|{value:X}";
+fn narrow_record(value: i8) -> String => f"{value:06d}/{value:04x}/{value:09B}";
+fn unicode_record(value: u64) -> String => f"{{我}}\0value={value:016X};";
+fn wide_record(value: i32) -> String => f"start{value:65537}!";
+
+fn advance_integer(&value: i32) -> i32 {
+    value += 1;
+    return value;
+}
+
+fn integer_flag(&trace: i32) -> bool {
+    trace += 1;
+    return true;
+}
+
+test "String interpolation: integer types preserve signs bases width Unicode and NUL" {
+    check(decimal_record(-9223372036854775808i64) == "[-9223372036854775808]");
+    check(decimal_record(7i64) == "[00000000000000000007]");
+    check(bit_record(255u8) == "11111111|11111111|377|ff|FF");
+    check(narrow_record(-128i8) == "-00128/-080/-10000000");
+    check(unicode_record(18446744073709551615u64) == "{我}\0value=FFFFFFFFFFFFFFFF;");
+    let wide = wide_record(-7);
+    check(wide.len() == 65543usize);
+    let bytes = wide.bytes;
+    check(bytes[0usize] == 115u8 && bytes[4usize] == 116u8);
+    check(bytes[65540usize] == 45u8 && bytes[65541usize] == 55u8 && bytes[65542usize] == 33u8);
+}
+
+test "String interpolation: parsed integer writes follow ordered scalar snapshots and folded effects" {
+    var value = 2;
+    var trace = 0;
+    let text = f"{value}/{integer_flag(&trace) && false}/{advance_integer(&value)}/{value}";
+    check(text == "2/false/3/3");
+    check(value == 3);
+    check(trace == 1);
+    var output: String = "prefix:";
+    output.append_format(f"{value:011d}/{advance_integer(&value):011d}/{value:011d}");
+    check(output == "prefix:00000000003/00000000004/00000000004");
+    check(value == 4);
+}

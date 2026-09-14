@@ -4,6 +4,7 @@ import :diagnostics.code;
 import :frontend.ast.expr;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.expr.operand;
 import :semantic.analysis.names;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -192,6 +193,63 @@ auto BodyElaborator::cpp_expression(
     };
 }
 
+auto BodyElaborator::build_cpp_argument(ASTExprID source) noexcept
+    -> AnalysisResult<BuiltCppArgument> {
+    const auto selected = call_argument_operand(ast, source);
+    auto built = expression(selected.expression);
+    if (!built) {
+        return std::unexpected(built.error());
+    }
+    const auto span = ast.expression(selected.expression).span;
+    auto value = [&]() noexcept -> AnalysisResult<SemanticExpression> {
+        if (selected.access == AccessMode::Write) {
+            auto place = consume_place(*built, span);
+            if (!place) {
+                return std::unexpected(place.error());
+            }
+            return std::move(place->expression);
+        }
+        return consume_value(*built, span, selected.access);
+    }();
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    return BuiltCppArgument {
+        .argument = {.access = selected.access, .expression = std::move(*value)},
+        .completes = built->completes,
+    };
+}
+
+auto BodyElaborator::cpp_construct(
+    const ASTConstructionExpr& source,
+    ConstructionTypeRef target,
+    Span span
+) noexcept -> AnalysisResult<BuiltExpression> {
+    auto operands = std::vector<SemCallArgument>();
+    auto completes = true;
+    if (const auto* values = std::get_if<ASTPositionalInitializerList>(&source.initializer.value)) {
+        for (const auto value : values->values) {
+            auto built = build_cpp_argument(value);
+            if (!built) {
+                return std::unexpected(built.error());
+            }
+            completes &= built->completes;
+            operands.push_back(std::move(built->argument));
+        }
+    } else if (std::holds_alternative<ASTFieldInitializerList>(source.initializer.value)) {
+        return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeConstructNotStruct,
+            "named initializers require a Carven structure"
+        ));
+    }
+    auto result = cpp_expression(CppConstructOperation {}, std::move(operands), span, target);
+    if (result) {
+        result->completes = completes;
+    }
+    return result;
+}
+
 auto BodyElaborator::cpp_call(
     SelectedExpression selected,
     const ASTCallExpr& source,
@@ -253,30 +311,12 @@ auto BodyElaborator::cpp_call(
     }
     auto arguments = std::vector<SemCallArgument>();
     for (const auto& argument : source.arguments) {
-        auto operand_id = argument.expression;
-        auto access = AccessMode::Read;
-        if (const auto* marker = std::get_if<ASTAccessExpr>(&ast.expression(operand_id).value)) {
-            access = marker->mode == ASTAccessMode::Write ? AccessMode::Write : AccessMode::Take;
-            operand_id = marker->operand_id;
-        }
-        auto built = expression(operand_id);
-        if (!built.has_value()) {
+        auto built = build_cpp_argument(argument.expression);
+        if (!built) {
             return std::unexpected(built.error());
         }
-        completes = completes && built->completes;
-        if (access == AccessMode::Write) {
-            auto place = consume_place(*built, ast.expression(operand_id).span);
-            if (!place.has_value()) {
-                return std::unexpected(place.error());
-            }
-            arguments.push_back({.access = access, .expression = std::move(place->expression)});
-        } else {
-            auto value = consume_value(*built, ast.expression(operand_id).span, access);
-            if (!value.has_value()) {
-                return std::unexpected(value.error());
-            }
-            arguments.push_back({.access = access, .expression = std::move(*value)});
-        }
+        completes &= built->completes;
+        arguments.push_back(std::move(built->argument));
     }
 
     auto call = SemCppCall {.callee = std::move(*callee), .arguments = std::move(arguments)};

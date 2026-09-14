@@ -81,11 +81,11 @@ TEST_CASE("Semantic control: direct and mutually recursive inference reach one f
     const auto program = analyze_test_program(
         "struct Failure {}\n"
         "private fn direct() { throw Failure {}; }\n"
-        "private fn left(stop: bool) {\n"
+        "private fn left(stop: bool) -> void {\n"
         "    if stop { throw Failure {}; }\n"
         "    right(true)?;\n"
         "}\n"
-        "private fn right(stop: bool) {\n"
+        "private fn right(stop: bool) -> void {\n"
         "    if stop { left(true)?; }\n"
         "}\n"
         "fn recover() {\n"

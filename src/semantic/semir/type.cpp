@@ -463,3 +463,10 @@ auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> Ty
 TypeResolution::TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
     : program_identity(identity),
       resolved_types(std::move(types)) {}
+
+auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
+    -> bool {
+    return source.target == target.target
+        && source.access == PointerAccess::Write
+        && target.access == PointerAccess::Read;
+}

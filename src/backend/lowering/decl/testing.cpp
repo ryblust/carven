@@ -4,9 +4,8 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl;
 import :backend.lowering.decl.lowerer;
-import :backend.realization.body;
+import :backend.lowering.decl;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -45,7 +44,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     auto lowered = lower_body(
         context,
         test.body,
-        BodyRealizationInputs {
+        BodyLoweringInputs {
             .parameters = {},
             .captures = {},
             .exit = TestBodyExit {},

@@ -1,0 +1,22 @@
+import .data using { table, empty, rows, from_provider, provider_row, };
+
+const selected = table[1];
+const tail = table.slice(1, table.len());
+
+fn from_consumer() -> [i32] => table;
+
+test "Modules: frozen slices retain static contents across artifact boundaries" {
+    let provider = from_provider();
+    let consumer = from_consumer();
+    let row = provider_row();
+    var index = 2;
+    check(provider[index] == 9);
+    check(consumer[index] == 9);
+    check(table[index] == 9);
+    check(selected == 7);
+    check(tail.len() == 2usize);
+    check(tail[1] == 9);
+    check(empty.is_empty());
+    check(row[0] == 6);
+    check(row[1] == rows[1][1]);
+}

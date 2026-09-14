@@ -1,0 +1,65 @@
+const static_table: [i32] = static_squares(3);
+const static_tail = static_table.slice(1, 4);
+const static_empty: [u8] = [];
+const static_rows: [[i32; 2]] = [[1, 2], [3, 4]];
+const static_words: [str] = ["first", "我\0😀"];
+const static_flags: [bool] = [true, false];
+const static_characters: [char] = ['A', '我'];
+
+const fn static_squares(offset: i32) -> [i32; 4] {
+    var result = [0, 0, 0, 0];
+    for index in 0..4 { result[index] = offset + index * index; }
+    return result;
+}
+
+fn persistent_view() -> [i32] => static_table;
+
+fn persistent_local_constant() -> [i32] {
+    const local: [i32] = static_squares(10);
+    return local;
+}
+
+fn copy_static_view(value: [i32]) -> [i32] => value;
+
+test "Const slices: completed data outlives function and local constant uses" {
+    const count = static_table.len();
+    const selected = static_tail[1];
+    const last_empty = static_table.slice(4, 4).is_empty();
+    check(count == 4usize);
+    check(selected == 7);
+    check(last_empty);
+    check(static_empty.len() == 0usize);
+    check(static_empty.slice(0, 0).is_empty());
+    let returned = persistent_view();
+    let local = persistent_local_constant();
+    let copied = copy_static_view(persistent_view());
+    var index = 3;
+    check(returned[index] == 12);
+    check(local[index] == 19);
+    check(copied[index] == 12);
+    var replaceable = returned;
+    let original = replaceable;
+    replaceable = local;
+    check(original[0] == 3);
+    check(replaceable[0] == 10);
+    var total = 0;
+    for value in static_table { total += value; }
+    check(total == 26);
+
+    var offset = 3;
+    let runtime = static_squares(offset);
+    for index in 0..4 { check(runtime[index] == returned[index]); }
+}
+
+test "Const slices: scalar text and nested array element types retain valid storage" {
+    var index = 1;
+    check(static_rows[index][0] == 3);
+    check(static_words[index] == "我\0😀");
+    check(static_words[index].len() == 8usize);
+    check(static_flags[0]);
+    check(!static_flags[index]);
+    check(static_characters[index] == '我');
+    let row: [i32] = static_rows[index];
+    check(row[0] == 3);
+    check(row[1] == 4);
+}

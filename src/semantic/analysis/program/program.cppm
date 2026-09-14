@@ -5,6 +5,8 @@ import :frontend.ast.tree;
 import :frontend.program;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
+import :semantic.evaluation.output;
+import :semantic.semir.constant_access;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -37,17 +39,22 @@ struct PendingFunctionContract final {
     FailureContractPolicy policy;
 };
 
-class ProgramDraft final {
+class ProgramDraft final : public ConstantValueAccess {
 public:
-    static auto begin(SyntaxProgram&& syntax, DiagnosticSink& sink) noexcept -> ProgramDraft;
+    static auto begin(
+        SyntaxProgram&& syntax,
+        DiagnosticSink& sink,
+        ConstantOutput output = {}
+    ) noexcept -> ProgramDraft;
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
-    ~ProgramDraft() = default;
+    ~ProgramDraft() override = default;
     auto operator=(const ProgramDraft&) -> ProgramDraft& = delete;
     auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
-    auto identity() const noexcept -> ProgramIdentity;
+    auto identity() const noexcept -> ProgramIdentity override;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
+    auto write_output(ConstantOutputStream stream, std::string_view bytes) const noexcept -> void;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
     auto resolved_imports(ProgramModuleID id) const noexcept
@@ -55,25 +62,30 @@ public:
     auto module_count() const noexcept -> std::size_t;
     auto provenance_module_at(std::size_t index) const noexcept -> ProgramModuleID;
     auto owns(ProgramModuleID id) const noexcept -> bool;
-    auto owns(ProgramSpellingID id) const noexcept -> bool;
+    auto owns(ProgramSpellingID id) const noexcept -> bool override;
     auto owns(ProgramOriginID id) const noexcept -> bool;
     auto source_span(ProgramOriginID id) const noexcept -> SourceSpan;
+    auto spelling(ProgramSpellingID id) const noexcept -> std::string_view override;
     auto spelling_copy(ProgramSpellingID id) const noexcept -> std::string;
     auto origin_slice_copy(ProgramOriginID id) const noexcept -> std::string;
+    auto source_origin(ProgramOriginID id) const noexcept -> ProgramSourceOrigin;
     auto module_source(ProgramModuleID id) const noexcept -> ProgramSourceID;
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
     auto source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string;
-    auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
+    auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID override;
     auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
-    auto intern_builtin_type(BuiltinType type) noexcept -> TypeID;
+    auto intern_builtin_type(BuiltinType type) noexcept -> TypeID override;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
-    auto type_copy(TypeID type) const noexcept -> CanonicalType;
-    auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
-    auto constant_copy(ConstantID constant) const noexcept -> ConstantFact;
+    auto type_copy(TypeID type) const noexcept -> CanonicalType override;
+    auto read_borrows_storage(TypeID type) const noexcept -> bool override;
+    auto intern_constant(ConstantFact fact) noexcept -> ConstantID override;
+    auto struct_field_types(StructID structure) const noexcept
+        -> std::optional<std::vector<TypeID>> override;
+    auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
@@ -105,6 +117,7 @@ public:
     auto complete_callable(CallableID id, CallableImplementation implementation) noexcept -> void;
     auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
+    auto function_for_callable(CallableID id) const noexcept -> std::optional<FunctionID>;
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
     auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
@@ -168,8 +181,11 @@ public:
     auto require_declared_failure_contract(FailureTermID actual, ProgramOriginID origin) noexcept
         -> void;
     auto finish_declaration_heads() noexcept -> void;
+    auto create_evaluation_root_identity() noexcept -> BodyIdentity;
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
     auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
+    // Stable across nested body completion; borrows end before the draft is consumed.
+    auto body_draft(BodyID id) const noexcept -> const StructuredBodyDraft&;
     auto reserve_test() noexcept -> TestID;
     auto define_test(TestID id, TestDeclaration test) noexcept -> void;
     auto finish() && noexcept -> AnalysisResult<SemIRProgram>;
@@ -180,7 +196,7 @@ private:
         Bodies,
     };
 
-    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink) noexcept;
+    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink, ConstantOutput output) noexcept;
     auto resolve() && noexcept -> AnalysisResult<SemIRProgram>;
     auto finalize_callable_signatures(
         const TypeResolution& types,
@@ -188,12 +204,13 @@ private:
     ) noexcept -> void;
     auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
         -> void;
-    auto require_declarations_available(std::string_view operation) const noexcept -> void;
     auto require_state(State expected, std::string_view operation) const noexcept -> void;
 
     ProgramIdentity program_identity;
+    std::uint32_t next_evaluation_root = 0;
     CompilationProvenanceAppender provenance_appender;
     AnalysisDiagnostics analysis_diagnostics;
+    ConstantOutput output;
     State state;
 
     struct ConstructionStorage final {
@@ -214,11 +231,12 @@ private:
         DeclarationBuilder declarations;
         FailureConstraintStore failure_constraints;
         std::map<CallableID, PendingFunctionContract> pending_function_contracts;
+        std::map<CallableID, FunctionID> functions_by_callable;
 
         struct BodySlot final {
             BodyKind kind;
             std::optional<TestID> test;
-            std::optional<StructuredBodyDraft> definition;
+            std::unique_ptr<StructuredBodyDraft> definition;
         };
 
         std::vector<BodySlot> bodies;

@@ -394,11 +394,7 @@ auto pointer_narrows(
 ) noexcept -> bool {
     const auto from = pointer_shape(draft, source);
     const auto to = pointer_shape(draft, target);
-    return from
-        && to
-        && from->target == to->target
-        && from->access == PointerAccess::Write
-        && to->access == PointerAccess::Read;
+    return from && to && pointer_narrows(*from, *to);
 }
 
 auto type_shapes_compatible(
@@ -750,6 +746,34 @@ auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     return array ? std::optional(array->element) : std::nullopt;
 }
 
+auto array_literal_element(
+    const ProgramDraft& draft,
+    std::optional<ConstructionTypeRef> expected,
+    std::size_t extent
+) noexcept -> std::expected<std::optional<ConstructionTypeRef>, OperationDiagnostic> {
+    auto element = std::optional<ConstructionTypeRef>();
+    if (expected) {
+        if (const auto array = array_shape(draft, *expected)) {
+            if (array->extent != extent) {
+                return operation_error(
+                    "array literal length differs from its expected type",
+                    DiagnosticCode::TypeMismatch
+                );
+            }
+            element = array->element;
+        } else {
+            element = slice_element(draft, *expected);
+        }
+    }
+    if (extent == 0uz && !element) {
+        return operation_error(
+            "empty array literal requires an expected array type",
+            DiagnosticCode::TypeEmptyArray
+        );
+    }
+    return element;
+}
+
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef> {
     if (const auto* id = std::get_if<TypeID>(&type)) {
@@ -778,22 +802,27 @@ auto decide_slice_method(
         return std::optional<SliceIntrinsic>();
     }
     auto operation = std::optional<SliceIntrinsic>();
-    if (array && name == "as_slice") {
+    if (name == "as_slice") {
         operation = SliceIntrinsic::FromArray;
     }
-    if (view && name == "len") {
+    if (name == "len") {
         operation = SliceIntrinsic::Len;
     }
-    if (view && name == "is_empty") {
+    if (name == "is_empty") {
         operation = SliceIntrinsic::IsEmpty;
     }
-    if (view && name == "slice") {
+    if (name == "slice") {
         operation = SliceIntrinsic::Slice;
     }
     if (!operation) {
         return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
     }
-    if (arguments != (*operation == SliceIntrinsic::Slice ? 2uz : 0uz)) {
+    const auto contract = slice_intrinsic_contract(*operation);
+    const auto receiver = array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice;
+    if (receiver != contract.receiver) {
+        return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
+    }
+    if (arguments != contract.arguments.size()) {
         return operation_error(
             "sequence method argument count does not match",
             DiagnosticCode::TypeMethodCallArity
@@ -832,7 +861,7 @@ auto decide_text_method(
             DiagnosticCode::TypeMethodCall
         );
     }
-    if (argument_count != text_intrinsic_arity(intrinsic) - 1) {
+    if (argument_count != text_intrinsic_contract(intrinsic).parameters.size() - 1) {
         return operation_error(
             "text method argument count does not match",
             DiagnosticCode::TypeMethodCallArity
@@ -853,4 +882,15 @@ auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecisi
                                             : "text type has no such property",
         DiagnosticCode::TypeTextProperty
     );
+}
+
+auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<SequenceShape> {
+    if (const auto array = array_shape(draft, type)) {
+        return SequenceShape {.element = array->element, .extent = array->extent};
+    }
+    if (const auto element = slice_element(draft, type)) {
+        return SequenceShape {.element = *element, .extent = std::nullopt};
+    }
+    return std::nullopt;
 }

@@ -32,6 +32,7 @@ private:
     std::uint32_t row_index;
 
     friend class ProgramDraft;
+    friend class ConstantStoreBuilder;
     template<typename Value, typename ID>
     friend class MutableProgramTable;
     template<typename Value, typename ID>

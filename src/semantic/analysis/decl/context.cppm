@@ -3,7 +3,6 @@ module carven:semantic.analysis.decl.context;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.catalog;
-import :semantic.analysis.decl;
 import :semantic.analysis.program;
 import :semantic.semir.program;
 import :source.text;
@@ -42,9 +41,3 @@ auto declaration_failure(
             .build()
     );
 }
-
-auto resolve_declarations(
-    ProgramDraft& draft,
-    AnalysisCatalogView catalog,
-    ImportUsage& import_usage
-) noexcept -> AnalysisResult<void>;

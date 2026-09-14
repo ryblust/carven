@@ -1,0 +1,16 @@
+const fn checked_sum(size: i32) {
+    require(size >= 0, "nonnegative size");
+    var sum = 0;
+    for value in 0..size { sum += value; }
+    return sum;
+}
+
+const test "checked sum executes statically" {
+    check(checked_sum(5) == 10);
+    check(checked_sum(0) == 0);
+}
+
+test "checked sum executes through generated C++" {
+    check(checked_sum(5) == 10);
+    check(checked_sum(0) == 0);
+}

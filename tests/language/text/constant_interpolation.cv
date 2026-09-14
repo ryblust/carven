@@ -1,0 +1,61 @@
+const version = 42;
+const title = f"build-{version:04}";
+const nested = wrap(f"{version:0{4}x}");
+const exact = f"{{{'我'}}}\0{'😀'}";
+const empty = String::new();
+const copied = String::from_str(f"{title}");
+const borrowed = f"{title}".as_str();
+const bytes = f"{'我'}\0{'😀'}".len();
+const skipped = false && f"{1 / 0}".is_empty();
+const skipped_copy = false && String::from_str(f"{1 / 0}").is_empty();
+const skipped_borrow = false && takes_view(f"{1 / 0}");
+
+const fn wrap(value: String) -> String => f"[{value}]";
+const fn runtime_format(value: i32, width: i32) -> String => f"{{{value:0{width}x}}}";
+const fn takes_owned(value: String) -> usize => value.len();
+const fn takes_view(value: str) -> bool => value.is_empty();
+const fn zero_width(value: i32, width: i32) -> String => f"{value:0{width}x}/{value:{width}}";
+
+const owned_length = takes_owned(f"{title}");
+const nested_length = takes_owned(String::from_str(f"{wrap(f"{version:x}")}"));
+
+test "Constant interpolation: composition freezes text only at initializer completion" {
+    check(title == "build-0042");
+    check(nested == "[002a]");
+    check(exact == "{我}\0😀");
+    check(empty.is_empty());
+    check(copied == title);
+    check(borrowed == title);
+    check(bytes == 8usize);
+    check(owned_length == title.len());
+    check(nested_length == 4usize);
+    check(!skipped);
+    check(!skipped_copy);
+    check(!skipped_borrow);
+    const local = f"{title}/{7:03}";
+    check(local == "build-0042/007");
+    let extent: [i32; f"{42:03}".len()] = [1, 2, 3];
+    check(extent[2] == 3);
+}
+
+test "Constant interpolation: the same subset produces the same runtime bytes" {
+    const formatted = f"{{{version:0{4}x}}}";
+    check(runtime_format(version, 4).as_str() == formatted);
+    const scalars = f"{-42:06x}/{true}/{'😀'}/{255:08b}/{7:3o}";
+    var value = -42;
+    var flag = true;
+    var character = '😀';
+    var binary = 255;
+    var octal = 7;
+    let actual = f"{value:06x}/{flag}/{character}/{binary:08b}/{octal:3o}";
+    check(actual.as_str() == scalars);
+    const zero = f"{-7:0{0}x}/{-7:{0}}";
+    const called_zero = zero_width(-7, 0);
+    check(zero == "-7/-7");
+    check(called_zero == zero);
+    check(zero_width(-7, 0).as_str() == zero);
+    var owned = f"{title}";
+    let saved = owned;
+    owned.clear();
+    check(saved.as_str() == title);
+}

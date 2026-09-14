@@ -15,6 +15,75 @@ fn append_format_value(&text: String) -> i32 {
 fn consume_format_value(&&text: String) -> usize => text.len();
 fn format_view(text: String) -> str => text;
 
+fn record_format_flag(&trace: i32, digit: i32) -> bool {
+    trace = trace * 10 + digit;
+    return true;
+}
+
+test "Interpolation: precomputed contents preserve local values ownership and integer rules" {
+    let version = 42;
+    let copy = version;
+    let text = "我\0{value}";
+    check(f"build-{copy:04}" == "build-0042");
+    check(f"{text} {'😀'} {true} {false}" == "我\0{value} 😀 true false");
+    check(f"{-42:06x} {42:08B} {42:04o}" == "-0002a 00101010 0052");
+    let minimum = -9223372036854775808i64;
+    let maximum = 18446744073709551615u64;
+    check(f"{minimum:021} {maximum:X}" == "-09223372036854775808 FFFFFFFFFFFFFFFF");
+    var first = f"{42:64}";
+    let second = f"{42:64}";
+    first.clear();
+    check(first.is_empty());
+    check(second.len() == 64usize);
+    let limit = 2147483647;
+    check(limit + 1 == -2147483648);
+    var dynamic = 42;
+    dynamic += 1;
+    check(f"{dynamic:04}" == "0043");
+}
+
+test "Interpolation: known results retain effects before construction and when discarded" {
+    var trace = 0;
+    check(f"{record_format_flag(&trace, 1) && false} {record_format_flag(&trace, 2) || true}"
+        == "false true");
+    check(trace == 12);
+    f"{record_format_flag(&trace, 3) && false}";
+    check(trace == 123);
+    let saved = record_format_flag(&trace, 4) && false;
+    check(f"{saved}" == "false");
+    check(trace == 1234);
+}
+
+test "Interpolation: mixed contents preserve literals and dynamic specification arguments" {
+    let prefix = "{build}\0我";
+    let version = 42;
+    var value = 7;
+    check(f"{prefix}={value}/{version:04}/{true}/{'😀'}" == "{build}\0我=7/0042/true/😀");
+    check(f"{value}/{version:04}/{value}" == "7/0042/7");
+    var price = 1.25;
+    var width = 7;
+    var precision = 2;
+    check(f"{version:04}/{price:{width}.{precision}f}/{7}" == "0042/   1.25/7");
+    var counter = 0;
+    check(f"{version:04}/{1.0:{next_format_value(&counter) + 3}.{next_format_value(&counter)}f}/{7}"
+        == "0042/1.00/7");
+    check(counter == 2);
+}
+
+test "Interpolation: mixed contents retain scalar snapshots String aliases and discarded effects" {
+    var counter = 2;
+    check(f"{counter} {record_format_flag(&counter, 3) && false} {counter}" == "2 false 23");
+    check(counter == 23);
+    var text: String = "original";
+    let result = f"{text} {(append_format_value(&text) == 0) && false}";
+    check(result == "original changed false");
+    text.clear();
+    check(result == "original changed false");
+    counter = 0;
+    f"{next_format_value(&counter)} {record_format_flag(&counter, 2) && false} {next_format_value(&counter)}";
+    check(counter == 13);
+}
+
 test "Interpolation: owning text standard formats and UTF-8" {
     let f = 42;
     check(f == 42);

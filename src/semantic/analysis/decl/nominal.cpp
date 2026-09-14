@@ -7,10 +7,9 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
-import :semantic.analysis.decl;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
@@ -271,12 +270,12 @@ auto DeclResolver::resolve_enum_case(
             *source_case.initializer,
             numeric->underlying_type
         );
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
+        if (!result) {
+            if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
+                return std::unexpected(*diagnostic);
+            }
         }
-        const auto fact = std::holds_alternative<ConstantID>(*result)
-            ? std::optional(draft.constant_copy(std::get<ConstantID>(*result)))
-            : std::nullopt;
+        const auto fact = result ? std::optional(draft.constant(*result)) : std::nullopt;
         const auto* selected =
             fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
         if (selected == nullptr) {
@@ -301,7 +300,7 @@ auto DeclResolver::resolve_enum_case(
         if (!previous_constant.has_value()) {
             invariant_violation("resolved numeric enum case has no constant");
         }
-        const auto fact = draft.constant_copy(*previous_constant);
+        const auto& fact = draft.constant(*previous_constant);
         const auto* previous = std::get_if<NumericEnumConstant>(&fact.value);
         if (previous == nullptr) {
             invariant_violation("numeric enum predecessor has a non-numeric constant");
@@ -367,7 +366,7 @@ auto DeclResolver::validate_enum_codes(const CatalogSymbol& symbol) noexcept
         if (!enum_case.has_value() || !enum_case->constant.has_value()) {
             continue;
         }
-        const auto fact = draft.constant_copy(*enum_case->constant);
+        const auto& fact = draft.constant(*enum_case->constant);
         const auto* numeric = std::get_if<NumericEnumConstant>(&fact.value);
         if (numeric == nullptr) {
             invariant_violation("numeric enum case has a non-numeric constant");

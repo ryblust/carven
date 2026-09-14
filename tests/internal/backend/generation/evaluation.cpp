@@ -18,6 +18,102 @@ import :semantic.semir;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
+TEST_CASE("Generation: precomputed formatting retains effects and owning construction") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn touch() -> bool { return true; }\n"
+            "fn known() -> String { let version = 42; return f\"build-{version:04}\"; }\n"
+            "fn effects() { f\"{touch() && false}\"; }\n"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("precomputed_format")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t formats = 0uz;
+        std::size_t constructions = 0uz;
+        std::size_t effects = 0uz;
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&expression.value)) {
+                formats += name->symbol == TargetSymbol::RuntimeFormat
+                    || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
+            }
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    effects += name->name.components().back().spelling() == "touch";
+                }
+                if (const auto* member =
+                        std::get_if<TargetStaticMemberExpr>(&call->callee->value)) {
+                    if (const auto* type =
+                            std::get_if<TargetIntrinsicType>(&unit.type(member->owner).value)) {
+                        constructions += type->symbol == TargetSymbol::RuntimeString;
+                    }
+                }
+            }
+            return true;
+        }
+    };
+
+    auto formats = 0uz;
+    auto constructions = 0uz;
+    auto effects = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        CHECK(traverse_target_unit(unit.sections(), query));
+        formats += query.formats;
+        constructions += query.constructions;
+        effects += query.effects;
+    }
+    CHECK(formats == 0uz);
+    CHECK(constructions == 2uz);
+    CHECK(effects == 1uz);
+}
+
+TEST_CASE("Generation: mixed formatting passes only residual values after required effects") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn touch() -> bool { return true; } "
+            "fn format(value: f64, width: i32, precision: i32) -> String { "
+            "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("mixed_format")}
+    );
+
+    struct Query final {
+        std::size_t formats = 0uz;
+        std::size_t effects = 0uz;
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+            if (call == nullptr) {
+                return true;
+            }
+            if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                effects += name->name.components().back().spelling() == "touch";
+            }
+            if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+                intrinsic != nullptr && intrinsic->symbol == TargetSymbol::RuntimeFormat) {
+                ++formats;
+                // One format literal, one dynamic value, width, and precision.
+                CHECK(call->arguments.size() == 4uz);
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.formats == 1uz);
+    CHECK(query.effects == 1uz);
+}
+
 TEST_CASE("Evaluation: known results retain source operations and execution obligations") {
     const auto semantic = analyze_test_program(
         "fn touch(&n: i32) -> bool { n += 1; return true; }\n"
@@ -183,7 +279,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
             "fn discard(flag: bool) throw Error { produce(flag)?; }\n"
             "fn discard_wrapped(flag: bool) throw Error { (produce(flag)? as i32) == 0; }\n"
             "fn discard_selected(flag: bool) throw Error { flag && (produce(flag)? == 0); }\n"
-            "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)?; }\n"
+            "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)? + 1; }\n"
         ),
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("result_consumption")}

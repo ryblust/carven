@@ -14,25 +14,16 @@ views; ownership alone does not put a payload outside the current contract.
 This proposal explores whether future move-only or managed values beyond that
 copyable nominal category should also participate in failure contracts.
 
-The existing typed failure model is not under reconsideration. Failure
-contracts remain closed sets, and `throw`, postfix `?`, `try`/`catch`, and
-`rethrow` remain structured control effects. The open question is what kinds of
-values those effects may carry and what ownership transfer means for them.
-
-No richer value category is proposed for acceptance yet. The next step is to
-choose one concrete use case after its underlying ownership semantics exist.
+Failure contracts remain closed sets carried through `throw`, postfix `?`,
+`try`/`catch`, and `rethrow`. The question is which additional values those
+structured effects may carry and how ownership transfers. Select a concrete
+use case after its underlying ownership semantics are defined.
 
 ## Context
 
-The implemented behavior lives in the permanent
-[failure-contract semantics](../docs/semantics.md#failure-contracts),
-[compiler architecture](../docs/compiler.md), and
-[backend contract](../docs/backend.md). This document does not duplicate them.
-
-Supporting a new C++ alternative inside the private `Outcome` carrier would be
-mechanically simple, but it would not answer the source questions: whether
-`throw` consumes a value, what a handler owns, whether a rejected guard may
-continue matching, or how `rethrow` preserves the original failure.
+A richer failure payload requires source rules for consumption by `throw`,
+handler ownership, continued matching after a rejected guard, and preservation
+by `rethrow`. Extending the private C++ `Outcome` carrier follows those rules.
 
 ## Direction
 
@@ -43,10 +34,8 @@ The first candidate should be the smallest ownership category justified by a
 real API. Move-only values, new owning-reference forms, and managed references need not
 share one design or ship together.
 
-Async completion is outside this proposal and remains owned by
-[async.md](async.md). Public C++ failure mapping is outside this proposal and
-must extend the current
-[C++ interoperation contract](../docs/semantics.md#c-interoperation).
+Async completion and public C++ failure mapping have separate contracts and
+remain outside this scope.
 
 ## Open decisions
 
@@ -56,7 +45,7 @@ must extend the current
 
 - **Status:** Blocked
 - **Blocked by:** A settled ownership form and a concrete API that needs it
-- **Why it matters:** The value category determines whether propagation copies,
+- **Question:** The value category determines whether propagation copies,
   moves, owns, borrows, shares, or erases identity.
 - **Options:** Unknown until a concrete use case exists
 - **Closure condition:** Select one value category and describe an end-to-end
@@ -66,8 +55,8 @@ must extend the current
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`
-- **Why it matters:** Pattern bindings, false guards, handler-produced failure,
-  and `rethrow` must not copy, consume, or destroy the payload accidentally.
+- **Question:** Define payload copying, consumption, and destruction for pattern
+  bindings, false guards, handler-produced failure, and `rethrow`.
 - **Options:** Determined by the selected value category
 - **Closure condition:** Define binding lifetime and disposition on every
   handler exit without relying on the private C++ representation.
@@ -82,11 +71,3 @@ contract. Runtime carrier changes follow that decision; they do not define it.
 An accepted design needs source examples for construction, propagation,
 matching, guard rejection, handler-produced failure, and `rethrow`, plus
 rejected examples that expose invalid ownership or lifetime.
-
-## References
-
-- [Failure-contract semantics](../docs/semantics.md#failure-contracts)
-- [Existing String and borrowed-text failure tests](../tests/language/failure_contracts/string.cv)
-- [Classes and ownership proposal](classes.md)
-- [Async proposal](async.md)
-- [C++ interoperation semantics](../docs/semantics.md#c-interoperation)

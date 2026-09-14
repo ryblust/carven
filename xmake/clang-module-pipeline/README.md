@@ -41,7 +41,12 @@ their provider's scan ownership and dependency records. The batch shares one
 Make dependency output file, with a distinct target key for each translation
 unit, because the scanner retains output streams until it exits. Scan records are
 published after the complete batch parses successfully. The scanner uses the
-configured job count or Xmake's default parallelism.
+configured job count or Xmake's default parallelism. Within the current build,
+the provider target also retains the published scan records in memory. Module
+graph loading and build-input preparation reuse those records; consumers use
+the provider's records for reused units. Disk records remain available to
+other entry points, including project generation. This sharing does not skip
+scanning or content checks on subsequent builds.
 
 After prerequisites finish, each BMI and object job compares source, header,
 and imported BMI contents, compiler identity, flags, and output contents with

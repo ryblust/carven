@@ -352,7 +352,7 @@ auto OwnershipBodyAnalyzer::require_available(
 auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
     if (source.constant.has_value()) {
-        const auto constant = program.constants().constant(*source.constant);
+        const auto& constant = program.constants().constant(*source.constant);
         if (const auto* value = std::get_if<BooleanConstant>(&constant.value)) {
             return value->value;
         }
@@ -363,7 +363,7 @@ auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) con
 auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept
     -> std::optional<std::uint64_t> {
     if (source.constant.has_value()) {
-        const auto constant = program.constants().constant(*source.constant);
+        const auto& constant = program.constants().constant(*source.constant);
         if (const auto* value = std::get_if<IntegerConstant>(&constant.value)) {
             return value->as_unsigned();
         }

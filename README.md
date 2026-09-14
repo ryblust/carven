@@ -2,48 +2,49 @@
 
 > **The power of C++, in the palm of your hand.**
 
-Carven is a programming language that generates inspectable C++ and fits into
-existing C++ projects, toolchains, and build systems. It makes ownership,
-access, and failure contracts part of the language, while the compiler selects
-the C++ representation that preserves them.
+Carven is a programming language that compiles to C++20, combining expressive
+syntax with checked ownership, typed failures, and compile-time capabilities.
+It builds on your existing C++ libraries and toolchain, with zero-overhead
+abstractions as a design goal.
 
 ## Why Carven?
 
 ### Intent over mechanism
 
-Express whether an operation reads, mutates, or takes ownership of a value.
-Carven checks those distinctions and manages the corresponding lifetimes and
-C++ operations. Ownership transfers, mutable access, and closure captures stay
-visible in source.
+Express whether an operation reads, mutates, or takes ownership of a value, with
+explicit access choices for function arguments and closure captures. Carven
+checks these contracts and manages the corresponding lifetimes. Write your intent
+in source and let the compiler arrange C++ construction, evaluation, and cleanup.
+
+### Compile-time capabilities
+
+Build static data with familiar functions, loops, and text operations, and keep
+constant functions available for runtime use. The compiler also uses known values,
+types, and structure to precompute work and specialize runtime operations.
+Even formatting dynamic values can benefit from prepared text, conversion choices,
+and size information supplied by the compiler.
 
 ### Typed failure contracts
 
-Failure types are part of a function's contract, alongside its successful
-result. Combine operations and preserve their distinct failure types and
-payloads. Private helpers and lambdas can infer their failure sets; shared
-interfaces declare bounds checked by the compiler. Propagate with `?`, recover
-with patterns, or translate failures at an interface. These contracts also
-apply to callbacks.
+See what can fail in a function's contract. Propagate with `?` or recover with
+patterns that give you the failure's type and payload. The same model extends to
+callbacks, keeping failures visible as you compose operations. Choose recovery
+where you have the context to handle it, with ownership and cleanup preserved.
 
 ### Zero-overhead abstractions
 
-Carven follows the zero-overhead principle, targeting the cost of skilled
-handwritten C++ with the same guarantees. Compile-time distinctions need no
-runtime representation unless execution requires it. Storage, checks, and
-dispatch serve the requested behavior, and generated C++ remains available
-for inspection and optimization.
+Use expressive language features with the cost of skilled handwritten C++ as the
+design target. Carven uses known semantic facts to guide storage and native calls,
+then puts your C++ compiler's optimizer to work. Generated C++ stays available for
+inspection, so you can follow how your source becomes native code and measure it
+with familiar performance tools.
 
-### Built on the C++ ecosystem
+### Seamless C++ interoperability
 
-Carven aims to build on the C++ community's mature libraries and expertise,
-bringing established capabilities into the language as built-in facilities.
-
-### Seamless C++ Interoperation
-
-Import C++ types and functions from headers, and export Carven functions through
-generated public interfaces. C++ checks native declarations and operations;
-Carven checks its own ownership, access, and failure contracts. Existing native
-tools and build systems compile and link the generated code.
+Bring C++ libraries into Carven through header imports, and make Carven functions
+available to C++ through generated public interfaces. Reuse native types and APIs
+alongside Carven code. Compile, link, and debug with your existing C++ tools and
+build systems, and introduce Carven into a native project alongside existing code.
 
 > [!NOTE]
 > Carven is under active development, and language and tooling changes may
@@ -142,7 +143,7 @@ dependencies remain ordinary build configuration. See the
 ## Documentation
 
 - **Run examples:** [Learning examples](examples/README.md) and the
-  [failure-contract series](examples/failures/README.md)
+  [failure-contract example](examples/failures/README.md)
 - **Learn the language:** [Tutorial](docs/tutorial.md),
   [Grammar](docs/grammar.md), and [Semantics](docs/semantics.md)
 - **Use the compiler:** [CLI Reference](docs/cli.md) and

@@ -12,16 +12,15 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expression_site;
-import :semantic.analysis.body.pipeline;
+import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.interpret;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -352,8 +351,8 @@ auto BodyElaborator::select_expression(
     const auto was_reachable = reachable;
     [[maybe_unused]] const auto path =
         BodyReferencePathGuard(reference_path_reachable, was_reachable);
-    auto site = BodyExpressionSite(*this, allow_pointer_narrowing);
-    return interpret_expression(site, id, expected);
+    auto site = BodyExprSite(*this, allow_pointer_narrowing);
+    return require_body_expression(interpret_expression(site, id, expected));
 }
 
 auto BodyElaborator::expression(

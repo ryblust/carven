@@ -1,0 +1,247 @@
+const array_table = array_squares(3);
+const array_selected = array_table[2];
+const array_empty: [u8; 0] = [];
+const array_nested = [[1u8, 2u8], [3u8, 4u8]];
+
+const fn array_squares(offset: i32) -> [i32; 4] {
+    var values = [0, 0, 0, 0];
+    for index in 0..4 {
+        values[index] = offset + index * index;
+    }
+    return values;
+}
+
+const fn array_empty_result() -> [u8; 0] => [];
+
+const fn array_first(values: [i32; 4]) -> i32 => values[0];
+
+const fn array_copy_rows() -> [[i32; 2]; 3] {
+    var values = [[1, 2], [3, 4]];
+    let snapshot = values;
+    values[0][1] = 9;
+    var row = values[1];
+    row[0] = 8;
+    return [snapshot[0], values[0], row];
+}
+
+const fn array_transfer(&&values: [i32; 2]) -> [i32; 2] => &&values;
+
+const fn array_restore_taken() -> [[i32; 2]; 2] {
+    var values = [1, 2];
+    let moved = array_transfer(&&values);
+    values = [7, 8];
+    return [moved, values];
+}
+
+const fn array_observe(values: [i32; 2], marker: i32) -> i32 {
+    return values[0] * 10 + values[1] + marker;
+}
+
+const fn array_read_alias() -> i32 {
+    var values = [1, 2];
+    return array_observe(values, if true { values[0] = 7; 0 } else { 0 });
+}
+
+const fn array_read_row_alias() -> i32 {
+    var values = [[1, 2], [3, 4]];
+    return array_observe(values[0], if true { values = [[7, 8], [9, 0]]; 0 } else { 0 });
+}
+
+const fn array_observe_scalar(value: i32, marker: i32) -> i32 => value * 10 + marker;
+
+const fn array_scalar_snapshot() -> i32 {
+    var values = [1, 2];
+    return array_observe_scalar(values[0], if true { values[0] = 7; values[0] } else { 0 });
+}
+
+const fn array_comparison_snapshot() -> bool {
+    var values = [1];
+    return values == if true { values[0] = 2; [2] } else { [2] };
+}
+
+const fn array_index_effects() -> [i32; 3] {
+    var values = [10, 20];
+    var evaluations = 0;
+    values[if true { ++evaluations; 0 } else { 1 }] +=
+        if true { values[0] = 50; 2 } else { 0 };
+    let observed = values[if true { ++evaluations; 0 } else { 1 }];
+    return [values[0], observed, evaluations];
+}
+
+const fn array_texts(value: str) -> [str; 2] => [value, "我\0😀"];
+
+const fn array_flags(value: bool) -> [bool; 2] => [value, !value];
+
+const fn array_characters(value: char) -> [char; 2] => [value, '我'];
+
+test "Const arrays: literals and function results retain element types and fixed extents" {
+    const local: [u16; 2] = [7, 9];
+    const selected = array_nested[1][0];
+    const first = array_first(array_squares(5));
+    const empty = array_empty_result();
+    check(local[0] == 7u16);
+    check(local[1] == 9u16);
+    check(selected == 3u8);
+    check(array_selected == 7);
+    check(first == 5);
+    let empty_copy = empty;
+    let literal_empty_copy = array_empty;
+    check(empty_copy.as_slice().is_empty());
+    check(literal_empty_copy.as_slice().len() == 0usize);
+
+    let copy: [i32; 4] = array_table;
+    let view = copy.as_slice();
+    check(view.len() == 4usize);
+    var index = 3;
+    check(view[index] == 12);
+    var offset = 3;
+    let runtime = array_squares(offset);
+    check(runtime == copy);
+}
+
+test "Const arrays: nested copies and whole-array Take preserve independent values" {
+    const copied = array_copy_rows();
+    const restored = array_restore_taken();
+    check(copied[0][0] == 1);
+    check(copied[0][1] == 2);
+    check(copied[1][0] == 1);
+    check(copied[1][1] == 9);
+    check(copied[2][0] == 8);
+    check(copied[2][1] == 4);
+    check(array_copy_rows() == copied);
+    check(restored[0][0] == 1);
+    check(restored[1][0] == 7);
+    check(array_restore_taken() == restored);
+    var first_copy = array_table;
+    let second_copy = first_copy;
+    first_copy[0] = 99;
+    check(second_copy[0] == 3);
+    check(array_table[0] == 3);
+}
+
+test "Const arrays: Read aliases and scalar snapshots observe ordinary evaluation order" {
+    const whole = array_read_alias();
+    const row = array_read_row_alias();
+    const scalar = array_scalar_snapshot();
+    const comparison = array_comparison_snapshot();
+    const effects = array_index_effects();
+    check(whole == 72);
+    check(row == 78);
+    check(scalar == 17);
+    check(!comparison);
+    check(effects[0] == 12);
+    check(effects[1] == 12);
+    check(effects[2] == 2);
+    check(array_read_alias() == whole);
+    check(array_read_row_alias() == row);
+    check(array_scalar_snapshot() == scalar);
+    check(array_comparison_snapshot() == comparison);
+    check(array_index_effects() == effects);
+}
+
+test "Const arrays: bool char and borrowed static text compose without type changes" {
+    const texts = array_texts("first");
+    const flags = array_flags(true);
+    const characters = array_characters('A');
+    check(texts[0] == "first");
+    check(texts[1] == "我\0😀");
+    check(texts[1].len() == 8usize);
+    check(flags[0]);
+    check(!flags[1]);
+    check(characters[0] == 'A');
+    check(characters[1] == '我');
+    check(array_texts("first") == texts);
+    check(array_flags(true) == flags);
+    check(array_characters('A') == characters);
+}
+
+const fn array_range_fill(size: usize) {
+    var data = [0, 0, 0, 0];
+    for &element in data {
+        element += size as i32;
+    }
+    return data;
+}
+
+const fn array_range_nested() {
+    var rows = [[1, 2], [3, 4]];
+    for &row in rows {
+        for &element in row {
+            element += 10;
+        }
+        row = [row[1], row[0]];
+    }
+    return rows;
+}
+
+const fn array_range_control() {
+    var sum = 0;
+    for element in [0, 3, 0, 3, 100] {
+        if element == 0 { continue; }
+        sum += element;
+        if sum == 6 { break; }
+    }
+    let empty: [i32; 0] = [];
+    for element in empty { sum += element; }
+    return sum;
+}
+
+const fn array_range_return() {
+    for element in [7, 8] { return element; }
+    return 0;
+}
+
+const fn array_range_snapshot() {
+    var values = [1, 2];
+    var sum = 0;
+    for element in values {
+        values = [5, 6];
+        sum += element;
+    }
+    return sum;
+}
+
+const fn array_range_read_rows() {
+    var rows = [[1, 2], [3, 4]];
+    var sum = 0;
+    for row in rows {
+        rows[0][0] += 1;
+        sum += row[0];
+    }
+    return sum;
+}
+
+const fn array_range_source_once() {
+    var evaluations = 0;
+    var sum = 0;
+    for row in if true { ++evaluations; [[1, 2], [3, 4]] } else { [[0, 0], [0, 0]] } {
+        for element in row { sum += element; }
+    }
+    return sum + evaluations;
+}
+
+test "Const arrays: sequence bindings share projection and control semantics" {
+    const filled = array_range_fill(2);
+    const nested = array_range_nested();
+    const control = array_range_control();
+    const early = array_range_return();
+    const snapshot = array_range_snapshot();
+    const rows = array_range_read_rows();
+    const once = array_range_source_once();
+    check(filled == [2, 2, 2, 2]);
+    check(nested == [[12, 11], [14, 13]]);
+    check(control == 6);
+    check(early == 7);
+    check(snapshot == 7);
+    check(rows == 5);
+    check(once == 11);
+    var input = 2usize;
+    check(array_range_fill(input) == filled);
+    check(array_range_nested() == nested);
+    check(array_range_control() == control);
+    check(array_range_return() == early);
+    check(array_range_snapshot() == snapshot);
+    check(array_range_read_rows() == rows);
+    check(array_range_source_once() == once);
+
+}

@@ -2,6 +2,7 @@ module;
 #define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
 #include <doctest/doctest.h>
 #include <carven/runtime/string.hpp>
+#include <carven/runtime/text.hpp>
 #include <carven/runtime/passing.hpp>
 
 module carven:test.internal.runtime.string;
@@ -51,7 +52,7 @@ TEST_CASE("Runtime: String push encodes every UTF-8 width and scalar boundary") 
     }
     CHECK(carven::runtime::utf8_is_valid(text.as_str()));
     auto decoded = std::vector<char32_t>();
-    for (const auto scalar : carven::runtime::str_chars(text.as_str())) {
+    for (const auto scalar : carven::runtime::text_chars(text)) {
         decoded.push_back(scalar);
     }
     CHECK(std::ranges::equal(decoded, scalars));
@@ -70,4 +71,14 @@ TEST_CASE("Runtime: String operations can execute during constant evaluation") {
         value = moved;
         return value == moved && value.size() == 5uz;
     }());
+}
+
+TEST_CASE("Runtime String: validated native storage is adopted") {
+    auto bytes = std::string(8192uz, 'x');
+    bytes.replace(1024uz, 8uz, std::string_view("我\0😀", 8uz));
+    const auto* allocation = bytes.data();
+    const auto result = carven::runtime::String::from_utf8(std::move(bytes));
+    CHECK(result.as_str().data() == allocation);
+    CHECK(result.size() == 8192uz);
+    CHECK(result.as_str().substr(1024uz, 8uz) == std::string_view("我\0😀", 8uz));
 }

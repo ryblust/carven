@@ -204,7 +204,8 @@ auto plan_artifacts(
                     },
                     [](ModuleConstantID) static noexcept {},
                     [&](TestID id) noexcept {
-                        if (request.test_mode != TestGenerationMode::None) {
+                        if (request.test_mode != TestGenerationMode::None
+                            && !semantic.tests().test(id).is_const) {
                             schedules[module_record.id.index()]->emitted_tests.push_back(id);
                         }
                     },
@@ -476,7 +477,11 @@ auto plan_artifacts(
         ));
     }
 
+    auto test_runner_modules = std::vector<ModuleID>();
     for (const auto module_id : module_ids) {
+        if (!schedules[module_id.index()]->emitted_tests.empty()) {
+            test_runner_modules.push_back(module_id);
+        }
         auto interface_dependencies = std::vector<TargetArtifactID>();
         if (module_component[module_id.index()].has_value()) {
             const auto component = *module_component[module_id.index()];
@@ -493,17 +498,7 @@ auto plan_artifacts(
         ));
     }
 
-    auto test_runner_modules = std::vector<ModuleID>();
     if (request.test_mode != TestGenerationMode::None) {
-        for (const auto test : semantic.tests().entries()) {
-            const auto module_id = test.value.module_id;
-            if (!std::ranges::contains(test_runner_modules, module_id)) {
-                test_runner_modules.push_back(module_id);
-            }
-        }
-        std::ranges::sort(test_runner_modules, [&](ModuleID left, ModuleID right) noexcept {
-            return module_path(semantic, left) < module_path(semantic, right);
-        });
         const auto runner_header = artifacts.add(
             TargetTestRunnerHeaderArtifact {
                 .logical_path = "carven/generated/carven-test-runner.hpp",

@@ -1,15 +1,59 @@
 local examples_dir = path.join(os.projectdir(), "examples")
 
 local cases = {
+    {name = "constant", dir = "constant", output = [[
+Text
+Carven build-0042
+00,01,02,03
+[Carven build-0042: 00,01,02,03]
+Title bytes: 17
+Runtime: 00,01,02
+Array values
+Selected: 7
+Entries: 4
+3
+4
+7
+12
+Runtime: 10 11 14 19
+Static slices
+Selected: 7
+Entries: 4
+3
+4
+7
+12
+Runtime: 10 11 14 19
+Record tables
+Selected: 11
+import 10
+const 11
+struct 12
+Runtime: const 21
+]]},
     {name = "strings", dir = "strings", output = "Hello, 世界!\nGoodbye!\nHello, 世界!\nBytes: 14, ID: 002a\n"},
     {name = "hello-world", dir = "helloworld", output = "Hello World\n"},
-    {name = "receipt", dir = "basics", output = "Total in cents: 860\n"},
+    {name = "receipt", dir = "basics", output = [[
+Notebook x 2
+  Subtotal in cents: 500
+  Discount in cents: 0
+  Line total in cents: 500
+Pencil x 3
+  Subtotal in cents: 360
+  Discount in cents: 36
+  Line total in cents: 324
+Subtotal in cents: 860
+Savings in cents: 36
+Total in cents: 824
+]]},
     {name = "inventory", dir = "ownership",
         output = "Snapshot: 7\nDispatched: 9\nReplacement stock: 1\n"},
     {name = "shipping", dir = "modules", output = "Shipping in cents: 500\n"},
-    {name = "booking", dir = "failures/basic",
-        output = "Seats remaining: 3\nNot enough seats for: 6\n"},
-    {name = "order-quote", dir = "failures/composition", output = [[
+    {name = "failures", dir = "failures", output = [[
+Basic failures
+Seats remaining: 3
+Not enough seats for: 6
+Failure composition
 Standard delivery
 Quote in cents: 800
 Alternate carrier
@@ -25,8 +69,17 @@ Unknown destination
 Unknown zone: 9
 Unavailable destination
 No carrier for zone: 3
-]]},
-    {name = "configuration", dir = "failures/recovery", output = [[
+Recovery lookup fails
+Carrier lookup failed for zone: 4
+Expression total: 800
+Evaluation trace: 12
+Expression total: -1
+Evaluation trace: 1
+Delivery affordable: 0
+Delivery trace: 0
+Delivery affordable: 1
+Delivery trace: 2
+Recovery
 Primary setting
 Port: 443
 Backup setting
@@ -39,12 +92,13 @@ Invalid backup propagates
 Port must be between 1 and 65535
 Zero is not a port
 Port must be between 1 and 65535
-]]},
-    {name = "policies", dir = "failures/callbacks", output = [[
+Callbacks
 Basic policy
 Accepted: 8
 Rejected by basic policy
 Amount must be positive: 0
+Widened stored view
+Accepted: 3
 Captured policy
 Accepted: 4
 Rejected by captured policy
@@ -52,10 +106,15 @@ Requested: 8
 Policy limit: 5
 Invalid input through captured policy
 Amount must be positive: -2
+Failure payloads
+Owned detail: request rejected
+Taken detail: taken detail
+Saved detail: borrowed detail
+Source bytes after clear: 0
 ]]},
-    {name = "native-parser", dir = "interop/cpp_calls", exceptions = true,
+    {name = "native-parser", dir = "call_cpp", exceptions = true,
         output = "Port: 8080\nInvalid port\nInvalid port\nInvalid port\n"},
-    {name = "cpp-host", dir = "interop/cpp_host", output = "Price in cents:\n1080\n"},
+    {name = "cpp-host", dir = "cpp_host", output = "Price in cents:\n1080\n"},
 }
 
 local names = {}

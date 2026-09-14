@@ -3,7 +3,6 @@
 - **Status:** Exploration
 - **Implementation:** Not started
 - **Scope:** Source documentation attachment and documentation tooling input
-- **Depends on:** None
 
 ## Summary
 
@@ -12,10 +11,8 @@ documentation for a module or declaration. This proposal will define the
 source attachment contract and the compiler facts needed by future
 documentation tools.
 
-No spelling, attachment rule, markup contract, or output pipeline has been
-selected. The active frontier is the source form, followed by attachment
-resolution and retained representation. Markup and the first output artifact
-follow those two decisions.
+Source spelling (`OPEN-01`), attachment and retention (`OPEN-02`), markup
+(`OPEN-03`), and the first output artifact (`OPEN-04`) remain open, in that order.
 
 ## Context
 
@@ -39,7 +36,7 @@ or documentation generation because they disappear before parsing.
 - Documentation attachment is deterministic from source structure.
 - A missing documentation tool does not change program validity or generated
   runtime behavior.
-- The source model does not depend on Doxygen-specific output conventions.
+- The source model is independent of an output tool's conventions.
 - Generated C++ is not automatically a stable public documentation interface.
 
 ## Goals and non-goals
@@ -60,12 +57,8 @@ or documentation generation because they disappear before parsing.
 
 ## Design
 
-No coherent source design has been selected. `OPEN-01` must choose the source
-forms, and `OPEN-02` must then choose where attachment is resolved and how the
-result is retained.
-
-The following example illustrates one possible user experience; it is not
-valid Carven syntax today:
+The following candidate illustrates module and declaration documentation.
+It is not valid Carven documentation syntax today:
 
 ```carven
 //! Describes the current module.
@@ -82,11 +75,8 @@ orphaned or ambiguous forms at the owning source range. The compiler must
 retain the resulting content and attachment identity long enough for the
 selected artifact consumer.
 
-No attachment-resolution stage or retained representation has been selected.
-Parser attachment and a source-indexed side table remain genuine alternatives
-under `OPEN-02`; the proposal cannot treat either as a private implementation
-choice before their behavior, diagnostics, and tooling consequences are
-compared.
+`OPEN-02` compares parser attachment with a source-indexed side table, including
+behavior, diagnostics, and tooling consequences.
 
 ## Open decisions
 
@@ -95,10 +85,7 @@ compared.
 ### OPEN-01 — Which source forms denote documentation?
 
 - **Status:** Active
-- **Depends on:** None
-- **Blocked by:** None
-- **Activation condition:** Active now
-- **Why it matters:** The spelling determines lexical compatibility,
+- **Question:** The spelling determines lexical compatibility,
   module-level documentation, and whether documentation is visually distinct
   from ordinary comments.
 - **Constraints:** Recognition cannot require name or type lookup; module and
@@ -114,9 +101,8 @@ compared.
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`
-- **Blocked by:** `OPEN-01`
 - **Activation condition:** A source form has been selected.
-- **Why it matters:** The stage and representation determine how documentation
+- **Question:** The stage and representation determine how documentation
   survives parsing, where orphan/duplicate attachment is diagnosed, and which
   compiler facts future tools can consume.
 - **Constraints:** Attachment is deterministic from source structure rather
@@ -134,9 +120,8 @@ compared.
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`, `OPEN-02`
-- **Blocked by:** `OPEN-01`, `OPEN-02`
 - **Activation condition:** Retained text and attachment boundaries are known.
-- **Why it matters:** Markup controls portability between tools and determines
+- **Question:** Markup controls portability between tools and determines
   whether the compiler must understand references inside documentation.
 - **Constraints:** Documentation text cannot change program semantics; tools
   need one stable interpretation of links and code blocks.
@@ -151,9 +136,8 @@ compared.
 
 - **Status:** Blocked
 - **Depends on:** `OPEN-01`, `OPEN-02`, `OPEN-03`
-- **Blocked by:** `OPEN-01`, `OPEN-02`, `OPEN-03`
 - **Activation condition:** The retained content and markup contract are stable.
-- **Why it matters:** The first consumer determines the minimum durable compiler
+- **Question:** The first consumer determines the minimum durable compiler
   facts and the first end-to-end validation path.
 - **Constraints:** Generated C++ is not automatically a stable public
   interface; documentation generation cannot affect ordinary execution.
@@ -163,11 +147,6 @@ compared.
 - **Closure condition:** Define one end-to-end use case and compare artifact
   stability, cross-module lookup, and downstream-tool requirements.
 
-## Deferred work
-
-None. Output themes, hosting, runtime reflection, and documentation-site
-generation are non-goals rather than inactive parts of this proposal.
-
 ## Implementation
 
 Implementation is not actionable until `OPEN-01` and `OPEN-02` close. The
@@ -175,9 +154,9 @@ first vertical delivery should cover lexical retention, source attachment,
 source ranges, the selected retained representation, compiler inspection, and
 local diagnostics.
 
-An artifact consumer is a later delivery. It remains blocked until `OPEN-03`
-selects the markup contract and `OPEN-04` selects the artifact role; the
-parser/inspection slice must not silently choose either.
+Artifact delivery follows the markup and output decisions in `OPEN-03` and
+`OPEN-04`. The parser/inspection slice retains documentation without selecting
+those contracts.
 
 ## Validation
 
@@ -191,9 +170,3 @@ selected attachment representation. After `OPEN-03` and `OPEN-04`, artifact
 validation must prove the selected output separately. Ordinary comments must
 remain discarded and neither ordinary nor documentation comments may alter
 generated program behavior.
-
-## References
-
-- [Carven grammar](../docs/grammar.md)
-- [Rust reference: documentation comments](https://doc.rust-lang.org/reference/comments.html#doc-comments)
-- [Doxygen documentation blocks](https://www.doxygen.nl/manual/docblocks.html)

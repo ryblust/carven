@@ -9,7 +9,8 @@ ArtifactLowering::ArtifactLowering(
     TargetArtifactID artifact
 ) noexcept
     : planned_compilation(compilation),
-      artifact_id(artifact) {
+      artifact_id(artifact),
+      constants(compilation, artifact) {
     static_cast<void>(compilation.target().artifact(artifact));
 }
 
@@ -27,6 +28,10 @@ auto ArtifactLowering::artifact() const noexcept -> const TargetArtifactPlan& {
 
 auto ArtifactLowering::target() noexcept -> TargetUnitBuilder& {
     return target_builder;
+}
+
+auto ArtifactLowering::constant_storage() noexcept -> ConstantStorage& {
+    return constants;
 }
 
 auto ArtifactLowering::module_context(ModuleID id) noexcept -> ModuleLowering {
@@ -53,6 +58,9 @@ auto ArtifactLowering::record_provider_interface(ModuleID active, ModuleID provi
 }
 
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
+    if (!constants.empty()) {
+        invariant_violation("module lowering did not place its constant storage");
+    }
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
     auto directives = materialize_directives(plan(), artifact_id, dependencies);
@@ -80,6 +88,10 @@ auto ModuleLowering::plan() const noexcept -> const TargetPlan& {
 
 auto ModuleLowering::target() noexcept -> TargetUnitBuilder& {
     return artifact_lowering.target();
+}
+
+auto ModuleLowering::constant_storage() noexcept -> ConstantStorage& {
+    return artifact_lowering.constant_storage();
 }
 
 auto ModuleLowering::active_module() const noexcept -> ModuleID {

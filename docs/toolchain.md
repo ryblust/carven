@@ -8,10 +8,10 @@ and build integration for this checkout.
 Compiler implementation uses C++26 with exceptions and RTTI disabled. The
 validated host is LLVM/Clang and libc++ 23.1.0. Generated programs and installed
 crafts have a C++20 minimum baseline. The consumer project selects its C++
-standard. Generated code and runtime support may use newer available facilities
-through capability-dependent implementations that preserve the same Carven
-semantic contract and functionality. Host-only features stay within the compiler
-implementation.
+standard. Generated code and runtime support select newer facilities through
+feature detection while preserving the operation's behavior.
+Compiler-host features do not raise the generated-program or installed-craft
+baseline.
 
 The native consumer build selects exception support for its sources and
 providers according to their C++ requirements. A `#[cpp]` fragment containing
@@ -24,12 +24,12 @@ compiles and links the artifacts. C++ validates provider declarations and
 protocols, object definitions, and link requirements. It also checks overloads,
 templates, and conversions for explicitly delegated operations.
 
-Semantic acceptance is one stage of compilation. Native compilation and linking
-must also succeed. Invalid target C++ for a supported Carven operation, after
-satisfying its provider requirements, is a compiler defect. The construction
-limitation below describes a current gap in that support.
-C++ diagnostics remain native toolchain diagnostics; source mapping identifies
-the corresponding Carven location.
+Successful builds require Carven analysis, native compilation, and linking.
+Native compilation checks delegated operations and reports C++ diagnostics with
+source mapping to the corresponding Carven location. The construction limitation
+below can cause native compilation to fail after successful Carven analysis.
+For a supported operation with satisfied provider requirements, invalid generated
+C++ is a compiler defect.
 
 ### Construction limitation
 
@@ -127,8 +127,8 @@ The rule passes the complete `.cv` batch to Carven before native dependency
 scanning, supplies a target-private output root and linkage domain, and registers
 generated implementations as C++ sources. Installed source paths preserve their
 `crafts/carven/` hierarchy. The compiler derives module identities from the supplied
-filenames and diagnoses duplicates. The [module rules](semantics.md#compilations-crafts-and-modules)
-define import resolution and the reserved `std::` prefix.
+filenames and diagnoses duplicates. Imports resolve within that batch; `std::`
+selects modules under `crafts/carven/std/`.
 
 Generation runs in a staging directory before updating live artifacts. A failed
 compiler invocation leaves live output intact; promotion itself can fail partway
@@ -137,8 +137,7 @@ batch scheduling, incremental promotion, and recovery.
 
 The installed layout places `crafts/` beside `bin/`. The official `carven` craft
 contains runtime support and the standard library. Capability modules keep their
-API documentation alongside their sources, as in
-[UTF](../crafts/carven/std/utf/README.md). Native headers and sources remain with
+API documentation alongside their sources. Native headers and sources remain with
 their owning capability. Runtime support is independent of generated
 standard-library code.
 
@@ -155,8 +154,10 @@ carven/runtime/text.hpp
 carven/runtime/utf.hpp
 carven/runtime/string.hpp
 carven/runtime/format.hpp
+carven/runtime/writer.hpp
 carven/runtime/print.hpp
 carven/runtime/entry.hpp
+carven/runtime/deferred.hpp
 carven/runtime/outcome.hpp
 carven/runtime/callable.hpp
 carven/runtime/unreachable.hpp
@@ -174,13 +175,15 @@ contexts, failure records, and reporting in `carven::runtime`.
 
 `utf.hpp` supplies UTF validation, scalar encoding and decoding, and native
 representation conversions. `text.hpp` supplies text views; `string.hpp` supplies owning
-String. Interpolation uses `format.hpp` and requires C++20 `<format>` support
-in the consumer's standard library. The consumer compiler checks format strings
-and the availability of formatters for native types. `print.hpp` supplies stdout
+String. General interpolation uses `format.hpp` and requires C++20 `<format>`
+support. Parsed integer formatting uses `writer.hpp`; precomputed text
+uses direct String construction or append. The consumer compiler checks delegated
+format strings and native formatter availability. `print.hpp` supplies stdout
 and stderr printing, selecting the C++20 implementation or available C++23 library
 print support without changing the consumer's selected standard.
 
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte
 storage and terminates on invalid UTF-8. Runtime String operations support C++20
-constant evaluation; this does not make String a Carven constant-expression type.
+constant evaluation. In Carven constant execution, temporary String values keep
+ownership until initializer completion freezes a text result to `str`.

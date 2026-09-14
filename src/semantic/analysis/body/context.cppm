@@ -11,15 +11,15 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
-import :semantic.analysis.body.pipeline;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.construction.requests;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -183,7 +183,7 @@ auto known_boolean_constant(const ProgramDraft& draft, std::optional<ConstantID>
     if (!constant.has_value()) {
         return std::nullopt;
     }
-    const auto fact = draft.constant_copy(*constant);
+    const auto& fact = draft.constant(*constant);
     const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
     return boolean == nullptr ? std::nullopt : std::optional(boolean->value);
 }
@@ -220,7 +220,7 @@ auto create_body_failure_term(
 class BodyBatchElaborator;
 
 class BodyElaborator final {
-    friend class BodyExpressionSite;
+    friend class BodyExprSite;
 
 public:
     BodyElaborator(
@@ -258,13 +258,21 @@ private:
         -> AnalysisResult<ConstructionTypeRef>;
     auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisResult<std::uint64_t>;
     auto resolve_constant_name(std::string_view name, Span span) noexcept
-        -> AnalysisResult<ResolvedConstantName>;
+        -> AnalysisResult<std::optional<ConstantID>>;
+    auto resolve_function(std::string_view name, Span span) noexcept
+        -> AnalysisResult<std::optional<FunctionID>>;
+    auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_enum_qualifier(ASTExprID expression) noexcept
         -> AnalysisResult<std::optional<TypeID>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisResult<ResolvedEnumCase>;
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
-    auto require_invariant_storage_type(
+    auto require_adaptation(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        Span span
+    ) noexcept -> AnalysisResult<void>;
+    auto require_invariant_type(
         ConstructionTypeRef source,
         ConstructionTypeRef target,
         Span span
@@ -372,6 +380,13 @@ private:
         Span span,
         std::optional<ConstructionTypeRef> type = std::nullopt
     ) noexcept -> AnalysisResult<BuiltExpression>;
+
+    struct BuiltCppArgument final {
+        SemCallArgument argument;
+        bool completes;
+    };
+
+    auto build_cpp_argument(ASTExprID source) noexcept -> AnalysisResult<BuiltCppArgument>;
     auto cpp_call(SelectedExpression callee, const ASTCallExpr& source, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
     auto select_cpp_name(const ASTCppNameExpr& name, Span span) noexcept
@@ -393,14 +408,11 @@ private:
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto select_name(const ASTNameExpr& name, Span span) noexcept
         -> AnalysisResult<SelectedExpression>;
-    auto array_expression(
-        const ASTArrayExpr& array,
-        Span span,
-        std::optional<ConstructionTypeRef> expected,
-        bool allow_pointer_narrowing = true
+    auto cpp_construct(
+        const ASTConstructionExpr& source,
+        ConstructionTypeRef target,
+        Span span
     ) noexcept -> AnalysisResult<BuiltExpression>;
-    auto construction_expression(const ASTConstructionExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
     auto access_expression(const ASTAccessExpr& source, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
     auto call_expression(
@@ -414,10 +426,6 @@ private:
         Span span,
         Span case_span
     ) noexcept -> AnalysisResult<BuiltExpression>;
-    auto index_expression(const ASTIndexExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
-    auto select_member(const ASTMemberExpr& source, Span span, BuiltExpression operand) noexcept
-        -> AnalysisResult<SelectedExpression>;
     auto propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
         -> AnalysisResult<BuiltExpression>;
     auto conditional_expression(
@@ -499,7 +507,7 @@ private:
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
-    auto callable_contract(BuiltExpression& callee, Span span) noexcept
+    auto callable_contract(ConstructionTypeRef type, Span span) noexcept
         -> AnalysisResult<ConstructionCallableContract>;
     auto build_call_argument(
         ASTExprID source,
@@ -514,6 +522,7 @@ private:
     ASTView ast;
     BodyBuilder body_builder;
     std::optional<ConstructionTypeRef> result_type;
+    bool infer_result;
     FailureTermID outward_failure_term_id;
     bool is_test;
     std::vector<BodyLocalFrame> frames;
@@ -534,15 +543,19 @@ public:
     BodyBatchElaborator(
         ProgramDraft& builder,
         AnalysisCatalogView catalog_view,
-        ImportUsage& usage
+        ImportUsage& usage,
+        ConstructionRequests& requests
     ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisResult<void>;
+    auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisResult<BodyID>;
 
     ProgramDraft* draft;
     AnalysisCatalogView catalog_data;
     ImportUsage* imports;
+    ConstructionRequests& requests;
 
 private:
     struct Unvisited final {};
@@ -560,5 +573,6 @@ private:
     auto elaborate_function(FunctionID id) noexcept -> AnalysisResult<void>;
     std::vector<const CatalogSymbol*> functions;
     std::vector<State> states;
+    std::vector<std::optional<BodyID>> body_ids;
     std::vector<FunctionID> active_path;
 };

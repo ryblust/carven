@@ -2,25 +2,29 @@
 
 This roadmap records proposed priorities, semantic dependencies, and activation
 criteria for deferred work. Individual proposals own open design decisions;
-[language semantics](../docs/semantics.md) describes implemented behavior.
+`docs/` describes implemented behavior.
 The current milestone is v0.1.0; allocation of the proposed work to milestones
 remains open.
 
 ## Available foundations
 
-| Available foundation | Evidence and planning consequence |
-| --- | --- |
-| Modules, structs, payload enums, arrays, matching, constants, and range loops | [Language semantics](../docs/semantics.md); enough concrete data and control flow to exercise new abstractions |
-| Read/Write/Take, closures and callable views, typed failures | [Language tests](../tests/language/); new receivers and generic values must compose with these contracts |
-| Pointer values and local non-null analysis | [Pointer semantics](../docs/semantics.md#pointer-values); native pointers do not establish an owning resource abstraction |
-| Owning String, text borrowing, interpolation, and String-bearing nominal failures | [String failure tests](../tests/language/failure_contracts/string.cv); owning text and copyable owning failure payloads already exist |
-| Read-only `[T]` slices and storage-borrow propagation | [slice tests](../tests/language/types_and_values/slices.cv) and [type parser](../src/frontend/parse/grammar/type.cpp); concrete input for reusable sequence consumers |
-| UTF library and crafts build/test integration | [UTF API](../crafts/carven/std/utf/README.md) and [crafts tests](../tests/crafts/); concrete library APIs for evaluating encapsulation |
-| C++ header imports and concrete scalar `import(cpp)`/`export(cpp)` | [C++ boundary](../docs/semantics.md#scalar-function-boundaries); explicit function boundaries still exclude generic and aggregate signatures |
+Implemented foundations include:
 
-User-defined generic declarations, concepts/impls, ordinary classes, dynamic
-class forms, and async remain unimplemented. Named type arguments and builtin
-`ptr<T>` syntax do not constitute Carven parametric generics.
+- modules, structs, payload enums, arrays, matching, constants, and range loops;
+- Read/Write/Take, closures and callable views, typed failures, pointer values,
+  and local non-null analysis;
+- owning String, tracked text borrows, interpolation, and copyable nominal
+  failures containing String or borrowed text;
+- builtin interpolation precomputation and explicit formatting/output paths;
+- constant functions, static text, struct and fixed-array execution, and frozen
+  `[T]` results with preserved nominal and field types;
+- read-only slices, storage-borrow propagation, and UTF crafts with build/test integration;
+- header imports and concrete scalar `import(cpp)`/`export(cpp)` boundaries.
+
+These provide consumers and constraints for new abstractions. Native pointers
+do not establish owning resources, and named type arguments or builtin `ptr<T>`
+do not supply user-defined generics. Generic declarations, concepts/impls,
+ordinary and dynamic classes, and async remain unimplemented.
 
 ## Proposed priorities
 
@@ -39,26 +43,36 @@ concrete library or application consumers.
 
 ### Ordinary classes: open decisions
 
-[Classes](classes.md) `OPEN-01` and `OPEN-02` cover the first scope decisions.
-Ordinary classes can be developed independently of dynamic `class(form)`,
-erased values, inheritance, and generic dynamic operations.
+Ordinary classes can be designed and delivered independently of dynamic class
+forms, erased values, inheritance, and generic dynamic operations.
 
-`UTF8Validator` is a candidate design exercise: its public fields record pending
-sequence state, while callers initialize and mutate it through library functions.
-An encapsulated validator would exercise factory visibility, Read queries,
-Write operations, and private helpers. Its existing `finish` operation checks EOF.
+`UTF8Validator` is a candidate for construction, Read queries, Write operations,
+and private helpers. Its public fields currently hold pending sequence state;
+library functions initialize and mutate it, and `finish` checks EOF. A
+String-backed consuming builder can exercise whole-representation decomposition,
+field disposition, borrows, and success/failure availability.
 
-A String-backed builder with a consuming operation could exercise
-whole-representation decomposition. Open questions include field disposition,
-outstanding borrows, and receiver state on success and failure.
+#### Next round actions
 
-Validation would cover cross-module visibility, valid construction and rejected
-external field access, receiver ownership and failure rules, and direct C++
-realization without mandatory allocation or dynamic dispatch.
+1. Use `UTF8Validator` to compare construction, query, mutation, and private-helper
+   surfaces. Resolve operation visibility and helper syntax in Classes
+   `OPEN-01`.
+2. Use a small String-backed consuming builder to resolve `OPEN-02`: whole-object
+   decomposition, disposition of every field, outstanding borrows, and receiver
+   availability on success and failure.
+3. Map the selected operations onto frontend syntax, semantic access and ownership,
+   C++ lowering, and craft/native support. Add a runtime primitive only where a
+   concrete operation needs one; public library APIs remain in crafts.
+4. Once those decisions are closed, implement the minimal ordinary value-class
+   slice and validate its accepted and rejected source programs, cross-module
+   visibility, lifetimes, and direct C++ output.
+
+The recommended next slice is ordinary classes. Constant execution of class
+operations requires separate admission and retained-result decisions.
 
 ### Generic core: scope decision
 
-[Generics](generics.md) `OPEN-01` currently includes generic C++ boundary
+Generics `OPEN-01` currently includes generic C++ boundary
 participation, which requires a representative use case. One proposed scope is
 to deliver generics within the closed Carven compilation first, retaining the
 existing concrete scalar C++ boundaries. This choice remains open in the owning
@@ -75,19 +89,37 @@ borrows, and failures.
 - `Option<T>` is a candidate early generic-enum consumer. Public Option/Result
   APIs need their own proposal; Result must explain explicit failure capture
   and its relationship to the existing typed control effect.
-- A growable container needs a concrete ownership, mutation, invalidation, and
-  allocation-failure contract. Generic syntax alone does not settle a `Vec<T>`
-  API. Iterator and operator protocols should follow real consumers.
+- The [growable-container follow-up](constant-storage.md#follow-up-growable-library-containers)
+  records the `Vector<T>` candidate's dependencies, contract decisions, and
+  validation. Iterator and operator protocols should follow real consumers.
 - [Documentation comments](doc-comments.md) are independent and can be a small
   separate delivery when a documentation artifact is selected. They do not
   block classes or generics.
-- The UTF `from_utf8([u8]) -> str` API currently delegates the returned borrow
-  to its native provider/caller contract. Compiler-checked return borrowing
-  across native boundaries would require a separate interoperation proposal.
+- The current UTF craft uses checked Carven
+  text borrowing. Broader return-borrow contracts for native calls need a concrete
+  interoperation use case and their own design.
+
+## Text composition and library storage
+
+Current formatting, output, constant functions, compound execution, and static
+slices are implemented foundations described in `docs/`. Remaining
+[formatting and output composition](formatting.md) work concerns broader capacity
+planning, completion/failure boundaries, and compatibility before any runtime replacement.
+These candidates do not depend on classes or generics.
+
+Constant library storage requires ordinary generic and
+encapsulated declarations, admitted storage operations, and a valid retained
+result. Its growable-container follow-up
+is unimplemented; fixed arrays and struct execution do not complete that scope.
+Additional operation consumers
+need concrete algorithms and their own contracts.
+
+Type computation, structural queries, and declaration generation remain separate
+capabilities that require their own source contracts and concrete consumers.
 
 ## Failure extension edges
 
-The current failure contract and compiler realization are closed.
+The current copyable nominal failure contract is implemented.
 Features that extend their boundary require the following design work:
 
 ```text
@@ -103,12 +135,10 @@ existing structured semantic facts.
 Copyable nominal failures can already contain owning String values and tracked
 borrowed views. [Failure value](failure-value.md) concerns extensions beyond
 that admitted category, such as move-only or managed payloads.
-Interprocedural private-call specialization remains deferred until measurement
-shows a material cost that supported C++ optimization cannot remove.
 
 ## Concurrency track
 
-The [async](async.md), [memory model](memory-model.md), and
+The async, [memory model](memory-model.md), and
 [threading](threading.md) proposals own distinct semantic authorities. Their
 cross-proposal edges are:
 
@@ -141,13 +171,13 @@ that protocol stable.
 
 ## Deferred infrastructure
 
+Each direction needs the following evidence before design or implementation.
+
 | Direction | Reactivation evidence |
 | --- | --- |
-| General pass/dialect or optimization framework | At least two implemented transformations require scheduling or extension machinery that direct SemIRProgram-to-unit-local TargetUnit lowering cannot express cleanly |
 | Query system, incremental analysis, or persistent IDs | Measured compilation behavior or an interactive use case requires stable reusable analysis |
-| Multi-backend IR | A supported non-C++ backend has concrete semantic and artifact requirements |
 | Generated C++ module interfaces | A supported consumer use case requires them; BMI orchestration remains a build-system responsibility |
-| Static meta or compile-time generation | Stable generics expose a real consumer and a proposal can define a bounded query and generation model |
+| Reflection and declaration generation | A concrete consumer and a proposal define the required query surface and bounded generation model |
 | Runtime reflection | A concrete dynamic use case justifies explicit metadata, ownership, and runtime cost |
 
 Deferred work is inactive until its evidence exists; implementation convenience

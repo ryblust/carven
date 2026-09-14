@@ -1,7 +1,5 @@
 #pragma once
 
-#include "slice.hpp"
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -142,13 +140,6 @@ constexpr auto checked_unicode_scalar(char32_t value) noexcept -> char32_t {
         std::abort();
     }
     return value;
-}
-
-// Requires valid UTF-8. The returned text borrows the input storage.
-inline auto utf8_text(Slice<std::uint8_t> bytes) noexcept -> std::string_view {
-    return bytes.empty()
-        ? std::string_view {}
-        : std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
 } // namespace carven::runtime

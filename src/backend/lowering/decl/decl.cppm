@@ -1,7 +1,6 @@
 module carven:backend.lowering.decl;
 
 import :backend.generation.plan;
-import :backend.realization.body;
 import :backend.lowering.context;
 import :backend.target.item;
 import :backend.target.unit;
@@ -10,6 +9,7 @@ import std;
 
 struct LoweredModuleSchedule final {
     std::vector<TargetItem> source_fragments;
+    std::vector<TargetItem> private_declarations;
     std::vector<TargetItem> private_items;
     std::vector<TargetItem> module_items;
     std::optional<TargetItem> entry_wrapper;

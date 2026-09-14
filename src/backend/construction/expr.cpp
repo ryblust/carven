@@ -1,7 +1,7 @@
 module carven:backend.construction.expr.impl;
 
-import :backend.construction;
 import :backend.construction.builder;
+import :backend.construction;
 import :semantic.semir;
 import :support.invariant;
 import :support.visit;
@@ -51,7 +51,28 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                         .destination = failure_exit
                     };
                 }
-                return ConstructionOperation {.operands = std::move(inputs), .failure = failure};
+                auto preparation = prepare_operation(semantic, source);
+                if (const auto* prepared = std::get_if<PreparedFormat>(preparation.get())) {
+                    const auto* format = std::get_if<SemFormat>(&source.value);
+                    const auto offset = format->receiver ? 1uz : 0uz;
+                    for (auto index = offset; index < inputs.size(); ++index) {
+                        inputs[index].demand = ConstructionDemand::Effects;
+                    }
+                    for (const auto index : prepared_format_operands(*prepared)) {
+                        inputs.at(index + offset).demand = ConstructionDemand::Value;
+                    }
+                } else if (const auto* prepared = std::get_if<PreparedPrint>(preparation.get())) {
+                    for (auto index = 0uz; index < inputs.size(); ++index) {
+                        if (prepared->operand_text[index]) {
+                            inputs[index].demand = ConstructionDemand::Effects;
+                        }
+                    }
+                }
+                return ConstructionOperation {
+                    .operands = std::move(inputs),
+                    .failure = failure,
+                    .preparation = std::move(preparation)
+                };
             },
             [&](const SemShortCircuit& value) noexcept -> ConstructionExpressionValue {
                 const auto condition = expression(*value.left);

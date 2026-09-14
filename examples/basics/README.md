@@ -1,12 +1,24 @@
 # Calculate a receipt
 
-Read `main.cv` in source order. `Item`
-groups price and quantity, and `subtotal` reads an item without transferring
-ownership. Amounts use integer cents.
+This single-file program introduces records, enums, functions, arrays, and loops
+through a receipt with per-line discounts. Read `main.cv` in source order.
 
-In `main`, an array owns two items. `let` makes that binding immutable, while
-`var total` permits accumulation. The loop sums each subtotal before printing
-the result.
+## Read the program
+
+`Discount` represents either no discount or a percentage. `Item` groups a name,
+unit price, quantity, and discount. Names are string literals; amounts use integer
+cents.
+
+`subtotal` calculates the undiscounted line amount. `savings` uses `match` to
+handle both discount cases and bind the percentage payload. Both functions read
+an item without transferring ownership and return ordinary integer results.
+
+`main` prepares a fixed array and prints each line before the receipt totals.
+`let` keeps the items binding immutable; `var` permits the two accumulators to
+change. The array length is inferred from its literal, and the loop visits every
+item. The two lines exercise both discount cases.
+
+## Run
 
 From the repository root:
 
@@ -16,12 +28,33 @@ From the repository root:
 ./xmakew run carven-example-receipt
 ```
 
-Expected output:
+In PowerShell, use `.\xmakew.ps1`. Expected output:
 
 ```text
-Total in cents: 860
+Notebook x 2
+  Subtotal in cents: 500
+  Discount in cents: 0
+  Line total in cents: 500
+Pencil x 3
+  Subtotal in cents: 360
+  Discount in cents: 36
+  Line total in cents: 324
+Subtotal in cents: 860
+Savings in cents: 36
+Total in cents: 824
 ```
 
-Try adding a third item to the array. Its extent is inferred from the literal;
-the loop still visits each item. This example uses bounded positive inputs and
-does not implement input validation or arbitrary-size financial arithmetic.
+## Try a change
+
+- Add a third item. The array length and loop adapt to the new entry.
+- Change the pencil discount to `Discount::None`. Savings become zero and the
+  receipt total becomes 860 cents.
+- Change it to `Discount::Percent(25)`. Savings become 90 cents and the total
+  becomes 770 cents.
+- Remove a `match` arm to see the compiler report incomplete enum coverage.
+
+Restore the original inputs before running `./xmakew test -g examples`.
+The example assumes small positive prices and quantities and percentages in
+0..100. Integer division truncates fractional-cent discounts toward zero.
+Input validation, taxes, and general-purpose financial arithmetic are outside
+this program's scope.

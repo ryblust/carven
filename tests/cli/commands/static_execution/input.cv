@@ -1,0 +1,12 @@
+const fn value() {
+    print("prepared ");
+    return 7;
+}
+
+const result = value();
+
+const test "static" {
+    check(result == 7);
+    println("checked");
+    eprintln("error stream");
+}

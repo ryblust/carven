@@ -25,7 +25,7 @@ auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexc
     return {
         .value = TargetCallExpr {
             .callee = target_child(std::move(callee)),
-            .template_argument_type_ids = {},
+            .template_arguments = {},
             .arguments = std::move(arguments),
         },
     };

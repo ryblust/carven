@@ -1,6 +1,7 @@
 module carven:backend.realization.operation;
 
 import :backend.lowering.context;
+import :backend.preparation;
 import :backend.target.expr;
 import :semantic.semir;
 import std;
@@ -10,11 +11,12 @@ import std;
 // would change in C++ (including declaration-order struct fields and unordered
 // call arguments). Preparing an expression tree alone does not establish this.
 // Operand owners remain alive through their source full-expression delivery.
-// Binding storage, structured control and array adoption belong to the body
-// realizer. Calls return the raw invocation/Outcome, without completion checks.
+// Binding storage and structured control belong to the body realizer.
+// Calls return the raw invocation/Outcome, without completion checks.
 auto realize_operation(
     ModuleLowering& context,
     const SemanticExpression& source,
+    const OperationPreparation* preparation,
     std::vector<TargetExpr> operands
 ) noexcept -> TargetExpr;
 
@@ -33,6 +35,8 @@ auto realize_binary(
     TypeID type
 ) noexcept -> TargetExpr;
 
+// Scalar and array adaptation share the source callable policy. Array inputs
+// must already be stabilized by the body realizer.
 auto realize_callable_adaptation(
     ModuleLowering& context,
     TargetExpr input,

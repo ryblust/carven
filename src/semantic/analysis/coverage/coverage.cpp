@@ -683,7 +683,7 @@ private:
 
     auto constant(ConstantID id) const noexcept -> ConstantFact {
         if constexpr (std::same_as<PatternTable, MutableBodyTable<ElaboratedPattern, PatternID>>) {
-            return program.constant_copy(id);
+            return program.constant(id);
         } else {
             return program.constants().constant(id);
         }

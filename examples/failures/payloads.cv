@@ -1,0 +1,64 @@
+struct TextError {
+    message: String,
+}
+
+struct ViewError {
+    message: str,
+}
+
+fn owned_failure(text: str) throw TextError {
+    let error = TextError { message: String::from_str(text) };
+    throw error;
+}
+
+fn taken_failure() throw TextError {
+    let error = TextError { message: String::from_str("taken detail") };
+    throw &&error;
+}
+
+fn borrowed_failure(text: String) throw ViewError {
+    throw ViewError { message: text.as_str() };
+}
+
+fn forward_failure(text: String) throw ViewError {
+    try {
+        borrowed_failure(text)?;
+    } catch {
+        ViewError(error) if error.message.is_empty() => {},
+        ViewError(_) => rethrow,
+    }
+}
+
+fn run_payloads() {
+    let owned = try {
+        try {
+            owned_failure("request rejected")?;
+        } catch {
+            TextError(error) if error.message.is_empty() => {},
+            TextError(_) => rethrow,
+        }
+        String::new()
+    } catch {
+        TextError(error) => error.message,
+    };
+    println("Owned detail:", owned);
+
+    let taken = try {
+        taken_failure()?;
+        String::new()
+    } catch {
+        TextError(error) => error.message,
+    };
+    println("Taken detail:", taken);
+
+    var source = String::from_str("borrowed detail");
+    let saved = try {
+        forward_failure(source)?;
+        String::new()
+    } catch {
+        ViewError(error) => String::from_str(error.message),
+    };
+    source.clear();
+    println("Saved detail:", saved);
+    println("Source bytes after clear:", source.len());
+}

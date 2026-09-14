@@ -147,17 +147,23 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::RuntimePrintln:
         case TargetSymbol::RuntimeEprint:
         case TargetSymbol::RuntimeEprintln:           include("carven/runtime/print.hpp"); return;
-        case TargetSymbol::RuntimeFormat:             include("carven/runtime/format.hpp"); return;
+        case TargetSymbol::RuntimeFormat:
+        case TargetSymbol::RuntimeFormatValidUTF8:
+        case TargetSymbol::RuntimeAppendFormat:
+        case TargetSymbol::RuntimeAppendFormatValidUTF8:
+            include("carven/runtime/format.hpp");
+            return;
         case TargetSymbol::RuntimeAsSlice:
-        case TargetSymbol::RuntimeSlice:              include("carven/runtime/slice.hpp"); return;
-        case TargetSymbol::RuntimeUTF8Text:           include("carven/runtime/utf.hpp"); return;
-        case TargetSymbol::RuntimeString:             include("carven/runtime/string.hpp"); return;
+        case TargetSymbol::RuntimeSlice:        include("carven/runtime/slice.hpp"); return;
+        case TargetSymbol::RuntimeWriter:       include("carven/runtime/writer.hpp"); return;
+        case TargetSymbol::RuntimeUTF8Text:     include("carven/runtime/text.hpp"); return;
+        case TargetSymbol::RuntimeString:       include("carven/runtime/string.hpp"); return;
         case TargetSymbol::RuntimeStrCharsView:
-        case TargetSymbol::RuntimeStrBytes:
-        case TargetSymbol::RuntimeStrChars:
+        case TargetSymbol::RuntimeTextBytes:
+        case TargetSymbol::RuntimeTextChars:
         case TargetSymbol::RuntimeCheckedUnicodeScalar: include("carven/runtime/text.hpp"); break;
         case TargetSymbol::RuntimeEntryArgs:            include("carven/runtime/entry.hpp"); break;
-        case TargetSymbol::RuntimeDeferredResult:    include("carven/runtime/lifetime.hpp"); break;
+        case TargetSymbol::RuntimeDeferredResult:    include("carven/runtime/deferred.hpp"); break;
         case TargetSymbol::RuntimeReadArg:
         case TargetSymbol::RuntimeTransfer:          include("carven/runtime/passing.hpp"); break;
         case TargetSymbol::RuntimeFunctionRef:       include("carven/runtime/callable.hpp"); break;
@@ -169,6 +175,7 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::RuntimeIntegerRemainder:
         case TargetSymbol::RuntimeIntegerLeftShift:
         case TargetSymbol::RuntimeIntegerRightShift: include("carven/runtime/numeric.hpp"); break;
+        case TargetSymbol::RuntimeAdoptArray:
         case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
         case TargetSymbol::StdRemoveCVRef:
         case TargetSymbol::StdAddConst:
@@ -179,7 +186,8 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::StdVariant:               include("variant"); break;
         case TargetSymbol::StdDeclval:
         case TargetSymbol::StdForward:
-        case TargetSymbol::StdMove:                  include("utility"); break;
+        case TargetSymbol::StdMove:
+        case TargetSymbol::StdAsConst:               include("utility"); break;
         case TargetSymbol::StdNullopt:
         case TargetSymbol::StdOptional:              include("optional"); break;
         case TargetSymbol::StdStringView:            include("string_view"); break;

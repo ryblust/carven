@@ -1,0 +1,6 @@
+export const seed: i32 = 40;
+private const step = 2;
+
+export const fn advance(value: i32) -> i32 => value + step;
+
+export const fn extent() -> usize => 3usize;

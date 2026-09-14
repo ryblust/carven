@@ -3,6 +3,7 @@ module carven:backend.construction.operands.impl;
 import :backend.construction.builder;
 import :backend.construction;
 import :semantic.semir;
+import :semantic.semir.children;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -33,18 +34,29 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
             [&](const SemUnary& value) noexcept {
-                add(*value.operand, ConstructionUse::OperandValue);
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::OperandValue);
+                });
             },
             [&](const SemBinary& value) noexcept {
-                add(*value.left, ConstructionUse::OperandValue);
-                add(*value.right, ConstructionUse::OperandValue);
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::OperandValue);
+                });
             },
             [&](const SemCast& value) noexcept {
-                add(*value.operand, ConstructionUse::OperandValue);
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::OperandValue);
+                });
             },
-            [&](const SemField& value) noexcept { add(*value.source, ConstructionUse::Place); },
+            [&](const SemField& value) noexcept {
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::Place);
+                });
+            },
             [&](const SemDereference& value) noexcept {
-                add(*value.source, ConstructionUse::AddressValue);
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::AddressValue);
+                });
             },
             [&](const SemIndex& value) noexcept {
                 add(*value.source, ConstructionUse::Place);
@@ -57,6 +69,9 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
             },
             [&](const SemFormat& value) noexcept {
+                if (value.receiver) {
+                    add(**value.receiver, ConstructionUse::Place);
+                }
                 for (const auto& input : value.operands) {
                     result.push_back(argument(input));
                 }
@@ -72,22 +87,24 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
             },
             [&](const SemArray& value) noexcept {
-                for (const auto& element : value.elements) {
-                    add(element, ConstructionUse::Consume);
-                }
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::Consume);
+                });
             },
             [&](const SemArrayAdopt& value) noexcept {
-                add(*value.source, ConstructionUse::ConstPlace);
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::ConstPlace);
+                });
             },
             [&](const SemStruct& value) noexcept {
-                for (const auto& field : value.fields) {
-                    add(field.value, ConstructionUse::Consume);
-                }
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::Consume);
+                });
             },
             [&](const SemEnumCase& value) noexcept {
-                for (const auto& element : value.payload) {
-                    add(element, ConstructionUse::Consume);
-                }
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::Consume);
+                });
             },
             [&](const SemClosure& value) noexcept {
                 for (const auto& capture : value.captures) {
@@ -111,7 +128,11 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
                 add(*value.source, use);
             },
-            [&](const SemTake& value) noexcept { add(*value.place, ConstructionUse::Place); },
+            [&](const SemTake& value) noexcept {
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, ConstructionUse::Place);
+                });
+            },
             [&](const SemCpp& value) noexcept {
                 for (const auto& input : value.operands) {
                     if (result.empty()
@@ -147,7 +168,16 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 add(*value.callee,
                     closure ? ConstructionUse::ConstPlace : ConstructionUse::OperandValue);
                 for (const auto& input : value.arguments) {
-                    result.push_back(argument(input));
+                    auto prepared = argument(input);
+                    const auto* builtin = std::get_if<BuiltinTypeValue>(
+                        &semantic.types().type(input.expression.type.resolved()).value
+                    );
+                    if (input.access == AccessMode::Read && builtin != nullptr
+                        && builtin->kind != BuiltinType::String
+                        && builtin->kind != BuiltinType::EntryArgs) {
+                        prepared.use = ConstructionUse::OperandValue;
+                    }
+                    result.push_back(prepared);
                 }
             },
             [](const SemShortCircuit&) static noexcept {

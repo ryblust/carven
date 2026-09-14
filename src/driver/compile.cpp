@@ -9,6 +9,7 @@ import :diagnostics.report;
 import :driver.compile;
 import :driver.input_path;
 import :driver.options;
+import :semantic.evaluation.output;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -131,6 +132,11 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         TargetPlanningRequest {
             .test_mode = request->test_mode,
             .linkage_domain = std::move(*linkage_domain),
+        },
+        [&](ConstantOutputStream stream, std::string_view bytes) noexcept {
+            const auto to_error = stream == ConstantOutputStream::Error
+                || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
+            std::print(to_error ? std::cerr : std::cout, "{}", bytes);
         }
     );
     if (!result) {

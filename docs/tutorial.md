@@ -1,9 +1,8 @@
 # Carven tutorial
 
 This tutorial introduces the basic forms used to write Carven programs.
-After a first program, it follows source organization: imports, types, functions,
-and their bodies. Each snippet shows declarations before their uses. The examples
-are separate; they are not parts of one file to concatenate.
+It starts with a first program, then covers imports, types, functions, and their
+bodies. Each snippet is a separate example, with declarations before their uses.
 
 ## A first program
 
@@ -21,9 +20,9 @@ fn main() {
 ```
 
 `fn` declares a function. Parameters state their types, and `-> i32` states
-that `add` returns a signed 32-bit integer. In a block-bodied function, omitting
-the result type means that the function returns no value. `main` is the program
-entry point. This program performs a calculation without printing output.
+that `add` returns a signed 32-bit integer. Omitting the result type lets the
+compiler infer it from the returns; a body with no return operands infers `void`.
+`main` is the program entry point. This program performs a calculation without printing output.
 
 From the repository root, build the compiler and inspect the generated C++:
 
@@ -33,10 +32,9 @@ From the repository root, build the compiler and inspect the generated C++:
 ```
 
 Carven generates C++ source; a native build compiles and links it. The command
-above prints the generated files without writing them. The output includes
-artifact headings and the generated definition of `add`; this command inspects
-compilation. The runnable programs under `examples/` each include native build
-commands and expected output. In Windows PowerShell, use `.\xmakew.ps1` in place of `./xmakew`.
+above prints the generated files and artifact headings without writing them.
+Programs under `examples/` include native build commands and expected output. In
+Windows PowerShell, use `.\xmakew.ps1` in place of `./xmakew`.
 
 Imports form the start of a source file. Types and constants normally precede
 functions that use them; helper functions precede their callers. Carven also
@@ -85,8 +83,7 @@ Functions, structures, enums, and constants may be `private`, bare, or `export`.
 Private declarations are module-local; bare means no visibility modifier and
 allows use within the same craft; exported declarations are visible across
 crafts in the compilation. Application modules outside crafts share one module
-domain. Finding a module does not bypass these visibility rules.
-Cross-module use always requires an import. Declarations may refer forward.
+domain. Cross-module use requires an import and a visible declaration.
 
 ## Records and arrays
 
@@ -138,8 +135,9 @@ within a pattern can be joined with `|`.
 ## Functions
 
 A function declares its parameters and result before its body. Parameters of an
-ordinary function state their types. A block-bodied function returning a value
-states its result after `->` and returns a value on every reachable path:
+ordinary function state their types. A function can state its result after `->`
+or infer it from its returns. A value-returning function returns on every reachable
+path:
 
 ```carven
 fn add(left: i32, right: i32) -> i32 {
@@ -150,8 +148,10 @@ fn next(value: i32) => add(value, 1);
 ```
 
 An expression body follows `=>` and implicitly returns that expression. Its
-result type can be inferred, as in `next`. A block body with no result annotation
-returns `void`. A `void` call can be used as an expression body too. Recursive
+result type can be inferred, as in `next`. Block bodies use the same inference
+rule: return operands must independently determine a consistent type. An explicit
+annotation supplies type context, for example when returning unsuffixed literals.
+A body with no return operands infers `void`. A `void` call can be used as an expression body too. Recursive
 result dependencies require enough explicit result types to break the cycle.
 
 ## Read, Write, and Take
@@ -417,3 +417,31 @@ test "addition produces the expected value" {
 A failed `check` reports and continues. A failed `require` reports and exits
 the test. `fail()` reports and exits unconditionally. Tests are analyzed with
 the source; generating a test executable requires selecting test emission.
+
+## Compile-time tests
+
+Use `const test` to execute a test during compilation. It shares the ordinary
+`check`, `require`, `fail`, and print operations, within the supported constant
+execution subset:
+
+```cv
+const fn sum(size: i32) {
+    var result = 0;
+    for value in 0..size { result += value; }
+    return result;
+}
+
+const test "sum at compile time" {
+    println("checking sum");
+    check(sum(5) == 10);
+}
+
+test "sum through generated C++" {
+    check(sum(5) == 10);
+}
+```
+
+The first test runs during Carven compilation and produces no runtime test
+function. A failed check makes compilation fail. The ordinary test runs through
+the generated test runner, checking the C++ implementation. Calling a `const fn`
+at runtime still executes it at runtime.

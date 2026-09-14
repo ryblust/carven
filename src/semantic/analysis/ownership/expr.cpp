@@ -333,6 +333,17 @@ auto OwnershipBodyAnalyzer::expression(
                 {
                     const auto previous_accesses = accesses.size();
                     const auto previous_readers = storage_readers.size();
+                    auto destination = std::optional<OwnershipPlace>();
+                    auto formatting_reads = OwnershipRelationships {};
+                    if constexpr (std::same_as<Output, SemFormat>) {
+                        if (value.receiver) {
+                            protect_storage(evaluate(**value.receiver));
+                            destination = location(**value.receiver);
+                            if (destination) {
+                                accesses.push_back({*destination, false});
+                            }
+                        }
+                    }
                     for (const auto& operand : value.operands) {
                         const auto relationships = evaluate(operand.expression, true);
                         if (!flow.normal) {
@@ -347,6 +358,15 @@ auto OwnershipBodyAnalyzer::expression(
                             );
                         }
                         protect_storage(relationships);
+                        if (destination
+                            && program.types().type(operand.expression.type.resolved()).value
+                                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                            for (const auto& backing : operand_storage) {
+                                formatting_reads.storage_loans.push_back(
+                                    {{}, backing, operand.expression.origin}
+                                );
+                            }
+                        }
                         if (!std::holds_alternative<PointerTypeValue>(
                                 program.types().type(operand.expression.type.resolved()).value
                             )) {
@@ -356,6 +376,13 @@ auto OwnershipBodyAnalyzer::expression(
                         }
                     }
                     if (flow.normal) {
+                        if (destination) {
+                            // String Read aliases are observed after all holes complete.
+                            // They must remain separate from the destination during append.
+                            protect_storage(formatting_reads);
+                            write_access(*destination, source.origin);
+                            check_storage_write(flow.normal->state, *destination, source.origin);
+                        }
                         flow.normal->value = {};
                     }
                     restore_storage_readers(previous_readers);

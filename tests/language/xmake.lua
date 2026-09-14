@@ -85,7 +85,7 @@ for _, mode in ipairs({
             os.tryrm(stdout_file)
             os.tryrm(stderr_file)
             assert(status == 0, "printing failed: " .. tostring(status))
-            assert(stdout == "text: 你好😀\n42\ntrue\n我\n1.25\na\0b\n{unchanged}\nvalue=0007\n9\ndone\nmixed: 42 true 我 1.25 owned\n{value} 7 a\0b \ncount: 3\n1 2 3\n3\nafter 1\n",
+            assert(stdout == "text: 你好😀\n42\ntrue\n我\n1.25\na\0b\n{unchanged}\nvalue=0007\n9\ndone\nmixed: 42 true 我 1.25 owned\n{value} 7 a\0b \ncount: 3\n1 2 3\n3\nafter 1\n1 false 11\n11\n42 before 1\n42 after 1\n18446744073709551615 -9223372036854775808\n",
                 "unexpected stdout: " .. stdout)
             assert(stderr == "error: -3\n\nerror: -4status: false\n", "unexpected stderr: " .. stderr)
             return true

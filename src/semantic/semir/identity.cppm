@@ -21,6 +21,8 @@ private:
     friend class ProgramDraft;
 };
 
+enum class BodyIdentityDomain { Body, EvaluationRoot };
+
 class BodyIdentity final {
 public:
     constexpr auto program() const noexcept -> ProgramIdentity { return program_identity; }
@@ -30,12 +32,18 @@ public:
     constexpr auto operator<=>(const BodyIdentity&) const noexcept = default;
 
 private:
-    explicit constexpr BodyIdentity(ProgramIdentity program, std::uint32_t body_index) noexcept
+    explicit constexpr BodyIdentity(
+        ProgramIdentity program,
+        std::uint32_t body_index,
+        BodyIdentityDomain domain = BodyIdentityDomain::Body
+    ) noexcept
         : program_identity(program),
-          body_index_value(body_index) {}
+          body_index_value(body_index),
+          domain(domain) {}
 
     ProgramIdentity program_identity;
     std::uint32_t body_index_value;
+    BodyIdentityDomain domain;
 
     friend class BodyBuilder;
     friend class ProgramDraft;

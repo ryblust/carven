@@ -77,6 +77,7 @@ struct TargetIntegerLiteral final {
     bool negative;
     std::uint64_t magnitude;
     TargetIntegerSuffix suffix;
+    auto operator==(const TargetIntegerLiteral&) const noexcept -> bool = default;
 };
 
 struct TargetFloatLiteral final {
@@ -125,9 +126,11 @@ struct TargetConditionalExpr final {
     UniqueIndirect<TargetExpr> false_value;
 };
 
+using TargetTemplateArgument = std::variant<TargetTypeID, bool, TargetIntegerLiteral>;
+
 struct TargetCallExpr final {
     UniqueIndirect<TargetExpr> callee;
-    std::vector<TargetTypeID> template_argument_type_ids;
+    std::vector<TargetTemplateArgument> template_arguments;
     std::vector<TargetExpr> arguments;
 };
 
@@ -214,7 +217,7 @@ auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexc
 
 auto template_call_expression(
     TargetExpr callee,
-    std::vector<TargetTypeID> template_arguments,
+    std::vector<TargetTemplateArgument> template_arguments,
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr;
 

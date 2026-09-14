@@ -56,6 +56,10 @@ public:
     auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>&;
     auto place_access(const PlaceExpression&) const noexcept -> AccessMode;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
+    auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
+    auto known_constant(const SemanticExpression&) const noexcept -> std::optional<ConstantID>;
+    auto known_sequence_extent(const SemanticExpression&) const noexcept
+        -> std::optional<std::uint64_t>;
     auto make_place(
         std::optional<LocalBindingID>,
         ConstructionTypeRef,
@@ -96,5 +100,7 @@ private:
     MutableBodyTable<LifetimeRegion, LifetimeRegionID> lifetime_regions;
     MutableBodyTable<ElaboratedLocalBinding, LocalBindingID> bindings;
     MutableBodyTable<ElaboratedPattern, PatternID> patterns;
+    std::map<LocalBindingID, ConstantID> local_constants;
+    std::map<LocalBindingID, std::uint64_t> local_sequence_extents;
     std::optional<LifetimeRegionID> active_lifetime;
 };

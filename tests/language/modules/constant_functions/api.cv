@@ -1,0 +1,11 @@
+import .values using { advance, seed, };
+
+export const published: i32 = answer();
+
+export const fn answer() -> i32 => advance(seed);
+
+export const fn label() -> String {
+    var result = f"value-{answer():04}";
+    result.append("\0我😀");
+    return result;
+}

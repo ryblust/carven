@@ -1,0 +1,17 @@
+import .data using { Entry, records, empty_records, first_record, provider_records, };
+
+const selected_key = records[1].key;
+const tail_records = records.slice(1, 2);
+fn consumer_records() -> [Entry] => tail_records;
+
+test "Modules: frozen user records retain types fields and static backing across artifacts" {
+    let provider = provider_records();
+    let consumer = consumer_records();
+    var index = 1;
+    check(provider[index].key == 15);
+    check(provider[index].label == "我\0😀");
+    check(consumer[0] == provider[1]);
+    check(first_record.key == 4);
+    check(selected_key == 15);
+    check(empty_records.is_empty());
+}

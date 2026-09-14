@@ -4,11 +4,12 @@ module;
 
 module carven:test.internal.semantic.analysis.interpolation;
 
+import :semantic.format;
 import :semantic.semir.traversal;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-TEST_CASE("Semantic interpolation: holes normalize to ordered explicit format arguments") {
+TEST_CASE("Interpolation: holes normalize to ordered explicit format arguments") {
     const auto program =
         analyze_test_program(R"(fn format(value: f64, width: i32, precision: i32) -> String {
         return f"{{value}}={value:{width}.{precision}f}\0";
@@ -31,11 +32,8 @@ TEST_CASE("Semantic interpolation: holes normalize to ordered explicit format ar
                         }
                     )
                 );
-                const auto& constant = program.constants().constant(format->format_string_id);
-                const auto* text = std::get_if<StringConstant>(&constant.value);
-                REQUIRE(text != nullptr);
                 CHECK(
-                    program.provenance().spelling(text->value)
+                    serialize_format(format->specification)
                     == std::string_view("{{value}}={0:{1}.{2}f}\0", 23)
                 );
             }

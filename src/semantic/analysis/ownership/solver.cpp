@@ -144,6 +144,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 OwnershipProjectionPath {std::nullopt}
             );
         }
+
         if (const auto* slice = std::get_if<SliceTypeValue>(&value);
             slice != nullptr && contents(type).callable_view) {
             relationships = nest_relationships(self(slice->element, origin), {std::nullopt});

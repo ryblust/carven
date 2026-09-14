@@ -273,7 +273,6 @@ auto DeclarationConstructionView::callable_signature(CallableID id) const noexce
 
 auto DeclarationConstructionView::callable_implementation(CallableID id) const noexcept
     -> CallableImplementation {
-    declaration_builder->require_heads_finished();
     return declaration_builder->callable_implementations.copy_defined(id);
 }
 
@@ -653,13 +652,12 @@ auto DeclarationBuilder::finish_heads() noexcept -> DeclarationConstructionView 
 }
 
 auto DeclarationBuilder::construction_view() const noexcept -> DeclarationConstructionView {
-    require_heads_finished();
     return DeclarationConstructionView(*this);
 }
 
 auto DeclarationBuilder::append_body_callable(ConstructionCallableContract contract) noexcept
     -> CallableID {
-    require_building_callables();
+    require_constructing_callables();
     const auto id = reserve_callable_pair();
     define_callable_contract(id, std::move(contract));
     return id;
@@ -686,7 +684,7 @@ auto DeclarationBuilder::complete_callable(
     CallableID id,
     CallableImplementation implementation
 ) noexcept -> void {
-    require_heads_finished();
+    require_constructing_callables();
     std::visit(
         [this](const auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
@@ -817,9 +815,9 @@ auto DeclarationBuilder::require_building_callables() const noexcept -> void {
     }
 }
 
-auto DeclarationBuilder::require_heads_finished() const noexcept -> void {
-    if (state == State::Reserving) {
-        invariant_violation("declaration operation used before heads completed");
+auto DeclarationBuilder::require_constructing_callables() const noexcept -> void {
+    if (state == State::Concrete) {
+        invariant_violation("callable construction resumed after signature resolution");
     }
 }
 

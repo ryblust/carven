@@ -5,8 +5,8 @@ module;
 module carven:test.internal.backend.emission.render;
 
 import :artifacts;
-import :backend.emission.render.string;
-import :backend.emit;
+import :backend.emission.string;
+import :backend.emission.emit;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -160,7 +160,7 @@ TEST_CASE("Emission: value regions retain explicit result types and selective un
                                         }
                                 }
                             ),
-                            .template_argument_type_ids = {},
+                            .template_arguments = {},
                             .arguments = {}
                         }
                     },

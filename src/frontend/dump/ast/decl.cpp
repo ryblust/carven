@@ -310,6 +310,9 @@ auto ASTDumper::render_top_level_item(
                         definition.cpp_export->span
                     );
                 }
+                if (definition.const_span) {
+                    render_span_field(nested_prefix, false, "const", *definition.const_span);
+                }
                 render_span_field(nested_prefix, false, "name", definition.name_span);
                 render_list(
                     nested_prefix,
@@ -391,7 +394,11 @@ auto ASTDumper::render_top_level_item(
                 append_line(
                     prefix,
                     is_last,
-                    std::format("TestDeclaration {}", format_dump_span(item.span))
+                    std::format(
+                        "{}TestDeclaration {}",
+                        declaration.is_const ? "Const" : "",
+                        format_dump_span(item.span)
+                    )
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "keyword", declaration.keyword_span);

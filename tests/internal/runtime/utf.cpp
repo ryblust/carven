@@ -41,11 +41,3 @@ TEST_CASE("Runtime: UTF primitives encode and decode scalar boundaries") {
         CHECK(carven::runtime::utf8_is_valid(bytes));
     }
 }
-
-TEST_CASE("Runtime: UTF representation conversion preserves borrowed byte storage") {
-    const auto bytes = std::array<std::uint8_t, 3> {65, 0, 66};
-    const auto input = carven::runtime::Slice<std::uint8_t>(std::span(bytes));
-    const auto text = carven::runtime::utf8_text(input);
-    CHECK_EQ(text, std::string_view("A\0B", 3));
-    CHECK(text.data() == reinterpret_cast<const char*>(bytes.data()));
-}

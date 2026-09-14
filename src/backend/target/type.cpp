@@ -51,7 +51,7 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
                 return value.symbol == other.symbol;
             } else if constexpr (std::same_as<Value, TargetCallExpr>) {
                 return equal_query(*value.callee, *other.callee)
-                    && value.template_argument_type_ids == other.template_argument_type_ids
+                    && value.template_arguments == other.template_arguments
                     && std::ranges::equal(value.arguments, other.arguments, equal_query);
             } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
                 return std::get<TargetIdentifier>(value.name)

@@ -1,0 +1,8 @@
+export const table: [i32] = make_table(5);
+export const empty: [u16] = [];
+export const rows: [[i32; 2]] = [[2, 4], [6, 8]];
+
+const fn make_table(offset: i32) -> [i32; 3] => [offset, offset + 2, offset + 4];
+
+export fn from_provider() -> [i32] => table;
+export fn provider_row() -> [i32] => rows[1];

@@ -40,6 +40,7 @@ source_key=$(
             "$source_program_dir/rules/c++/modules/clang/scanner.lua" \
             "$source_program_dir/rules/c++/modules/builder.lua" \
             "$source_program_dir/rules/c++/modules/scanner.lua" \
+            "$source_program_dir/rules/c++/modules/support.lua" \
             "$source_program_dir/rules/c++/modules/xmake.lua" \
             "$patch_file"
     } | hash_sha256 | awk '{print $1}'

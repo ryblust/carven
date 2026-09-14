@@ -35,6 +35,14 @@ struct TargetFunctionDecl final {
     bool inline_specifier;
 };
 
+struct TargetVariableDecl final {
+    TargetIdentifier name;
+    TargetTypeID type;
+    TargetExpr initializer;
+    bool inline_specifier;
+    bool constexpr_specifier;
+};
+
 struct TargetStructField final {
     TargetIdentifier name;
     TargetTypeID type;
@@ -169,6 +177,7 @@ struct TargetClassForwardDecl final {
 
 using TargetDecl = std::variant<
     TargetFunctionDecl,
+    TargetVariableDecl,
     TargetOutOfClassMemberDefinition,
     TargetStructDecl,
     TargetStructForwardDecl,

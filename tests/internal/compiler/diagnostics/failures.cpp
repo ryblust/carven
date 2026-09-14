@@ -120,8 +120,57 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
 TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semantic contracts") {
     static constexpr auto cases = std::to_array<ErrorExpectation>({
         {
+            .name = "array of slices rejects callable failure narrowing",
+            .source =
+                "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure]; 0]) { let adopted: [[fn() -> i32]; 0] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "array of slices rejects callable failure widening",
+            .source =
+                "struct Failure {} fn invalid(source: [[fn() -> i32]; 1]) { let adopted: [[fn() -> i32 throw Failure]; 1] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "array callable failure narrowing",
+            .source =
+                "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 1]) { let adopted: [fn() -> i32; 1] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "empty array callable failure narrowing",
+            .source =
+                "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 0]) { let adopted: [fn() -> i32; 0] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "nested array callable failure narrowing",
+            .source =
+                "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure; 1]; 1]) { let adopted: [[fn() -> i32; 1]; 1] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "callable parameter failure invariance",
+            .source =
+                "struct Failure {} fn invalid(source: fn(fn() -> i32 throw Failure) -> i32) { let adopted: fn(fn() -> i32) -> i32 = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
+            .name = "callable parameter failure invariance in arrays",
+            .source =
+                "struct Failure {} fn invalid(source: [fn(fn() -> i32) -> i32; 0]) { let adopted: [fn(fn() -> i32 throw Failure) -> i32; 0] = source; }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = {},
+        },
+        {
             .name = "void return rejects a data result",
-            .source = "fn invalid() { return 42; }",
+            .source = "fn invalid() -> void { return 42; }",
             .code = "CV-TYPE-RETURN-VALUE",
             .primary_text = {},
         },
@@ -283,6 +332,17 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "fn second(value: i32) -> i32 { return value + 1; } "
                       "fn invalid() { let choose = [](flag: bool) { "
                       "if flag { return first; } return second; }; }",
+            .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
+            .primary_text = {},
+        },
+        {
+            .name = "widened view cannot outlive its source view storage",
+            .source = "struct First {} struct Second {} "
+                      "fn narrow(value: i32) -> i32 throw First { return value; } "
+                      "fn invalid() { "
+                      "var outer: fn(i32) -> i32 throw First + Second = narrow; "
+                      "if true { let inner: fn(i32) -> i32 throw First = narrow; "
+                      "outer = inner; } }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
             .primary_text = {},
         },
@@ -536,4 +596,29 @@ TEST_CASE("Compiler diagnostics: catch type names distinguish modules in stable 
         );
         CHECK_EQ(diagnostic->attachment.notes[1].message, "failure type not fully covered: zeta.E");
     }
+}
+
+TEST_CASE("Compiler: array adoption preserves equal nested callable contracts") {
+    auto sources = SourceManager();
+    const auto source_id = *sources.append_virtual(
+        "adoption.cv",
+        "struct A {} struct B {} "
+        "fn higher(source: [fn(fn() -> i32 throw A + B) -> i32 throw A; 1]) { "
+        "let target: [fn(fn() -> i32 throw B + A) -> i32 throw A + B; 1] = source; } "
+        "fn slices(source: [[fn() -> i32 throw A + B]; 0]) { "
+        "let target: [[fn() -> i32 throw B + A]; 0] = source; }"
+    );
+    const auto input = CompilationModuleInput {
+        .source_id = source_id,
+        .module_path = *CanonicalModulePath::from_value("adoption"),
+    };
+    const auto result = compile(
+        sources,
+        CompilationRequest {.modules = std::span(&input, 1)},
+        TargetPlanningRequest {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),
+        }
+    );
+    CHECK(result.has_value());
 }

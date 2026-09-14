@@ -2,10 +2,10 @@ module carven:backend.lowering.decl.nominal.impl;
 
 import :backend.generation.names;
 import :backend.generation.plan;
+import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
-import :backend.realization.constant;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -254,7 +254,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .expression = TargetExpr {
                     .value = TargetCallExpr {
                         .callee = target_child(intrinsic_expression(TargetSymbol::StdGetIf)),
-                        .template_argument_type_ids =
+                        .template_arguments =
                             {
                                 context.named_type(TargetName {record}),
                             },

@@ -32,3 +32,18 @@ export(cpp) fn slice_range(start: usize, end: usize) {
     let array = [1];
     let _ = array.as_slice().slice(start, end);
 }
+
+export(cpp) fn slice_known_length() {
+    let array = [1];
+    let _ = array.as_slice().slice(0, 2).len();
+}
+
+export(cpp) fn slice_known_empty() {
+    let array = [1];
+    let _ = array.as_slice().slice(2, 2).is_empty();
+}
+
+export(cpp) fn slice_known_format() {
+    let array = [1];
+    let _ = f"{array.as_slice().slice(0, 2).len()}";
+}

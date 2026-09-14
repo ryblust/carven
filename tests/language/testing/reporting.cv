@@ -105,9 +105,15 @@ fn require_in_helper(value: bool) {
     cv_test_reporting_mark(20);
 }
 
+fn require_through_tail(value: bool) {
+    let closure = [value]() { return require_in_helper(value); };
+    let callback: fn() -> void = closure;
+    return callback();
+}
+
 test "Testing: require failure leaves helpers and the current test" {
     let owner = ::ReportingOwner(21);
-    require_in_helper(false);
+    require_through_tail(false);
     cv_test_reporting_mark(22);
 }
 

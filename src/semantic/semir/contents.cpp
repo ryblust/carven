@@ -9,41 +9,55 @@ import std;
 
 namespace {
 // Contents describe resolved types and do not traverse pointer targets.
+template<typename Types, typename Declarations>
 class TypeContentsQuery final {
 public:
-    TypeContentsQuery(
-        const CanonicalTypeStore& types,
-        const DeclarationStore& declarations
-    ) noexcept;
+    TypeContentsQuery(const Types& types, const Declarations& declarations) noexcept;
     auto contents(TypeID type) noexcept -> TypeContents;
+    auto contents(ConstructionTypeRef type) noexcept -> TypeContents;
 
 private:
-    const CanonicalTypeStore& types;
-    const DeclarationStore& declarations;
-    std::vector<std::optional<TypeContents>> contents_by_type;
+    const Types& types;
+    const Declarations& declarations;
+    std::map<TypeID, TypeContents> contents_by_type;
 };
 
-TypeContentsQuery::TypeContentsQuery(
-    const CanonicalTypeStore& types,
-    const DeclarationStore& declarations
+template<typename Types, typename Declarations>
+TypeContentsQuery<Types, Declarations>::TypeContentsQuery(
+    const Types& types,
+    const Declarations& declarations
 ) noexcept
     : types(types),
-      declarations(declarations),
-      contents_by_type(types.size()) {
+      declarations(declarations) {
     if (types.owner() != declarations.owner()) {
         invariant_violation("type contents inputs belong to different programs");
     }
 }
 
-auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
-    if (!types.contains(type)) {
-        invariant_violation("type contents query observed a foreign or invalid type");
+template<typename Types, typename Declarations>
+auto TypeContentsQuery<Types, Declarations>::contents(ConstructionTypeRef type) noexcept
+    -> TypeContents {
+    const auto* concrete = std::get_if<TypeID>(&type);
+    if (concrete == nullptr) {
+        invariant_violation("type contents query requires completed declaration fields");
     }
-    auto& cached = contents_by_type[type.index()];
-    if (cached.has_value()) {
-        return *cached;
+    return contents(*concrete);
+}
+
+template<typename Types, typename Declarations>
+auto TypeContentsQuery<Types, Declarations>::contents(TypeID type) noexcept -> TypeContents {
+    if (const auto found = contents_by_type.find(type); found != contents_by_type.end()) {
+        return found->second;
     }
+    const auto& canonical = [&]() noexcept -> decltype(auto) {
+        if constexpr (std::same_as<Types, CanonicalTypeStore>) {
+            return types.type(type);
+        } else {
+            return types.copy(type);
+        }
+    }();
     // Recursive containment contributes no additional contents on this path.
+    auto& cached = contents_by_type[type];
     cached = TypeContents {.closure_owner = false, .callable_view = false, .storage_owner = false};
     const auto merge = [](TypeContents& destination, TypeContents source) static noexcept {
         destination.closure_owner |= source.closure_owner;
@@ -124,7 +138,7 @@ auto TypeContentsQuery::contents(TypeID type) noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false, .storage_owner = false};
             },
         },
-        types.type(type).value
+        canonical.value
     );
     cached = result;
     return result;
@@ -148,4 +162,12 @@ auto compute_type_contents(
 
 auto TypeContents::read_borrows_storage() const noexcept -> bool {
     return storage_owner || closure_owner;
+}
+
+auto query_type_contents(
+    const CanonicalTypeStoreBuilder& types,
+    DeclarationConstructionView declarations,
+    TypeID type
+) noexcept -> TypeContents {
+    return TypeContentsQuery(types, declarations).contents(type);
 }

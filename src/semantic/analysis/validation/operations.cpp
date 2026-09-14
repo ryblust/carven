@@ -1,5 +1,8 @@
 module carven:semantic.analysis.validation.operations.impl;
 import :semantic.analysis.validation.context;
+import :semantic.format;
+import :semantic.semir.format;
+import :support.utf8;
 import std;
 
 auto BodyContractVerifier::verify_computations() const noexcept -> void {
@@ -75,6 +78,10 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
     static_cast<void>(require_type(source.type.resolved()));
     static_cast<void>(require_failure_set(source.failures.resolved()));
     require_origin(source.origin);
+    if (source.constant
+        && program.constants().constant(*source.constant).type != source.type.resolved()) {
+        invariant_violation("normal-completion fact differs from expression type");
+    }
     if (!body.lifetime_regions().contains(source.lifetime)) {
         invariant_violation("semantic expression has foreign lifetime");
     }
@@ -241,7 +248,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
                     invariant_violation("invalid printing operation contract");
                 }
-                for (const auto& operand : value.operands) {
+                for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
                     const auto* type = std::get_if<BuiltinTypeValue>(
                         &require_type(operand.expression.type.resolved()).value
                     );
@@ -259,27 +266,46 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemFormat& value) noexcept {
-                const auto& specification = program.constants().constant(value.format_string_id);
-                if (require_type(specification.type).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}}
-                    || !std::holds_alternative<StringConstant>(specification.value)
-                    || require_type(source.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}
+                if (require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {
+                            value.receiver ? BuiltinType::Void : BuiltinType::String
+                        }}
                     || source.category != SemanticValueCategory::Value
                     || source.constant) {
-                    invariant_violation(
-                        "format requires a str constant and an owning String result"
-                    );
+                    invariant_violation("format requires the matching result type");
                 }
-                for (const auto& operand : value.operands) {
-                    if (operand.access != AccessMode::Read) {
-                        invariant_violation("format operands require Read access");
+                if (value.receiver
+                    && ((**value.receiver).category != SemanticValueCategory::Place
+                        || require_type((**value.receiver).type.resolved()).value
+                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}})) {
+                    invariant_violation("formatted append requires a String receiver place");
+                }
+                const auto verify_structure =
+                    [&](this const auto& self, std::span<const FormatPart> parts) noexcept -> void {
+                    for (const auto& part : parts) {
+                        if (const auto* hole = std::get_if<FormatHole>(&part.value)) {
+                            if (!hole->has_specification && !hole->specification.empty()) {
+                                invariant_violation("format hole hides specification parts");
+                            }
+                            self(hole->specification);
+                        }
+                    }
+                };
+                verify_structure(value.specification.parts);
+                const auto source_indices = format_operands(value.specification);
+                if (source_indices.size() != value.operands.size()) {
+                    invariant_violation("format specification requires all source operands");
+                }
+                for (auto index = 0uz; index < value.operands.size(); ++index) {
+                    if (source_indices[index] != index
+                        || value.operands[index].access != AccessMode::Read) {
+                        invariant_violation("format requires source-ordered Read operands");
                     }
                 }
             },
             [&](const SemSliceIntrinsic& value) noexcept {
-                if (value.operands.size()
-                    != (value.intrinsic == SliceIntrinsic::Slice ? 3uz : 1uz)) {
+                const auto contract = slice_intrinsic_contract(value.intrinsic);
+                if (value.operands.size() != contract.arguments.size() + 1) {
                     invariant_violation("slice intrinsic operand count mismatch");
                 }
                 for (const auto& operand : value.operands) {
@@ -291,18 +317,19 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     require_type(value.operands.front().expression.type.resolved()).value;
                 const auto* array = std::get_if<ArrayTypeValue>(&receiver);
                 const auto* slice = std::get_if<SliceTypeValue>(&receiver);
-                if ((value.intrinsic == SliceIntrinsic::FromArray && array == nullptr)
-                    || (value.intrinsic != SliceIntrinsic::FromArray && slice == nullptr)) {
+                if ((contract.receiver == SliceIntrinsicShape::Array && array == nullptr)
+                    || (contract.receiver == SliceIntrinsicShape::Slice && slice == nullptr)) {
                     invariant_violation("slice intrinsic receiver mismatch");
                 }
+                if (array != nullptr && value.result_extent != array->extent) {
+                    invariant_violation("array slice extent differs from its source type");
+                }
                 const auto result = require_type(source.type.resolved()).value;
-                if (value.intrinsic == SliceIntrinsic::Len
-                    || value.intrinsic == SliceIntrinsic::IsEmpty) {
-                    if (result
-                        != CanonicalTypeValue {BuiltinTypeValue {
-                            value.intrinsic == SliceIntrinsic::Len ? BuiltinType::Usize
-                                                                   : BuiltinType::Bool
-                        }}) {
+                if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
+                    if (value.result_extent) {
+                        invariant_violation("slice query cannot publish a sequence extent");
+                    }
+                    if (result != CanonicalTypeValue {BuiltinTypeValue {*builtin}}) {
                         invariant_violation("slice query result mismatch");
                     }
                 } else if (result
@@ -313,61 +340,35 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
                 for (auto i = 1uz; i < value.operands.size(); ++i) {
                     if (require_type(value.operands[i].expression.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}) {
+                        != CanonicalTypeValue {BuiltinTypeValue {contract.arguments[i - 1]}}) {
                         invariant_violation("slice bound type mismatch");
                     }
                 }
             },
             [&](const SemTextIntrinsic& value) noexcept {
-                if (value.operands.size() != text_intrinsic_arity(value.intrinsic)) {
+                const auto contract = text_intrinsic_contract(value.intrinsic);
+                if (value.operands.size() != contract.parameters.size()) {
                     invariant_violation("text intrinsic operand count mismatch");
                 }
+                const auto lookup = [&](TypeID type) noexcept -> const CanonicalType& {
+                    return require_type(type);
+                };
                 for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
-                    const auto access = index == 0 && text_intrinsic_writes(value.intrinsic)
-                        ? AccessMode::Write
-                        : AccessMode::Read;
-                    if (operand.access != access
-                        || (access == AccessMode::Write
+                    const auto& parameter = contract.parameters[index];
+                    if (operand.access != parameter.access
+                        || (parameter.access == AccessMode::Write
                             && operand.expression.category != SemanticValueCategory::Place)) {
                         invariant_violation("text intrinsic operand access mismatch");
                     }
-                    const auto& type = require_type(operand.expression.type.resolved()).value;
-                    if (value.intrinsic == TextIntrinsic::FromUTF8Unchecked) {
-                        const auto* slice = std::get_if<SliceTypeValue>(&type);
-                        if (slice == nullptr
-                            || require_type(slice->element).value
-                                != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::U8}}) {
-                            invariant_violation("UTF-8 construction requires a byte slice");
-                        }
-                        continue;
-                    }
-                    const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
-                    const auto query = value.intrinsic == TextIntrinsic::Len
-                        || value.intrinsic == TextIntrinsic::IsEmpty
-                        || value.intrinsic == TextIntrinsic::Bytes
-                        || value.intrinsic == TextIntrinsic::Chars;
-                    const auto expected = value.intrinsic == TextIntrinsic::FromU32Unchecked
-                        ? BuiltinType::U32
-                        : value.intrinsic == TextIntrinsic::FromStr || index == 1
-                        ? (value.intrinsic == TextIntrinsic::Push ? BuiltinType::Char
-                                                                  : BuiltinType::Str)
-                        : BuiltinType::String;
-                    if (builtin == nullptr
-                        || (builtin->kind != expected
-                            && !(query && builtin->kind == BuiltinType::Str))) {
+                    if (!matches_text_intrinsic_type(
+                            parameter.type,
+                            operand.expression.type.resolved(),
+                            lookup
+                        )) {
                         invariant_violation("text intrinsic operand type mismatch");
                     }
                 }
-                const auto& result = require_type(source.type.resolved()).value;
-                const auto* slice = std::get_if<SliceTypeValue>(&result);
-                const auto valid_result = value.intrinsic == TextIntrinsic::Bytes ? slice != nullptr
-                        && require_type(slice->element).value
-                            == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::U8}}
-                                                                                  : result
-                        == CanonicalTypeValue {
-                            BuiltinTypeValue {*text_intrinsic_builtin_result(value.intrinsic)}
-                        };
-                if (!valid_result) {
+                if (!matches_text_intrinsic_type(contract.result, source.type.resolved(), lookup)) {
                     invariant_violation("text intrinsic result mismatch");
                 }
             },

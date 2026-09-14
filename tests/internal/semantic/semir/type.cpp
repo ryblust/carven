@@ -32,6 +32,7 @@ TEST_CASE("Construction types: children must already exist in the owning store")
             types.append({.value = ConstructionArrayTypeValue {.element = self, .extent = 1u}})
         );
     }));
+
     CHECK(expect_termination("type-parameter-child-must-exist", [&] noexcept {
         static_cast<void>(types.append(
             {.value = ConstructionCallableViewTypeValue {

@@ -100,7 +100,10 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                         }
                     },
                     [&](TestID id) noexcept {
-                        visit_body(module_record.id, semantic.tests().test(id).body, true);
+                        const auto& test = semantic.tests().test(id);
+                        if (!test.is_const) {
+                            visit_body(module_record.id, test.body, true);
+                        }
                     },
                     [](StructID) static noexcept {},
                     [](EnumID) static noexcept {},
@@ -453,6 +456,9 @@ auto plan_names(
     auto tests = std::vector<std::optional<TargetIdentifier>>(semantic.tests().size());
     auto module_test_ordinals = std::vector<std::size_t>(module_count);
     for (const auto test : semantic.tests().entries()) {
+        if (test.value.is_const) {
+            continue;
+        }
         const auto module_id = test.value.module_id;
         if (module_id.owner() != semantic.identity() || module_id.index() >= module_count) {
             invariant_violation("test names a foreign or unknown module");
@@ -484,7 +490,7 @@ auto plan_names(
         std::move(closure_type_names),
         std::move(total_case_names),
         std::move(payload_enums),
-        take_total(std::move(tests), "target name plan did not name every test"),
+        std::move(tests),
         take_total(std::move(module_runners), "target name plan did not name every module runner")
     );
 }

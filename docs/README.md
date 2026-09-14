@@ -1,37 +1,38 @@
 # Documentation
 
-These documents describe Carven in this checkout.
+This directory contains Carven's tutorial, language and implementation references,
+and development guidance for the current checkout.
 
-## Reading paths
+## Documents
 
-| Need | Document | Responsibility |
-| --- | --- | --- |
-| Learn the basics | [Tutorial](tutorial.md) | A first program, basic concepts, and short examples |
-| Complete a task | [Examples](../examples/README.md) | Runnable programs, local explanations, and expected output |
-| Look up a source form | [Grammar](grammar.md) | Encoding, tokens, syntax, precedence, and parsing |
-| Determine program behavior | [Language semantics](semantics.md) | Program validity and behavior, including ownership, failures, tests, and C++ boundaries |
-| Invoke the compiler | [CLI](cli.md) | Options, input paths, output writes, and process status |
-| Build generated C++ | [Toolchain and artifacts](toolchain.md) | Native requirements, artifact paths, compilation, linking, and build integration |
-| Work on semantic analysis | [Compiler architecture](compiler.md) | Semantic construction, analysis, publication, internal ownership, and dependencies |
-| Work on code generation | [C++ generation](backend.md) | C++ representation, target construction, lowering, and emission |
-| Maintain build support | [Xmake support](../xmake/README.md) | Build wrappers, formatting, generated-code analysis configuration, and performance measurements |
-| Validate changes | [Testing](testing.md) | Test placement, assertions, and validation commands |
-| Write repository C++ | [Conventions](conventions.md) | Source organization and C++ rules |
-| Evaluate a design | [Principles](principles.md) | Criteria for language and implementation decisions |
+| Document | Scope |
+| --- | --- |
+| [Tutorial](tutorial.md) | Basic concepts and examples in learning order |
+| [Grammar](grammar.md) | Encoding, tokens, syntax, precedence, and parsing |
+| [Semantics](semantics.md) | Program validity and observable behavior |
+| [CLI](cli.md) | Invocation, input paths, output writes, and process status |
+| [Toolchain](toolchain.md) | Native requirements, artifact interfaces, compilation, linking, and build integration |
+| [Compiler](compiler.md) | Orchestration, semantic analysis, ownership, dependencies, and publication |
+| [Backend](backend.md) | Published semantics to C++ representation, target syntax, and emitted artifacts |
+| [Conventions](conventions.md) | Handwritten C++ organization, naming, and coding rules |
+| [Testing](testing.md) | Suite responsibilities, fixtures, assertions, and validation procedures |
+| [Principles](principles.md) | Design principles and guidance for language and implementation decisions |
+
+Runnable programs live in [examples](../examples/README.md); unfinished designs
+live in [proposals](../proposals/README.md). Craft APIs and Xmake procedures are
+documented alongside their sources.
 
 ## Maintenance
 
-- Describe current behavior concretely. Distinguish language rules, implementation
-  facts, and design goals; state restrictions and external responsibilities where
-  they affect use.
-- Give each detailed rule one owning section. Other documents provide the context
-  needed for their task and link to that section for the full rule.
-- State supported forms, defaults, evaluation, lifetimes, failures, and the
-  responsible component. Use examples to clarify rules. Record unresolved choices
-  in proposals and research comparisons in notes.
-- Order tutorials and examples from imports and declarations to helpers, callers,
-  and tests. Explain providers before consumers, then show build commands and
-  expected output.
-- Resolve disagreements between documentation, implementation, and tests
-  explicitly. Update affected explanations and links together; keep proposals and
-  historical accounts outside the current reference documents.
+- Write concise, factual, neutral explanations of what to do and how. Include
+  rationale and underlying mechanisms where they help understanding or decisions.
+- Keep each rule in the document that owns its scope. Provide enough context for
+  independent reading and link to related details. Split documents by reader task.
+- Describe current behavior, requirements, and limitations in references. Check
+  their accuracy against implementation and tests; keep proposed changes in proposals.
+- State supported forms, defaults, evaluation, lifetime, failure, and diagnostic
+  boundaries explicitly.
+- Preserve decision criteria, useful rationale, and practical guidance when
+  condensing text. Remove repetition and historical debate.
+- Present teaching examples in dependency order, with commands and expected
+  results where useful.

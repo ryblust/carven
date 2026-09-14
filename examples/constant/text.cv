@@ -1,0 +1,28 @@
+const version = 42;
+const title = f"Carven build-{version:04}";
+const catalog = make_catalog(4);
+const decorated = frame(f"{title}: {catalog}");
+const title_bytes = f"{title}".len();
+
+const fn make_catalog(count: i32) -> String {
+    var result = String::new();
+    for index in 0..count {
+        if index != 0 {
+            result.push(',');
+        }
+        result.append_format(f"{index:02}");
+    }
+    return result;
+}
+
+const fn frame(value: String) -> String => f"[{value}]";
+
+fn run_text() {
+    println(title);
+    println(catalog);
+    println(decorated);
+    println("Title bytes:", title_bytes);
+    var count = 3;
+    let current = make_catalog(count);
+    println("Runtime:", current);
+}

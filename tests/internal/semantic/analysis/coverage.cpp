@@ -134,6 +134,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     compilation.define_test(
         test,
         TestDeclaration {
+            .is_const = false,
             .module_id = module_id,
             .name = compilation.intern_spelling("coverage"),
             .origin = origin,

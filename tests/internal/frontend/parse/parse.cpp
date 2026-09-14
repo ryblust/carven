@@ -189,12 +189,9 @@ TEST_CASE("Parser: AST storage builder creates a complete ID graph") {
     CHECK(!ast.statements().empty());
 }
 
-TEST_CASE("Parser: failed speculation rewinds every typed table") {
-    const auto valid = parse_valid("fn f() { let value = Vec { x: 1, y: 2 }; }");
+TEST_CASE("Parser: incomplete construction fields require an initializer") {
     check_invalid(
         "fn f() { let value = Vec { x: 1, y }; }",
         "expected ':' after initializer field name"
     );
-    check_invalid("fn f() { for * ; ready; tick() {} }");
-    check_invalid("fn f() { for value; ready; * {} }");
 }

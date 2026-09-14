@@ -54,6 +54,7 @@ struct FunctionDeclaration final {
     CallableID callable;
     std::optional<EntryPointKind> entry_point;
     std::optional<ProgramOriginID> cpp_export_origin;
+    bool is_const;
 };
 
 struct StructField final {
@@ -157,6 +158,7 @@ auto cpp_import_form_origin(const CallableDeclaration& callable) noexcept
     -> std::optional<ProgramOriginID>;
 
 struct TestDeclaration final {
+    bool is_const;
     ModuleID module_id;
     ProgramSpellingID name;
     ProgramOriginID origin;
@@ -318,7 +320,7 @@ private:
 
     auto require_reserving() const noexcept -> void;
     auto require_building_callables() const noexcept -> void;
-    auto require_heads_finished() const noexcept -> void;
+    auto require_constructing_callables() const noexcept -> void;
     auto require_concrete() const noexcept -> void;
     auto require_heads_defined() const noexcept -> void;
     auto reserve_callable_pair() noexcept -> CallableID;

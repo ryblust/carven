@@ -429,3 +429,40 @@ TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery")
         CHECK_EQ(finalized.identity(), identity);
     }
 }
+
+TEST_CASE("SemIR body: normal-completion facts match the expression type and program") {
+    enum class Fact { Missing, Boolean, WrongType, Foreign };
+    const auto cases = std::array {Fact::Missing, Fact::Boolean, Fact::WrongType, Fact::Foreign};
+    for (const auto scenario : cases) {
+        CAPTURE(static_cast<int>(scenario));
+        const auto publish = [&]() noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto prepared = prepare_function(sources, diagnostics);
+            auto body = body_fixture(prepared);
+            auto expression = boolean_expression(prepared, body);
+            auto foreign_sources = SourceManager();
+            auto foreign_diagnostics = DiagnosticSink();
+            auto foreign = prepare_function(foreign_sources, foreign_diagnostics);
+            if (scenario == Fact::Boolean) {
+                expression.constant = std::get<SemConstant>(expression.value).constant;
+            } else if (scenario == Fact::WrongType) {
+                expression.constant = prepared.builder.intern_constant(
+                    {.type = prepared.builder.intern_builtin_type(BuiltinType::I32),
+                     .value = IntegerConstant::zero()}
+                );
+            } else if (scenario == Fact::Foreign) {
+                expression.constant = foreign.builder.intern_constant(
+                    {.type = foreign.boolean_type, .value = BooleanConstant {.value = true}}
+                );
+            }
+            static_cast<void>(finish_body(prepared, std::move(body), {}, std::move(expression)));
+            REQUIRE(std::move(prepared.builder).finish().has_value());
+        };
+        if (scenario == Fact::Missing || scenario == Fact::Boolean) {
+            publish();
+        } else {
+            CHECK(expect_termination("expression-fact-contract", publish));
+        }
+    }
+}

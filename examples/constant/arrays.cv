@@ -1,0 +1,24 @@
+const table = squares(3);
+const selected = table[2];
+
+const fn squares(offset: i32) -> [i32; 4] {
+    var values = [0, 0, 0, 0];
+    for index in 0..4 {
+        values[index] = offset + index * index;
+    }
+    return values;
+}
+
+fn run_arrays() {
+    println("Selected:", selected);
+    let stored = table;
+    let view = stored.as_slice();
+    println("Entries:", view.len());
+    for value in view {
+        println(value);
+    }
+
+    var offset = 10;
+    let current = squares(offset);
+    println("Runtime:", current[0], current[1], current[2], current[3]);
+}

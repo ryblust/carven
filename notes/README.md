@@ -7,6 +7,10 @@ The articles explain mechanisms, compare approaches, and link to primary
 sources. They are informative and do not define a Carven contract, design
 decision, or roadmap.
 
+Each article develops a self-contained technical argument or explanation from
+the research. Source inventories, reading excerpts, and library-by-library
+summaries belong in an external archive until they support such an article.
+
 ## Articles
 
 - [Async Programming: Control, Execution, and

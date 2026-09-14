@@ -1,0 +1,87 @@
+import "interpolation/append.hpp";
+
+struct AppendError {
+    code: i32,
+}
+
+fn change_append_source(&source: String) -> i32 {
+    source.clear();
+    source.append("after我\0value");
+    return ::formatted_append_probe::record() as i32;
+}
+
+fn fail_append(&effects: i32) -> i32 throw AppendError {
+    effects += 1;
+    throw AppendError { code: effects };
+}
+
+test "Formatted append interop: receiver selection precedes holes and preserves temporary backing" {
+    ::formatted_append_probe::reset();
+    var destinations: [String; 2] = ["left", "right:"];
+    destinations[::formatted_append_probe::select() as usize].append_format(
+        f"{::formatted_append_probe::make(7).value as i32}/{::formatted_append_probe::record() as i32}"
+    );
+    check(destinations[0] == "left");
+    check(destinations[1] == "right:7/1");
+    check(::formatted_append_probe::events() == 123);
+    check(::formatted_append_probe::observed() == 1);
+    check(::formatted_append_probe::alive() == 0);
+    check(::formatted_append_probe::calls() == 0);
+}
+
+test "Formatted append interop: String reads follow all holes and own appended bytes" {
+    ::formatted_append_probe::reset();
+    var source: String = "original text exceeding a small string buffer";
+    var destination: String = "prefix:";
+    destination.append_format(f"{42:04}|{source}|{::formatted_append_probe::make(7).value as i32}|{change_append_source(&source)}");
+    check(destination == "prefix:0042|after我\0value|7|1");
+    check(::formatted_append_probe::events() == 23);
+    check(::formatted_append_probe::observed() == 1);
+    check(::formatted_append_probe::alive() == 0);
+    source.clear();
+    check(destination == "prefix:0042|after我\0value|7|1");
+}
+
+test "Formatted append interop: known bytes retain backing and hole effects" {
+    ::formatted_append_probe::reset();
+    var destination: String = "prefix:";
+    destination.append_format(f"{(::formatted_append_probe::make(42).value == 42) && false}/{(::formatted_append_probe::record() == 1) || true}");
+    check(destination == "prefix:false/true");
+    check(::formatted_append_probe::events() == 23);
+    check(::formatted_append_probe::observed() == 1);
+    check(::formatted_append_probe::alive() == 0);
+    check(::formatted_append_probe::calls() == 0);
+}
+
+test "Formatted append interop: native formatters run once with original argument indices" {
+    ::formatted_append_probe::reset();
+    var destination: String = "prefix:";
+    destination.append_format(f"{42:04}|{::formatted_append_probe::make(7):q04x}|{::formatted_append_probe::record() as i32}|{::formatted_append_probe::context_value()}");
+    check(destination == "prefix:0042|0007|1|42");
+    check(::formatted_append_probe::events() == 23);
+    check(::formatted_append_probe::at_format() == 23);
+    check(::formatted_append_probe::calls() == 1);
+    check(::formatted_append_probe::alive() == 0);
+}
+
+test "Formatted append interop: failing holes skip formatting and clean backing before recovery" {
+    ::formatted_append_probe::reset();
+    var destination: String = "unchanged";
+    var effects = 0;
+    let failure = try {
+        destination.append_format(f"{::formatted_append_probe::make(1)}/{fail_append(&effects)?}/{::formatted_append_probe::record() as i32}");
+        0
+    } catch {
+        AppendError(error) => {
+            check(::formatted_append_probe::alive() == 0);
+            check(::formatted_append_probe::calls() == 0);
+            check(destination == "unchanged");
+            error.code
+        },
+    };
+    check(failure == 1);
+    check(effects == 1);
+    check(::formatted_append_probe::events() == 2);
+    check(::formatted_append_probe::alive() == 0);
+    check(destination == "unchanged");
+}

@@ -1,11 +1,7 @@
 # Grammar
 
-This document defines which source characters and token sequences form a
-syntactically well-formed Carven program.
-
-It specifies encoding, tokens, productions, precedence, and syntactic
-disambiguation. A syntactically well-formed program may still be semantically
-invalid.
+This document defines source encoding, tokens, productions, precedence, and
+syntactic disambiguation. Semantic analysis checks the validity of parsed programs.
 
 ## Contents
 
@@ -91,8 +87,7 @@ match nullptr private rethrow return struct test throw true try using var while
 language production, including `new` and `delete`, remain
 ordinary identifiers.
 
-Canonical naming conventions are style guidance only. They do not change the
-set of syntactically valid identifiers.
+Naming style conventions do not restrict syntactically valid identifiers.
 
 The adjacent prefix `c"` starts a `CStringLiteral` token. Its quoted payload
 uses ordinary string decoding, but decoded NUL is rejected at the originating
@@ -244,12 +239,9 @@ empty. A line terminator after the closing line is not part of the token. The
 complete form, including both fences, is one `CPP_SOURCE_FRAGMENT` token and has
 no terminating semicolon.
 
-Scanning is line-based and byte-opaque. Carven does not recognize C++ braces,
-comments, character or string literals, raw strings, preprocessing directives,
-declarations, names, types, or effects. Consequently, a payload line that is a
-matching closing fence ends the fragment even when C++ would treat that line as
-part of another construct. The author selects a longer fence when the payload
-contains such a line.
+Scanning compares lines with the closing fence and treats other payload bytes
+as opaque. A matching line ends the fragment even inside a C++ construct.
+Choose a longer fence when the payload contains a matching line.
 
 ### 2.7 Punctuators
 
@@ -304,9 +296,8 @@ declaration-name = IDENTIFIER
 Imports form one contiguous prefix. A later `import-declaration` cannot occur
 after a `top-level-item`.
 
-Top-level `let` and `var` declarations are not productions. A module constant
-uses the dedicated form above rather than the local variable-declaration
-production. The grammar has no namespace-declaration block.
+Top-level bindings use `module-constant-declaration`. Top-level `let`, `var`,
+and namespace blocks are unsupported.
 
 ### 3.1 Imports
 
@@ -404,7 +395,7 @@ function-definition = function-head, function-body;
 
 function-body = ordinary-block | "=>", expression, ";";
 
-function-head = "fn", IDENTIFIER,
+function-head = [ "const" ], "fn", IDENTIFIER,
                 "(", [ parameter-list ], ")",
                 [ "->", function-result-type ],
                 [ throw-clause ];
@@ -437,7 +428,7 @@ scope. `private` and `export` may prefix the declaration through the common
 ### 3.6 Tests
 
 ```ebnf
-test-declaration = "test", STRING_LITERAL, test-block;
+test-declaration = [ "const" ], "test", STRING_LITERAL, test-block;
 
 test-block = "{", { statement }, "}";
 ```
@@ -942,9 +933,9 @@ expression grammar outside a pattern.
 ### 10.5 Construction and Calls
 
 `T { ... }` is the only source form introduced by `construction-expression`.
-Parentheses following a parsed expression always start a call operation. A
-parser does not classify a name as a type to reinterpret `T(...)` as a
-construction. The production accepts the `construction-type` forms defined above.
+Parentheses following a parsed expression always start a call operation.
+`T(...)` is parsed as a call regardless of the name's resolved meaning. The
+production accepts the `construction-type` forms defined above.
 
 In a control-flow header whose expression is followed immediately by a required
 body, the `{` at the header's outer delimiter depth always begins that body. A

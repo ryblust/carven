@@ -3,32 +3,25 @@
 #define _HAS_EXCEPTIONS 1
 #endif
 
+#include <carven/api/tests/interop/exceptions/precomputed.hpp>
+
 #include <carven/runtime/callable.hpp>
 #include <carven/runtime/outcome.hpp>
 #include <carven/runtime/string.hpp>
 #include <carven/runtime/format.hpp>
+#include <carven/runtime/print.hpp>
+
+#include "provider.hpp"
 
 #include <csignal>
 #include <cstdlib>
 #include <exception>
+#include <limits>
+#include <locale>
 #include <new>
 #include <string>
 #include <string_view>
 #include <utility>
-
-struct FormatProbe final {
-    bool invalid_utf8;
-};
-
-template<>
-struct std::formatter<FormatProbe> final : std::formatter<std::string_view> {
-    auto format(const FormatProbe& value, std::format_context& context) const {
-        if (!value.invalid_utf8) {
-            throw std::format_error("provider failure");
-        }
-        return std::formatter<std::string_view>::format(std::string_view("\xff", 1), context);
-    }
-};
 
 namespace {
 
@@ -62,6 +55,13 @@ auto foreign_function() -> int {
     throw 3;
 }
 
+class InvalidGrouping final : public std::numpunct<char> {
+private:
+    auto do_grouping() const -> std::string override { return "\3"; }
+
+    auto do_thousands_sep() const -> char override { return static_cast<char>(0xff); }
+};
+
 } // namespace
 
 // Allocation failure is enabled only by the selected isolated scenario.
@@ -81,13 +81,19 @@ auto operator delete(void* memory) noexcept -> void {
 
 // This process is built with C++ exceptions enabled to test the protocol boundary.
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
-auto main(int argc, char** argv) -> int {
+auto main(int argc, char** argv) -> int try {
     std::set_terminate([]() noexcept { std::_Exit(73); });
     std::signal(SIGABRT, aborted);
     if (argc != 2) {
         return 1;
     }
     const auto operation = std::string_view(argv[1]);
+    if (operation.starts_with("print-")) {
+        // Termination uses _Exit; expose each completed write to the capture file.
+        if (std::setvbuf(stdout, nullptr, _IONBF, 0) != 0) {
+            return 3;
+        }
+    }
     using Outcome = carven::runtime::Outcome<Foreign, Foreign>;
     if (operation == "copy") {
         const auto source = Foreign(false);
@@ -115,6 +121,42 @@ auto main(int argc, char** argv) -> int {
     } else if (operation == "format-allocate") {
         fail_allocation = true;
         static_cast<void>(carven::runtime::format("{:4096}", 1));
+    } else if (operation == "precomputed-format-allocate") {
+        fail_allocation = true;
+        carven::api::tests::interop::exceptions::precomputed::discard_precomputed();
+    } else if (operation == "mixed-format-allocate") {
+        fail_allocation = true;
+        carven::api::tests::interop::exceptions::precomputed::discard_mixed(7);
+    } else if (operation == "format-character-utf8") {
+        // Stay within char's range so formatting succeeds before UTF-8 validation fails.
+        constexpr auto byte = std::numeric_limits<char>::is_signed ? -1 : 255;
+        carven::api::tests::interop::exceptions::precomputed::discard_character(byte);
+    } else if (operation == "format-locale-utf8") {
+        static_cast<void>(
+            std::locale::global(std::locale(std::locale::classic(), new InvalidGrouping))
+        );
+        carven::api::tests::interop::exceptions::precomputed::discard_localized(1000);
+    } else if (operation == "append-format-throw" || operation == "append-format-utf8") {
+        carven::api::tests::interop::exceptions::precomputed::append_native_failure(
+            operation == "append-format-utf8"
+        );
+    } else if (operation == "append-format-allocate") {
+        fail_allocation = true;
+        carven::api::tests::interop::exceptions::precomputed::append_dynamic(7);
+    } else if (operation == "append-precomputed-allocate") {
+        fail_allocation = true;
+        carven::api::tests::interop::exceptions::precomputed::append_precomputed();
+    } else if (operation == "append-format-width") {
+        carven::api::tests::interop::exceptions::precomputed::append_width(-1);
+    } else if (operation == "print-inner-allocate") {
+        fail_allocation = true;
+        carven::api::tests::interop::exceptions::precomputed::print_precomputed();
+    } else if (operation == "print-inner-throw" || operation == "print-inner-utf8") {
+        carven::api::tests::interop::exceptions::precomputed::print_native_failure(
+            operation == "print-inner-utf8"
+        );
+    } else if (operation == "print-later-throw") {
+        carven::runtime::println(std::string_view("42"), FormatProbe {.invalid_utf8 = false});
     } else if (operation == "string-allocate" || operation == "string-copy") {
         const auto input = std::string(4096, 'x');
         if (operation == "string-allocate") {
@@ -129,4 +171,7 @@ auto main(int argc, char** argv) -> int {
         }
     }
     return 2;
+} catch (...) {
+    // Escaping the runtime boundary is a failure, even though uncaught exceptions terminate.
+    return 75;
 }

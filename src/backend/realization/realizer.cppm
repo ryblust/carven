@@ -2,10 +2,10 @@ module carven:backend.realization.realizer;
 
 import :backend.construction;
 import :backend.generation.names;
+import :backend.lowering.body;
+import :backend.lowering.constant;
 import :backend.lowering.context;
-import :backend.realization.body;
 import :backend.realization.composition;
-import :backend.realization.constant;
 import :backend.realization.pattern;
 import :backend.target.expr;
 import :backend.target.stmt;
@@ -17,7 +17,7 @@ public:
     BodyRealizer(
         ModuleLowering& context,
         const BodyConstruction& construction,
-        BodyRealizationInputs inputs
+        BodyLoweringInputs inputs
     ) noexcept;
     auto finish() noexcept -> LoweredBody;
 
@@ -37,16 +37,16 @@ private:
     };
 
 
-    enum class ResultDemand { Value, Observe, Discard };
+    enum class ResultDemand { Value, Observe, Discard, PropagateOutcome };
     auto expression(
         ConstructionExpressionID source,
-        RealizationLiteralContext literal = RealizationLiteralContext::Exact,
+        ConstantLiteralContext literal = ConstantLiteralContext::Exact,
         ResultDemand demand = ResultDemand::Value
     ) noexcept -> Lowered<LoweringResult>;
     auto condition(ConstructionExpressionID source) noexcept -> Lowered<LoweringPredicate>;
     auto operand(
         ConstructionOperand source,
-        RealizationLiteralContext literal = RealizationLiteralContext::Exact
+        ConstantLiteralContext literal = ConstantLiteralContext::Exact
     ) noexcept -> Lowered<TargetExpr>;
     auto discard(ConstructionExpressionID source) noexcept -> Lowered<LoweringCompleted>;
     auto read_value(Lowered<LoweringResult> value, LoweringStmtBuilder& destination) noexcept
@@ -188,7 +188,7 @@ private:
     ModuleLowering& context;
     const BodyConstruction& construction;
     const SemIRBody& metadata;
-    BodyRealizationInputs inputs;
+    BodyLoweringInputs inputs;
     TargetNameAllocator names;
     std::vector<LocalBindingID> parameter_bindings;
     std::vector<LocalBindingID> capture_bindings;

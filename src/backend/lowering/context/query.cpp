@@ -28,7 +28,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
         return {
             .value = TargetCallExpr {
                 .callee = target_child(intrinsic_expression(TargetSymbol::StdDeclval)),
-                .template_argument_type_ids = {reference_type(
+                .template_arguments = {reference_type(
                     lower_type(value.type),
                     value.access == AccessMode::Read,
                     value.access == AccessMode::Take
@@ -130,7 +130,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
                 return {
                     .value = TargetCallExpr {
                         .callee = UniqueIndirect(std::move(callee)),
-                        .template_argument_type_ids = {},
+                        .template_arguments = {},
                         .arguments = std::move(arguments)
                     }
                 };

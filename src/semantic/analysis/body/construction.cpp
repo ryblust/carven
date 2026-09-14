@@ -1,6 +1,5 @@
 module carven:semantic.analysis.body.construction.impl;
 
-
 import :diagnostics.builder;
 import :diagnostics.code;
 import :frontend.ast.control;
@@ -13,17 +12,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
-import :semantic.analysis.body.expression_site;
-import :semantic.analysis.body.pipeline;
+import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluate;
+import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
-import :semantic.analysis.expr.constant;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
+import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -48,6 +46,7 @@ BodyElaborator::BodyElaborator(
       ast(source),
       body_builder(std::move(reservation), *owner.draft),
       result_type(result),
+      infer_result(!result.has_value()),
       outward_failure_term_id(outward_failure_term_id),
       is_test(test_body),
       dead_failure_context {owner.draft->add_empty_failure_term(), true},
@@ -107,18 +106,15 @@ auto BodyElaborator::warn(Span span, DiagnosticCode code, std::string message) n
 }
 
 auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisResult<std::uint64_t> {
-    auto scope = BodyExpressionSite(*this);
+    auto scope = BodyExprSite(*this);
     return evaluate_array_extent(draft(), source_module_id, ast, scope, id);
 }
 
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
-    -> AnalysisResult<ResolvedConstantName> {
+    -> AnalysisResult<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
         const auto* constant = std::get_if<ConstantID>(&local->storage);
-        return ResolvedConstantName {
-            .type = local->type,
-            .constant = constant == nullptr ? std::nullopt : std::optional(*constant),
-        };
+        return constant == nullptr ? std::nullopt : std::optional(*constant);
     }
     auto selected = find_global(name, span);
     if (!selected.has_value()) {
@@ -126,42 +122,27 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
     }
     return std::visit(
         Overloaded {
-            [&](const CatalogConstantForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+            [&](const CatalogConstantForm& form) noexcept
+                -> AnalysisResult<std::optional<ConstantID>> {
                 const auto declaration = draft().module_constant_declaration_copy(form.constant);
-                return ResolvedConstantName {
-                    .type = draft().constant_copy(declaration.value).type,
-                    .constant = declaration.value,
-                };
+                return declaration.value;
             },
-            [&](const CatalogEnumCaseForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+            [&](const CatalogEnumCaseForm& form) noexcept
+                -> AnalysisResult<std::optional<ConstantID>> {
                 const auto declaration =
                     draft().construction_enum_case_declaration_copy(form.enum_case);
-                const auto type = draft().intern_type(
-                    CanonicalType {
-                        .value = EnumTypeValue {.enumeration = declaration.owner},
-                    }
-                );
-                return ResolvedConstantName {
-                    .type = type,
-                    .constant = declaration.constant,
-                };
+                return declaration.constant;
             },
-            [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<ResolvedConstantName> {
+            [&](const CatalogFunctionForm& form) noexcept
+                -> AnalysisResult<std::optional<ConstantID>> {
                 auto completed =
                     batch->ensure_function_signature(form.function, source_module_id, span);
                 if (!completed.has_value()) {
                     return std::unexpected(completed.error());
                 }
-                return ResolvedConstantName {
-                    .type = draft().intern_type(
-                        CanonicalType {
-                            .value = FunctionTypeValue {.callable = form.callable},
-                        }
-                    ),
-                    .constant = std::nullopt,
-                };
+                return std::nullopt;
             },
-            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<ResolvedConstantName> {
+            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<std::optional<ConstantID>> {
                 static_assert(
                     std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
                     "unhandled non-constant catalog symbol"
@@ -175,6 +156,31 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
         },
         (*selected)->form
     );
+}
+
+auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
+    return batch->requests;
+}
+
+auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
+    -> AnalysisResult<std::optional<FunctionID>> {
+    if (use_local(name) != nullptr || catalog().lookup(source_module_id, name).empty()) {
+        return std::optional<FunctionID>();
+    }
+    auto selected = find_global(name, span);
+    if (!selected) {
+        return std::unexpected(selected.error());
+    }
+    const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
+    if (function == nullptr) {
+        return std::optional<FunctionID>();
+    }
+
+    auto completed = batch->ensure_function_signature(function->function, source_module_id, span);
+    if (!completed) {
+        return std::unexpected(completed.error());
+    }
+    return std::optional(function->function);
 }
 
 auto BodyElaborator::resolve_enum_qualifier(ASTExprID expression) noexcept
@@ -243,7 +249,7 @@ auto BodyElaborator::resolve_constant_enum_case(
 }
 
 auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return resolve_source_type(
+    auto result = resolve_source_type(
         draft(),
         catalog(),
         import_usage(),
@@ -252,11 +258,18 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisResult<Con
         type,
         [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
     );
+    if (result) {
+        auto prepared = batch->requests.ensure_type(*result, source_module_id, ast.type(type).span);
+        if (!prepared) {
+            return std::unexpected(prepared.error());
+        }
+    }
+    return result;
 }
 
 auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) noexcept
     -> AnalysisResult<ConstructionTypeRef> {
-    return resolve_source_construction_type(
+    auto result = resolve_source_construction_type(
         draft(),
         catalog(),
         import_usage(),
@@ -265,123 +278,18 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         type,
         [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
     );
+    if (result) {
+        auto prepared = batch->requests.ensure_type(*result, source_module_id, type.span);
+        if (!prepared) {
+            return std::unexpected(prepared.error());
+        }
+    }
+    return result;
 }
 
 auto BodyElaborator::compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept
     -> bool {
     return type_shapes_compatible(draft(), left, right);
-}
-
-auto BodyElaborator::require_invariant_storage_type(
-    ConstructionTypeRef source,
-    ConstructionTypeRef target,
-    Span span
-) noexcept -> AnalysisResult<void> {
-    if (is_cpp_type(source) || is_cpp_type(target)) {
-        return {};
-    }
-
-    struct ArrayShape final {
-        ConstructionTypeRef element;
-        std::uint64_t extent;
-    };
-
-    struct CallableViewShape final {
-        std::vector<ConstructionCallableParameter> parameters;
-        ConstructionTypeRef result;
-        FailureTermID failures;
-    };
-
-    const auto array_shape = [&](ConstructionTypeRef type) noexcept -> std::optional<ArrayShape> {
-        if (const auto* concrete = std::get_if<TypeID>(&type)) {
-            const auto canonical = draft().type_copy(*concrete);
-            const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
-            return array == nullptr ? std::nullopt
-                                    : std::optional(
-                                          ArrayShape {
-                                              .element = array->element,
-                                              .extent = array->extent,
-                                          }
-                                      );
-        }
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value);
-        return array == nullptr ? std::nullopt
-                                : std::optional(
-                                      ArrayShape {
-                                          .element = array->element,
-                                          .extent = array->extent,
-                                      }
-                                  );
-    };
-    const auto callable_view_shape =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<CallableViewShape> {
-        if (std::holds_alternative<TypeID>(type)) {
-            return std::nullopt;
-        }
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-        return view == nullptr ? std::nullopt
-                               : std::optional(
-                                     CallableViewShape {
-                                         .parameters = view->parameters,
-                                         .result = view->result,
-                                         .failures = view->failures,
-                                     }
-                                 );
-    };
-    const auto invariant = [&](this auto&& self,
-                               ConstructionTypeRef left,
-                               ConstructionTypeRef right) noexcept -> bool {
-        if (left == right) {
-            return true;
-        }
-        const auto left_slice = slice_element(draft(), left);
-        const auto right_slice = slice_element(draft(), right);
-        if (left_slice || right_slice) {
-            return left_slice && right_slice && self(*left_slice, *right_slice);
-        }
-        const auto left_array = array_shape(left);
-        const auto right_array = array_shape(right);
-        if (left_array.has_value() || right_array.has_value()) {
-            return left_array.has_value()
-                && right_array.has_value()
-                && left_array->extent == right_array->extent
-                && self(left_array->element, right_array->element);
-        }
-        const auto left_view = callable_view_shape(left);
-        const auto right_view = callable_view_shape(right);
-        if (left_view.has_value() || right_view.has_value()) {
-            if (!left_view.has_value()
-                || !right_view.has_value()
-                || left_view->parameters.size() != right_view->parameters.size()
-                || !self(left_view->result, right_view->result)) {
-                return false;
-            }
-            for (auto index = 0uz; index < left_view->parameters.size(); ++index) {
-                if (left_view->parameters[index].access != right_view->parameters[index].access
-                    || !self(
-                        left_view->parameters[index].type,
-                        right_view->parameters[index].type
-                    )) {
-                    return false;
-                }
-            }
-            draft().require_equal_failures(left_view->failures, right_view->failures, origin(span));
-            return true;
-        }
-        const auto* left_type = std::get_if<TypeID>(&left);
-        const auto* right_type = std::get_if<TypeID>(&right);
-        return left_type != nullptr
-            && right_type != nullptr
-            && draft().type_copy(*left_type) == draft().type_copy(*right_type);
-    };
-    if (!invariant(source, target)) {
-        return std::unexpected(
-            fail(span, DiagnosticCode::TypeMismatch, "storage has an incompatible type")
-        );
-    }
-    return {};
 }
 
 auto BuiltExpression::is_function_reference() const noexcept -> bool {
@@ -425,13 +333,16 @@ BodyReferencePathGuard::~BodyReferencePathGuard() noexcept {
 BodyBatchElaborator::BodyBatchElaborator(
     ProgramDraft& builder,
     AnalysisCatalogView catalog_view,
-    ImportUsage& usage
+    ImportUsage& usage,
+    ConstructionRequests& requests
 ) noexcept
     : draft(std::addressof(builder)),
       catalog_data(catalog_view),
       imports(std::addressof(usage)),
+      requests(requests),
       functions(catalog_view.function_count()),
-      states(catalog_view.function_count(), Unvisited {}) {
+      states(catalog_view.function_count(), Unvisited {}),
+      body_ids(catalog_view.function_count()) {
     for (const auto& symbol : catalog_view.symbols()) {
         if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
             functions[function->function.index()] = std::addressof(symbol);

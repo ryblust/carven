@@ -211,7 +211,36 @@ auto BodyRealizer::result_expression(
         static_cast<void>(destination.accept(discard(source)));
         return;
     }
-    auto literal = RealizationLiteralContext::Exact;
+    const auto& expression_source = construction.expression(source);
+    const auto* operation = std::get_if<ConstructionOperation>(&expression_source.value);
+    const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
+    if (std::holds_alternative<LoweringReturnResult>(result)
+        && callable != nullptr
+        && operation != nullptr
+        && operation->failure
+        && std::holds_alternative<ConstructionFunctionExit>(operation->failure->destination)
+        && std::holds_alternative<SemCall>(expression_source.operation.value)
+        && context.call_result(construction.expression(operation->operands.front().expression).type)
+            == context.callable_result(callable->callable_id)) {
+        auto value = destination.accept(
+            expression(source, ConstantLiteralContext::Exact, ResultDemand::PropagateOutcome)
+        );
+        if (value) {
+            if (!context.plan().failure_abi().members(operation->failure->failures).empty()) {
+                destination.record_exits(
+                    LoweringExitSummary {.targets = {{LoweringExitKind::Failure, 0}}}
+                );
+            }
+            destination.terminate(
+                generated_statement(
+                    TargetReturnStmt {.expression = require_expression(std::move(*value))}
+                ),
+                LoweringExitTarget {LoweringExitKind::FunctionReturn, 0}
+            );
+        }
+        return;
+    }
+    auto literal = ConstantLiteralContext::Exact;
     if (returns_result(result)) {
         if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
             std::holds_alternative<LoweringYieldResult>(result)
@@ -226,7 +255,7 @@ auto BodyRealizer::result_expression(
                                                    .signature)
                                     .failures)
                        .empty())) {
-            literal = RealizationLiteralContext::TargetTyped;
+            literal = ConstantLiteralContext::TargetTyped;
         }
     }
     auto value = destination.accept(expression(source, literal));

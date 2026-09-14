@@ -31,13 +31,13 @@ auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexc
 
 auto template_call_expression(
     TargetExpr callee,
-    std::vector<TargetTypeID> template_arguments,
+    std::vector<TargetTemplateArgument> template_arguments,
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr {
     return {
         .value = TargetCallExpr {
             .callee = UniqueIndirect(std::move(callee)),
-            .template_argument_type_ids = std::move(template_arguments),
+            .template_arguments = std::move(template_arguments),
             .arguments = std::move(arguments),
         },
     };

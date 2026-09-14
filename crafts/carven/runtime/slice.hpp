@@ -1,12 +1,11 @@
 #pragma once
 
-#include "numeric.hpp"
+#include "index.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <span>
-#include <type_traits>
 
 namespace carven::runtime {
 
@@ -31,15 +30,7 @@ public:
 
     template<Integer Index>
     constexpr auto operator[](Index index) const noexcept -> const Element& {
-        if constexpr (std::is_signed_v<Index>) {
-            if (index < 0) {
-                std::abort();
-            }
-        }
-        if (static_cast<std::make_unsigned_t<Index>>(index) >= size()) {
-            std::abort();
-        }
-        return storage[static_cast<std::size_t>(index)];
+        return storage[checked_index_offset(index, size())];
     }
 
     constexpr auto slice(std::size_t start, std::size_t end) const noexcept -> Slice {
