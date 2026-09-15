@@ -55,7 +55,7 @@ TEST_CASE("Format preparation: append shares normalization with a separate Write
                     CHECK(text->text == "7");
                     CHECK(format->operands.size() == 1uz);
                 } else {
-                    CHECK(std::holds_alternative<PreparedIntegerFormat>(preparation));
+                    CHECK(std::holds_alternative<PreparedWriterFormat>(preparation));
                 }
                 ++count;
             }

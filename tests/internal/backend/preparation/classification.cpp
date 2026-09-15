@@ -15,7 +15,7 @@ TEST_CASE("Integer formatting: parsed fields retain literal bytes and exact type
         BuiltinType::U32,
         BuiltinType::I64,
     };
-    const auto parsed = classify_integer_format(
+    const auto parsed = classify_writer_format(
         FormatSpec {
             .parts =
                 {format_text(std::string("{我}\0", 6uz)),
@@ -29,9 +29,9 @@ TEST_CASE("Integer formatting: parsed fields retain literal bytes and exact type
     CHECK(parsed->text == std::vector<std::string> {std::string("{我}\0", 6uz), "/", ""});
     CHECK(
         parsed->fields
-        == std::vector<IntegerFormatField> {
-            {.base = 16, .uppercase = true, .zero_pad = true, .width = 8u},
-            {.base = 10, .uppercase = false, .zero_pad = true, .width = 20u},
+        == std::vector<WriterFormatField> {
+            IntegerFormatField {.base = 16, .uppercase = true, .zero_pad = true, .width = 8u},
+            IntegerFormatField {.base = 10, .uppercase = false, .zero_pad = true, .width = 20u},
         }
     );
     CHECK(parsed->minimum_size == 35u);
@@ -101,7 +101,7 @@ TEST_CASE("Integer formatting: size bounds include every value and the sign of a
     for (const auto& scenario : scenarios) {
         CAPTURE(serialize_format(scenario.format));
         const auto types = std::array<std::optional<BuiltinType>, 1> {scenario.type};
-        const auto parsed = classify_integer_format(scenario.format, types);
+        const auto parsed = classify_writer_format(scenario.format, types);
         REQUIRE(parsed.has_value());
         CHECK(parsed->minimum_size == scenario.minimum_size);
         CHECK(parsed->maximum_size == scenario.maximum_size);
@@ -115,33 +115,70 @@ TEST_CASE(
     for (const auto specification :
          {"00", "+d", "#x", "c", "L", "2147483648", "999999999999999999999999"}) {
         CAPTURE(specification);
-        CHECK_FALSE(classify_integer_format(
+        CHECK_FALSE(classify_writer_format(
                         FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}},
                         integer
         )
                         .has_value());
     }
     CHECK_FALSE(
-        classify_integer_format(FormatSpec {.parts = {format_field(1uz)}}, integer).has_value()
+        classify_writer_format(FormatSpec {.parts = {format_field(1uz)}}, integer).has_value()
     );
-    CHECK_FALSE(classify_integer_format(
+    CHECK_FALSE(classify_writer_format(
                     FormatSpec {.parts = {format_field(0uz), format_field(0uz)}},
                     integer
     )
                     .has_value());
-    CHECK_FALSE(classify_integer_format(
+    CHECK_FALSE(classify_writer_format(
                     FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
                     integer
     )
                     .has_value());
     for (const auto type :
-         {std::optional(BuiltinType::Bool),
-          std::optional(BuiltinType::Str),
+         {std::optional(BuiltinType::Void),
           std::optional(BuiltinType::F64),
           std::optional<BuiltinType>()}) {
         const auto types = std::array {type};
         CHECK_FALSE(
-            classify_integer_format(FormatSpec {.parts = {format_field(0uz)}}, types).has_value()
+            classify_writer_format(FormatSpec {.parts = {format_field(0uz)}}, types).has_value()
         );
+    }
+}
+
+TEST_CASE(
+    "Writer formatting: mixed bounds exclude runtime text and include bool and Unicode scalars"
+) {
+    const auto types = std::array<std::optional<BuiltinType>, 5> {
+        BuiltinType::Str,
+        BuiltinType::String,
+        BuiltinType::Bool,
+        BuiltinType::Char,
+        BuiltinType::U8,
+    };
+    const auto parsed = classify_writer_format(
+        FormatSpec {
+            .parts =
+                {format_text("["),
+                 format_field(0uz),
+                 format_field(1uz),
+                 format_field(2uz),
+                 format_field(3uz),
+                 format_field(4uz, {format_text("02X")}),
+                 format_text("]")}
+        },
+        types
+    );
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->minimum_size == 9u);
+    CHECK(parsed->maximum_size == 13u);
+    CHECK(parsed->fields.size() == 5uz);
+    for (const auto type :
+         {BuiltinType::Str, BuiltinType::String, BuiltinType::Bool, BuiltinType::Char}) {
+        const auto operand = std::array<std::optional<BuiltinType>, 1> {type};
+        CHECK_FALSE(classify_writer_format(
+                        FormatSpec {.parts = {format_field(0uz, {format_text(">8")})}},
+                        operand
+        )
+                        .has_value());
     }
 }

@@ -86,15 +86,14 @@ auto format_preserves_utf8(
     );
 }
 
-auto classify_integer_format(
+auto classify_writer_format(
     const FormatSpec& format,
     std::span<const std::optional<BuiltinType>> operands
-) noexcept -> std::optional<IntegerFormat> {
+) noexcept -> std::optional<WriterFormat> {
     if (operands.empty()) {
         return std::nullopt;
     }
-    auto result =
-        IntegerFormat {.text = {""}, .fields = {}, .minimum_size = 0u, .maximum_size = 0u};
+    auto result = WriterFormat {.text = {""}, .fields = {}, .minimum_size = 0u, .maximum_size = 0u};
     auto size_overflow = false;
     const auto add_size = [&](std::uint64_t minimum, std::uint64_t maximum) noexcept {
         if (maximum > std::numeric_limits<std::size_t>::max() - result.maximum_size) {
@@ -112,8 +111,24 @@ auto classify_integer_format(
             add_size(1u, 1u);
         },
         [&](std::size_t index, std::string_view specification) noexcept {
-            if (!operands[index] || !builtin_is_integer(*operands[index])) {
+            if (!operands[index]) {
                 return false;
+            }
+            const auto type = *operands[index];
+            if (!builtin_is_integer(type)) {
+                if (!specification.empty()) {
+                    return false;
+                }
+                switch (type) {
+                    case BuiltinType::Bool:   add_size(4u, 5u); break;
+                    case BuiltinType::Char:   add_size(1u, 4u); break;
+                    case BuiltinType::Str:
+                    case BuiltinType::String: break;
+                    default:                  return false;
+                }
+                result.fields.emplace_back(type);
+                result.text.emplace_back();
+                return true;
             }
             const auto parsed = parse_integer_format_specification(specification);
             if (!parsed) {
@@ -132,12 +147,14 @@ auto classify_integer_format(
                     return false;
                 }
             }
-            result.fields.push_back({
-                .base = parsed->base,
-                .uppercase = parsed->uppercase,
-                .zero_pad = parsed->zero_pad,
-                .width = width,
-            });
+            result.fields.push_back(
+                IntegerFormatField {
+                    .base = parsed->base,
+                    .uppercase = parsed->uppercase,
+                    .zero_pad = parsed->zero_pad,
+                    .width = width,
+                }
+            );
             result.text.emplace_back();
             add_size(
                 std::max(width, 1u),

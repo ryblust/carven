@@ -149,7 +149,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     (void)executable;
     return fail("native execution currently supports POSIX hosts only");
 #else
-    auto semantic = analyze_sources(
+    auto semantic = load_and_analyze_sources(
         input_paths,
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);

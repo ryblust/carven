@@ -295,13 +295,20 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     // A factory cannot extend a prvalue lifetime by returning const T&.
     const auto read = use == ConstructionUse::ReadBorrow
         && (value.category == SemanticValueCategory::Place || names_storage(value));
+    // By-value builtin snapshots store the value type, not a const parameter type.
+    const auto read_value = read
+        && std::holds_alternative<BuiltinTypeValue>(
+                                owner.context.semantic().types().type(value.type).value
+        )
+        && !owner.context.plan().read_borrows_storage(value.type);
     const auto type = place
         ? owner.context.reference_type(
               owner.context.lower_type(value.type),
               use == ConstructionUse::ConstPlace || value.category != SemanticValueCategory::Place
           )
-        : read ? owner.context.lower_parameter({.access = AccessMode::Read, .type = value.type})
-               : owner.context.lower_type(value.type);
+        : read && !read_value
+        ? owner.context.lower_parameter({.access = AccessMode::Read, .type = value.type})
+        : owner.context.lower_type(value.type);
     const auto storage = LoweringDeferredStorage {.name = name, .value_type = type};
     owner.declare_deferred(storage, false, declarations);
     owner.initialize_deferred(

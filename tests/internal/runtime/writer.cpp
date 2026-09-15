@@ -101,3 +101,41 @@ TEST_CASE("Runtime Writer: an upper bound alone does not require its storage") {
     writer.integer<2, false, false>(7u, 0uz);
     CHECK(output.as_str() == "value=111");
 }
+
+TEST_CASE("Runtime writer: mixed fields size completed text and preserve independent UTF-8 bytes") {
+    const auto input = carven::runtime::String::from_str(std::string(4096uz, 'x') + "我");
+    const auto view = std::string_view("a\0b", 3uz);
+    auto output = carven::runtime::String::from_str("prefix:");
+    auto writer = carven::runtime::Writer(output, 7uz, 11uz, {input.size(), view.size()});
+    const auto* allocation = output.as_str().data();
+    writer.append(input);
+    writer.append(view);
+    writer.boolean(false);
+    writer.character(U'😀');
+    writer.integer<16, true, true>(std::uint8_t {255}, 2uz);
+    CHECK(
+        output.as_str()
+        == std::string("prefix:") + std::string(input.as_str()) + std::string(view) + "false😀FF"
+    );
+    CHECK(output.as_str().data() == allocation);
+    CHECK(input.size() == 4099uz);
+}
+
+TEST_CASE("Runtime Writer: cumulative text lengths reject overflow before allocation") {
+    CHECK(expect_termination("writer-text-sizes", []() static noexcept {
+        auto output = carven::runtime::String();
+        const auto maximum = std::string().max_size();
+        auto writer = carven::runtime::Writer(output, 0uz, 0uz, {maximum, 1uz});
+        writer.append("unused");
+    }));
+}
+
+TEST_CASE("Runtime Writer: saturated text upper bounds preserve available storage") {
+    auto output = carven::runtime::String::from_str("prefix:");
+    const auto* storage = output.as_str().data();
+    auto writer =
+        carven::runtime::Writer(output, 0uz, std::numeric_limits<std::size_t>::max(), {1uz, 1uz});
+    writer.append("ab");
+    CHECK(output.as_str() == "prefix:ab");
+    CHECK(output.as_str().data() == storage);
+}

@@ -73,6 +73,7 @@ enum class TargetSymbol {
     StdNullptr,
     StdExitFailure,
     StdOptional,
+    StdInitializerList,
     StdStringView,
     StdVariant,
     TestingContext,

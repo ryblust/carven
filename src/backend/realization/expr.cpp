@@ -5,6 +5,7 @@ import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.realization.expr;
+import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.realization.realizer;
 import :backend.target.builder;
@@ -91,6 +92,25 @@ auto BodyRealizer::ExpressionBuilder::finish(
         return take_statements(shared).complete<LoweringResult>(
             LoweringDirectExpression {std::get<TargetExpr>(std::move(recipe.completion))}
         );
+    }
+    if (demand == ResultDemand::DirectReturn) {
+        const auto* operation =
+            std::get_if<ConstructionOperation>(&owner.construction.expression(source).value);
+        const auto* preparation = operation != nullptr
+            ? std::get_if<PreparedFormat>(operation->preparation.get())
+            : nullptr;
+        const auto* writer =
+            preparation != nullptr ? std::get_if<PreparedWriterFormat>(preparation) : nullptr;
+        if (writer != nullptr) {
+            const auto& format =
+                std::get<SemFormat>(owner.construction.expression(source).operation.value);
+            complete_writer(
+                recipe,
+                format,
+                *writer,
+                owner.names.fresh(TargetTemporaryNameKind::Owner)
+            );
+        }
     }
     // A residual expression may be consumed after an intervening C++ statement.
     // Its borrowed backing belongs to this source frame, not that statement.
@@ -469,6 +489,18 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         recipe.operands.push_back(std::move(child));
     }
+    const auto* format = std::get_if<SemFormat>(&value.operation.value);
+    const auto* prepared_operation = std::get_if<ConstructionOperation>(&value.value);
+    const auto* prepared = prepared_operation != nullptr
+        ? std::get_if<PreparedFormat>(prepared_operation->preparation.get())
+        : nullptr;
+    const auto* writer_format =
+        prepared != nullptr ? std::get_if<PreparedWriterFormat>(prepared) : nullptr;
+    if (format != nullptr && format->receiver && writer_format != nullptr) {
+        flush_pending(pending);
+        complete_writer(recipe, *format, *writer_format, std::nullopt);
+        return recipe;
+    }
     const auto needs_stable_source = std::holds_alternative<SemArrayAdopt>(value.operation.value)
         || (std::holds_alternative<SemBorrowCallable>(value.operation.value)
             && inputs.front().use == ConstructionUse::ConstPlace);
@@ -495,6 +527,66 @@ auto BodyRealizer::ExpressionBuilder::build(
         );
     }
     return recipe;
+}
+
+auto BodyRealizer::ExpressionBuilder::complete_writer(
+    Recipe& recipe,
+    const SemFormat& format,
+    const PreparedWriterFormat& preparation,
+    std::optional<TargetIdentifier> output
+) noexcept -> void {
+    const auto offset = format.receiver ? 1uz : 0uz;
+    // Existing conflict barriers have already captured reads before later effects.
+    // Complete remaining nontrivial inputs before any reservation or write.
+    for (auto index = 0uz; index < recipe.inputs.size(); ++index) {
+        if (recipe.inputs[index].demand != ConstructionDemand::Value) {
+            continue;
+        }
+        auto& child = recipe.operands[index];
+        if (!std::holds_alternative<SemBinding>(source(child).operation.value)) {
+            preserve_borrows(child);
+            anchor(child, recipe.inputs[index].use, false, true);
+        }
+    }
+    auto operands = std::vector<TargetExpr>();
+    auto sizes = std::vector<TargetExpr>();
+    for (auto index = 0uz; index < preparation.operand_indices.size(); ++index) {
+        auto& child = recipe.operands[preparation.operand_indices[index] + offset];
+        const auto* type = std::get_if<BuiltinType>(&preparation.format.fields[index]);
+        if (type != nullptr && (*type == BuiltinType::Str || *type == BuiltinType::String)) {
+            sizes.push_back(call_member(raw(child), "size", {}));
+        }
+        operands.push_back(raw(child));
+    }
+    if (output) {
+        const auto type = owner.context.lower_type(source(recipe).type);
+        statements.emit(generated_statement(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::MutableValue,
+                .maybe_unused = false,
+                .name = *output,
+                .type = type,
+                .initializer =
+                    TargetExpr {.value = TargetConstructionExpr {.type = type, .initializer = {}}}
+            }
+        ));
+    }
+    auto writes = realize_writer_statements(
+        owner.context,
+        preparation.format,
+        owner.names.fresh(TargetTemporaryNameKind::Operand),
+        output ? name_expression(*output) : raw(recipe.operands.front()),
+        std::move(operands),
+        std::move(sizes)
+    );
+    for (auto& statement : writes) {
+        statements.emit(std::move(statement));
+    }
+    if (output) {
+        complete(recipe, name_expression(*output));
+    } else {
+        complete(recipe, LoweringCompleted {});
+    }
 }
 
 auto BodyRealizer::expression(

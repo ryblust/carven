@@ -153,26 +153,21 @@ auto prepare_format(
         }
     };
     renumber(prepared.parts);
+    // Direct writing consumes structured text, not an escaped native format string.
+    if (auto writer = classify_writer_format(prepared, retained_types)) {
+        return PreparedWriterFormat {
+            .format = std::move(*writer),
+            .operand_indices = std::move(retained)
+        };
+    }
     auto serialized = serialize_format(prepared, maximum_prepared_format_bytes);
     if (!serialized) {
-        if (auto integer = classify_integer_format(specification, types)) {
-            return PreparedIntegerFormat {
-                .format = std::move(*integer),
-                .operand_indices = format_operands(specification)
-            };
-        }
         return PreparedDelegatedFormat {
             .format_string = serialize_format(specification),
             .operand_indices = format_operands(specification),
             .encoding = format_preserves_utf8(specification, types)
                 ? FormatResultEncoding::ValidUTF8
                 : FormatResultEncoding::Unproven,
-        };
-    }
-    if (auto integer = classify_integer_format(prepared, retained_types)) {
-        return PreparedIntegerFormat {
-            .format = std::move(*integer),
-            .operand_indices = std::move(retained)
         };
     }
     const auto encoding = format_preserves_utf8(prepared, retained_types)

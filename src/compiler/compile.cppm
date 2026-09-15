@@ -10,7 +10,7 @@ import std;
 
 auto compile(
     const SourceManager& sources,
-    CompilationRequest compilation,
+    CompilationRequest request,
     const TargetPlanningRequest& generation,
     const ExecutionOutput& output = {}
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics>;

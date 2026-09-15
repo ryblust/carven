@@ -120,6 +120,12 @@ private:
         bool full_expression_root = false,
         bool propagate_outcome = false
     ) noexcept -> Recipe;
+    auto complete_writer(
+        Recipe& recipe,
+        const SemFormat& format,
+        const PreparedWriterFormat& preparation,
+        std::optional<TargetIdentifier> output
+    ) noexcept -> void;
     auto unordered(const ConstructionExpression& value) const noexcept -> bool;
     auto first_unsequenced(const ConstructionExpression& value) const noexcept -> std::size_t;
     auto preserve_borrows(Recipe& recipe) noexcept -> void;

@@ -37,7 +37,7 @@ private:
     };
 
 
-    enum class ResultDemand { Value, Observe, Discard, PropagateOutcome };
+    enum class ResultDemand { Value, DirectReturn, Observe, Discard, PropagateOutcome };
     auto expression(
         ConstructionExpressionID source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,

@@ -15,15 +15,17 @@ struct IntegerFormatField final {
     auto operator==(const IntegerFormatField&) const noexcept -> bool = default;
 };
 
-struct IntegerFormat final {
+using WriterFormatField = std::variant<IntegerFormatField, BuiltinType>;
+
+struct WriterFormat final {
     // Unescaped literal segments before, between, and after the ordered fields.
     std::vector<std::string> text;
-    std::vector<IntegerFormatField> fields;
-    // Bounds from literal bytes, widths, and integer types. Equal bounds give
-    // an exact size without evaluating the dynamic values.
+    std::vector<WriterFormatField> fields;
+    // Bounds exclude dynamic text bytes, added from completed operands by Writer.
+    // Equal bounds give an exact size after those text lengths are added.
     std::uint64_t minimum_size;
     std::uint64_t maximum_size;
-    auto operator==(const IntegerFormat&) const noexcept -> bool = default;
+    auto operator==(const WriterFormat&) const noexcept -> bool = default;
 };
 
 
@@ -33,8 +35,8 @@ struct PreparedFormatText final {
     std::string text;
 };
 
-struct PreparedIntegerFormat final {
-    IntegerFormat format;
+struct PreparedWriterFormat final {
+    WriterFormat format;
     std::vector<std::size_t> operand_indices;
 };
 
@@ -45,16 +47,16 @@ struct PreparedDelegatedFormat final {
 };
 
 using PreparedFormat =
-    std::variant<PreparedFormatText, PreparedIntegerFormat, PreparedDelegatedFormat>;
+    std::variant<PreparedFormatText, PreparedWriterFormat, PreparedDelegatedFormat>;
 
 auto prepared_format_operands(const PreparedFormat& preparation) noexcept
     -> std::span<const std::size_t>;
 
-// Classifies ordered static integer fields and computes type-derived size bounds.
-auto classify_integer_format(
+// Classifies supported builtin fields and computes bounds excluding dynamic text.
+auto classify_writer_format(
     const FormatSpec& format,
     std::span<const std::optional<BuiltinType>> operands
-) noexcept -> std::optional<IntegerFormat>;
+) noexcept -> std::optional<WriterFormat>;
 // Proves UTF-8 on successful formatting for the supported builtin subset.
 auto format_preserves_utf8(
     const FormatSpec& format,

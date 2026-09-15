@@ -65,7 +65,7 @@ jobs:
 
       - name: Toolchain versions
         run: |
-          xmake --version
+          ./xmakew --version
           clang --version
           clang-tidy --version
           clang-format --version
@@ -73,28 +73,28 @@ jobs:
       - name: Configure macOS
         if: runner.os == 'macOS'
         run: |
-          xmake f -y -m release --sdk="$LLVM_ROOT" --target_minver=26.0 \
+          ./xmakew f -y -m release --sdk="$LLVM_ROOT" --target_minver=26.0 \
             --ldflags="-L$LLVM_ROOT/lib/c++ -Wl,-rpath,$LLVM_ROOT/lib/c++"
 
       - name: Configure Linux
         if: runner.os == 'Linux'
-        run: xmake f -y -m release --sdk="$LLVM_ROOT" --runtimes=c++_shared --syslinks=c++abi
+        run: ./xmakew f -y -m release --sdk="$LLVM_ROOT" --runtimes=c++_shared --syslinks=c++abi
 
       - name: Build compiler
-        run: xmake build -y
+        run: ./xmakew build -y
 
       - name: Test all groups
-        run: xmake test
-
-      - name: Clang-tidy
-        run: |
-          if ! xmake check -vD clang.tidy; then
-            # Xmake generates this database in quiet mode before starting tidy.
-            # Repeat visibly on failure so setup errors are not lost.
-            xmake project -vD -k compile_commands --lsp=clangd build/clang-tidy-diagnostics
-            exit 1
-          fi
+        run: ./xmakew test
 
       - name: Check formatting
         if: runner.os == 'macOS'
-        run: xmake format-check
+        run: ./xmakew format-check
+
+      - name: Clang-tidy
+        run: |
+          if ! ./xmakew check -vD clang.tidy; then
+            # Xmake generates this database in quiet mode before starting tidy.
+            # Repeat visibly on failure so setup errors are not lost.
+            ./xmakew project -vD -k compile_commands --lsp=clangd build/clang-tidy-diagnostics
+            exit 1
+          fi

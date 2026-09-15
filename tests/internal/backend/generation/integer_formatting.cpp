@@ -20,7 +20,8 @@ namespace {
 
 struct IntegerFormatQuery final {
     std::vector<std::vector<TargetTemplateArgument>> policies;
-    std::size_t generic_calls = 0uz;
+    std::size_t generic_calls;
+    std::size_t lambdas;
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
@@ -29,6 +30,7 @@ auto IntegerFormatQuery::enter_expression(
     const TargetExpr& expression,
     TargetExpressionRole
 ) noexcept -> bool {
+    lambdas += std::holds_alternative<TargetLambdaExpr>(expression.value);
     const auto* call = std::get_if<TargetCallExpr>(&expression.value);
     if (call == nullptr) {
         return true;
@@ -56,7 +58,7 @@ auto inspect(std::string source) noexcept -> IntegerFormatQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("integer_format")}
     );
-    auto query = IntegerFormatQuery();
+    auto query = IntegerFormatQuery {.policies = {}, .generic_calls = 0uz, .lambdas = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
@@ -97,7 +99,7 @@ TEST_CASE(
         fn dynamic(value: i32, width: i32) -> String => f"{value:0{width}d}";
         fn locale(value: i32) -> String => f"{value:L}";
         fn large(value: i32) -> String => f"{value:2147483648}";
-        fn text(value: i32, text: str) -> String => f"{value:08x}/{text}";
+        fn text(value: i32, text: str) -> String => f"{value:08x}/{text:>8}";
     )");
     CHECK(query.policies.empty());
     CHECK(query.generic_calls == 5uz);
@@ -116,4 +118,27 @@ TEST_CASE("Generation: known dynamic width selects integer writes") {
         REQUIRE(policy.size() == 3uz);
         CHECK(std::get<bool>(policy[2]));
     }
+}
+
+TEST_CASE("Generation: mixed builtin formatting and append use direct writes") {
+    const auto query = inspect(R"(
+        fn format(value: u64, text: str, owned: String, flag: bool, scalar: char) -> String {
+            return f"{text}/{owned}/{value:016X}/{flag}/{scalar}";
+        }
+        fn append(&output: String, text: String, value: i32, flag: bool) {
+            output.append_format(f"{text}/{value:04}/{flag}");
+        }
+    )");
+    CHECK(query.generic_calls == 0uz);
+    CHECK(query.policies.size() == 2uz);
+    CHECK(query.lambdas == 0uz);
+}
+
+TEST_CASE("Generation: nested owning formatting retains its expression construction boundary") {
+    const auto query = inspect(R"(
+        fn length(value: i32, text: String) -> usize => f"{value}/{text}".len();
+    )");
+    CHECK(query.generic_calls == 0uz);
+    CHECK(query.policies.size() == 1uz);
+    CHECK(query.lambdas > 0uz);
 }

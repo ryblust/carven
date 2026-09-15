@@ -103,7 +103,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
         ExecutionOutput([](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         });
-    const auto program = analyze_sources(paths, output);
+    const auto program = load_and_analyze_sources(paths, output);
     if (!program) {
         return 1;
     }

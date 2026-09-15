@@ -39,3 +39,94 @@ test "String interpolation: parsed integer writes follow ordered scalar snapshot
     check(output == "prefix:00000000003/00000000004/00000000004");
     check(value == 4);
 }
+
+fn mixed_writer_record(
+    text: str,
+    owned: String,
+    value: u64,
+    flag: bool,
+    scalar: char
+) -> String => f"{{{text}}}\0{owned}|{value:016X}|{flag}|{scalar}";
+
+fn mixed_writer_append(&output: String, text: String, value: i32, flag: bool, scalar: char) {
+    output.append_format(f"[{text}:{value:04}:{flag}:{scalar}]");
+}
+
+test "String interpolation: mixed writer fields preserve bytes growth and ownership" {
+    var owned: String = "我\0text";
+    let result = mixed_writer_record("view", owned, 18446744073709551615u64, false, '😀');
+    check(result == "{view}\0我\0text|FFFFFFFFFFFFFFFF|false|😀");
+    var output: String = "prefix:";
+    for index in 0..100 {
+        mixed_writer_append(&output, owned, index, true, '\0');
+    }
+    check(output.len() == 2207usize);
+    owned.clear();
+    check(result == "{view}\0我\0text|FFFFFFFFFFFFFFFF|false|😀");
+}
+
+fn writer_change(&source: String, &trace: i32) -> i32 {
+    source.clear();
+    source.append("after我");
+    trace += 1;
+    return trace;
+}
+
+fn writer_direct_return(
+    &source: String,
+    &trace: i32
+) -> String => f"{source}/{trace}/{writer_change(&source, &trace)}/{source}";
+
+struct WriterFailure {
+    code: i32
+}
+
+fn writer_fail(&trace: i32) -> i32 throw WriterFailure {
+    trace += 1;
+    throw WriterFailure { code: trace };
+}
+
+fn writer_fallible_return(&trace: i32) -> String throw WriterFailure => f"text/{writer_fail(
+        &trace
+    )?}/{advance_integer(&trace)}";
+
+test "Writer delivery: direct returns observe String after effects and keep scalar snapshots" {
+    var source: String = "before storage long enough to allocate";
+    var trace = 3;
+    let result = writer_direct_return(&source, &trace);
+    check(result == "after我/3/4/after我");
+    source.clear();
+    check(result == "after我/3/4/after我");
+    var output = String::new();
+    var counter = 0;
+    let nested = f"{advance_integer(&counter)}/{if true {
+            output.append_format(f"{counter}/{advance_integer(&counter)}");
+            counter
+        } else {
+            0
+        }}/{counter}";
+    check(nested == "1/2/2");
+    check(output == "1/2");
+    check(counter == 2);
+    let code = try {
+        writer_fallible_return(&trace)?;
+        0
+    } catch {
+        WriterFailure(error) => error.code
+    };
+    check(code == 5);
+    check(trace == 5);
+}
+
+fn writer_temporary_return(text: str, &trace: i32) -> String {
+    return f"{String::from_str(text).as_str()}/{advance_integer(&trace)}";
+}
+
+test "Writer delivery: direct return retains temporary text through later effects" {
+    var source: String = "dynamic text long enough to require independent heap storage 我";
+    var trace = 7;
+    let result = writer_temporary_return(source.as_str(), &trace);
+    source.clear();
+    check(result == "dynamic text long enough to require independent heap storage 我/8");
+    check(trace == 8);
+}

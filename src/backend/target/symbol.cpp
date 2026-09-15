@@ -77,6 +77,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdAsConst:          return "std::as_const";
         case TargetSymbol::StdNullopt:          return "std::nullopt";
         case TargetSymbol::StdNullptr:          return "nullptr";
+        case TargetSymbol::StdInitializerList:  return "std::initializer_list";
         case TargetSymbol::StdOptional:         return "std::optional";
         case TargetSymbol::StdStringView:       return "std::string_view";
         case TargetSymbol::StdVariant:          return "std::variant";

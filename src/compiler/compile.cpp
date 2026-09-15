@@ -3,26 +3,20 @@ module carven:compiler.compile.impl;
 import :artifacts;
 import :backend.generate;
 import :backend.generation.request;
+import :compiler.analysis;
 import :compiler.compile;
 import :compiler.request;
-import :frontend.program.parse;
-import :semantic.analyze;
 import :semantic.evaluation.output;
 import :source.manager;
 import std;
 
 auto compile(
     const SourceManager& sources,
-    CompilationRequest compilation,
+    CompilationRequest request,
     const TargetPlanningRequest& generation,
     const ExecutionOutput& output
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
-    auto syntax = parse_program(sources, compilation);
-    if (!syntax.has_value()) {
-        return std::unexpected(std::move(syntax.error()));
-    }
-
-    auto semantic = analyze(std::move(*syntax), output);
+    auto semantic = analyze_compilation(sources, request, output);
     if (!semantic.has_value()) {
         return std::unexpected(std::move(semantic.error()));
     }

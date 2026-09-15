@@ -189,6 +189,7 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::StdForward:
         case TargetSymbol::StdMove:
         case TargetSymbol::StdAsConst:               include("utility"); break;
+        case TargetSymbol::StdInitializerList:       include("initializer_list"); break;
         case TargetSymbol::StdNullopt:
         case TargetSymbol::StdOptional:              include("optional"); break;
         case TargetSymbol::StdStringView:            include("string_view"); break;

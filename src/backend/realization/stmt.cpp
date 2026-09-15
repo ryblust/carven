@@ -240,25 +240,30 @@ auto BodyRealizer::result_expression(
         }
         return;
     }
+    const auto native_result = callable != nullptr
+        && context.plan()
+               .failure_abi()
+               .members(context.semantic()
+                            .callable_signatures()
+                            .signature(context.semantic()
+                                           .declarations()
+                                           .callable(callable->callable_id)
+                                           .signature)
+                            .failures)
+               .empty();
     auto literal = ConstantLiteralContext::Exact;
-    if (returns_result(result)) {
-        if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-            std::holds_alternative<LoweringYieldResult>(result)
-            || (callable != nullptr
-                && context.plan()
-                       .failure_abi()
-                       .members(context.semantic()
-                                    .callable_signatures()
-                                    .signature(context.semantic()
-                                                   .declarations()
-                                                   .callable(callable->callable_id)
-                                                   .signature)
-                                    .failures)
-                       .empty())) {
-            literal = ConstantLiteralContext::TargetTyped;
-        }
+    if (returns_result(result)
+        && (std::holds_alternative<LoweringYieldResult>(result) || native_result)) {
+        literal = ConstantLiteralContext::TargetTyped;
     }
-    auto value = destination.accept(expression(source, literal));
+    auto demand = ResultDemand::Value;
+    if (std::holds_alternative<LoweringReturnResult>(result)
+        && callable != nullptr
+        && native_result
+        && !context.semantic().may_stop_test(callable->callable_id)) {
+        demand = ResultDemand::DirectReturn;
+    }
+    auto value = destination.accept(expression(source, literal, demand));
     if (value) {
         deliver_result(std::move(*value), result, destination);
     }

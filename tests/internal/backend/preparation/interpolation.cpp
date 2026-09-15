@@ -128,12 +128,12 @@ TEST_CASE("Format preparation: mixed builtin holes publish an ordered residual f
     }
 }
 
-TEST_CASE("Format preparation: residual byte budgets include escaped braces") {
+TEST_CASE("Format preparation: delegated residual byte budgets include escaped braces") {
     for (const auto length : {32766uz, 32767uz}) {
         const auto braces = std::string(length, '{');
         const auto program = analyze_test_program(
             std::format(
-                "fn format(value: i32) -> String {{ let text = \"{}\"; return f\"{{text}}{{value}}\"; }}",
+                "fn format(value: f64) -> String {{ let text = \"{}\"; return f\"{{text}}{{value}}\"; }}",
                 braces
             )
         );

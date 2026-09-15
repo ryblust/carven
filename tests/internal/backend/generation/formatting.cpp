@@ -47,17 +47,13 @@ TEST_CASE(
 ) {
     struct Scenario final {
         std::string_view expression;
-        TargetSymbol entry;
+        std::optional<TargetSymbol> entry;
         std::size_t arguments;
     };
 
     const auto scenarios = std::to_array<Scenario>({
-        {.expression = R"(f"{number:04x}/{text}")",
-         .entry = TargetSymbol::RuntimeFormatValidUTF8,
-         .arguments = 3uz},
-        {.expression = R"(f"{42:04x}/{text}")",
-         .entry = TargetSymbol::RuntimeFormatValidUTF8,
-         .arguments = 2uz},
+        {.expression = R"(f"{number:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
+        {.expression = R"(f"{42:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
         {.expression = R"(f"{number:c}")", .entry = TargetSymbol::RuntimeFormat, .arguments = 2uz},
         {.expression = R"(f"{42}/{number:L}")",
          .entry = TargetSymbol::RuntimeFormat,
@@ -83,8 +79,12 @@ TEST_CASE(
             const auto unit = lower_artifact(compilation, artifact.id);
             REQUIRE(traverse_target_unit(unit.sections(), query));
         }
+        if (!scenario.entry) {
+            CHECK(query.entries.empty());
+            continue;
+        }
         REQUIRE(query.entries.size() == 1uz);
-        CHECK(query.entries.front() == scenario.entry);
+        CHECK(query.entries.front() == *scenario.entry);
         REQUIRE(query.argument_counts.size() == 1uz);
         CHECK(query.argument_counts.front() == scenario.arguments);
     }

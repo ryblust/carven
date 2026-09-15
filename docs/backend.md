@@ -269,12 +269,13 @@ Builtin compound assignment snapshots the prior value when its right operand
 requires execution. An execution-free right operand uses the selected place
 directly; effectful operands retain the source snapshot and evaluation order.
 
-Carven call operands for builtin value parameters use value delivery. Native C++ calls retain their const-reference
-operand contract for overload resolution. Named input storage already has a
-source lifetime; sequencing creates snapshots when later evaluation requires them.
-Scalar value consumers can use direct local storage within an expression frame.
-Integer-range bounds retain snapshots when they read storage or require execution;
-independent constant bounds appear directly in the loop.
+Carven call operands for builtin value parameters use value delivery. Native C++
+calls retain their const-reference operand contract for overload resolution.
+Named input storage already has a source lifetime; sequencing creates snapshots
+when later evaluation requires them. Scalar value consumers can use direct local
+storage within an expression frame. Integer-range bounds retain snapshots when
+they read storage or require execution; independent constant bounds appear
+directly in the loop.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains
@@ -515,22 +516,25 @@ stores. `ConstructionOperation` optionally owns a plan through realization.
 Operations without preparation and print calls without known scalar text hold no
 plan payload.
 
-`PreparedFormatText` owns the complete text. `PreparedIntegerFormat` owns literal
-segments, integer fields, added-byte bounds, and retained operand indices.
+`PreparedFormatText` owns the complete text. `PreparedWriterFormat` owns literal
+segments, builtin fields, added-byte bounds, and retained operand indices.
 `PreparedDelegatedFormat` owns native format bytes in `format_string`, retained
 operand indices, and an encoding guarantee. `PreparedPrint` owns optional scalar
 text for each source operand. Published semantics retain the source operation and
 its value facts.
 
 Preparation adapts published constant facts for `semantic.format.builtin`.
-Optional materialization has a preparation-owned 64 KiB budget, including escaped
-braces and residual field spellings. The bounded `semantic.format` serializer
-enforces this budget when producing candidate format bytes. Over-budget or
-unsupported work retains runtime formatting. Serialization of the source fallback
-is outside the optional materialization budget. Known dynamic integer widths may
-become static specifications. Integer classification computes size bounds without
-allocating padding. Native/custom formatters retain all original arguments because
-they can inspect the argument pack.
+Optional text materialization has a preparation-owned 64 KiB budget. Direct
+writer selection consumes prepared text and fields without native serialization.
+Delegated residual formatting additionally budgets escaped braces and field
+spellings through the bounded `semantic.format` serializer. Over-budget or
+unsupported work retains runtime formatting. Serialization of the source
+fallback is outside the optional materialization budget. Known dynamic integer
+widths may become static specifications. Writer classification accepts static
+integer specifications and default text, boolean, and character fields. It
+computes size bounds without allocating padding; the bounds exclude dynamic text
+bytes. Native/custom formatters retain all original arguments because they can
+inspect the argument pack.
 
 Construction translates each selection into a generic input demand: value or
 execution effects. Every original operand remains in source order. Realization
@@ -565,31 +569,47 @@ temporary backing before constructing the owning result, including when that
 result is discarded. Ordinary local bindings and their initialization remain;
 known contents do not substitute static storage for the String owner.
 
-Owning mixed builtin `SemFormat` operations retaining a subset of source operands evaluate every original
-operand in order. Retained values use their original Read storage policy, keeping
-scalar snapshots and String aliases; folded values keep their execution and
-temporary backing. Realization consumes the selected preparation and its mapped operands. String contents are still observed
-after all holes complete. Discarding the result retains this construction path.
+Owning mixed builtin `SemFormat` operations retaining a subset of source
+operands evaluate every original operand in order. Retained values use their
+original Read storage policy, keeping scalar snapshots and String aliases;
+folded values keep their execution and temporary backing. Realization consumes
+the selected preparation and its mapped operands. String contents are still
+observed after all holes complete. Discarding the result retains this
+construction path.
 
-`PreparedIntegerFormat` lowers through `realization.format` to a local String and
-`runtime::Writer` in `writer.hpp`. A scoped lambda receives the
-prepared retained integers by value and, for append, the destination by reference.
-Its body starts only after those arguments complete. It writes static text
-segments and calls `integer<base, uppercase, zero_pad>(value, width)` in order,
-then returns the owning String or completes the append. This keeps original
-operand evaluation and failure handling in the ordinary construction path.
+`PreparedWriterFormat` lowers through the shared statement builder in
+`realization.format` to `runtime::Writer` in `writer.hpp`. Formatted append emits
+ordinary statements after the expression builder completes its inputs and flushes
+pending earlier work. A direct owning return with the native return ABI creates a
+local String, writes its fields, and returns it by name, permitting C++ NRVO.
+Nested owning expressions, initialization, and failure-transport returns retain an
+expression lambda to preserve their construction and delivery boundary. Its
+parameters use the existing Read storage policy.
+
+Both forms append static text and call
+`integer<base, uppercase, zero_pad>(value, width)` in order, copy text fields,
+select boolean text, and encode Unicode scalars directly. Existing construction
+machinery preserves operand evaluation, failures, scalar snapshots, and borrowed
+backing before any reservation or write; statement emission never occurs as a
+side effect of requesting a residual expression.
 
 The prepared minimum and maximum added-byte counts reach the writer as ordinary
-arguments. When the minimum exceeds available capacity, runtime reserves for the
-maximum, capped at the destination's size limit. Otherwise normal storage growth
-applies. Equal bounds reserve for an exact size. An upper bound alone does not
-force allocation for a short result. Runtime checks size arithmetic and performs
-integer conversion with `std::to_chars`, sign handling, and padding.
-The writer borrows private String storage and requires valid text and disjoint
-inputs. It has no format parser or output validation scan. Unsupported or mixed
-remaining fields retain the complete selected general format call. Parsed paths
-need no `<format>` dependency; fully precomputed contents still use the existing
-direct text construction or append.
+arguments, followed by an initializer list of explicit dynamic text byte
+lengths. Carven emits each `.size()` query after all holes complete. Runtime
+adds these lengths to both bounds with checked arithmetic; it does not
+rediscover field types or parse format policies.
+
+When the minimum exceeds available capacity, runtime reserves for the maximum, capped at the
+destination's size limit. Otherwise normal storage growth applies. Equal bounds
+reserve for an exact size. An upper bound alone does not force allocation for a
+short result. Runtime checks size arithmetic and performs integer conversion
+with `std::to_chars`, sign handling, and padding.
+
+The writer borrows private String storage and requires valid text and disjoint inputs. It has no format
+parser or output validation scan. Unsupported remaining fields retain the
+complete selected general format call. Parsed paths need no `<format>`
+dependency; fully precomputed contents still use the existing direct text
+construction or append.
 
 Reservation requests do not prescribe the native String's exact capacity or
 allocation alignment; the native String implementation selects both.
@@ -613,7 +633,7 @@ An append `SemFormat` places its Write receiver before the hole operands in targ
 construction. Realization selects the receiver once, then completes all holes using
 the same Read, failure, and temporary-backing rules. Preparation operand indices
 exclude the receiver. Known contents lower to `receiver.append(static_text)` after
-required hole execution. Prepared integer fields use the writer above. Otherwise,
+required hole execution. Prepared builtin fields use the writer above. Otherwise,
 `PreparedDelegatedFormat::encoding` selects `append_format_valid_utf8`
 or `append_format`, with the receiver followed by the selected format and argument pack.
 

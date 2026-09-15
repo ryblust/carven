@@ -6,11 +6,17 @@ batch through publication of an immutable semantic program.
 
 ## Pipeline
 
-`compiler/` owns the compilation input contract and end-to-end orchestration.
-`compiler.request` describes the closed source batch and depends only on source
-types; the frontend consumes this contract independently. `compiler.compile`
-sequences parsing, semantic analysis, and artifact generation. Command-line
-input preparation and filesystem output belong to `driver/`.
+`compiler.request` defines the closed source batch using source types.
+`compiler.analysis` sequences parsing and semantic analysis through
+`analyze_compilation`, returning a published program and structured diagnostics.
+`compiler.compile` calls this entry and generates artifacts. Execution output is
+delivered synchronously to the supplied recipient.
+
+`driver/` owns command options, file loading, diagnostic presentation, artifact
+output, and native process execution. `load_and_analyze_sources` prepares the batch,
+calls `analyze_compilation`, and renders diagnostics using the source manager.
+Compile and run commands send the program to the backend; interpret sends it to
+the interpreter. Dump commands consume lexical or syntax results directly.
 
 ```text
 CompilationRequest → SyntaxProgram → ProgramDraft → SemIRProgram

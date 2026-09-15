@@ -6,6 +6,7 @@
 #include <charconv>
 #include <cstddef>
 #include <exception>
+#include <initializer_list>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -20,19 +21,39 @@ class Writer final {
 public:
     Writer(String& destination, std::size_t minimum_size, std::size_t maximum_size) noexcept
         : storage(destination.storage) {
+        reserve(minimum_size, maximum_size);
+    }
+
+    // Carven observes dynamic text only after all source operands complete.
+    // Bounds cover other fragments; supplied lengths are exact byte counts.
+    Writer(
+        String& destination,
+        std::size_t minimum_size,
+        std::size_t maximum_size,
+        std::initializer_list<std::size_t> text_sizes
+    ) noexcept
+        : storage(destination.storage) {
         const auto available = storage.max_size() - storage.size();
-        if (minimum_size > available) {
-            std::terminate();
+        for (const auto size : text_sizes) {
+            if (size > available || minimum_size > available - size) {
+                std::terminate();
+            }
+            minimum_size += size;
+            maximum_size = maximum_size > available - size ? available : maximum_size + size;
         }
-        // Reserve the bound only when growth is certain. A large type bound
-        // alone must not force short results out of existing storage.
-        if (minimum_size > storage.capacity() - storage.size()) {
-            const auto capacity = maximum_size < available ? maximum_size : available;
-            storage.reserve(storage.size() + capacity);
-        }
+        reserve(minimum_size, maximum_size);
     }
 
     auto append(std::string_view text) noexcept -> void { storage.append(text); }
+
+    auto append(const String& text) noexcept -> void { append(text.as_str()); }
+
+    auto boolean(bool value) noexcept -> void { append(value ? "true" : "false"); }
+
+    auto character(char32_t value) noexcept -> void {
+        const auto encoded = encode_valid_utf8(value);
+        append(std::string_view(encoded.bytes.data(), encoded.width));
+    }
 
     template<int Base, bool Uppercase, bool ZeroPad, typename Integer>
         requires (std::is_integral_v<Integer> && !std::is_same_v<Integer, bool>)
@@ -75,6 +96,19 @@ public:
     }
 
 private:
+    auto reserve(std::size_t minimum_size, std::size_t maximum_size) noexcept -> void {
+        const auto available = storage.max_size() - storage.size();
+        if (minimum_size > available) {
+            std::terminate();
+        }
+        // Reserve the bound only when growth is certain. A large type bound
+        // alone must not force short results out of existing storage.
+        if (minimum_size > storage.capacity() - storage.size()) {
+            const auto capacity = maximum_size < available ? maximum_size : available;
+            storage.reserve(storage.size() + capacity);
+        }
+    }
+
     std::string& storage;
 };
 

@@ -74,7 +74,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         return 1;
     }
 
-    auto semantic = analyze_sources(
+    auto semantic = load_and_analyze_sources(
         request->input_paths,
         [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
             const auto to_error = stream == ExecutionOutputStream::Error

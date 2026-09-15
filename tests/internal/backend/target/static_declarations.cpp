@@ -5,6 +5,7 @@ module;
 module carven:test.internal.backend.target.static_declarations;
 
 import :backend.target.decl;
+import :backend.target.dependencies;
 import :backend.target.expr;
 import :backend.target.item;
 import :backend.target.name;
@@ -51,4 +52,30 @@ TEST_CASE("Target static declarations: verification traverses type and initializ
         REQUIRE_FALSE(checked.has_value());
         CHECK(checked.error().kind == TargetSealViolationKind::InvalidTypeReference);
     }
+}
+
+TEST_CASE("Target static declarations: nullopt collects optional without a typed optional") {
+    const auto owner = TargetTestingFixture::unit_identity();
+    const auto types = std::array {TargetType {
+        .value = TargetIntrinsicType {.symbol = TargetSymbol::Auto, .type_argument_ids = {}},
+        .const_qualified = false,
+    }};
+    auto body = std::vector<TargetItem>();
+    body.push_back({
+        .value = TargetDecl {TargetVariableDecl {
+            .name = TargetIdentifier::from_spelling("empty"),
+            .type = TargetTestingFixture::type_id(owner, 0),
+            .initializer =
+                TargetExpr {.value = TargetIntrinsicNameExpr {.symbol = TargetSymbol::StdNullopt}},
+            .inline_specifier = true,
+            .constexpr_specifier = true,
+        }},
+        .attribution =
+            TargetCompilerOwnedAttribution {.reason = TargetCompilerReason::ArtifactScaffolding},
+    });
+    const auto sections =
+        TargetUnitSections {.preamble = {}, .body = std::move(body), .epilogue = {}};
+    const auto dependencies = collect_target_dependencies(owner, types, sections);
+    REQUIRE(dependencies.size() == 1uz);
+    CHECK(dependencies.front().bytes == "#include <optional>");
 }

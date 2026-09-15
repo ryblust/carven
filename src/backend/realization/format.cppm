@@ -3,6 +3,7 @@ module carven:backend.realization.format;
 import :backend.lowering.context;
 import :backend.preparation.format;
 import :backend.target.expr;
+import :backend.target.stmt;
 import :semantic.semir;
 import std;
 
@@ -15,3 +16,14 @@ auto realize_format(
     const PreparedFormat& preparation,
     std::vector<TargetExpr> operands
 ) noexcept -> TargetExpr;
+
+// Inputs are stable after ordinary source sequencing. Sizes are observed only
+// after every hole completes; these statements never evaluate a source operand twice.
+auto realize_writer_statements(
+    ModuleLowering& context,
+    const WriterFormat& format,
+    TargetIdentifier writer,
+    TargetExpr output,
+    std::vector<TargetExpr> operands,
+    std::vector<TargetExpr> text_sizes
+) noexcept -> std::vector<TargetStmt>;

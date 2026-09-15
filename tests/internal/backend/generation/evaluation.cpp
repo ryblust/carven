@@ -689,3 +689,47 @@ TEST_CASE("Generation: independent nested pattern alternatives keep target size 
         CHECK(counts[index] <= 3uz * counts[index - 1uz]);
     }
 }
+
+TEST_CASE("Generation: builtin Read snapshots use unqualified value factory results") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn advance(&value: i32) -> i32 { value += 1; return value; }
+            fn format(&value: i32) -> String {
+                var output = String::new();
+                return f"{if true {
+                    output.append_format(f"{value}/{advance(&value)}");
+                    value
+                } else { 0 }}";
+            }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("read_snapshot")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t scalar_factories;
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            const auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value);
+            if (lambda != nullptr) {
+                const auto& result = unit.type(lambda->result);
+                const auto* type = std::get_if<TargetIntrinsicType>(&result.value);
+                if (type != nullptr && type->symbol == TargetSymbol::StdInt32) {
+                    ++scalar_factories;
+                    CHECK_FALSE(result.const_qualified);
+                }
+            }
+            return true;
+        }
+    };
+
+    auto scalar_factories = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit, .scalar_factories = 0uz};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+        scalar_factories += query.scalar_factories;
+    }
+    CHECK(scalar_factories > 0uz);
+}

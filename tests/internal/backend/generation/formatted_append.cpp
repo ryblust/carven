@@ -22,7 +22,7 @@ struct AppendQuery final {
     std::vector<TargetSymbol> entries;
     std::vector<std::size_t> argument_counts;
     std::vector<std::string> events;
-    std::size_t owning_formats = 0uz;
+    std::size_t owning_formats;
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
@@ -50,9 +50,12 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value)) {
         if (const auto* name = std::get_if<TargetIdentifier>(&member->name);
             name != nullptr && name->spelling() == "append") {
-            events.push_back("append");
             REQUIRE(call->arguments.size() == 1uz);
-            CHECK(std::holds_alternative<TargetLiteralExpr>(call->arguments.front().value));
+            events.push_back(
+                std::holds_alternative<TargetLiteralExpr>(call->arguments.front().value)
+                    ? "append"
+                    : "append_value"
+            );
         }
     }
     if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
@@ -70,7 +73,8 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("formatted_append")}
     );
-    auto query = AppendQuery();
+    auto query =
+        AppendQuery {.entries = {}, .argument_counts = {}, .events = {}, .owning_formats = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
@@ -83,17 +87,13 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
 TEST_CASE("Generation: formatted append selects its entry and passes only residual hole values") {
     struct Scenario final {
         std::string_view expression;
-        TargetSymbol entry;
+        std::optional<TargetSymbol> entry;
         std::size_t arguments;
     };
 
     const auto scenarios = std::to_array<Scenario>({
-        {.expression = R"(f"{number:04x}/{text}")",
-         .entry = TargetSymbol::RuntimeAppendFormatValidUTF8,
-         .arguments = 4uz},
-        {.expression = R"(f"{42:04x}/{text}")",
-         .entry = TargetSymbol::RuntimeAppendFormatValidUTF8,
-         .arguments = 3uz},
+        {.expression = R"(f"{number:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
+        {.expression = R"(f"{42:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
         {.expression = R"(f"{number:c}")",
          .entry = TargetSymbol::RuntimeAppendFormat,
          .arguments = 3uz},
@@ -117,8 +117,14 @@ TEST_CASE("Generation: formatted append selects its entry and passes only residu
                 scenario.expression
             )
         );
+        if (!scenario.entry) {
+            CHECK(query.entries.empty());
+            CHECK(query.owning_formats == 0uz);
+            CHECK(std::ranges::find(query.events, "append_value") != query.events.end());
+            continue;
+        }
         REQUIRE(query.entries.size() == 1uz);
-        CHECK(query.entries.front() == scenario.entry);
+        CHECK(query.entries.front() == *scenario.entry);
         REQUIRE(query.argument_counts.size() == 1uz);
         CHECK(query.argument_counts.front() == scenario.arguments);
         CHECK(query.owning_formats == 0uz);

@@ -1,6 +1,13 @@
 import("lib.detect.find_program")
+import("core.project.config")
+import("core.project.project")
+import("private.action.run.runenvs")
 
 function main(check)
+    config.load()
+    local target = project.target("graver")
+    local graver = path.absolute(target:targetfile(), os.projectdir())
+    local addenvs, setenvs = runenvs.make(target)
     local program
     if os.host() == "macosx" then
         local brew = find_program("brew")
@@ -49,9 +56,8 @@ function main(check)
         table.insert(sources, path.relative(file, os.projectdir()))
     end
     table.sort(sources)
-    os.vrunv(os.programfile(), {"build", "graver"}, {curdir = os.projectdir()})
-    local graver_args = {"run", "graver", check and "check" or "write"}
+    local graver_args = {check and "check" or "write"}
     table.join2(graver_args, sources)
-    os.vrunv(os.programfile(), graver_args, {curdir = os.projectdir()})
+    os.vrunv(graver, graver_args, {curdir = os.projectdir(), addenvs = addenvs, setenvs = setenvs})
     print(check and "Formatting check passed." or "Formatting complete.")
 end
