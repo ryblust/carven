@@ -1,0 +1,5 @@
+fn main() {
+    let x = foo(1, 2);
+    var y: i32 = -x + 3;
+    return y;
+}

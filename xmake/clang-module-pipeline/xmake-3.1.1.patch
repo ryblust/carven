@@ -381,7 +381,70 @@
 
  function _scanner(target)
      return support.import_implementation_of(target, "scanner")
-@@ -437,7 +438,10 @@
+@@ -172,10 +173,12 @@
+ function _get_edges(target, nodes, modules)
+
+   profiler.enter(target:fullname(), "c++ modules", "scanner", "get module dependency graph edges")
++  nodes = table.unique(nodes)
+   local edges = {}
+   local name_filemap = {}
++  local name_nodemap = {}
+   local deps_names = hashset.new()
+-  for _, node in ipairs(table.unique(nodes)) do
++  for _, node in ipairs(nodes) do
+       local module = modules[node]
+       if module.name then
+           if deps_names:has(module.name) then
+@@ -187,13 +190,15 @@
+           deps_names:insert(module.name)
+           name_filemap[module.name] = module.sourcefile
+       end
+-      for dep_name, _ in table.orderpairs(module.deps) do
+-          for _, dep_node in ipairs(nodes) do
+-              local dep_module = modules[dep_node]
+-              if dep_module.name and dep_name == dep_module.name then
+-                  table.insert(edges, {dep_node, node})
+-                  break
+-              end
++      if module.name then
++          name_nodemap[module.name] = node
++      end
++  end
++  for _, node in ipairs(nodes) do
++      for dep_name, _ in table.orderpairs(modules[node].deps) do
++          local dep_node = name_nodemap[dep_name]
++          if dep_node then
++              table.insert(edges, {dep_node, node})
+           end
+       end
+   end
+@@ -352,7 +357,14 @@
+     return get_basegroup_for(target) .. "/scan"
+ end
+
++function _batch_scanner(target)
++    return content_depend.enabled(target) and _scanner(target).scan_dependencies_for
++end
++
+ function get_scanfilejob_for(target, sourcefile)
++    if _batch_scanner(target) then
++        return get_scangroup_for(target) .. "/batch"
++    end
+     return get_scangroup_for(target) .. "/" .. sourcefile
+ end
+
+@@ -360,8 +372,8 @@
+     return get_basegroup_for(target) .. "/parse"
+ end
+
+-function get_parsefilejob_for(target, sourcefile)
+-    return get_parsegroup_for(target) .. "/" .. sourcefile
++function get_parsejob_for(target)
++    return get_parsegroup_for(target) .. "/batch"
+ end
+
+ -- patch sourcebatch
+@@ -437,17 +449,20 @@
      profiler.enter(target:fullname(), "c++ modules", "scanner", "compute dag")
      local localcache = support.localcache()
      local memcache = support.memcache()
@@ -393,55 +456,183 @@
 
      if changed then
          localcache:set2(target:fullname(), "c++.modules", modules)
-@@ -534,7 +538,24 @@
+         mapper.feed(target, modules, sourcebatch.sourcefiles)
+         -- check if a dependency is missing
+-        local modules_names = hashset.from(table.keys(mapper.get_mapper_for(target)))
++        local modulemap = mapper.get_mapper_for(target)
+         for _, module in pairs(modules) do
+             for dep_name, dep in pairs(module.deps) do
+                 if dep.method == "by-name" then
+-                    if not modules_names:has(dep_name) then
++                    if not modulemap[dep_name] then
+                         if option.get("diagnosis") then
+                             print("parsing:", target:fullname(), "\nmodules:", modules or {})
+                         end
+@@ -525,89 +540,108 @@
+     profiler.leave(target:fullname(), "c++ modules", "scanner", "scan dependencies for", sourcefile)
+ end
+
+--- scan module dependencies
++-- Scan records belong to their provider; consumers only parse after publication.
+ function _schedule_module_dependencies_scan(target, jobgraph, sourcebatch)
+
+     profiler.enter(target:fullname(), "c++ modules", "scanner", "schedule moduleinfo scanning, parsing and dag computation")
+-    -- if XMAKE_IN_COMPILE_COMMANDS_PROJECT_GENERATOR is set, then we can just reuse scan artifacts from build
++    -- Compile-command generation can reuse the existing module graph.
+     if not os.getenv("XMAKE_IN_COMPILE_COMMANDS_PROJECT_GENERATOR") or not support.localcache():get2(target:fullname(), "c++.modules") then
          local memcache = support.memcache()
++        local sourcefiles = table.unique(sourcebatch.sourcefiles)
          local scangroup = get_scangroup_for(target)
-         local has_scanjob = false
-+        local batchscan = content_depend.enabled(target) and _scanner(target).scan_dependencies_for
+-        local has_scanjob = false
++        local batchscan = _batch_scanner(target)
 +        local owned = {}
-+        if batchscan then
-+            for _, sourcefile in ipairs(table.unique(sourcebatch.sourcefiles)) do
-+                if not support.is_reused(target, sourcefile) then
-+                    table.insert(owned, sourcefile)
++        for _, sourcefile in ipairs(sourcefiles) do
++            if not support.is_reused(target, sourcefile) then
++                table.insert(owned, sourcefile)
++            end
++        end
+         jobgraph:group(scangroup, function()
+-            for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
+-                local reused, _ = support.is_reused(target, sourcefile)
+-                if not reused then
+-                    local scanfilejob = get_scanfilejob_for(target, sourcefile)
+-                    if not jobgraph:has(scanfilejob) then
+-                        has_scanjob = true
+-                        jobgraph:add(scanfilejob, function(_, _, opt)
+-                            progress.set_target(opt.progress, target)
+-                            _do_scan(target, sourcefile, opt)
+-                        end)
+-                    end
++            if batchscan then
++                if #owned > 0 then
++                    jobgraph:add(scangroup .. "/batch", function(_, _, opt)
++                        progress.set_target(opt.progress, target)
++                        batchscan(target, owned, opt)
++                        memcache:set2(target:fullname(), "modules.changed", true)
++                    end)
++                end
++            else
++                for _, sourcefile in ipairs(owned) do
++                    jobgraph:add(get_scanfilejob_for(target, sourcefile), function(_, _, opt)
++                        progress.set_target(opt.progress, target)
++                        _do_scan(target, sourcefile, opt)
++                    end)
+                 end
+             end
+         end)
++
+         local modules
+         local parsegroup = get_parsegroup_for(target)
++        local parsejob = get_parsejob_for(target)
+         jobgraph:group(parsegroup, function()
+-            for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
+-                local parsefilejob = get_parsefilejob_for(target, sourcefile)
+-                if not jobgraph:has(parsefilejob) then
+-                    jobgraph:add(parsefilejob, function(_, _, opt)
+-                        local changed = memcache:get2(target:fullname(), "modules.changed")
+-                        if changed then
+-                            modules = modules or {}
+-                            local moduleinfo = assert(support.load_moduleinfo(target, sourcefile))
+-                            local module, headerunitsinfo = _parse_moduleinfo(target, moduleinfo)
+-                            modules[module.sourcefile] = module
+-                            for _, headerunitinfo in ipairs(headerunitsinfo) do
+-                                local headerunit = _parse_moduleinfo(target, headerunitinfo)
+-                                local key = headerunit.sourcefile .. headerunit.key
+-                                if not modules[key] then
+-                                    modules[key] = table.clone(headerunit)
+-                                    modules[key].name = headerunit.sourcefile
+-                                end
+-                                local name = headerunit.name .. headerunit.key
+-                                modules[name] = headerunit
+-                                modules[name].alias = true
++            jobgraph:add(parsejob, function()
++                local changed = content_depend.enabled(target) or memcache:get2(target:fullname(), "modules.changed")
++                if changed then
++                    modules = {}
++                    for _, sourcefile in ipairs(sourcefiles) do
++                        local moduleinfo = assert(support.load_moduleinfo(target, sourcefile))
++                        local module, headerunitsinfo = _parse_moduleinfo(target, moduleinfo)
++                        modules[module.sourcefile] = module
++                        for _, headerunitinfo in ipairs(headerunitsinfo) do
++                            local headerunit = _parse_moduleinfo(target, headerunitinfo)
++                            local key = headerunit.sourcefile .. headerunit.key
++                            if not modules[key] then
++                                modules[key] = table.clone(headerunit)
++                                modules[key].name = headerunit.sourcefile
+                             end
+-                        end
+-                                        end)
+-                    local reused, from = support.is_reused(target, sourcefile)
+-                    if reused then
+-                        local scanfilejob = get_scanfilejob_for(from, sourcefile)
+-                        if jobgraph:has(scanfilejob) then
+-                            jobgraph:add_orders(scanfilejob, parsefilejob)
+-                        else
+-                            local jobdeps = memcache:get2(from:fullname(), "jobdeps") or {}
+-                            jobdeps.parsefile = jobdeps.parsefile or {}
+-                            jobdeps.parsefile[parsefilejob] = scanfilejob
+-                            memcache:set2(from:fullname(), "jobdeps", jobdeps)
++                            local name = headerunit.name .. headerunit.key
++                            modules[name] = headerunit
++                            modules[name].alias = true
+                         end
+                     end
+                 end
+-            end
++            end)
+         end)
++        -- Repeated imports from a batch provider share one completion edge.
++        local scanjobs = {}
++        for _, sourcefile in ipairs(sourcefiles) do
++            local reused, from = support.is_reused(target, sourcefile)
++            if reused then
++                local scanjob = get_scanfilejob_for(from, sourcefile)
++                if not scanjobs[scanjob] then
++                    scanjobs[scanjob] = true
++                    if jobgraph:has(scanjob) then
++                        jobgraph:add_orders(scanjob, parsejob)
++                    else
++                        local jobdeps = memcache:get2(from:fullname(), "jobdeps") or {}
++                        jobdeps.parse = jobdeps.parse or {}
++                        jobdeps.parse[scanjob] = jobdeps.parse[scanjob] or {}
++                        jobdeps.parse[scanjob][parsejob] = true
++                        memcache:set2(from:fullname(), "jobdeps", jobdeps)
++                    end
 +                end
 +            end
 +        end
-+        local batchjob = scangroup .. "/batch"
-         jobgraph:group(scangroup, function()
-+            if batchscan and #owned > 0 then
-+                jobgraph:add(batchjob, function(_, _, opt)
-+                    progress.set_target(opt.progress, target)
-+                    batchscan(target, owned, opt)
-+                    memcache:set2(target:fullname(), "modules.changed", true)
-+                end)
-+            end
-             for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
-                 local reused, _ = support.is_reused(target, sourcefile)
-                 if not reused then
-@@ -543,8 +564,13 @@
-                         has_scanjob = true
-                         jobgraph:add(scanfilejob, function(_, _, opt)
-                             progress.set_target(opt.progress, target)
--                            _do_scan(target, sourcefile, opt)
-+                            if not batchscan then
-+                                _do_scan(target, sourcefile, opt)
-+                            end
-                         end)
-+                        if batchscan then
-+                            jobgraph:add_orders(batchjob, scanfilejob)
-+                        end
-                     end
+         local computedagjob = get_computedagjob_for(target)
+-        jobgraph:add(computedagjob, function ()
++        jobgraph:add(computedagjob, function()
+             _do_computedag(target, modules, sourcebatch)
+         end)
+-        if has_scanjob then
+-            jobgraph:add_orders(scangroup, parsegroup)
+-        end
+-        jobgraph:add_orders(parsegroup, computedagjob)
++        if #owned > 0 then
++            jobgraph:add_orders(scangroup, parsejob)
++        end
++        jobgraph:add_orders(parsejob, computedagjob)
+         local jobdeps = memcache:get2(target:fullname(), "jobdeps")
+         if jobdeps then
+-            for _, computedag in ipairs(jobdeps.computedag) do
++            for _, computedag in ipairs(jobdeps.computedag or {}) do
+                 if jobgraph:has(computedag) then
+                     jobgraph:add_orders(computedagjob, computedag)
                  end
              end
-@@ -556,7 +582,7 @@
-                 local parsefilejob = get_parsefilejob_for(target, sourcefile)
-                 if not jobgraph:has(parsefilejob) then
-                     jobgraph:add(parsefilejob, function(_, _, opt)
--                        local changed = memcache:get2(target:fullname(), "modules.changed")
-+                        local changed = content_depend.enabled(target) or memcache:get2(target:fullname(), "modules.changed")
-                         if changed then
-                             modules = modules or {}
-                             local moduleinfo = assert(support.load_moduleinfo(target, sourcefile))
+-            for from, to in pairs(jobdeps.parsefile) do
+-                if jobgraph:has(to) then
+-                    jobgraph:add_orders(to, from)
++            for scanjob, consumers in pairs(jobdeps.parse or {}) do
++                if jobgraph:has(scanjob) then
++                    for consumer in pairs(consumers) do
++                        jobgraph:add_orders(scanjob, consumer)
++                    end
+                 end
+             end
+         end
 --- a/rules/c++/modules/clang/builder.lua
 +++ b/rules/c++/modules/clang/builder.lua
 @@ -31,6 +31,12 @@
@@ -605,7 +796,7 @@
      before_buildcmd_files("builder.build_bmis")
 --- a/rules/c++/modules/support.lua
 +++ b/rules/c++/modules/support.lua
-@@ -306,9 +306,11 @@
+@@ -306,12 +306,19 @@
      local reused, from = is_reused(target, sourcefile)
      local dependfile = reused and from:dependfile(sourcefile) or target:dependfile(sourcefile)
 
@@ -617,5 +808,16 @@
 -        local data = io.load(dependfile)
 +        local data = record or io.load(dependfile)
          if data then
-             local moduleinfo = json.decode(data.moduleinfo)
-             moduleinfo.sourcefile = sourcefile
+-            local moduleinfo = json.decode(data.moduleinfo)
+-            moduleinfo.sourcefile = sourcefile
+-            return moduleinfo
++            -- Provider-owned records are replaced by every completed scan batch.
++            -- Consumers read the same decoded P1689 facts; target paths remain
++            -- the responsibility of scanner._parse_moduleinfo.
++            if not data.decoded_moduleinfo then
++                data.decoded_moduleinfo = json.decode(data.moduleinfo)
++                data.decoded_moduleinfo.sourcefile = sourcefile
++            end
++            return data.decoded_moduleinfo
+         end
+     end

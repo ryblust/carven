@@ -1,0 +1,12 @@
+fn f() {
+    if x { call(); } else if y { return 1; } else { return 2; }
+    while x {
+        --x;
+    }
+    for var i = 0; i < 3; ++i {
+        call(i);
+    }
+    for &v in values {
+        v += 1;
+    }
+}

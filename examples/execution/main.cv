@@ -10,9 +10,7 @@ const test "prepared heading" {
 }
 
 fn fibonacci(value: i32) -> i32 {
-    if value < 2 {
-        return value;
-    }
+    if value < 2 { return value; }
 
     return fibonacci(value - 1) + fibonacci(value - 2);
 }

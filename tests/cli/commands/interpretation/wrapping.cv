@@ -6,9 +6,4 @@ fn product(left: i32, right: i32) => left * right;
 
 fn shift(value: i32, count: i32) => value << count;
 
-println(
-    increment(2147483647),
-    negate(-2147483648),
-    product(2147483647, 2),
-    shift(1, 31)
-);
+println(increment(2147483647), negate(-2147483648), product(2147483647, 2), shift(1, 31));

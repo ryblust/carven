@@ -1,18 +1,14 @@
 # Carven tools
 
-This directory contains two tools under development:
+- [Graver](graver/README.md) formats Carven source using the compiler lexer and parser.
+- `carvend/` contains a language-server placeholder and is not integrated into the build.
 
-- `graver/`: source formatter.
-- `carvend/`: language server.
-
-Build and run explicitly from the repository root:
+Build and test Graver from the repository root:
 
 ```shell
 ./xmakew build graver
-./xmakew run graver
-
-./xmakew build carvend
-./xmakew run carvend
+./xmakew test -g graver
+./xmakew run graver input.cv
 ```
 
 On Windows, use `.\xmakew.ps1` with the same arguments.

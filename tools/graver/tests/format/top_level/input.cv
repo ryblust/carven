@@ -1,0 +1,1 @@
+println("start");fn twice(value:i32)=>value*2;let value=twice(21);const answer=42;const test "answer"{check(answer==42);}for index in 0..2{println(index);}struct Item{value:i32}println(value);

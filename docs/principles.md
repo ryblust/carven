@@ -113,11 +113,22 @@ and fit with the intended operation. Define source behavior, access, and lifetim
 requirements before selecting a native implementation. Model native details
 where a language rule depends on them.
 
+## Language mechanisms and library composition
+
+Give each builtin a defined role in language semantics: typing, evaluation,
+access, ownership, lifetimes, or observable effects. The compiler establishes
+these contracts and carries their facts through execution and lowering. Runtime
+support implements the operations required by their native realization.
+
+Libraries compose these mechanisms into algorithms, data structures, and public
+APIs. A type's language-level contract and its library operations have distinct
+responsibilities. Place compiler knowledge at the semantic boundary and keep
+algorithmic choices with the library that owns them.
+
 Standard and user crafts use the same language facilities and admission rules.
-Shared language operations belong to the runtime; library APIs and their
-implementation support belong to crafts. Design library APIs for runtime use and
-constant construction where their operations and retained results have defined
-contracts.
+Develop shared execution capabilities so library code can benefit from
+compile-time evaluation and specialization within defined operation and result
+contracts. Let concrete library needs guide the evolution of language mechanisms.
 
 ## Semantic authority and native boundaries
 

@@ -1,0 +1,10 @@
+fn f(x: Vector<Vector<i32> >) {
+    let p = Pair {
+        left: 1,
+        right: 2
+    };
+    let v = [1, 2];
+}
+
+let single = Entry { value: 11 };
+let empty = Entry {};

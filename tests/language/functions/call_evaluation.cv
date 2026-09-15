@@ -32,7 +32,14 @@ fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) 
 test "Evaluation: predecessor reads survive later effects across a wide argument list" {
     var value = 1;
     let result = eight_values(
-        value, value, next_value(&value), value, value, next_value(&value), value, value
+        value,
+        value,
+        next_value(&value),
+        value,
+        value,
+        next_value(&value),
+        value,
+        value
     );
     check(result == 33322211);
     check(value == 3);
@@ -40,21 +47,16 @@ test "Evaluation: predecessor reads survive later effects across a wide argument
 
 test "Evaluation: call arguments evaluate from left to right" {
     var trace = 0;
-    let ordered = pair(
-        record(&trace, 1),
-        record(&trace, 2),
-    );
+    let ordered = pair(record(&trace, 1), record(&trace, 2),);
     let observed = trace;
 
     check(ordered == 12);
     check(observed == 12);
 
     trace = 0;
-    let invoked = (if record(&trace, 1) > 0 {
-        identity
-    } else {
-        identity
-    })(recorded_two(&trace) + 0);
+    let invoked = (if record(&trace, 1) > 0 { identity } else { identity })(
+        recorded_two(&trace) + 0
+    );
     let callback_order = trace;
     check(invoked == 2);
     check(callback_order == 12);

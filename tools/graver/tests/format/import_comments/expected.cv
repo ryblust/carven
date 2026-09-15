@@ -1,0 +1,9 @@
+import std::utf.text using {
+    from_utf8, // decode
+    to_string,
+};
+
+import <vector> using std::{ // containers
+    vector,
+    allocator
+};

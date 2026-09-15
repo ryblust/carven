@@ -22,7 +22,8 @@ fn replace_format_text(&text: String) -> i32 {
 
 test "Interpolation interop: builtin formatting retains String aliases backing and result ownership" {
     var text: String = "original text longer than a small string buffer";
-    let formatted = f"{42:04}|{text}|{::interpolation_probe::make(7).value as i32}|{replace_format_text(&text)}";
+    let formatted = f"{42:04}|{text}|{::interpolation_probe::make(7).value
+            as i32}|{replace_format_text(&text)}";
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
     check(formatted.as_str() == "0042|after我\0value|7|1");
@@ -31,8 +32,11 @@ test "Interpolation interop: builtin formatting retains String aliases backing a
 }
 
 test "Interpolation interop: precomputed bytes retain native temporary backing" {
-    check(f"{(::interpolation_probe::make(42).value == 42) && false} {::interpolation_probe::record_live() || true}"
-        == "false true");
+    check(
+        f"{(::interpolation_probe::make(42).value == 42)
+                && false} {::interpolation_probe::record_live() || true}"
+            == "false true"
+    );
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
 }
@@ -53,17 +57,24 @@ test "Interpolation interop: precomputed bytes retain propagation and skip later
 
 test "Interpolation interop: mixed contents retain backing across folded and dynamic holes" {
     ::interpolation_probe::record_live();
-    check(f"{(::interpolation_probe::make(42).value == 42) && false} {::interpolation_probe::record_live() as bool}"
-        == "false true");
+    check(
+        f"{(::interpolation_probe::make(42).value == 42)
+                && false} {::interpolation_probe::record_live() as bool}"
+            == "false true"
+    );
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
     ::interpolation_probe::record_live();
-    check(f"{::interpolation_probe::make(42).value as i32} {::interpolation_probe::record_live() || true}"
-        == "42 true");
+    check(
+        f"{::interpolation_probe::make(42).value as i32} {::interpolation_probe::record_live()
+                || true}"
+            == "42 true"
+    );
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
     ::interpolation_probe::record_live();
-    f"{(::interpolation_probe::make(42).value == 42) && false} {::interpolation_probe::record_live() as bool}";
+    f"{(::interpolation_probe::make(42).value == 42) && false} {::interpolation_probe::record_live()
+            as bool}";
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
 }
@@ -72,7 +83,8 @@ test "Interpolation interop: mixed folded failures clean backing before the hand
     var effects = 0;
     ::interpolation_probe::record_live();
     let result = try {
-        f"{::interpolation_probe::make(42).value as i32} {::interpolation_probe::record_live() || true} {(fail_format(&effects)? == 0) && false} {after_format(&effects)}"
+        f"{::interpolation_probe::make(42).value as i32} {::interpolation_probe::record_live()
+                || true} {(fail_format(&effects)? == 0) && false} {after_format(&effects)}"
     } catch {
         FormatError(error) => {
             check(error.code == 1);

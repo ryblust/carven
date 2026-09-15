@@ -1,7 +1,11 @@
 const array_table = array_squares(3);
 const array_selected = array_table[2];
 const array_empty: [u8; 0] = [];
-const array_nested = [[1u8, 2u8], [3u8, 4u8]];
+
+const array_nested = [
+    [1u8, 2u8],
+    [3u8, 4u8]
+];
 
 const fn array_squares(offset: i32) -> [i32; 4] {
     var values = [0, 0, 0, 0];
@@ -16,7 +20,10 @@ const fn array_empty_result() -> [u8; 0] => [];
 const fn array_first(values: [i32; 4]) -> i32 => values[0];
 
 const fn array_copy_rows() -> [[i32; 2]; 3] {
-    var values = [[1, 2], [3, 4]];
+    var values = [
+        [1, 2],
+        [3, 4]
+    ];
     let snapshot = values;
     values[0][1] = 9;
     var row = values[1];
@@ -39,32 +46,86 @@ const fn array_observe(values: [i32; 2], marker: i32) -> i32 {
 
 const fn array_read_alias() -> i32 {
     var values = [1, 2];
-    return array_observe(values, if true { values[0] = 7; 0 } else { 0 });
+    return array_observe(
+        values,
+        if true {
+            values[0] = 7;
+            0
+        } else {
+            0
+        }
+    );
 }
 
 const fn array_read_row_alias() -> i32 {
-    var values = [[1, 2], [3, 4]];
-    return array_observe(values[0], if true { values = [[7, 8], [9, 0]]; 0 } else { 0 });
+    var values = [
+        [1, 2],
+        [3, 4]
+    ];
+    return array_observe(
+        values[0],
+        if true {
+            values = [
+                [7, 8],
+                [9, 0]
+            ];
+            0
+        } else {
+            0
+        }
+    );
 }
 
 const fn array_observe_scalar(value: i32, marker: i32) -> i32 => value * 10 + marker;
 
 const fn array_scalar_snapshot() -> i32 {
     var values = [1, 2];
-    return array_observe_scalar(values[0], if true { values[0] = 7; values[0] } else { 0 });
+    return array_observe_scalar(
+        values[0],
+        if true {
+            values[0] = 7;
+            values[0]
+        } else {
+            0
+        }
+    );
 }
 
 const fn array_comparison_snapshot() -> bool {
     var values = [1];
-    return values == if true { values[0] = 2; [2] } else { [2] };
+    return values
+        == if true {
+            values[0] = 2;
+            [2]
+        } else {
+            [2]
+        };
 }
 
 const fn array_index_effects() -> [i32; 3] {
     var values = [10, 20];
     var evaluations = 0;
-    values[if true { ++evaluations; 0 } else { 1 }] +=
-        if true { values[0] = 50; 2 } else { 0 };
-    let observed = values[if true { ++evaluations; 0 } else { 1 }];
+    values[
+        if true {
+            ++evaluations;
+            0
+        } else {
+            1
+        }
+    ] += if true {
+        values[0] = 50;
+        2
+    } else {
+        0
+    };
+    let observed = values[
+        if true {
+            ++evaluations;
+            0
+        } else {
+            1
+        }
+    ];
     return [values[0], observed, evaluations];
 }
 
@@ -164,7 +225,10 @@ const fn array_range_fill(size: usize) {
 }
 
 const fn array_range_nested() {
-    var rows = [[1, 2], [3, 4]];
+    var rows = [
+        [1, 2],
+        [3, 4]
+    ];
     for &row in rows {
         for &element in row {
             element += 10;
@@ -182,12 +246,16 @@ const fn array_range_control() {
         if sum == 6 { break; }
     }
     let empty: [i32; 0] = [];
-    for element in empty { sum += element; }
+    for element in empty {
+        sum += element;
+    }
     return sum;
 }
 
 const fn array_range_return() {
-    for element in [7, 8] { return element; }
+    for element in [7, 8] {
+        return element;
+    }
     return 0;
 }
 
@@ -202,7 +270,10 @@ const fn array_range_snapshot() {
 }
 
 const fn array_range_read_rows() {
-    var rows = [[1, 2], [3, 4]];
+    var rows = [
+        [1, 2],
+        [3, 4]
+    ];
     var sum = 0;
     for row in rows {
         rows[0][0] += 1;
@@ -214,8 +285,21 @@ const fn array_range_read_rows() {
 const fn array_range_source_once() {
     var evaluations = 0;
     var sum = 0;
-    for row in if true { ++evaluations; [[1, 2], [3, 4]] } else { [[0, 0], [0, 0]] } {
-        for element in row { sum += element; }
+    for row in if true {
+            ++evaluations;
+            [
+                [1, 2],
+                [3, 4]
+            ]
+        } else {
+            [
+                [0, 0],
+                [0, 0]
+            ]
+        } {
+        for element in row {
+            sum += element;
+        }
     }
     return sum + evaluations;
 }
@@ -229,7 +313,13 @@ test "Const arrays: sequence bindings share projection and control semantics" {
     const rows = array_range_read_rows();
     const once = array_range_source_once();
     check(filled == [2, 2, 2, 2]);
-    check(nested == [[12, 11], [14, 13]]);
+    check(
+        nested
+            == [
+                [12, 11],
+                [14, 13]
+            ]
+    );
     check(control == 6);
     check(early == 7);
     check(snapshot == 7);

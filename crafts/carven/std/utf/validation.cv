@@ -72,7 +72,9 @@ export fn push(&state: UTF8Validator, byte: u8) throw UTF8Error {
 
 // A block boundary can split a scalar; only finish declares EOF.
 export fn feed(&state: UTF8Validator, bytes: [u8]) throw UTF8Error {
-    for byte in bytes { push(&state, byte)?; }
+    for byte in bytes {
+        push(&state, byte)?;
+    }
 }
 
 export fn finish(state: UTF8Validator) throw UTF8Error {

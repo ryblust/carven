@@ -45,7 +45,10 @@ test "String C++ boundary: native owning conversion has independent storage" {
     check(::native_text::read(copy) == 6usize);
 }
 
-private fn observe_tagged(value: ::native_text::TaggedValue<String>, &target: ::native_text::TaggedValue<String>) -> i32 {
+private fn observe_tagged(
+    value: ::native_text::TaggedValue<String>,
+    &target: ::native_text::TaggedValue<String>
+) -> i32 {
     target.value = 2;
     return value.value as i32;
 }

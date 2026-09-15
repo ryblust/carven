@@ -85,22 +85,31 @@ fn terminal_condition() throw SelectedFailure {
 
 fn terminal_guard() -> i32 throw SelectedFailure {
     return match 1 {
-        _ if if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }
-            => inactive_value()?,
+        _ if if true {
+            throw SelectedFailure {};
+        } else {
+            throw SelectedFailure {};
+        } => inactive_value()?,
         _ => inactive_value()?,
     };
 }
 
 fn terminal_catch_guard() -> i32 throw SelectedFailure {
-    return try { throw InactiveFailure {}; } catch {
-        InactiveFailure(_) if if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; }
-            => inactive_value()?,
+    return try {
+        throw InactiveFailure {};
+    } catch {
+        InactiveFailure(_) if if true {
+            throw SelectedFailure {};
+        } else {
+            throw SelectedFailure {};
+        } => inactive_value()?,
         InactiveFailure(_) => inactive_value()?,
     };
 }
 
 fn no_loop_exit() {
-    while true {}
+    while true {
+    }
     inactive_value()?;
 }
 

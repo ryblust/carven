@@ -11,7 +11,7 @@ configuration.
 | Path | Responsibility |
 | --- | --- |
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
-| [`format.lua`](format.lua) | C++ formatting and formatting checks |
+| [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
 | [`build_pulse.lua`](build_pulse.lua) | Fresh module-batch timings and incremental C++ rebuild observations |
 | [`analysis_pulse.lua`](analysis_pulse.lua) | End-to-end compiler timings for structured source workloads |
@@ -31,10 +31,16 @@ Run commands from the repository root using `./xmakew`; on Windows, use
 ```
 
 `format-check` reports formatting violations; `format` applies formatting.
-Both cover `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`, `tests/`,
-`crafts/`, and `examples/`. On macOS, the script first looks for clang-format
-in Homebrew's LLVM installation, then falls back to PATH. Other platforms use
-PATH. See [C++ conventions](../docs/conventions.md) for source conventions and
+Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
+`tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
+On macOS, the script first looks for clang-format in Homebrew's LLVM installation,
+then falls back to PATH. Other platforms use PATH.
+
+Both commands build Graver and use it for `.cv` files under `crafts/`, `examples/`,
+and `tests/`, plus Graver's expected-output fixtures. Deliberately unformatted
+Graver inputs and the three lexical/syntax rejection fixtures listed in
+`format.lua` are excluded. Other formatting or parse failures fail the command.
+See [C++ conventions](../docs/conventions.md) for source conventions and
 [Testing](../docs/testing.md) for test responsibilities and validation workflow.
 
 The root build copies `.clang-tidy` into each target's generated directory and

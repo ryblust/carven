@@ -1,4 +1,6 @@
-struct Rejected { code: i32 }
+struct Rejected {
+    code: i32
+}
 
 fn first(value: i32) -> i32 throw Rejected {
     if value < 0 { throw Rejected { code: value }; }
@@ -8,7 +10,14 @@ fn first(value: i32) -> i32 throw Rejected {
 fn second(value: i32) -> i32 throw Rejected => value + 20;
 
 fn rebind_in_tail(&callback: fn(i32) -> i32 throw Rejected, value: i32) -> i32 throw Rejected {
-    return callback(if true { callback = second; value } else { value })?;
+    return callback(
+        if true {
+            callback = second;
+            value
+        } else {
+            value
+        }
+    )?;
 }
 
 fn argument(&trace: i32, digit: i32, value: i32) -> i32 throw Rejected {
@@ -37,12 +46,22 @@ fn void_tail(&trace: i32, rejected: bool) throw Rejected {
 
 test "Tail outcomes: a callable target is selected before argument rebinding" {
     var callback: fn(i32) -> i32 throw Rejected = first;
-    let result = try { rebind_in_tail(&callback, 5)? } catch { Rejected(_) => 0, };
+    let result = try {
+        rebind_in_tail(&callback, 5)?
+    } catch {
+        Rejected(_) => 0,
+    };
     check(result == 15);
-    let changed = try { callback(5)? } catch { Rejected(_) => 0, };
+    let changed = try {
+        callback(5)?
+    } catch {
+        Rejected(_) => 0,
+    };
     check(changed == 25);
     callback = first;
-    let failure = try { rebind_in_tail(&callback, -5)? } catch {
+    let failure = try {
+        rebind_in_tail(&callback, -5)?
+    } catch {
         Rejected(error) => error.code,
     };
     check(failure == -5);
@@ -50,17 +69,25 @@ test "Tail outcomes: a callable target is selected before argument rebinding" {
 
 test "Tail outcomes: argument failures preserve order and stop later arguments" {
     var trace = 0;
-    let success = try { ordered_tail(&trace, 4, 5)? } catch { Rejected(_) => 0, };
+    let success = try {
+        ordered_tail(&trace, 4, 5)?
+    } catch {
+        Rejected(_) => 0,
+    };
     check(success == 9);
     check(trace == 123);
     trace = 0;
-    let first_failure = try { ordered_tail(&trace, -4, 5)? } catch {
+    let first_failure = try {
+        ordered_tail(&trace, -4, 5)?
+    } catch {
         Rejected(error) => error.code,
     };
     check(first_failure == 1);
     check(trace == 1);
     trace = 0;
-    let second_failure = try { ordered_tail(&trace, 4, -5)? } catch {
+    let second_failure = try {
+        ordered_tail(&trace, 4, -5)?
+    } catch {
         Rejected(error) => error.code,
     };
     check(second_failure == 2);
@@ -69,10 +96,21 @@ test "Tail outcomes: argument failures preserve order and stop later arguments" 
 
 test "Tail outcomes: captured void tails preserve success and typed failure" {
     var trace = 0;
-    let closure = [&trace](rejected: bool) { return void_tail(&trace, rejected)?; };
+    let closure = [&trace](rejected: bool) {
+        return void_tail(&trace, rejected)?;
+    };
     let callback: fn(bool) -> void throw Rejected = closure;
-    try { callback(false)?; } catch { Rejected(_) => { fail("unexpected failure"); }, }
-    let failure = try { callback(true)?; 0 } catch { Rejected(error) => error.code, };
+    try {
+        callback(false)?;
+    } catch {
+        Rejected(_) => { fail("unexpected failure"); },
+    }
+    let failure = try {
+        callback(true)?;
+        0
+    } catch {
+        Rejected(error) => error.code,
+    };
     check(failure == 7);
     check(trace == 2);
 }

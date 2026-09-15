@@ -1,4 +1,4 @@
-import .header_bridge using { header_twice, twice_via_header };
+import .header_bridge using {header_twice, twice_via_header};
 import "providers/providers.hpp";
 import <cstdint>;
 

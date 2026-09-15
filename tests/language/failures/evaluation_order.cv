@@ -4,9 +4,7 @@ struct ReadError {
 
 fn effect_value(&trace: i32, marker: i32, fail: bool, value: i32) -> i32 throw ReadError {
     trace = trace * 10 + marker;
-    if fail {
-        throw ReadError { code: marker };
-    }
+    if fail { throw ReadError { code: marker }; }
     return value;
 }
 
@@ -76,11 +74,13 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
 
     trace = 0;
     let selected_if = try {
-        let selected = (if false {
-            effect_value(&trace, 1, false, 10)
-        } else {
-            effect_value(&trace, 2, false, 20)
-        })?;
+        let selected = (
+            if false {
+                effect_value(&trace, 1, false, 10)
+            } else {
+                effect_value(&trace, 2, false, 20)
+            }
+        )?;
         selected
     } catch {
         ReadError(_) => -1,
@@ -106,10 +106,12 @@ test "Failure contracts: effectful expressions preserve lexical placement" {
 
     trace = 0;
     let selected_match = try {
-        let selected = (match 1 {
-            0 => effect_value(&trace, 1, false, 10),
-            _ => effect_value(&trace, 2, false, 20),
-        })?;
+        let selected = (
+            match 1 {
+                0 => effect_value(&trace, 1, false, 10),
+                _ => effect_value(&trace, 2, false, 20),
+            }
+        )?;
         selected
     } catch {
         ReadError(_) => -1,

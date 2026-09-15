@@ -1,0 +1,4 @@
+fn f() {
+    let apply = [&x](n: i32) => x + n;
+    let s = f"raw  // {x + 1:04x} {f"nested {y * 2}"}";
+}

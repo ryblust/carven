@@ -25,9 +25,7 @@ test "Testing: inline-test operands are eager, ordered, and evaluated once" {
 }
 
 test "Testing: test calls compose with control blocks and lambdas" {
-    if true {
-        check(true);
-    }
+    if true { check(true); }
     for value in [1, 2] {
         require(value > 0);
     }
@@ -35,7 +33,9 @@ test "Testing: test calls compose with control blocks and lambdas" {
         1 => { check(true); },
         _ => { fail("unselected arm"); },
     }
-    let callback = []() { check(true); };
+    let callback = []() {
+        check(true);
+    };
     callback();
     let ordinary = ordinary_check(true);
     check(ordinary);
@@ -54,7 +54,9 @@ test "Testing: test exits do not participate in value-region merges" {
             require(true);
             22
         },
-        _ => { fail("unselected value-match arm"); },
+        _ => {
+            fail("unselected value-match arm");
+        },
     };
 
     let selected_try = try {
@@ -71,9 +73,15 @@ test "Testing: test exits do not participate in value-region merges" {
 
 test "Testing: local callable names shadow builtins in every position" {
     let assertion: fn(bool) -> void = check;
-    let check = [](value: bool) -> bool { return !value; };
-    let fail = []() -> i32 { return 17; };
-    let println = [](value: i32) -> i32 { return value + 1; };
+    let check = [](value: bool) -> bool {
+        return !value;
+    };
+    let fail = []() -> i32 {
+        return 17;
+    };
+    let println = [](value: i32) -> i32 {
+        return value + 1;
+    };
     assertion(check(false));
     check(false);
     assertion(fail() == 17);

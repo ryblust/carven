@@ -1,0 +1,1 @@
+fn f(){let x=match y{.A=>1,.B(v) if v>0=>{v},_=>0,};try{call()?;}catch{Error(_)=>{},_=>rethrow,}}

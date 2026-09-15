@@ -3,9 +3,7 @@ struct ReadError {
 }
 
 fn read(ok: bool) -> i32 throw ReadError {
-    if ok {
-        return 42;
-    }
+    if ok { return 42; }
     throw ReadError { code: 7 };
 }
 
@@ -43,12 +41,8 @@ fn loop_result() -> i32 {
         value += 1;
         try {
             read(true)?;
-            if value == 2 {
-                continue;
-            }
-            if value == 4 {
-                break;
-            }
+            if value == 2 { continue; }
+            if value == 4 { break; }
         } catch {
             ReadError(_) => {},
         }
@@ -62,12 +56,8 @@ fn nested_value_loop_result() -> i32 {
         read(true)?;
         while value < 5 {
             value += 1;
-            if value == 2 {
-                continue;
-            }
-            if value == 4 {
-                break;
-            }
+            if value == 2 { continue; }
+            if value == 4 { break; }
         }
         value
     } catch {

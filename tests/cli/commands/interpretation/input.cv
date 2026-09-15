@@ -10,9 +10,7 @@ const test "prepared" {
 }
 
 fn fib(value: i32) -> i32 {
-    if value < 2 {
-        return value;
-    }
+    if value < 2 { return value; }
 
     return fib(value - 1) + fib(value - 2);
 }

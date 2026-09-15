@@ -1,6 +1,11 @@
 import .orders using {
-    quote, line_total, delivery_fee,
-    QuantityError, OutOfStock, DeliveryError, CarrierLookupError,
+    quote,
+    line_total,
+    delivery_fee,
+    QuantityError,
+    OutOfStock,
+    DeliveryError,
+    CarrierLookupError,
 };
 
 fn report(label: str, quantity: i32, available: i32, zone: i32) {
@@ -16,7 +21,9 @@ fn report(label: str, quantity: i32, available: i32, zone: i32) {
             println("Requested:", error.requested);
             println("Available:", error.available);
         },
-        CarrierLookupError(error) => { println("Carrier lookup failed for zone:", error.zone); },
+        CarrierLookupError(error) => {
+            println("Carrier lookup failed for zone:", error.zone);
+        },
         DeliveryError(.UnknownZone(zone)) => {
             println("Unknown zone:", zone);
         },

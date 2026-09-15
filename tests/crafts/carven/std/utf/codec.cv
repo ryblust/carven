@@ -11,10 +11,17 @@ test "UTF8: prefix decoding stops before later bytes" {
         }
         let prefix: [u8; 2] = [0x61, 0xff];
         match decode_utf8(prefix)? {
-            .End => { check(false); },
-            .Scalar(value, width) => { check(value == 'a'); check(width == 1); },
+            .End => {
+                check(false);
+            },
+            .Scalar(value, width) => {
+                check(value == 'a');
+                check(width == 1);
+            },
         }
-    } catch { UTF8Error(_) => { check(false); }, }
+    } catch {
+        UTF8Error(_) => { check(false); },
+    }
 }
 
 private struct ScalarCase {
@@ -25,17 +32,61 @@ private struct ScalarCase {
 
 test "UTF8: scalar boundaries have the specified encoding and decoding" {
     let cases = [
-        ScalarCase { scalar: 0, width: 1, bytes: [0, 0, 0, 0] },
-        ScalarCase { scalar: 0x7f, width: 1, bytes: [0x7f, 0, 0, 0] },
-        ScalarCase { scalar: 0x80, width: 2, bytes: [0xc2, 0x80, 0, 0] },
-        ScalarCase { scalar: 0x7ff, width: 2, bytes: [0xdf, 0xbf, 0, 0] },
-        ScalarCase { scalar: 0x800, width: 3, bytes: [0xe0, 0xa0, 0x80, 0] },
-        ScalarCase { scalar: 0xd7ff, width: 3, bytes: [0xed, 0x9f, 0xbf, 0] },
-        ScalarCase { scalar: 0xe000, width: 3, bytes: [0xee, 0x80, 0x80, 0] },
-        ScalarCase { scalar: 0xffff, width: 3, bytes: [0xef, 0xbf, 0xbf, 0] },
-        ScalarCase { scalar: 0x10000, width: 4, bytes: [0xf0, 0x90, 0x80, 0x80] },
-        ScalarCase { scalar: 0x1f600, width: 4, bytes: [0xf0, 0x9f, 0x98, 0x80] },
-        ScalarCase { scalar: 0x10ffff, width: 4, bytes: [0xf4, 0x8f, 0xbf, 0xbf] },
+        ScalarCase {
+            scalar: 0,
+            width: 1,
+            bytes: [0, 0, 0, 0]
+        },
+        ScalarCase {
+            scalar: 0x7f,
+            width: 1,
+            bytes: [0x7f, 0, 0, 0]
+        },
+        ScalarCase {
+            scalar: 0x80,
+            width: 2,
+            bytes: [0xc2, 0x80, 0, 0]
+        },
+        ScalarCase {
+            scalar: 0x7ff,
+            width: 2,
+            bytes: [0xdf, 0xbf, 0, 0]
+        },
+        ScalarCase {
+            scalar: 0x800,
+            width: 3,
+            bytes: [0xe0, 0xa0, 0x80, 0]
+        },
+        ScalarCase {
+            scalar: 0xd7ff,
+            width: 3,
+            bytes: [0xed, 0x9f, 0xbf, 0]
+        },
+        ScalarCase {
+            scalar: 0xe000,
+            width: 3,
+            bytes: [0xee, 0x80, 0x80, 0]
+        },
+        ScalarCase {
+            scalar: 0xffff,
+            width: 3,
+            bytes: [0xef, 0xbf, 0xbf, 0]
+        },
+        ScalarCase {
+            scalar: 0x10000,
+            width: 4,
+            bytes: [0xf0, 0x90, 0x80, 0x80]
+        },
+        ScalarCase {
+            scalar: 0x1f600,
+            width: 4,
+            bytes: [0xf0, 0x9f, 0x98, 0x80]
+        },
+        ScalarCase {
+            scalar: 0x10ffff,
+            width: 4,
+            bytes: [0xf4, 0x8f, 0xbf, 0xbf]
+        },
     ];
     for item in cases {
         try {
@@ -43,11 +94,15 @@ test "UTF8: scalar boundaries have the specified encoding and decoding" {
             check(char_to_u32(character) == item.scalar);
             let encoded = encode_utf8(character);
             check(encoded.width == item.width);
-            for index in 0usize..item.width { check(encoded.bytes[index] == item.bytes[index]); }
+            for index in 0usize..item.width {
+                check(encoded.bytes[index] == item.bytes[index]);
+            }
             let bytes = item.bytes.as_slice().slice(0, item.width);
             validate_utf8(bytes)?;
             match decode_utf8(bytes)? {
-                .End => { check(false); },
+                .End => {
+                    check(false);
+                },
                 .Scalar(value, width) => {
                     check(char_to_u32(value) == item.scalar);
                     check(width == item.width);
@@ -64,8 +119,11 @@ test "UTF8: surrogate and out-of-range values are rejected" {
     let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
     for value in invalid {
         var rejected = false;
-        try { let _ = char_from_u32(value)?; }
-        catch { UnicodeScalarError(error) => { rejected = error.value == value; }, }
+        try {
+            let _ = char_from_u32(value)?;
+        } catch {
+            UnicodeScalarError(error) => { rejected = error.value == value; },
+        }
         check(rejected);
     }
 }

@@ -15,7 +15,7 @@ enum PatternEnvelope {
 fn sibling_constraint_type(value: PatternEnvelope) -> i32 {
     return match value {
         .First(PatternModel, is PatternModel)
-        | .Second(PatternModel, is PatternModel) if PatternModel == 7 => PatternModel,
+            | .Second(PatternModel, is PatternModel) if PatternModel == 7 => PatternModel,
         .First(_, _) | .Second(_, _) => 0,
     };
 }

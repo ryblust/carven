@@ -1,7 +1,9 @@
 const fn checked_sum(size: i32) {
     require(size >= 0, "nonnegative size");
     var sum = 0;
-    for value in 0..size { sum += value; }
+    for value in 0..size {
+        sum += value;
+    }
     return sum;
 }
 

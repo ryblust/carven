@@ -21,8 +21,18 @@ fn savings(item: Item) -> i32 {
 
 fn main() {
     let items = [
-        Item { name: "Notebook", price_cents: 250, quantity: 2, discount: Discount::None },
-        Item { name: "Pencil", price_cents: 120, quantity: 3, discount: Discount::Percent(10) },
+        Item {
+            name: "Notebook",
+            price_cents: 250,
+            quantity: 2,
+            discount: Discount::None
+        },
+        Item {
+            name: "Pencil",
+            price_cents: 120,
+            quantity: 3,
+            discount: Discount::Percent(10)
+        },
     ];
     var gross: i32 = 0;
     var saved: i32 = 0;

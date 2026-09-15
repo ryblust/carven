@@ -15,7 +15,9 @@ struct EntryFailure {
 }
 
 private fn fail_entry() throw EntryFailure {
-    throw EntryFailure { payload: ::EntryPayload {} };
+    throw EntryFailure {
+        payload: ::EntryPayload {}
+    };
 }
 
 // Entry points: completion preserves cleanup and determines process status.
@@ -28,7 +30,9 @@ fn main(args) -> ::EntryPayload throw EntryFailure {
         print(::cv_test_entry_failure_status() as i32);
     }
     if ::cv_test_entry_selected(c"throw") {
-        throw EntryFailure { payload: ::EntryPayload {} };
+        throw EntryFailure {
+            payload: ::EntryPayload {}
+        };
     }
     if ::cv_test_entry_selected(c"recover") {
         try {

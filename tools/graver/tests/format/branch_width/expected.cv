@@ -1,0 +1,12 @@
+fn process() {
+    try {
+        work()?;
+    } catch {
+        Error(.Missing) => {
+            first();
+        },
+        Error(.Invalid(.UnexpectedCharacterInConfigurationValue(character_position))) => {
+            second();
+        },
+    }
+}

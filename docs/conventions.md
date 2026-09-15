@@ -1,13 +1,13 @@
 # C++ Conventions
 
-These rules apply to project-authored C++ in `src/`, `tests/`, and `crafts/`.
+These rules apply to project-authored C++ in `src/`, `tests/`, `crafts/`, and `tools/`.
 Vendored source and fixtures that preserve an external interface follow their
 owning format. Generated artifacts follow the C++ baseline below; the remaining
 source-layout and style rules apply to handwritten code.
 
 ## C++ baseline
 
-- Source in `src/` and `tests/internal/` may use C++26.
+- Source in `src/`, `tests/internal/`, and `tools/` may use C++26.
 - Crafts, installed support source, generated code, and baseline consumer
   fixtures must compile with C++20. Implementations may select newer facilities
   when the consumer's standard and library support them, while preserving the

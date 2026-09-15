@@ -31,12 +31,30 @@ fn traced_value(&trace: i32, value: i32) -> Value {
 }
 
 test "Equality: structural equality compares values recursively" {
-    let first_point = Point { x: 1, y: 2 };
-    let same_point = Point { x: 1, y: 2 };
-    let other_point = Point { x: 1, y: 3 };
-    let first_envelope = Envelope { point: first_point, values: [3, 4] };
-    let same_envelope = Envelope { point: same_point, values: [3, 4] };
-    let other_envelope = Envelope { point: other_point, values: [3, 4] };
+    let first_point = Point {
+        x: 1,
+        y: 2
+    };
+    let same_point = Point {
+        x: 1,
+        y: 2
+    };
+    let other_point = Point {
+        x: 1,
+        y: 3
+    };
+    let first_envelope = Envelope {
+        point: first_point,
+        values: [3, 4]
+    };
+    let same_envelope = Envelope {
+        point: same_point,
+        values: [3, 4]
+    };
+    let other_envelope = Envelope {
+        point: other_point,
+        values: [3, 4]
+    };
 
     check(first_point == same_point);
     check(first_point != other_point);

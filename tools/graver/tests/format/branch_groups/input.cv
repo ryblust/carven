@@ -1,0 +1,4 @@
+fn short() {try {work()?;} catch { Error(.A) => {first();}, Error(.B) => {second();}, }}
+fn complex() {try {work()?;} catch { Error(.A) => {first();}, Error(.B) => {let value = second(); use(value);}, }}
+fn commented() {match value {.A => {first();}, .B => {// explain
+second();}, }}

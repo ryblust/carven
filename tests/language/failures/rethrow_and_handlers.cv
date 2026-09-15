@@ -35,16 +35,12 @@ fn fail_parse(code: i32) -> i32 throw ParseError {
 }
 
 fn fail_selected(read_failure: bool) -> i32 throw ReadError + ParseError {
-    if read_failure {
-        throw ReadError { code: 31 };
-    }
+    if read_failure { throw ReadError { code: 31 }; }
     throw ParseError { code: 47 };
 }
 
 fn fail_decode(kind: i32) -> i32 throw DecodeError {
-    if kind == 0 {
-        throw DecodeError::Empty;
-    }
+    if kind == 0 { throw DecodeError::Empty; }
     throw DecodeError::Invalid(73);
 }
 
@@ -86,9 +82,7 @@ fn ignore_absent_typed_catch_effect() -> i32 {
 }
 
 fn ignore_constant_dead_effect() -> i32 {
-    if false {
-        return fail_unreachable()?;
-    }
+    if false { return fail_unreachable()?; }
     while false {
         fail_unreachable()?;
     }
@@ -181,8 +175,7 @@ fn overlapping_alternatives_share_one_guard(accepted: bool) -> i32 {
     let result = try {
         fail_pair()?
     } catch {
-        PairError(.Pair(1, _)) | PairError(.Pair(_, 1))
-            if record_guard(&calls) && accepted => 7,
+        PairError(.Pair(1, _)) | PairError(.Pair(_, 1)) if record_guard(&calls) && accepted => 7,
         PairError(_) => 0,
     };
     return result + calls * 10;
@@ -200,9 +193,7 @@ fn handler_transforms_failure() -> i32 throw ParseError {
     return try {
         read()?
     } catch {
-        ReadError(_) => {
-            throw ParseError { code: 61 };
-        },
+        ReadError(_) => { throw ParseError { code: 61 }; },
     };
 }
 
@@ -244,9 +235,7 @@ fn nested_rethrow() -> i32 throw ReadError {
         read()?
     } catch {
         ReadError(error) => {
-            if error.code == 7 {
-                rethrow;
-            }
+            if error.code == 7 { rethrow; }
             0
         },
     };
@@ -261,16 +250,12 @@ fn recover_nested_rethrow() -> i32 {
 }
 
 private fn recursive_failure_left(fail_here: bool) -> i32 {
-    if fail_here {
-        throw RecursiveError { code: 83 };
-    }
+    if fail_here { throw RecursiveError { code: 83 }; }
     return recursive_failure_right(true)?;
 }
 
 private fn recursive_failure_right(visit_left: bool) -> i32 {
-    if visit_left {
-        return recursive_failure_left(true)?;
-    }
+    if visit_left { return recursive_failure_left(true)?; }
     return 0;
 }
 

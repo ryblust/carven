@@ -1,0 +1,16 @@
+fn f() {
+    var result = [
+        Entry { "import", 0 },
+        Entry { "const",  0 },
+        Entry { "struct", 0 }
+    ];
+    let matrix = [
+        [1, 2],
+        [3, 4]
+    ];
+    let scalar = [1, 2, 3];
+    let wrapped = [
+        (Entry { "one", 1 }),
+        0
+    ];
+}

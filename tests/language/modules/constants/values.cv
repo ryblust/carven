@@ -18,7 +18,9 @@ const selected_item: ConstantValue = ConstantValue::Item(later);
 const selected_empty: ConstantValue = ConstantValue::Empty;
 
 export fn constants_preserve_enum_identity() -> bool {
-    return selected_status as u8 == 5u8
+    return selected_status
+        as u8
+        == 5u8
         && selected_item == ConstantValue::Item(20)
         && selected_empty == ConstantValue::Empty;
 }

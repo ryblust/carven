@@ -17,11 +17,17 @@ test "Basics: representative primitives aggregates and arrays run end to end" {
 
     let row: [i32; 3] = [1, 2, 3];
     let first_value: i32 = first(row);
-    let point = Point { x: 20, y: 22 };
+    let point = Point {
+        x: 20,
+        y: 22
+    };
     let positional = Point { 19, 23 };
     let empty = Empty {};
     let empty_values: [i32; 0] = [];
-    let nested: [[u8; 2]; 2] = [[1, 2], [3, 4]];
+    let nested: [[u8; 2]; 2] = [
+        [1, 2],
+        [3, 4]
+    ];
     let result = sum(point);
 
     check(signed_value == 3);

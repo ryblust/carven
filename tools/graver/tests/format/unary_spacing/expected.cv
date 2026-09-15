@@ -1,0 +1,4 @@
+fn f() {
+    let x = - -a;
+    let y = a - -b;
+}

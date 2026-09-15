@@ -12,7 +12,10 @@ fn line_total(quantity: i32, available: i32) -> i32 throw QuantityError + OutOfS
     if quantity <= 0 { throw QuantityError::NonPositive(quantity); }
     if quantity > 100 { throw QuantityError::TooLarge(quantity); }
     if quantity > available {
-        throw OutOfStock { requested: quantity, available: available };
+        throw OutOfStock {
+            requested: quantity,
+            available: available
+        };
     }
     return quantity * 250;
 }
@@ -45,8 +48,11 @@ private fn primary_quote(quantity: i32, available: i32, zone: i32) -> i32 {
 }
 
 // This shared module interface states every failure its callers must handle.
-fn quote(quantity: i32, available: i32, zone: i32) -> i32
-    throw QuantityError + OutOfStock + DeliveryError + CarrierLookupError {
+fn quote(
+    quantity: i32,
+    available: i32,
+    zone: i32
+) -> i32 throw QuantityError + OutOfStock + DeliveryError + CarrierLookupError {
     return try {
         primary_quote(quantity, available, zone)?
     } catch {

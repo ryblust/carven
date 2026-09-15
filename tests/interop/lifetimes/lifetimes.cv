@@ -30,14 +30,18 @@ struct FixedBox {
 }
 
 fn boxed_after_loop(selected: bool, skip: bool) -> FixedBox {
-    return FixedBox { value: if (selected) {
-        for var n = 0; n < 2; n += 1 {
-            mark(n + 1);
-            if skip { continue; }
-            break;
+    return FixedBox {
+        value: if (selected) {
+            for var n = 0; n < 2; n += 1 {
+                mark(n + 1);
+                if skip { continue; }
+                break;
+            }
+            FixedOwner { 51 }
+        } else {
+            FixedOwner { 52 }
         }
-        FixedOwner { 51 }
-    } else { FixedOwner { 52 } } };
+    };
 }
 
 test "Lifetimes: loop-local transfers preserve direct branch construction" {
@@ -97,9 +101,7 @@ test "Lifetimes: selected lexical regions destroy in reverse construction order"
 
 test "Lifetimes: condition evaluation ends before branch execution" {
     reset();
-    if (Owner { 1 }.probe() as bool) {
-        mark(9);
-    }
+    if (Owner { 1 }.probe() as bool) { mark(9); }
     check(matches("1 11 -1 9 "));
     reset();
     if (Owner { 2 }.probe() as bool) && false { mark(9); }
@@ -222,8 +224,10 @@ fn observed(value: bool) -> bool {
 }
 
 fn nested_owners(flag: bool) -> bool {
-    return observed((Owner { 1 }.probe() as bool)
-        && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool)));
+    return observed(
+        (Owner { 1 }.probe() as bool)
+            && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool))
+    );
 }
 
 test "Lifetimes: nested conditional operands destroy owners in reverse construction order" {
@@ -270,9 +274,8 @@ fn probe_fixed_receiver(succeeds: bool) throw Failure {
 }
 
 fn probe_conditional_fixed_receiver(selected: bool, succeeds: bool) throw Failure {
-    let _ = selected && (
-        ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0) as bool
-    );
+    let _ = selected
+        && (ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0) as bool);
     mark(8);
 }
 
@@ -315,18 +318,19 @@ test "Lifetimes: nested receiver temporaries span fallible argument evaluation" 
 }
 
 fn probe_conditional_reference(selected: bool, succeeds: bool) throw Failure {
-    let _ = selected && (
-        ::lifetime_probe::receiver_reference()
-            .probe(initialization_argument(succeeds)?) as bool
-    );
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_reference().probe(initialization_argument(succeeds)?) as bool
+        );
     mark(8);
 }
 
 fn probe_conditional_const_reference(selected: bool, succeeds: bool) throw Failure {
-    let _ = selected && (
-        ::lifetime_probe::receiver_const_reference()
-            .probe(initialization_argument(succeeds)?) as bool
-    );
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_const_reference().probe(initialization_argument(succeeds)?)
+                as bool
+        );
     mark(8);
 }
 
@@ -437,8 +441,8 @@ fn accept_pattern(accepted: bool) -> bool {
 fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 {
     return match value {
         .Pair(chosen, _, 0 | 1, 0 | 1)
-        | .Pair(_, chosen, 2 | 3, 2 | 3)
-        | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
+            | .Pair(_, chosen, 2 | 3, 2 | 3)
+            | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
         .Pair(_, _, _, _) => -1,
     };
 }
@@ -549,18 +553,22 @@ test "Lifetimes: closure parameters construct directly from owned temporaries" {
 }
 
 fn conditional_outcome(flag: bool) -> bool throw Failure {
-    return (flag && (owned_outcome(true)?.probe() as bool))
-        && (matches("1 11 ") as bool);
+    return (flag && (owned_outcome(true)?.probe() as bool)) && (matches("1 11 ") as bool);
 }
 
 fn conditional_branch_owner(flag: bool) -> bool {
-    return (flag && ((if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } })
-        .probe(event(5), event(6)) as bool)) && (matches("3 5 6 9 ") as bool);
+    return (
+        flag
+            && (
+                (if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } }).probe(event(5), event(6))
+                    as bool
+            )
+    )
+        && (matches("3 5 6 9 ") as bool);
 }
 
 fn conditional_failure(flag: bool) -> bool throw Failure {
-    return (Owner { 1 }.probe() as bool)
-        && (flag && (owned_outcome(false)?.probe() as bool));
+    return (Owner { 1 }.probe() as bool) && (flag && (owned_outcome(false)?.probe() as bool));
 }
 
 test "Lifetimes: joined outcomes and branch values retain full expression owners" {
@@ -594,18 +602,22 @@ test "Lifetimes: joined outcomes and branch values retain full expression owners
 }
 
 fn probe_literal_reference(selected: bool, succeeds: bool) throw Failure {
-    let _ = selected && (
-        ::lifetime_probe::receiver_from_literal(1)
-            .probe(initialization_argument(succeeds)?) as bool
-    );
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_from_literal(1).probe(initialization_argument(succeeds)?)
+                as bool
+        );
     mark(8);
 }
 
 fn probe_ordered_literal_reference(selected: bool, succeeds: bool) throw Failure {
-    let _ = selected && (
-        ::lifetime_probe::receiver_from_literal(1, event(5))
-            .probe(initialization_argument(succeeds)?) as bool
-    );
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_from_literal(1, event(5)).probe(
+                    initialization_argument(succeeds)?
+                )
+                as bool
+        );
     mark(8);
 }
 
@@ -716,20 +728,17 @@ test "Lifetimes: native array elements snapshot references before later mutation
 
 fn take_scalar_before_failure(succeeds: bool) -> i32 throw Failure {
     let value: i32 = 1;
-    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
-        as i32;
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
 }
 
 fn take_pointer_before_failure(succeeds: bool) -> i32 throw Failure {
     let value: ptr<&i32> = ::lifetime_probe::native_take_address();
-    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
-        as i32;
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
 }
 
 fn take_owner_before_failure(succeeds: bool) -> i32 throw Failure {
     let value = ::lifetime_probe::NativeTakeOwner {};
-    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?)
-        as i32;
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
 }
 
 test "Lifetimes: native Take selects rvalue overloads before and after operand stabilization" {
@@ -800,8 +809,9 @@ struct ReturnedOwner {
     text: String,
 }
 
-fn copy_taken_native(&&value: ::lifetime_probe::NativeTakeOwner)
-    -> ::lifetime_probe::NativeTakeOwner => value;
+fn copy_taken_native(
+    &&value: ::lifetime_probe::NativeTakeOwner
+) -> ::lifetime_probe::NativeTakeOwner => value;
 
 fn copy_taken_record(&&value: ReturnedOwner) -> ReturnedOwner => value;
 

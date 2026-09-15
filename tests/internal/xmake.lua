@@ -3,7 +3,7 @@ target("carven-test-internal")
     add_deps("carven-modules")
 
     add_includedirs(path.join(os.projectdir(), "crafts"))
-    add_includedirs(path.join(os.projectdir(), "tests", "internal", "vendor"))
+    add_includedirs(path.join(os.projectdir(), "tests", "internal", "thirdparty"))
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cppm"))
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cpp"))
 

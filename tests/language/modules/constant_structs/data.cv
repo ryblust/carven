@@ -8,7 +8,10 @@ export const empty_records: [Entry] = [];
 export const first_record: Entry = records[0];
 
 const fn make_records(seed: i32) -> [Entry; 2] {
-    var rows = [Entry { seed, "first" }, Entry { seed + 1, "我\0😀" }];
+    var rows = [
+        Entry { seed,     "first"     },
+        Entry { seed + 1, "我\0😀" }
+    ];
     rows[1].key += 10;
     return rows;
 }

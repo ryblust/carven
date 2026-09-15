@@ -101,7 +101,10 @@ test "String: holders end by scope replacement and independent consumption" {
 }
 
 test "String: aggregate storage captures branches recursive calls and retained ranges" {
-    var pair = TextPair { first: own("one"), second: own("two") };
+    var pair = TextPair {
+        first: own("one"),
+        second: own("two")
+    };
     if true {
         let v = pair.first.as_str();
         pair.second.push('!');
@@ -111,10 +114,16 @@ test "String: aggregate storage captures branches recursive calls and retained r
     array[1].append("c");
     check(array[1] == "bc");
     let view = TextView { text: pair.first };
-    let mixed = MixedText { owner: pair.first, view: view.text };
+    let mixed = MixedText {
+        owner: pair.first,
+        view: view.text
+    };
     check(mixed.owner.as_str() == mixed.view);
     let choice = TextChoice::View(recursive_view(pair.first, 2));
-    let size: usize = match choice { .View(v) => v.len(), .Owned(s) => s.len() };
+    let size: usize = match choice {
+        .View(v) => v.len(),
+        .Owned(s) => s.len()
+    };
     check(size == 3usize);
     let closure = [view]() -> usize => view.text.len();
     check(closure() == 3usize);
@@ -127,13 +136,16 @@ test "String: aggregate storage captures branches recursive calls and retained r
 }
 
 fn take_view(&&view: str) -> usize => view.len();
+
 fn recursive_str(view: str, count: i32) -> str {
     if count == 0 { return view; }
     return recursive_str(view, count - 1);
 }
+
 fn selected_view(first: String, second: String, choose: bool) -> str {
     return if choose { first } else { second };
 }
+
 fn capture_view(view: str) => [view]() -> usize => view.len();
 
 test "String: transferred views recursive str and selected results retain the right backing" {
@@ -173,7 +185,10 @@ test "String: Take parameters keep owning storage even for a read-only body" {
     check(consume(&&text) == 5usize);
 }
 
-fn literal_string() -> String { return "123"; }
+fn literal_string() -> String {
+    return "123";
+}
+
 fn grouped_string() -> String => (("456"));
 fn text_length(text: str) -> usize => text.len();
 
@@ -184,7 +199,10 @@ test "String: contextual literals and explicit copies own independent text" {
     check(copy == "我\0abc");
     check(literal_string() == "123");
     check(grouped_string() == "456");
-    let pair = TextPair { first: "one", second: "two" };
+    let pair = TextPair {
+        first: "one",
+        second: "two"
+    };
     let values: [String; 2] = ["a", ("b")];
     check(pair.first == "one");
     check(values[1] == "b");

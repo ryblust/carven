@@ -1,4 +1,4 @@
-import .api using { answer, label, published, };
+import .api using {answer, label, published,};
 import .values using extent;
 
 const frozen_label = label();

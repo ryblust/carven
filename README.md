@@ -171,6 +171,8 @@ The default build selects the compiler. Build it before running the test suite:
 ./xmakew test
 ```
 
+Use [Graver](tools/graver/README.md) to format `.cv` source files.
+
 ### Module build troubleshooting
 
 If an unexpected compiler, module, BMI, dependency-order, or apparently

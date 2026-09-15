@@ -10,9 +10,7 @@ struct AFailure {
 }
 
 fn narrow(value: i32) -> i32 throw ZFailure {
-    if value < 0 {
-        throw ZFailure { code: -value };
-    }
+    if value < 0 { throw ZFailure { code: -value }; }
     return value;
 }
 
@@ -21,16 +19,12 @@ fn exact_tail(value: i32) -> i32 throw ZFailure => narrow(value)?;
 fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure => narrow(value)?;
 
 fn selected_failure(select_a: bool) -> i32 throw ZFailure + AFailure {
-    if select_a {
-        throw AFailure { code: 41 };
-    }
+    if select_a { throw AFailure { code: 41 }; }
     throw ZFailure { code: 43 };
 }
 
 fn narrow_void(fail: bool) throw ZFailure {
-    if fail {
-        throw ZFailure { code: 47 };
-    }
+    if fail { throw ZFailure { code: 47 }; }
 }
 
 fn widened_void(fail: bool) throw ZFailure + AFailure {
@@ -95,7 +89,9 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     let widened_stored_view: fn(i32) -> i32 throw ZFailure + AFailure = exact_function;
     let narrow_array: [fn(i32) -> i32 throw ZFailure; 2] = [narrow, narrow];
     let wide_array: [fn(i32) -> i32 throw ZFailure + AFailure; 2] = narrow_array;
-    let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [[narrow]];
+    let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [
+        [narrow]
+    ];
     let nested_wide: [[fn(i32) -> i32 throw ZFailure + AFailure; 1]; 1] = nested_narrow;
     let empty_narrow: [fn(i32) -> i32 throw ZFailure; 0] = [];
     let empty_wide: [fn(i32) -> i32 throw ZFailure + AFailure; 0] = empty_narrow;

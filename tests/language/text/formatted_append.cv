@@ -48,7 +48,14 @@ struct AppendPair {
 const fn append_current_length() -> String {
     var text: String = "abc";
     text.append_format(f"/{text.len()}");
-    text.append_format(f"{if true { text = String::from_str("new"); 7 } else { 0 }}");
+    text.append_format(
+        f"{if true {
+                text = String::from_str("new");
+                7
+            } else {
+                0
+            }}"
+    );
     return text;
 }
 
@@ -58,7 +65,10 @@ test "Formatted append: destination queries and independent projections remain a
     var text: String = "abc";
     text.append_format(f"/{text.len()}");
     check(text == "abc/3");
-    var pair = AppendPair { first: String::new(), second: "value" };
+    var pair = AppendPair {
+        first: String::new(),
+        second: "value"
+    };
     pair.first.append_format(f"{pair.second}");
     check(pair.first == "value");
     var array = [String::new(), String::from_str("other")];
@@ -95,14 +105,18 @@ test "Formatted append: scalar snapshots and String reads preserve hole evaluati
     source.clear();
     check(result == "after我\0value/7");
     result.clear();
-    result.append_format(f"{String::from_str("temporary backing exceeding a small string buffer").as_str()}");
+    result.append_format(
+        f"{String::from_str("temporary backing exceeding a small string buffer").as_str()}"
+    );
     check(result == "temporary backing exceeding a small string buffer");
 }
 
 test "Formatted append: known contents retain effects and runtime specifications" {
     var trace = 0;
     var result = String::new();
-    result.append_format(f"{record_append_flag(&trace, 1) && false}/{record_append_flag(&trace, 2) || true}");
+    result.append_format(
+        f"{record_append_flag(&trace, 1) && false}/{record_append_flag(&trace, 2) || true}"
+    );
     check(result == "false/true");
     check(trace == 12);
     var width = 7;
@@ -116,7 +130,9 @@ test "Formatted append: a failing hole skips later holes and destination mutatio
     var result: String = "unchanged";
     var effects = 0;
     let failure = try {
-        result.append_format(f"prefix/{fail_append_value(&effects)?}/{next_append_value(&effects)}");
+        result.append_format(
+            f"prefix/{fail_append_value(&effects)?}/{next_append_value(&effects)}"
+        );
         0
     } catch {
         AppendError(error) => error.code,
@@ -130,7 +146,9 @@ test "Formatted append: receiver failure and completed hole mutations keep their
     var values = [String::from_str("unchanged")];
     var effects = 0;
     let receiver_failure = try {
-        values[fail_append_value(&effects)? as usize].append_format(f"{next_append_value(&effects)}");
+        values[fail_append_value(&effects)? as usize].append_format(
+            f"{next_append_value(&effects)}"
+        );
         0
     } catch {
         AppendError(error) => error.code,

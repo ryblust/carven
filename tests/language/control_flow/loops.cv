@@ -6,9 +6,7 @@ fn record_loop_effect(&trace: i32, result: i32) -> i32 {
 }
 
 fn advance_loop_step(&value: i32, fail: bool) throw LoopStepFailure {
-    if fail {
-        throw LoopStepFailure {};
-    }
+    if fail { throw LoopStepFailure {}; }
     value += 1;
 }
 
@@ -20,9 +18,7 @@ test "Loops: loops support clauses iteration and control transfer" {
 
     var odd_total: i32 = 0;
     for var index: i32 = 0; index < 6; ++index {
-        if index % 2 == 0 {
-            continue;
-        }
+        if index % 2 == 0 { continue; }
         odd_total += index;
     }
 
@@ -48,39 +44,42 @@ test "Loops: loops support clauses iteration and control transfer" {
     }
 
     var assigned: i32 = 7;
-    for assigned = 0; assigned < 2; assigned = assigned + 1 {}
+    for assigned = 0; assigned < 2; assigned = assigned + 1 {
+    }
 
     var multi_index: i32 = 0;
     var accumulated: i32 = 0;
     var flipped = false;
-    for ; multi_index < 3; ++multi_index, accumulated += multi_index, flipped = !flipped {}
+    for ; multi_index < 3; ++multi_index, accumulated += multi_index, flipped = !flipped {
+    }
 
     var mutation_values: [i32; 1] = [0];
     var mutation_trace: i32 = 0;
     var mutation_index: i32 = 0;
-    for ; mutation_index < 1;
-        mutation_values[record_loop_effect(&mutation_trace, 0)] +=
-            record_loop_effect(&mutation_trace, 1),
-        ++mutation_index
-    {}
+    for ;
+        mutation_index < 1;
+        mutation_values[record_loop_effect(&mutation_trace, 0)] += record_loop_effect(
+            &mutation_trace,
+            1
+        ),
+        ++mutation_index {
+    }
 
     var recovered_index: i32 = 0;
     var recovered_visits: i32 = 0;
     try {
         for ; recovered_index < 2; advance_loop_step(&recovered_index, false)? {
             recovered_visits += 1;
-            if recovered_visits == 1 {
-                continue;
-            }
+            if recovered_visits == 1 { continue; }
         }
     } catch {
         LoopStepFailure(_) => {},
     }
 
     var constant_false_trace: i32 = 0;
-    for record_loop_effect(&constant_false_trace, 0); false;
-        record_loop_effect(&constant_false_trace, 0)
-    {
+    for record_loop_effect(&constant_false_trace, 0);
+        false;
+        record_loop_effect(&constant_false_trace, 0) {
         constant_false_trace += 100;
     }
 

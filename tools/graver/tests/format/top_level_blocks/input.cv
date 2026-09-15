@@ -1,0 +1,1 @@
+if ready{println(1);}fn value()=>7;while active{println(value());}

@@ -17,16 +17,19 @@ export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
     for byte in bytes {
         push(&state, byte)?;
         if state.offset == 1 {
-            if byte < 0x80 { scalar = byte as u32; }
-            else if byte < 0xe0 { scalar = (byte & 31) as u32; }
-            else if byte < 0xf0 { scalar = (byte & 15) as u32; }
-            else { scalar = (byte & 7) as u32; }
+            if byte < 0x80 {
+                scalar = byte as u32;
+            } else if byte < 0xe0 {
+                scalar = (byte & 31) as u32;
+            } else if byte < 0xf0 {
+                scalar = (byte & 15) as u32;
+            } else {
+                scalar = (byte & 7) as u32;
+            }
         } else {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
-        if state.remaining == 0 {
-            return .Scalar(char::from_u32_unchecked(scalar), state.offset);
-        }
+        if state.remaining == 0 { return .Scalar(char::from_u32_unchecked(scalar), state.offset); }
     }
     throw error(state, .Truncated);
 }
@@ -41,22 +44,34 @@ export fn encode_utf8(character: char) -> UTF8Encoded {
     var bytes: [u8; 4] = [0, 0, 0, 0];
     if value <= 0x7f {
         bytes[0] = value as u8;
-        return UTF8Encoded { bytes: bytes, width: 1 };
+        return UTF8Encoded {
+            bytes: bytes,
+            width: 1
+        };
     }
     if value <= 0x7ff {
         bytes[0] = (0xc0 | (value >> 6)) as u8;
         bytes[1] = continuation(value, 0);
-        return UTF8Encoded { bytes: bytes, width: 2 };
+        return UTF8Encoded {
+            bytes: bytes,
+            width: 2
+        };
     }
     if value <= 0xffff {
         bytes[0] = (0xe0 | (value >> 12)) as u8;
         bytes[1] = continuation(value, 6);
         bytes[2] = continuation(value, 0);
-        return UTF8Encoded { bytes: bytes, width: 3 };
+        return UTF8Encoded {
+            bytes: bytes,
+            width: 3
+        };
     }
     bytes[0] = (0xf0 | (value >> 18)) as u8;
     bytes[1] = continuation(value, 12);
     bytes[2] = continuation(value, 6);
     bytes[3] = continuation(value, 0);
-    return UTF8Encoded { bytes: bytes, width: 4 };
+    return UTF8Encoded {
+        bytes: bytes,
+        width: 4
+    };
 }

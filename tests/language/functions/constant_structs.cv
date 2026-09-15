@@ -16,15 +16,23 @@ struct ConstantTextEntry {
 
 struct ConstantEmpty {}
 
-const entry_literal = ConstantEntry { value: 9, key: 3 };
+const entry_literal = ConstantEntry {
+    value: 9,
+    key: 3
+};
+
 const entry_table: [ConstantEntry] = entry_build(3);
 const entry_middle = entry_table.slice(1, 3);
 const entry_selected = entry_middle[1].value;
 const entry_empty: [ConstantEntry] = entry_nothing();
 
 const fn entry_build(seed: i32) -> [ConstantEntry; 4] {
-    var entries = [ConstantEntry { 0, 0 }, ConstantEntry { 0, 0 },
-                   ConstantEntry { 0, 0 }, ConstantEntry { 0, 0 }];
+    var entries = [
+        ConstantEntry { 0, 0 },
+        ConstantEntry { 0, 0 },
+        ConstantEntry { 0, 0 },
+        ConstantEntry { 0, 0 }
+    ];
     for index in 0..4 {
         entries[index].key = index;
         entries[index].value = seed + index * index;
@@ -34,19 +42,40 @@ const fn entry_build(seed: i32) -> [ConstantEntry; 4] {
 
 const fn entry_nothing() -> [ConstantEntry; 0] => [];
 const fn entry_transfer(&&entry: ConstantEntry) -> ConstantEntry => &&entry;
+
 const fn entry_observe(entry: ConstantEntry, snapshot: i32, marker: i32) -> i32 {
     return entry.key * 100 + snapshot * 10 + marker;
 }
 
 const fn entry_read_order() -> i32 {
-    var group = ConstantEntryGroup { [ConstantEntry { 1, 2 }, ConstantEntry { 3, 4 }], true };
-    return entry_observe(group.entries[0], group.entries[0].key, if true {
-        group = ConstantEntryGroup { [ConstantEntry { 7, 8 }, ConstantEntry { 9, 10 }], false };
-        2
-    } else { 0 });
+    var group = ConstantEntryGroup {
+        [
+            ConstantEntry { 1, 2 },
+            ConstantEntry { 3, 4 }
+        ],
+        true
+    };
+    return entry_observe(
+        group.entries[0],
+        group.entries[0].key,
+        if true {
+            group = ConstantEntryGroup {
+                [
+                    ConstantEntry { 7, 8  },
+                    ConstantEntry { 9, 10 }
+                ],
+                false
+            };
+            2
+        } else {
+            0
+        }
+    );
 }
 
-struct ConstantEntryBox { group: ConstantEntryGroup }
+struct ConstantEntryBox {
+    group: ConstantEntryGroup
+}
 
 const fn entry_observe_group(group: ConstantEntryGroup, snapshot: i32, marker: i32) -> i32 {
     return group.entries[0].key * 100 + snapshot * 10 + marker;
@@ -54,14 +83,32 @@ const fn entry_observe_group(group: ConstantEntryGroup, snapshot: i32, marker: i
 
 const fn entry_storage_read_order() -> i32 {
     var box = ConstantEntryBox {
-        ConstantEntryGroup { [ConstantEntry { 1, 2 }, ConstantEntry { 3, 4 }], true }
+        ConstantEntryGroup {
+            [
+                ConstantEntry { 1, 2 },
+                ConstantEntry { 3, 4 }
+            ],
+            true
+        }
     };
-    return entry_observe_group(box.group, box.group.entries[0].key, if true {
-        box = ConstantEntryBox {
-            ConstantEntryGroup { [ConstantEntry { 7, 8 }, ConstantEntry { 9, 10 }], false }
-        };
-        2
-    } else { 0 });
+    return entry_observe_group(
+        box.group,
+        box.group.entries[0].key,
+        if true {
+            box = ConstantEntryBox {
+                ConstantEntryGroup {
+                    [
+                        ConstantEntry { 7, 8  },
+                        ConstantEntry { 9, 10 }
+                    ],
+                    false
+                }
+            };
+            2
+        } else {
+            0
+        }
+    );
 }
 
 const fn entry_copy_take() -> ConstantEntryGroup {
@@ -70,34 +117,71 @@ const fn entry_copy_take() -> ConstantEntryGroup {
     entry.value = 8;
     let moved = entry_transfer(&&entry);
     entry = ConstantEntry { 4, 5 };
-    return ConstantEntryGroup { [copy, moved], entry.value == 5 };
+    return ConstantEntryGroup {
+        [copy, moved],
+        entry.value == 5
+    };
 }
 
 const fn entry_field_order() -> ConstantEntry {
     var state = ConstantEntry { 1, 2 };
     return ConstantEntry {
-        value: if true { state.key = 7; state.value } else { 0 },
+        value: if true {
+            state.key = 7;
+            state.value
+        } else {
+            0
+        },
         key: state.key,
     };
 }
 
-struct ConstantEntryPair { first: ConstantEntryGroup, second: i32 }
+struct ConstantEntryPair {
+    first: ConstantEntryGroup,
+    second: i32
+}
 
 const fn entry_constructor_copy() -> ConstantEntryPair {
-    var group = ConstantEntryGroup { [ConstantEntry { 1, 2 }, ConstantEntry { 3, 4 }], true };
+    var group = ConstantEntryGroup {
+        [
+            ConstantEntry { 1, 2 },
+            ConstantEntry { 3, 4 }
+        ],
+        true
+    };
     return ConstantEntryPair {
         first: group,
-        second: if true { group.entries[0].key = 7; group.entries[0].key } else { 0 },
+        second: if true {
+            group.entries[0].key = 7;
+            group.entries[0].key
+        } else {
+            0
+        },
     };
 }
 
 const fn entry_assignment_order() -> [i32; 3] {
-    var entries = [ConstantEntry { 10, 20 }, ConstantEntry { 30, 40 }];
+    var entries = [
+        ConstantEntry { 10, 20 },
+        ConstantEntry { 30, 40 }
+    ];
     var selections = 0;
-    entries[if true { ++selections; 0 } else { 1 }].key += if true {
-        entries = [ConstantEntry { 50, 60 }, ConstantEntry { 70, 80 }];
+    entries[
+        if true {
+            ++selections;
+            0
+        } else {
+            1
+        }
+    ].key += if true {
+        entries = [
+            ConstantEntry { 50, 60 },
+            ConstantEntry { 70, 80 }
+        ];
         2
-    } else { 0 };
+    } else {
+        0
+    };
     return [entries[0].key, entries[0].value, selections];
 }
 
@@ -107,7 +191,10 @@ fn entry_view() -> [ConstantEntry] => entry_middle;
 
 // Constant functions and frozen constant slices retain existing struct semantics.
 test "Const structs: typed records and arrays retain static views and ordinary runtime calls" {
-    const local = ConstantEntry { key: 11, value: 12 };
+    const local = ConstantEntry {
+        key: 11,
+        value: 12
+    };
     const selected = entry_build(5)[2].value;
     check(local.key == 11);
     check(entry_literal.value == 9);
@@ -169,10 +256,15 @@ test "Const structs: static text fields retain UTF8 bytes NUL and scalar types" 
     check(entry_text("我\0😀") == entry);
 }
 
-private struct PrivateConstantRecord { value: i32 }
+private struct PrivateConstantRecord {
+    value: i32
+}
 
 test "Const structs: private record definitions precede their static backing" {
-    const records: [PrivateConstantRecord] = [PrivateConstantRecord { 7 }, PrivateConstantRecord { 9 }];
+    const records: [PrivateConstantRecord] = [
+        PrivateConstantRecord { 7 },
+        PrivateConstantRecord { 9 }
+    ];
     var index = 1;
     check(records[index].value == 9);
 }

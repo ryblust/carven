@@ -1,0 +1,7 @@
+fn one(){return 1;}private fn two(){return 2;}
+
+
+fn three(){return 3;}
+enum Mode{Read,Write}enum State{Ready,Closed}
+// A separate operation.
+fn work(){let x=1;call(x);}fn done(){return 0;}

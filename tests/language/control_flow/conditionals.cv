@@ -13,44 +13,22 @@ fn classify(value: i32) -> i32 {
 }
 
 fn choose_else_if(value: i32) -> i32 {
-    return if value == 0 {
-        5
-    } else if value == 1 {
-        10
-    } else {
-        20
-    };
+    return if value == 0 { 5 } else if value == 1 { 10 } else { 20 };
 }
 
 fn choose_constant_statement() -> i32 {
     var selected: i32 = 0;
-    if false {
-        selected = 1;
-    } else if true {
-        selected = 2;
-    } else {
-        selected = 3;
-    }
+    if false { selected = 1; } else if true { selected = 2; } else { selected = 3; }
     return selected;
 }
 
 fn choose_constant_value() -> i32 {
-    return if false {
-        1
-    } else if true {
-        2
-    } else {
-        3
-    };
+    return if false { 1 } else if true { 2 } else { 3 };
 }
 
 test "Control flow: conditionals support statement and value forms" {
     var selected: i32 = 0;
-    if choose(true) == 1 {
-        selected = 1;
-    } else {
-        selected = -1;
-    }
+    if choose(true) == 1 { selected = 1; } else { selected = -1; }
 
     check(selected == 1);
     check(classify(0) == 5);

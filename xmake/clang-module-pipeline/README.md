@@ -44,9 +44,18 @@ published after the complete batch parses successfully. The scanner uses the
 configured job count or Xmake's default parallelism. Within the current build,
 the provider target also retains the published scan records in memory. Module
 graph loading and build-input preparation reuse those records; consumers use
-the provider's records for reused units. Disk records remain available to
-other entry points, including project generation. This sharing does not skip
+the provider's records for reused units. Decoded P1689 facts are retained on
+those records and read by consumers; target-specific module paths are derived
+separately. Dependency edges use a per-target module-name index rather than
+searching the complete module list for each import. Disk records remain available
+to other entry points, including project generation. This sharing does not skip
 scanning or content checks on subsequent builds.
+
+Each target parses its scan records in one task. The task waits directly for
+its own scan and the scans of reused providers; batch scans do not create
+per-file placeholder tasks. Providers using per-file scanning retain those
+parallel scan jobs. Dependency-graph publication still precedes consumers’
+graph construction.
 
 After prerequisites finish, each BMI and object job compares source, header,
 and imported BMI contents, compiler identity, flags, and output contents with

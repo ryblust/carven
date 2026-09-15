@@ -44,8 +44,10 @@ test "Interpolation: precomputed contents preserve local values ownership and in
 
 test "Interpolation: known results retain effects before construction and when discarded" {
     var trace = 0;
-    check(f"{record_format_flag(&trace, 1) && false} {record_format_flag(&trace, 2) || true}"
-        == "false true");
+    check(
+        f"{record_format_flag(&trace, 1) && false} {record_format_flag(&trace, 2) || true}"
+            == "false true"
+    );
     check(trace == 12);
     f"{record_format_flag(&trace, 3) && false}";
     check(trace == 123);
@@ -65,8 +67,10 @@ test "Interpolation: mixed contents preserve literals and dynamic specification 
     var precision = 2;
     check(f"{version:04}/{price:{width}.{precision}f}/{7}" == "0042/   1.25/7");
     var counter = 0;
-    check(f"{version:04}/{1.0:{next_format_value(&counter) + 3}.{next_format_value(&counter)}f}/{7}"
-        == "0042/1.00/7");
+    check(
+        f"{version:04}/{1.0:{next_format_value(&counter) + 3}.{next_format_value(&counter)}f}/{7}"
+            == "0042/1.00/7"
+    );
     check(counter == 2);
 }
 
@@ -80,7 +84,9 @@ test "Interpolation: mixed contents retain scalar snapshots String aliases and d
     text.clear();
     check(result == "original changed false");
     counter = 0;
-    f"{next_format_value(&counter)} {record_format_flag(&counter, 2) && false} {next_format_value(&counter)}";
+    f"{next_format_value(&counter)} {record_format_flag(&counter, 2) && false} {next_format_value(
+            &counter
+        )}";
     check(counter == 13);
 }
 
@@ -135,15 +141,19 @@ test "Interpolation: source order snapshots aliases and independent results" {
 
 test "Interpolation: multiline holes and branch values retain ordinary expression scope" {
     let result = f"value {if true {
-        let x = 2;
-        x * 3
-    } else { 0 }}";
+            let x = 2;
+            x * 3
+        } else {
+            0
+        }}";
     check(result == "value 6");
     let closure = [](x: i32) -> String => f"{x}";
     check(closure(7) == "7");
     var text: String = "text that exceeds a small string buffer";
     text = f"{text.as_str()}!";
     check(text == "text that exceeds a small string buffer!");
-    check(f"{String::from_str("temporary backing that exceeds a small string buffer").as_str()}"
-        == "temporary backing that exceeds a small string buffer");
+    check(
+        f"{String::from_str("temporary backing that exceeds a small string buffer").as_str()}"
+            == "temporary backing that exceeds a small string buffer"
+    );
 }

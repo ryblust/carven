@@ -9,7 +9,10 @@ import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
 };
 
 private struct Failure {}
-private struct PayloadFailure { payload: Tracked }
+
+private struct PayloadFailure {
+    payload: Tracked
+}
 
 private fn copy_result(value: i32) -> CopyTrivial throw Failure => CopyTrivial { value };
 private fn forward_copy(value: i32) -> CopyTrivial throw Failure => copy_result(value)?;
@@ -93,7 +96,9 @@ test "Tail outcomes: borrowed argument temporaries outlive result transfer" {
 }
 
 private fn rejected_result(guard: Guard, value: i32) -> i32 throw PayloadFailure {
-    throw PayloadFailure { payload: Tracked { value } };
+    throw PayloadFailure {
+        payload: Tracked { value }
+    };
 }
 
 private fn forward_rejected() -> i32 throw PayloadFailure {

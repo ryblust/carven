@@ -2,32 +2,56 @@ const fn observe_text(text: String, marker: i32) -> String => f"{text}:{marker}"
 
 const fn constant_format_alias() -> String {
     var text: String = "a";
-    return f"{text}:{if true { text.append("b"); 7 } else { 0 }}";
+    return f"{text}:{if true {
+            text.append("b");
+            7
+        } else {
+            0
+        }}";
 }
 
 const fn constant_call_alias() -> String {
     var text: String = "a";
-    return observe_text(text, if true { text.append("b"); 7 } else { 0 });
+    return observe_text(
+        text,
+        if true {
+            text.append("b");
+            7
+        } else {
+            0
+        }
+    );
 }
 
 const fn constant_scalar_snapshot() -> String {
     var value = 1;
-    return f"{value}:{if true { value = 2; value } else { 0 }}";
+    return f"{value}:{if true {
+            value = 2;
+            value
+        } else {
+            0
+        }}";
 }
 
 const fn constant_binary_snapshot() -> bool {
     var text: String = "a";
-    return text == if true {
-        text.append("b");
-        String::from_str("a")
-    } else {
-        String::new()
-    };
+    return text
+        == if true {
+            text.append("b");
+            String::from_str("a")
+        } else {
+            String::new()
+        };
 }
 
 const fn constant_compound_snapshot() -> i32 {
     var value = 1;
-    value += if true { value = 10; 2 } else { 0 };
+    value += if true {
+        value = 10;
+        2
+    } else {
+        0
+    };
     return value;
 }
 
@@ -35,7 +59,12 @@ const fn constant_match_guard() -> i32 {
     var subject = 1;
     var other = 0;
     return match subject {
-        candidate if if true { other = candidate + 1; false } else { true } => 10,
+        candidate if if true {
+            other = candidate + 1;
+            false
+        } else {
+            true
+        } => 10,
         1 => other,
         _ => 30,
     };
@@ -126,5 +155,7 @@ test "Const functions: initializer composition preserves types and skips unused 
 
     const ignored = false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0));
     check(!ignored);
-    check((false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0))) == ignored);
+    check(
+        (false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0))) == ignored
+    );
 }

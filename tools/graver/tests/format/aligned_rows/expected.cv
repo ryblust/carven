@@ -1,0 +1,38 @@
+let positional = [
+    Row { "a",    1   },
+    Row { "long", 222 }
+];
+
+let named = [
+    Row {
+        name: "a",
+        value: 1
+    },
+    Row {
+        name: "long",
+        value: 222
+    }
+];
+
+let mixed = [
+    Row { "a", 1 },
+    Other { "long", 222 },
+    Row { "x" },
+    Row { "long", 2 }
+];
+
+let commented = [
+    Row { "a", 1 }, // keep
+    Row { "long", 222 }
+];
+
+let grouped = [
+    Row { "a",    1   },
+    Row { "long", 222 },
+
+    Row { "x",    2   },
+    Row { "wide", 333 },
+    // A separate group.
+    Row { "z",       3    },
+    Row { "longest", 4444 }
+];

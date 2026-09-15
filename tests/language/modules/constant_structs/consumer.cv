@@ -1,7 +1,8 @@
-import .data using { Entry, records, empty_records, first_record, provider_records, };
+import .data using {Entry, records, empty_records, first_record, provider_records,};
 
 const selected_key = records[1].key;
 const tail_records = records.slice(1, 2);
+
 fn consumer_records() -> [Entry] => tail_records;
 
 test "Modules: frozen user records retain types fields and static backing across artifacts" {

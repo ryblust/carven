@@ -10,13 +10,9 @@ fn parse_port(text: str) -> i32 throw MissingSetting + InvalidPort {
     var value: i32 = 0;
     var position: usize = 0;
     for byte in text.bytes {
-        if byte < 48u8 || byte > 57u8 {
-            throw InvalidPort::BadDigit(position);
-        }
+        if byte < 48u8 || byte > 57u8 { throw InvalidPort::BadDigit(position); }
         let digit = (byte as i32) - 48;
-        if value > (65535 - digit) / 10 {
-            throw InvalidPort::OutOfRange;
-        }
+        if value > (65535 - digit) / 10 { throw InvalidPort::OutOfRange; }
         value = value * 10 + digit;
         ++position;
     }

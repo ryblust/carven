@@ -1,0 +1,4 @@
+fn total() {
+    let result = initial_processing_cost
+        + additional_validation_cost * number_of_requested_operations;
+}

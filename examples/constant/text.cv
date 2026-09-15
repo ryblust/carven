@@ -7,9 +7,7 @@ const title_bytes = f"{title}".len();
 const fn make_catalog(count: i32) -> String {
     var result = String::new();
     for index in 0..count {
-        if index != 0 {
-            result.push(',');
-        }
+        if index != 0 { result.push(','); }
         result.append_format(f"{index:02}");
     }
     return result;

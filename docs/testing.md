@@ -212,3 +212,11 @@ CLI execution cases cover the shared top-level language surface, analysis-time
 output and static tests, native argument forwarding, interpreter admission,
 source traces, runtime arithmetic, and resource failures. Interpreter acceptance
 uses expected program results; compiled execution also exercises generated C++.
+
+## Graver
+
+`./xmakew test -g graver` runs the formatter’s C++ boundary tests, CLI scenarios,
+and exact-output examples. Known-valid language, interop, library, and example
+sources also exercise the fixed formatting style. These checks require
+syntax preservation and stable output; formatting does not execute source code.
+See [Graver](../tools/graver/README.md) for fixture layout and commands.

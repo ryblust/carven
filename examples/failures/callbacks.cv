@@ -12,13 +12,14 @@ fn positive(amount: i32) -> i32 throw InvalidAmount {
     return amount;
 }
 
-fn process(amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded)
-    -> i32 throw InvalidAmount + LimitExceeded {
+fn process(
+    amount: i32,
+    policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded
+) -> i32 throw InvalidAmount + LimitExceeded {
     return policy(amount)?;
 }
 
-fn report(label: str, amount: i32,
-    policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded) {
+fn report(label: str, amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded) {
     println(label);
     try {
         let accepted = process(amount, policy)?;
@@ -47,7 +48,10 @@ fn run_callbacks() {
     let bounded = [limit](amount: i32) {
         let accepted = positive(amount)?;
         if accepted > limit {
-            throw LimitExceeded { amount: accepted, limit: limit };
+            throw LimitExceeded {
+                amount: accepted,
+                limit: limit
+            };
         }
         return accepted;
     };

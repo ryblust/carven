@@ -1,0 +1,6 @@
+fn process() {
+    call(
+        outer(primary_measurement_series, secondary_measurement_series),
+        supplemental_measurement_series
+    );
+}

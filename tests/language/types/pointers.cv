@@ -58,13 +58,16 @@ test "Pointers: binding slots and target modes are independent" {
 }
 
 test "Pointers: recursive Carven targets and shallow aggregate copies preserve modes" {
-    var node = Node { value: 7, next: nullptr };
+    var node = Node {
+        value: 7,
+        next: nullptr
+    };
     let p: ptr<&Node> = ::pointer_values::address(&node);
     if p != nullptr {
-        p->value = 9;
-        p->next = p;
-        let next = p->next;
-        if next != nullptr { next->value = 12; }
+        p -> value = 9;
+        p -> next = p;
+        let next = p -> next;
+        if next != nullptr { next -> value = 12; }
     }
     check(node.value == 12);
     let scene = Scene { mesh: ::pointer_values::get() };
@@ -102,8 +105,12 @@ test "Pointers: fields arrays enums captures and local control preserve values" 
     check(callback() == read(p));
     let choice = Choice::Some(p);
     match choice {
-        .Some(saved) => { if saved != nullptr { check(*saved > 0); } },
-        .Empty => { fail("wrong case"); },
+        .Some(saved) => {
+            if saved != nullptr { check(*saved > 0); }
+        },
+        .Empty => {
+            fail("wrong case");
+        },
     }
     for value in values {
         if value != nullptr { check(*value > 0); }
@@ -193,7 +200,9 @@ fn caught_proof(p: ptr<i32>, fail_first: bool) -> i32 {
         if fail_first { throw PointerFailure {}; }
         if p == nullptr { return 0; }
     } catch {
-        PointerFailure(_) => { if p == nullptr { return 0; } },
+        PointerFailure(_) => {
+            if p == nullptr { return 0; }
+        },
     }
     return *p;
 }
@@ -243,7 +252,14 @@ test "Pointers: local Write iteration does not expose storage after the loop" {
     let copied = p;
     check(pair(copied, &&copied));
     let writer: ptr<&i32> = ::pointer_values::get();
-    let selected: ptr<i32> = if true { p } else { (if false { writer } else { nullptr }) };
-    let nested: [[ptr<i32>; 1]; 2] = [[p], [writer]];
+    let selected: ptr<i32> = if true {
+        p
+    } else {
+        (if false { writer } else { nullptr })
+    };
+    let nested: [[ptr<i32>; 1]; 2] = [
+        [p],
+        [writer]
+    ];
     check(selected == nested[1][0]);
 }

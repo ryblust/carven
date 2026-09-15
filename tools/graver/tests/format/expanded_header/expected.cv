@@ -1,0 +1,8 @@
+fn calculate(
+    first_measurement: i32,
+    second_measurement: i32,
+    adjustment_factor: i32,
+    calibration_offset: i32
+) -> i32 {
+    return first_measurement + second_measurement;
+}

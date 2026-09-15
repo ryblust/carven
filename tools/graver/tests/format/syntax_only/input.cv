@@ -1,0 +1,1 @@
+import missing::library using *;const fn pending()->i32{println("must not execute");while true {}}const value=pending();const test "not evaluated"{check(false);}println(unknown(value));

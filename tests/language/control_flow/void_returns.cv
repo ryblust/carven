@@ -27,10 +27,7 @@ fn fallible(&count: i32, stop: bool) throw Stop {
 fn forward(&count: i32, stop: bool) throw Stop => fallible(&count, stop)?;
 
 fn terminal(&count: i32) throw Stop {
-    return fallible(
-        &count,
-        if true { throw Stop {}; } else { throw Stop {}; }
-    )?;
+    return fallible(&count, if true { throw Stop {}; } else { throw Stop {}; })?;
 }
 
 test "Functions: void returns forward evaluation and lambda results" {

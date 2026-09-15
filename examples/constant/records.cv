@@ -7,7 +7,11 @@ const catalog: [Entry] = entries(10);
 const selected = catalog[1].code;
 
 const fn entries(offset: i32) -> [Entry; 3] {
-    var result = [Entry { "import", 0 }, Entry { "const", 0 }, Entry { "struct", 0 }];
+    var result = [
+        Entry { "import", 0 },
+        Entry { "const",  0 },
+        Entry { "struct", 0 }
+    ];
     for index in 0..3 {
         result[index].code = offset + index;
     }

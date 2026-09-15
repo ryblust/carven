@@ -1,0 +1,1 @@
+import .api using {one,two,};struct Pair{left:ptr<&i32>,right:[i32;2],}enum Result{Ok(i32),Error,}fn f(&x:Vector<Vector<i32>>,&&y:fn(&i32)->i32)throw Error{}

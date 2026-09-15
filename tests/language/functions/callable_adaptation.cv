@@ -32,8 +32,7 @@ test "Callable adaptation: selected captured targets preserve results and effect
             if value < 0 { throw Rejected { value }; }
             return value - offset;
         };
-        let selected: fn(i32) -> i32 throw Rejected =
-            if choose_add { add } else { subtract };
+        let selected: fn(i32) -> i32 throw Rejected = if choose_add { add } else { subtract };
 
         let direct = try {
             let value = if choose_add { add(20)? } else { subtract(20)? };
@@ -41,13 +40,19 @@ test "Callable adaptation: selected captured targets preserve results and effect
         } catch {
             Rejected(_) => 0,
         };
-        let dynamic = try { invoke(selected, 20)? } catch { Rejected(_) => 0, };
+        let dynamic = try {
+            invoke(selected, 20)?
+        } catch {
+            Rejected(_) => 0,
+        };
         let expected = if choose_add { 25 } else { 15 };
         check(direct == expected);
         check(dynamic == direct);
         check(calls == 2);
 
-        let rejected = try { invoke(selected, -3)? } catch {
+        let rejected = try {
+            invoke(selected, -3)?
+        } catch {
             Rejected(error) => error.value,
         };
         check(rejected == -3);
@@ -61,8 +66,14 @@ test "Callable adaptation: equal copies snapshot targets while widening borrows 
     let widened: fn(i32) -> i32 throw Rejected + OtherFailure = source;
     source = second;
 
-    let original = try { copied(5)? } catch { Rejected(_) => 0, };
-    let current = try { widened(5)? } catch {
+    let original = try {
+        copied(5)?
+    } catch {
+        Rejected(_) => 0,
+    };
+    let current = try {
+        widened(5)?
+    } catch {
         Rejected(_) => 0,
         OtherFailure(_) => 0,
     };
@@ -72,7 +83,14 @@ test "Callable adaptation: equal copies snapshot targets while widening borrows 
     // The saved widened target still refers to source, whose contents change
     // during argument evaluation before the inner invocation selects a target.
     let replaced = try {
-        widened(if true { source = first; 5 } else { 5 })?
+        widened(
+            if true {
+                source = first;
+                5
+            } else {
+                5
+            }
+        )?
     } catch {
         Rejected(_) => 0,
         OtherFailure(_) => 0,

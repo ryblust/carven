@@ -1,0 +1,2 @@
+fn f(){if ready{call();}else{let x=1;call(x);}}
+fn g(){if ready{call();}else{}}

@@ -3,18 +3,25 @@ fn inferred_block(value: i32) {
     return 0;
 }
 
-fn inferred_forward() { return inferred_block(7); }
+fn inferred_forward() {
+    return inferred_block(7);
+}
 
 test "Function results: bodies share result inference" {
     check(inferred_forward() == 7);
-    let block = [](value: i32) { if value > 0 { return value; } return 0; };
+    let block = [](value: i32) {
+        if value > 0 { return value; }
+        return 0;
+    };
     check(block(-2) == inferred_block(-2));
 }
 
 struct ResultFailure {}
 
 private fn stopped_first(flag: bool) {
-    if flag { return if true { throw ResultFailure {}; } else { throw ResultFailure {}; }; }
+    if flag {
+        return if true { throw ResultFailure {}; } else { throw ResultFailure {}; };
+    }
     return 7;
 }
 
@@ -28,9 +35,13 @@ test "Function results: only successful returns contribute types" {
         check(stopped_first(false)? == 7);
         check(stopped_last(false)? == 7);
         let choose = [](flag: bool) {
-            if flag { return if true { throw ResultFailure {}; } else { throw ResultFailure {}; }; }
+            if flag {
+                return if true { throw ResultFailure {}; } else { throw ResultFailure {}; };
+            }
             return 7;
         };
         check(choose(false)? == 7);
-    } catch { ResultFailure(_) => { fail("unexpected failure"); }, }
+    } catch {
+        ResultFailure(_) => { fail("unexpected failure"); },
+    }
 }

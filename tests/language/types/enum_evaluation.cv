@@ -29,10 +29,7 @@ fn second(value: Value) -> i32 {
 
 test "Enums: sum construction and matching evaluate once from left to right" {
     var trace = 0;
-    let ordered: Value = .Pair(
-        record(&trace, 1),
-        record(&trace, 2),
-    );
+    let ordered: Value = .Pair(record(&trace, 1), record(&trace, 2),);
     let observed = trace;
     check(second(ordered) == 2);
     check(observed == 12);

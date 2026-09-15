@@ -1,4 +1,4 @@
-import .values using { base, published, };
+import .values using {base, published,};
 
 export const combined: i32 = base + published;
 

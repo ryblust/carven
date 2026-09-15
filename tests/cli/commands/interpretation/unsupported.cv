@@ -1,7 +1,5 @@
 import <cstdlib> using std::abort;
 
 fn main() {
-    if false {
-        abort();
-    }
+    if false { abort(); }
 }

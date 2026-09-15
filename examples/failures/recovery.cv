@@ -1,4 +1,4 @@
-import .settings using { ConfigError, port_or_default };
+import .settings using {ConfigError, port_or_default};
 
 fn report(label: str, primary: str, backup: str) {
     println(label);
@@ -6,7 +6,9 @@ fn report(label: str, primary: str, backup: str) {
         let port = port_or_default(primary, backup)?;
         println("Port:", port);
     } catch {
-        ConfigError(.Missing) => { println("No port configured"); },
+        ConfigError(.Missing) => {
+            println("No port configured");
+        },
         ConfigError(.Invalid(.BadDigit(position))) => {
             println("Bad digit at byte:", position as i32);
         },

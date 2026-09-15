@@ -69,11 +69,7 @@ test "Callable views: copies retain their target after intermediate scope exit" 
 
 test "Callable views: mutable storage follows branch and loop replacement" {
     var callback: fn(i32) -> i32 = first;
-    if true {
-        callback = second;
-    } else {
-        callback = first;
-    }
+    if true { callback = second; } else { callback = first; }
     check(callback(1) == 3);
 
     var iteration = 0;
@@ -89,12 +85,14 @@ test "Callable views: mutable storage follows branch and loop replacement" {
 
 test "Calls: callee is selected before argument evaluation" {
     var callback: fn(i32) -> i32 = first;
-    let result = callback(if true {
-        replace_with_second(&callback);
-        1
-    } else {
-        1
-    });
+    let result = callback(
+        if true {
+            replace_with_second(&callback);
+            1
+        } else {
+            1
+        }
+    );
     check(result == 2);
     check(callback(1) == 3);
 }
@@ -182,8 +180,14 @@ test "Callable views: Take materializes declaration values" {
 
 test "Callable arrays: nested captured elements retain their backing" {
     var count = 0;
-    let closure = [&count]() { count += 1; return count; };
-    let owners = [[closure], [closure]];
+    let closure = [&count]() {
+        count += 1;
+        return count;
+    };
+    let owners = [
+        [closure],
+        [closure]
+    ];
     let callbacks: [[fn() -> i32; 1]; 2] = owners;
     check(callbacks[0][0]() == 1);
     check(callbacks[1][0]() == 2);
@@ -194,7 +198,9 @@ test "Callable arrays: nested stateless adoption evaluates its source once" {
     var count = 0;
     let callbacks: [[fn() -> i32; 1]; 1] = [&count]() {
         count += 1;
-        return [[[]() => 17]];
+        return [
+            [[]() => 17]
+        ];
     }();
     check(count == 1);
     check(callbacks[0][0]() == 17);

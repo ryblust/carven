@@ -71,11 +71,12 @@ includes("tests/language")
 includes("tests/crafts")
 includes("tests/interop")
 includes("tests/cli")
+includes("tools/graver")
 
 task("format")
     set_menu({
         usage = "xmake format [options]",
-        description = "Format C++ sources with clang-format",
+        description = "Format C++ and Carven sources",
         options = {},
     })
     on_run(function ()
@@ -86,7 +87,7 @@ task_end()
 task("format-check")
     set_menu({
         usage = "xmake format-check [options]",
-        description = "Check C++ formatting with clang-format",
+        description = "Check C++ and Carven formatting",
         options = {},
     })
     on_run(function ()

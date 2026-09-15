@@ -13,10 +13,14 @@ test "UTF8: byte slices construct borrowed and owning text" {
         let copy = to_string(text.bytes)?;
         check(copy.as_str() == text);
         var count = 0;
-        for _ in text.chars { count += 1; }
+        for _ in text.chars {
+            count += 1;
+        }
         check(count == 4);
         accepted = true;
-    } catch { UTF8Error(_) => {}, }
+    } catch {
+        UTF8Error(_) => {},
+    }
     check(accepted);
 
     var original: [u8; 1] = [0x61];
@@ -24,23 +28,38 @@ test "UTF8: byte slices construct borrowed and owning text" {
         let copy = to_string(original)?;
         original[0] = 0x62;
         check(copy.as_str() == "a");
-    } catch { UTF8Error(_) => { check(false); }, }
+    } catch {
+        UTF8Error(_) => { check(false); },
+    }
 }
 
 test "UTF8: text construction and prefix decoding reject invalid bytes" {
     let input: [u8; 2] = [0xe2, 0x28];
     let bytes = input.as_slice();
-    let expected = UTF8Error { kind: .InvalidContinuation, offset: 1, sequence_start: 0 };
+    let expected = UTF8Error {
+        kind:.InvalidContinuation,
+        offset: 1,
+        sequence_start: 0
+    };
     var rejected = false;
-    try { let _ = from_utf8(bytes)?; }
-    catch { UTF8Error(error) => { rejected = error == expected; }, }
+    try {
+        let _ = from_utf8(bytes)?;
+    } catch {
+        UTF8Error(error) => { rejected = error == expected; },
+    }
     check(rejected);
     rejected = false;
-    try { let _ = to_string(bytes)?; }
-    catch { UTF8Error(error) => { rejected = error == expected; }, }
+    try {
+        let _ = to_string(bytes)?;
+    } catch {
+        UTF8Error(error) => { rejected = error == expected; },
+    }
     check(rejected);
     rejected = false;
-    try { let _ = decode_utf8(bytes)?; }
-    catch { UTF8Error(error) => { rejected = error == expected; }, }
+    try {
+        let _ = decode_utf8(bytes)?;
+    } catch {
+        UTF8Error(error) => { rejected = error == expected; },
+    }
     check(rejected);
 }

@@ -63,7 +63,7 @@ ImplementationFileExtensions:
   - 'cppm'
   - 'cxx'
 HeaderFilterRegex: '.*[/\\](src|tests|crafts)[/\\].*|.*[/\\]build[/\\]\.gens[/\\].*'
-ExcludeHeaderFilterRegex: '.*[/\\]tests[/\\]internal[/\\]vendor[/\\].*'
+ExcludeHeaderFilterRegex: '.*[/\\]tests[/\\]internal[/\\]thirdparty[/\\].*'
 FormatStyle: none
 SystemHeaders: false
 CheckOptions:

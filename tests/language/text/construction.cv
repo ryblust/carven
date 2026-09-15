@@ -20,9 +20,7 @@ test "Text: empty and embedded NUL literals preserve their contents" {
     var nul_count = 0usize;
     for byte in text.bytes {
         byte_count += 1usize;
-        if byte == 0u8 {
-            nul_count += 1usize;
-        }
+        if byte == 0u8 { nul_count += 1usize; }
     }
     check(byte_count == 3usize);
     check(nul_count == 2usize);
@@ -48,9 +46,7 @@ test "Conversions: casts binding access and UTF-8 text work together" {
     var byte_count = 0usize;
     var first_byte: u8 = 0u8;
     for byte in text.bytes {
-        if byte_count == 0usize {
-            first_byte = byte;
-        }
+        if byte_count == 0usize { first_byte = byte; }
         byte_count += 1usize;
     }
     check(byte_count == 10usize);
@@ -59,9 +55,7 @@ test "Conversions: casts binding access and UTF-8 text work together" {
     var scalar_count = 0usize;
     var first_scalar: char = '\0';
     for scalar in text.chars {
-        if scalar_count == 0usize {
-            first_scalar = scalar;
-        }
+        if scalar_count == 0usize { first_scalar = scalar; }
         scalar_count += 1usize;
     }
     check(scalar_count == 4usize);

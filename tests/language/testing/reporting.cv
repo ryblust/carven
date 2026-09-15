@@ -36,9 +36,7 @@ test "Testing: fail reports and exits" {
 
 test "Testing: require exits across nested control" {
     while true {
-        if true {
-            require(traced_reporting_condition(8, false));
-        }
+        if true { require(traced_reporting_condition(8, false)); }
     }
     cv_test_reporting_mark(9);
 }
@@ -69,7 +67,9 @@ test "Testing: callback failure leaves helpers and cleans up" {
 
 struct ReportingFailure {}
 
-fn stop_with_failure_view(action: fn() -> void throw ReportingFailure) -> i32 throw ReportingFailure {
+fn stop_with_failure_view(
+    action: fn() -> void throw ReportingFailure
+) -> i32 throw ReportingFailure {
     action()?;
     cv_test_reporting_mark(14);
     return 1;
@@ -78,8 +78,13 @@ fn stop_with_failure_view(action: fn() -> void throw ReportingFailure) -> i32 th
 test "Testing: test exit bypasses typed catches and widened views" {
     let stop: fn() -> void = fail;
     let widened: fn() -> void throw ReportingFailure = stop;
-    let value = try { stop_with_failure_view(widened)? } catch {
-        _ => { cv_test_reporting_mark(15); 2 },
+    let value = try {
+        stop_with_failure_view(widened)?
+    } catch {
+        _ => {
+            cv_test_reporting_mark(15);
+            2
+        },
     };
     cv_test_reporting_mark(16);
     check(value == 1);
@@ -91,7 +96,9 @@ test "Testing: runner continues after failed helpers" {
     assertion(true, "owned test message");
 }
 
-fn stop_in_result() -> i32 { return fail("no result"); }
+fn stop_in_result() -> i32 {
+    return fail("no result");
+}
 
 test "Testing: a non-completing builtin can occupy a result position" {
     let value = stop_in_result();
@@ -106,7 +113,9 @@ fn require_in_helper(value: bool) {
 }
 
 fn require_through_tail(value: bool) {
-    let closure = [value]() { return require_in_helper(value); };
+    let closure = [value]() {
+        return require_in_helper(value);
+    };
     let callback: fn() -> void = closure;
     return callback();
 }
@@ -119,10 +128,16 @@ test "Testing: require failure leaves helpers and the current test" {
 
 test "Testing: temporary messages survive direct and callable reports" {
     check(false, String::from_str("direct temporary message with enough text for owned storage"));
-    require(false, String::from_str("explicit temporary message with enough text for owned storage").as_str());
+    require(
+        false,
+        String::from_str("explicit temporary message with enough text for owned storage").as_str()
+    );
 }
 
 test "Testing: callable reports retain temporary messages" {
     let assertion: fn(bool, String) -> void = check;
-    assertion(false, String::from_str("callable temporary message with enough text for owned storage"));
+    assertion(
+        false,
+        String::from_str("callable temporary message with enough text for owned storage")
+    );
 }

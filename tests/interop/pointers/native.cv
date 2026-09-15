@@ -31,7 +31,7 @@ test "Pointers: Read calls snapshot addresses and dereference selects its target
 
 test "Pointers: noncopyable native targets can be observed through an address" {
     let p: ptr<::pointer_probe::Fixed> = ::pointer_probe::fixed_object();
-    if p != nullptr { check(p->read() == 91); }
+    if p != nullptr { check(p -> read() == 91); }
 }
 
 test "Pointers: native qualifiers aliases and incomplete targets retain their types" {

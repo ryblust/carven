@@ -85,9 +85,7 @@ test "C++ lifetimes: condition temporaries end before the selected branch" {
     } else {
         check(false);
     }
-    if ((Owner { 4 }.read() as i32) == 4) && false {
-        check(false);
-    }
+    if ((Owner { 4 }.read() as i32) == 4) && false { check(false); }
     check(live() == 0);
     let _ = ((Owner { 4 }.read() as i32) == 4) && false;
     check(live() == 0);
