@@ -10,7 +10,7 @@ auto evaluate_constant_root(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     const SemanticExpression& expression
-) noexcept -> AnalysisResult<ConstantExecutionValue>;
+) noexcept -> AnalysisResult<ExecutionValue>;
 
 auto evaluate_constant_test(
     ProgramDraft& draft,

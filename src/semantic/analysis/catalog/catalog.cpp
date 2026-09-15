@@ -65,7 +65,8 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
                 return semantic_visibility(value.visibility);
             },
             [](const ASTFunctionDecl& value) static noexcept {
-                return semantic_visibility(value.visibility);
+                return value.is_implicit_entry ? DeclarationVisibility::Module
+                                               : semantic_visibility(value.visibility);
             },
             [](const ASTConstantDecl& value) static noexcept {
                 return semantic_visibility(value.visibility);
@@ -377,11 +378,16 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
         for (const auto item_id : ast_module.items) {
             const auto& item = ast.item(item_id);
             if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value)) {
-                const auto function_name = draft.source_slice_copy(module_id, function->name_span);
+                const auto function_name = function->is_implicit_entry
+                    ? std::string("main")
+                    : draft.source_slice_copy(module_id, function->name_span);
                 const auto is_cpp_import =
                     std::holds_alternative<ASTCppImportForm>(function->implementation);
                 if (function_name == "main" && !is_cpp_import) {
-                    const auto current = locate(source_id, function->name_span);
+                    const auto current = locate(
+                        source_id,
+                        function->is_implicit_entry ? item.span : function->name_span
+                    );
                     if (first_entry.has_value()) {
                         auto diagnostic = DiagnosticBuilder(
                             DiagnosticCode::EntryDuplicate,
@@ -425,8 +431,11 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 }
                 continue;
             }
-            auto name = draft.source_slice_copy(module_id, *name_span);
-            if (const auto prior = names.find(name); prior != names.end()) {
+            const auto* function = std::get_if<ASTFunctionDecl>(&item.value);
+            const auto implicit_entry = function != nullptr && function->is_implicit_entry;
+            auto name = implicit_entry ? std::string("main")
+                                       : draft.source_slice_copy(module_id, *name_span);
+            if (const auto prior = names.find(name); !implicit_entry && prior != names.end()) {
                 auto error = catalog_error(
                     source_id,
                     "a module declaration name is defined more than once",
@@ -440,7 +449,9 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 diagnostics.push_back(std::move(error));
                 continue;
             }
-            names.emplace(name, *name_span);
+            if (!implicit_entry) {
+                names.emplace(name, *name_span);
+            }
             if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
                 resource_limit_exceeded("catalog symbols exhausted their 32-bit identity space");
             }
@@ -506,11 +517,13 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 .declaration_span = *name_span,
             });
             catalog_module.symbols.push_back(symbol_id);
-            append_candidate(
-                local_candidates,
-                result.symbols[symbol_id.index()].name,
-                {.symbol_id = symbol_id, .import_binding = std::nullopt}
-            );
+            if (!implicit_entry) {
+                append_candidate(
+                    local_candidates,
+                    result.symbols[symbol_id.index()].name,
+                    {.symbol_id = symbol_id, .import_binding = std::nullopt}
+                );
+            }
 
             std::visit(
                 Overloaded {

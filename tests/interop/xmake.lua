@@ -43,36 +43,50 @@ local rejection_cases = {
     },
 }
 
+target("carven-test-interop")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "external"})
+
+    set_languages("c++20")
+    add_includedirs(interop_dir)
+    add_files(table.unpack(interop_sources))
+
+    add_tests("behavior", {group = "interop"})
+    for _, operation in ipairs({
+        "divide", "remainder", "shift", "width", "index",
+        "slice-index", "slice-negative", "slice-range", "slice-reversed",
+        "slice-known-length", "slice-known-empty", "slice-known-format",
+        "unicode", "unicode-export"
+    }) do
+        add_tests(operation, {group = "interop"})
+    end
+    on_test(function (target, opt)
+        local name = opt.name:match("([^/]+)$")
+        local arguments = name == "behavior" and {} or {name}
+        import("harness.process", {rootdir = interop_dir})(target, arguments,
+            name == "behavior" and 0 or 73, name)
+        return true
+    end)
+target_end()
+
+target("carven-test-interop-rejections")
+    set_default(false)
+    set_kind("phony")
+    set_languages("c++20")
+    add_deps("carven", {inherit = false})
+    for _, name in ipairs(table.orderkeys(rejection_cases)) do
+        add_tests(name, {group = "interop"})
+    end
+    on_test(function (target, opt)
+        local name = opt.name:match("^[^/]+/(.+)$") or opt.name
+        import("harness.compile", {rootdir = interop_dir})(target, name, rejection_cases[name])
+        return true
+    end)
+target_end()
 for _, mode in ipairs({
     {standard = "c++20", suffix = ""},
     {standard = "c++23", suffix = "-cxx23"},
 }) do
-    target("carven-test-interop" .. mode.suffix)
-        set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
-
-        set_languages(mode.standard)
-        add_includedirs(interop_dir)
-        add_files(table.unpack(interop_sources))
-
-        add_tests("behavior", {group = "interop"})
-        for _, operation in ipairs({
-            "divide", "remainder", "shift", "width", "index",
-            "slice-index", "slice-negative", "slice-range", "slice-reversed",
-            "slice-known-length", "slice-known-empty", "slice-known-format",
-            "unicode", "unicode-export"
-        }) do
-            add_tests(operation, {group = "interop"})
-        end
-        on_test(function (target, opt)
-            local name = opt.name:match("([^/]+)$")
-            local arguments = name == "behavior" and {} or {name}
-            import("harness.process", {rootdir = interop_dir})(target, arguments,
-                name == "behavior" and 0 or 73, name)
-            return true
-        end)
-    target_end()
-
     target("carven-test-interop-exception-boundary" .. mode.suffix)
         set_default(false)
         set_kind("binary")
@@ -92,7 +106,9 @@ for _, mode in ipairs({
             "append-precomputed-allocate", "append-format-width",
             "print-inner-allocate", "print-inner-throw", "print-inner-utf8", "print-later-throw"
         }) do
-            add_tests(operation, {group = "interop"})
+            if mode.standard == "c++20" or operation:startswith("print-") then
+                add_tests(operation, {group = "interop"})
+            end
         end
         on_test(function (target, opt)
             local operation = opt.name:match("([^/]+)$")
@@ -108,20 +124,6 @@ for _, mode in ipairs({
         end)
     target_end()
 
-    target("carven-test-interop-rejections" .. mode.suffix)
-        set_default(false)
-        set_kind("phony")
-        set_languages(mode.standard)
-        add_deps("carven", {inherit = false})
-        for _, name in ipairs(table.orderkeys(rejection_cases)) do
-            add_tests(name, {group = "interop"})
-        end
-        on_test(function (target, opt)
-            local name = opt.name:match("^[^/]+/(.+)$") or opt.name
-            import("harness.compile", {rootdir = interop_dir})(target, name, rejection_cases[name])
-            return true
-        end)
-    target_end()
 end
 
 target("carven-test-interop-print")

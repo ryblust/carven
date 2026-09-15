@@ -499,3 +499,25 @@ TEST_CASE("Parser: callable expression bodies retain syntax and outer delimiters
         check_invalid(text);
     }
 }
+
+TEST_CASE("Parser: top-level statements form one source-located implicit entry") {
+    static constexpr auto text = std::string_view(
+        "let value = twice(21);\n"
+        "fn twice(value: i32) => value * 2;\n"
+        "const expected = 42;\n"
+        "println(value);\n"
+    );
+    const auto result = parse_valid(text);
+    const auto ast = result.view();
+    REQUIRE_EQ(root(result).items.size(), 3uz);
+    CHECK_FALSE(function(result, 0).is_implicit_entry);
+    CHECK(is<ASTConstantDecl>(ast.item(root(result).items[1])));
+    const auto& entry = function(result, 2);
+    REQUIRE(entry.is_implicit_entry);
+    CHECK(entry.parameters.empty());
+    const auto& implementation = std::get<ASTFunctionBody>(entry.implementation);
+    const auto& body = ast.block(std::get<ASTBlockID>(implementation.body));
+    REQUIRE_EQ(body.statements.size(), 2uz);
+    CHECK_EQ(slice(text, ast.statement(body.statements[0]).span), "let value = twice(21);");
+    CHECK_EQ(slice(text, ast.statement(body.statements[1]).span), "println(value);");
+}

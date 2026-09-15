@@ -30,8 +30,8 @@ auto compile_static(std::string source, std::string& output, std::string& errors
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("static-tests")
         },
-        [&](ConstantOutputStream stream, std::string_view bytes) noexcept {
-            (stream == ConstantOutputStream::Standard ? output : errors) += bytes;
+        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+            (stream == ExecutionOutputStream::Standard ? output : errors) += bytes;
         }
     );
 }

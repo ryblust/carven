@@ -15,7 +15,7 @@ import std;
 
 namespace {
 
-class ExecutionContext final : public ConstantExecutionContext {
+class ExecutionContext final : public SemanticExecutionContext {
 public:
     ExecutionContext(
         ProgramDraft& draft,
@@ -25,14 +25,14 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> std::expected<ConstantCallBody, ConstantCallFailure> override;
-    auto report(const ConstantExecutionDiagnostic& diagnostic) noexcept -> void override;
+        -> std::expected<ExecutionCallBody, ExecutionCallFailure> override;
+    auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
 
-    auto write(ConstantOutputStream, std::string_view) noexcept -> void override;
+    auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
 
     std::string output;
     std::vector<FunctionID> calls;
-    std::vector<ConstantExecutionDiagnostic> diagnostics;
+    std::vector<ExecutionDiagnostic> diagnostics;
 
 private:
     ProgramDraft& draft;
@@ -49,7 +49,7 @@ ExecutionContext::ExecutionContext(
       construction(construction),
       module(module) {}
 
-auto ExecutionContext::write(ConstantOutputStream, std::string_view bytes) noexcept -> void {
+auto ExecutionContext::write(ExecutionOutputStream, std::string_view bytes) noexcept -> void {
     output += bytes;
 }
 
@@ -59,16 +59,19 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 }
 
 auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> std::expected<ConstantCallBody, ConstantCallFailure> {
+    -> std::expected<ExecutionCallBody, ExecutionCallFailure> {
     calls.push_back(function);
     const auto body =
         construction.ensure_function_body(function, module, draft.source_origin(origin).span);
     REQUIRE(body.has_value());
     REQUIRE(draft.body_draft(*body).inputs.parameters.empty());
-    return ConstantCallBody {.body = draft.body_draft(*body), .parameter_types = {}};
+    return ExecutionCallBody {
+        .body = ExecutionBody(draft.body_draft(*body)),
+        .parameter_types = {}
+    };
 }
 
-auto ExecutionContext::report(const ConstantExecutionDiagnostic& diagnostic) noexcept -> void {
+auto ExecutionContext::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
     diagnostics.push_back(diagnostic);
 }
 
@@ -94,7 +97,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     const auto module = view.modules().front().module_id;
     const auto origin = draft.append_source_origin(draft.module_source(module), Span::at(0u));
     auto context = ExecutionContext(draft, construction, module);
-    const auto evaluate = [&](std::string_view name, ConstantExecutionLimits limits = {}) noexcept {
+    const auto evaluate = [&](std::string_view name, ExecutionLimits limits = {}) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);
         REQUIRE(found != view.symbols().end());
         const auto function = std::get<CatalogFunctionForm>(found->form);
@@ -136,10 +139,10 @@ auto check_limit(const ExecutionContext& context, std::string_view resource) noe
 
 auto require_integer(
     const ConstantValueReader& values,
-    const ConstantExecutionValue& result,
+    const ExecutionValue& result,
     std::int64_t expected
 ) noexcept -> void {
-    const auto atom = constant_execution_atom(values, result);
+    const auto atom = execution_atom(values, result);
     REQUIRE(atom.has_value());
     CHECK(std::get<IntegerConstant>(atom->value) == IntegerConstant::from_signed(expected));
 }
@@ -174,7 +177,7 @@ TEST_CASE("Constant execution: logical operators preserve results and required c
             [&](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) {
                 const auto result = evaluate("run");
                 REQUIRE(result.has_value());
-                const auto atom = constant_execution_atom(draft, *result);
+                const auto atom = execution_atom(draft, *result);
                 REQUIRE(atom.has_value());
                 CHECK(std::get<BooleanConstant>(atom->value).value == scenario.result);
                 CHECK(context.calls.size() == scenario.calls);
@@ -321,7 +324,7 @@ TEST_CASE("Constant execution: text work counts produced bytes across copies app
                 check_limit(context, "text");
                 const auto result = evaluate("run", {.text_work = scenario.work});
                 REQUIRE(result.has_value());
-                CHECK(std::get<ConstantOwnedText>(*result).bytes == scenario.result);
+                CHECK(std::get<ExecutionOwnedText>(*result).bytes == scenario.result);
                 CHECK(context.diagnostics.empty());
             }
         );

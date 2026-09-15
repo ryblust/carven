@@ -4,15 +4,15 @@ import :semantic.evaluation.limits;
 import :semantic.evaluation.shape;
 import std;
 
-ConstantTypeShapes::ConstantTypeShapes(const ConstantValueAccess& values) noexcept
+ExecutionTypeShapes::ExecutionTypeShapes(const ExecutionValueAccess& values) noexcept
     : values(values) {}
 
-auto ConstantTypeShapes::get(TypeID type) const noexcept -> std::optional<ConstantTypeShape> {
+auto ExecutionTypeShapes::get(TypeID type) const noexcept -> std::optional<ExecutionTypeShape> {
     return compute(type, 0uz);
 }
 
-auto ConstantTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
-    -> std::optional<ConstantTypeShape> {
+auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
+    -> std::optional<ExecutionTypeShape> {
     if (const auto found = completed.find(type); found != completed.end()) {
         return depth <= maximum_constant_aggregate_depth
                 && found->second.depth <= maximum_constant_aggregate_depth - depth
@@ -22,9 +22,9 @@ auto ConstantTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
     if (depth > maximum_constant_aggregate_depth) {
         return std::nullopt;
     }
-    const auto calculate = [&]() noexcept -> std::optional<ConstantTypeShape> {
+    const auto calculate = [&]() noexcept -> std::optional<ExecutionTypeShape> {
         const auto canonical = values.type_copy(type);
-        auto result = ConstantTypeShape {.supported = false, .depth = 0uz, .elements = 0uz};
+        auto result = ExecutionTypeShape {.supported = false, .depth = 0uz, .elements = 0uz};
         constexpr auto saturated = maximum_constant_aggregate_elements + 1uz;
         if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             const auto child = compute(array->element, depth + 1uz);

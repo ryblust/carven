@@ -19,30 +19,28 @@ TEST_CASE(
         .value = StringConstant {.value = values.intern_spelling(bytes)}
     };
     const auto retained = values.intern_constant(fact);
-    const auto representations = std::array<ConstantExecutionValue, 4> {
+    const auto representations = std::array<ExecutionValue, 4> {
         retained,
         *constant_atom(fact),
-        ConstantText {.bytes = std::make_shared<const std::string>(bytes)},
-        ConstantOwnedText {.bytes = bytes}
+        ExecutionText {.bytes = std::make_shared<const std::string>(bytes)},
+        ExecutionOwnedText {.bytes = bytes}
     };
     for (auto index = 0uz; index < representations.size(); ++index) {
         CAPTURE(index);
-        const auto text = constant_execution_text(values, representations[index]);
+        const auto text = execution_text(values, representations[index]);
         REQUIRE(text.has_value());
         CHECK(*text == bytes);
         auto steps = 0uz;
-        CHECK(
-            constant_execution_equal(values, representations[index], retained, steps, 1uz) == true
-        );
+        CHECK(execution_equal(values, representations[index], retained, steps, 1uz) == true);
         CHECK(steps == 1uz);
     }
-    const auto nontext = ConstantExecutionValue(
+    const auto nontext = ExecutionValue(
         ConstantAtom {
             .type = values.intern_builtin_type(BuiltinType::I32),
             .value = IntegerConstant::from_signed(1)
         }
     );
-    CHECK_FALSE(constant_execution_text(values, nontext).has_value());
+    CHECK_FALSE(execution_text(values, nontext).has_value());
     auto steps = 0uz;
-    CHECK(constant_execution_equal(values, nontext, retained, steps, 1uz) == false);
+    CHECK(execution_equal(values, nontext, retained, steps, 1uz) == false);
 }

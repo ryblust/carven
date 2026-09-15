@@ -101,7 +101,7 @@ Canonical facts and spellings remain stable across appends; moving or sealing th
 owner ends outstanding borrows. Types still return copies during construction.
 Constant interning uses a hash index with exact equality checks and deterministic
 insertion-order IDs. Floating identity uses bits; numeric equality remains separate.
-`ConstantExecutionContext` supplies callable lookup and completed typed bodies.
+`SemanticExecutionContext` supplies callable lookup and completed typed bodies.
 The analysis adapter builds a provenance-source requester index on the first call
 within a root evaluation and caches completed body/parameter descriptors. It does not cache
 call results or provisional completion failures.
@@ -400,7 +400,7 @@ undergo normal semantic and ownership validation.
 structured control flow and direct callable identities. It reuses checked scalar
 constant evaluation and the builtin constant-formatting implementation. Steps,
 nested calls, text construction, aggregate size and copying work are bounded.
-`ConstantExecutionLimits` supplies cumulative step, text-work, and aggregate-work
+`ExecutionLimits` supplies cumulative step, text-work, and aggregate-work
 allowances at the execution entry. Nested calls share those allowances; each root
 starts fresh. Per-value size, aggregate depth, and call depth retain fixed limits.
 Text work counts constructed, copied, and appended bytes; formatted append charges
@@ -410,8 +410,8 @@ and storage transfers create no additional slots.
 Evaluator state and call stacks belong to one required root and end with that
 request. Existing `ConstantID` values borrow retained inputs. Computed `ConstantAtom`
 values remain execution-local and cannot carry compound storage; they hold scalar
-data or an immutable text identity. Immutable `ConstantText` shares owned bytes;
-`ConstantOwnedText` preserves String ownership across calls. Formatting,
+data or an immutable text identity. Immutable `ExecutionText` shares owned bytes;
+`ExecutionOwnedText` preserves String ownership across calls. Formatting,
 queries, and equality read these values without freezing them. At the initializer
 boundary, owning String becomes canonical `str` whose bytes no longer depend
 on evaluator storage.
@@ -633,7 +633,7 @@ inferred storage loans. Native Write view slots retain their possible old storag
 ## Compile-time output and tests
 
 Constant execution delivers output bytes and a stream selection through its
-context. The analysis adapter forwards them to the synchronous `ConstantOutput`
+context. The analysis adapter forwards them to the synchronous `ExecutionOutput`
 recipient supplied to `analyze` or `compile`; an omitted recipient discards output.
 The executor owns evaluation order and accounts for output and failed-check
 diagnostic text within its cumulative text-work budget. The driver owns
@@ -649,3 +649,24 @@ program. Failed checks report diagnostics while allowing execution to continue;
 requirements stop the root through the executor's failure transport. Test errors
 prevent publication. Published test declarations retain their explicit execution
 stage so target planning selects only runtime tests.
+
+## Interpreted execution
+
+`interpreter/` consumes a published `SemIRProgram`. It validates the interpreter
+operation subset from the entry through direct callees, then invokes the shared
+structured executor. Ordinary
+language analysis remains the authority for names, types, access, lifetimes,
+failures, and entry uniqueness; interpretation does not introduce an AST checker.
+
+The executor borrows construction or published bodies through `ExecutionBody`.
+Execution needs read access to canonical values, compound type facts, and builtin
+types through `ExecutionValueAccess`. `ConstantValueAccess` additionally permits
+interning completed constants and spellings during construction and freezing.
+Published execution does not mutate semantic tables or clone operation trees.
+
+The call context supplies bodies, output, diagnostics, and optional source trace
+events. Required constant execution admits const functions and uses checked
+integer arithmetic. Interpretation admits supported ordinary functions and uses
+runtime integer arithmetic. Output and errors follow the selected stage; the
+normal compiler has no interpreter-mode branch. The driver owns command options
+and diagnostic presentation.

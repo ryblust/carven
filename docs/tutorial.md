@@ -13,28 +13,32 @@ fn add(left: i32, right: i32) -> i32 {
     return left + right;
 }
 
-fn main() {
-    let answer = add(20, 22);
-    let _ = answer;
-}
+let answer = add(20, 22);
+println(answer);
 ```
 
 `fn` declares a function. Parameters state their types, and `-> i32` states
 that `add` returns a signed 32-bit integer. Omitting the result type lets the
-compiler infer it from the returns; a body with no return operands infers `void`.
-`main` is the program entry point. This program performs a calculation without printing output.
+compiler infer it from returns; a body with no return operands infers `void`.
+The top-level statements form an implicit program entry, and `answer` is local
+to that entry. You can instead put those statements inside an explicit `fn main()`;
+a compilation may have only one entry.
 
-From the repository root, build the compiler and inspect the generated C++:
+From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew run carven --stdout main.cv
+./xmakew run carven main.cv
+./xmakew run carven interpret main.cv
+./xmakew run carven compile --stdout main.cv
 ```
 
-Carven generates C++ source; a native build compiles and links it. The command
-above prints the generated files and artifact headings without writing them.
-Programs under `examples/` include native build commands and expected output. In
-Windows PowerShell, use `.\xmakew.ps1` in place of `./xmakew`.
+The first execution command compiles and runs a native program on POSIX hosts.
+The second interprets the same source using the supported semantic subset. Both
+print `42`. The third prints generated C++ and artifact headings for inspection.
+Use `carven interpret --trace main.cv` to observe statement locations and calls.
+In Windows PowerShell, use `.\xmakew.ps1`; native execution through the CLI is
+currently POSIX-only, while generation and interpretation are available separately.
 
 Imports form the start of a source file. Types and constants normally precede
 functions that use them; helper functions precede their callers. Carven also
@@ -61,7 +65,7 @@ fn main() {
 ```
 
 Supply both files to the compiler, for example
-`./xmakew run carven --stdout main.cv math.cv`. Imports do not discover files.
+`./xmakew run carven compile --stdout main.cv math.cv`. Imports do not discover files.
 
 An unprefixed module reference starts at the current craft's root. A leading
 `.` starts in the importing module's directory. `json::parser` selects a module

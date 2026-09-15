@@ -22,17 +22,24 @@ Runnable programs live in [examples](../examples/README.md); unfinished designs
 live in [proposals](../proposals/README.md). Craft APIs and Xmake procedures are
 documented alongside their sources.
 
+Grammar and Semantics together define the language reference. Tutorial examples
+introduce those rules in learning order. Compiler and Backend describe their
+implementation; Principles states design criteria. Each rule belongs to the
+reference that owns its scope.
+
 ## Maintenance
 
 - Write concise, factual, neutral explanations of what to do and how. Include
-  rationale and underlying mechanisms where they help understanding or decisions.
-- Keep each rule in the document that owns its scope. Provide enough context for
-  independent reading and link to related details. Split documents by reader task.
+  mechanisms and rationale where they explain a rule's behavior or use.
+- Keep each rule in the document that owns its scope. Make each explanation
+  locally understandable with the brief context it needs. Use cross-references
+  only when essential detail cannot be stated concisely in place. Split documents
+  by reader task.
 - Describe current behavior, requirements, and limitations in references. Check
   their accuracy against implementation and tests; keep proposed changes in proposals.
 - State supported forms, defaults, evaluation, lifetime, failure, and diagnostic
   boundaries explicitly.
 - Preserve decision criteria, useful rationale, and practical guidance when
-  condensing text. Remove repetition and historical debate.
+  condensing text. Combine repeated explanations.
 - Present teaching examples in dependency order, with commands and expected
   results where useful.

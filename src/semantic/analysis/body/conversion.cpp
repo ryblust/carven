@@ -201,9 +201,7 @@ auto BodyElaborator::require_invariant_type(
             && draft().type_copy(*left_type) == draft().type_copy(*right_type);
     };
     if (!invariant(source, target)) {
-        return std::unexpected(
-            fail(span, DiagnosticCode::TypeMismatch, "types must match")
-        );
+        return std::unexpected(fail(span, DiagnosticCode::TypeMismatch, "types must match"));
     }
     return {};
 }

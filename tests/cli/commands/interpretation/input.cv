@@ -1,0 +1,30 @@
+const fn prepare(value: i32) {
+    println("compile", value);
+    return value * 2;
+}
+
+const prepared = prepare(21);
+
+const test "prepared" {
+    check(prepared == 42);
+}
+
+fn fib(value: i32) -> i32 {
+    if value < 2 {
+        return value;
+    }
+
+    return fib(value - 1) + fib(value - 2);
+}
+
+let values = [1, 2, 3];
+var total = 0;
+
+for value in values {
+    total += value;
+}
+
+var message = String::from_str("result");
+message.append_format(f" {prepared}");
+
+println(message, total, fib(6));

@@ -9,8 +9,8 @@ namespace {
 
 auto freeze_value(
     ConstantValueAccess& values,
-    const ConstantTypeShapes& shapes,
-    ConstantExecutionValue value,
+    const ExecutionTypeShapes& shapes,
+    ExecutionValue value,
     std::size_t depth
 ) noexcept -> std::optional<ConstantID> {
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
@@ -19,18 +19,18 @@ auto freeze_value(
     if (const auto* atom = std::get_if<ConstantAtom>(&value)) {
         return values.intern_constant(constant_fact(*atom));
     }
-    if (const auto text = constant_execution_text(values, value)) {
+    if (const auto text = execution_text(values, value)) {
         return values.intern_constant({
             .type = values.intern_builtin_type(BuiltinType::Str),
             .value = StringConstant {.value = values.intern_spelling(*text)},
         });
     }
-    const auto* aggregate = std::get_if<ConstantAggregateValue>(&value);
-    const auto* enumeration = std::get_if<ConstantEnumValue>(&value);
+    const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);
+    const auto* enumeration = std::get_if<ExecutionEnumValue>(&value);
     if (aggregate || enumeration) {
         const auto type = aggregate ? aggregate->type : enumeration->type;
         const auto enum_case = enumeration ? std::optional(enumeration->enum_case) : std::nullopt;
-        auto children = constant_execution_elements(value);
+        auto children = execution_elements(value);
         if (depth >= maximum_constant_aggregate_depth
             || children.size() > maximum_constant_aggregate_elements) {
             return std::nullopt;
@@ -58,7 +58,7 @@ auto freeze_value(
         elements.reserve(children.size());
         for (auto index = 0uz; index < children.size(); ++index) {
             auto& child = children[index];
-            const auto actual = constant_execution_value_type(values, child);
+            const auto actual = execution_value_type(values, child);
             const auto expected = array ? array->element
                 : slice                 ? slice->element
                 : fields                ? (*fields)[index]
@@ -94,8 +94,8 @@ auto freeze_value(
 
 } // namespace
 
-auto freeze_constant_value(ConstantValueAccess& values, ConstantExecutionValue value) noexcept
+auto freeze_constant_value(ConstantValueAccess& values, ExecutionValue value) noexcept
     -> std::optional<ConstantID> {
-    const auto shapes = ConstantTypeShapes(values);
+    const auto shapes = ExecutionTypeShapes(values);
     return freeze_value(values, shapes, std::move(value), 0);
 }

@@ -162,6 +162,7 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::RuntimeTextBytes:
         case TargetSymbol::RuntimeTextChars:
         case TargetSymbol::RuntimeCheckedUnicodeScalar: include("carven/runtime/text.hpp"); break;
+        case TargetSymbol::RuntimeEntryArgsType:
         case TargetSymbol::RuntimeEntryArgs:            include("carven/runtime/entry.hpp"); break;
         case TargetSymbol::RuntimeDeferredResult:    include("carven/runtime/deferred.hpp"); break;
         case TargetSymbol::RuntimeReadArg:

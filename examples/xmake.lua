@@ -1,6 +1,7 @@
 local examples_dir = path.join(os.projectdir(), "examples")
 
 local cases = {
+    {name = "execution", dir = "execution", output = "Build 0042\n0 0\n1 1\n2 1\n3 2\n4 3\n5 5\n6 8\n"},
     {name = "constant", dir = "constant", output = [[
 Text
 Carven build-0042

@@ -3,51 +3,62 @@ module carven:semantic.evaluation.control.impl;
 import :semantic.evaluation.executor;
 import std;
 
-auto ConstantExecutor::region(ConstantFrame& frame, const SemanticRegion& source) noexcept
-    -> ConstantExecutionResult<ConstantCompletion> {
+auto SemanticExecutor::region(ExecutionFrame& frame, const SemanticRegion& source) noexcept
+    -> ExecutionResult<ExecutionCompletion> {
     if (auto checked = step(source.origin); !checked) {
         return std::unexpected(checked.error());
     }
     for (const auto& child : source.statements) {
         auto result = statement(frame, child);
-        if (!result || result->flow != ConstantFlow::Normal) {
+        if (!result || result->flow != ExecutionFlow::Normal) {
             return result;
         }
     }
-    return source.result ? expression(frame, *source.result)
-                         : ConstantExecutionResult<ConstantCompletion>(ConstantCompletion {});
+    return source.result
+        ? expression(frame, *source.result)
+        : ExecutionResult<ExecutionCompletion>(
+              ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
+          );
 }
 
-auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& source) noexcept
-    -> ConstantExecutionResult<ConstantCompletion> {
+auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement& source) noexcept
+    -> ExecutionResult<ExecutionCompletion> {
+    context.trace(
+        {.kind = ExecutionTraceKind::Statement,
+         .origin = source.origin,
+         .function = std::nullopt,
+         .depth = calls.size()}
+    );
     if (auto checked = step(source.origin); !checked) {
         return std::unexpected(checked.error());
     }
     return std::visit(
-        [&](const auto& operation) noexcept -> ConstantExecutionResult<ConstantCompletion> {
+        [&](const auto& operation) noexcept -> ExecutionResult<ExecutionCompletion> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemReturn>) {
-                auto result = operation.value
-                    ? value(frame, *operation.value)
-                    : ConstantExecutionResult<ConstantExecutionValue>(ConstantVoid {});
+                auto result = operation.value ? value(frame, *operation.value)
+                                              : ExecutionResult<ExecutionValue>(ExecutionVoid {});
                 if (!result) {
                     return std::unexpected(result.error());
                 }
-                return ConstantCompletion {
-                    .flow = ConstantFlow::Return,
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Return,
                     .value = std::move(*result)
                 };
             } else if constexpr (std::same_as<Operation, SemBreak>) {
-                return ConstantCompletion {.flow = ConstantFlow::Break, .value = ConstantVoid {}};
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Break,
+                    .value = ExecutionVoid {}
+                };
             } else if constexpr (std::same_as<Operation, SemContinue>) {
-                return ConstantCompletion {
-                    .flow = ConstantFlow::Continue,
-                    .value = ConstantVoid {}
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Continue,
+                    .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemExpressionStatement>) {
                 auto result = expression(frame, operation.expression);
-                if (result && result->flow == ConstantFlow::Normal) {
-                    result->value = ConstantVoid {};
+                if (result && result->flow == ExecutionFlow::Normal) {
+                    result->value = ExecutionVoid {};
                 }
                 return result;
             } else if constexpr (std::same_as<Operation, SemInitialize>) {
@@ -60,7 +71,10 @@ auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& 
                     return std::unexpected(stored.error());
                 }
                 frame.slots[operation.binding.index()] = std::move(*stored);
-                return ConstantCompletion {};
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Normal,
+                    .value = ExecutionVoid {}
+                };
             } else if constexpr (std::same_as<Operation, SemAssign>) {
                 auto target = place(frame, operation.target);
                 if (!target) {
@@ -95,7 +109,8 @@ auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& 
                             *operation.compound,
                             *prior,
                             *rhs,
-                            *result_type
+                            *result_type,
+                            context.arithmetic()
                         ),
                         source.origin
                     );
@@ -116,7 +131,10 @@ auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& 
                     }
                     **selected = std::move(*right);
                 }
-                return ConstantCompletion {};
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Normal,
+                    .value = ExecutionVoid {}
+                };
             } else if constexpr (std::same_as<Operation, SemLoop>) {
                 return loop(frame, operation, source.origin);
             } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
@@ -127,7 +145,7 @@ auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& 
                 return std::unexpected(fail(
                     source.origin,
                     DiagnosticCode::ConstEvaluation,
-                    "statement is not supported in const execution"
+                    "statement is not supported in execution"
                 ));
             }
         },
@@ -135,13 +153,13 @@ auto ConstantExecutor::statement(ConstantFrame& frame, const SemanticStatement& 
     );
 }
 
-auto ConstantExecutor::loop(
-    ConstantFrame& frame,
+auto SemanticExecutor::loop(
+    ExecutionFrame& frame,
     const SemLoop& source,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantCompletion> {
+) noexcept -> ExecutionResult<ExecutionCompletion> {
     auto initialized = region(frame, *source.initializer);
-    if (!initialized || initialized->flow != ConstantFlow::Normal) {
+    if (!initialized || initialized->flow != ExecutionFlow::Normal) {
         return initialized;
     }
     while (true) {
@@ -158,32 +176,35 @@ auto ConstantExecutor::loop(
                 return std::unexpected(truth.error());
             }
             if (!*truth) {
-                return ConstantCompletion {};
+                return ExecutionCompletion {
+                    .flow = ExecutionFlow::Normal,
+                    .value = ExecutionVoid {}
+                };
             }
         }
         auto body = region(frame, *source.body);
-        if (!body || body->flow == ConstantFlow::Return) {
+        if (!body || body->flow == ExecutionFlow::Return) {
             return body;
         }
-        if (body->flow == ConstantFlow::Break) {
-            return ConstantCompletion {};
+        if (body->flow == ExecutionFlow::Break) {
+            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
         }
         auto steps = region(frame, *source.steps);
-        if (!steps || steps->flow == ConstantFlow::Return) {
+        if (!steps || steps->flow == ExecutionFlow::Return) {
             return steps;
         }
     }
 }
 
-auto ConstantExecutor::sequence_loop(
-    ConstantFrame& frame,
+auto SemanticExecutor::sequence_loop(
+    ExecutionFrame& frame,
     const SemRangeLoop& source,
     const SemSequenceRange& sequence,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantCompletion> {
+) noexcept -> ExecutionResult<ExecutionCompletion> {
     const auto slots = frame.slots.size();
-    const auto execute = [&]() noexcept -> ConstantExecutionResult<ConstantCompletion> {
-        auto owner = ConstantPlace {.slot = slots, .path = {}};
+    const auto execute = [&]() noexcept -> ExecutionResult<ExecutionCompletion> {
+        auto owner = ExecutionPlace {.slot = slots, .path = {}};
         if (local_place(sequence.value)) {
             auto selected = place(frame, sequence.value);
             if (!selected) {
@@ -205,18 +226,16 @@ auto ConstantExecutor::sequence_loop(
         if (!storage) {
             return std::unexpected(storage.error());
         }
-        const auto view = constant_compound_view(values, **storage);
+        const auto view = execution_compound_view(values, **storage);
         if (!view) {
-            return std::unexpected(fail(
-                origin,
-                DiagnosticCode::ConstEvaluation,
-                "constant iteration requires array storage"
-            ));
+            return std::unexpected(
+                fail(origin, DiagnosticCode::ConstEvaluation, "iteration requires array storage")
+            );
         }
         const auto extent = view->size();
         auto borrow_element = source.access == AccessMode::Write;
         if (source.binding) {
-            const auto element_type = type(frame.body->bindings.get(*source.binding).type, origin);
+            const auto element_type = type(frame.body->binding_type(*source.binding), origin);
             if (!element_type) {
                 return std::unexpected(element_type.error());
             }
@@ -244,28 +263,28 @@ auto ConstantExecutor::sequence_loop(
                 }
             }
             auto body = region(frame, *source.body);
-            if (!body || body->flow == ConstantFlow::Return) {
+            if (!body || body->flow == ExecutionFlow::Return) {
                 return body;
             }
-            if (body->flow == ConstantFlow::Break) {
+            if (body->flow == ExecutionFlow::Break) {
                 break;
             }
         }
-        return ConstantCompletion {};
+        return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     };
     auto result = execute();
     if (source.binding) {
-        frame.slots[source.binding->index()] = ConstantUninitialized {};
+        frame.slots[source.binding->index()] = ExecutionUninitialized {};
     }
     frame.slots.resize(slots);
     return result;
 }
 
-auto ConstantExecutor::range_loop(
-    ConstantFrame& frame,
+auto SemanticExecutor::range_loop(
+    ExecutionFrame& frame,
     const SemRangeLoop& source,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantCompletion> {
+) noexcept -> ExecutionResult<ExecutionCompletion> {
     const auto* range = std::get_if<SemIntegerRange>(&source.source);
     if (range == nullptr) {
         return sequence_loop(frame, source, std::get<SemSequenceRange>(source.source), origin);
@@ -285,30 +304,17 @@ auto ConstantExecutor::range_loop(
     }
     const auto one =
         ConstantFact {.type = current->type, .value = IntegerConstant::from_parts(1, false)};
-    const auto boolean_type = values.intern_builtin_type(BuiltinType::Bool);
     while (true) {
         if (auto checked = step(origin); !checked) {
             return std::unexpected(checked.error());
         }
-        auto comparison = finish(
-            evaluate_binary_constant_value(
-                values,
-                BinaryOperator::Less,
-                *current,
-                *bound,
-                boolean_type
-            ),
-            origin
-        );
-        if (!comparison) {
-            return std::unexpected(comparison.error());
-        }
-        auto truth = boolean(*comparison, origin);
-        if (!truth) {
-            return std::unexpected(truth.error());
-        }
-        if (!*truth) {
-            return ConstantCompletion {};
+        const auto& left = std::get<IntegerConstant>(current->value);
+        const auto& right = std::get<IntegerConstant>(bound->value);
+        const auto less = left.negative() != right.negative() ? left.negative()
+            : left.negative() ? left.magnitude() > right.magnitude()
+                              : left.magnitude() < right.magnitude();
+        if (!less) {
+            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
         }
         if (source.binding) {
             frame.slots[source.binding->index()] = ConstantAtom {
@@ -317,11 +323,11 @@ auto ConstantExecutor::range_loop(
             };
         }
         auto body = region(frame, *source.body);
-        if (!body || body->flow == ConstantFlow::Return) {
+        if (!body || body->flow == ExecutionFlow::Return) {
             return body;
         }
-        if (body->flow == ConstantFlow::Break) {
-            return ConstantCompletion {};
+        if (body->flow == ExecutionFlow::Break) {
+            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
         }
         auto incremented = finish(
             evaluate_binary_constant_value(
@@ -329,7 +335,8 @@ auto ConstantExecutor::range_loop(
                 BinaryOperator::Add,
                 *current,
                 one,
-                current->type
+                current->type,
+                context.arithmetic()
             ),
             origin
         );
@@ -343,11 +350,11 @@ auto ConstantExecutor::range_loop(
     }
 }
 
-auto ConstantExecutor::test_report(
-    ConstantFrame& frame,
+auto SemanticExecutor::test_report(
+    ExecutionFrame& frame,
     const SemTestReport& operation,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantExecutionValue> {
+) noexcept -> ExecutionResult<ExecutionValue> {
     if (!testing) {
         return std::unexpected(
             fail(origin, DiagnosticCode::ConstTest, "test operation requires an active const test")
@@ -399,5 +406,5 @@ auto ConstantExecutor::test_report(
             return std::unexpected(failure);
         }
     }
-    return ConstantVoid {};
+    return ExecutionVoid {};
 }

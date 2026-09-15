@@ -44,6 +44,7 @@ enum class TargetSymbol {
     RuntimeWriter,
     RuntimeStrCharsView,
     RuntimeEntryArgs,
+    RuntimeEntryArgsType,
     RuntimeFunctionRef,
     RuntimeTextBytes,
     RuntimeTextChars,

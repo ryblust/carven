@@ -1,24 +1,92 @@
 # Command-line interface
 
-The `carven` command compiles an explicit batch of `.cv` source files, inspects
-frontend representations, and reports its version and command help. This
+The `carven` command runs an explicit batch of `.cv` source files, generates
+C++ artifacts, and inspects frontend representations. This
 document defines invocation, input paths, output writes, and process behavior.
 
 ## Invocation
 
 ```text
-carven [options...] <source-file>...
+carven <source-file>... [-- <arguments>...]
+carven compile [options...] <source-file>...
+carven interpret [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump tokens <source-file>
 carven dump ast <source-file>
 ```
 
-`-h` and `--help` print command help. `-V` and `--version` print
+`carven --help`, `carven compile --help`, and `carven interpret --help`
+print help (`-h` is also accepted). `carven --version` and `carven -V` print
 `carven v<version>` followed by a newline. With no arguments, `carven` prints
 the top-level help and succeeds.
 
+## Native execution
+
+A bare source invocation compiles the batch to C++, compiles and links a native
+program, then executes it. Native header lookup includes the working directory. The batch must have a program entry point. Carven
+reports a missing entry before invoking the native compiler. Multiple entries
+are rejected during semantic analysis.
+
+Arguments before `--` belong to Carven; arguments after it are passed unchanged
+to the program, including `--help` and strings containing shell syntax. Native
+execution accepts source paths only before the separator. Artifact destinations
+and test-emission options belong to `compile`.
+
+Native execution currently supports POSIX hosts. `CXX` selects one compiler
+executable name or path, defaulting to `clang++`; its value is not split into
+shell words. Carven requests C++20 and locates Crafts beside an installed binary
+or in the source checkout containing the development binary. Generated files
+and the executable live in a unique temporary directory removed when the driver
+returns after execution or a handled failure. Child processes inherit the working directory and standard streams.
+Carven returns the native compiler's failure status or the program's exit
+status; termination by signal yields `128 + signal`.
+
+## Interpretation
+
+`interpret` parses and analyzes the same explicit source batch as native execution.
+Required constant initializers, compile-time printing, and `const test` execute
+through the normal analysis pipeline. The interpreter then checks the entry and
+its transitive direct callees against its execution subset and executes the
+published semantic operations. Admission covers all branches of those bodies.
+Unused functions still receive ordinary language checks; they do not have to
+belong to the interpreter subset. No C++ artifacts or native executable are written.
+
+The current subset supports integer, bool, char, str, and owning String locals;
+supported structs and fixed arrays; direct Carven calls; local mutation; conditional
+control, loops and supported matching; builtin printing and formatting. It shares
+the shared structured executor's operation support, but ordinary calls do not require
+`const fn`. Runtime integer operations use the language's wrapping rules; required
+constant arithmetic remains checked. A const function called at runtime also uses
+runtime arithmetic and output behavior.
+
+Native headers and source fragments, native calls, floating operations, callable
+values, typed failures, Write parameters,
+slices in executed bodies, and entry argument values are not yet supported.
+Unsupported uses report `CV-INTERPRET-ADMISSION`; interpretation does not fall back
+to native compilation. The entry must currently take no parameters. Arguments
+after `--` are ignored by such an entry, as in native execution. This mode adds no
+language syntax, global-variable behavior, or interpreter-only builtin names.
+
+`--trace` reports executed statement locations and function calls and successful
+returns to stderr, indented by call depth. It describes interpreted execution after
+analysis, not constant evaluation, and does not record every expression or variable
+value. Program stderr shares that stream. Combined stdout/stderr display order is
+not a complete execution log.
+
+`--max-steps N` supplies a nonnegative decimal step budget, defaulting to 100,000.
+Steps charge expression evaluation, statements, and loop progress using the shared
+executor; nested calls share the root budget. It does not limit elapsed time or
+blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
+limits also apply. Each required constant root keeps its own analysis budget;
+this option changes only interpreted execution. Repeated options are errors.
+
+Execution errors report `CV-INTERPRET-EXECUTION` with source locations and call
+context; exhausted budgets report `CV-INTERPRET-LIMIT`. Completed output remains
+observable. Invocation, admission, and execution failures return status 1; normal
+completion returns 0, following the existing entry-result convention.
+
 ## Source inputs
 
-A compile invocation requires one or more explicitly named source files. The
+A source invocation requires one or more explicitly named source files. The
 compiler analyzes that complete batch; imports resolve among those inputs.
 
 Input paths use UTF-8, `/` separators, and a `.cv` extension. Relative paths
@@ -45,7 +113,7 @@ module path.
 
 ## Artifact destinations
 
-One destination mode is always active, and at most one may be selected
+For `compile`, one destination mode is always active, and at most one may be selected
 explicitly. With no destination option, output is written below the current
 directory.
 
@@ -122,8 +190,8 @@ failure produce diagnostics on standard error and a nonzero status. Source
 warnings are printed on standard error while a successful compilation and
 materialization still return zero.
 
-Native compilation, linking, and C++ language selection belong to the consuming
-build.
+For `compile`, native compilation, linking, and C++ language selection belong
+to the consuming build.
 
 ## Syntax inspection
 

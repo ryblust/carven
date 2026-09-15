@@ -28,7 +28,7 @@ auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
         case Str:          return TargetSymbol::StdStringView;
         case StrCharsView: return TargetSymbol::RuntimeStrCharsView;
         case Void:         return TargetSymbol::Void;
-        case EntryArgs:    return TargetSymbol::Auto;
+        case EntryArgs:    return TargetSymbol::RuntimeEntryArgsType;
     }
     std::unreachable();
 }
@@ -112,9 +112,6 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
     const auto base = lower_type(parameter.type);
     const auto* builtin =
         std::get_if<BuiltinTypeValue>(&semantic().types().type(parameter.type).value);
-    if (builtin != nullptr && builtin->kind == BuiltinType::EntryArgs) {
-        return base;
-    }
     switch (parameter.access) {
         case AccessMode::Read:
             if (plan().read_borrows_storage(parameter.type)) {

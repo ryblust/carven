@@ -165,7 +165,8 @@ auto BodyRealizer::ExpressionBuilder::assign(
                                   .value
         );
     auto previous = std::optional<TargetIdentifier>();
-    if (assignment.compound && !external
+    if (assignment.compound
+        && !external
         && owner.construction.expression(assignment.value).requires_execution) {
         const auto name = owner.names.fresh(TargetTemporaryNameKind::Operand);
         statements.emit(generated_statement(

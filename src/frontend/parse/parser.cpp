@@ -52,6 +52,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
     auto cpp_header_imports = std::vector<ASTCppHeaderImport> {};
     auto cpp_source_fragments = std::vector<ASTCppSourceFragment> {};
     auto items = std::vector<ASTItemID> {};
+    auto statements = std::vector<ASTStmtID> {};
 
     while (!failed && check(TokenKind::Import) && !check_next(TokenKind::LeftParen)) {
         if (check_next(TokenKind::CppAngleHeaderName)
@@ -70,7 +71,22 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         furthest_speculative_failure.reset();
         const auto diagnostic_count = diagnostics.size();
         const auto checkpoint = builder.checkpoint();
-        const auto item = parse_top_level_item();
+        const auto kind = current().kind;
+        const auto is_declaration = kind == TokenKind::Private
+            || kind == TokenKind::Export
+            || kind == TokenKind::Import
+            || kind == TokenKind::Enum
+            || kind == TokenKind::Struct
+            || kind == TokenKind::Fn
+            || kind == TokenKind::Const
+            || kind == TokenKind::Test;
+        auto item = std::optional<ASTItemID>();
+        if (is_declaration) {
+            item = parse_top_level_item();
+        } else if (const auto statement = parse_statement()) {
+            statements.push_back(*statement);
+            continue;
+        }
         if (item.has_value()) {
             items.push_back(*item);
             continue;
@@ -100,6 +116,35 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
                                       .build());
         }
         return std::unexpected(std::move(diagnostics));
+    }
+
+    if (!statements.empty()) {
+        const auto span = join(
+            builder.statement(statements.front()).span,
+            builder.statement(statements.back()).span
+        );
+        const auto body = builder.append_block(
+            ASTBlock {
+                .span = span,
+                .statements = std::move(statements),
+            }
+        );
+        items.push_back(builder.append_item(
+            ASTItem {
+                .span = span,
+                .value = ASTFunctionDecl {
+                    .is_implicit_entry = true,
+                    .visibility = ASTBareDeclarationVisibility {},
+                    .cpp_export = std::nullopt,
+                    .const_span = std::nullopt,
+                    .name_span = Span::at(span.start()),
+                    .parameters = {},
+                    .result_type = std::nullopt,
+                    .throw_clause = std::nullopt,
+                    .implementation = ASTFunctionBody {.body = body},
+                },
+            }
+        ));
     }
 
     auto ast_module = ASTModule {

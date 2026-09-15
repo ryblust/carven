@@ -68,24 +68,27 @@ fn main() {
 }
 ```
 
-From the repository root, build the compiler and inspect the generated C++:
+From the repository root, build the compiler and run the example:
 
 ```shell
 ./xmakew build
-./xmakew run carven --stdout examples/helloworld/main.cv
+./xmakew run carven examples/helloworld/main.cv
 ```
 
-Build and run the same example as a native executable:
+It prints `Hello World`. Bare source invocation compiles and runs a native program
+on POSIX hosts. Use `interpret` to execute the supported semantic subset without
+native compilation, or `compile` to inspect or retain C++ artifacts:
 
 ```shell
-./xmakew build carven-example-hello-world
-./xmakew run carven-example-hello-world
+./xmakew run carven interpret examples/helloworld/main.cv
+./xmakew run carven compile --stdout examples/helloworld/main.cv
 ```
 
-It prints `Hello World`. The Carven CLI generates C++; the build system compiles
-and links it. `--stdout` displays generated artifacts for inspection. To write
-them to a directory, use `-o <dir>`; without a destination option, the CLI writes
-below the current directory.
+The [execution example](examples/execution/README.md) combines top-level statements,
+compile-time output, static tests, and ordinary function calls. `compile --stdout`
+displays generated artifacts; `compile -o <dir>` writes them below the selected
+directory. With no destination option, `compile` writes below the current directory.
+The [CLI reference](docs/cli.md) defines execution limits and supported platforms.
 
 ## C++ project integration
 
@@ -106,7 +109,7 @@ For example, save the Hello World above as `main.cv`. With an installed `carven`
 on `PATH`, run:
 
 ```shell
-carven -o out main.cv
+carven compile -o out main.cv
 clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
     out/main.cpp -o out/hello-carven
 ./out/hello-carven
@@ -117,7 +120,7 @@ toolchain's `bin/`, or use this repository's `crafts/` with the locally built
 compiler. From the repository root, the existing example can be built directly:
 
 ```shell
-./xmakew run carven -o out/manual examples/helloworld/main.cv
+./xmakew run carven compile -o out/manual examples/helloworld/main.cv
 clang++ -std=c++20 -Iout/manual -Icrafts \
     out/manual/examples/helloworld/main.cpp -o out/manual/hello-carven
 ./out/manual/hello-carven
@@ -127,7 +130,7 @@ Carven does not discover imported source modules. For a `main.cv` that imports
 `std::utf.text`, explicitly include the package modules and their generated implementations:
 
 ```shell
-carven -o out main.cv /path/to/carven/crafts/carven/std/utf/*.cv
+carven compile -o out main.cv /path/to/carven/crafts/carven/std/utf/*.cv
 clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
     out/main.cpp out/crafts/carven/std/utf/*.cpp -o out/app
 ./out/app

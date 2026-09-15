@@ -42,6 +42,7 @@ private:
     auto append_branch_block(ASTBranchBlock value) noexcept -> ASTBranchBlockID;
     auto append_item(ASTItem value) noexcept -> ASTItemID;
     auto append_module_import(ASTModuleImport value) noexcept -> ASTModuleImportID;
+    auto statement(ASTStmtID id) const noexcept -> const ASTStmt&;
     auto expression(ASTExprID id) const noexcept -> const ASTExpr&;
     auto type(ASTTypeID id) const noexcept -> const ASTType&;
     auto pattern(ASTPatternID id) const noexcept -> const ASTPattern&;

@@ -15,7 +15,7 @@ auto compile(
     const SourceManager& sources,
     CompilationRequest compilation,
     const TargetPlanningRequest& generation,
-    const ConstantOutput& output
+    const ExecutionOutput& output
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
     auto syntax = parse_program(sources, compilation);
     if (!syntax.has_value()) {

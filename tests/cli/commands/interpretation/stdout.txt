@@ -1,0 +1,2 @@
+compile 21
+result 42 6 8

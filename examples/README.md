@@ -70,3 +70,6 @@ When updating an example, keep its explanation, commands, and expected output
 consistent with the executable source. Explain providers before callers and
 keep navigation between examples in this index. Rejection and termination cases
 belong in the compiler's test suites.
+
+[Execution stages](execution/README.md) demonstrates top-level statements,
+compile-time output and tests, native execution, and interpretation of the same program.

@@ -501,7 +501,7 @@ public:
         );
     }
 
-    auto evaluate(const Value& value) noexcept -> AnalysisResult<ConstantExecutionValue> {
+    auto evaluate(const Value& value) noexcept -> AnalysisResult<ExecutionValue> {
         return evaluate_constant_root(program, scope.construction_requests(), value);
     }
 
@@ -531,7 +531,7 @@ public:
     }
 
 private:
-    ConstantTypeShapes shapes;
+    ExecutionTypeShapes shapes;
     ProgramDraft& program;
     ProgramModuleID module;
     ASTView ast;
@@ -610,7 +610,7 @@ auto evaluate_array_extent(
         if (!evaluated) {
             return std::unexpected(evaluated.error());
         }
-        if (const auto result = constant_execution_atom(draft, *evaluated)) {
+        if (const auto result = execution_atom(draft, *evaluated)) {
             fact = *result;
         }
     }

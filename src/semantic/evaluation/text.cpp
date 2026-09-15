@@ -6,16 +6,16 @@ import :semantic.format.builtin;
 import :support.utf8;
 import std;
 
-auto ConstantExecutor::text_storage(
-    ConstantFrame& frame,
-    const ConstantPlace& place,
+auto SemanticExecutor::text_storage(
+    ExecutionFrame& frame,
+    const ExecutionPlace& place,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantOwnedText*> {
+) noexcept -> ExecutionResult<ExecutionOwnedText*> {
     auto selected = located(frame, place, origin);
     if (!selected) {
         return std::unexpected(selected.error());
     }
-    if (auto* text = std::get_if<ConstantOwnedText>(*selected)) {
+    if (auto* text = std::get_if<ExecutionOwnedText>(*selected)) {
         return text;
     }
     return std::unexpected(
@@ -23,36 +23,34 @@ auto ConstantExecutor::text_storage(
     );
 }
 
-auto ConstantExecutor::append_text(
-    ConstantFrame& frame,
-    const ConstantPlace& destination,
+auto SemanticExecutor::append_text(
+    ExecutionFrame& frame,
+    const ExecutionPlace& destination,
     std::string_view bytes,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantExecutionValue> {
+) noexcept -> ExecutionResult<ExecutionValue> {
     auto target = text_storage(frame, destination, origin);
     if (!target) {
         return std::unexpected(target.error());
     }
     if (bytes.size() > maximum_constant_text_bytes - (*target)->bytes.size()) {
-        return std::unexpected(
-            fail(origin, DiagnosticCode::ConstLimit, "constant text exceeds 1 MiB")
-        );
+        return std::unexpected(fail(origin, DiagnosticCode::ConstLimit, "text exceeds 1 MiB"));
     }
     if (auto checked = account_text(bytes.size(), origin); !checked) {
         return std::unexpected(checked.error());
     }
     (*target)->bytes += bytes;
-    return ConstantVoid {};
+    return ExecutionVoid {};
 }
 
-auto ConstantExecutor::text_intrinsic(
-    ConstantFrame& frame,
+auto SemanticExecutor::text_intrinsic(
+    ExecutionFrame& frame,
     const SemTextIntrinsic& operation,
     TypeID result_type,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantExecutionValue> {
+) noexcept -> ExecutionResult<ExecutionValue> {
     switch (operation.intrinsic) {
-        case TextIntrinsic::New:    return ConstantOwnedText {.bytes = {}};
+        case TextIntrinsic::New:    return ExecutionOwnedText {.bytes = {}};
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:   {
@@ -66,7 +64,7 @@ auto ConstantExecutor::text_intrinsic(
                     return std::unexpected(target.error());
                 }
                 (*target)->bytes.clear();
-                return ConstantVoid {};
+                return ExecutionVoid {};
             }
             auto operand = value(frame, operation.operands[1].expression);
             if (!operand) {
@@ -86,18 +84,16 @@ auto ConstantExecutor::text_intrinsic(
                 }
                 const auto* character = std::get_if<CharacterConstant>(&fact->value);
                 if (character == nullptr) {
-                    return std::unexpected(fail(
-                        origin,
-                        DiagnosticCode::ConstEvaluation,
-                        "String.push requires a constant char"
-                    ));
+                    return std::unexpected(
+                        fail(origin, DiagnosticCode::ConstEvaluation, "String.push requires a char")
+                    );
                 }
                 append_utf8(suffix, character->scalar);
             } else {
                 return std::unexpected(fail(
                     origin,
                     DiagnosticCode::ConstEvaluation,
-                    "operation does not implement constant text mutation"
+                    "operation does not implement text mutation"
                 ));
             }
             return append_text(frame, *receiver, suffix, origin);
@@ -115,9 +111,9 @@ auto ConstantExecutor::text_intrinsic(
     if (!operand) {
         return std::unexpected(operand.error());
     }
-    auto* receiver = std::get_if<ConstantExecutionValue>(&*operand);
+    auto* receiver = std::get_if<ExecutionValue>(&*operand);
     if (receiver == nullptr) {
-        auto selected = located(frame, std::get<ConstantPlace>(*operand), origin);
+        auto selected = located(frame, std::get<ExecutionPlace>(*operand), origin);
         if (!selected) {
             return std::unexpected(selected.error());
         }
@@ -132,18 +128,18 @@ auto ConstantExecutor::text_intrinsic(
             if (auto checked = account_text(bytes->size(), origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            return ConstantOwnedText {.bytes = std::string(*bytes)};
+            return ExecutionOwnedText {.bytes = std::string(*bytes)};
         case TextIntrinsic::AsStr:
             if (auto checked = account_text(bytes->size(), origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            return ConstantText {.bytes = std::make_shared<const std::string>(*bytes)};
+            return ExecutionText {.bytes = std::make_shared<const std::string>(*bytes)};
         case TextIntrinsic::Bytes: {
             if (auto checked = account_aggregate(bytes->size(), origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            const auto element_type = values.intern_builtin_type(BuiltinType::U8);
-            auto elements = std::vector<ConstantExecutionValue>();
+            const auto element_type = values.builtin_type(BuiltinType::U8);
+            auto elements = std::vector<ExecutionValue>();
             for (const auto byte : *bytes) {
                 elements.emplace_back(
                     ConstantAtom {
@@ -153,19 +149,19 @@ auto ConstantExecutor::text_intrinsic(
                     }
                 );
             }
-            return ConstantAggregateValue {
+            return ExecutionAggregateValue {
                 .type = result_type,
                 .elements = std::move(elements),
             };
         }
         case TextIntrinsic::Len:
             return ConstantAtom {
-                .type = values.intern_builtin_type(BuiltinType::Usize),
+                .type = values.builtin_type(BuiltinType::Usize),
                 .value = IntegerConstant::from_parts(bytes->size(), false),
             };
         case TextIntrinsic::IsEmpty:
             return ConstantAtom {
-                .type = values.intern_builtin_type(BuiltinType::Bool),
+                .type = values.builtin_type(BuiltinType::Bool),
                 .value = BooleanConstant {.value = bytes->empty()},
             };
         case TextIntrinsic::New:
@@ -178,18 +174,18 @@ auto ConstantExecutor::text_intrinsic(
             return std::unexpected(fail(
                 origin,
                 DiagnosticCode::ConstEvaluation,
-                "text operation is not supported in const execution"
+                "text operation is not supported in execution"
             ));
     }
     std::unreachable();
 }
 
-auto ConstantExecutor::format(
-    ConstantFrame& frame,
+auto SemanticExecutor::format(
+    ExecutionFrame& frame,
     const SemFormat& operation,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantExecutionValue> {
-    auto destination = std::optional<ConstantPlace>();
+) noexcept -> ExecutionResult<ExecutionValue> {
+    auto destination = std::optional<ExecutionPlace>();
     if (operation.receiver) {
         auto selected = place(frame, **operation.receiver);
         if (!selected) {
@@ -197,7 +193,7 @@ auto ConstantExecutor::format(
         }
         destination = std::move(*selected);
     }
-    auto operands = std::vector<ConstantOperand>();
+    auto operands = std::vector<ExecutionOperand>();
     for (const auto& operand : operation.operands) {
         auto result = read_operand(frame, operand.expression);
         if (!result) {
@@ -205,7 +201,7 @@ auto ConstantExecutor::format(
         }
         operands.push_back(std::move(*result));
     }
-    auto arguments = std::vector<ConstantExecutionValue>();
+    auto arguments = std::vector<ExecutionValue>();
     for (auto& operand : operands) {
         auto result = materialize(frame, std::move(operand), origin);
         if (!result) {
@@ -216,9 +212,9 @@ auto ConstantExecutor::format(
     auto observed = std::vector<BuiltinFormatValue>();
     observed.reserve(arguments.size());
     for (const auto& argument : arguments) {
-        if (const auto text = constant_execution_text(values, argument)) {
+        if (const auto text = execution_text(values, argument)) {
             observed.emplace_back(*text);
-        } else if (const auto atom = constant_execution_atom(values, argument)) {
+        } else if (const auto atom = execution_atom(values, argument)) {
             observed.push_back(builtin_format_value(values, constant_fact(*atom)));
         } else {
             observed.emplace_back();
@@ -240,15 +236,15 @@ auto ConstantExecutor::format(
     if (destination) {
         return append_text(frame, *destination, *result, origin);
     }
-    return ConstantOwnedText {.bytes = std::move(*result)};
+    return ExecutionOwnedText {.bytes = std::move(*result)};
 }
 
-auto ConstantExecutor::print(
-    ConstantFrame& frame,
+auto SemanticExecutor::print(
+    ExecutionFrame& frame,
     const SemPrint& operation,
     ProgramOriginID origin
-) noexcept -> ConstantExecutionResult<ConstantExecutionValue> {
-    auto operands = std::vector<ConstantOperand>();
+) noexcept -> ExecutionResult<ExecutionValue> {
+    auto operands = std::vector<ExecutionOperand>();
     for (const auto& operand : operation.operands) {
         auto result = read_operand(frame, operand.expression);
         if (!result) {
@@ -257,9 +253,9 @@ auto ConstantExecutor::print(
         operands.push_back(std::move(*result));
     }
     const auto stream = operation.kind == PrintKind::Eprint || operation.kind == PrintKind::Eprintln
-        ? ConstantOutputStream::Error
-        : ConstantOutputStream::Standard;
-    const auto write = [&](std::string_view bytes) noexcept -> ConstantExecutionResult<void> {
+        ? ExecutionOutputStream::Error
+        : ExecutionOutputStream::Standard;
+    const auto write = [&](std::string_view bytes) noexcept -> ExecutionResult<void> {
         if (auto checked = account_text(bytes.size(), origin); !checked) {
             return checked;
         }
@@ -272,9 +268,9 @@ auto ConstantExecutor::print(
             return std::unexpected(argument.error());
         }
         auto observed = BuiltinFormatValue();
-        if (const auto bytes = constant_execution_text(values, *argument)) {
+        if (const auto bytes = execution_text(values, *argument)) {
             observed = *bytes;
-        } else if (const auto atom = constant_execution_atom(values, *argument)) {
+        } else if (const auto atom = execution_atom(values, *argument)) {
             observed = builtin_format_value(values, constant_fact(*atom));
         }
         auto formatted = format_builtin_value(observed, {}, maximum_constant_text_bytes);
@@ -284,7 +280,7 @@ auto ConstantExecutor::print(
                 formatted.error() == BuiltinFormatFailureKind::Limit
                     ? DiagnosticCode::ConstLimit
                     : DiagnosticCode::ConstEvaluation,
-                "value cannot be printed within the constant execution limits"
+                "value cannot be printed within the execution limits"
             ));
         }
         if (index != 0) {
@@ -301,5 +297,5 @@ auto ConstantExecutor::print(
             return std::unexpected(written.error());
         }
     }
-    return ConstantVoid {};
+    return ExecutionVoid {};
 }

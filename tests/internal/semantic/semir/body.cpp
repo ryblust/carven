@@ -89,6 +89,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
             .callable = callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         }
     );
     builder.define_declaration(

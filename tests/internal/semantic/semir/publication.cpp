@@ -65,6 +65,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
             .callable = function_callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         }
     );
     builder.define_declaration(

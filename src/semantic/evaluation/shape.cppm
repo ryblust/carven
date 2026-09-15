@@ -3,7 +3,7 @@ module carven:semantic.evaluation.shape;
 import :semantic.semir.constant_access;
 import std;
 
-struct ConstantTypeShape final {
+struct ExecutionTypeShape final {
     bool supported;
     std::size_t depth;
     // Counts retained slots, saturated at the element limit plus one.
@@ -12,14 +12,15 @@ struct ConstantTypeShape final {
 
 // Scoped to one construction/execution boundary. Only complete type shapes are
 // cached. Incomplete types and shapes beyond the depth limit produce no entry.
-class ConstantTypeShapes final {
+class ExecutionTypeShapes final {
 public:
-    explicit ConstantTypeShapes(const ConstantValueAccess& values) noexcept;
-    auto get(TypeID type) const noexcept -> std::optional<ConstantTypeShape>;
+    explicit ExecutionTypeShapes(const ExecutionValueAccess& values) noexcept;
+    auto get(TypeID type) const noexcept -> std::optional<ExecutionTypeShape>;
 
 private:
-    auto compute(TypeID type, std::size_t depth) const noexcept -> std::optional<ConstantTypeShape>;
+    auto compute(TypeID type, std::size_t depth) const noexcept
+        -> std::optional<ExecutionTypeShape>;
 
-    const ConstantValueAccess& values;
-    mutable std::map<TypeID, ConstantTypeShape> completed;
+    const ExecutionValueAccess& values;
+    mutable std::map<TypeID, ExecutionTypeShape> completed;
 };

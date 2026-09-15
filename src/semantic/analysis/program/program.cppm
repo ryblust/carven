@@ -44,7 +44,7 @@ public:
     static auto begin(
         SyntaxProgram&& syntax,
         DiagnosticSink& sink,
-        ConstantOutput output = {}
+        ExecutionOutput output = {}
     ) noexcept -> ProgramDraft;
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
@@ -54,7 +54,7 @@ public:
     auto identity() const noexcept -> ProgramIdentity override;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
-    auto write_output(ConstantOutputStream stream, std::string_view bytes) const noexcept -> void;
+    auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
     auto syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree&;
     auto syntax_trees() const noexcept -> std::span<const SyntaxTree>;
     auto resolved_imports(ProgramModuleID id) const noexcept
@@ -196,7 +196,7 @@ private:
         Bodies,
     };
 
-    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink, ConstantOutput output) noexcept;
+    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink, ExecutionOutput output) noexcept;
     auto resolve() && noexcept -> AnalysisResult<SemIRProgram>;
     auto finalize_callable_signatures(
         const TypeResolution& types,
@@ -210,7 +210,7 @@ private:
     std::uint32_t next_evaluation_root = 0;
     CompilationProvenanceAppender provenance_appender;
     AnalysisDiagnostics analysis_diagnostics;
-    ConstantOutput output;
+    ExecutionOutput output;
     State state;
 
     struct ConstructionStorage final {

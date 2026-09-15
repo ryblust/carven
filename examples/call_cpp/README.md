@@ -35,6 +35,9 @@ From the repository root:
 ./xmakew run carven-example-native-parser
 ```
 
+With an installed `carven`, run `carven main.cv` from this directory. Native
+header paths are resolved from the working directory.
+
 Expected output:
 
 ```text

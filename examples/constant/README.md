@@ -63,7 +63,7 @@ From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew run carven --stdout examples/constant/main.cv examples/constant/text.cv examples/constant/arrays.cv examples/constant/slices.cv examples/constant/records.cv
+./xmakew run carven compile --stdout examples/constant/main.cv examples/constant/text.cv examples/constant/arrays.cv examples/constant/slices.cv examples/constant/records.cv
 ```
 
 `--stdout` prints artifact headings and contents without writing generated files.

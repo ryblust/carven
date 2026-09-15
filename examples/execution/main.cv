@@ -1,0 +1,24 @@
+const fn title(value: i32) {
+    println("Preparing title");
+    return f"Build {value:04}";
+}
+
+const heading = title(42);
+
+const test "prepared heading" {
+    check(heading == "Build 0042");
+}
+
+fn fibonacci(value: i32) -> i32 {
+    if value < 2 {
+        return value;
+    }
+
+    return fibonacci(value - 1) + fibonacci(value - 2);
+}
+
+println(heading);
+
+for value in 0..7 {
+    println(value, fibonacci(value));
+}

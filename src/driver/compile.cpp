@@ -2,27 +2,18 @@ module carven:driver.compile.impl;
 
 import :artifacts.materialize;
 import :artifacts;
+import :backend.generate;
 import :backend.generation.request;
-import :compiler.compile;
-import :compiler.request;
-import :diagnostics.report;
+import :driver.analysis;
 import :driver.compile;
-import :driver.input_path;
 import :driver.options;
 import :semantic.evaluation.output;
-import :source.manager;
-import :source.module_path;
-import :source.text;
+import :semantic.semir.program;
 import :support.invariant;
 import :support.visit;
 import std;
 
 namespace {
-
-struct PreparedModuleInput final {
-    std::string_view input_path;
-    CanonicalModulePath module_path;
-};
 
 auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
     -> std::expected<LinkageDomain, std::string> {
@@ -83,78 +74,33 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         return 1;
     }
 
-    auto exit_code = 0;
-    auto inputs = std::vector<PreparedModuleInput> {};
-    inputs.reserve(request->input_paths.size());
-    for (const auto input_path : request->input_paths) {
-        auto module_path = derive_input_module_path(input_path);
-        if (!module_path) {
-            std::println(std::cerr, "carven: error: {}", module_path.error());
-            exit_code = 1;
-            continue;
-        }
-        inputs.push_back({
-            .input_path = input_path,
-            .module_path = std::move(*module_path),
-        });
-    }
-    if (exit_code != 0) {
-        return exit_code;
-    }
-
-    auto sources = SourceManager();
-    auto module_inputs = std::vector<CompilationModuleInput> {};
-    module_inputs.reserve(inputs.size());
-    for (const auto& input : inputs) {
-        const auto source_id = sources.append_file(input.input_path);
-        if (!source_id) {
-            std::println(
-                std::cerr,
-                "carven: error: {}: '{}'",
-                source_id.error().message,
-                source_id.error().origin
-            );
-            exit_code = 1;
-            continue;
-        }
-        module_inputs.push_back({
-            .source_id = *source_id,
-            .module_path = input.module_path,
-        });
-    }
-    if (exit_code != 0) {
-        return exit_code;
-    }
-
-    const auto result = compile(
-        sources,
-        CompilationRequest {.modules = module_inputs},
-        TargetPlanningRequest {
-            .test_mode = request->test_mode,
-            .linkage_domain = std::move(*linkage_domain),
-        },
-        [&](ConstantOutputStream stream, std::string_view bytes) noexcept {
-            const auto to_error = stream == ConstantOutputStream::Error
+    auto semantic = analyze_sources(
+        request->input_paths,
+        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+            const auto to_error = stream == ExecutionOutputStream::Error
                 || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
             std::print(to_error ? std::cerr : std::cout, "{}", bytes);
         }
     );
-    if (!result) {
-        std::print(std::cerr, "{}", render_diagnostics(result.error(), sources));
+    if (!semantic) {
         return 1;
     }
-    if (!result->diagnostics.empty()) {
-        std::print(std::cerr, "{}", render_diagnostics(result->diagnostics, sources));
-    }
+    const auto artifacts = generate_artifacts(
+        std::move(*semantic),
+        TargetPlanningRequest {
+            .test_mode = request->test_mode,
+            .linkage_domain = std::move(*linkage_domain),
+        }
+    );
 
     const auto written = std::visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {
-                return write_artifacts(destination.root, result->value);
+                return write_artifacts(destination.root, artifacts);
             },
             [&](const StandardOutputArtifactDestination&) noexcept
                 -> std::expected<void, std::string> {
-                print_artifacts(result->value);
+                print_artifacts(artifacts);
                 return {};
             },
         },

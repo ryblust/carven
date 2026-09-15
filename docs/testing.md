@@ -59,7 +59,7 @@ when building.
 | `crafts` | Public source-package APIs | Library results, errors, state transitions, and algorithms |
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, source fragments, native calls, Unicode checks, and header self-containment |
 | `examples` | User-facing programs | Documented program output from the actual example executables |
-| `cli` | Compiler process and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
+| `cli` | Compiler process, native/ interpreted execution, and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
 Place each case in the group that owns the tested boundary. Specify accepted
 behavior, rejected inputs, and representation invariants from the current contract.
@@ -72,22 +72,22 @@ Apply the following C++ modes:
 | Subject | Compiler mode |
 | --- | --- |
 | Compiler internals and Carven diagnostics | Compiler's own C++26 configuration |
-| Language programs, entry and reporting contracts | C++20 and C++23 |
-| Interop programs, native rejection and termination contracts | C++20 and C++23 |
+| Language programs, entry and reporting contracts | C++20 baseline |
+| Interop programs, native rejection and termination contracts | C++20 baseline |
 | Crafts public APIs | C++20 baseline |
 | Examples | C++20 baseline |
-| Builtin printing | C++20 and C++23 implementations |
+| Builtin printing and printing termination contracts | C++20 and C++23 implementations |
 | Native C++23 print API | C++23 |
 
-C++20 is the generated-source baseline. C++20 and C++23 builds check compilation
-and behavior under each consumer standard mode, including standard-library
-capability branches. Declare shared sources once in each group's `xmake.lua` and
+C++20 is the generated-source baseline. Additional standard modes exercise
+standard-library capability branches; shared semantic contracts run at baseline.
+Declare shared sources once in each group's `xmake.lua` and
 apply the modes listed above. Entry tests cover default
 and explicit entries, success and failure status, reported failures, and cleanup.
 
 Execution-selection tests use valid, terminating operands and assert call counts
 or execution traces. Internal constant-execution tests can observe calls through
-`ConstantExecutionContext`. Invalid-input and resource-limit cases separately
+`SemanticExecutionContext`. Invalid-input and resource-limit cases separately
 assert their diagnostics.
 
 Resource-accounting cases exercise actual construction, copying, calls, and queries
@@ -207,3 +207,8 @@ generated-program tests.
 Test runtime exception boundaries in isolated C++ consumer processes. Require the
 throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
+
+CLI execution cases cover the shared top-level language surface, analysis-time
+output and static tests, native argument forwarding, interpreter admission,
+source traces, runtime arithmetic, and resource failures. Interpreter acceptance
+uses expected program results; compiled execution also exercises generated C++.

@@ -267,8 +267,10 @@ top-level-item = module-item
                | cpp-import-function-declaration
                | cpp-export-function-definition
                | test-declaration
-               | CPP_SOURCE_FRAGMENT;
+               | CPP_SOURCE_FRAGMENT
+               | statement;
 
+(* A top-level const is always a module constant declaration. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";

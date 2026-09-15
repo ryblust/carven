@@ -400,7 +400,7 @@
 +        local batchscan = content_depend.enabled(target) and _scanner(target).scan_dependencies_for
 +        local owned = {}
 +        if batchscan then
-+            for _, sourcefile in ipairs(sourcebatch.sourcefiles) do
++            for _, sourcefile in ipairs(table.unique(sourcebatch.sourcefiles)) do
 +                if not support.is_reused(target, sourcefile) then
 +                    table.insert(owned, sourcefile)
 +                end

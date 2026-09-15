@@ -175,6 +175,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .callable = first_callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         }
     );
     builder.define_declaration(
@@ -187,6 +188,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .callable = second_callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         }
     );
     builder.define_declaration(

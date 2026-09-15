@@ -298,10 +298,16 @@ auto ASTDumper::render_top_level_item(
                 append_line(
                     prefix,
                     is_last,
-                    std::format("FunctionDeclaration {}", format_dump_span(item.span))
+                    std::format(
+                        "{} {}",
+                        definition.is_implicit_entry ? "TopLevelBody" : "FunctionDeclaration",
+                        format_dump_span(item.span)
+                    )
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
-                render_visibility(definition.visibility, nested_prefix);
+                if (!definition.is_implicit_entry) {
+                    render_visibility(definition.visibility, nested_prefix);
+                }
                 if (definition.cpp_export.has_value()) {
                     render_span_field(
                         nested_prefix,
@@ -313,7 +319,9 @@ auto ASTDumper::render_top_level_item(
                 if (definition.const_span) {
                     render_span_field(nested_prefix, false, "const", *definition.const_span);
                 }
-                render_span_field(nested_prefix, false, "name", definition.name_span);
+                if (!definition.is_implicit_entry) {
+                    render_span_field(nested_prefix, false, "name", definition.name_span);
+                }
                 render_list(
                     nested_prefix,
                     false,

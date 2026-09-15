@@ -47,6 +47,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::RuntimeSlice:             return "carven::runtime::Slice";
         case TargetSymbol::RuntimeString:            return "carven::runtime::String";
         case TargetSymbol::RuntimeStrCharsView:      return "carven::runtime::StrCharsView";
+        case TargetSymbol::RuntimeEntryArgsType:     return "carven::runtime::EntryArgs";
         case TargetSymbol::RuntimeEntryArgs:         return "carven::runtime::entry_args";
         case TargetSymbol::RuntimeFunctionRef:       return "carven::runtime::FunctionRef";
         case TargetSymbol::RuntimeTextBytes:         return "carven::runtime::text_bytes";
@@ -73,7 +74,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdDeclval:          return "::std::declval";
         case TargetSymbol::StdForward:          return "std::forward";
         case TargetSymbol::StdMove:             return "std::move";
-        case TargetSymbol::StdAsConst:           return "std::as_const";
+        case TargetSymbol::StdAsConst:          return "std::as_const";
         case TargetSymbol::StdNullopt:          return "std::nullopt";
         case TargetSymbol::StdNullptr:          return "nullptr";
         case TargetSymbol::StdOptional:         return "std::optional";

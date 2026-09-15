@@ -172,7 +172,8 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                     const auto* builtin = std::get_if<BuiltinTypeValue>(
                         &semantic.types().type(input.expression.type.resolved()).value
                     );
-                    if (input.access == AccessMode::Read && builtin != nullptr
+                    if (input.access == AccessMode::Read
+                        && builtin != nullptr
                         && builtin->kind != BuiltinType::String
                         && builtin->kind != BuiltinType::EntryArgs) {
                         prepared.use = ConstructionUse::OperandValue;

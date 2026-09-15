@@ -63,6 +63,9 @@ namespace {
     X(ConstShiftRange, "CV-CONST-SHIFT-RANGE", Error, "Constant shift is out of range.")           \
     X(EntryDuplicate, "CV-ENTRY-DUPLICATE", Error, "Duplicate entry point.")                       \
     X(EntryParameters, "CV-ENTRY-PARAMETERS", Error, "Invalid entry-point parameters.")            \
+    X(InterpretAdmission, "CV-INTERPRET-ADMISSION", Error, "Unsupported interpreter operation.")   \
+    X(InterpretExecution, "CV-INTERPRET-EXECUTION", Error, "Interpreter execution failed.")        \
+    X(InterpretLimit, "CV-INTERPRET-LIMIT", Error, "Interpreter execution budget exceeded.")       \
     X(FlowBreakOutsideLoop, "CV-FLOW-BREAK-OUTSIDE-LOOP", Error, "Break outside a loop.")          \
     X(FlowContinueOutsideLoop, "CV-FLOW-CONTINUE-OUTSIDE-LOOP", Error, "Continue outside a loop.") \
     X(FlowMissingReturn, "CV-FLOW-MISSING-RETURN", Error, "Missing return path.")                  \

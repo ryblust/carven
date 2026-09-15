@@ -7,5 +7,5 @@ import :semantic.evaluation.output;
 import :semantic.semir.program;
 import std;
 
-auto analyze(SyntaxProgram syntax, const ConstantOutput& output = {}) noexcept
+auto analyze(SyntaxProgram syntax, const ExecutionOutput& output = {}) noexcept
     -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;

@@ -545,6 +545,7 @@ auto Parser::parse_function(
         std::pair {
             *end,
             ASTFunctionDecl {
+                .is_implicit_entry = false,
                 .visibility = visibility,
                 .cpp_export = cpp_export,
                 .const_span = const_span,

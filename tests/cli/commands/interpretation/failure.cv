@@ -1,0 +1,4 @@
+fn divide(value: i32) => 7 / value;
+
+println("before");
+println(divide(0));

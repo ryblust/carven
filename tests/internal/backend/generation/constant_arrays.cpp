@@ -144,6 +144,7 @@ TEST_CASE("Generation: array loops use established types and direct stable stora
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("direct_array_loop")}
     );
+
     struct Query final {
         std::size_t locals = 0uz;
         std::size_t ranges = 0uz;
@@ -160,6 +161,7 @@ TEST_CASE("Generation: array loops use established types and direct stable stora
             return true;
         }
     };
+
     auto locals = 0uz;
     auto ranges = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {

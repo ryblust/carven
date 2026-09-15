@@ -1,6 +1,7 @@
 module carven:semantic.semir.constant_access;
 
 import :semantic.semir.constant;
+import :semantic.semir.contents;
 import :semantic.semir.identity;
 import :semantic.semir.type;
 import std;
@@ -17,11 +18,17 @@ public:
     virtual auto spelling(ProgramSpellingID spelling) const noexcept -> std::string_view = 0;
 };
 
-class ConstantValueAccess : public ConstantValueReader {
+class ExecutionValueAccess : public ConstantValueReader {
 public:
     virtual auto read_borrows_storage(TypeID type) const noexcept -> bool = 0;
     virtual auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> = 0;
+    virtual auto builtin_type(BuiltinType type) noexcept -> TypeID = 0;
+};
+
+class ConstantValueAccess : public ExecutionValueAccess {
+public:
+    auto builtin_type(BuiltinType type) noexcept -> TypeID override;
     virtual auto intern_builtin_type(BuiltinType type) noexcept -> TypeID = 0;
     virtual auto intern_constant(ConstantFact fact) noexcept -> ConstantID = 0;
     virtual auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID = 0;
@@ -30,9 +37,13 @@ public:
 class SemIRProgram;
 
 // The published program outlives this view and all returned borrows.
-class PublishedConstantValues final : public ConstantValueReader {
+class PublishedConstantValues final : public ExecutionValueAccess {
 public:
     explicit PublishedConstantValues(const SemIRProgram& program) noexcept;
+    auto builtin_type(BuiltinType type) noexcept -> TypeID override;
+    auto read_borrows_storage(TypeID type) const noexcept -> bool override;
+    auto struct_field_types(StructID structure) const noexcept
+        -> std::optional<std::vector<TypeID>> override;
     auto identity() const noexcept -> ProgramIdentity override;
     auto owns(ProgramSpellingID id) const noexcept -> bool override;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
@@ -41,4 +52,6 @@ public:
 
 private:
     const SemIRProgram& program;
+    mutable std::optional<std::vector<TypeContents>> contents;
+    std::map<BuiltinType, TypeID> builtins;
 };

@@ -1,0 +1,5 @@
+compiled
+running 1
+--help
+space argument
+; echo injected

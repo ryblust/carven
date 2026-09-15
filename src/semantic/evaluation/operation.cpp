@@ -15,12 +15,12 @@ auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
     switch (failure) {
         case ConstantEvaluationFailure::IntegerOverflow:
             return ConstantEvaluationDiagnostic {
-                .message = "integer constant overflow",
+                .message = "integer overflow",
                 .code = DiagnosticCode::ConstOverflow,
             };
         case ConstantEvaluationFailure::DivideByZero:
             return ConstantEvaluationDiagnostic {
-                .message = "division by zero in constant expression",
+                .message = "division by zero in expression",
                 .code = DiagnosticCode::ConstDivideByZero,
             };
         case ConstantEvaluationFailure::ShiftOutOfRange:
@@ -30,12 +30,12 @@ auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
             };
         case ConstantEvaluationFailure::IntegerLiteralOutOfRange:
             return ConstantEvaluationDiagnostic {
-                .message = "integer constant is out of range",
+                .message = "integer is out of range",
                 .code = DiagnosticCode::ConstOverflow,
             };
         case ConstantEvaluationFailure::FloatingLiteralOutOfRange:
             return ConstantEvaluationDiagnostic {
-                .message = "floating constant is out of range",
+                .message = "floating value is out of range",
                 .code = DiagnosticCode::ConstOverflow,
             };
         case ConstantEvaluationFailure::IntegerLiteralNotRepresentable:
@@ -45,7 +45,7 @@ auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
             };
         case ConstantEvaluationFailure::SliceOutOfBounds:
             return ConstantEvaluationDiagnostic {
-                .message = "constant slice range is out of bounds",
+                .message = "slice range is out of bounds",
                 .code = DiagnosticCode::ConstIndexBounds,
             };
         case ConstantEvaluationFailure::OperandNotConstant:
@@ -57,7 +57,7 @@ auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
 
 namespace {
 
-auto builtin_type(const ConstantValueAccess& values, TypeID type) noexcept
+auto builtin_type(const ExecutionValueAccess& values, TypeID type) noexcept
     -> std::optional<BuiltinType> {
     const auto canonical = values.type_copy(type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
@@ -65,7 +65,7 @@ auto builtin_type(const ConstantValueAccess& values, TypeID type) noexcept
 }
 
 auto constant_pointer_narrows(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TypeID source,
     TypeID target
 ) noexcept -> bool {
@@ -83,15 +83,15 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
             using Item = std::remove_cvref_t<decltype(item)>;
             if constexpr (std::same_as<Item, StringConstant>) {
                 if (!values.owns(item.value)) {
-                    invariant_violation("constant evaluator received a foreign spelling");
+                    invariant_violation("evaluator received a foreign spelling");
                 }
             } else if constexpr (std::same_as<Item, NumericEnumConstant>) {
                 if (item.enum_case.owner() != values.identity()) {
-                    invariant_violation("constant evaluator received a foreign enum case");
+                    invariant_violation("evaluator received a foreign enum case");
                 }
             } else if constexpr (std::same_as<Item, PayloadEnumConstant>) {
                 if (item.enum_case.owner() != values.identity()) {
-                    invariant_violation("constant evaluator received a foreign enum case");
+                    invariant_violation("evaluator received a foreign enum case");
                 }
                 for (const auto child : item.payload) {
                     static_cast<void>(values.constant(child));
@@ -113,7 +113,7 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
                         || std::same_as<Item, F32Constant>
                         || std::same_as<Item, F64Constant>
                         || std::same_as<Item, CharacterConstant>,
-                    "unhandled constant value validation"
+                    "unhandled value validation"
                 );
             }
         },
@@ -121,7 +121,7 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
     );
 }
 
-auto validate_constant_fact(const ConstantValueAccess& values, const ConstantFact& fact) noexcept
+auto validate_constant_fact(const ExecutionValueAccess& values, const ConstantFact& fact) noexcept
     -> void {
     const auto type = values.type_copy(fact.type);
     validate_constant_value(values, fact.value);
@@ -191,17 +191,20 @@ auto validate_constant_fact(const ConstantValueAccess& values, const ConstantFac
                 }
                 return true;
             } else {
-                static_assert(std::same_as<Value, void>, "new constant requires type validation");
+                static_assert(
+                    std::same_as<Value, void>,
+                    "new value alternative requires type validation"
+                );
             }
         },
         fact.value
     );
     if (!matches) {
-        invariant_violation("constant evaluator received a value with a mismatched type");
+        invariant_violation("evaluator received a value with a mismatched type");
     }
 }
 
-auto is_builtin(const ConstantValueAccess& values, TypeID type, BuiltinType expected) noexcept
+auto is_builtin(const ExecutionValueAccess& values, TypeID type, BuiltinType expected) noexcept
     -> bool {
     return builtin_type(values, type) == expected;
 }
@@ -268,7 +271,7 @@ auto constant_integer(TypeID type, IntegerConstant value) noexcept -> ConstantFa
     return {.type = type, .value = value};
 }
 
-auto constant_boolean(const ConstantValueAccess& values, TypeID type, bool value) noexcept
+auto constant_boolean(const ExecutionValueAccess& values, TypeID type, bool value) noexcept
     -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     if (!is_builtin(values, type, BuiltinType::Bool)) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
@@ -277,13 +280,23 @@ auto constant_boolean(const ConstantValueAccess& values, TypeID type, bool value
 }
 
 auto finish_constant_integer(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TypeID result,
     IntegerConstant value,
-    BuiltinType type
+    BuiltinType type,
+    IntegerArithmetic arithmetic = IntegerArithmetic::Checked
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     if (builtin_type(values, result) != type) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+    }
+    if (arithmetic == IntegerArithmetic::Wrapping) {
+        const auto width = *builtin_integer_width(type);
+        const auto mask = width == 64u ? std::numeric_limits<std::uint64_t>::max()
+                                       : (std::uint64_t {1u} << width) - 1u;
+        const auto bits = (value.negative() ? 0u - value.magnitude() : value.magnitude()) & mask;
+        const auto negative =
+            builtin_is_signed_integer(type) && (bits & (std::uint64_t {1u} << (width - 1u))) != 0u;
+        value = IntegerConstant::from_parts(negative ? ((~bits) & mask) + 1u : bits, negative);
     }
     if (!integer_constant_fits(value, type)) {
         return std::unexpected(ConstantEvaluationFailure::IntegerOverflow);
@@ -292,12 +305,13 @@ auto finish_constant_integer(
 }
 
 auto evaluate_signed_integer(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     IntegerConstant left,
     IntegerConstant right,
     BuiltinType type,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     const auto width = builtin_integer_width(type);
     const auto lhs = left.as_signed();
@@ -306,7 +320,7 @@ auto evaluate_signed_integer(
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
     const auto finish = [&](IntegerConstant value) noexcept {
-        return finish_constant_integer(values, result, value, type);
+        return finish_constant_integer(values, result, value, type, arithmetic);
     };
     switch (operation) {
         case BinaryOperator::Add:
@@ -331,6 +345,9 @@ auto evaluate_signed_integer(
             }
             if (*lhs == std::numeric_limits<std::int64_t>::min() && *rhs == -1) {
                 if (operation == BinaryOperator::Divide) {
+                    if (arithmetic == IntegerArithmetic::Wrapping) {
+                        return finish(left);
+                    }
                     return std::unexpected(ConstantEvaluationFailure::IntegerOverflow);
                 }
                 return finish(IntegerConstant::zero());
@@ -377,12 +394,13 @@ auto evaluate_signed_integer(
 }
 
 auto evaluate_unsigned_integer(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     IntegerConstant left,
     IntegerConstant right,
     BuiltinType type,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     const auto width = builtin_integer_width(type);
     const auto lhs = left.as_unsigned();
@@ -393,7 +411,7 @@ auto evaluate_unsigned_integer(
     const auto maximum = *width == 64u ? std::numeric_limits<std::uint64_t>::max()
                                        : (std::uint64_t {1u} << *width) - 1u;
     const auto finish = [&](IntegerConstant value) noexcept {
-        return finish_constant_integer(values, result, value, type);
+        return finish_constant_integer(values, result, value, type, arithmetic);
     };
     switch (operation) {
         case BinaryOperator::Add:
@@ -455,7 +473,7 @@ auto evaluate_unsigned_integer(
 } // namespace
 
 auto load_constant_fact(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     std::optional<ConstantID> constant
 ) noexcept -> std::expected<const ConstantFact*, ConstantEvaluationFailure> {
     if (!constant.has_value()) {
@@ -530,10 +548,11 @@ auto constant_value_equal(
 }
 
 auto evaluate_unary_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     UnaryOperator operation,
     const ConstantFact& operand,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(values, operand);
     static_cast<void>(values.type_copy(result));
@@ -552,7 +571,8 @@ auto evaluate_unary_constant_value(
                         values,
                         result,
                         IntegerConstant::from_parts(integer->magnitude(), !integer->negative()),
-                        *type
+                        *type,
+                        arithmetic
                     );
                 }
             }
@@ -591,11 +611,12 @@ auto evaluate_unary_constant_value(
 }
 
 auto evaluate_binary_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     const ConstantFact& left,
     const ConstantFact& right,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(values, left);
     validate_constant_fact(values, right);
@@ -624,13 +645,42 @@ auto evaluate_binary_constant_value(
         if (right_integer == nullptr || !type.has_value() || !builtin_is_integer(*type)) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
+        if (arithmetic == IntegerArithmetic::Wrapping) {
+            const auto bits = [](IntegerConstant value) static noexcept {
+                return value.negative() ? 0u - value.magnitude() : value.magnitude();
+            };
+            const auto finish = [&](std::uint64_t value) noexcept {
+                return finish_constant_integer(
+                    values,
+                    result,
+                    IntegerConstant::from_parts(value, false),
+                    *type,
+                    arithmetic
+                );
+            };
+            switch (operation) {
+                case BinaryOperator::Add: return finish(bits(*left_integer) + bits(*right_integer));
+                case BinaryOperator::Subtract:
+                    return finish(bits(*left_integer) - bits(*right_integer));
+                case BinaryOperator::Multiply:
+                    return finish(bits(*left_integer) * bits(*right_integer));
+                case BinaryOperator::LeftShift:
+                    if (right_integer->negative()
+                        || right_integer->magnitude() >= *builtin_integer_width(*type)) {
+                        return std::unexpected(ConstantEvaluationFailure::ShiftOutOfRange);
+                    }
+                    return finish(bits(*left_integer) << right_integer->magnitude());
+                default: break;
+            }
+        }
         return builtin_is_signed_integer(*type) ? evaluate_signed_integer(
                                                       values,
                                                       operation,
                                                       *left_integer,
                                                       *right_integer,
                                                       *type,
-                                                      result
+                                                      result,
+                                                      arithmetic
                                                   )
                                                 : evaluate_unsigned_integer(
                                                       values,
@@ -638,14 +688,15 @@ auto evaluate_binary_constant_value(
                                                       *left_integer,
                                                       *right_integer,
                                                       *type,
-                                                      result
+                                                      result,
+                                                      arithmetic
                                                   );
     }
     return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
 }
 
 auto evaluate_cast_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     CastKind kind,
     const ConstantFact& operand,
     TypeID result
@@ -736,7 +787,7 @@ auto evaluate_cast_constant_value(
 }
 
 auto evaluate_text_intrinsic_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
     const ConstantFact& operand,
     TypeID result
@@ -777,7 +828,7 @@ auto evaluate_text_intrinsic_constant_value(
 }
 
 auto evaluate_slice_intrinsic_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     SliceIntrinsic intrinsic,
     const ConstantFact& operand,
     std::span<const ConstantFact> bounds,
@@ -828,7 +879,7 @@ auto evaluate_slice_intrinsic_constant_value(
 }
 
 auto fold_unary_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     UnaryOperator operation,
     std::optional<ConstantID> operand,
     TypeID result
@@ -841,7 +892,7 @@ auto fold_unary_constant(
 }
 
 auto fold_binary_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     std::optional<ConstantID> left,
     std::optional<ConstantID> right,
@@ -859,7 +910,7 @@ auto fold_binary_constant(
 }
 
 auto fold_cast_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     CastKind kind,
     std::optional<ConstantID> operand,
     TypeID result
@@ -872,7 +923,7 @@ auto fold_cast_constant(
 }
 
 auto fold_text_intrinsic_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
     std::optional<ConstantID> operand,
     TypeID result

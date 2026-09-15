@@ -119,8 +119,8 @@ auto BodyRealizer::ExpressionBuilder::raw(Recipe& recipe, ConstantLiteralContext
             inputs[index].use == ConstructionUse::OperandValue
                 ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped : literal)
                 : std::holds_alternative<SemArray>(value.operation.value)
-                    ? ConstantLiteralContext::TargetTyped
-                    : ConstantLiteralContext::Exact
+                ? ConstantLiteralContext::TargetTyped
+                : ConstantLiteralContext::Exact
         ));
     };
     for (auto index = 0uz; index < inputs.size(); ++index) {
@@ -190,7 +190,8 @@ auto BodyRealizer::ExpressionBuilder::emit(
     // Named values copy even at C++ automatic-move return sites.
     if (copy_binding) {
         return call_expression(
-            intrinsic_expression(TargetSymbol::StdAsConst), target_expressions(std::move(result))
+            intrinsic_expression(TargetSymbol::StdAsConst),
+            target_expressions(std::move(result))
         );
     }
     if (use == ConstructionUse::ReadBorrow

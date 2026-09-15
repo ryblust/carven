@@ -168,3 +168,83 @@ TEST_CASE("Compiler diagnostics: module graph errors use one catalog identity sp
         );
     }
 }
+
+TEST_CASE("Compiler diagnostics: implicit entry locals remain local to their body") {
+    const auto cases = std::array {
+        CompilerErrorExpectation {
+            .name = "module function cannot capture entry local",
+            .source = "let local = 42; fn read() => local;",
+            .code = "CV-NAME-UNRESOLVED",
+            .primary_text = "local",
+        },
+        CompilerErrorExpectation {
+            .name = "implicit entry has no source name binding",
+            .source = "main();",
+            .code = "CV-NAME-UNRESOLVED",
+            .primary_text = "main",
+        },
+        CompilerErrorExpectation {
+            .name = "explicit and implicit entry conflict",
+            .source = "fn main() {} println(42);",
+            .code = "CV-ENTRY-DUPLICATE",
+            .primary_text = "println(42);",
+        },
+    };
+    check_compiler_errors(cases);
+}
+
+TEST_CASE("Compiler diagnostics: each file's top-level body counts as an entry") {
+    auto sources = SourceManager();
+    const auto first = *sources.append_virtual("first.cv", "println(1);");
+    const auto second = *sources.append_virtual("second.cv", "println(2);");
+    const auto inputs = std::array {
+        CompilationModuleInput {
+            .source_id = first,
+            .module_path = *CanonicalModulePath::from_value("first")
+        },
+        CompilationModuleInput {
+            .source_id = second,
+            .module_path = *CanonicalModulePath::from_value("second")
+        },
+    };
+    const auto result = compile(
+        sources,
+        CompilationRequest {.modules = inputs},
+        TargetPlanningRequest {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
+        }
+    );
+    REQUIRE(!result.has_value());
+    const auto* diagnostic = find_compiler_diagnostic(result.error(), "CV-ENTRY-DUPLICATE");
+    REQUIRE(diagnostic != nullptr);
+    REQUIRE(diagnostic->attachment.primary.has_value());
+    CHECK_EQ(diagnostic->attachment.primary->span.source_id, second);
+    REQUIRE_EQ(diagnostic->attachment.related.size(), 1uz);
+    CHECK_EQ(diagnostic->attachment.related.front().span.source_id, first);
+}
+
+TEST_CASE("Compiler: top-level bodies use ordinary callable analysis") {
+    auto sources = SourceManager();
+    const auto source = *sources.append_virtual("app.cv", R"(
+        let result = twice(21);
+        fn twice(value: i32) => value * 2;
+        const expected = 42;
+        var total = 0;
+        for index in 0..3 { total += index; }
+        println(result, expected, total);
+    )");
+    const auto input = CompilationModuleInput {
+        .source_id = source,
+        .module_path = *CanonicalModulePath::from_value("app")
+    };
+    const auto result = compile(
+        sources,
+        CompilationRequest {.modules = std::span(&input, 1)},
+        TargetPlanningRequest {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
+        }
+    );
+    REQUIRE(result.has_value());
+}

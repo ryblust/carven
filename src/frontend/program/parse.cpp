@@ -98,17 +98,18 @@ auto resolve_import_path(
     const CanonicalModulePath& importer_path,
     const ASTModuleReference& reference
 ) noexcept -> std::expected<CanonicalModulePath, ModuleReferenceResolutionError> {
+    const auto domain_prefix = importer_path.module_domain_prefix();
     auto components = std::vector<std::string_view>();
     std::visit(
         Overloaded {
             [&](const ASTDomainRootModuleReference& value) noexcept {
-                append_domain_prefix(components, importer_path.module_domain_prefix());
+                append_domain_prefix(components, domain_prefix);
                 for (const auto component : value.components) {
                     components.push_back(slice(source, component));
                 }
             },
             [&](const ASTParentRelativeModuleReference& value) noexcept {
-                append_domain_prefix(components, importer_path.module_domain_prefix());
+                append_domain_prefix(components, domain_prefix);
                 const auto relative = importer_path.domain_relative_components();
                 for (auto index = 0uz; index + 1uz < relative.size(); ++index) {
                     components.push_back(relative[index]);

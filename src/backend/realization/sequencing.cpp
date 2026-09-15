@@ -21,7 +21,11 @@ auto BodyRealizer::ExpressionBuilder::discard_pending(Recipe& recipe) noexcept -
     }
     if (source(recipe).executes_operation
         || std::holds_alternative<TargetExpr>(recipe.completion)) {
-        statements.emit(generated_statement(TargetDiscardStmt {.expression = raw(recipe)}));
+        if (owner.context.is_void(source(recipe).type)) {
+            statements.emit(generated_statement(TargetExprStmt {.expression = raw(recipe)}));
+        } else {
+            statements.emit(generated_statement(TargetDiscardStmt {.expression = raw(recipe)}));
+        }
         complete(recipe, LoweringCompleted {});
         return;
     }

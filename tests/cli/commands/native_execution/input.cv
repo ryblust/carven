@@ -1,0 +1,16 @@
+import "arguments.hpp";
+
+const fn prepare() {
+    println("compiled");
+    return 1;
+}
+
+const prepared = prepare();
+
+struct Failure {}
+
+fn main(args) throw Failure {
+    println("running", prepared);
+    ::show_args(args);
+    throw Failure {};
+}

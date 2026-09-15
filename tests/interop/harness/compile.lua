@@ -8,7 +8,7 @@ function main(target, name, diagnostics)
     os.mkdir(temporary)
     os.cp(source, path.join(temporary, "probe.cv"))
     os.vrunv(path.absolute(project.target("carven"):targetfile()),
-        {"-o", generated, "probe.cv"}, {curdir = temporary, timeout = 30000})
+        {"compile", "-o", generated, "probe.cv"}, {curdir = temporary, timeout = 30000})
     local program, arguments = compiler.compargv(path.join(generated, "probe.cpp"), path.join(temporary, "probe.o"), {
         target = target,
         configs = {includedirs = {generated, path.join(root, "tests", "interop"), path.join(root, "crafts")}},

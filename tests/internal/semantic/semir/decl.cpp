@@ -285,6 +285,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
             .callable = callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         };
     };
     builder.define_declaration(first, function("first"));
@@ -364,6 +365,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
             .callable = callable,
             .entry_point = std::nullopt,
             .cpp_export_origin = std::nullopt,
+            .is_const = false,
         }
     );
     builder.define_declaration(

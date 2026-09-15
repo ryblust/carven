@@ -29,7 +29,8 @@ TEST_CASE("Module path: domain projection is derived from reserved path structur
     REQUIRE(craft_value.has_value());
 
     CHECK(!local->module_domain_prefix().craft_name().has_value());
-    const auto craft_name = craft_parser->module_domain_prefix().craft_name();
+    const auto domain_prefix = craft_parser->module_domain_prefix();
+    const auto craft_name = domain_prefix.craft_name();
     REQUIRE(craft_name.has_value());
     CHECK_EQ(*craft_name, "json");
     CHECK_EQ(craft_parser->domain_relative_components().size(), 1u);

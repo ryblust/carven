@@ -20,4 +20,6 @@ constexpr auto entry_args(int argc, const char* const* argv) noexcept -> auto {
            });
 }
 
+using EntryArgs = decltype(entry_args(0, nullptr));
+
 } // namespace carven::runtime

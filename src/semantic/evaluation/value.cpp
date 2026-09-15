@@ -25,34 +25,30 @@ auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact {
     );
 }
 
-auto constant_execution_value_type(
-    ConstantValueAccess& values,
-    const ConstantExecutionValue& value
-) noexcept -> TypeID {
+auto execution_value_type(ExecutionValueAccess& values, const ExecutionValue& value) noexcept
+    -> TypeID {
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
         return values.constant(*constant).type;
     }
     if (const auto* fact = std::get_if<ConstantAtom>(&value)) {
         return fact->type;
     }
-    if (std::holds_alternative<ConstantText>(value)) {
-        return values.intern_builtin_type(BuiltinType::Str);
+    if (std::holds_alternative<ExecutionText>(value)) {
+        return values.builtin_type(BuiltinType::Str);
     }
-    if (const auto* enumeration = std::get_if<ConstantEnumValue>(&value)) {
+    if (const auto* enumeration = std::get_if<ExecutionEnumValue>(&value)) {
         return enumeration->type;
     }
-    if (const auto* aggregate = std::get_if<ConstantAggregateValue>(&value)) {
+    if (const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value)) {
         return aggregate->type;
     }
-    return values.intern_builtin_type(
-        std::holds_alternative<ConstantOwnedText>(value) ? BuiltinType::String : BuiltinType::Void
+    return values.builtin_type(
+        std::holds_alternative<ExecutionOwnedText>(value) ? BuiltinType::String : BuiltinType::Void
     );
 }
 
-auto constant_execution_atom(
-    const ConstantValueReader& values,
-    const ConstantExecutionValue& value
-) noexcept -> std::optional<ConstantAtom> {
+auto execution_atom(const ConstantValueReader& values, const ExecutionValue& value) noexcept
+    -> std::optional<ConstantAtom> {
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
         return constant_atom(values.constant(*constant));
     }
@@ -62,17 +58,15 @@ auto constant_execution_atom(
     return std::nullopt;
 }
 
-auto constant_execution_text(
-    const ConstantValueReader& values,
-    const ConstantExecutionValue& value
-) noexcept -> std::optional<std::string_view> {
-    if (const auto* text = std::get_if<ConstantText>(&value)) {
+auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
+    -> std::optional<std::string_view> {
+    if (const auto* text = std::get_if<ExecutionText>(&value)) {
         return *text->bytes;
     }
-    if (const auto* text = std::get_if<ConstantOwnedText>(&value)) {
+    if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
         return text->bytes;
     }
-    if (const auto atom = constant_execution_atom(values, value)) {
+    if (const auto atom = execution_atom(values, value)) {
         if (const auto* text = std::get_if<StringConstant>(&atom->value)) {
             return values.spelling(text->value);
         }
@@ -80,10 +74,10 @@ auto constant_execution_text(
     return std::nullopt;
 }
 
-auto constant_execution_equal(
+auto execution_equal(
     const ConstantValueReader& values,
-    const ConstantExecutionValue& left,
-    const ConstantExecutionValue& right,
+    const ExecutionValue& left,
+    const ExecutionValue& right,
     std::size_t& steps,
     std::size_t maximum_steps
 ) noexcept -> std::optional<bool> {
@@ -91,16 +85,16 @@ auto constant_execution_equal(
         return std::nullopt;
     }
     ++steps;
-    const auto lhs_text = constant_execution_text(values, left);
-    const auto rhs_text = constant_execution_text(values, right);
+    const auto lhs_text = execution_text(values, left);
+    const auto rhs_text = execution_text(values, right);
     if (lhs_text || rhs_text) {
         if (!lhs_text || !rhs_text || lhs_text->size() != rhs_text->size()) {
             return false;
         }
         return lhs_text->data() == rhs_text->data() || *lhs_text == *rhs_text;
     }
-    const auto lhs = constant_compound_view(values, left);
-    const auto rhs = constant_compound_view(values, right);
+    const auto lhs = execution_compound_view(values, left);
+    const auto rhs = execution_compound_view(values, right);
     if (lhs || rhs) {
         if (!lhs || !rhs || lhs->type != rhs->type || lhs->enum_case != rhs->enum_case) {
             return false;
@@ -112,7 +106,7 @@ auto constant_execution_equal(
                     return false;
                 }
                 for (auto index = 0uz; index < left_children.size(); ++index) {
-                    const auto equal = constant_execution_equal(
+                    const auto equal = execution_equal(
                         values,
                         left_children[index],
                         right_children[index],
@@ -129,8 +123,8 @@ auto constant_execution_equal(
             rhs->elements
         );
     }
-    const auto lhs_fact = constant_execution_atom(values, left);
-    const auto rhs_fact = constant_execution_atom(values, right);
+    const auto lhs_fact = execution_atom(values, left);
+    const auto rhs_fact = execution_atom(values, right);
     return lhs_fact
         && rhs_fact
         && constant_value_equal(
@@ -140,29 +134,29 @@ auto constant_execution_equal(
         );
 }
 
-auto ConstantCompoundView::size() const noexcept -> std::size_t {
+auto ExecutionCompoundView::size() const noexcept -> std::size_t {
     return std::visit(
         [](const auto children) static noexcept { return children.size(); },
         elements
     );
 }
 
-auto constant_compound_view(
+auto execution_compound_view(
     const ConstantValueReader& values,
-    const ConstantExecutionValue& value
-) noexcept -> std::optional<ConstantCompoundView> {
-    if (const auto* local = std::get_if<ConstantAggregateValue>(&value)) {
-        return ConstantCompoundView {
+    const ExecutionValue& value
+) noexcept -> std::optional<ExecutionCompoundView> {
+    if (const auto* local = std::get_if<ExecutionAggregateValue>(&value)) {
+        return ExecutionCompoundView {
             .type = local->type,
             .enum_case = std::nullopt,
-            .elements = std::span<const ConstantExecutionValue>(local->elements)
+            .elements = std::span<const ExecutionValue>(local->elements)
         };
     }
-    if (const auto* local = std::get_if<ConstantEnumValue>(&value)) {
-        return ConstantCompoundView {
+    if (const auto* local = std::get_if<ExecutionEnumValue>(&value)) {
+        return ExecutionCompoundView {
             .type = local->type,
             .enum_case = local->enum_case,
-            .elements = std::span<const ConstantExecutionValue>(local->payload)
+            .elements = std::span<const ExecutionValue>(local->payload)
         };
     }
     const auto* retained = std::get_if<ConstantID>(&value);
@@ -175,19 +169,18 @@ auto constant_compound_view(
         return std::nullopt;
     }
     const auto* payload = std::get_if<PayloadEnumConstant>(&fact->value);
-    return ConstantCompoundView {
+    return ExecutionCompoundView {
         .type = fact->type,
         .enum_case = payload ? std::optional(payload->enum_case) : std::nullopt,
         .elements = *children
     };
 }
 
-auto constant_execution_elements(ConstantExecutionValue& value) noexcept
-    -> std::span<ConstantExecutionValue> {
-    if (auto* aggregate = std::get_if<ConstantAggregateValue>(&value)) {
+auto execution_elements(ExecutionValue& value) noexcept -> std::span<ExecutionValue> {
+    if (auto* aggregate = std::get_if<ExecutionAggregateValue>(&value)) {
         return aggregate->elements;
     }
-    if (auto* enumeration = std::get_if<ConstantEnumValue>(&value)) {
+    if (auto* enumeration = std::get_if<ExecutionEnumValue>(&value)) {
         return enumeration->payload;
     }
     return {};

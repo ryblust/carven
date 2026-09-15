@@ -9,6 +9,8 @@ import :semantic.semir.operation;
 import :semantic.semir.type;
 import std;
 
+enum class IntegerArithmetic { Checked, Wrapping };
+
 enum class ConstantEvaluationFailure {
     OperandNotConstant,
     UnsupportedOperation,
@@ -31,7 +33,7 @@ auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
     -> std::optional<ConstantEvaluationDiagnostic>;
 
 auto load_constant_fact(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     std::optional<ConstantID> constant
 ) noexcept -> std::expected<const ConstantFact*, ConstantEvaluationFailure>;
 auto constant_value_equal(
@@ -41,32 +43,34 @@ auto constant_value_equal(
 ) noexcept -> bool;
 
 auto evaluate_unary_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     UnaryOperator operation,
     const ConstantFact& operand,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic = IntegerArithmetic::Checked
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_binary_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     const ConstantFact& left,
     const ConstantFact& right,
-    TypeID result
+    TypeID result,
+    IntegerArithmetic arithmetic = IntegerArithmetic::Checked
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_cast_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     CastKind kind,
     const ConstantFact& operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_text_intrinsic_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
     const ConstantFact& operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto evaluate_slice_intrinsic_constant_value(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     SliceIntrinsic intrinsic,
     const ConstantFact& operand,
     std::span<const ConstantFact> bounds,
@@ -74,26 +78,26 @@ auto evaluate_slice_intrinsic_constant_value(
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 
 auto fold_unary_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     UnaryOperator operation,
     std::optional<ConstantID> operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto fold_binary_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     BinaryOperator operation,
     std::optional<ConstantID> left,
     std::optional<ConstantID> right,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto fold_cast_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     CastKind kind,
     std::optional<ConstantID> operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
 auto fold_text_intrinsic_constant(
-    const ConstantValueAccess& values,
+    const ExecutionValueAccess& values,
     TextIntrinsic intrinsic,
     std::optional<ConstantID> operand,
     TypeID result

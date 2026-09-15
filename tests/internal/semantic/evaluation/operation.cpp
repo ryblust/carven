@@ -150,3 +150,95 @@ TEST_CASE(
     check_zero.operator()<F32Constant>(BuiltinType::F32);
     check_zero.operator()<F64Constant>(BuiltinType::F64);
 }
+
+TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand width") {
+    auto fixture = ConstantEvaluationFixture();
+    auto& values = fixture.compilation;
+
+    struct Scenario final {
+        BuiltinType type;
+        BinaryOperator operation;
+        std::int64_t left;
+        std::int64_t right;
+        std::int64_t expected;
+    };
+
+    const auto scenarios = std::array {
+        Scenario {BuiltinType::I8, BinaryOperator::Add, 127, 1, -128},
+        Scenario {BuiltinType::I8, BinaryOperator::Subtract, -128, 1, 127},
+        Scenario {BuiltinType::I8, BinaryOperator::Multiply, 64, 2, -128},
+        Scenario {BuiltinType::I8, BinaryOperator::LeftShift, -1, 1, -2},
+        Scenario {BuiltinType::I8, BinaryOperator::Divide, -128, -1, -128},
+        Scenario {BuiltinType::I8, BinaryOperator::Remainder, -128, -1, 0},
+        Scenario {BuiltinType::U8, BinaryOperator::Add, 255, 1, 0},
+        Scenario {BuiltinType::U8, BinaryOperator::Subtract, 0, 1, 255},
+        Scenario {BuiltinType::U8, BinaryOperator::Multiply, 128, 2, 0},
+        Scenario {BuiltinType::U8, BinaryOperator::LeftShift, 128, 1, 0},
+        Scenario {
+            BuiltinType::I64,
+            BinaryOperator::Add,
+            std::numeric_limits<std::int64_t>::max(),
+            1,
+            std::numeric_limits<std::int64_t>::min()
+        },
+        Scenario {
+            BuiltinType::I64,
+            BinaryOperator::Divide,
+            std::numeric_limits<std::int64_t>::min(),
+            -1,
+            std::numeric_limits<std::int64_t>::min()
+        },
+    };
+    for (const auto& scenario : scenarios) {
+        const auto type = values.intern_builtin_type(scenario.type);
+        const auto result = evaluate_binary_constant_value(
+            values,
+            scenario.operation,
+            constant_test_integer_fact(type, scenario.left),
+            constant_test_integer_fact(type, scenario.right),
+            type,
+            IntegerArithmetic::Wrapping
+        );
+        REQUIRE(result.has_value());
+        CHECK(
+            std::get<IntegerConstant>(result->value)
+            == IntegerConstant::from_signed(scenario.expected)
+        );
+    }
+    const auto i8 = values.intern_builtin_type(BuiltinType::I8);
+    const auto minimum = constant_test_integer_fact(i8, -128);
+    const auto negated = evaluate_unary_constant_value(
+        values,
+        UnaryOperator::Negate,
+        minimum,
+        i8,
+        IntegerArithmetic::Wrapping
+    );
+    REQUIRE(negated.has_value());
+    CHECK(std::get<IntegerConstant>(negated->value) == IntegerConstant::from_signed(-128));
+    const auto checked = evaluate_unary_constant_value(values, UnaryOperator::Negate, minimum, i8);
+    REQUIRE_FALSE(checked.has_value());
+    CHECK(checked.error() == ConstantEvaluationFailure::IntegerOverflow);
+    for (const auto shift : {-1, 8}) {
+        const auto invalid = evaluate_binary_constant_value(
+            values,
+            BinaryOperator::LeftShift,
+            minimum,
+            constant_test_integer_fact(i8, shift),
+            i8,
+            IntegerArithmetic::Wrapping
+        );
+        REQUIRE_FALSE(invalid.has_value());
+        CHECK(invalid.error() == ConstantEvaluationFailure::ShiftOutOfRange);
+    }
+    const auto zero = evaluate_binary_constant_value(
+        values,
+        BinaryOperator::Divide,
+        minimum,
+        constant_test_integer_fact(i8, 0),
+        i8,
+        IntegerArithmetic::Wrapping
+    );
+    REQUIRE_FALSE(zero.has_value());
+    CHECK(zero.error() == ConstantEvaluationFailure::DivideByZero);
+}

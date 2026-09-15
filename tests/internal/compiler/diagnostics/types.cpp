@@ -345,11 +345,13 @@ TEST_CASE("Compiler diagnostics: expression body result contracts preserve sourc
 TEST_CASE("Compiler diagnostics: callable result inference is independent of body syntax") {
     constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "native return widths require a declared common result",
-         .source = "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return a; } return b; }",
+         .source =
+             "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return a; } return b; }",
          .code = "CV-TYPE-MISMATCH",
          .primary_text = "b"},
         {.name = "reversing native returns does not select a different result",
-         .source = "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return b; } return a; }",
+         .source =
+             "import <cstdint>; fn select(flag: bool, a: ::std::int32_t, b: ::std::int64_t) { if flag { return b; } return a; }",
          .code = "CV-TYPE-MISMATCH",
          .primary_text = "a"},
         {.name = "block result dependency cycle",

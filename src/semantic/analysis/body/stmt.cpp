@@ -348,7 +348,9 @@ auto BodyElaborator::return_statement(
                         ));
                     }
                     auto compatible = require_invariant_type(
-                        *inferred, *result_type, ast.expression(*operand).span
+                        *inferred,
+                        *result_type,
+                        ast.expression(*operand).span
                     );
                     if (!compatible) {
                         return std::unexpected(compatible.error());

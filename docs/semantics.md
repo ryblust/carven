@@ -1097,8 +1097,22 @@ is rejected; the parameter does not establish a sufficient backing lifetime.
 Widening an existing view to a larger failure set borrows that view's storage.
 The source view must remain alive, and rebinding it changes the target observed
 through the wider view. The same rule applies to element-wise array widening.
-This differs from adapting a concrete callable directly to the wider contract,
-which does not introduce an intermediate view borrow.
+Adapting a concrete callable directly to the wider contract uses that callable
+as its target.
+
+For example, given functions `first` and `second` with the same signature:
+
+```carven
+var source: fn(i32) -> i32 throw E = first;
+let copied = source;
+let widened: fn(i32) -> i32 throw E + F = source;
+source = second;
+```
+
+`copied` calls `first`; `widened` calls `second`. The widened view invokes the
+source view and adapts its result to the wider failure contract. It retains a
+borrow of the source view's storage; both views preserve the backing lifetime
+requirements of their targets.
 
 #### Invocation and snapshots
 
@@ -1307,6 +1321,8 @@ it does not participate in runtime arm selection.
 
 ## Failure contracts
 
+### Sets and callable contracts
+
 Carven models recoverable failure as a typed control effect represented to
 source users by callable failure contracts. Failure values are copyable nominal
 structures or enums. A failure contract denotes a closed set of types; member
@@ -1322,6 +1338,12 @@ visibility. Tests must handle every failure and cannot expose a failure
 contract. Failure types in a published contract must be visible to that
 contract's audience.
 
+Calls use the callee's failure contract. An explicit contract determines the
+call's failure set even when the callee's body produces fewer failures:
+`fn source() throw E {}` still makes `source()` fallible with type `E`.
+
+### Propagation and evaluation
+
 A value with pending failures cannot be consumed where an ordinary completed
 value is required. Postfix `?` consumes the pending failures of its operand at
 that lexical position and transfers them to the nearest enclosing failure
@@ -1330,28 +1352,75 @@ evaluation path carries pending failures. Applying `?` to an infallible operand
 is invalid. `throw` transfers the supplied failure and does not complete
 normally.
 
+The nonempty requirement for `?` is checked against the solved failure set.
+For `private fn source() {}`, `source()?` is invalid because the inferred set
+is empty; the call is written `source()`. This also applies when a body change
+makes a previously fallible private function infallible.
+
+Pending failures describe static expression composition. Evaluation stops at
+the first failure: in `(first() + second())?`, a failure from `first()` skips
+`second()` and the addition. Operands evaluate left to right, exactly once,
+along the selected path.
+
 Failure propagation does not roll back completed mutations or external effects.
 
 Carven failures are independent of C++ exceptions. Native exceptions must be
 handled in C++ before they escape a generated `noexcept` boundary to continue
 execution.
 
+### Catch selection and remaining failures
+
 `try` handles failures produced by its protected body. Catch arms may select a
-failure type, wildcard, alternatives, payload patterns, and guards; they must
-cover the protected body's actual failure set. Failures produced by a guard or
-handler propagate to the enclosing failure target and are never caught again by
-the same `try`. Alternatives in one arm form one or-pattern. The first matching
-alternative establishes its bindings, then the arm guard runs once. A false
+failure type, wildcard, alternatives, payload patterns, and guards. Remaining
+failures transfer to the enclosing failure target. An enclosing protected body,
+a lambda, a private non-entry function with inferred failures, or a function
+with an explicit `throw` contract accepts this transfer. At a test boundary or
+a published or entry function without an explicit contract, catch arms must
+cover every protected failure. Outward failures remain subject to the enclosing
+callable's contract.
+
+For example, this handler consumes `A` and forwards `B`:
+
+```carven
+struct A {}
+struct B {}
+fn source() throw A + B {}
+
+fn wrapper() throw B {
+    try {
+        source()?;
+    } catch {
+        A(_) => {},
+    }
+}
+```
+
+Adding `_ => rethrow,` after the `A` arm explicitly forwards the remaining
+failure and gives the same outward set, `{B}`. A failure type remains in the
+set unless the arms collectively cover all its values, accounting for guards
+that may reject.
+
+Failures produced by a guard or handler propagate to the enclosing failure
+target and are never caught again by the same `try`. Alternatives in one arm
+form one or-pattern. The first matching alternative establishes its bindings,
+then the arm guard runs once. A false
 guard continues with the next arm. Catch-arm order remains observable even
 though failure-set member order does not. A non-exhaustive catch diagnostic
 identifies each failure type that is not fully covered, including partial payload
 patterns and guards that may reject. A `try` around an infallible body is valid
 and produces no diagnostic.
 
+### Rethrow and payload lifetime
+
 `rethrow` is valid only within a catch handler and transfers the caught failure
 identity selected for that handler. Closure bodies are separate callable
 boundaries: their failures and control transfers do not belong to evaluation of
 the expression that creates the closure.
+
+Failure payloads and copied catch bindings follow the ordinary ownership rules.
+The original payload retains its backing relationships through selection,
+guards, and rethrow, independently of copied catch bindings. Borrowed storage
+must remain alive while the failure payload refers to it.
 
 
 ## C++ interoperation
@@ -1648,7 +1717,21 @@ views. The expected signature fixes the parameter count and types.
 
 ### Entry points and tests
 
-At most one function named `main` may exist in a compilation. Its module path,
+A compilation may contain zero or one program entry. A function named `main`
+and a file containing top-level executable statements each define an entry.
+Multiple entries are diagnosed at their source locations. Generating C++ does
+not require an entry; executing a program requires one.
+
+Top-level statements execute in source order as one implicit entry body. Module
+declarations may appear between them and retain their usual meaning: in
+particular, a top-level `const` is a module constant. Top-level `let` and `var`
+bindings are entry locals; module functions cannot capture them. The implicit
+entry introduces no callable source name and has no parameters or declared
+outward failures. Its statements follow ordinary function-body rules, including
+result inference, access, cleanup, and handling failures. These language rules
+are shared by native compilation and interpretation.
+
+An explicit `main` function's module path,
 module domain, and declaration visibility do not affect entry selection. It
 accepts no parameters or one untyped Read parameter representing command-line
 arguments; ordinary function parameter rules apply elsewhere. An entry with

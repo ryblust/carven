@@ -12,5 +12,5 @@ auto compile(
     const SourceManager& sources,
     CompilationRequest compilation,
     const TargetPlanningRequest& generation,
-    const ConstantOutput& output = {}
+    const ExecutionOutput& output = {}
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics>;

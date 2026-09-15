@@ -48,6 +48,10 @@ auto ASTBuilder::append_module_import(ASTModuleImport value) noexcept -> ASTModu
     return storage.module_import_table.add(std::move(value));
 }
 
+auto ASTBuilder::statement(ASTStmtID id) const noexcept -> const ASTStmt& {
+    return storage.statement_table.get(id);
+}
+
 auto ASTBuilder::expression(ASTExprID id) const noexcept -> const ASTExpr& {
     return storage.expression_table.get(id);
 }

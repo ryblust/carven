@@ -2,8 +2,8 @@ local case_specs = {
     ["commands/static_execution"] = {
         inputs = {"input.cv"},
         steps = {
-            {args = {"input.cv", "-o", "emit"}, stdout = "stdout.txt", stderr = "stderr.txt"},
-            {args = {"input.cv", "--stdout"}, stderr = "combined.txt", stdout_contains = {"==> input.cpp <=="}},
+            {args = {"compile", "input.cv", "-o", "emit"}, stdout = "stdout.txt", stderr = "stderr.txt"},
+            {args = {"compile", "input.cv", "--stdout"}, stderr = "combined.txt", stdout_contains = {"==> input.cpp <=="}},
         },
     },
     ["commands/dump"] = {
@@ -27,17 +27,17 @@ local case_specs = {
     ["invocation/help"] = {
         steps = {
             {args = {"--help"}, stdout = "stdout.txt"},
-            {args = {"missing.cv", "--help"}, stdout = "stdout.txt"},
+            {args = {"compile", "--help"}, stdout = "stdout.txt"},
             {args = {}, stdout = "stdout.txt"},
         },
     },
     ["input/invalid_extension"] = {
-        args = {"unknown"},
+        args = {"compile", "unknown"},
         exit_code = 1,
         stderr = "stderr.txt",
     },
     ["input/missing"] = {
-        args = {"missing.cv"},
+        args = {"compile", "missing.cv"},
         exit_code = 1,
         stderr_contains = {"cannot read source file", "missing.cv"},
     },
@@ -47,20 +47,20 @@ local case_specs = {
     },
     ["diagnostics/syntax"] = {
         inputs = {"input.cv"},
-        args = {"input.cv"},
+        args = {"compile", "input.cv"},
         exit_code = 1,
         stderr_contains = {"CV-SYNTAX", "expected parameter name", "input.cv:1:12"},
     },
     ["diagnostics/warning"] = {
         inputs = {"input.cv"},
-        args = {"input.cv"},
+        args = {"compile", "input.cv"},
         stderr_contains = {"CV-LINT-UNUSED-LOCAL", "input.cv"},
         output_files = {"input.cpp"},
         absent_files = {"carven/generated/input.hpp"},
     },
     ["output/default"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
-        args = {"bare_structure.cv"},
+        args = {"compile", "bare_structure.cv"},
         output_files = {"bare_structure.cpp", "carven/generated/bare_structure.hpp"},
         absent_files = {".carven", ".carven-artifacts"},
     },
@@ -70,7 +70,7 @@ local case_specs = {
             ["../state/preexisting.fixture"] = "emit/bare_structure.cpp",
             ["../state/stale.fixture"] = "emit/stale.txt",
         },
-        args = {"--output-dir=emit", "bare_structure.cv"},
+        args = {"compile", "--output-dir=emit", "bare_structure.cv"},
         output_files = {
             "emit/bare_structure.cpp",
             "emit/carven/generated/bare_structure.hpp",
@@ -83,7 +83,7 @@ local case_specs = {
     },
     ["output/stdout"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
-        args = {"bare_structure.cv", "--stdout"},
+        args = {"compile", "bare_structure.cv", "--stdout"},
         stdout_ordered = {
             "==> bare_structure.cpp <==",
             "==> carven/generated/bare_structure.hpp <==",
@@ -99,7 +99,7 @@ local case_specs = {
         fixtures = {["../fixtures/passing_test.cv"] = "passing_test.cv"},
         steps = {
             {
-                args = {"-o", "none", "passing_test.cv"},
+                args = {"compile", "-o", "none", "passing_test.cv"},
                 output_files = {"none/passing_test.cpp"},
                 absent_files = {
                     "none/carven/generated/passing_test.hpp",
@@ -113,7 +113,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"passing_test.cv", "--tests=default", "--output-dir=default"},
+                args = {"compile", "passing_test.cv", "--tests=default", "--output-dir=default"},
                 output_files = {
                     "default/passing_test.cpp",
                     "default/carven/generated/carven-test-runner.hpp",
@@ -128,7 +128,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"--tests=external", "--output-dir", "external", "passing_test.cv"},
+                args = {"compile", "--tests=external", "--output-dir", "external", "passing_test.cv"},
                 output_files = {
                     "external/passing_test.cpp",
                     "external/carven/generated/carven-test-runner.hpp",
@@ -150,7 +150,7 @@ local case_specs = {
             ["../fixtures/bare_structure.cv"] = "bare_structure.cv",
             ["../state/preexisting.fixture"] = "blocked",
         },
-        args = {"bare_structure.cv", "--output-dir=blocked"},
+        args = {"compile", "bare_structure.cv", "--output-dir=blocked"},
         exit_code = 1,
         stderr_contains = {"carven: error: cannot create directory 'blocked':"},
         output_files = {"blocked"},
@@ -163,13 +163,13 @@ local case_specs = {
         },
     },
     ["invocation/invalid_option"] = {
-        args = {"--unknown", "input.cv"},
+        args = {"compile", "--unknown", "input.cv"},
         exit_code = 1,
         stderr_contains = {"unknown option '--unknown'"},
     },
     ["module_layout/duplicate"] = {
         project = "../project",
-        args = {"main.cv", "./main.cv"},
+        args = {"compile", "main.cv", "./main.cv"},
         exit_code = 1,
         stderr_contains = {"duplicate module path 'main'"},
         absent_files = {"main.cpp", ".carven", ".carven-artifacts"},
@@ -177,6 +177,7 @@ local case_specs = {
     ["module_layout/spec"] = {
         project = "../project",
         args = {
+            "compile",
             "--output-dir=emit",
             "main.cv",
             "sibling.cv",
@@ -201,6 +202,76 @@ local case_specs = {
         },
     },
 }
+
+if not is_plat("windows") then
+    case_specs["commands/native_execution"] = {
+        inputs = {"input.cv", "library.cv", "arguments.hpp"},
+        steps = {
+            {
+                args = {"input.cv", "--", "--help", "space argument", "; echo injected"},
+                exit_code = 1,
+                stdout = "stdout.txt",
+                absent_files = {"input.cpp", "program"},
+            },
+            {
+                args = {"library.cv"},
+                exit_code = 1,
+                stderr_contains = {"running a program requires an entry point"},
+                absent_files = {"library.cpp", "program"},
+            },
+            {
+                args = {"input.cv", "--stdout"},
+                exit_code = 1,
+                stderr_contains = {"unknown option '--stdout'"},
+            },
+        },
+    }
+end
+
+case_specs["commands/interpretation"] = {
+    inputs = {"input.cv", "unsupported.cv", "failure.cv", "limit.cv", "wrapping.cv"},
+    steps = {
+        {
+            args = {"interpret", "input.cv", "--", "--help"},
+            stdout = "stdout.txt",
+            absent_files = {"input.cpp", "program"},
+        },
+        {
+            args = {"interpret", "--trace", "input.cv"},
+            stdout = "stdout.txt",
+            stderr_contains = {"call main", "call fib", "return fib", "statement"},
+        },
+        {
+            args = {"interpret", "unsupported.cv"}, exit_code = 1,
+            stderr_contains = {"CV-INTERPRET-ADMISSION"},
+        },
+        {
+            args = {"interpret", "failure.cv"}, exit_code = 1,
+            stdout = "failure.txt",
+            stderr_contains = {"CV-INTERPRET-EXECUTION", "failure.cv:1:", "while interpreting this function call"},
+        },
+        {
+            args = {"interpret", "--max-steps", "20", "limit.cv"}, exit_code = 1,
+            stdout = "limit.txt",
+            stderr_contains = {"CV-INTERPRET-LIMIT"},
+        },
+        {
+            args = {"interpret", "--max-steps", "-1", "input.cv"}, exit_code = 1,
+            stderr_contains = {"nonnegative integer"},
+        },
+        {
+            args = {"interpret", "wrapping.cv"},
+            stdout = "wrapping.txt",
+        },
+    },
+}
+if not is_plat("windows") then
+    table.insert(case_specs["commands/interpretation"].steps, {
+        args = {"input.cv"},
+        stdout = "stdout.txt",
+        absent_files = {"input.cpp", "program"},
+    })
+end
 
 local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
 

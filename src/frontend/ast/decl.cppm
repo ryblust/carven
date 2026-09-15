@@ -127,6 +127,7 @@ struct ASTFunctionBody final {
 using ASTFunctionImplementation = std::variant<ASTFunctionBody, ASTCppImportForm>;
 
 struct ASTFunctionDecl final {
+    bool is_implicit_entry;
     ASTDeclarationVisibility visibility;
     std::optional<ASTCppExportForm> cpp_export;
     std::optional<Span> const_span;

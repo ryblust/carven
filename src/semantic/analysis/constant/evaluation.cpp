@@ -9,15 +9,15 @@ import std;
 
 namespace {
 
-class ConstantAnalysisContext final : public ConstantExecutionContext {
+class ConstantAnalysisContext final : public SemanticExecutionContext {
 public:
     ConstantAnalysisContext(ProgramDraft& draft, ConstructionRequests& requests) noexcept;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> std::expected<ConstantCallBody, ConstantCallFailure> override;
-    auto report(const ConstantExecutionDiagnostic& diagnostic) noexcept -> void override;
-    auto write(ConstantOutputStream stream, std::string_view bytes) noexcept -> void override;
+        -> std::expected<ExecutionCallBody, ExecutionCallFailure> override;
+    auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
+    auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
 
 private:
     struct CompletedCall final {
@@ -38,7 +38,7 @@ ConstantAnalysisContext::ConstantAnalysisContext(
     : draft(draft),
       requests(requests) {}
 
-auto ConstantAnalysisContext::write(ConstantOutputStream stream, std::string_view bytes) noexcept
+auto ConstantAnalysisContext::write(ExecutionOutputStream stream, std::string_view bytes) noexcept
     -> void {
     draft.write_output(stream, bytes);
 }
@@ -49,17 +49,17 @@ auto ConstantAnalysisContext::function_for_callable(CallableID callable) const n
 }
 
 auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> std::expected<ConstantCallBody, ConstantCallFailure> {
+    -> std::expected<ExecutionCallBody, ExecutionCallFailure> {
     if (const auto found = completed_calls.find(function); found != completed_calls.end()) {
-        return ConstantCallBody {
-            .body = found->second.body,
+        return ExecutionCallBody {
+            .body = ExecutionBody(found->second.body),
             .parameter_types = found->second.parameters
         };
     }
     const auto declaration = draft.function_declaration_copy(function);
     if (!declaration.is_const) {
         return std::unexpected(
-            ConstantExecutionDiagnostic {
+            ExecutionDiagnostic {
                 .origin = origin,
                 .code = DiagnosticCode::ConstAdmission,
                 .message = "constant execution can call only const fn",
@@ -77,7 +77,7 @@ auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID 
     const auto requester = modules.at(location.source_id);
     auto completed = requests.ensure_function_body(function, requester, location.span);
     if (!completed) {
-        return std::unexpected(ConstantDependencyFailure {});
+        return std::unexpected(ExecutionDependencyFailure {});
     }
     const auto contract = draft.construction_callable_contract_copy(declaration.callable);
     auto parameters = std::vector<ConstructionTypeRef>();
@@ -94,13 +94,13 @@ auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID 
                                 }
                             )
                             .first;
-    return ConstantCallBody {
-        .body = stored->second.body,
+    return ExecutionCallBody {
+        .body = ExecutionBody(stored->second.body),
         .parameter_types = stored->second.parameters
     };
 }
 
-auto ConstantAnalysisContext::report(const ConstantExecutionDiagnostic& failure) noexcept -> void {
+auto ConstantAnalysisContext::report(const ExecutionDiagnostic& failure) noexcept -> void {
     auto diagnostic = DiagnosticBuilder(failure.code, failure.message);
     diagnostic.primary(draft.source_span(failure.origin));
     auto shown = 0uz;
@@ -122,7 +122,7 @@ auto evaluate_constant_root(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     const SemanticExpression& expression
-) noexcept -> AnalysisResult<ConstantExecutionValue> {
+) noexcept -> AnalysisResult<ExecutionValue> {
     auto context = ConstantAnalysisContext(draft, requests);
     auto evaluated = execute_constant_root(draft, context, expression);
     if (evaluated) {

@@ -3,20 +3,24 @@ module carven:driver.cli.impl;
 import :driver.cli;
 import :driver.compile;
 import :driver.dump;
+import :driver.interpret;
+import :driver.run;
 import std;
 
 namespace {
 
 auto print_help() noexcept -> int {
     std::print(
-        "Carven Source-to-C++ Compiler\n"
+        "Carven\n"
         "\n"
         "USAGE:\n"
-        "    carven [options...] <source-file>...\n"
+        "    carven <source-file>... [-- <arguments>...]\n"
+        "    carven compile [options...] <source-file>...\n"
+        "    carven interpret <source-file>... [-- <arguments>...]\n"
         "    carven dump tokens <source-file>\n"
         "    carven dump ast <source-file>\n"
         "\n"
-        "OPTIONS:\n"
+        "COMPILE OPTIONS:\n"
         "    -o, --output-dir <dir>   Write generated files below this directory\n"
         "                             (default: current directory)\n"
         "    --stdout                 Print all generated artifacts for inspection\n"
@@ -58,19 +62,17 @@ auto carven_main(int argc, const char* const* argv) noexcept -> int {
         return run_dump_command(args.subspan(1));
     }
 
-    if (std::ranges::any_of(args, [](const char* arg) static noexcept {
-            const auto value = std::string_view(arg);
-            return value == "--help" || value == "-h";
-        })) {
-        return print_help();
+    if (first_arg == "compile") {
+        if (args.size() == 2
+            && (std::string_view(args[1]) == "--help" || std::string_view(args[1]) == "-h")) {
+            return print_help();
+        }
+        return run_compile_command(args.subspan(1));
     }
 
-    if (std::ranges::any_of(args, [](const char* arg) static noexcept {
-            const auto value = std::string_view(arg);
-            return value == "--version" || value == "-V";
-        })) {
-        return print_version();
+    if (first_arg == "interpret") {
+        return run_interpret_command(args.subspan(1));
     }
 
-    return run_compile_command(args);
+    return run_native_command(argv[0], args);
 }

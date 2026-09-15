@@ -1,11 +1,13 @@
-Carven Source-to-C++ Compiler
+Carven
 
 USAGE:
-    carven [options...] <source-file>...
+    carven <source-file>... [-- <arguments>...]
+    carven compile [options...] <source-file>...
+    carven interpret <source-file>... [-- <arguments>...]
     carven dump tokens <source-file>
     carven dump ast <source-file>
 
-OPTIONS:
+COMPILE OPTIONS:
     -o, --output-dir <dir>   Write generated files below this directory
                              (default: current directory)
     --stdout                 Print all generated artifacts for inspection

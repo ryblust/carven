@@ -71,7 +71,7 @@ TEST_CASE("SemIR constants: typed execution fields freeze in declaration order")
         {.type = draft.intern_builtin_type(BuiltinType::Bool),
          .value = BooleanConstant {.value = true}}
     );
-    const auto value = ConstantAggregateValue {.type = type, .elements = {integer, boolean}};
+    const auto value = ExecutionAggregateValue {.type = type, .elements = {integer, boolean}};
     const auto frozen = freeze_constant_value(draft, value);
     REQUIRE(frozen.has_value());
     CHECK(draft.constant(*frozen).type == type);
@@ -82,16 +82,16 @@ TEST_CASE("SemIR constants: typed execution fields freeze in declaration order")
     CHECK(freeze_constant_value(draft, value) == frozen);
     CHECK_FALSE(freeze_constant_value(
         draft,
-        ConstantAggregateValue {.type = type, .elements = {boolean, integer}}
+        ExecutionAggregateValue {.type = type, .elements = {boolean, integer}}
     ));
     CHECK_FALSE(
-        freeze_constant_value(draft, ConstantAggregateValue {.type = type, .elements = {integer}})
+        freeze_constant_value(draft, ExecutionAggregateValue {.type = type, .elements = {integer}})
     );
     CHECK_FALSE(freeze_constant_value(
         draft,
-        ConstantAggregateValue {
+        ExecutionAggregateValue {
             .type = type,
-            .elements = {ConstantOwnedText {.bytes = "7"}, boolean}
+            .elements = {ExecutionOwnedText {.bytes = "7"}, boolean}
         }
     ));
     CHECK(std::move(draft).finish().has_value());
@@ -103,7 +103,7 @@ TEST_CASE("SemIR constants: struct fields count toward retained aggregate size a
     const auto entry = define_structure(draft);
     const auto table =
         draft.intern_type({.value = ArrayTypeValue {.element = entry, .extent = 21845u}});
-    const auto shapes = ConstantTypeShapes(draft);
+    const auto shapes = ExecutionTypeShapes(draft);
     REQUIRE(shapes.get(table).has_value());
     CHECK(shapes.get(table)->supported);
     CHECK(shapes.get(table)->elements == 65535uz);
@@ -120,7 +120,7 @@ TEST_CASE("SemIR constants: struct fields count toward retained aggregate size a
     CHECK(shapes.get(nested)->elements == 65uz);
     nested = draft.intern_type({.value = ArrayTypeValue {.element = nested, .extent = 1u}});
     CHECK_FALSE(shapes.get(nested).has_value());
-    const auto cold_shapes = ConstantTypeShapes(draft);
+    const auto cold_shapes = ExecutionTypeShapes(draft);
     CHECK_FALSE(cold_shapes.get(nested).has_value());
 }
 

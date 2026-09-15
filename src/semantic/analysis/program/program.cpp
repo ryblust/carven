@@ -16,7 +16,7 @@ import std;
 auto ProgramDraft::begin(
     SyntaxProgram&& syntax,
     DiagnosticSink& sink,
-    ConstantOutput output
+    ExecutionOutput output
 ) noexcept -> ProgramDraft {
     return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output));
 }
@@ -24,7 +24,7 @@ auto ProgramDraft::begin(
 ProgramDraft::ProgramDraft(
     SyntaxProgramParts parts,
     DiagnosticSink& sink,
-    ConstantOutput output
+    ExecutionOutput output
 ) noexcept
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
@@ -702,7 +702,7 @@ auto ProgramDraft::create_evaluation_root_identity() noexcept -> BodyIdentity {
     );
 }
 
-auto ProgramDraft::write_output(ConstantOutputStream stream, std::string_view bytes) const noexcept
+auto ProgramDraft::write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept
     -> void {
     if (output) {
         output(stream, bytes);
