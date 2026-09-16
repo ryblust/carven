@@ -736,7 +736,10 @@ auto SyntaxFormatter::separation(std::size_t index) const noexcept -> Separation
     if (right == LeftBrace) {
         return left == ColonColon ? Separation::None : Separation::Space;
     }
-    if (left == DotDot || right == DotDot) {
+    if (left == DotDot && right == If) {
+        return Separation::Space;
+    }
+    if (left == DotDot || right == DotDot || left == DotDotEqual || right == DotDotEqual) {
         return Separation::None;
     }
     if (infix_operators[index]) {

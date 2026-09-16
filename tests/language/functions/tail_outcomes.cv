@@ -3,8 +3,10 @@ struct Rejected {
 }
 
 fn first(value: i32) -> i32 throw Rejected {
-    if value < 0 { throw Rejected { code: value }; }
-    return value + 10;
+    return match value {
+        ..0 => throw Rejected { code: value },
+        _ => value + 10,
+    };
 }
 
 fn second(value: i32) -> i32 throw Rejected => value + 20;
@@ -22,8 +24,10 @@ fn rebind_in_tail(&callback: fn(i32) -> i32 throw Rejected, value: i32) -> i32 t
 
 fn argument(&trace: i32, digit: i32, value: i32) -> i32 throw Rejected {
     trace = trace * 10 + digit;
-    if value < 0 { throw Rejected { code: digit }; }
-    return value;
+    return match value {
+        ..0 => throw Rejected { code: digit },
+        _ => value,
+    };
 }
 
 fn combine(left: i32, right: i32, &trace: i32) -> i32 throw Rejected {
@@ -103,7 +107,7 @@ test "Tail outcomes: captured void tails preserve success and typed failure" {
     try {
         callback(false)?;
     } catch {
-        Rejected(_) => { fail("unexpected failure"); },
+        Rejected(_) => fail("unexpected failure"),
     }
     let failure = try {
         callback(true)?;

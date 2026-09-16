@@ -37,7 +37,30 @@ auto Parser::parse_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
-    return parse_logical_or();
+    auto begin = parse_logical_or();
+    if (!begin || (!check(TokenKind::DotDot) && !check(TokenKind::DotDotEqual))) {
+        return begin;
+    }
+    const auto operation = consume();
+    const auto end = parse_logical_or();
+    if (!end) {
+        return std::nullopt;
+    }
+    if (check(TokenKind::DotDot) || check(TokenKind::DotDotEqual)) {
+        fail_here("range operators are non-associative");
+        return std::nullopt;
+    }
+    return builder.append_expression(
+        ASTExpr {
+            .span = join(builder.expression(*begin).span, builder.expression(*end).span),
+            .value = ASTRangeExpr {
+                .begin = *begin,
+                .operator_span = operation.span,
+                .end = *end,
+                .inclusive = operation.kind == TokenKind::DotDotEqual
+            }
+        }
+    );
 }
 
 template<typename ParseOperand>

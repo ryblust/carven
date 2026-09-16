@@ -119,7 +119,7 @@ private fn borrow_field(value: ArrayStorage) -> [i32] => value.values;
 private fn observe_payload(value: ArrayPayload, &target: ArrayPayload) -> i32 {
     target = .Values([70, 80]);
     match value {
-        .Values(values) => { return values[0]; },
+        .Values(values) => return values[0],
     }
 }
 

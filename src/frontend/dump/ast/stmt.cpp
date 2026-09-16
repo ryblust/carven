@@ -45,37 +45,7 @@ auto ASTDumper::render_for_header(
                 } else {
                     render_type(*range.type, nested_prefix, false, "type ");
                 }
-                std::visit(
-                    Overloaded {
-                        [&](ASTExprID iterable) noexcept {
-                            render_expression(iterable, nested_prefix, true, "iterable ");
-                        },
-                        [&](const ASTHalfOpenRange& iterable) noexcept {
-                            const auto iterable_span = Span::from_bounds(
-                                ast.expression(iterable.begin).span.start(),
-                                ast.expression(iterable.end).span.end()
-                            );
-                            append_line(
-                                nested_prefix,
-                                true,
-                                std::format(
-                                    "iterable HalfOpenRange {}",
-                                    format_dump_span(iterable_span)
-                                )
-                            );
-                            const auto iterable_prefix = child_prefix(nested_prefix, true);
-                            render_expression(iterable.begin, iterable_prefix, false, "begin ");
-                            render_span_field(
-                                iterable_prefix,
-                                false,
-                                "operator",
-                                iterable.operator_span
-                            );
-                            render_expression(iterable.end, iterable_prefix, true, "end ");
-                        },
-                    },
-                    range.iterable
-                );
+                render_expression(range.iterable, nested_prefix, true, "iterable ");
             },
             [&](const ASTCStyleForHeader& c_style) noexcept {
                 append_line(

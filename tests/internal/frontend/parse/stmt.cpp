@@ -77,8 +77,7 @@ TEST_CASE("Parser: declarations, actions, and loop headers remain distinct") {
     REQUIRE(range.write_marker.has_value());
     CHECK_EQ(slice(text, *range.write_marker), "&");
     CHECK(range.type.has_value());
-    REQUIRE(std::holds_alternative<ASTExprID>(range.iterable));
-    CHECK(is<ASTNameExpr>(ast.expression(std::get<ASTExprID>(range.iterable))));
+    CHECK(is<ASTNameExpr>(ast.expression(range.iterable)));
 
     const auto& c_style_loop = get<ASTForStmt>(statement_at(result, 5));
     const auto& c_style = get<ASTCStyleForHeader>(c_style_loop.header);
@@ -104,23 +103,22 @@ TEST_CASE("Parser: range-for sources distinguish containers and half-open bounds
         return get<ASTRangeForHeader>(get<ASTForStmt>(statement_at(result, index)).header);
     };
     const auto& container = header_at(0);
-    REQUIRE(is<ASTExprID>(container.iterable));
-    const auto container_id = std::get<ASTExprID>(container.iterable);
+    const auto container_id = container.iterable;
     CHECK(is<ASTNameExpr>(ast.expression(container_id)));
     CHECK_EQ(slice(text, ast.expression(container_id).span), "items");
 
-    const auto& literal = std::get<ASTHalfOpenRange>(header_at(1).iterable);
+    const auto& literal = get<ASTRangeExpr>(ast.expression(header_at(1).iterable));
     CHECK(is<ASTLiteral>(ast.expression(literal.begin)));
     CHECK(is<ASTLiteral>(ast.expression(literal.end)));
     CHECK_EQ(slice(text, literal.operator_span), "..");
 
-    const auto& variable = std::get<ASTHalfOpenRange>(header_at(2).iterable);
+    const auto& variable = get<ASTRangeExpr>(ast.expression(header_at(2).iterable));
     CHECK(is<ASTNameExpr>(ast.expression(variable.begin)));
 
     check_invalid("fn invalid(values) { for &&value in values {} }");
     CHECK(is<ASTCallExpr>(ast.expression(variable.end)));
 
-    const auto& grouped = std::get<ASTHalfOpenRange>(header_at(3).iterable);
+    const auto& grouped = get<ASTRangeExpr>(ast.expression(header_at(3).iterable));
     CHECK(is<ASTGroupExpr>(ast.expression(grouped.begin)));
     CHECK(is<ASTGroupExpr>(ast.expression(grouped.end)));
 }
@@ -252,4 +250,18 @@ TEST_CASE("Parser: discard targets cover bindings and range loops") {
     CHECK(is<ASTDiscardBindingTarget>(reference_range.target));
     CHECK(!value_range.write_marker.has_value());
     CHECK(reference_range.write_marker.has_value());
+}
+
+TEST_CASE("Parser: ranges require value endpoints and a closed upper bound") {
+    const auto invalid = std::array {
+        "fn f() { let r = ..10; }",
+        "fn f() { let r = 0..; }",
+        "fn f() { let r = 0..1..2; }",
+        "fn f(x: i32) { match x { 0..= => {}, _ => {} } }",
+        "fn f(x: i32) { match x { .. => {}, _ => {} } }"
+    };
+    for (const auto source : invalid) {
+        CAPTURE(source);
+        check_invalid(source);
+    }
 }

@@ -74,7 +74,10 @@ test "Callable views: mutable storage follows branch and loop replacement" {
 
     var iteration = 0;
     while iteration < 2 {
-        callback = if iteration == 0 { first } else { second };
+        callback = match iteration {
+            0 => first,
+            _ => second
+        };
         iteration += 1;
     }
     check(callback(1) == 3);

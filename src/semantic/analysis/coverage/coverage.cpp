@@ -23,6 +23,14 @@ struct CoverageAtom final {
     std::variant<ConstantID, bool, float, double> value;
 };
 
+struct CoverageInterval final {
+    ConstructionTypeRef type;
+    std::uint64_t begin;
+    std::uint64_t end;
+    bool dynamic;
+    bool empty;
+};
+
 struct CoverageCase final {
     ConstructionTypeRef type;
     EnumCaseID enum_case;
@@ -35,7 +43,7 @@ struct CoverageOr final {
 };
 
 struct CoveragePattern final {
-    std::variant<CoverageAny, CoverageAtom, CoverageCase, CoverageOr> value;
+    std::variant<CoverageAny, CoverageAtom, CoverageInterval, CoverageCase, CoverageOr> value;
 };
 
 using Row = std::vector<CoveragePattern>;
@@ -48,7 +56,8 @@ auto pattern_type(const CoveragePattern& pattern) noexcept -> ConstructionTypeRe
                 std::same_as<Value, CoverageAny>
                     || std::same_as<Value, CoverageAtom>
                     || std::same_as<Value, CoverageCase>
-                    || std::same_as<Value, CoverageOr>,
+                    || std::same_as<Value, CoverageOr>
+                    || std::same_as<Value, CoverageInterval>,
                 "unhandled coverage pattern"
             );
             return value.type;
@@ -67,6 +76,9 @@ auto children(const CoveragePattern& pattern) noexcept -> std::span<const Covera
                 return value.alternatives;
             },
             [](const CoverageAny&) static noexcept -> std::span<const CoveragePattern> {
+                return {};
+            },
+            [](const CoverageInterval&) static noexcept -> std::span<const CoveragePattern> {
                 return {};
             },
             [](const CoverageAtom&) static noexcept -> std::span<const CoveragePattern> {
@@ -134,6 +146,63 @@ auto defaults(const Matrix& source) noexcept -> Matrix {
     auto result = Matrix();
     for (const auto& row : expand_head(source)) {
         if (!row.empty() && std::holds_alternative<CoverageAny>(row.front().value)) {
+            result.emplace_back(row.begin() + 1, row.end());
+        }
+    }
+    return result;
+}
+
+// Partition only at written interval boundaries, never at every integer.
+auto ordinal(IntegerConstant value, BuiltinType type) noexcept -> std::uint64_t {
+    const auto width = *builtin_integer_width(type);
+    if (!builtin_is_signed_integer(type)) {
+        return value.magnitude();
+    }
+    const auto midpoint = std::uint64_t {1} << (width - 1u);
+    return value.negative() ? midpoint - value.magnitude() : midpoint + value.magnitude();
+}
+
+auto interval_contains(const CoveragePattern& pattern, std::uint64_t point, bool query) noexcept
+    -> bool {
+    if (std::holds_alternative<CoverageAny>(pattern.value)) {
+        return true;
+    }
+    if (const auto* range = std::get_if<CoverageInterval>(&pattern.value)) {
+        return range->dynamic ? query
+                              : !range->empty && range->begin <= point && point <= range->end;
+    }
+    return false;
+}
+
+auto interval_points(const Matrix& matrix, const CoveragePattern* query) noexcept
+    -> std::vector<std::uint64_t> {
+    auto points = std::vector<std::uint64_t> {0u};
+    const auto add = [&](const CoveragePattern& pattern) noexcept {
+        if (const auto* range = std::get_if<CoverageInterval>(&pattern.value);
+            range && !range->dynamic && !range->empty) {
+            points.push_back(range->begin);
+            if (range->end != std::numeric_limits<std::uint64_t>::max()) {
+                points.push_back(range->end + 1u);
+            }
+        }
+    };
+    for (const auto& row : matrix) {
+        if (!row.empty()) {
+            add(row.front());
+        }
+    }
+    if (query) {
+        add(*query);
+    }
+    std::ranges::sort(points);
+    points.erase(std::unique(points.begin(), points.end()), points.end());
+    return points;
+}
+
+auto specialize_interval(const Matrix& matrix, std::uint64_t point) noexcept -> Matrix {
+    auto result = Matrix();
+    for (const auto& row : matrix) {
+        if (!row.empty() && interval_contains(row.front(), point, false)) {
             result.emplace_back(row.begin() + 1, row.end());
         }
     }
@@ -370,6 +439,18 @@ private:
                             "literal coverage constant type differs from its subject"
                         );
                     }
+                    if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
+                        const auto point = ordinal(*integer, *integer_type(expected_type));
+                        return CoveragePattern {
+                            .value = CoverageInterval {
+                                .type = expected_type,
+                                .begin = point,
+                                .end = point,
+                                .dynamic = false,
+                                .empty = false
+                            }
+                        };
+                    }
                     auto atom = decltype(CoverageAtom::value) {value.constant};
                     if (const auto* boolean = std::get_if<BooleanConstant>(&fact.value)) {
                         atom = boolean->value;
@@ -383,6 +464,40 @@ private:
                             .type = expected_type,
                             .value = atom,
                         },
+                    };
+                },
+                [&](const RangePattern& value) -> std::expected<CoveragePattern, std::string> {
+                    const auto kind = integer_type(expected_type);
+                    if (!kind) {
+                        return std::unexpected("range pattern subject is not integer");
+                    }
+                    auto begin = std::uint64_t {0};
+                    auto end = integer_max(*kind);
+                    const auto dynamic = (value.begin && !value.begin->constant)
+                        || (value.end && !value.end->constant);
+                    if (value.begin && value.begin->constant) {
+                        const auto fact = constant(*value.begin->constant);
+                        begin = ordinal(std::get<IntegerConstant>(fact.value), *kind);
+                    }
+                    auto empty = false;
+                    if (value.end && value.end->constant) {
+                        const auto fact = constant(*value.end->constant);
+                        end = ordinal(std::get<IntegerConstant>(fact.value), *kind);
+                        if (!value.inclusive) {
+                            empty = end == 0u;
+                            if (!empty) {
+                                --end;
+                            }
+                        }
+                    }
+                    return CoveragePattern {
+                        .value = CoverageInterval {
+                            .type = expected_type,
+                            .begin = begin,
+                            .end = end,
+                            .dynamic = dynamic,
+                            .empty = empty || begin > end
+                        }
                     };
                 },
                 [&](const EnumCasePattern& value) -> std::expected<CoveragePattern, std::string> {
@@ -460,6 +575,23 @@ private:
         }
     }
 
+    auto integer_type(ConstructionTypeRef reference) noexcept -> std::optional<BuiltinType> {
+        const auto* id = std::get_if<TypeID>(&reference);
+        if (!id) {
+            return std::nullopt;
+        }
+        const auto canonical = type(*id);
+        const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+        return builtin && builtin_is_integer(builtin->kind) ? std::optional(builtin->kind)
+                                                            : std::nullopt;
+    }
+
+    static auto integer_max(BuiltinType kind) noexcept -> std::uint64_t {
+        const auto width = *builtin_integer_width(kind);
+        return width == 64u ? std::numeric_limits<std::uint64_t>::max()
+                            : (std::uint64_t {1} << width) - 1u;
+    }
+
     auto constructors(ConstructionTypeRef type) noexcept
         -> std::expected<std::optional<std::vector<CoveragePattern>>, std::string> {
         if (!owned(type)) {
@@ -530,6 +662,22 @@ private:
                 }
                 if (*found) {
                     return true;
+                }
+            }
+            return false;
+        }
+        if (const auto kind = integer_type(pattern_type(query.front()))) {
+            const auto expanded = expand_head(matrix);
+            for (const auto point : interval_points(expanded, &query.front())) {
+                if (point > integer_max(*kind) || !interval_contains(query.front(), point, true)) {
+                    continue;
+                }
+                auto found = useful(
+                    specialize_interval(expanded, point),
+                    Row(query.begin() + 1, query.end())
+                );
+                if (!found || *found) {
+                    return found;
                 }
             }
             return false;
@@ -607,6 +755,30 @@ private:
         if (types.empty()) {
             if (matrix.empty()) {
                 return std::optional(WitnessRow {});
+            }
+            return std::optional<WitnessRow>();
+        }
+        if (const auto kind = integer_type(types.front())) {
+            const auto expanded = expand_head(matrix);
+            for (const auto point : interval_points(expanded, nullptr)) {
+                if (point > integer_max(*kind)) {
+                    continue;
+                }
+                auto tail = missing_row(specialize_interval(expanded, point), types.subspan(1uz));
+                if (!tail) {
+                    return tail;
+                }
+                if (!*tail) {
+                    continue;
+                }
+                auto witness = std::to_string(point);
+                if (builtin_is_signed_integer(*kind)) {
+                    const auto midpoint = std::uint64_t {1} << (*builtin_integer_width(*kind) - 1u);
+                    witness = point < midpoint ? "-" + std::to_string(midpoint - point)
+                                               : std::to_string(point - midpoint);
+                }
+                (*tail)->insert((*tail)->begin(), std::move(witness));
+                return tail;
             }
             return std::optional<WitnessRow>();
         }

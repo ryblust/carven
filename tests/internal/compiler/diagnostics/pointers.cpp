@@ -217,7 +217,7 @@ TEST_CASE("Compiler diagnostics: pointer permissions and null proofs preserve so
          .primary_text = "{ q }"},
         {.name = "catch inference does not authorize narrowing",
          .source =
-             "struct F {} fn source(q: ptr<&i32>) -> ptr<&i32> throw F { return q; } fn invalid(p: ptr<i32>, q: ptr<&i32>, a: bool) { let value = if a { p } else { (try { source(q)? } catch { F(_) => { p } }) }; }",
+             "struct F {} fn source(q: ptr<&i32>) -> ptr<&i32> throw F { return q; } fn invalid(p: ptr<i32>, q: ptr<&i32>, a: bool) { let value = if a { p } else { (try { source(q)? } catch { F(_) => p }) }; }",
          .code = "CV-TYPE-MISMATCH",
          .primary_text = "{ source(q)? }"},
         {.name = "range Write calls can expose array storage",

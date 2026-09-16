@@ -299,6 +299,10 @@ private:
         visit_fields(value.qualifier, value.name_span, value.payload);
     }
 
+    auto visit(const ASTRangePattern& value) noexcept -> void {
+        visit_fields(value.begin, value.operator_span, value.end);
+    }
+
     auto visit(const ASTOrPattern& value) noexcept -> void {
         visit_fields(value.alternatives, value.pipe_spans);
     }
@@ -447,6 +451,10 @@ private:
         visit_fields(value.left, value.operator_span, value.right);
     }
 
+    auto visit(const ASTRangeExpr& value) noexcept -> void {
+        visit_fields(value.begin, value.operator_span, value.end);
+    }
+
     auto visit(const ASTCastExpr& value) noexcept -> void {
         visit_fields(value.operand_id, value.operator_span, value.target_type);
     }
@@ -504,10 +512,6 @@ private:
     }
 
     auto visit(const ASTForStep& value) noexcept -> void { visit_fields(value.span, value.value); }
-
-    auto visit(const ASTHalfOpenRange& value) noexcept -> void {
-        visit_fields(value.begin, value.operator_span, value.end);
-    }
 
     auto visit(const ASTRangeForHeader& value) noexcept -> void {
         visit_fields(value.write_marker, value.target, value.type, value.iterable);

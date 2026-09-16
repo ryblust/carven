@@ -10,8 +10,10 @@ struct AFailure {
 }
 
 fn narrow(value: i32) -> i32 throw ZFailure {
-    if value < 0 { throw ZFailure { code: -value }; }
-    return value;
+    return match value {
+        ..0 => throw ZFailure { code: -value },
+        _ => value,
+    };
 }
 
 fn exact_tail(value: i32) -> i32 throw ZFailure => narrow(value)?;

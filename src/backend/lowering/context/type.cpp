@@ -312,6 +312,16 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                     .const_qualified = false
                 };
             },
+            [&](const RangeTypeValue& value) noexcept -> TargetType {
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeRange,
+                            .type_argument_ids = {lower_type(value.element)},
+                        },
+                    .const_qualified = false
+                };
+            },
             [&](const ArrayTypeValue& value) noexcept -> TargetType {
                 return {
                     .value =

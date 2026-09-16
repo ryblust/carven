@@ -267,9 +267,9 @@ constructs directly in final storage.
 
 Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
-source. Sequence sources use explicit Read or Write borrowing during realization.
-Arrays, slices, and text use C++ range-for iteration, directly consuming the
-range expression after operand construction has retained required backing.
+source. Arrays, slices, and text use explicit Read or Write borrowing during
+realization. C++ range-for iteration consumes the range expression after operand
+construction has retained required backing.
 Write element types can be deduced from the range. Text decodes UTF-8 in one
 sequential pass. Array initialization uses an accurate type context without
 repeating it on both the local declaration and the initializer.
@@ -282,9 +282,12 @@ Carven call operands for builtin value parameters use value delivery. Native C++
 calls retain their const-reference operand contract for overload resolution.
 Named input storage already has a source lifetime; sequencing creates snapshots
 when later evaluation requires them. Scalar value consumers can use direct local
-storage within an expression frame. Integer-range bounds retain snapshots when
-they read storage or require execution; independent constant bounds appear
-directly in the loop.
+storage within an expression frame.
+
+Integer range values use `runtime::Range<T>`, which stores both bounds and an
+upper-bound inclusion flag. Its iteration operations are `constexpr`. Range loops
+use C++ range-for; integer ranges are copied before traversal. Closed iteration
+tests its final element before incrementing, so it can include the type maximum.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains

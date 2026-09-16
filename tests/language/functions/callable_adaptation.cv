@@ -5,13 +5,17 @@ struct Rejected {
 struct OtherFailure {}
 
 fn first(value: i32) -> i32 throw Rejected {
-    if value < 0 { throw Rejected { value }; }
-    return value + 1;
+    return match value {
+        ..0 => throw Rejected { value },
+        _ => value + 1,
+    };
 }
 
 fn second(value: i32) -> i32 throw Rejected {
-    if value < 0 { throw Rejected { value }; }
-    return value + 2;
+    return match value {
+        ..0 => throw Rejected { value },
+        _ => value + 2,
+    };
 }
 
 fn invoke(callback: fn(i32) -> i32 throw Rejected, value: i32) -> i32 throw Rejected {
@@ -24,13 +28,17 @@ test "Callable adaptation: selected captured targets preserve results and effect
         let offset = 5;
         let add = [offset, &calls](value: i32) {
             calls += 1;
-            if value < 0 { throw Rejected { value }; }
-            return value + offset;
+            return match value {
+                ..0 => throw Rejected { value },
+                _ => value + offset,
+            };
         };
         let subtract = [offset, &calls](value: i32) {
             calls += 1;
-            if value < 0 { throw Rejected { value }; }
-            return value - offset;
+            return match value {
+                ..0 => throw Rejected { value },
+                _ => value - offset,
+            };
         };
         let selected: fn(i32) -> i32 throw Rejected = if choose_add { add } else { subtract };
 

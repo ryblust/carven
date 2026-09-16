@@ -110,6 +110,12 @@ struct OwnershipFlow final {
     std::vector<OwnershipExit> exits;
 };
 
+struct OwnershipCondition final {
+    std::optional<OwnershipNormal> yes;
+    std::optional<OwnershipNormal> no;
+    std::vector<OwnershipExit> exits;
+};
+
 struct OwnershipAccess final {
     OwnershipPlace place;
     bool stable;
@@ -310,6 +316,11 @@ private:
         PatternID pattern,
         const OwnershipRelationships& relationships
     ) noexcept -> void;
+    auto pattern_condition(
+        PatternID pattern,
+        std::span<const SemPatternBounds> bounds,
+        OwnershipState state
+    ) noexcept -> OwnershipCondition;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto object_type(std::size_t object) const noexcept -> TypeID;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;

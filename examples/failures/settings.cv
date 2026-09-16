@@ -10,14 +10,18 @@ fn parse_port(text: str) -> i32 throw MissingSetting + InvalidPort {
     var value: i32 = 0;
     var position: usize = 0;
     for byte in text.bytes {
-        if byte < 48u8 || byte > 57u8 { throw InvalidPort::BadDigit(position); }
-        let digit = (byte as i32) - 48;
+        let digit = match byte {
+            48..=57 => (byte as i32) - 48,
+            _ => throw InvalidPort::BadDigit(position),
+        };
         if value > (65535 - digit) / 10 { throw InvalidPort::OutOfRange; }
         value = value * 10 + digit;
         ++position;
     }
-    if value == 0 { throw InvalidPort::OutOfRange; }
-    return value;
+    return match value {
+        0 => throw InvalidPort::OutOfRange,
+        _ => value,
+    };
 }
 
 enum ConfigError {
@@ -39,8 +43,8 @@ fn configured_port(primary: str, backup: str) -> i32 throw ConfigError {
     return try {
         select_port(primary, backup)?
     } catch {
-        MissingSetting(_) => { throw ConfigError::Missing; },
-        InvalidPort(error) => { throw ConfigError::Invalid(error); },
+        MissingSetting(_) => throw ConfigError::Missing,
+        InvalidPort(error) => throw ConfigError::Invalid(error),
     };
 }
 

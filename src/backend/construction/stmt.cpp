@@ -94,22 +94,7 @@ auto BodyConstructionBuilder::statement(const SemanticStatement& source) noexcep
             },
             [&](const SemRangeLoop& item) noexcept -> ConstructionStatementValue {
                 const auto identity = reserve_region();
-                const auto range = std::visit(
-                    Overloaded {
-                        [&](const SemIntegerRange& input) noexcept
-                            -> decltype(ConstructionRangeLoop::source) {
-                            return ConstructionIntegerRange {
-                                .begin = expression(input.begin),
-                                .end = expression(input.end)
-                            };
-                        },
-                        [&](const SemSequenceRange& input) noexcept
-                            -> decltype(ConstructionRangeLoop::source) {
-                            return ConstructionSequenceRange {.value = expression(input.value)};
-                        }
-                    },
-                    item.source
-                );
+                const auto range = expression(item.source);
                 const auto outer = loop;
                 loop = identity;
                 const auto contents = region(*item.body);

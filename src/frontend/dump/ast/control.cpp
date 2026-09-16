@@ -310,6 +310,21 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                     );
                 }
             },
+            [&](const ASTRangePattern& range) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("RangePattern {}", format_dump_span(pattern.span))
+                );
+                const auto nested = child_prefix(prefix, is_last);
+                if (range.begin) {
+                    render_expression(*range.begin, nested, false, "begin ");
+                }
+                render_span_field(nested, !range.end, "operator", range.operator_span);
+                if (range.end) {
+                    render_expression(*range.end, nested, true, "end ");
+                }
+            },
             [&](const ASTOrPattern& alternatives) noexcept {
                 append_line(
                     prefix,

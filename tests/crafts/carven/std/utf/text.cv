@@ -29,7 +29,7 @@ test "UTF8: byte slices construct borrowed and owning text" {
         original[0] = 0x62;
         check(copy.as_str() == "a");
     } catch {
-        UTF8Error(_) => { check(false); },
+        UTF8Error(_) => check(false),
     }
 }
 

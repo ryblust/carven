@@ -45,7 +45,8 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                         || std::same_as<Value, CallableViewTypeValue>
                         || std::same_as<Value, CppTypeValue>
                         || std::same_as<Value, PointerTypeValue>
-                        || std::same_as<Value, SliceTypeValue>,
+                        || std::same_as<Value, SliceTypeValue>
+                        || std::same_as<Value, RangeTypeValue>,
                     "unhandled canonical failure type"
                 );
                 invariant_violation("failure set contains a non-nominal type");

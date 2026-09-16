@@ -405,13 +405,17 @@ auto Parser::begin_speculation() noexcept -> Checkpoint {
     return checkpoint;
 }
 
-auto Parser::finish_speculation(const Checkpoint& checkpoint, bool commit) noexcept -> void {
+auto Parser::finish_speculation(
+    const Checkpoint& checkpoint,
+    bool commit,
+    bool retain_failure
+) noexcept -> void {
     --speculation_depth;
     auto failure = std::move(speculation_failures.back());
     speculation_failures.pop_back();
     if (!commit) {
         restore(checkpoint);
-        if (failure.has_value()) {
+        if (retain_failure && failure.has_value()) {
             remember_speculative_failure(std::move(*failure));
         }
     } else {

@@ -99,6 +99,11 @@ private:
     auto range(const SemRangeLoop& source, NullState state) noexcept -> NullFlow;
     auto bind_pattern(NullState& state, PatternID pattern, const NullValue& value) const noexcept
         -> void;
+    auto pattern_condition(
+        PatternID pattern,
+        std::span<const SemPatternBounds> bounds,
+        NullState state
+    ) noexcept -> NullCondition;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto failures(NullFlow& flow, FailureSetID failures) const noexcept -> void;
     auto require_nonnull(ProgramOriginID origin, const NullValue& value) noexcept -> void;

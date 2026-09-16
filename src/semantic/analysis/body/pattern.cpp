@@ -22,6 +22,7 @@ import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -32,7 +33,8 @@ auto BodyElaborator::build_pattern(
     ConstructionTypeRef type,
     std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
     bool allow_new_bindings,
-    std::flat_set<std::string, std::less<>>& used_bindings
+    std::flat_set<std::string, std::less<>>& used_bindings,
+    std::vector<SemPatternBounds>& pattern_bounds
 ) noexcept -> AnalysisResult<BuiltPattern> {
     const auto& source = ast.pattern(source_id);
     const auto pattern_origin = origin(source.span);
@@ -106,6 +108,131 @@ auto BodyElaborator::build_pattern(
                     .bindings = {},
                     .irrefutable = false,
                 };
+            },
+            [&](const ASTRangePattern& range) noexcept -> AnalysisResult<BuiltPattern> {
+                const auto* concrete = std::get_if<TypeID>(&type);
+                if (concrete == nullptr) {
+                    return std::unexpected(fail(
+                        source.span,
+                        DiagnosticCode::TypeMatchPattern,
+                        "range pattern needs an integer subject"
+                    ));
+                }
+                const auto canonical = draft().type_copy(*concrete);
+                const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+                if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
+                    return std::unexpected(fail(
+                        source.span,
+                        DiagnosticCode::TypeMatchPattern,
+                        "range pattern needs an integer subject"
+                    ));
+                }
+                auto pattern = RangePattern {
+                    .begin = std::nullopt,
+                    .end = std::nullopt,
+                    .inclusive = range.inclusive
+                };
+                auto first = std::optional<SemanticExpression>();
+                auto last = std::optional<SemanticExpression>();
+                const auto build_bound = [&](
+                                             std::optional<ASTExprID> id,
+                                             std::optional<RangePatternBound>& bound,
+                                             std::optional<SemanticExpression>& operation
+                                         ) noexcept -> AnalysisResult<void> {
+                    if (!id) {
+                        return {};
+                    }
+                    auto value = expression(*id, type);
+                    if (!value) {
+                        return std::unexpected(value.error());
+                    }
+                    if (!compatible(type, value->type())) {
+                        return std::unexpected(fail(
+                            ast.expression(*id).span,
+                            DiagnosticCode::TypeRangeBounds,
+                            "range bound differs from subject type"
+                        ));
+                    }
+                    auto checked =
+                        consume_value(*value, ast.expression(*id).span, AccessMode::Read);
+                    if (!checked) {
+                        return std::unexpected(checked.error());
+                    }
+                    auto uses_pattern_binding = false;
+                    visit_semantic_nodes(*checked, [&](const SemanticExpression& expr) noexcept {
+                        if (const auto* selection = std::get_if<SemBinding>(&expr.value)) {
+                            for (const auto& [name, binding] : bindings) {
+                                static_cast<void>(name);
+                                uses_pattern_binding |=
+                                    selection->binding == binding.storage.binding;
+                            }
+                        }
+                    });
+                    if (uses_pattern_binding) {
+                        return std::unexpected(fail(
+                            ast.expression(*id).span,
+                            DiagnosticCode::TypeMatchPattern,
+                            "range bounds cannot refer to bindings introduced by the same pattern"
+                        ));
+                    }
+                    checked->constant = body_builder.known_constant(*checked);
+                    const auto static_bound = [&](this const auto& self,
+                                                  const SemanticExpression& expr) noexcept -> bool {
+                        const auto* type = std::get_if<TypeID>(&expr.type.construction());
+                        if (!type) {
+                            return false;
+                        }
+                        const auto canonical = draft().type_copy(*type);
+                        const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+                        if (!builtin
+                            || !(
+                                builtin_is_integer(builtin->kind)
+                                || builtin->kind == BuiltinType::Bool
+                                || builtin->kind == BuiltinType::Char
+                            )) {
+                            return false;
+                        }
+                        if (std::holds_alternative<SemBinding>(expr.value)) {
+                            return expr.constant.has_value();
+                        }
+                        if (std::holds_alternative<SemConstant>(expr.value)) {
+                            return true;
+                        }
+                        if (const auto* unary = std::get_if<SemUnary>(&expr.value)) {
+                            return self(*unary->operand);
+                        }
+                        if (const auto* binary = std::get_if<SemBinary>(&expr.value)) {
+                            return self(*binary->left) && self(*binary->right);
+                        }
+                        if (const auto* cast = std::get_if<SemCast>(&expr.value)) {
+                            return self(*cast->operand);
+                        }
+                        return false;
+                    };
+                    const auto known = checked->constant && static_bound(*checked)
+                        ? checked->constant
+                        : std::nullopt;
+                    bound = RangePatternBound {.constant = known};
+                    if (!known) {
+                        operation = std::move(*checked);
+                    }
+                    return {};
+                };
+                auto checked = build_bound(range.begin, pattern.begin, first);
+                if (!checked) {
+                    return std::unexpected(checked.error());
+                }
+                checked = build_bound(range.end, pattern.end, last);
+                if (!checked) {
+                    return std::unexpected(checked.error());
+                }
+                const auto id = add(pattern);
+                if (first || last) {
+                    pattern_bounds.push_back(
+                        {.pattern = id, .begin = std::move(first), .end = std::move(last)}
+                    );
+                }
+                return BuiltPattern {.pattern = id, .bindings = {}, .irrefutable = false};
             },
             [&](const ASTBindingPattern& binding) noexcept -> AnalysisResult<BuiltPattern> {
                 const auto name = spelling(binding.name_span);
@@ -256,7 +383,8 @@ auto BodyElaborator::build_pattern(
                         selected->payload_types[index],
                         bindings,
                         allow_new_bindings,
-                        used_bindings
+                        used_bindings,
+                        pattern_bounds
                     );
                     if (!child.has_value()) {
                         return std::unexpected(child.error());
@@ -294,7 +422,8 @@ auto BodyElaborator::build_pattern(
                         type,
                         bindings,
                         index == 0uz && allow_new_bindings,
-                        alternative_names
+                        alternative_names,
+                        pattern_bounds
                     );
                     if (!alternative.has_value()) {
                         return std::unexpected(alternative.error());
@@ -388,6 +517,8 @@ auto BodyElaborator::build_match(
         BodyLocalFrame frame;
         BuiltPattern pattern;
         bool useful;
+        std::vector<SemPatternBounds> pattern_bounds;
+        FailureTermID range_failures;
     };
 
     auto plans = std::vector<ArmPlan>();
@@ -397,7 +528,13 @@ auto BodyElaborator::build_match(
         push_frame(arm.span);
         auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto used = std::flat_set<std::string, std::less<>>();
-        auto pattern = build_pattern(arm.pattern, subject_type, bindings, true, used);
+        auto pattern_bounds = std::vector<SemPatternBounds>();
+        const auto outer = failure_context_for_current_path();
+        const auto range_failures = draft().add_empty_failure_term();
+        failure_contexts.push_back({range_failures, outer.accepts_catch_residual});
+        auto pattern =
+            build_pattern(arm.pattern, subject_type, bindings, true, used, pattern_bounds);
+        failure_contexts.pop_back();
         if (!pattern.has_value()) {
             return std::unexpected(pattern.error());
         }
@@ -416,6 +553,8 @@ auto BodyElaborator::build_match(
                 .frame = std::move(frame),
                 .pattern = std::move(*pattern),
                 .useful = true,
+                .pattern_bounds = std::move(pattern_bounds),
+                .range_failures = range_failures,
             }
         );
     }
@@ -499,6 +638,12 @@ auto BodyElaborator::build_match(
     for (auto& plan : plans) {
         const auto useful = remaining && plan.useful;
         [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, useful);
+        if (useful) {
+            draft().add_failure_contribution(
+                failure_context_for_current_path().term,
+                plan.range_failures
+            );
+        }
         frames.push_back(std::move(plan.frame));
         [[maybe_unused]] const auto suspended =
             BodyFullExpressionSuspension(active_full_expression);
@@ -547,7 +692,8 @@ auto BodyElaborator::build_match(
              std::move(plan.pattern.bindings),
              std::move(guard_tree),
              std::move(*body),
-             useful}
+             useful,
+             std::move(plan.pattern_bounds)}
         );
         pop_frame();
     }

@@ -76,6 +76,9 @@ auto BodyElaborator::build_try(
         push_frame(arm.span);
         auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
+        auto pattern_bounds = std::vector<SemPatternBounds>();
+        const auto range_failures = draft().add_empty_failure_term();
+        failure_contexts.push_back({range_failures, outer_failure.accepts_catch_residual});
         auto alternatives = std::vector<SemCatchAlternative>();
         auto coverage_alternatives = std::vector<CatchCoverageAlternative>();
         auto accepted_pieces = std::vector<FailureTermID>();
@@ -106,7 +109,8 @@ auto BodyElaborator::build_try(
                     *failure_type,
                     bindings,
                     !expected_names.has_value(),
-                    alternative_names
+                    alternative_names,
+                    pattern_bounds
                 );
                 if (!pattern.has_value()) {
                     return std::unexpected(pattern.error());
@@ -149,6 +153,7 @@ auto BodyElaborator::build_try(
                 }
             );
         }
+        failure_contexts.pop_back();
         if (arm.pattern.alternatives.empty()) {
             invariant_violation("catch arm has no alternatives");
         }
@@ -326,6 +331,7 @@ auto BodyElaborator::build_try(
         const auto local_failures = draft().add_empty_failure_term();
         if (reference_path_reachable) {
             draft().add_guarded_failure_contribution(outer_failure.term, accepted, local_failures);
+            draft().add_guarded_failure_contribution(outer_failure.term, accepted, range_failures);
         }
         const auto local_failure =
             BodyFailureContext {local_failures, outer_failure.accepts_catch_residual};
@@ -381,7 +387,8 @@ auto BodyElaborator::build_try(
              std::move(alternatives),
              std::move(produced_bindings),
              std::move(guard_tree),
-             std::move(*body)}
+             std::move(*body),
+             std::move(pattern_bounds)}
         );
         coverage_history.back().guarded = guard_may_reject;
         catch_all_covered |= catches_all && !guard_may_reject;

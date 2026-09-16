@@ -172,6 +172,12 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
                     invariant_violation("string constant used a foreign spelling");
                 }
                 mix(value.value.index());
+            } else if constexpr (std::same_as<Value, RangeConstant>) {
+                mix(value.begin.magnitude());
+                mix(value.begin.negative());
+                mix(value.end.magnitude());
+                mix(value.end.negative());
+                mix(value.inclusive);
             } else if constexpr (std::same_as<Value, IntegerConstant>) {
                 mix(value.magnitude());
                 mix(value.negative());

@@ -20,6 +20,7 @@ template<typename Pattern>
 auto supported_execution_pattern(const Pattern& pattern) noexcept -> bool {
     return std::holds_alternative<WildcardPattern>(pattern)
         || std::holds_alternative<LiteralPattern>(pattern)
+        || std::holds_alternative<RangePattern>(pattern)
         || std::holds_alternative<BindingPattern>(pattern)
         || std::holds_alternative<OrPattern>(pattern);
 }

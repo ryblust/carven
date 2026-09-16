@@ -107,6 +107,13 @@ struct ASTBinaryExpr final {
     ASTExprID right;
 };
 
+struct ASTRangeExpr final {
+    ASTExprID begin;
+    Span operator_span;
+    ASTExprID end;
+    bool inclusive;
+};
+
 struct ASTCastExpr final {
     ASTExprID operand_id;
     Span operator_span;
@@ -188,6 +195,7 @@ struct ASTExpr final {
         ASTPrefixExpr,
         ASTAccessExpr,
         ASTBinaryExpr,
+        ASTRangeExpr,
         ASTCastExpr,
         ASTCallExpr,
         ASTIndexExpr,

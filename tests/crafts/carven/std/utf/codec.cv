@@ -7,20 +7,18 @@ test "UTF8: prefix decoding stops before later bytes" {
         let empty: [u8; 0] = [];
         match decode_utf8(empty)? {
             .End => {},
-            .Scalar(_, _) => { check(false); },
+            .Scalar(_, _) => check(false),
         }
         let prefix: [u8; 2] = [0x61, 0xff];
         match decode_utf8(prefix)? {
-            .End => {
-                check(false);
-            },
+            .End => check(false),
             .Scalar(value, width) => {
                 check(value == 'a');
                 check(width == 1);
             },
         }
     } catch {
-        UTF8Error(_) => { check(false); },
+        UTF8Error(_) => check(false),
     }
 }
 
@@ -100,17 +98,15 @@ test "UTF8: scalar boundaries have the specified encoding and decoding" {
             let bytes = item.bytes.as_slice().slice(0, item.width);
             validate_utf8(bytes)?;
             match decode_utf8(bytes)? {
-                .End => {
-                    check(false);
-                },
+                .End => check(false),
                 .Scalar(value, width) => {
                     check(char_to_u32(value) == item.scalar);
                     check(width == item.width);
                 },
             }
         } catch {
-            UTF8Error(_) => { check(false); },
-            UnicodeScalarError(_) => { check(false); },
+            UTF8Error(_) => check(false),
+            UnicodeScalarError(_) => check(false),
         }
     }
 }

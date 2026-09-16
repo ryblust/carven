@@ -6,15 +6,12 @@ fn report(label: str, primary: str, backup: str) {
         let port = port_or_default(primary, backup)?;
         println("Port:", port);
     } catch {
-        ConfigError(.Missing) => {
-            println("No port configured");
-        },
-        ConfigError(.Invalid(.BadDigit(position))) => {
-            println("Bad digit at byte:", position as i32);
-        },
-        ConfigError(.Invalid(.OutOfRange)) => {
-            println("Port must be between 1 and 65535");
-        },
+        ConfigError(.Missing) => println("No port configured"),
+        ConfigError(.Invalid(.BadDigit(position))) => println(
+            "Bad digit at byte:",
+            position as i32
+        ),
+        ConfigError(.Invalid(.OutOfRange)) => println("Port must be between 1 and 65535"),
     }
 }
 

@@ -70,17 +70,11 @@ struct ASTForStep final {
     std::variant<ASTAssignment, ASTUpdate, ASTExprID> value;
 };
 
-struct ASTHalfOpenRange final {
-    ASTExprID begin;
-    Span operator_span;
-    ASTExprID end;
-};
-
 struct ASTRangeForHeader final {
     std::optional<Span> write_marker;
     ASTBindingTarget target;
     std::optional<ASTTypeID> type;
-    std::variant<ASTExprID, ASTHalfOpenRange> iterable;
+    ASTExprID iterable;
 };
 
 struct ASTCStyleForHeader final {

@@ -931,9 +931,9 @@ const decorated = decorate(label(3)); // "[000102]"
 ```
 
 Parameters use Read or Take access and have builtin integer, `bool`, `char`,
-`str`, `String`, or supported fixed-array and struct types. Results use these types or
-`void`; a void result cannot initialize a constant. Ordinary result annotation
-and inference rules apply.
+`str`, `String`, integer ranges, or supported fixed-array and struct types. Results
+use these types or `void`; a void result cannot initialize a constant. Ordinary
+result annotation and inference rules apply.
 The entry function and `import(cpp)` functions cannot be `const fn`.
 
 Every definition is checked, including uncalled functions and inactive branches.
@@ -942,9 +942,9 @@ operations and casts; local initialization, assignment and Take; `if`, `match`,
 `while`, C-style loops, integer ranges and fixed-array range loops;
 `return`, `break` and `continue`;
 and direct calls to other constant functions. Match supports builtin subjects
-with literal, binding, wildcard and or patterns, including guards. Recursion is
-allowed when signatures and bodies can be completed without a construction
-dependency cycle.
+with literal, integer range, binding, wildcard and or patterns, including guards.
+Recursion is allowed when signatures and bodies can be completed without a
+construction dependency cycle.
 
 Text operations include `String::new`, `String::from_str`, the equivalent
 `str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
@@ -959,9 +959,9 @@ independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
 Structs support positional and named construction, field access and assignment,
 equality, independent copies, whole-binding Take, and parameters and results.
-Fields and array elements may be integers, `bool`, `char`, `str`, or recursively
-supported fixed arrays and structs. Construction evaluates initializers in source
-order. Freezing preserves nominal identity, array extents, and every field and
+Fields and array elements may be integers, integer ranges, `bool`, `char`, `str`,
+or recursively supported fixed arrays and structs. Construction evaluates
+initializers in source order. Freezing preserves nominal identity, array extents, and every field and
 element type; it does not convert owning String fields or elements to `str`.
 Empty array literals require an expected element type.
 
@@ -1258,10 +1258,18 @@ before each iteration, executes the body, then evaluates step clauses in source
 order. An omitted condition is true. `continue` in a C-style `for` proceeds
 to its step clauses; `break` exits the loop.
 
-An integer range evaluates its begin and end once, left to right. Both bounds
-must have one compatible integer type. It visits the half-open ascending
-sequence from begin through end-exclusive; begin greater than or equal to end
-produces no iterations. Integer-range bindings cannot use Write access.
+An integer range value has type `range<T>` for a builtin integer `T`. Expressions
+`begin..end` and `begin..=end` evaluate both bounds once, left to right, and own
+snapshots of one compatible integer type. The former excludes the upper bound;
+the latter includes it. Ranges support ordinary storage, copying, parameters,
+returns, and constant execution. They do not own element storage or borrow their
+bound expressions. Omitted bounds are supported only in patterns.
+
+An integer-range loop snapshots its source once. Changing the source range or
+its original bounds during iteration does not change the sequence. Iteration
+ascends; a reversed range is empty, and equal endpoints produce zero elements
+for `..` or one for `..=`. Closed intervals may include the type maximum without
+overflow. Integer-range bindings cannot use Write access.
 
 Arrays support Read and, for a mutable source, Write range bindings. Slices
 and `str.chars` support Read bindings only. A range binding is scoped to the
@@ -1293,9 +1301,22 @@ through aliases or callable captures. Guards may modify other storage, call
 functions, and produce failures. A selected arm's body may modify the subject.
 The first arm whose pattern matches and whose optional guard succeeds is selected.
 
+Integer range patterns accept `a..b`, `a..=b`, `..b`, `..=b`, and `a..`.
+Bounds have the subject's integer type. Each present bound evaluates once from
+left to right when its pattern is attempted, before testing containment. Enum
+case rejection, earlier payload rejection, and successful or-pattern alternatives
+skip later bound evaluation. Reversed and empty intervals never match. Bound
+failures propagate outward; bounds cannot obtain Write or Take access to the
+match subject, and cannot reference bindings introduced by the same pattern.
+
+Directly known, execution-free bounds contribute to static coverage. Dynamic
+bounds provide no coverage proof; use a fallback when static patterns are
+insufficient. Effectful bounds retain their evaluation even when their result is
+known.
+
 Patterns are recursive. Enum payload positions admit case, literal, binding,
-wildcard, `is`, and or-patterns. Structure and array destructuring are not
-supported. Payload arity must be exact. A bare identifier creates an immutable
+wildcard, integer range, `is`, and or-patterns. Structure and array destructuring
+are not supported. Payload arity must be exact. A bare identifier creates an immutable
 owning binding and never pins a constant. The selected payload is copied once
 after its case matches and before the guard runs.
 

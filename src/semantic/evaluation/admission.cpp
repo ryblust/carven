@@ -15,6 +15,9 @@ auto supported_execution_type(
     }
     const auto canonical = values.type_copy(*id);
 
+    if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
+        return true;
+    }
     if (std::holds_alternative<ArrayTypeValue>(canonical.value)
         || std::holds_alternative<StructTypeValue>(canonical.value)) {
         const auto shape = shapes.get(*id);
@@ -40,6 +43,7 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                           || std::same_as<Value, SemBinding>
                           || std::same_as<Value, SemStruct>
                           || std::same_as<Value, SemField>
+                          || std::same_as<Value, SemRange>
                           || std::same_as<Value, SemArray>
                           || std::same_as<Value, SemIndex>
                           || std::same_as<Value, SemUnary>

@@ -121,3 +121,10 @@ TEST_CASE("Graver format: import lists include closing punctuation in the line w
         );
     }
 }
+
+TEST_CASE("Graver format: unbounded range patterns separate their guards") {
+    check_format(
+        "fn f(x:i32){match x{0..if ready=>{},_=>{},}}",
+        "fn f(x: i32) {\n    match x {\n        0.. if ready => {},\n        _ => {},\n    }\n}\n"
+    );
+}

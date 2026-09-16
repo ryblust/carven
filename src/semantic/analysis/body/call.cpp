@@ -47,7 +47,8 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
                             || std::same_as<Value, CallableViewTypeValue>
                             || std::same_as<Value, CppTypeValue>
                             || std::same_as<Value, PointerTypeValue>
-                            || std::same_as<Value, SliceTypeValue>,
+                            || std::same_as<Value, SliceTypeValue>
+                            || std::same_as<Value, RangeTypeValue>,
                         "unhandled non-owning callable type"
                     );
                 },

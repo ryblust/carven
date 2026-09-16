@@ -107,7 +107,8 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
                 }
             } else {
                 static_assert(
-                    std::same_as<Item, IntegerConstant>
+                    std::same_as<Item, RangeConstant>
+                        || std::same_as<Item, IntegerConstant>
                         || std::same_as<Item, BooleanConstant>
                         || std::same_as<Item, NullPointerConstant>
                         || std::same_as<Item, F32Constant>
@@ -128,7 +129,18 @@ auto validate_constant_fact(const ExecutionValueAccess& values, const ConstantFa
     const auto matches = std::visit(
         [&](const auto& value) noexcept -> bool {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, IntegerConstant>) {
+            if constexpr (std::same_as<Value, RangeConstant>) {
+                const auto* range = std::get_if<RangeTypeValue>(&type.value);
+                if (range == nullptr) {
+                    return false;
+                }
+                const auto element = values.type_copy(range->element);
+                const auto* builtin = std::get_if<BuiltinTypeValue>(&element.value);
+                return builtin != nullptr
+                    && builtin_is_integer(builtin->kind)
+                    && integer_constant_fits(value.begin, builtin->kind)
+                    && integer_constant_fits(value.end, builtin->kind);
+            } else if constexpr (std::same_as<Value, IntegerConstant>) {
                 const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
                 return builtin != nullptr
                     && builtin_is_integer(builtin->kind)

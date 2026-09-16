@@ -32,8 +32,10 @@ fn release_then_push(&view: str, &owner: String) {
 }
 
 fn recursive_view(text: String, count: i32) -> str {
-    if count == 0 { return text; }
-    return recursive_view(text, count - 1);
+    return match count {
+        0 => text,
+        _ => recursive_view(text, count - 1),
+    };
 }
 
 fn read_with_write_alias(text: String, &alias: String) -> usize {
@@ -138,8 +140,10 @@ test "String: aggregate storage captures branches recursive calls and retained r
 fn take_view(&&view: str) -> usize => view.len();
 
 fn recursive_str(view: str, count: i32) -> str {
-    if count == 0 { return view; }
-    return recursive_str(view, count - 1);
+    return match count {
+        0 => view,
+        _ => recursive_str(view, count - 1),
+    };
 }
 
 fn selected_view(first: String, second: String, choose: bool) -> str {
@@ -244,7 +248,7 @@ test "String: temporary backing survives range and match consumption" {
     }
     check(bytes == 47);
     match String::from_str("temporary text longer than small string storage").as_str() {
-        "temporary text longer than small string storage" => { check(true); },
-        _ => { fail("temporary match subject lost its contents"); },
+        "temporary text longer than small string storage" => check(true),
+        _ => fail("temporary match subject lost its contents"),
     }
 }

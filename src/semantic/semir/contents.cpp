@@ -111,6 +111,9 @@ auto TypeContentsQuery<Types, Declarations>::contents(TypeID type) noexcept -> T
                     .storage_owner = false
                 };
             },
+            [](const RangeTypeValue&) static noexcept -> TypeContents {
+                return {.closure_owner = false, .callable_view = false, .storage_owner = false};
+            },
             [](const PointerTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false, .storage_owner = false};
             },

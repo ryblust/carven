@@ -4,8 +4,10 @@ struct InvalidPort {}
 
 fn port(text: str) -> i32 throw InvalidPort {
     let value = ::parse_port(text) as i32;
-    if value < 0 { throw InvalidPort {}; }
-    return value;
+    return match value {
+        ..0 => throw InvalidPort {},
+        _ => value,
+    };
 }
 
 fn report(text: str) {
@@ -13,7 +15,7 @@ fn report(text: str) {
         let value = port(text)?;
         println("Port:", value);
     } catch {
-        InvalidPort(_) => { println("Invalid port"); },
+        InvalidPort(_) => println("Invalid port"),
     }
 }
 

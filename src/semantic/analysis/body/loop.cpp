@@ -163,65 +163,27 @@ auto BodyElaborator::range_for_statement(
         }
         declared = *resolved;
     }
-    auto begin = std::optional<SemanticExpression>();
-    auto end = std::optional<SemanticExpression>();
+    auto iterable = std::optional<SemanticExpression>();
     auto element_type = std::optional<ConstructionTypeRef>();
-    if (const auto* range = std::get_if<ASTHalfOpenRange>(&header.iterable)) {
-        if (header.write_marker.has_value()) {
-            return std::unexpected(fail(
-                *header.write_marker,
-                DiagnosticCode::AccessRangeBinding,
-                "integer range bindings cannot use Write access"
-            ));
+    {
+        const auto id = header.iterable;
+        auto expected = std::optional<ConstructionTypeRef>();
+        auto ungrouped = id;
+        while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(ungrouped).value)) {
+            ungrouped = group->expression;
         }
-        auto value = expression(range->begin, declared);
-        if (!value.has_value()) {
-            return std::unexpected(value.error());
+        if (declared && std::holds_alternative<ASTRangeExpr>(ast.expression(ungrouped).value)) {
+            if (const auto* concrete = std::get_if<TypeID>(&*declared)) {
+                const auto canonical = draft().type_copy(*concrete);
+                const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+                if (builtin && builtin_is_integer(builtin->kind)) {
+                    expected =
+                        draft().intern_type({.value = RangeTypeValue {.element = *concrete}});
+                }
+            }
         }
-        const auto* type = std::get_if<TypeID>(&value->type());
-        if (type == nullptr) {
-            return std::unexpected(fail(
-                ast.expression(range->begin).span,
-                DiagnosticCode::TypeRangeInteger,
-                "integer range bound must have a concrete integer type"
-            ));
-        }
-        const auto canonical = draft().type_copy(*type);
-        const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
-        if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-            return std::unexpected(fail(
-                ast.expression(range->begin).span,
-                DiagnosticCode::TypeRangeInteger,
-                "integer range bounds must be integers"
-            ));
-        }
-        element_type = value->type();
-        auto checked = consume_value(*value, ast.expression(range->begin).span, AccessMode::Read);
-        if (!checked.has_value()) {
-            return std::unexpected(checked.error());
-        }
-        begin = std::move(*checked);
-        auto limit = expression(range->end, element_type);
-        if (!limit.has_value()) {
-            return std::unexpected(limit.error());
-        }
-        if (!compatible(*element_type, limit->type())) {
-            return std::unexpected(fail(
-                ast.expression(range->end).span,
-                DiagnosticCode::TypeRangeBounds,
-                "integer range bounds must have one compatible type"
-            ));
-        }
-        auto limit_checked =
-            consume_value(*limit, ast.expression(range->end).span, AccessMode::Read);
-        if (!limit_checked.has_value()) {
-            return std::unexpected(limit_checked.error());
-        }
-        end = std::move(*limit_checked);
-    } else {
-        const auto id = std::get<ASTExprID>(header.iterable);
-        auto value = expression(id);
-        if (!value.has_value()) {
+        auto value = expression(id, expected);
+        if (!value) {
             return std::unexpected(value.error());
         }
         auto read_only = false;
@@ -229,6 +191,9 @@ auto BodyElaborator::range_for_statement(
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
+            } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
+                element_type = range->element;
+                read_only = true;
             } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
                 element_type = slice->element;
                 read_only = true;
@@ -252,15 +217,15 @@ auto BodyElaborator::range_for_statement(
             return std::unexpected(fail(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
-                "range iterable must be an array, slice, or character view"
+                "range iterable must be an integer range, array, slice, or character view"
             ));
         }
         if (header.write_marker.has_value()) {
             if (read_only) {
                 return std::unexpected(fail(
                     *header.write_marker,
-                    DiagnosticCode::AccessViewRangeBinding,
-                    "view range bindings are read-only"
+                    DiagnosticCode::AccessRangeBinding,
+                    "iteration over this value is read-only"
                 ));
             }
             const auto* place = std::get_if<PlaceExpression>(&value->storage);
@@ -287,10 +252,10 @@ auto BodyElaborator::range_for_statement(
             if (!checked.has_value()) {
                 return std::unexpected(checked.error());
             }
-            begin = std::move(*checked);
+            iterable = std::move(*checked);
         }
         if (header.write_marker.has_value()) {
-            begin = take_built(*value, ast.expression(id).span);
+            iterable = take_built(*value, ast.expression(id).span);
         }
     }
     if (declared.has_value() && !compatible(*declared, *element_type)) {
@@ -351,8 +316,7 @@ auto BodyElaborator::range_for_statement(
             loop_lifetime,
             header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
             binding,
-            end ? SemRangeSource(SemIntegerRange {std::move(*begin), std::move(*end)})
-                : SemRangeSource(SemSequenceRange {std::move(*begin)}),
+            std::move(*iterable),
             UniqueIndirect(std::move(body))
         },
         origin(span)

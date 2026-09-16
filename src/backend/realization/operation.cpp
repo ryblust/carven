@@ -330,6 +330,15 @@ auto realize_operation(
                     "array adoption requires element realization from a stabilized source"
                 );
             },
+            [&](const SemRange& value) noexcept -> TargetExpr {
+                operands.push_back(bool_expression(value.inclusive));
+                return TargetExpr {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(source.type.resolved()),
+                        .initializer = std::move(operands)
+                    }
+                };
+            },
             [&](const SemArray&) noexcept -> TargetExpr {
                 const auto& array = std::get<ArrayTypeValue>(
                     context.semantic().types().type(source.type.resolved()).value

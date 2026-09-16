@@ -484,6 +484,7 @@ public:
                               || std::same_as<Form, ASTNameExpr>
                               || std::same_as<Form, ASTContextualCaseExpr>
                               || std::same_as<Form, ASTPrefixExpr>
+                              || std::same_as<Form, ASTRangeExpr>
                               || std::same_as<Form, ASTBinaryExpr>
                               || std::same_as<Form, ASTCastExpr>
                               || std::same_as<Form, ASTInterpolationExpr>

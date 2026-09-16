@@ -439,3 +439,87 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
         source.operator_span
     );
 }
+
+template<typename Site>
+auto interpret_range(
+    Site& site,
+    const ASTRangeExpr& source,
+    Span span,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionResult<typename Site::Value> {
+    auto element = std::optional<ConstructionTypeRef>();
+    if (expected) {
+        if (const auto* concrete = std::get_if<TypeID>(&*expected)) {
+            const auto type = site.draft().type_copy(*concrete);
+            if (const auto* range = std::get_if<RangeTypeValue>(&type.value)) {
+                element = range->element;
+            }
+        }
+    }
+    auto begin = site.read(source.begin, element);
+    if (!begin) {
+        return std::unexpected(begin.error());
+    }
+    const auto begin_type = site.type(*begin);
+    const auto* concrete = std::get_if<TypeID>(&begin_type);
+    if (concrete == nullptr) {
+        return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::TypeRangeInteger,
+            "range requires concrete integer bounds"
+        ));
+    }
+    const auto type = site.draft().type_copy(*concrete);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+    if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
+        return std::unexpected(
+            site.fail(span, DiagnosticCode::TypeRangeInteger, "range bounds must be integers")
+        );
+    }
+    const auto range_type =
+        site.draft().intern_type({.value = RangeTypeValue {.element = *concrete}});
+    auto end = site.read(source.end, site.type(*begin));
+    if (!end) {
+        return std::unexpected(end.error());
+    }
+    if (!type_shapes_compatible(site.draft(), site.type(*begin), site.type(*end))) {
+        return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::TypeRangeBounds,
+            "range bounds must have one compatible type"
+        ));
+    }
+    auto known = std::optional<ConstantID>();
+    if (site.known(*begin) && site.known(*end)) {
+        const auto left = site.draft().constant(*site.known(*begin));
+        const auto right = site.draft().constant(*site.known(*end));
+        known = site.draft().intern_constant(
+            {.type = range_type,
+             .value = RangeConstant {
+                 .begin = std::get<IntegerConstant>(left.value),
+                 .end = std::get<IntegerConstant>(right.value),
+                 .inclusive = source.inclusive
+             }}
+        );
+    }
+    auto state = typename Site::OperandState();
+    auto first = site.consume_read(state, std::move(*begin), span);
+    if (!first) {
+        return std::unexpected(first.error());
+    }
+    auto last = site.consume_read(state, std::move(*end), span);
+    if (!last) {
+        return std::unexpected(last.error());
+    }
+    return site.finish_constructed(
+        range_type,
+        SemRange {
+            .begin = OwnedSemanticExpression(std::move(*first)),
+            .end = OwnedSemanticExpression(std::move(*last)),
+            .inclusive = source.inclusive
+        },
+        std::move(state),
+        span,
+        known
+    );
+}

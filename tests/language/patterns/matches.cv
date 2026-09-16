@@ -1,7 +1,7 @@
 fn classify(value: i32) -> i32 {
     return match value {
         -1 => 0,
-        0 | 1 => 1,
+        0..=1 => 1,
         _ => {
             let doubled = value * 2;
             doubled

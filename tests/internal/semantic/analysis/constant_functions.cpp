@@ -120,8 +120,10 @@ TEST_CASE("Const functions: repeated recursive evaluation owns one typed body pe
         const second = factorial(6);
         const third = factorial(3);
         const fn factorial(value: i32) -> i32 {
-            if value < 2 { return 1; }
-            return value * factorial(value - 1);
+            return match value {
+                ..2 => 1,
+                _ => value * factorial(value - 1),
+            };
         }
         fn ordinary() -> i32 => factorial(4);
     )");

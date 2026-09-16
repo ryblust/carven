@@ -139,7 +139,7 @@ TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries"
          .primary_text = "s"},
         {.name = "caught original holder",
          .source =
-             "struct E { text: str } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) => { s.clear(); }, } }",
+             "struct E { text: str } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) => s.clear(), } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "guard original holder",

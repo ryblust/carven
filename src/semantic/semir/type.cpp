@@ -42,7 +42,8 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
             } else if constexpr (std::same_as<Value, PointerTypeValue>) {
                 child(value.target, "ptr type used a foreign target");
                 mix(static_cast<std::size_t>(value.access));
-            } else if constexpr (std::same_as<Value, SliceTypeValue>) {
+            } else if constexpr (std::same_as<Value, SliceTypeValue>
+                                 || std::same_as<Value, RangeTypeValue>) {
                 child(value.element, "slice type used a foreign element type");
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 child(value.element, "array type used a foreign element type");

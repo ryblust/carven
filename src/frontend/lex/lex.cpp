@@ -354,7 +354,7 @@ auto Lexer::scan_token() noexcept -> void {
         case '{': append_token(LeftBrace); return;
         case '}': append_token(RightBrace); return;
         case ',': append_token(Comma); return;
-        case '.': append_token(match('.') ? DotDot : Dot); return;
+        case '.': append_token(match('.') ? (match('=') ? DotDotEqual : DotDot) : Dot); return;
         case ';': append_token(Semicolon); return;
         case ':': append_token(match(':') ? ColonColon : Colon); return;
         case '+': append_token(match('=') ? PlusEqual : match('+') ? PlusPlus : Plus); return;

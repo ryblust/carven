@@ -44,6 +44,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
             return "carven::runtime::append_format_valid_utf8";
         case TargetSymbol::RuntimeAdoptArray:        return "carven::runtime::adopt_array";
         case TargetSymbol::RuntimeAsSlice:           return "carven::runtime::as_slice";
+        case TargetSymbol::RuntimeRange:             return "carven::runtime::Range";
         case TargetSymbol::RuntimeSlice:             return "carven::runtime::Slice";
         case TargetSymbol::RuntimeString:            return "carven::runtime::String";
         case TargetSymbol::RuntimeStrCharsView:      return "carven::runtime::StrCharsView";

@@ -66,6 +66,12 @@ private:
         const ConstructionInitialize& source,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
+    auto pattern_bound(
+        std::span<const ConstructionPatternBounds> pattern_bounds,
+        PatternID pattern,
+        bool upper,
+        LoweringStmtBuilder& destination
+    ) noexcept -> std::optional<TargetExpr>;
     auto assign(const ConstructionAssign& source, LoweringStmtBuilder& destination) noexcept
         -> void;
     auto statement(const ConstructionStatement& source, ConstructionRegionID owner) noexcept

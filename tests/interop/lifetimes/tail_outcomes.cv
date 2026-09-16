@@ -27,7 +27,7 @@ test "Tail outcomes: native trivial copies do not invoke observable move constru
         check(forward_copy(41)?.get() == 41);
         check(closure()?.get() == 43);
     } catch {
-        Failure(_) => { fail("unexpected failure"); },
+        Failure(_) => fail("unexpected failure"),
     }
     check(move_count() == 0);
 }
@@ -42,7 +42,7 @@ test "Tail outcomes: success payloads retain their original construction identit
         check(!(forward_self()?.at_construction_address() as bool));
         check(!(closure()?.at_construction_address() as bool));
     } catch {
-        Failure(_) => { fail("unexpected failure"); },
+        Failure(_) => fail("unexpected failure"),
     }
 }
 
@@ -58,7 +58,7 @@ test "Tail outcomes: success transfer preserves source and function-local cleanu
     try {
         check(forward_tracked(41)?.get() == 41);
     } catch {
-        Failure(_) => { fail("unexpected failure"); },
+        Failure(_) => fail("unexpected failure"),
     }
     check(matches("G1 c41 m41 s-41 g1 r41 d41 "));
 
@@ -71,7 +71,7 @@ test "Tail outcomes: success transfer preserves source and function-local cleanu
     try {
         check(closure()?.get() == 43);
     } catch {
-        Failure(_) => { fail("unexpected failure"); },
+        Failure(_) => fail("unexpected failure"),
     }
     check(matches("G2 c43 m43 s-43 g2 r43 d43 "));
 }
@@ -90,7 +90,7 @@ test "Tail outcomes: borrowed argument temporaries outlive result transfer" {
     try {
         check(forward_borrowed()?.get() == 47);
     } catch {
-        Failure(_) => { fail("unexpected failure"); },
+        Failure(_) => fail("unexpected failure"),
     }
     check(matches("G1 G2 c47 m47 s-47 g2 g1 r47 d47 "));
 }
@@ -112,7 +112,7 @@ test "Tail outcomes: failure payload transfer preserves borrowed argument cleanu
         let _ = forward_rejected()?;
         fail("expected payload failure");
     } catch {
-        PayloadFailure(error) => { check(error.payload.get() == 53); },
+        PayloadFailure(error) => check(error.payload.get() == 53),
     }
     // Catch storage receives the failure before the named pattern copies it.
     check(matches("G1 G2 c53 m53 s-53 m53 s-53 g2 g1 m53 s-53 p53 r53 d53 d53 "));

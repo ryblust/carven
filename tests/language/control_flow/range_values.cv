@@ -1,0 +1,43 @@
+const fn sum_interval(values: range<i32>) -> i32 {
+    var sum = 0;
+    for value in values {
+        sum += value;
+    }
+    return sum;
+}
+
+const fn make_interval(end: i32) -> range<i32> => 1..=end;
+
+const test "Range values: constants and calls share interval semantics" {
+    let interval = make_interval(4);
+    check(sum_interval(interval) == 10);
+    check(sum_interval(4..1) == 0);
+    check(sum_interval(1..1) == 0);
+    check(sum_interval(1..=1) == 1);
+    var count = 0;
+    for value in 254u8..=255u8 {
+        count += 1;
+        continue;
+    }
+    check(count == 2);
+}
+
+test "Range values: construction and iteration retain independent snapshots" {
+    var end = 4;
+    var interval = 1..end;
+    end = 8;
+    check(sum_interval(interval) == 6);
+    var sum = 0;
+    for value in interval {
+        interval = 10..20;
+        sum += value;
+    }
+    check(sum == 6);
+    check(sum_interval(make_interval(4)) == 10);
+    var count = 0;
+    for value in 18446744073709551614u64..=18446744073709551615u64 {
+        count += 1;
+        continue;
+    }
+    check(count == 2);
+}

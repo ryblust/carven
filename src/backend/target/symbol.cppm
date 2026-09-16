@@ -31,6 +31,7 @@ enum class TargetSymbol {
     RuntimeOutcome,
     RuntimeString,
     RuntimeSlice,
+    RuntimeRange,
     RuntimeAsSlice,
     RuntimeAdoptArray,
     RuntimePrint,

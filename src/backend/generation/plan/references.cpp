@@ -122,6 +122,9 @@ auto DeclarationReferenceCollector::collect_type(
             [&](const SliceTypeValue& value) noexcept {
                 collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
             },
+            [&](const RangeTypeValue& value) noexcept {
+                collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
+            },
             [&](const PointerTypeValue& value) noexcept {
                 collect_type(value.target, TargetTypeCompleteness::Declaration, guard);
             },

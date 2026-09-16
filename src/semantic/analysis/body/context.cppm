@@ -460,7 +460,8 @@ private:
         ConstructionTypeRef type,
         std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
         bool allow_new_bindings,
-        std::flat_set<std::string, std::less<>>& used_bindings
+        std::flat_set<std::string, std::less<>>& used_bindings,
+        std::vector<SemPatternBounds>& pattern_bounds
     ) noexcept -> AnalysisResult<BuiltPattern>;
     auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
         -> AnalysisResult<ConstructionTypeRef>;

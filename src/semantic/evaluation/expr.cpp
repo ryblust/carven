@@ -72,7 +72,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     return std::unexpected(subject.error());
                 }
             }
-            auto accepted = matches(frame, arm.pattern, *subject);
+            auto accepted = matches(frame, arm.pattern, *subject, arm.pattern_bounds);
             if (!accepted) {
                 return std::unexpected(accepted.error());
             }
@@ -292,6 +292,34 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     }
                 }
                 std::unreachable();
+            } else if constexpr (std::same_as<Operation, SemRange>) {
+                auto begin = value(frame, *operation.begin);
+                if (!begin) {
+                    return std::unexpected(begin.error());
+                }
+                auto end = value(frame, *operation.end);
+                if (!end) {
+                    return std::unexpected(end.error());
+                }
+                auto first = read_fact(*begin, source.origin);
+                auto last = read_fact(*end, source.origin);
+                if (!first || !last) {
+                    return std::unexpected(!first ? first.error() : last.error());
+                }
+                auto range_type = type(source.type.construction(), source.origin);
+                if (!range_type) {
+                    return std::unexpected(range_type.error());
+                }
+                return ExecutionValue(
+                    ConstantAtom {
+                        .type = *range_type,
+                        .value = RangeConstant {
+                            .begin = std::get<IntegerConstant>(first->value),
+                            .end = std::get<IntegerConstant>(last->value),
+                            .inclusive = operation.inclusive
+                        }
+                    }
+                );
             } else if constexpr (std::same_as<Operation, SemArray>) {
                 auto result_type = type(source.type.construction(), source.origin);
                 if (!result_type) {
@@ -505,7 +533,8 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
 auto SemanticExecutor::matches(
     ExecutionFrame& frame,
     PatternID id,
-    const ExecutionValue& subject
+    const ExecutionValue& subject,
+    std::span<const SemPatternBounds> pattern_bounds
 ) noexcept -> ExecutionResult<bool> {
     return frame.body->visit_pattern(
         id,
@@ -525,6 +554,80 @@ auto SemanticExecutor::matches(
                         }
                         frame.slots[pattern_value.binding.index()] = std::move(*copied);
                         return true;
+                    } else if constexpr (std::same_as<Pattern, RangePattern>) {
+                        const auto read =
+                            [&](const RangePatternBound& bound,
+                                bool upper) noexcept -> ExecutionResult<ConstantFact> {
+                            if (bound.constant) {
+                                return values.constant(*bound.constant);
+                            }
+                            const auto found =
+                                std::ranges::find(pattern_bounds, id, &SemPatternBounds::pattern);
+                            if (found == pattern_bounds.end()) {
+                                return std::unexpected(fail(
+                                    pattern.origin,
+                                    DiagnosticCode::ConstEvaluation,
+                                    "missing range bound"
+                                ));
+                            }
+                            const auto& expression = upper ? found->end : found->begin;
+                            auto result = value(frame, *expression);
+                            if (!result) {
+                                return std::unexpected(result.error());
+                            }
+                            return read_fact(*result, pattern.origin);
+                        };
+                        auto first = std::optional<ConstantFact>();
+                        auto last = std::optional<ConstantFact>();
+                        if (pattern_value.begin) {
+                            auto result = read(*pattern_value.begin, false);
+                            if (!result) {
+                                return std::unexpected(result.error());
+                            }
+                            first = std::move(*result);
+                        }
+                        if (pattern_value.end) {
+                            auto result = read(*pattern_value.end, true);
+                            if (!result) {
+                                return std::unexpected(result.error());
+                            }
+                            last = std::move(*result);
+                        }
+                        auto selected = read_fact(subject, pattern.origin);
+                        if (!selected) {
+                            return std::unexpected(selected.error());
+                        }
+                        const auto compare =
+                            [&](BinaryOperator operation,
+                                const ConstantFact& bound) noexcept -> ExecutionResult<bool> {
+                            auto result = finish(
+                                evaluate_binary_constant_value(
+                                    values,
+                                    operation,
+                                    *selected,
+                                    bound,
+                                    values.builtin_type(BuiltinType::Bool),
+                                    context.arithmetic()
+                                ),
+                                pattern.origin
+                            );
+                            if (!result) {
+                                return std::unexpected(result.error());
+                            }
+                            return boolean(*result, pattern.origin);
+                        };
+                        if (first) {
+                            auto accepted = compare(BinaryOperator::GreaterEqual, *first);
+                            if (!accepted || !*accepted) {
+                                return accepted;
+                            }
+                        }
+                        return last ? compare(
+                                          pattern_value.inclusive ? BinaryOperator::LessEqual
+                                                                  : BinaryOperator::Less,
+                                          *last
+                                      )
+                                    : ExecutionResult<bool>(true);
                     } else if constexpr (std::same_as<Pattern, LiteralPattern>) {
                         return equal(
                             subject,
@@ -533,7 +636,7 @@ auto SemanticExecutor::matches(
                         );
                     } else if constexpr (std::same_as<Pattern, OrPattern>) {
                         for (const auto alternative : pattern_value.alternatives) {
-                            auto accepted = matches(frame, alternative, subject);
+                            auto accepted = matches(frame, alternative, subject, pattern_bounds);
                             if (!accepted || *accepted) {
                                 return accepted;
                             }

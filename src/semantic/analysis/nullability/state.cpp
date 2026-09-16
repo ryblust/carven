@@ -310,10 +310,8 @@ auto NullabilityBodyAnalyzer::add_range_aliases(const SemRangeLoop& source) noex
     if (source.access != AccessMode::Write) {
         return;
     }
-    if (const auto* sequence = std::get_if<SemSequenceRange>(&source.source)) {
-        if (const auto place = location(sequence->value, true)) {
-            range_aliases.insert(place->root);
-        }
+    if (const auto place = location(source.source, true)) {
+        range_aliases.insert(place->root);
     }
     if (source.binding) {
         range_aliases.insert(*source.binding);
@@ -342,9 +340,7 @@ auto NullabilityBodyAnalyzer::scan_writes_impl(NullState& state, const Source& s
                 }
                 if (const auto* loop = std::get_if<SemRangeLoop>(&value.value);
                     loop != nullptr && loop->access == AccessMode::Write) {
-                    if (const auto* range = std::get_if<SemSequenceRange>(&loop->source)) {
-                        invalidate(state, location(range->value, true));
-                    }
+                    invalidate(state, location(loop->source, true));
                 }
             },
         }

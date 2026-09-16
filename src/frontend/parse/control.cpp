@@ -391,6 +391,44 @@ auto Parser::parse_pattern() noexcept -> std::optional<ASTPatternID> {
 
 auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
     const auto start = current().span;
+    const auto checkpoint = begin_speculation();
+    auto begin = std::optional<ASTExprID>();
+    if (!check(TokenKind::DotDot) && !check(TokenKind::DotDotEqual)) {
+        begin = parse_shift();
+    }
+    const auto range = !failed && (check(TokenKind::DotDot) || check(TokenKind::DotDotEqual));
+    finish_speculation(checkpoint, range, false);
+    if (range) {
+        const auto operation = consume();
+        auto end = std::optional<ASTExprID>();
+        if (!check(TokenKind::FatArrow)
+            && !check(TokenKind::If)
+            && !check(TokenKind::Pipe)
+            && !check(TokenKind::Comma)
+            && !check(TokenKind::RightParen)) {
+            end = parse_shift();
+            if (!end) {
+                return std::nullopt;
+            }
+        }
+        if ((!begin && !end) || (operation.kind == TokenKind::DotDotEqual && !end)) {
+            fail_here(
+                "range pattern requires a bound and an inclusive upper bound cannot be omitted"
+            );
+            return std::nullopt;
+        }
+        return builder.append_pattern(
+            ASTPattern {
+                .span = join(start, end ? builder.expression(*end).span : operation.span),
+                .value = ASTRangePattern {
+                    .begin = begin,
+                    .operator_span = operation.span,
+                    .end = end,
+                    .inclusive = operation.kind == TokenKind::DotDotEqual
+                }
+            }
+        );
+    }
     if (check(TokenKind::Identifier) && slice(source, current().span) == "_") {
         const auto wildcard = consume();
         return builder.append_pattern(

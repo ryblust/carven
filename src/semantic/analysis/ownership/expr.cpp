@@ -232,6 +232,12 @@ auto OwnershipBodyAnalyzer::expression(
                     );
                 },
                 [](const SemEnumConstructor&) static noexcept {},
+                [&](const SemRange& value) noexcept {
+                    static_cast<void>(evaluate(*value.begin));
+                    if (flow.normal) {
+                        static_cast<void>(evaluate(*value.end));
+                    }
+                },
                 [&](const SemArray& value) noexcept {
                     for (const auto [index, child] : std::views::enumerate(value.elements)) {
                         aggregate(child, OwnershipProjectionPath {index});

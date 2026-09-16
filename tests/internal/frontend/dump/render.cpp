@@ -183,7 +183,7 @@ TEST_CASE("Dump: half-open range iterables expose their ordered syntax") {
     REQUIRE(parsed.has_value());
 
     const auto output = render_ast_dump(owned.sources, *parsed);
-    const auto iterable = output.find("iterable HalfOpenRange [18, 30)");
+    const auto iterable = output.find("iterable RangeExpression [18, 30)");
     const auto begin = output.find("begin NameExpression [18, 23) \"begin\"");
     const auto op = output.find("operator [23, 25) \"..\"");
     const auto end = output.find("end CallExpression [25, 30)");

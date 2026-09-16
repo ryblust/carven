@@ -1,4 +1,5 @@
 module carven:semantic.analysis.validation.structure.impl;
+
 import :semantic.analysis.validation.context;
 import std;
 
@@ -48,6 +49,23 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
         std::visit(
             Overloaded {
                 [](const WildcardPattern&) static noexcept {},
+                [&](const RangePattern& value) noexcept {
+                    const auto& type = require_type(pattern.type);
+                    const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+                    if (!builtin
+                        || !builtin_is_integer(builtin->kind)
+                        || (!value.begin && !value.end)) {
+                        invariant_violation("invalid integer range pattern");
+                    }
+                    for (const auto& bound : {value.begin, value.end}) {
+                        if (bound
+                            && bound->constant
+                            && program.constants().constant(*bound->constant).type
+                                != pattern.type) {
+                            invariant_violation("range bound type differs from subject");
+                        }
+                    }
+                },
                 [&](const LiteralPattern& value) noexcept {
                     if (program.constants().constant(value.constant).type != pattern.type) {
                         invariant_violation("literal pattern type differs from its constant");
@@ -111,6 +129,7 @@ auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
     return std::visit(
         Overloaded {
             [](const WildcardPattern&) static noexcept { return std::vector<LocalBindingID>(); },
+            [](const RangePattern&) static noexcept { return std::vector<LocalBindingID>(); },
             [](const LiteralPattern&) static noexcept { return std::vector<LocalBindingID>(); },
             [](const TypeConstraintPattern&) static noexcept {
                 return std::vector<LocalBindingID>();
@@ -173,7 +192,8 @@ auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> Cal
                         || std::same_as<Value, ArrayTypeValue>
                         || std::same_as<Value, CppTypeValue>
                         || std::same_as<Value, PointerTypeValue>
-                        || std::same_as<Value, SliceTypeValue>,
+                        || std::same_as<Value, SliceTypeValue>
+                        || std::same_as<Value, RangeTypeValue>,
                     "unhandled non-callable canonical type"
                 );
                 invariant_violation("value or place does not have a callable type");
@@ -219,4 +239,51 @@ auto BodyContractVerifier::compatible_pattern_type(TypeID left, TypeID right) co
             );
     };
     return compatible(left, right);
+}
+
+auto BodyContractVerifier::verify_pattern_bounds(
+    std::span<const PatternID> roots,
+    std::span<const SemPatternBounds> pattern_bounds
+) const noexcept -> void {
+    auto expected = std::flat_map<PatternID, const RangePattern*>();
+    const auto visit = [&](this const auto& self, PatternID id) noexcept -> void {
+        const auto& pattern = body.pattern(id);
+        if (const auto* range = std::get_if<RangePattern>(&pattern.value)) {
+            if ((range->begin && !range->begin->constant)
+                || (range->end && !range->end->constant)) {
+                expected.emplace(id, range);
+            }
+        } else if (const auto* alternatives = std::get_if<OrPattern>(&pattern.value)) {
+            for (const auto child : alternatives->alternatives) {
+                self(child);
+            }
+        } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern.value)) {
+            for (const auto child : enumeration->payload) {
+                self(child);
+            }
+        }
+    };
+    for (const auto root : roots) {
+        visit(root);
+    }
+    for (const auto& range : pattern_bounds) {
+        const auto found = expected.find(range.pattern);
+        if (found == expected.end()) {
+            invariant_violation("range expressions have no unique dynamic pattern");
+        }
+        const auto& pattern = body.pattern(range.pattern);
+        const auto check = [&](const std::optional<RangePatternBound>& bound,
+                               const std::optional<SemanticExpression>& expression) noexcept {
+            if (expression.has_value() != (bound && !bound->constant)
+                || (expression && expression->type.resolved() != pattern.type)) {
+                invariant_violation("dynamic pattern bound shape or type mismatch");
+            }
+        };
+        check(found->second->begin, range.begin);
+        check(found->second->end, range.end);
+        expected.erase(found);
+    }
+    if (!expected.empty()) {
+        invariant_violation("dynamic pattern has no bound expressions");
+    }
 }

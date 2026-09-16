@@ -25,12 +25,16 @@ struct PatternState final {
 
 // The caller keeps the subject storage alive through matching and selected
 // binding construction. Failed partial matches only write address slots.
+using PatternBoundRealizer =
+    std::function<std::optional<TargetExpr>(PatternID, bool, LoweringStmtBuilder&)>;
+
 class PatternRealizer final {
 public:
     PatternRealizer(
         ModuleLowering& context,
         TargetNameAllocator& names,
-        const SemIRBody& body
+        const SemIRBody& body,
+        PatternBoundRealizer bound = {}
     ) noexcept;
     auto prepare(
         std::span<const PatternBindingType> bindings,
@@ -53,4 +57,5 @@ private:
     ModuleLowering& context;
     TargetNameAllocator& names;
     const SemIRBody& body;
+    PatternBoundRealizer bound;
 };

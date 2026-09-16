@@ -119,6 +119,10 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
             },
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
+            [&](const SemRange& value) noexcept {
+                static_cast<void>(evaluate(*value.begin));
+                static_cast<void>(evaluate(*value.end));
+            },
             [&](const SemArray& value) noexcept {
                 auto result = NullValue();
                 for (const auto [index, element] : std::views::enumerate(value.elements)) {

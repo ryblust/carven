@@ -60,6 +60,13 @@ struct ASTCasePattern final {
     std::optional<ASTCasePayload> payload;
 };
 
+struct ASTRangePattern final {
+    std::optional<ASTExprID> begin;
+    Span operator_span;
+    std::optional<ASTExprID> end;
+    bool inclusive;
+};
+
 struct ASTOrPattern final {
     std::vector<ASTPatternID> alternatives;
     std::vector<Span> pipe_spans;
@@ -74,6 +81,7 @@ struct ASTPattern final {
         ASTBindingPattern,
         ASTConstraintPattern,
         ASTCasePattern,
+        ASTRangePattern,
         ASTOrPattern>
         value;
 };

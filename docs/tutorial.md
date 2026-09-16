@@ -248,8 +248,27 @@ fn accumulate() -> i32 {
 }
 ```
 
-The range `1..4` visits 1, 2, and 3. A range loop can also traverse an array,
-`text.bytes`, or `text.chars`. `break` exits a loop and `continue` advances to
+The range `1..4` visits 1, 2, and 3; `1..=4` also visits 4. Ranges are values:
+`let interval = 1..4;` can be used with `for n in interval`. Their type is
+`range<i32>` here, and their bounds are snapshots taken when the value is created.
+
+A range pattern classifies an integer by interval:
+
+```carven
+fn band(value: i32) -> i32 {
+    return match value {
+        ..0 => -1,
+        0..=100 => 0,
+        101.. => 1,
+    };
+}
+```
+
+Bounds can also be runtime expressions; then include a fallback unless the
+remaining static patterns already cover the domain. Favor `match` for classifying
+one value and `if` for deciding actions from computed conditions.
+
+A range loop can also traverse an array, `text.bytes`, or `text.chars`. `break` exits a loop and `continue` advances to
 its next iteration. C-style loops use `for var i = 0; i < 3; ++i { ... }`.
 
 Value branches end with a result expression without a semicolon. Logical

@@ -124,6 +124,9 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     ? required
                     : operands(*value.source, &*value.index);
             },
+            [&](const SemRange& value) noexcept {
+                return operands(*value.begin, std::addressof(*value.end));
+            },
             [&](const SemArray&) noexcept { return required; },
             [&](const SemArrayAdopt&) noexcept { return required; },
             [&](const SemStruct&) noexcept { return required; },

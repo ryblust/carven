@@ -248,7 +248,7 @@ Choose a longer fence when the payload contains a matching line.
 Lexical analysis uses maximal munch. The punctuator set is:
 
 ```text
-( ) [ ] { } , . .. : ;
+( ) [ ] { } , . .. ..= : ;
 + - * / % ! ? = < > & | ^ ~
 += -= *= /= %= != == <= >= ++ --
 && || << >> &= |= ^= <<= >>=
@@ -477,6 +477,9 @@ function-type-parameter = [ access-marker ], type;
 `String` is an `IDENTIFIER`. Its factories, dot methods, and `.bytes`/`.chars`
 projections use ordinary member and call syntax.
 
+Unqualified `range<T>` in type position denotes an integer interval value; `T`
+must be a builtin integer type. Half-open and closed intervals have this type.
+
 Unqualified `ptr` in type position constructs a pointer type. Its optional inner
 `&` selects writable target access; `ptr<&&T>` is invalid. This marker is part of
 the pointer-type production. `*p` is dereference; `p->member`
@@ -600,7 +603,7 @@ for-header = range-for-header | c-style-for-header;
 
 range-for-header = for-binding, "in", range-for-source;
 
-range-for-source = expression, [ "..", expression ];
+range-for-source = expression;
 
 for-binding = [ "&" ], binding-target, [ ":", type ];
 
@@ -620,11 +623,9 @@ for-step = assignment-form | update-form | expression;
 The first semicolon in a C-style header terminates the optional
 `for-initializer`; it is not part of `variable-declaration-head`.
 
-`..` is one maximal-munch token. The optional suffix above is recognized only
-after `in` in a `range-for-header`; ordinary expression grammar does not consume
-`..`. When `..` is present, both surrounding expressions are required.
-Inclusive, omitted-bound, step, implicit-reverse, and general range-value forms
-are not productions.
+`..` and `..=` are maximal-munch tokens. Range expressions are available in
+ordinary expression positions and require both bounds. Omitted bounds are
+permitted only in range patterns. Step and implicit-reverse forms are not supported.
 
 ## 6. Branch Blocks
 
@@ -647,7 +648,10 @@ A branch block is a structural component of `if-form`, `match-form`, or
 The expression grammar is ordered from the loosest binding form to the tightest.
 
 ```ebnf
-expression = access-expression | logical-or-expression;
+expression = access-expression | range-expression;
+
+range-expression = logical-or-expression,
+                   [ ( ".." | "..=" ), logical-or-expression ];
 
 access-expression = access-marker, expression;
 
@@ -846,7 +850,12 @@ atomic-pattern = wildcard-pattern
                | negative-number-pattern
                | binding-pattern
                | constraint-pattern
-               | case-pattern;
+               | case-pattern
+               | range-pattern;
+
+range-pattern = shift-expression, "..", [ shift-expression ]
+              | "..", shift-expression
+              | [ shift-expression ], "..=", shift-expression;
 
 wildcard-pattern = "_";
 
@@ -869,7 +878,11 @@ constraint-pattern = "is", constraint-operand;
 constraint-operand = qualified-name | array-type;
 ```
 
-Patterns are a syntactic category independent from `expression`.
+Patterns are a syntactic category independent from `expression`. Range bounds
+are expressions; parentheses permit the full expression grammar. An unparenthesized
+`|` separates pattern alternatives. Range operators are non-associative.
+A bare identifier introduces a binding; it does not match membership in a
+stored range.
 
 ### 9.2 Match Arm Bodies
 

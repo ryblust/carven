@@ -17,15 +17,12 @@ export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
     for byte in bytes {
         push(&state, byte)?;
         if state.offset == 1 {
-            if byte < 0x80 {
-                scalar = byte as u32;
-            } else if byte < 0xe0 {
-                scalar = (byte & 31) as u32;
-            } else if byte < 0xf0 {
-                scalar = (byte & 15) as u32;
-            } else {
-                scalar = (byte & 7) as u32;
-            }
+            scalar = match byte {
+                ..0x80 => byte as u32,
+                0x80..0xe0 => (byte & 31) as u32,
+                0xe0..0xf0 => (byte & 15) as u32,
+                0xf0.. => (byte & 7) as u32,
+            };
         } else {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
@@ -41,37 +38,32 @@ private fn continuation(value: u32, shift: u32) -> u8 {
 
 export fn encode_utf8(character: char) -> UTF8Encoded {
     let value = character as u32;
-    var bytes: [u8; 4] = [0, 0, 0, 0];
-    if value <= 0x7f {
-        bytes[0] = value as u8;
-        return UTF8Encoded {
-            bytes: bytes,
-            width: 1
-        };
-    }
-    if value <= 0x7ff {
-        bytes[0] = (0xc0 | (value >> 6)) as u8;
-        bytes[1] = continuation(value, 0);
-        return UTF8Encoded {
-            bytes: bytes,
-            width: 2
-        };
-    }
-    if value <= 0xffff {
-        bytes[0] = (0xe0 | (value >> 12)) as u8;
-        bytes[1] = continuation(value, 6);
-        bytes[2] = continuation(value, 0);
-        return UTF8Encoded {
-            bytes: bytes,
-            width: 3
-        };
-    }
-    bytes[0] = (0xf0 | (value >> 18)) as u8;
-    bytes[1] = continuation(value, 12);
-    bytes[2] = continuation(value, 6);
-    bytes[3] = continuation(value, 0);
-    return UTF8Encoded {
-        bytes: bytes,
-        width: 4
+    return match value {
+        ..=0x7f => UTF8Encoded {
+            bytes: [value as u8, 0, 0, 0],
+            width: 1,
+        },
+        0x80..=0x7ff => UTF8Encoded {
+            bytes: [(0xc0 | (value >> 6)) as u8, continuation(value, 0), 0, 0],
+            width: 2,
+        },
+        0x800..=0xffff => UTF8Encoded {
+            bytes: [
+                (0xe0 | (value >> 12)) as u8,
+                continuation(value, 6),
+                continuation(value, 0),
+                0
+            ],
+            width: 3,
+        },
+        0x10000.. => UTF8Encoded {
+            bytes: [
+                (0xf0 | (value >> 18)) as u8,
+                continuation(value, 12),
+                continuation(value, 6),
+                continuation(value, 0),
+            ],
+            width: 4,
+        },
     };
 }

@@ -81,6 +81,66 @@ auto OwnershipBodyAnalyzer::irrefutable(PatternID pattern) const noexcept -> boo
     return facts.irrefutable_patterns.contains(pattern);
 }
 
+auto OwnershipBodyAnalyzer::pattern_condition(
+    PatternID id,
+    std::span<const SemPatternBounds> bounds,
+    OwnershipState state
+) noexcept -> OwnershipCondition {
+    auto result = OwnershipCondition {
+        .yes = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
+        .no = {},
+        .exits = {}
+    };
+    const auto& pattern = body.pattern(id).value;
+    const auto sequence = [&](PatternID child) noexcept {
+        if (!result.yes) {
+            return;
+        }
+        auto next = pattern_condition(child, bounds, std::move(result.yes->state));
+        result.yes = std::move(next.yes);
+        join_normal_ownership(result.no, next.no);
+        result.exits.append_range(std::views::as_rvalue(next.exits));
+    };
+    if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
+        result.no = std::move(result.yes);
+        result.yes.reset();
+        for (const auto child : alternatives->alternatives) {
+            if (!result.no) {
+                break;
+            }
+            auto next = pattern_condition(child, bounds, std::move(result.no->state));
+            join_normal_ownership(result.yes, next.yes);
+            result.no = std::move(next.no);
+            result.exits.append_range(std::views::as_rvalue(next.exits));
+        }
+    } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern)) {
+        const auto owner = program.declarations().enum_case(enumeration->enum_case).owner;
+        if (program.declarations().enumeration(owner).cases.size() > 1uz) {
+            result.no = result.yes;
+        }
+        for (const auto child : enumeration->payload) {
+            sequence(child);
+        }
+    } else {
+        const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
+        if (found != bounds.end()) {
+            for (const auto* bound : {&found->begin, &found->end}) {
+                if (!*bound || !result.yes) {
+                    continue;
+                }
+                auto next = complete_expression(**bound, std::move(result.yes->state));
+                result.yes = std::move(next.normal);
+                result.exits.append_range(std::views::as_rvalue(next.exits));
+            }
+        }
+        result.no = result.yes;
+    }
+    if (irrefutable(id)) {
+        result.no.reset();
+    }
+    return result;
+}
+
 auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) noexcept
     -> OwnershipFlow {
     auto subject = value.subject_is_place ? place(*value.subject, std::move(state))
@@ -98,11 +158,17 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         }
         auto selected = *remaining;
         bind_pattern(selected.state, arm.pattern, subject_value);
-        if (irrefutable(arm.pattern)) {
-            remaining.reset();
+        const auto previous_access = accesses.size();
+        if (subject_place) {
+            accesses.push_back({*subject_place, true});
         }
-        auto accepted = std::optional(std::move(selected));
-        if (arm.guard.has_value()) {
+        auto checked =
+            pattern_condition(arm.pattern, arm.pattern_bounds, std::move(selected.state));
+        accesses.resize(previous_access);
+        auto accepted = std::move(checked.yes);
+        remaining = std::move(checked.no);
+        result.exits.append_range(std::views::as_rvalue(checked.exits));
+        if (accepted && arm.guard.has_value()) {
             const auto previous = accesses.size();
             if (subject_place.has_value()) {
                 accesses.push_back({*subject_place, true});
@@ -161,9 +227,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 continue;
             }
             const auto& acceptance = found->second;
-            auto remaining = acceptance.exhaustive
-                ? std::optional<OwnershipNormal>()
-                : std::optional(OwnershipNormal {failure.state, {}, {}});
+            auto remaining = std::optional<OwnershipNormal>();
             auto accepted = std::optional(OwnershipNormal {std::move(failure.state), {}, {}});
             for (const auto pattern : acceptance.alternatives) {
                 if (pattern.has_value()) {
@@ -178,7 +242,27 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             caught = std::get<OwnershipFailure>(failure.payload);
             const auto previous_readers = storage_readers.size();
             protect_storage(caught->value);
-            if (arm.guard.has_value()) {
+            remaining = std::move(accepted);
+            accepted.reset();
+            for (const auto pattern : acceptance.alternatives) {
+                if (!remaining) {
+                    break;
+                }
+                if (!pattern) {
+                    join_normal_ownership(accepted, remaining);
+                    remaining.reset();
+                    break;
+                }
+                auto checked =
+                    pattern_condition(*pattern, arm.pattern_bounds, std::move(remaining->state));
+                join_normal_ownership(accepted, checked.yes);
+                remaining = std::move(checked.no);
+                result.exits.append_range(std::views::as_rvalue(checked.exits));
+            }
+            if (acceptance.exhaustive) {
+                remaining.reset();
+            }
+            if (accepted && arm.guard.has_value()) {
                 auto guard = complete_expression(*arm.guard, std::move(accepted->state));
                 accepted = std::move(guard.normal);
                 append_ownership_exits(result, guard);
@@ -295,17 +379,13 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
 
 auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState state) noexcept
     -> OwnershipFlow {
-    const auto* integer = std::get_if<SemIntegerRange>(&value.source);
-    const auto& first = integer ? integer->begin : std::get<SemSequenceRange>(value.source).value;
-
-    const auto source = location(first);
-    auto result = integer == nullptr && source.has_value() ? place(first, std::move(state))
-                                                           : expression(first, std::move(state));
-    if (result.normal.has_value() && integer != nullptr) {
-        auto end = expression(integer->end, std::move(result.normal->state));
-        result.normal = std::move(end.normal);
-        append_ownership_exits(result, end);
-    }
+    const auto& iterable = value.source;
+    const auto range_value = std::holds_alternative<RangeTypeValue>(
+        program.types().type(iterable.type.resolved()).value
+    );
+    const auto source = range_value ? std::nullopt : location(iterable);
+    auto result =
+        source ? place(iterable, std::move(state)) : expression(iterable, std::move(state));
     if (!result.normal.has_value()) {
         return result;
     }
@@ -313,12 +393,12 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto previous_readers = storage_readers.size();
     protect_storage(result.normal->value);
     auto elements = std::optional<OwnershipPlace>();
-    if (integer == nullptr) {
+    if (!range_value) {
         for (const auto& selected : result.normal->storage) {
             accesses.push_back({selected, false});
         }
     }
-    if (integer == nullptr && source.has_value()) {
+    if (source.has_value()) {
         elements = *source;
         elements->path.push_back(std::nullopt);
     }
@@ -330,7 +410,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
             *value.binding,
             select_element_storage(
                 program.types(),
-                first.type.resolved(),
+                iterable.type.resolved(),
                 result.normal->storage,
                 result.normal->value,
                 std::nullopt

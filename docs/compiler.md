@@ -52,6 +52,11 @@ requirements may call for extending or revising the underlying contracts. These
 considerations guide exploration; the appropriate boundary depends on the
 feature's semantics.
 
+Carven establishes source types, coverage, evaluation order, ownership, and failure
+contracts through structured analysis and bounded constant execution. Simplification
+preserves required evaluation, failures, storage observations, and lifetimes.
+C++ compilation owns native optimization, including storage elimination.
+
 Generated code can use established semantic facts to express the required
 behavior directly. Where type context and native C++ constructs satisfy the
 contract, prefer those forms. Additional storage, conversions, and helper calls
@@ -267,7 +272,12 @@ Bodies retain conditionals, loops, matches, handlers, lexical scopes, and exits.
 Places describe storage identity and projection evaluation. Values describe
 computation. Initialization, assignment, and Take remain distinct operations.
 Operations retain operand order and access; control nodes specify conditional
-execution. Range sources select integer bounds or a sequence expression.
+execution. Range values retain two ordered integer bounds and an upper-bound
+inclusion flag. Range loops retain a single iterable expression. Pattern tables
+retain static interval facts; match and catch arms own dynamic bound expressions
+keyed by pattern identity. Recursive pattern selection executes those expressions
+only when that pattern is attempted. Integer coverage partitions the type domain
+at interval boundaries and composes with enum payload and or-pattern coverage.
 
 `semantic.semir.children` visits direct child expressions and regions in stored
 order, including inactive branches. `semantic.semir.traversal` supplies recursion.

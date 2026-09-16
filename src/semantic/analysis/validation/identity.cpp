@@ -1,4 +1,5 @@
 module carven:semantic.analysis.validation.identity.impl;
+
 import :semantic.analysis.validation.context;
 import std;
 

@@ -196,23 +196,64 @@ auto SemanticExecutor::loop(
     }
 }
 
-auto SemanticExecutor::sequence_loop(
+auto SemanticExecutor::range_loop(
     ExecutionFrame& frame,
     const SemRangeLoop& source,
-    const SemSequenceRange& sequence,
     ProgramOriginID origin
 ) noexcept -> ExecutionResult<ExecutionCompletion> {
+    const auto sequence_type = type(source.source.type.construction(), origin);
+    if (!sequence_type) {
+        return std::unexpected(sequence_type.error());
+    }
+    const auto canonical = values.type_copy(*sequence_type);
+    if (const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value)) {
+        auto evaluated = value(frame, source.source);
+        if (!evaluated) {
+            return std::unexpected(evaluated.error());
+        }
+        auto fact = read_fact(*evaluated, origin);
+        if (!fact) {
+            return std::unexpected(fact.error());
+        }
+        const auto range = std::get<RangeConstant>(fact->value);
+        auto current = range.begin;
+        const auto less = [](IntegerConstant a, IntegerConstant b) static noexcept {
+            return a.negative() != b.negative() ? a.negative()
+                : a.negative()                  ? a.magnitude() > b.magnitude()
+                                                : a.magnitude() < b.magnitude();
+        };
+        while (less(current, range.end) || (range.inclusive && current == range.end)) {
+            if (auto checked = step(origin); !checked) {
+                return std::unexpected(checked.error());
+            }
+            if (source.binding) {
+                frame.slots[source.binding->index()] =
+                    ConstantAtom {.type = range_type->element, .value = current};
+            }
+            auto body = region(frame, *source.body);
+            if (!body || body->flow == ExecutionFlow::Return) {
+                return body;
+            }
+            if (body->flow == ExecutionFlow::Break || current == range.end) {
+                break;
+            }
+            current = current.negative()
+                ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
+                : IntegerConstant::from_parts(current.magnitude() + 1u, false);
+        }
+        return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+    }
     const auto slots = frame.slots.size();
     const auto execute = [&]() noexcept -> ExecutionResult<ExecutionCompletion> {
         auto owner = ExecutionPlace {.slot = slots, .path = {}};
-        if (local_place(sequence.value)) {
-            auto selected = place(frame, sequence.value);
+        if (local_place(source.source)) {
+            auto selected = place(frame, source.source);
             if (!selected) {
                 return std::unexpected(selected.error());
             }
             owner = std::move(*selected);
         } else {
-            auto evaluated = value(frame, sequence.value);
+            auto evaluated = value(frame, source.source);
             if (!evaluated) {
                 return std::unexpected(evaluated.error());
             }
@@ -278,76 +319,6 @@ auto SemanticExecutor::sequence_loop(
     }
     frame.slots.resize(slots);
     return result;
-}
-
-auto SemanticExecutor::range_loop(
-    ExecutionFrame& frame,
-    const SemRangeLoop& source,
-    ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionCompletion> {
-    const auto* range = std::get_if<SemIntegerRange>(&source.source);
-    if (range == nullptr) {
-        return sequence_loop(frame, source, std::get<SemSequenceRange>(source.source), origin);
-    }
-    auto begin = value(frame, range->begin);
-    if (!begin) {
-        return std::unexpected(begin.error());
-    }
-    auto end = value(frame, range->end);
-    if (!end) {
-        return std::unexpected(end.error());
-    }
-    auto current = read_fact(*begin, origin);
-    auto bound = read_fact(*end, origin);
-    if (!current || !bound) {
-        return std::unexpected(!current ? current.error() : bound.error());
-    }
-    const auto one =
-        ConstantFact {.type = current->type, .value = IntegerConstant::from_parts(1, false)};
-    while (true) {
-        if (auto checked = step(origin); !checked) {
-            return std::unexpected(checked.error());
-        }
-        const auto& left = std::get<IntegerConstant>(current->value);
-        const auto& right = std::get<IntegerConstant>(bound->value);
-        const auto less = left.negative() != right.negative() ? left.negative()
-            : left.negative() ? left.magnitude() > right.magnitude()
-                              : left.magnitude() < right.magnitude();
-        if (!less) {
-            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
-        }
-        if (source.binding) {
-            frame.slots[source.binding->index()] = ConstantAtom {
-                .type = current->type,
-                .value = *std::get_if<IntegerConstant>(&current->value)
-            };
-        }
-        auto body = region(frame, *source.body);
-        if (!body || body->flow == ExecutionFlow::Return) {
-            return body;
-        }
-        if (body->flow == ExecutionFlow::Break) {
-            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
-        }
-        auto incremented = finish(
-            evaluate_binary_constant_value(
-                values,
-                BinaryOperator::Add,
-                *current,
-                one,
-                current->type,
-                context.arithmetic()
-            ),
-            origin
-        );
-        if (!incremented) {
-            return std::unexpected(incremented.error());
-        }
-        current = read_fact(*incremented, origin);
-        if (!current) {
-            return std::unexpected(current.error());
-        }
-    }
 }
 
 auto SemanticExecutor::test_report(

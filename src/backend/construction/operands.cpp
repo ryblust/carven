@@ -86,6 +86,10 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                     result.push_back(argument(input));
                 }
             },
+            [&](const SemRange& value) noexcept {
+                add(*value.begin, ConstructionUse::OperandValue);
+                add(*value.end, ConstructionUse::OperandValue);
+            },
             [&](const SemArray& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
                     add(input, ConstructionUse::Consume);

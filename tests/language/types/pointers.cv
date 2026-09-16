@@ -108,9 +108,7 @@ test "Pointers: fields arrays enums captures and local control preserve values" 
         .Some(saved) => {
             if saved != nullptr { check(*saved > 0); }
         },
-        .Empty => {
-            fail("wrong case");
-        },
+        .Empty => fail("wrong case"),
     }
     for value in values {
         if value != nullptr { check(*value > 0); }
@@ -214,7 +212,7 @@ test "Pointers: failure exits and iteration retain their contracts" {
     try {
         check(null_is_failure(p)? == read(p));
     } catch {
-        PointerFailure(_) => { fail("unexpected null"); },
+        PointerFailure(_) => fail("unexpected null"),
     }
     var caught = false;
     try {

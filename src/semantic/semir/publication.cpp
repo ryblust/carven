@@ -372,6 +372,16 @@ auto validate_publication_facts(
                         invariant_violation("canonical array used an unpublished element type");
                     }
                 },
+                [&](const RangeTypeValue& value) noexcept {
+                    if (!types.contains(value.element)) {
+                        invariant_violation("canonical range used an unpublished element type");
+                    }
+                    const auto* builtin =
+                        std::get_if<BuiltinTypeValue>(&types.type(value.element).value);
+                    if (!builtin || !builtin_is_integer(builtin->kind)) {
+                        invariant_violation("canonical range requires an integer element type");
+                    }
+                },
                 [&](const ArrayTypeValue& value) noexcept {
                     if (!types.contains(value.element)) {
                         invariant_violation("canonical array used an unpublished element type");
@@ -434,6 +444,18 @@ auto validate_publication_facts(
         const auto& canonical = types.type(fact.type).value;
         const auto valid = std::visit(
             Overloaded {
+                [&](const RangeConstant& value) noexcept {
+                    const auto* range = std::get_if<RangeTypeValue>(&canonical);
+                    if (range == nullptr) {
+                        return false;
+                    }
+                    const auto* builtin =
+                        std::get_if<BuiltinTypeValue>(&types.type(range->element).value);
+                    return builtin != nullptr
+                        && builtin_is_integer(builtin->kind)
+                        && integer_constant_fits(value.begin, builtin->kind)
+                        && integer_constant_fits(value.end, builtin->kind);
+                },
                 [&](const IntegerConstant& value) noexcept {
                     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical);
                     return builtin != nullptr

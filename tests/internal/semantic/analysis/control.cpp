@@ -255,3 +255,143 @@ TEST_CASE("Semantic control: native invocations inherit argument completion") {
         ));
     }
 }
+
+TEST_CASE("Semantic ranges: coverage partitions integer domains and nested payloads") {
+    static_cast<void>(analyze_test_program(
+        "enum E { Value(u8), Empty }\n"
+        "fn classify(x: E) -> i32 { return match x { .Value(0..128) => 0, "
+        ".Value(128..=255) => 1, .Empty => 2 }; }\n"
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors(
+            "fn f(x: u8) -> i32 { return match x { 0..127 => 0, 128..=255 => 1 }; }"
+        ),
+        DiagnosticCode::MatchNonExhaustive
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors("fn f(x: i32, lo: i32) -> i32 { return match x { lo.. => 0 }; }"),
+        DiagnosticCode::MatchNonExhaustive
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors(
+            "fn f(x: i32) -> i32 { return match x { 0..10 => 0, 10..20 => 1, 1..19 => 2, _ => 3 }; }"
+        ),
+        DiagnosticCode::FlowUnreachableMatchArm
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors("fn f(x: i32) -> i32 { return match x { 0..10 | 4 => 0, _ => 1 }; }"),
+        DiagnosticCode::MatchDuplicateAlternative
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors("fn f(x: f64) -> i32 { return match x { 0..10 => 0, _ => 1 }; }"),
+        DiagnosticCode::TypeMatchPattern
+    ));
+}
+
+TEST_CASE("Semantic ranges: selection protects the subject and excludes dead bound failures") {
+    const auto subject_write = analyze_test_errors(
+        "fn change(&x: i32) -> i32 { x = 0; return 0; } "
+        "fn f() { var x = 1; match x { (change(&x))..10 => {}, _ => {} } }"
+    );
+    CHECK(contains_diagnostic_code(subject_write, DiagnosticCode::AccessOperationConflict));
+    const auto pattern_binding = analyze_test_errors(
+        "enum E { Pair(i32, i32) } "
+        "fn f(x: E) { match x { .Pair(lo, lo..10) => {}, _ => {} } }"
+    );
+    CHECK(contains_diagnostic_code(pattern_binding, DiagnosticCode::TypeMatchPattern));
+    static_cast<void>(analyze_test_program(
+        "struct E {} fn bound() -> i32 throw E { throw E {}; } "
+        "fn f(x: i32) -> i32 { return match x { _ => 1, (bound()?)..10 => 2 }; }"
+    ));
+}
+
+TEST_CASE("Semantic ranges: bounds and element types obey integer contracts") {
+    struct Case final {
+        std::string_view name;
+        std::string_view source;
+        DiagnosticCode code;
+    };
+
+    const auto cases = std::array {
+        Case {
+            "write integer element",
+            "fn f() { for &n in 0..10 {} }",
+            DiagnosticCode::AccessRangeBinding
+        },
+        Case {"noninteger element", "fn f(x: range<f64>) {}", DiagnosticCode::TypeRangeInteger},
+        Case {"missing element", "fn f(x: range) {}", DiagnosticCode::TypeUnresolved},
+        Case {"extra element", "fn f(x: range<i32, u8>) {}", DiagnosticCode::TypeUnresolved},
+        Case {
+            "noninteger bounds",
+            "fn f() { let r = 0.0..1.0; }",
+            DiagnosticCode::TypeRangeInteger
+        },
+        Case {
+            "different value bounds",
+            "fn f(a: i32, b: u8) { let r = a..b; }",
+            DiagnosticCode::TypeRangeBounds
+        },
+        Case {
+            "different pattern bound",
+            "fn f(x: i32, b: u8) { match x { b.. => {}, _ => {} } }",
+            DiagnosticCode::TypeRangeBounds
+        }
+    };
+    for (const auto& scenario : cases) {
+        CAPTURE(scenario.name);
+        CHECK(contains_diagnostic_code(
+            analyze_test_errors(std::string(scenario.source)),
+            scenario.code
+        ));
+    }
+    static_cast<void>(analyze_test_program("fn f() { for n: u8 in (0..=255) {} }"));
+}
+
+TEST_CASE("Semantic ranges: bound sequencing preserves established pointer facts") {
+    static_cast<void>(analyze_test_program(R"(
+        fn f(p: ptr<i32>, x: i32) -> i32 {
+            if p == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return match x {
+                (if true { slot = p; 0 } else { 0 })..0 | 0..(*slot) => *slot,
+                _ => *slot
+            };
+        }
+    )"));
+    static_cast<void>(analyze_test_program(R"(
+        enum E { Number(i32) }
+        fn f(p: ptr<i32>, x: E) -> i32 {
+            if p == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return match x {
+                .Number((if true { slot = p; 0 } else { 0 })..(*slot)) => *slot,
+                _ => *slot
+            };
+        }
+    )"));
+
+    static_cast<void>(analyze_test_program(R"(
+        fn f(p: ptr<i32>, x: i32) -> i32 {
+            if p == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return match x {
+                (if true { slot = p; 0 } else { 0 })..(*slot) => *slot,
+                _ => *slot
+            };
+        }
+    )"));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors(R"(
+        enum E { Number(i32), Empty }
+        fn f(p: ptr<i32>, x: E) -> i32 {
+            if p == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return match x {
+                .Number((if true { slot = p; 0 } else { 0 })..10) => *slot,
+                _ => *slot
+            };
+        }
+    )"),
+        DiagnosticCode::PointerNonNull
+    ));
+}

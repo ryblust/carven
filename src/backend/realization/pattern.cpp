@@ -102,6 +102,48 @@ auto PatternRealizer::match(
     std::visit(
         Overloaded {
             [&](const WildcardPattern&) noexcept { set(bool_expression(true)); },
+            [&](const RangePattern& value) noexcept {
+                const auto read = [&](const std::optional<RangePatternBound>& part,
+                                      bool upper) noexcept -> std::optional<TargetExpr> {
+                    if (!part) {
+                        return std::nullopt;
+                    }
+                    if (part->constant) {
+                        return constant_expression(context, *part->constant);
+                    }
+                    if (!bound) {
+                        invariant_violation("dynamic range pattern has no bound realizer");
+                    }
+                    return bound(pattern_id, upper, destination);
+                };
+                auto first = read(value.begin, false);
+                if (!destination.continues()) {
+                    return;
+                }
+                auto last = read(value.end, true);
+                if (!destination.continues()) {
+                    return;
+                }
+                auto test = first ? binary_expression(
+                                        subject_expression(subject),
+                                        TargetBinaryOperator::GreaterEqual,
+                                        std::move(*first)
+                                    )
+                                  : bool_expression(true);
+                if (last) {
+                    test = binary_expression(
+                        std::move(test),
+                        TargetBinaryOperator::LogicalAnd,
+                        binary_expression(
+                            subject_expression(subject),
+                            value.inclusive ? TargetBinaryOperator::LessEqual
+                                            : TargetBinaryOperator::Less,
+                            std::move(*last)
+                        )
+                    );
+                }
+                set(std::move(test));
+            },
             [&](const LiteralPattern& value) noexcept {
                 set(binary_expression(
                     subject_expression(subject),
@@ -206,8 +248,10 @@ auto PatternRealizer::match(
 PatternRealizer::PatternRealizer(
     ModuleLowering& context,
     TargetNameAllocator& names,
-    const SemIRBody& body
+    const SemIRBody& body,
+    PatternBoundRealizer bound
 ) noexcept
     : context(context),
       names(names),
-      body(body) {}
+      body(body),
+      bound(std::move(bound)) {}

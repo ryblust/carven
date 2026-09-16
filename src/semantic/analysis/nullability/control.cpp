@@ -175,6 +175,66 @@ auto NullabilityBodyAnalyzer::irrefutable(PatternID id) const noexcept -> bool {
     );
 }
 
+auto NullabilityBodyAnalyzer::pattern_condition(
+    PatternID id,
+    std::span<const SemPatternBounds> bounds,
+    NullState state
+) noexcept -> NullCondition {
+    auto result = NullCondition {
+        .yes = NullNormal {.state = std::move(state), .value = {}},
+        .no = {},
+        .exits = {}
+    };
+    const auto& pattern = body.pattern(id).value;
+    const auto sequence = [&](PatternID child) noexcept {
+        if (!result.yes) {
+            return;
+        }
+        auto next = pattern_condition(child, bounds, std::move(result.yes->state));
+        result.yes = std::move(next.yes);
+        join_null_normal(result.no, next.no);
+        append_null_exits(result.exits, std::move(next.exits));
+    };
+    if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
+        result.no = std::move(result.yes);
+        result.yes.reset();
+        for (const auto child : alternatives->alternatives) {
+            if (!result.no) {
+                break;
+            }
+            auto next = pattern_condition(child, bounds, std::move(result.no->state));
+            join_null_normal(result.yes, next.yes);
+            result.no = std::move(next.no);
+            append_null_exits(result.exits, std::move(next.exits));
+        }
+    } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern)) {
+        const auto owner = program.declarations().enum_case(enumeration->enum_case).owner;
+        if (program.declarations().enumeration(owner).cases.size() > 1uz) {
+            result.no = result.yes;
+        }
+        for (const auto child : enumeration->payload) {
+            sequence(child);
+        }
+    } else {
+        const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
+        if (found != bounds.end()) {
+            for (const auto* bound : {&found->begin, &found->end}) {
+                if (!*bound || !result.yes) {
+                    continue;
+                }
+                auto next = expression(**bound, std::move(result.yes->state));
+                result.yes = std::move(next.normal);
+                append_null_exits(result.exits, std::move(next.exits));
+            }
+        }
+        result.no = result.yes;
+    }
+    if (irrefutable(id)) {
+        result.no.reset();
+    }
+    return result;
+}
+
 auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noexcept -> NullFlow {
     auto subject = expression(*source.subject, std::move(state));
     auto result = NullFlow {.normal = {}, .exits = std::move(subject.exits)};
@@ -187,11 +247,12 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
         auto selected = *remaining;
         const auto place = source.subject_is_place ? location(*source.subject) : std::nullopt;
         bind_pattern(selected.state, arm.pattern, place ? value_at(selected.state, *place) : saved);
-        if (irrefutable(arm.pattern)) {
-            remaining.reset();
-        }
-        auto accepted = std::optional(std::move(selected));
-        if (arm.guard) {
+        auto checked_pattern =
+            pattern_condition(arm.pattern, arm.pattern_bounds, std::move(selected.state));
+        auto accepted = std::move(checked_pattern.yes);
+        remaining = std::move(checked_pattern.no);
+        append_null_exits(result.exits, std::move(checked_pattern.exits));
+        if (accepted && arm.guard) {
             auto checked = condition(*arm.guard, std::move(accepted->state));
             accepted = std::move(checked.yes);
             join_null_normal(remaining, checked.no);
@@ -246,10 +307,34 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                     bind_pattern(accepted->state, typed->inner, {});
                 }
             }
-            auto remaining = exhaustive ? std::optional<NullNormal>() : accepted;
+            auto remaining = std::optional<NullNormal>();
             const auto previous = caught;
             caught = {*type};
-            if (arm.guard) {
+            remaining = std::move(accepted);
+            accepted.reset();
+            for (const auto& alternative : arm.alternatives) {
+                if (!alternative.reachable || !remaining) {
+                    continue;
+                }
+                if (std::holds_alternative<CatchAllPattern>(alternative.pattern)) {
+                    join_null_normal(accepted, remaining);
+                    remaining.reset();
+                    break;
+                }
+                const auto& typed = std::get<SemTypedCatchPattern>(alternative.pattern);
+                if (typed.type.resolved() != *type) {
+                    continue;
+                }
+                auto checked =
+                    pattern_condition(typed.inner, arm.pattern_bounds, std::move(remaining->state));
+                join_null_normal(accepted, checked.yes);
+                remaining = std::move(checked.no);
+                append_null_exits(result.exits, std::move(checked.exits));
+            }
+            if (exhaustive) {
+                remaining.reset();
+            }
+            if (accepted && arm.guard) {
                 auto checked = condition(*arm.guard, std::move(accepted->state));
                 accepted = std::move(checked.yes);
                 join_null_normal(remaining, checked.no);
@@ -319,23 +404,7 @@ auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexc
 
 auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state) noexcept
     -> NullFlow {
-    auto initial = std::visit(
-        Overloaded {
-            [&](const SemIntegerRange& range) noexcept {
-                auto begin = expression(range.begin, std::move(state));
-                if (!begin.normal) {
-                    return begin;
-                }
-                auto end = expression(range.end, std::move(begin.normal->state));
-                append_null_exits(end.exits, std::move(begin.exits));
-                return end;
-            },
-            [&](const SemSequenceRange& range) noexcept {
-                return expression(range.value, std::move(state));
-            },
-        },
-        source.source
-    );
+    auto initial = expression(source.source, std::move(state));
     auto result = NullFlow {.normal = {}, .exits = std::move(initial.exits)};
     if (!initial.normal) {
         return result;
@@ -344,9 +413,7 @@ auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state)
     const auto previous_aliases = range_aliases;
     add_range_aliases(source);
     if (source.access == AccessMode::Write) {
-        if (const auto* sequence = std::get_if<SemSequenceRange>(&source.source)) {
-            invalidate(head, location(sequence->value, true));
-        }
+        invalidate(head, location(source.source, true));
     }
     if (source.binding) {
         invalidate(head, NullPlace {.root = *source.binding, .path = {}});

@@ -89,6 +89,18 @@ struct LiteralPattern final {
     ConstantID constant;
 };
 
+// A missing bound is unbounded. A present bound without a constant is evaluated
+// through the owning arm's structured expression at this pattern's attempt.
+struct RangePatternBound final {
+    std::optional<ConstantID> constant;
+};
+
+struct RangePattern final {
+    std::optional<RangePatternBound> begin;
+    std::optional<RangePatternBound> end;
+    bool inclusive;
+};
+
 struct OrPattern final {
     std::vector<PatternID> alternatives;
 };
@@ -109,6 +121,7 @@ struct EnumCasePattern final {
 using PatternValue = std::variant<
     WildcardPattern,
     LiteralPattern,
+    RangePattern,
     OrPattern,
     TypeConstraintPattern,
     BindingPattern,
@@ -127,6 +140,7 @@ struct ElaboratedTypeConstraintPattern final {
 using ElaboratedPatternValue = std::variant<
     WildcardPattern,
     LiteralPattern,
+    RangePattern,
     OrPattern,
     ElaboratedTypeConstraintPattern,
     BindingPattern,

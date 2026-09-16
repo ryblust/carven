@@ -387,22 +387,8 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
         if (!begin) {
             return std::nullopt;
         }
-        auto iterable = std::variant<ASTExprID, ASTHalfOpenRange>(*begin);
-        auto end_span = builder.expression(*begin).span;
-        if (!failed) {
-            if (const auto operation = match(TokenKind::DotDot)) {
-                const auto end = parse_expression_before_block();
-                if (!end) {
-                    return std::nullopt;
-                }
-                iterable = ASTHalfOpenRange {
-                    .begin = *begin,
-                    .operator_span = operation->span,
-                    .end = *end,
-                };
-                end_span = builder.expression(*end).span;
-            }
-        }
+        const auto iterable = *begin;
+        const auto end_span = builder.expression(*begin).span;
         return ASTForHeader {
             .span = join(start, end_span),
             .value = ASTRangeForHeader {

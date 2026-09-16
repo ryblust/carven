@@ -1,0 +1,142 @@
+const fn classify_interval(value: i32) -> i32 {
+    return match value {
+        ..0 => -1,
+        0..10 => 0,
+        10..=20 => 1,
+        21.. => 2,
+    };
+}
+
+fn dynamic_interval(value: i32, low: i32, high: i32) -> bool {
+    return match value {
+        low..=high => true,
+        _ => false
+    };
+}
+
+fn range_bound(&trace: i32, digit: i32, value: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+enum IntervalPayload {
+    Number(i32),
+    Empty
+}
+
+const test "Range patterns: static partitions execute at compile time" {
+    check(classify_interval(-1) == -1);
+    check(classify_interval(0) == 0);
+    check(classify_interval(9) == 0);
+    check(classify_interval(10) == 1);
+    check(classify_interval(20) == 1);
+    check(classify_interval(21) == 2);
+}
+
+test "Range patterns: boundaries and dynamic empty intervals" {
+    check(classify_interval(-1) == -1);
+    check(classify_interval(10) == 1);
+    check(classify_interval(21) == 2);
+    check(dynamic_interval(10, 10, 20));
+    check(dynamic_interval(20, 10, 20));
+    check(!dynamic_interval(21, 10, 20));
+    check(!dynamic_interval(15, 20, 10));
+    let all: u8 = 255;
+    check(
+        match all {
+            0..128 => false,
+            128..=255 => true
+        }
+    );
+    let maximum = 18446744073709551615u64;
+    check(
+        match maximum {
+            0..18446744073709551615 => false,
+            18446744073709551615.. => true
+        }
+    );
+    let signed: i8 = -128;
+    check(
+        match signed {
+            -128..0 => true,
+            0..=127 => false
+        }
+    );
+}
+
+test "Range patterns: attempts evaluate bounds once in pattern order" {
+    var trace = 0;
+    let selected = match 5 {
+        (range_bound(&trace, 1, 10))..=(range_bound(&trace, 2, 20)) => 0,
+        (range_bound(&trace, 3, 0))..=(range_bound(&trace, 4, 10))
+            | (range_bound(&trace, 5, 0))..10 => 1,
+        _ => 2,
+    };
+    check(selected == 1);
+    check(trace == 1234);
+    trace = 0;
+    let empty: IntervalPayload = .Empty;
+    check(
+        match empty {
+            .Number((range_bound(&trace, 1, 0))..10) => false,
+            .Empty => true,
+            _ => false,
+        }
+    );
+    check(trace == 0);
+    let number: IntervalPayload = .Number(4);
+    check(
+        match number {
+            .Number(0..=4) => true,
+            _ => false
+        }
+    );
+}
+
+struct IntervalFailure {}
+
+fn failed_bound() -> i32 throw IntervalFailure {
+    throw IntervalFailure {};
+}
+
+test "Range patterns: bound failures leave the match and catch payloads classify" {
+    let recovered = try {
+        (
+            match 4 {
+                (failed_bound()?)..10 => 0,
+                _ => 1
+            }
+        )
+    } catch {
+        IntervalFailure(_) => 2
+    };
+    check(recovered == 2);
+    let result = try {
+        throw IntervalPayload::Number(4);
+    } catch {
+        IntervalPayload(.Number(0..=5)) => 1,
+        IntervalPayload(_) => 2
+    };
+    check(result == 1);
+    var trace = 0;
+    let dynamic = try {
+        throw IntervalPayload::Number(4);
+    } catch {
+        IntervalPayload(.Number((range_bound(&trace, 1, 0))..=(range_bound(&trace, 2, 5)))) => 3,
+        IntervalPayload(_) => 4,
+    };
+    check(dynamic == 3);
+    check(trace == 12);
+}
+
+const fn constant_dynamic_interval(value: i32, low: i32, high: i32) -> bool {
+    return match value {
+        low..=high => true,
+        _ => false
+    };
+}
+
+const test "Range patterns: interpreter executes runtime-shaped bounds" {
+    check(constant_dynamic_interval(4, 0, 5));
+    check(!constant_dynamic_interval(4, 5, 0));
+}

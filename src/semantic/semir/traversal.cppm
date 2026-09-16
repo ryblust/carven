@@ -67,17 +67,7 @@ public:
                         child(*value.steps);
                     },
                     [&](Node<SemRangeLoop>& value) noexcept {
-                        std::visit(
-                            [&](auto& range) noexcept {
-                                if constexpr (requires { range.begin; }) {
-                                    child(range.begin);
-                                    child(range.end);
-                                } else {
-                                    child(range.value);
-                                }
-                            },
-                            value.source
-                        );
+                        child(value.source);
                         child(*value.body);
                     },
                     [&](Node<OwnedSemanticRegion>& value) noexcept { child(*value); },

@@ -72,6 +72,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemEnumConstructor>
                              || std::same_as<Operation, SemCpp>
                              || std::same_as<Operation, SemCppCall>
+                             || std::same_as<Operation, SemRange>
                              || std::same_as<Operation, SemArray>
                              || std::same_as<Operation, SemArrayAdopt>
                              || std::same_as<Operation, SemStruct>
@@ -122,6 +123,14 @@ auto BodyBuilder::make_expression(
                     if (!arm.reachable) {
                         continue;
                     }
+                    for (const auto& range : arm.pattern_bounds) {
+                        if (range.begin) {
+                            add(*range.begin);
+                        }
+                        if (range.end) {
+                            add(*range.end);
+                        }
+                    }
                     if (arm.guard.has_value()) {
                         add(*arm.guard);
                         const auto known = truth(*arm.guard);
@@ -141,6 +150,16 @@ auto BodyBuilder::make_expression(
                 for (const auto& arm : node.arms) {
                     const auto handler = draft.add_empty_failure_term();
                     auto executes_body = true;
+                    for (const auto& range : arm.pattern_bounds) {
+                        if (range.begin) {
+                            draft.add_failure_contribution(handler, range.begin->failures.term());
+                            exits_test |= range.begin->exits_test;
+                        }
+                        if (range.end) {
+                            draft.add_failure_contribution(handler, range.end->failures.term());
+                            exits_test |= range.end->exits_test;
+                        }
+                    }
                     if (arm.guard.has_value()) {
                         draft.add_failure_contribution(handler, arm.guard->failures.term());
                         exits_test |= arm.guard->exits_test;
@@ -207,6 +226,9 @@ auto BodyBuilder::remember_initializer(
     const auto& fact = draft.constant(*constant);
     const auto type = draft.type_copy(fact.type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+    if (std::holds_alternative<RangeTypeValue>(type.value)) {
+        local_constants.emplace(id, *constant);
+    }
     if (builtin != nullptr
         && (builtin_is_integer(builtin->kind)
             || builtin->kind == BuiltinType::Bool

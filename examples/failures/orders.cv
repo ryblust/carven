@@ -9,15 +9,15 @@ struct OutOfStock {
 }
 
 fn line_total(quantity: i32, available: i32) -> i32 throw QuantityError + OutOfStock {
-    if quantity <= 0 { throw QuantityError::NonPositive(quantity); }
-    if quantity > 100 { throw QuantityError::TooLarge(quantity); }
-    if quantity > available {
-        throw OutOfStock {
+    return match quantity {
+        ..=0 => throw QuantityError::NonPositive(quantity),
+        101.. => throw QuantityError::TooLarge(quantity),
+        _ if quantity > available => throw OutOfStock {
             requested: quantity,
-            available: available
-        };
-    }
-    return quantity * 250;
+            available: available,
+        },
+        _ => quantity * 250,
+    };
 }
 
 enum DeliveryError {
@@ -28,8 +28,8 @@ enum DeliveryError {
 fn delivery_fee(zone: i32) -> i32 throw DeliveryError {
     return match zone {
         1 => 300,
-        2 | 3 | 4 => { throw DeliveryError::Unavailable(zone); },
-        _ => { throw DeliveryError::UnknownZone(zone); },
+        2..=4 => throw DeliveryError::Unavailable(zone),
+        _ => throw DeliveryError::UnknownZone(zone),
     };
 }
 
@@ -38,8 +38,10 @@ struct CarrierLookupError {
 }
 
 fn alternate_available(zone: i32) -> bool throw CarrierLookupError {
-    if zone == 4 { throw CarrierLookupError { zone: zone }; }
-    return zone == 2;
+    return match zone {
+        4 => throw CarrierLookupError { zone: zone },
+        _ => zone == 2,
+    };
 }
 
 // Private composition infers the union of both providers' failure sets.
@@ -57,9 +59,11 @@ fn quote(
         primary_quote(quantity, available, zone)?
     } catch {
         // A failed lookup in this guard goes outward to the caller.
-        DeliveryError(.Unavailable(failed_zone)) if alternate_available(failed_zone)? => {
-            line_total(quantity, available)? + 700
-        },
+        DeliveryError(.Unavailable(failed_zone)) if alternate_available(failed_zone)? => line_total(
+                quantity,
+                available
+            )?
+            + 700,
         QuantityError(_) | OutOfStock(_) | DeliveryError(_) => rethrow,
     };
 }

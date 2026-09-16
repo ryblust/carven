@@ -86,6 +86,7 @@ auto DeclResolver::supports_equality(
             [](const CallableViewTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
             [](const PointerTypeValue&) static noexcept { return true; },
+            [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
         },
         draft.type_copy(concrete).value

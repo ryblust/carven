@@ -8,8 +8,10 @@ struct LimitExceeded {
 }
 
 fn positive(amount: i32) -> i32 throw InvalidAmount {
-    if amount <= 0 { throw InvalidAmount { amount: amount }; }
-    return amount;
+    return match amount {
+        ..=0 => throw InvalidAmount { amount: amount },
+        _ => amount,
+    };
 }
 
 fn process(
@@ -25,9 +27,7 @@ fn report(label: str, amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + 
         let accepted = process(amount, policy)?;
         println("Accepted:", accepted);
     } catch {
-        InvalidAmount(error) => {
-            println("Amount must be positive:", error.amount);
-        },
+        InvalidAmount(error) => println("Amount must be positive:", error.amount),
         LimitExceeded(error) => {
             println("Requested:", error.amount);
             println("Policy limit:", error.limit);

@@ -106,6 +106,7 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
             [&](const EnumTypeValue& value) noexcept {
                 validate_nominal(program.declarations().enumeration(value.enumeration));
             },
+            [&](const RangeTypeValue& value) noexcept { validate(value.element); },
             [&](const SliceTypeValue& value) noexcept { validate(value.element); },
             [&](const ArrayTypeValue& value) noexcept { validate(value.element); },
             [&](const PointerTypeValue& value) noexcept { validate(value.target); },

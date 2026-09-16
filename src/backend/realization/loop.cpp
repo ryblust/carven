@@ -95,15 +95,14 @@ auto BodyRealizer::lower_range(
     const ConstructionRangeLoop& value,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    const auto* integer = std::get_if<ConstructionIntegerRange>(&value.source);
-    const auto& first =
-        integer ? integer->begin : std::get<ConstructionSequenceRange>(value.source).value;
-
     auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
-    auto begin = scope.accept(operand({
-        .expression = first,
-        .use = integer != nullptr               ? ConstructionUse::OperandValue
+    const auto range_value = std::holds_alternative<RangeTypeValue>(
+        context.semantic().types().type(construction.expression(value.source).type).value
+    );
+    auto iterable = scope.accept(operand({
+        .expression = value.source,
+        .use = range_value                      ? ConstructionUse::OperandValue
             : value.access == AccessMode::Write ? ConstructionUse::WritePlace
                                                 : ConstructionUse::ReadBorrow,
     }));
@@ -111,21 +110,20 @@ auto BodyRealizer::lower_range(
         destination.scope(std::move(scope));
         return;
     }
-    if (integer == nullptr) {
-        loops.emplace(
-            identity,
-            LoopContinuation {
-                .step = std::nullopt,
-                .target = exit_target(LoweringExitKind::Continue),
-                .break_target = exit_target(LoweringExitKind::Break)
-            }
-        );
-        auto iteration = region(value.body, LoweringDiscardResult {});
-        const auto continuation = loops.at(identity);
-        static_cast<void>(iteration.consume_exit(continuation.target));
-        static_cast<void>(iteration.consume_exit(continuation.break_target));
-        scope.record_exits(iteration.exits());
-        scope.emit(generated_statement(
+    loops.emplace(
+        identity,
+        LoopContinuation {
+            .step = std::nullopt,
+            .target = exit_target(LoweringExitKind::Continue),
+            .break_target = exit_target(LoweringExitKind::Break)
+        }
+    );
+    auto iteration = region(value.body, LoweringDiscardResult {});
+    const auto continuation = loops.at(identity);
+    static_cast<void>(iteration.consume_exit(continuation.target));
+    static_cast<void>(iteration.consume_exit(continuation.break_target));
+    scope.record_exits(iteration.exits());
+    scope.emit(generated_statement(
             TargetRangeForStmt {
                 .binding = value.access == AccessMode::Write
                     ? TargetVariableBinding::MutableReference
@@ -143,95 +141,11 @@ auto BodyRealizer::lower_range(
                                  }
                              ))
                     : context.intrinsic_type(TargetSymbol::Auto),
-                .range = std::move(*begin),
+                .range = range_value ? TargetExpr {.value = TargetConstructionExpr {
+                    .type = context.lower_type(construction.expression(value.source).type),
+                    .initializer = target_expressions(std::move(*iterable))}} : std::move(*iterable),
                 .body = std::move(iteration).finish()
             }
         ));
-        destination.scope(std::move(scope));
-        return;
-    }
-    const auto index_type = context.lower_type(construction.expression(first).type);
-    const auto retain_bound = [&](ConstructionExpressionID id, TargetExpr expression) noexcept {
-        const auto& source = construction.expression(id);
-        if (!source.reads_storage && !source.requires_execution) {
-            return expression;
-        }
-        const auto name = names.fresh(TargetTemporaryNameKind::Operand);
-        scope.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .name = name,
-                .type = index_type,
-                .initializer = std::move(expression)
-            }
-        ));
-        return name_expression(name);
-    };
-    auto initial = retain_bound(first, std::move(*begin));
-    auto upper = read_value(expression(integer->end), scope);
-    if (!scope.continues()) {
-        destination.scope(std::move(scope));
-        return;
-    }
-    auto limit = retain_bound(integer->end, std::move(*upper));
-    auto element = name_expression(index);
-    loops.emplace(
-        identity,
-        LoopContinuation {
-            .step = std::nullopt,
-            .target = exit_target(LoweringExitKind::Continue),
-            .break_target = exit_target(LoweringExitKind::Break)
-        }
-    );
-    auto iteration = LoweringStmtBuilder();
-    if (value.binding.has_value()) {
-        const auto id = *value.binding;
-        iteration.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = value.access == AccessMode::Write
-                    ? TargetVariableBinding::MutableReference
-                    : TargetVariableBinding::ConstValue,
-                .maybe_unused = true,
-                .name = binding_names.at(id),
-                .type = context.lower_type(metadata.binding(id).type),
-                .initializer = std::move(element)
-            }
-        ));
-    }
-    iteration.append(region(value.body, LoweringDiscardResult {}));
-    const auto continuation = loops.at(identity);
-    static_cast<void>(iteration.consume_exit(continuation.target));
-    static_cast<void>(iteration.consume_exit(continuation.break_target));
-    scope.record_exits(iteration.exits());
-    auto steps = std::vector<TargetForStep>();
-    steps.push_back(
-        {.value = TargetUpdateStmt {
-             .op = TargetUpdateOperator::Increment,
-             .target = name_expression(index)
-         }}
-    );
-    scope.emit(generated_statement(
-        TargetForStmt {
-            .initializer =
-                TargetForInitializer {
-                    .value =
-                        TargetVariableStmt {
-                            .binding = TargetVariableBinding::MutableValue,
-                            .maybe_unused = false,
-                            .name = index,
-                            .type = index_type,
-                            .initializer = std::move(initial)
-                        }
-                },
-            .condition = binary_expression(
-                name_expression(index),
-                TargetBinaryOperator::Less,
-                std::move(limit)
-            ),
-            .steps = std::move(steps),
-            .body = std::move(iteration).finish(),
-        }
-    ));
     destination.scope(std::move(scope));
 }

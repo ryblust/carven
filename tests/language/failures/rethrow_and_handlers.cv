@@ -40,8 +40,10 @@ fn fail_selected(read_failure: bool) -> i32 throw ReadError + ParseError {
 }
 
 fn fail_decode(kind: i32) -> i32 throw DecodeError {
-    if kind == 0 { throw DecodeError::Empty; }
-    throw DecodeError::Invalid(73);
+    return match kind {
+        0 => throw DecodeError::Empty,
+        _ => throw DecodeError::Invalid(73),
+    };
 }
 
 fn fail_unreachable() -> i32 throw UnreachableError {
@@ -193,7 +195,7 @@ fn handler_transforms_failure() -> i32 throw ParseError {
     return try {
         read()?
     } catch {
-        ReadError(_) => { throw ParseError { code: 61 }; },
+        ReadError(_) => throw ParseError { code: 61 },
     };
 }
 

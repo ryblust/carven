@@ -53,8 +53,10 @@ TEST_CASE("Const fn admission: supported definitions do not require a call site"
         R"(const fn caller(value: i32) -> i32 { return callee(value); }
            const fn callee(value: i32) -> i32 { return value + 1; })",
         R"(const fn factorial(value: i32) -> i32 {
-            if value < 2 { return 1; }
-            return value * factorial(value - 1);
+            return match value {
+                ..2 => 1,
+                _ => value * factorial(value - 1),
+            };
         })",
     });
     for (const auto source : sources) {

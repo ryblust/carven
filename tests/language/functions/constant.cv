@@ -5,8 +5,10 @@ const short_and = false && positive(1);
 const short_or = true || positive(0);
 
 const fn factorial(value: i32) -> i32 {
-    if value <= 1 { return 1; }
-    return value * factorial(value - 1);
+    return match value {
+        ..=1 => 1,
+        _ => value * factorial(value - 1),
+    };
 }
 
 const fn positive(value: i32) -> bool => value > 0;
@@ -33,8 +35,11 @@ const fn loops() -> i32 {
         ++index;
     }
     for var index = 0; index < 8; ++index {
-        if index == 2 { continue; }
-        if index == 5 { break; }
+        match index {
+            2 => continue,
+            5 => break,
+            _ => {},
+        }
         result += index;
     }
     return result;
@@ -43,7 +48,7 @@ const fn loops() -> i32 {
 const fn classified(value: i32) -> str {
     return match value {
         0 => "zero",
-        1 | 2 => "small",
+        1..=2 => "small",
         _ => "large",
     };
 }

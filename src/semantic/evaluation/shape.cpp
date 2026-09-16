@@ -53,6 +53,8 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
                 result.supported &= child->supported;
                 result.elements += std::min(child->elements, saturated - result.elements);
             }
+        } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
+            result.supported = true;
         } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
             result.supported = builtin_is_integer(builtin->kind)
                 || builtin->kind == BuiltinType::Bool

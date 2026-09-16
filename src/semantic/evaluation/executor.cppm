@@ -109,19 +109,17 @@ private:
         -> ExecutionResult<ExecutionCompletion>;
     auto loop(ExecutionFrame& frame, const SemLoop& loop, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionCompletion>;
-    auto sequence_loop(
-        ExecutionFrame& frame,
-        const SemRangeLoop& loop,
-        const SemSequenceRange& sequence,
-        ProgramOriginID origin
-    ) noexcept -> ExecutionResult<ExecutionCompletion>;
     auto range_loop(
         ExecutionFrame& frame,
         const SemRangeLoop& loop,
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<ExecutionCompletion>;
-    auto matches(ExecutionFrame& frame, PatternID pattern, const ExecutionValue& value) noexcept
-        -> ExecutionResult<bool>;
+    auto matches(
+        ExecutionFrame& frame,
+        PatternID pattern,
+        const ExecutionValue& value,
+        std::span<const SemPatternBounds> pattern_bounds
+    ) noexcept -> ExecutionResult<bool>;
     auto format(ExecutionFrame& frame, const SemFormat& format, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
     auto print(ExecutionFrame& frame, const SemPrint& operation, ProgramOriginID origin) noexcept

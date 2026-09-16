@@ -106,6 +106,16 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                     if (!arm.reachable) {
                         continue;
                     }
+                    auto pattern_bounds = std::vector<ConstructionPatternBounds>();
+                    for (const auto& range : arm.pattern_bounds) {
+                        pattern_bounds.push_back(
+                            {.pattern = range.pattern,
+                             .begin = range.begin ? std::optional(expression(*range.begin))
+                                                  : std::nullopt,
+                             .end =
+                                 range.end ? std::optional(expression(*range.end)) : std::nullopt}
+                        );
+                    }
                     auto guard = std::optional<ConstructionExpressionID>();
                     if (arm.guard) {
                         guard = expression(*arm.guard);
@@ -114,7 +124,8 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                         {.pattern_id = arm.pattern,
                          .bindings = arm.bindings,
                          .guard = guard,
-                         .body = region(arm.body)}
+                         .body = region(arm.body),
+                         .pattern_bounds = std::move(pattern_bounds)}
                     );
                 }
                 return ConstructionMatch {
@@ -164,6 +175,16 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                         .handler = id,
                         .failures = arm.accepted_failures.resolved()
                     };
+                    auto pattern_bounds = std::vector<ConstructionPatternBounds>();
+                    for (const auto& range : arm.pattern_bounds) {
+                        pattern_bounds.push_back(
+                            {.pattern = range.pattern,
+                             .begin = range.begin ? std::optional(expression(*range.begin))
+                                                  : std::nullopt,
+                             .end =
+                                 range.end ? std::optional(expression(*range.end)) : std::nullopt}
+                        );
+                    }
                     auto guard = std::optional<ConstructionExpressionID>();
                     if (arm.guard) {
                         guard = expression(*arm.guard);
@@ -175,7 +196,8 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                          .alternatives = std::move(alternatives),
                          .bindings = arm.bindings,
                          .guard = guard,
-                         .body = handler_body}
+                         .body = handler_body,
+                         .pattern_bounds = std::move(pattern_bounds)}
                     );
                 }
                 return ConstructionTry {

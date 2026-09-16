@@ -61,6 +61,12 @@ struct SemEnumConstructor final {
     EnumCaseID enum_case;
 };
 
+struct SemRange final {
+    OwnedSemanticExpression begin;
+    OwnedSemanticExpression end;
+    bool inclusive;
+};
+
 struct SemArray final {
     std::vector<SemanticExpression> elements;
 };
@@ -238,6 +244,7 @@ struct SemanticExpression final {
         SemCpp,
         SemCppCall,
         SemArray,
+        SemRange,
         SemArrayAdopt,
         SemStruct,
         SemEnumCase,
@@ -297,12 +304,19 @@ struct SemConditionalBranch final {
     SemanticRegion body;
 };
 
+struct SemPatternBounds final {
+    PatternID pattern;
+    std::optional<SemanticExpression> begin;
+    std::optional<SemanticExpression> end;
+};
+
 struct SemMatchArm final {
     PatternID pattern;
     std::vector<LocalBindingID> bindings;
     std::optional<SemanticExpression> guard;
     SemanticRegion body;
     bool reachable;
+    std::vector<SemPatternBounds> pattern_bounds;
 };
 
 struct SemCatchArm final {
@@ -312,6 +326,7 @@ struct SemCatchArm final {
     std::vector<LocalBindingID> bindings;
     std::optional<SemanticExpression> guard;
     SemanticRegion body;
+    std::vector<SemPatternBounds> pattern_bounds;
 };
 
 struct SemReturn final {
@@ -351,22 +366,11 @@ struct SemLoop final {
     OwnedSemanticRegion steps;
 };
 
-struct SemIntegerRange final {
-    SemanticExpression begin;
-    SemanticExpression end;
-};
-
-struct SemSequenceRange final {
-    SemanticExpression value;
-};
-
-using SemRangeSource = std::variant<SemIntegerRange, SemSequenceRange>;
-
 struct SemRangeLoop final {
     LifetimeRegionID lifetime;
     AccessMode access;
     std::optional<LocalBindingID> binding;
-    SemRangeSource source;
+    SemanticExpression source;
     OwnedSemanticRegion body;
 };
 

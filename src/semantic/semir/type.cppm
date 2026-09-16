@@ -67,6 +67,11 @@ struct ArrayTypeValue final {
     constexpr auto operator==(const ArrayTypeValue&) const noexcept -> bool = default;
 };
 
+struct RangeTypeValue final {
+    TypeID element;
+    constexpr auto operator==(const RangeTypeValue&) const noexcept -> bool = default;
+};
+
 struct SliceTypeValue final {
     TypeID element;
     constexpr auto operator==(const SliceTypeValue&) const noexcept -> bool = default;
@@ -93,6 +98,7 @@ using CanonicalTypeValue = std::variant<
     EnumTypeValue,
     ArrayTypeValue,
     SliceTypeValue,
+    RangeTypeValue,
     PointerTypeValue,
     FunctionTypeValue,
     ClosureTypeValue,

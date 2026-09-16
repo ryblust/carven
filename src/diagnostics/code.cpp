@@ -28,10 +28,6 @@ namespace {
     X(AccessNotAssignable, "CV-ACCESS-NOT-ASSIGNABLE", Error, "Non-assignable Update target.")     \
     X(AccessRangeBinding, "CV-ACCESS-RANGE-BINDING", Error, "Invalid Write range binding.")        \
     X(AccessRangeIterable, "CV-ACCESS-RANGE-ITERABLE", Error, "Invalid Write range iterable.")     \
-    X(AccessViewRangeBinding,                                                                      \
-      "CV-ACCESS-VIEW-RANGE-BINDING",                                                              \
-      Error,                                                                                       \
-      "View range bindings only support Read access.")                                             \
     X(Catalog, "CV-CATALOG", Error, "Semantic catalog failure.")                                   \
     X(CompilationInput, "CV-COMPILATION-INPUT", Error, "Invalid closed-compilation input.")        \
     X(CppBoundary, "CV-CPP-BOUNDARY", Error, "Invalid C++ boundary declaration.")                  \

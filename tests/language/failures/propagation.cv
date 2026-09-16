@@ -41,8 +41,11 @@ fn loop_result() -> i32 {
         value += 1;
         try {
             read(true)?;
-            if value == 2 { continue; }
-            if value == 4 { break; }
+            match value {
+                2 => continue,
+                4 => break,
+                _ => {},
+            }
         } catch {
             ReadError(_) => {},
         }
@@ -56,8 +59,11 @@ fn nested_value_loop_result() -> i32 {
         read(true)?;
         while value < 5 {
             value += 1;
-            if value == 2 { continue; }
-            if value == 4 { break; }
+            match value {
+                2 => continue,
+                4 => break,
+                _ => {},
+            }
         }
         value
     } catch {

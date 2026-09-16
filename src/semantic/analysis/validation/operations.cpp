@@ -1,4 +1,5 @@
 module carven:semantic.analysis.validation.operations.impl;
+
 import :semantic.analysis.validation.context;
 import :semantic.format;
 import :semantic.semir.format;
@@ -169,6 +170,15 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         || argument.access != parameter.access) {
                         invariant_violation("call argument differs from parameter");
                     }
+                }
+            },
+            [&](const SemRange& value) noexcept {
+                const auto& type = require_type(source.type.resolved());
+                const auto* range = std::get_if<RangeTypeValue>(&type.value);
+                if (range == nullptr
+                    || value.begin->type.resolved() != range->element
+                    || value.end->type.resolved() != range->element) {
+                    invariant_violation("range bounds have incompatible types");
                 }
             },
             [&](const SemArray& value) noexcept {
@@ -398,6 +408,8 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
             },
             [&](const SemMatch& value) noexcept {
                 for (const auto& arm : value.arms) {
+                    const auto roots = std::array {arm.pattern};
+                    verify_pattern_bounds(roots, arm.pattern_bounds);
                     if (body.pattern(arm.pattern).type != value.subject->type.resolved()) {
                         invariant_violation("match pattern type mismatch");
                     }
@@ -412,6 +424,18 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         && arm.body.result->type.resolved() != source.type.resolved()) {
                         invariant_violation("match result type mismatch");
                     }
+                }
+            },
+            [&](const SemTry& value) noexcept {
+                for (const auto& arm : value.arms) {
+                    auto roots = std::vector<PatternID>();
+                    for (const auto& alternative : arm.alternatives) {
+                        if (const auto* typed =
+                                std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                            roots.push_back(typed->inner);
+                        }
+                    }
+                    verify_pattern_bounds(roots, arm.pattern_bounds);
                 }
             },
             [&](const SemDereference& value) noexcept {

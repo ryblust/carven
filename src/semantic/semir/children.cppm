@@ -44,6 +44,9 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
             for (auto& argument : value.arguments) {
                 child(argument.expression);
             }
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemRange>) {
+            child(*operation.begin);
+            child(*operation.end);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemArray>) {
             auto& value = operation;
             for (auto& element : value.elements) {
@@ -150,6 +153,14 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
             auto& value = operation;
             child(*value.subject);
             for (auto& arm : value.arms) {
+                for (auto& range : arm.pattern_bounds) {
+                    if (range.begin) {
+                        child(*range.begin);
+                    }
+                    if (range.end) {
+                        child(*range.end);
+                    }
+                }
                 if (arm.guard.has_value()) {
                     child(*arm.guard);
                 }
@@ -159,6 +170,14 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
             auto& value = operation;
             child(*value.body);
             for (auto& arm : value.arms) {
+                for (auto& range : arm.pattern_bounds) {
+                    if (range.begin) {
+                        child(*range.begin);
+                    }
+                    if (range.end) {
+                        child(*range.end);
+                    }
+                }
                 if (arm.guard.has_value()) {
                     child(*arm.guard);
                 }

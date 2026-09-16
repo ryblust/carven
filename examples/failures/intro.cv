@@ -12,7 +12,7 @@ fn report(requested: i32, available: i32) {
         let remaining = reserve(requested, available)?;
         println("Seats remaining:", remaining);
     } catch {
-        SoldOut(error) => { println("Not enough seats for:", error.requested); },
+        SoldOut(error) => println("Not enough seats for:", error.requested),
     }
 }
 

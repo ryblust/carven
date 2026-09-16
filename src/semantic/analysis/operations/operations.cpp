@@ -93,6 +93,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                                  || std::same_as<Form, ASTConstructionExpr>
                                  || std::same_as<Form, ASTPrefixExpr>
                                  || std::same_as<Form, ASTAccessExpr>
+                                 || std::same_as<Form, ASTRangeExpr>
                                  || std::same_as<Form, ASTBinaryExpr>
                                  || std::same_as<Form, ASTCastExpr>
                                  || std::same_as<Form, ASTIndexExpr>
@@ -445,6 +446,7 @@ auto supports_equality(
             [](const CallableViewTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
             [](const PointerTypeValue&) static noexcept { return true; },
+            [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
         },
         canonical.value

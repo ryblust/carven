@@ -27,7 +27,6 @@ enum class DiagnosticCode {
     AccessNotAssignable,
     AccessRangeBinding,
     AccessRangeIterable,
-    AccessViewRangeBinding,
     Catalog,
     CompilationInput,
     CppBoundary,

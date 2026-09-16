@@ -20,7 +20,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
             finish(state)?;
             check(state.offset == 5);
         } catch {
-            UTF8Error(_) => { check(false); },
+            UTF8Error(_) => check(false),
         }
         split += 1;
     }
@@ -268,7 +268,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             try {
                 feed(&state, bytes.slice(0, item.error.offset))?;
             } catch {
-                UTF8Error(_) => { check(false); },
+                UTF8Error(_) => check(false),
             }
             let before = state;
             rejected = false;

@@ -154,6 +154,7 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
             include("carven/runtime/format.hpp");
             return;
         case TargetSymbol::RuntimeAsSlice:
+        case TargetSymbol::RuntimeRange:        include("carven/runtime/range.hpp"); return;
         case TargetSymbol::RuntimeSlice:        include("carven/runtime/slice.hpp"); return;
         case TargetSymbol::RuntimeWriter:       include("carven/runtime/writer.hpp"); return;
         case TargetSymbol::RuntimeUTF8Text:     include("carven/runtime/text.hpp"); return;

@@ -108,6 +108,30 @@ auto constant_expression(
     const auto& fact = context.semantic().constants().constant(id);
     return std::visit(
         Overloaded {
+            [&](const RangeConstant& value) noexcept -> TargetExpr {
+                const auto& range =
+                    std::get<RangeTypeValue>(context.semantic().types().type(fact.type).value);
+                return TargetExpr {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(fact.type),
+                        .initializer = target_expressions(
+                            typed_integer_expression(
+                                context,
+                                value.begin,
+                                range.element,
+                                ConstantLiteralContext::TargetTyped
+                            ),
+                            typed_integer_expression(
+                                context,
+                                value.end,
+                                range.element,
+                                ConstantLiteralContext::TargetTyped
+                            ),
+                            bool_expression(value.inclusive)
+                        )
+                    }
+                };
+            },
             [&](const IntegerConstant& value) noexcept {
                 return typed_integer_expression(context, value, fact.type, use);
             },

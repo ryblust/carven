@@ -25,6 +25,13 @@ private:
     bool stored_negative;
 };
 
+struct RangeConstant final {
+    IntegerConstant begin;
+    IntegerConstant end;
+    bool inclusive;
+    constexpr auto operator==(const RangeConstant&) const noexcept -> bool = default;
+};
+
 struct NullPointerConstant final {
     constexpr auto operator==(const NullPointerConstant&) const noexcept -> bool = default;
 };
@@ -91,6 +98,7 @@ struct SliceConstant final {
 
 using ConstantValue = std::variant<
     IntegerConstant,
+    RangeConstant,
     BooleanConstant,
     NullPointerConstant,
     StringConstant,

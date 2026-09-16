@@ -197,7 +197,14 @@ auto BodyRealizer::lower_match(
             break;
         }
         auto statements = LoweringStmtBuilder();
-        auto matcher = PatternRealizer(context, names, metadata);
+        auto matcher = PatternRealizer(
+            context,
+            names,
+            metadata,
+            [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
+                return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
+            }
+        );
         const auto pattern = matcher.prepare(pattern_bindings(arm.bindings), statements);
         matcher.match(
             arm.pattern_id,
@@ -283,7 +290,14 @@ auto BodyRealizer::lower_try(
             continue;
         }
         auto statements = LoweringStmtBuilder();
-        auto matcher = PatternRealizer(context, names, metadata);
+        auto matcher = PatternRealizer(
+            context,
+            names,
+            metadata,
+            [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
+                return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
+            }
+        );
         const auto state = matcher.prepare(pattern_bindings(arm.bindings), statements);
         const auto add = [&](TypeID type, std::optional<PatternID> pattern_id) noexcept {
             auto candidate = LoweringStmtBuilder();
@@ -367,4 +381,37 @@ auto BodyRealizer::pattern_branch(
     destination.emit(generated_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
+}
+
+auto BodyRealizer::pattern_bound(
+    std::span<const ConstructionPatternBounds> pattern_bounds,
+    PatternID pattern,
+    bool upper,
+    LoweringStmtBuilder& destination
+) noexcept -> std::optional<TargetExpr> {
+    const auto found =
+        std::ranges::find(pattern_bounds, pattern, &ConstructionPatternBounds::pattern);
+    if (found == pattern_bounds.end()) {
+        invariant_violation("dynamic range pattern has no expressions");
+    }
+    const auto bound = upper ? found->end : found->begin;
+    if (!bound) {
+        invariant_violation("dynamic range bound has no expression");
+    }
+    auto value =
+        destination.accept(operand({.expression = *bound, .use = ConstructionUse::OperandValue}));
+    if (!destination.continues()) {
+        return std::nullopt;
+    }
+    const auto name = names.fresh(TargetTemporaryNameKind::Operand);
+    destination.emit(generated_statement(
+        TargetVariableStmt {
+            .binding = TargetVariableBinding::ConstValue,
+            .maybe_unused = false,
+            .name = name,
+            .type = context.lower_type(construction.expression(*bound).type),
+            .initializer = std::move(*value)
+        }
+    ));
+    return name_expression(name);
 }

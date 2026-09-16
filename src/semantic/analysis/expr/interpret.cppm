@@ -31,6 +31,8 @@ auto interpret_expression(
                 return interpret_unary(site, form, source.span, expected);
             } else if constexpr (std::same_as<Form, ASTBinaryExpr>) {
                 return interpret_binary(site, form, source.span, expected);
+            } else if constexpr (std::same_as<Form, ASTRangeExpr>) {
+                return interpret_range(site, form, source.span, expected);
             } else if constexpr (std::same_as<Form, ASTCastExpr>) {
                 return interpret_cast(site, form, source.span);
             } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {

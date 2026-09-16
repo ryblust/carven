@@ -114,6 +114,46 @@ auto resolve_named(
     Span origin
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
+    if (!named.global_root && named.components.size() == 1uz && root == "range") {
+        if (named.arguments.size() != 1uz) {
+            return std::unexpected(fail(
+                draft,
+                module_id,
+                origin,
+                DiagnosticCode::TypeUnresolved,
+                "range requires one integer element type"
+            ));
+        }
+        auto element = resolve_source_type(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            syntax,
+            named.arguments.front(),
+            resolve_extent
+        );
+        if (!element) {
+            return std::unexpected(element.error());
+        }
+        const auto* concrete = std::get_if<TypeID>(&*element);
+        if (concrete != nullptr) {
+            const auto type = draft.type_copy(*concrete);
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            if (builtin != nullptr && builtin_is_integer(builtin->kind)) {
+                return ConstructionTypeRef {
+                    draft.intern_type({.value = RangeTypeValue {.element = *concrete}})
+                };
+            }
+        }
+        return std::unexpected(fail(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::TypeRangeInteger,
+            "range element must be an integer type"
+        ));
+    }
     if (named.global_root.has_value()
         || (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty())) {
         auto components = std::vector<Span>();
@@ -631,7 +671,8 @@ auto resolve_failure_types(
                                   || std::same_as<Value, CallableViewTypeValue>
                                   || std::same_as<Value, CppTypeValue>
                                   || std::same_as<Value, PointerTypeValue>
-                                  || std::same_as<Value, SliceTypeValue>,
+                                  || std::same_as<Value, SliceTypeValue>
+                                  || std::same_as<Value, RangeTypeValue>,
                               "unhandled non-nominal failure type"
                           );
                           return false;

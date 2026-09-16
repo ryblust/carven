@@ -229,6 +229,15 @@ void ConstructionVerifier::expression(
                 expression(value.subject, control, source.origin);
                 for (const auto& arm : value.arms) {
                     pattern(arm.pattern_id, source.origin);
+                    for (const auto& range : arm.pattern_bounds) {
+                        pattern(range.pattern, source.origin);
+                        if (range.begin) {
+                            expression(*range.begin, control, source.origin);
+                        }
+                        if (range.end) {
+                            expression(*range.end, control, source.origin);
+                        }
+                    }
                     if (arm.guard) {
                         expression(*arm.guard, control, source.origin);
                     }
@@ -257,6 +266,15 @@ void ConstructionVerifier::expression(
                     }
                     auto handler_control = control;
                     handler_control.caught = ConstructionCaughtFailure {id, arm.accepted_failures};
+                    for (const auto& range : arm.pattern_bounds) {
+                        pattern(range.pattern, source.origin);
+                        if (range.begin) {
+                            expression(*range.begin, handler_control, source.origin);
+                        }
+                        if (range.end) {
+                            expression(*range.end, handler_control, source.origin);
+                        }
+                    }
                     if (arm.guard) {
                         expression(*arm.guard, handler_control, source.origin);
                     }
@@ -355,16 +373,7 @@ void ConstructionVerifier::statement(
             [&](const ConstructionRangeLoop& value) noexcept {
                 loop_owner(owner, source.origin);
                 lifetime(value.lifetime, source.origin);
-                std::visit(
-                    Overloaded {
-                        [&](const ConstructionIntegerRange& range) noexcept {
-                            input(range.begin);
-                            input(range.end);
-                        },
-                        [&](const ConstructionSequenceRange& range) noexcept { input(range.value); }
-                    },
-                    value.source
-                );
+                input(value.source);
                 auto nested = control;
                 nested.loop = owner;
                 region(value.body, nested, source.origin);

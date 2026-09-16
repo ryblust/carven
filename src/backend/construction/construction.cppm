@@ -100,11 +100,18 @@ struct ConstructionConditional final {
     std::optional<ConstructionRegionID> otherwise;
 };
 
+struct ConstructionPatternBounds final {
+    PatternID pattern;
+    std::optional<ConstructionExpressionID> begin;
+    std::optional<ConstructionExpressionID> end;
+};
+
 struct ConstructionMatchArm final {
     PatternID pattern_id;
     std::vector<LocalBindingID> bindings;
     std::optional<ConstructionExpressionID> guard;
     ConstructionRegionID body;
+    std::vector<ConstructionPatternBounds> pattern_bounds;
 };
 
 struct ConstructionMatch final {
@@ -128,6 +135,7 @@ struct ConstructionCatchArm final {
     std::vector<LocalBindingID> bindings;
     std::optional<ConstructionExpressionID> guard;
     ConstructionRegionID body;
+    std::vector<ConstructionPatternBounds> pattern_bounds;
 };
 
 struct ConstructionTry final {
@@ -213,20 +221,11 @@ struct ConstructionLoop final {
     ConstructionRegionID steps;
 };
 
-struct ConstructionIntegerRange final {
-    ConstructionExpressionID begin;
-    ConstructionExpressionID end;
-};
-
-struct ConstructionSequenceRange final {
-    ConstructionExpressionID value;
-};
-
 struct ConstructionRangeLoop final {
     LifetimeRegionID lifetime;
     AccessMode access;
     std::optional<LocalBindingID> binding;
-    std::variant<ConstructionIntegerRange, ConstructionSequenceRange> source;
+    ConstructionExpressionID source;
     ConstructionRegionID body;
 };
 

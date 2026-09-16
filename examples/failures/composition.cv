@@ -14,22 +14,17 @@ fn report(label: str, quantity: i32, available: i32, zone: i32) {
         let total = quote(quantity, available, zone)?;
         println("Quote in cents:", total);
     } catch {
-        QuantityError(.NonPositive(value)) | QuantityError(.TooLarge(value)) => {
-            println("Quantity must be between 1 and 100:", value);
-        },
+        QuantityError(.NonPositive(value)) | QuantityError(.TooLarge(value)) => println(
+            "Quantity must be between 1 and 100:",
+            value
+        ),
         OutOfStock(error) => {
             println("Requested:", error.requested);
             println("Available:", error.available);
         },
-        CarrierLookupError(error) => {
-            println("Carrier lookup failed for zone:", error.zone);
-        },
-        DeliveryError(.UnknownZone(zone)) => {
-            println("Unknown zone:", zone);
-        },
-        DeliveryError(.Unavailable(zone)) => {
-            println("No carrier for zone:", zone);
-        },
+        CarrierLookupError(error) => println("Carrier lookup failed for zone:", error.zone),
+        DeliveryError(.UnknownZone(zone)) => println("Unknown zone:", zone),
+        DeliveryError(.Unavailable(zone)) => println("No carrier for zone:", zone),
     }
 }
 

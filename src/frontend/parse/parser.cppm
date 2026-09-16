@@ -112,7 +112,11 @@ private:
     auto save() const noexcept -> Checkpoint;
     auto restore(const Checkpoint& checkpoint) noexcept -> void;
     auto begin_speculation() noexcept -> Checkpoint;
-    auto finish_speculation(const Checkpoint& checkpoint, bool commit) noexcept -> void;
+    auto finish_speculation(
+        const Checkpoint& checkpoint,
+        bool commit,
+        bool retain_failure = true
+    ) noexcept -> void;
     auto remember_speculative_failure(ParseFailure failure) noexcept -> void;
     static auto join(Span first, Span last) noexcept -> Span;
     auto parse_module_reference() noexcept -> ASTModuleReference;

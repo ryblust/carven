@@ -10,9 +10,10 @@ const test "prepared" {
 }
 
 fn fib(value: i32) -> i32 {
-    if value < 2 { return value; }
-
-    return fib(value - 1) + fib(value - 2);
+    return match value {
+        ..2 => value,
+        _ => fib(value - 1) + fib(value - 2),
+    };
 }
 
 let values = [1, 2, 3];

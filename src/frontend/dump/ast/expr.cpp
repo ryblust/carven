@@ -267,6 +267,28 @@ auto ASTDumper::render_expression(
 }
 
 auto ASTDumper::render_expression(
+    const ASTRangeExpr& binary,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}RangeExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested_prefix = child_prefix(prefix, is_last);
+    render_expression(binary.begin, nested_prefix, false, "begin ");
+    render_span_field(nested_prefix, false, "operator", binary.operator_span);
+    render_expression(binary.end, nested_prefix, true, "end ");
+}
+
+auto ASTDumper::render_expression(
     const ASTCastExpr& cast,
     ASTExprID expression,
     std::string_view prefix,
