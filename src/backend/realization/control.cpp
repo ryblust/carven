@@ -176,7 +176,7 @@ auto BodyRealizer::lower_match(
     const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
     auto subject_value = scope.accept(operand({
         .expression = value.subject,
-        .use = value.subject_is_place ? ConstructionUse::Place : ConstructionUse::Consume,
+        .use = value.subject_is_place ? ConstructionUse::ConstPlace : ConstructionUse::Consume,
     }));
     if (!scope.continues()) {
         destination.append(std::move(scope));

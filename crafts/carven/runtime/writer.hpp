@@ -1,5 +1,6 @@
 #pragma once
 
+#include "numeric.hpp"
 #include "string.hpp"
 
 #include <array>
@@ -11,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace carven::runtime {
 
@@ -55,19 +57,14 @@ public:
         append(std::string_view(encoded.bytes.data(), encoded.width));
     }
 
-    template<int Base, bool Uppercase, bool ZeroPad, typename Integer>
-        requires (std::is_integral_v<Integer> && !std::is_same_v<Integer, bool>)
-    auto integer(Integer value, std::size_t width) noexcept -> void {
+    template<int Base, bool Uppercase, bool ZeroPad, Integer Type>
+    auto integer(Type value, std::size_t width) noexcept -> void {
         static_assert(Base == 2 || Base == 8 || Base == 10 || Base == 16);
-        using Unsigned = std::make_unsigned_t<Integer>;
-        auto magnitude = static_cast<Unsigned>(value);
-        auto negative = false;
-        if constexpr (std::is_signed_v<Integer>) {
-            negative = value < 0;
-            if (negative) {
-                magnitude = Unsigned {0} - magnitude;
-            }
-        }
+        using Unsigned = std::make_unsigned_t<Type>;
+        const auto negative = std::cmp_less(value, 0);
+        const auto converted_value = static_cast<Unsigned>(value);
+        const auto magnitude =
+            negative ? static_cast<Unsigned>(Unsigned {0} - converted_value) : converted_value;
         std::array<char, std::numeric_limits<Unsigned>::digits> buffer;
         const auto converted =
             std::to_chars(buffer.data(), buffer.data() + buffer.size(), magnitude, Base);

@@ -118,7 +118,7 @@ auto align_array_rows(
                 } else if constexpr (std::same_as<T, ASTFieldInitializerList>) {
                     row.signature += "#named";
                     for (const auto& field : initializer.fields) {
-                        row.signature += ":";
+                        row.signature += ':';
                         row.signature += spelling(field.name_span);
                         row.columns.push_back(rendered[index_at(field.span.start())].span.start());
                     }

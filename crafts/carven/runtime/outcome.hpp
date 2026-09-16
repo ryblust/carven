@@ -166,10 +166,12 @@ public:
         requires (std::is_void_v<Result> || detail::TransferConstructible<Result>)
         && (detail::TransferConstructible<Failures> && ...)
     {
-        if (auto* value = success_if()) {
-            if constexpr (std::is_void_v<Result>) {
+        if constexpr (std::is_void_v<Result>) {
+            if (success_if() != nullptr) {
                 return success();
-            } else {
+            }
+        } else {
+            if (auto* value = success_if()) {
                 return success_from([&]() noexcept -> Result { return transfer(value->value); });
             }
         }

@@ -37,13 +37,16 @@ using ConstructionRegionID = ConstructionID<ConstructionRegionTag>;
 
 // ReadBorrow observes an object; AddressValue reads a pointer slot. Neither
 // requires a C++ local declaration. Realization chooses storage at boundaries.
+// ProjectionPlace forwards the consumer access through a field or element projection.
+// WritePlace requires mutable access; merely locating an object does not.
 // NativeTake additionally preserves the C++ query contract T&&, including for
 // trivial values whose Carven transfer policy otherwise observes const T&.
 enum class ConstructionUse {
     ReadBorrow,
     AddressValue,
     OperandValue,
-    Place,
+    ProjectionPlace,
+    WritePlace,
     ConstPlace,
     Consume,
     NativeTake

@@ -55,7 +55,7 @@ auto BodyConstructionBuilder::argument(const SemCallArgument& source) noexcept
     -> ConstructionOperand {
     auto use = ConstructionUse::ReadBorrow;
     if (source.access == AccessMode::Write) {
-        use = ConstructionUse::Place;
+        use = ConstructionUse::WritePlace;
     } else if (source.access == AccessMode::Take) {
         use = ConstructionUse::Consume;
     } else if (std::holds_alternative<PointerTypeValue>(

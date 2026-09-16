@@ -8,6 +8,7 @@ import :diagnostics.diagnostic;
 import :diagnostics.report;
 import :graver.format;
 import :source.manager;
+import :support.path;
 import std;
 
 namespace {
@@ -31,6 +32,34 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
 }
 
 } // namespace
+
+TEST_CASE("Graver format: examples have exact and stable output") {
+    auto folders = std::vector<std::filesystem::path>();
+    auto error = std::error_code();
+    auto iterator = std::filesystem::directory_iterator("tools/graver/tests/format", error);
+    REQUIRE_FALSE(error);
+    const auto end = std::filesystem::directory_iterator();
+    while (iterator != end) {
+        if (iterator->is_directory(error)) {
+            folders.push_back(iterator->path());
+        }
+        REQUIRE_FALSE(error);
+        iterator.increment(error);
+        REQUIRE_FALSE(error);
+    }
+    std::ranges::sort(folders);
+    REQUIRE_FALSE(folders.empty());
+    for (const auto& folder : folders) {
+        const auto name = path_to_generic_utf8(folder);
+        INFO(name);
+        auto sources = SourceManager();
+        const auto input_id = sources.append_file(path_to_generic_utf8(folder / "input.cv"));
+        REQUIRE(input_id.has_value());
+        const auto expected_id = sources.append_file(path_to_generic_utf8(folder / "expected.cv"));
+        REQUIRE(expected_id.has_value());
+        check_format(sources.view(*input_id).text, sources.view(*expected_id).text);
+    }
+}
 
 TEST_CASE(
     "Graver format: comments retain their token gaps including punctuation and closing braces"

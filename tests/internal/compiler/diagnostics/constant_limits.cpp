@@ -18,7 +18,7 @@ TEST_CASE(
     for (auto index = 0uz; index < 256uz; ++index) {
         retained += ".slice(0, 2048)";
     }
-    retained += ";";
+    retained += ';';
     const auto cases = std::to_array<std::string_view>({
         retained,
         "const fn endless() -> i32 { while true {} return 0; } "

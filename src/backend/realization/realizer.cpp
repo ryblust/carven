@@ -43,15 +43,6 @@ BodyRealizer::BodyRealizer(
         names.reserve(inputs.captures[index].spelling());
         names.reserve(inputs.captures[index].spelling(), callable_scope);
     }
-    for (const auto& value : construction.expression_values()) {
-        if (const auto* take = std::get_if<SemTake>(&value.operation.value)) {
-            const auto* binding = std::get_if<SemBinding>(&take->place->value);
-            if (binding == nullptr) {
-                invariant_violation("take source is not a complete owner binding");
-            }
-            taken_bindings.insert(binding->binding);
-        }
-    }
     for (const auto binding : metadata.bindings()) {
         if (!binding_names.contains(binding.id)) {
             const auto preferred =
@@ -78,7 +69,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     }
     auto completed = std::move(statements).finish();
     auto referenced_parameters =
-        finish_body_declarations(completed, inputs.parameters, inputs.captures);
+        finish_body_declarations(completed, inputs.parameters, inputs.captures, mutable_owners);
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),

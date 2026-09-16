@@ -32,16 +32,13 @@ auto BodyRealizer::declare_binding(
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
-    const auto& owner = std::get<OwnerBindingStorage>(binding.storage);
     // A typed aggregate initializer already fixes its exact native value type.
     const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value)
         ? context.intrinsic_type(TargetSymbol::Auto)
         : context.lower_type(binding.type);
     destination.emit(generated_statement(
         TargetVariableStmt {
-            .binding = owner.writable || taken_bindings.contains(id)
-                ? TargetVariableBinding::MutableValue
-                : TargetVariableBinding::ConstValue,
+            .binding = TargetVariableBinding::ConstValue,
             .maybe_unused = true,
             .name = binding_names.at(id),
             .type = type,

@@ -644,10 +644,14 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                                             );
                                     }
                                 }();
-                                auto expanded = std::ranges::any_of(values, structured);
-                                if constexpr (std::same_as<U, ASTFieldInitializerList>) {
-                                    expanded = expanded || initializer.fields.size() > 1uz;
-                                }
+                                const auto expanded = [&]() noexcept {
+                                    const auto nested = std::ranges::any_of(values, structured);
+                                    if constexpr (std::same_as<U, ASTFieldInitializerList>) {
+                                        return nested || initializer.fields.size() > 1uz;
+                                    } else {
+                                        return nested;
+                                    }
+                                }();
                                 if (expanded) {
                                     block_layouts[block_open(expression.span)] =
                                         BlockLayout::Expanded;

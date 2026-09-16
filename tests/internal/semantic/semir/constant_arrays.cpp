@@ -188,7 +188,7 @@ TEST_CASE("SemIR constants invariant: array children already belong to the same 
                 auto draft = begin_compilation(sources, diagnostics);
                 auto other_sources = SourceManager();
                 auto other_diagnostics = DiagnosticSink();
-                auto other = begin_compilation(other_sources, other_diagnostics);
+                const auto other = begin_compilation(other_sources, other_diagnostics);
                 const auto integer = draft.intern_builtin_type(BuiltinType::I32);
                 auto alternate = MutableProgramTable<ConstantFact, ConstantID>(
                     foreign ? other.identity() : draft.identity()

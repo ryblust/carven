@@ -103,7 +103,7 @@ TEST_CASE("Declarations: reads clear attributes while writes retain names") {
         target_lowering_statement(TargetReturnStmt {.expression = reference("returned")})
     );
     const auto parameters = std::array {name("parameter"), name("absent")};
-    CHECK(finish_body_declarations(body, parameters, {}) == std::vector<bool> {true, false});
+    CHECK(finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false});
     CHECK(flags(body) == std::vector<bool> {false, true, true, true});
 }
 
@@ -137,7 +137,7 @@ TEST_CASE("Declarations: sibling declarations and lambda parameters have lexical
     body.push_back(target_lowering_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, true, false, true});
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
             .body = std::move(iteration)
         }
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, false, true, false, false});
 }
 

@@ -44,11 +44,8 @@ auto load_and_analyze_sources(
         return std::nullopt;
     }
 
-    auto result = analyze_compilation(
-        sources,
-        CompilationRequest {.modules = module_inputs},
-        output
-    );
+    auto result =
+        analyze_compilation(sources, CompilationRequest {.modules = module_inputs}, output);
     if (!result) {
         std::print(std::cerr, "{}", render_diagnostics(result.error(), sources));
         return std::nullopt;

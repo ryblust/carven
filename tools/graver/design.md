@@ -76,7 +76,7 @@ keeping blank lines free of generated spaces. Width is measured in UTF-8 bytes.
 ## Tests
 
 C++ tests cover source preservation, layout decisions, batch results, and
-file-write boundaries. CLI scenarios cover process behavior; reviewed input/output
+file-write boundaries. CLI scenarios cover process behavior; input/output
 examples specify style. Corpus checks require known-valid repository inputs to
 parse, checking idempotence and output stability after horizontal-whitespace
 changes. Lexically or syntactically invalid inputs must fail.

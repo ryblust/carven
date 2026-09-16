@@ -81,3 +81,24 @@ test "Evaluation: call arguments evaluate from left to right" {
     check(source_first_order == 3);
     check(reserved_identifier(5) == 5);
 }
+
+struct TextContainer {
+    text: String,
+}
+
+fn text_length_after(value: String, marker: i32) -> usize {
+    return value.len() + marker as usize;
+}
+
+test "Evaluation: read-only owner projections retain backing across later effects" {
+    var trace = 0;
+    var container = TextContainer { text: "field" };
+    var values: [String; 1] = ["element"];
+    let field_result = text_length_after(container.text, record(&trace, 1));
+    let element_result = text_length_after(values[0], record(&trace, 2));
+    check(field_result == 6usize);
+    check(element_result == 9usize);
+    check(trace == 12);
+    check(container.text == "field");
+    check(values[0] == "element");
+}

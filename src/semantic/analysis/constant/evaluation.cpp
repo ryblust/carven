@@ -140,7 +140,7 @@ auto evaluate_constant_test(
     BodyID body
 ) noexcept -> AnalysisResult<void> {
     auto context = ConstantAnalysisContext(draft, requests);
-    auto result = execute_constant_test(draft, context, draft.body_draft(body));
+    const auto result = execute_constant_test(draft, context, draft.body_draft(body));
     if (!result) {
         if (const auto failure = draft.diagnostics().failure()) {
             return std::unexpected(*failure);

@@ -105,7 +105,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
         auto root = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);
         const auto lifetime =
             root.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
-        auto expression = root.make_expression(
+        const auto expression = root.make_expression(
             contract.result,
             lifetime,
             origin,

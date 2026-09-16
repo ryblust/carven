@@ -126,6 +126,112 @@ TEST_CASE("Emission: runtime trap remains distinct from unreachable proof") {
     CHECK_FALSE(artifact.content.contains("carven::runtime::unreachable();"));
 }
 
+TEST_CASE("Emission: binary grouping preserves associativity and makes comparisons explicit") {
+    struct Case final {
+        TargetBinaryOperator outer;
+        TargetBinaryOperator inner;
+        bool nested_left;
+        std::string_view expected;
+    };
+
+    const auto cases = std::array {
+        Case {
+            .outer = TargetBinaryOperator::Equal,
+            .inner = TargetBinaryOperator::Equal,
+            .nested_left = true,
+            .expected = "(a == b) == c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Equal,
+            .inner = TargetBinaryOperator::Equal,
+            .nested_left = false,
+            .expected = "a == (b == c);"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Less,
+            .inner = TargetBinaryOperator::Less,
+            .nested_left = true,
+            .expected = "(a < b) < c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Less,
+            .inner = TargetBinaryOperator::Less,
+            .nested_left = false,
+            .expected = "a < (b < c);"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Equal,
+            .inner = TargetBinaryOperator::Less,
+            .nested_left = true,
+            .expected = "(a < b) == c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Equal,
+            .inner = TargetBinaryOperator::Less,
+            .nested_left = false,
+            .expected = "a == (b < c);"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Less,
+            .inner = TargetBinaryOperator::Equal,
+            .nested_left = true,
+            .expected = "(a == b) < c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Less,
+            .inner = TargetBinaryOperator::Equal,
+            .nested_left = false,
+            .expected = "a < (b == c);"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Subtract,
+            .inner = TargetBinaryOperator::Subtract,
+            .nested_left = true,
+            .expected = "a - b - c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Subtract,
+            .inner = TargetBinaryOperator::Subtract,
+            .nested_left = false,
+            .expected = "a - (b - c);"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Multiply,
+            .inner = TargetBinaryOperator::Add,
+            .nested_left = true,
+            .expected = "(a + b) * c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::Add,
+            .inner = TargetBinaryOperator::Multiply,
+            .nested_left = false,
+            .expected = "a + b * c;"
+        },
+    };
+    const auto name = [](std::string_view spelling) static noexcept {
+        return TargetExpr {
+            .value = TargetNameExpr {.name = TargetName(TargetIdentifier::from_spelling(spelling))}
+        };
+    };
+    for (const auto& scenario : cases) {
+        CAPTURE(scenario.expected);
+        auto expression = scenario.nested_left
+            ? binary_expression(
+                  binary_expression(name("a"), scenario.inner, name("b")),
+                  scenario.outer,
+                  name("c")
+              )
+            : binary_expression(
+                  name("a"),
+                  scenario.outer,
+                  binary_expression(name("b"), scenario.inner, name("c"))
+              );
+        const auto artifact =
+            emitted_statement(TargetExprStmt {.expression = std::move(expression)});
+        CHECK(artifact.content.contains(scenario.expected));
+    }
+}
+
 TEST_CASE("Emission: value regions retain explicit result types and selective unused names") {
     for (const auto maybe_unused : {false, true}) {
         const auto artifact =

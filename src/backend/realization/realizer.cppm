@@ -193,7 +193,7 @@ private:
     std::vector<LocalBindingID> parameter_bindings;
     std::vector<LocalBindingID> capture_bindings;
     std::flat_map<LocalBindingID, TargetIdentifier> binding_names;
-    std::flat_set<LocalBindingID> taken_bindings;
+    std::flat_set<std::string> mutable_owners;
     std::flat_map<LocalBindingID, LoweringDeferredStorage> delayed_bindings;
     std::map<ConstructionExpressionID, FailureDestination> handlers;
 

@@ -120,7 +120,7 @@ TEST_CASE("Generation: frozen slices reference deduplicated static array declara
         slices += facts.slices;
         empty_arrays += facts.empty_arrays;
         if (facts.slices != 0) {
-            auto unique = std::flat_set<std::string>(
+            const auto unique = std::flat_set<std::string>(
                 facts.referenced_names.begin(),
                 facts.referenced_names.end()
             );

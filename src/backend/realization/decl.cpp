@@ -14,7 +14,8 @@ class DeclarationUses final {
 public:
     DeclarationUses(
         std::span<const TargetIdentifier> parameters,
-        std::span<const TargetIdentifier> captures
+        std::span<const TargetIdentifier> captures,
+        const std::flat_set<std::string>& mutable_owners
     ) noexcept;
     auto enter_scope(TargetTraversalScope) noexcept -> bool;
     auto leave_scope(TargetTraversalScope) noexcept -> bool;
@@ -22,6 +23,10 @@ public:
 
     template<typename Variable>
     auto visit_variable(Variable& variable) noexcept -> bool {
+        if (variable.binding == TargetVariableBinding::ConstValue
+            && mutable_owners.contains(std::string(variable.name.spelling()))) {
+            variable.binding = TargetVariableBinding::MutableValue;
+        }
         declare(
             variable.name,
             {.maybe_unused = &variable.maybe_unused, .parameter_index = std::nullopt}
@@ -40,15 +45,18 @@ private:
 
     auto declare(const TargetIdentifier& name, Declaration declaration) noexcept -> void;
 
+    const std::flat_set<std::string>& mutable_owners;
     std::vector<bool> parameter_references;
     std::vector<std::flat_map<std::string, Declaration>> scopes {1uz};
 };
 
 DeclarationUses::DeclarationUses(
     std::span<const TargetIdentifier> parameters,
-    std::span<const TargetIdentifier> captures
+    std::span<const TargetIdentifier> captures,
+    const std::flat_set<std::string>& mutable_owners
 ) noexcept
-    : parameter_references(parameters.size(), false) {
+    : mutable_owners(mutable_owners),
+      parameter_references(parameters.size(), false) {
     for (const auto& capture : captures) {
         declare(capture, {.maybe_unused = nullptr, .parameter_index = std::nullopt});
     }
@@ -114,9 +122,10 @@ auto DeclarationUses::declare(const TargetIdentifier& name, Declaration declarat
 auto finish_body_declarations(
     std::span<TargetStmt> statements,
     std::span<const TargetIdentifier> parameters,
-    std::span<const TargetIdentifier> captures
+    std::span<const TargetIdentifier> captures,
+    const std::flat_set<std::string>& mutable_owners
 ) noexcept -> std::vector<bool> {
-    auto uses = DeclarationUses(parameters, captures);
+    auto uses = DeclarationUses(parameters, captures, mutable_owners);
     if (!traverse_target_statements(statements, uses)) {
         invariant_violation("body declaration traversal did not complete");
     }

@@ -104,7 +104,7 @@ auto BodyRealizer::lower_range(
     auto begin = scope.accept(operand({
         .expression = first,
         .use = integer != nullptr               ? ConstructionUse::OperandValue
-            : value.access == AccessMode::Write ? ConstructionUse::Place
+            : value.access == AccessMode::Write ? ConstructionUse::WritePlace
                                                 : ConstructionUse::ReadBorrow,
     }));
     if (!scope.continues()) {

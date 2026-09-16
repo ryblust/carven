@@ -495,7 +495,7 @@ auto SemanticExecutor::evaluate_test(const StructuredBodyDraft& body) noexcept
         .body = ExecutionBody(body),
         .slots = std::vector<ExecutionSlot>(body.bindings.size())
     };
-    auto result = region(frame, body.region);
+    const auto result = region(frame, body.region);
     if (!result || test_failed) {
         return std::unexpected(ExecutionFailure {});
     }

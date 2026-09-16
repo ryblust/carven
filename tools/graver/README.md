@@ -86,17 +86,22 @@ comments, C++ fragments, and type-argument lists may exceed the target.
 
 ## Tests and implementation
 
-The `graver` group contains three test areas:
+The `graver` group covers:
 
-- `tests/internal/`: C++ boundary and repository-corpus tests.
+- `tests/internal/`: C++ boundary, formatting-example, and repository-corpus tests.
 - `tests/cli/`: the process harness and CLI scenarios.
-- `tests/format/`: reviewed source-formatting examples.
+- `tests/format/`: source-formatting inputs and expected outputs.
 
-Examples contain `input.cv` and `expected.cv`; they check exact output and
-idempotence. CLI scenarios check exit status, both streams, and file changes
-in isolated temporary directories.
-Failed scenarios retain their files and captured streams. Repository `.cv` inputs
-also exercise idempotence and horizontal-whitespace normalization.
+Examples contain `input.cv` and `expected.cv`; C++ tests discover them and call
+the formatter directly in one process to check exact output and idempotence.
+Repository `.cv` inputs exercise parsing, idempotence, and horizontal-whitespace
+normalization. Invalid-input tests check lexical and syntax errors.
+
+Each CLI scenario is registered separately with Xmake. The harness checks exit
+status, both streams, and file changes in an isolated temporary directory.
+Scenarios are declared in `tests/cli/cases.lua` and run by `tests/cli/cli.lua`.
+Failed scenarios retain their files and captured streams. Run one scenario with
+`./xmakew test graver-cli-test/mixed_write_failure`.
 
 See [implementation design](design.md) for component responsibilities
 and ownership. Build targets are in `tools/graver/xmake.lua`.

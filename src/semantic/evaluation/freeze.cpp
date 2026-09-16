@@ -30,7 +30,7 @@ auto freeze_value(
     if (aggregate || enumeration) {
         const auto type = aggregate ? aggregate->type : enumeration->type;
         const auto enum_case = enumeration ? std::optional(enumeration->enum_case) : std::nullopt;
-        auto children = execution_elements(value);
+        const auto children = execution_elements(value);
         if (depth >= maximum_constant_aggregate_depth
             || children.size() > maximum_constant_aggregate_elements) {
             return std::nullopt;

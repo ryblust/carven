@@ -107,7 +107,7 @@ auto find_crafts_directory(std::string_view executable) noexcept -> std::filesys
     if (error) {
         return {};
     }
-    const auto installed = program.parent_path().parent_path() / "crafts";
+    auto installed = program.parent_path().parent_path() / "crafts";
     if (std::filesystem::is_regular_file(installed / "carven/runtime/runtime.hpp", error)) {
         return installed;
     }

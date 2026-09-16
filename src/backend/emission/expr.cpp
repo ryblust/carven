@@ -191,9 +191,15 @@ auto TargetRenderer::render_expression(
                 );
             },
             [&](const TargetBinaryExpr& binary) noexcept {
-                const auto right_precedence =
-                    static_cast<TargetPrecedence>(static_cast<std::uint8_t>(own_precedence) + 1);
-                const auto left = render_expression(*binary.left, own_precedence);
+                const auto comparison = own_precedence == TargetPrecedence::Equality
+                    || own_precedence == TargetPrecedence::Relational;
+                // Comparisons display both nested comparisons explicitly. Other
+                // binary operators retain C++ left associativity.
+                const auto left_precedence = comparison ? TargetPrecedence::Shift : own_precedence;
+                const auto right_precedence = comparison
+                    ? TargetPrecedence::Shift
+                    : static_cast<TargetPrecedence>(static_cast<std::uint8_t>(own_precedence) + 1);
+                const auto left = render_expression(*binary.left, left_precedence);
                 const auto right = concat(
                     {text(binary_spelling(binary.op)),
                      text(" "),

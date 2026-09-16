@@ -111,7 +111,7 @@ auto SemanticExecutor::text_intrinsic(
     if (!operand) {
         return std::unexpected(operand.error());
     }
-    auto* receiver = std::get_if<ExecutionValue>(&*operand);
+    const auto* receiver = std::get_if<ExecutionValue>(&*operand);
     if (receiver == nullptr) {
         auto selected = located(frame, std::get<ExecutionPlace>(*operand), origin);
         if (!selected) {

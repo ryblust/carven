@@ -151,7 +151,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
     const ConstructionAssign& assignment,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    auto target = build(assignment.target, nullptr, true, ConstructionUse::Place);
+    auto target = build(assignment.target, nullptr, true, ConstructionUse::WritePlace);
     if (!statements.continues()) {
         destination.scope(take_statements());
         return;
@@ -169,7 +169,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 .maybe_unused = false,
                 .name = name,
                 .type = owner.context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = raw(target)
+                .initializer = emit(target, ConstructionUse::WritePlace)
             }
         ));
         complete(target, Saved {.name = name, .kind = SavedKind::Place});
@@ -244,7 +244,11 @@ auto BodyRealizer::ExpressionBuilder::assign(
             }
         }
         statements.emit(generated_statement(
-            TargetAssignmentStmt {.target = raw(target), .op = operation, .value = std::move(value)}
+            TargetAssignmentStmt {
+                .target = emit(target, ConstructionUse::WritePlace),
+                .op = operation,
+                .value = std::move(value)
+            }
         ));
     }
     destination.scope(take_statements());
@@ -422,7 +426,16 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         return recipe;
     }
-    recipe.inputs = construction_operands(value);
+    const auto operands = construction_operands(value);
+    recipe.inputs.assign(operands.begin(), operands.end());
+    for (auto& input : recipe.inputs) {
+        if (input.use == ConstructionUse::ProjectionPlace) {
+            input.use = result_use == ConstructionUse::WritePlace
+                    || result_use == ConstructionUse::NativeTake
+                ? ConstructionUse::WritePlace
+                : ConstructionUse::ConstPlace;
+        }
+    }
     if (std::ranges::none_of(recipe.inputs, [](const auto& input) static noexcept {
             return input.demand == ConstructionDemand::Value;
         })) {
@@ -575,7 +588,8 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
         owner.context,
         preparation.format,
         owner.names.fresh(TargetTemporaryNameKind::Operand),
-        output ? name_expression(*output) : raw(recipe.operands.front()),
+        output ? name_expression(*output)
+               : emit(recipe.operands.front(), ConstructionUse::WritePlace),
         std::move(operands),
         std::move(sizes)
     );

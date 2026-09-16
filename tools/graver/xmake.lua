@@ -38,8 +38,17 @@ target("graver-cli-test")
     set_default(false)
     set_kind("phony")
     add_deps("graver")
-    add_tests("cli", {group = "graver", run_timeout = 60000})
-    on_test(function (target)
-        return import("cli", {rootdir = path.join(os.projectdir(), "tools", "graver", "tests", "cli")}).main(target)
+    on_load(function (target)
+        local cases = import("cases", {
+            rootdir = path.join(os.projectdir(), "tools", "graver", "tests", "cli"),
+        }).main()
+        for _, case in ipairs(cases) do
+            target:add("tests", case.name, {group = "graver"})
+        end
+    end)
+    on_test(function (target, opt)
+        return import("cli", {
+            rootdir = path.join(os.projectdir(), "tools", "graver", "tests", "cli"),
+        }).main(target, opt)
     end)
 target_end()

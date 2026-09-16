@@ -86,7 +86,7 @@ auto BodyRealizer::ExpressionBuilder::raw(Recipe& recipe, ConstantLiteralContext
         return constant_expression(owner.context, constant->constant, literal);
     }
     if (std::holds_alternative<SemTake>(value.operation.value)) {
-        return transfer_expression(raw(recipe.operands.front()));
+        return transfer_expression(emit(recipe.operands.front(), ConstructionUse::WritePlace));
     }
     if (const auto* adoption = std::get_if<SemArrayAdopt>(&value.operation.value)) {
         return realize_callable_adaptation(
@@ -145,12 +145,25 @@ auto BodyRealizer::ExpressionBuilder::emit(
     ConstructionUse use,
     ConstantLiteralContext literal
 ) noexcept -> TargetExpr {
+    if (use == ConstructionUse::ProjectionPlace) {
+        invariant_violation("projection access was not resolved before realization");
+    }
+    if (!saved(recipe)
+        && (use == ConstructionUse::WritePlace || use == ConstructionUse::NativeTake)) {
+        if (const auto* binding = std::get_if<SemBinding>(&source(recipe).operation.value);
+            binding != nullptr
+            && std::holds_alternative<OwnerBindingStorage>(
+                owner.metadata.binding(binding->binding).storage
+            )) {
+            owner.mutable_owners.emplace(owner.binding_names.at(binding->binding).spelling());
+        }
+    }
     if (use == ConstructionUse::NativeTake) {
         // The query promises T&&. Do not first turn a trivial Take into
         // const T& via Carven transfer and then cast away constness.
         auto value = saved(recipe) == nullptr
                 && std::holds_alternative<SemTake>(source(recipe).operation.value)
-            ? raw(recipe.operands.front())
+            ? emit(recipe.operands.front(), ConstructionUse::WritePlace)
             : raw(recipe, literal);
         return TargetExpr {
             .value = TargetStaticCastExpr {
@@ -234,7 +247,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         invariant_violation("owner anchoring requires its source cleanup frame");
     }
     if (std::holds_alternative<SemBinding>(value.operation.value)
-        && (use == ConstructionUse::Place || use == ConstructionUse::ConstPlace)) {
+        && (use == ConstructionUse::WritePlace || use == ConstructionUse::ConstPlace)) {
         return;
     }
     if (!std::holds_alternative<SemBinding>(value.operation.value)) {
@@ -243,7 +256,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     const auto name = owner.names.fresh(TargetTemporaryNameKind::Owner);
     if ((direct_scalar || use == ConstructionUse::OperandValue || use == ConstructionUse::Consume)
         && scalar(value.type)
-        && use != ConstructionUse::Place
+        && use != ConstructionUse::WritePlace
         && use != ConstructionUse::ConstPlace
         && std::holds_alternative<BuiltinTypeValue>(
             owner.context.semantic().types().type(value.type).value
@@ -290,7 +303,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     // native invocation. Returning the normalized object type copies a
     // native T&/const T&, moves T&&, and directly constructs a prvalue.
     const auto place = (value.category == SemanticValueCategory::Place || names_storage(value))
-        && (use == ConstructionUse::Place || use == ConstructionUse::ConstPlace);
+        && (use == ConstructionUse::WritePlace || use == ConstructionUse::ConstPlace);
     // Read describes the consumer, not ownership of a newly produced value.
     // A factory cannot extend a prvalue lifetime by returning const T&.
     const auto read = use == ConstructionUse::ReadBorrow
@@ -313,8 +326,11 @@ auto BodyRealizer::ExpressionBuilder::anchor(
     owner.declare_deferred(storage, false, declarations);
     owner.initialize_deferred(
         storage,
-        use == ConstructionUse::Consume || use == ConstructionUse::OperandValue ? emit(recipe, use)
-                                                                                : raw(recipe),
+        use == ConstructionUse::Consume
+                || use == ConstructionUse::OperandValue
+                || use == ConstructionUse::WritePlace
+            ? emit(recipe, use)
+            : raw(recipe),
         statements
     );
     complete(

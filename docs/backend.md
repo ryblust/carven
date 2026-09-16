@@ -250,11 +250,20 @@ Initialization stays at its execution point, including conditional paths. Native
 bodies provide scopes; independent regions with declarations require a block.
 Statement composition and source attribution do not create scopes.
 
-Locals that require writes, delayed initialization, or Take remain mutable C++ storage.
-Other local owners are const. Named values preserve copy access at C++ return
-sites. Const access, such as `std::as_const`, expresses that requirement. Take parameters retain value storage even when their bodies
-only read it. A local requiring deferred initialization initializes its final
-storage directly.
+Realization records mutable owner access required by emitted Write operands and
+transfers. Function-body completion uses these retained demands to select const or
+mutable storage for directly initialized local owners. Deferred initialization
+uses mutable result storage.
+
+`ProjectionPlace` forwards the consumer's access through fields and array elements;
+`WritePlace` requires mutable access. Realization resolves projection access before
+sequencing, retaining const references for read projections and propagating write
+demands to the owning object. Dereference reads the pointer slot; the pointer type
+determines access to the pointee.
+
+Named values preserve copy access at C++ return sites through const access, such
+as `std::as_const`. Take parameters own value storage. Deferred initialization
+constructs directly in final storage.
 
 Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
@@ -473,8 +482,11 @@ collection traverses the finished tree and referenced types, producing the
 required standard and runtime headers. Unreferenced interned types add no headers.
 
 The renderer serializes the verified nodes, directives, source mapping, and
-whitespace. Semantic inference and target syntax construction finish before
-rendering. Artifact collection checks logical paths, uniqueness, and prefix safety.
+whitespace. Binary rendering preserves the expression tree using C++ precedence
+and associativity. Nested comparisons on either side receive explicit parentheses
+to make their grouping visible. Semantic inference and target syntax construction
+finish before rendering. Artifact collection checks logical paths, uniqueness,
+and prefix safety.
 
 ## External names and operations
 
@@ -603,7 +615,9 @@ When the minimum exceeds available capacity, runtime reserves for the maximum, c
 destination's size limit. Otherwise normal storage growth applies. Equal bounds
 reserve for an exact size. An upper bound alone does not force allocation for a
 short result. Runtime checks size arithmetic and performs integer conversion
-with `std::to_chars`, sign handling, and padding.
+with `std::to_chars`, sign handling, and padding. Writer integer inputs use the
+same `runtime::Integer` domain as arithmetic; boolean and character fields use
+their separate operations.
 
 The writer borrows private String storage and requires valid text and disjoint inputs. It has no format
 parser or output validation scan. Unsupported remaining fields retain the

@@ -156,7 +156,7 @@ TEST_CASE("Const slices: repeated retained length queries do not consume constru
     for (auto index = 0uz; index < 256uz; ++index) {
         source += "+values.len()";
     }
-    source += ";";
+    source += ';';
     const auto program = analyze_test_program(std::move(source));
     auto checked = false;
     for (const auto [id, declaration] : program.declarations().module_constants()) {

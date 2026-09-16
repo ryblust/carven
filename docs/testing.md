@@ -215,8 +215,12 @@ uses expected program results; compiled execution also exercises generated C++.
 
 ## Graver
 
-`./xmakew test -g graver` runs the formatter’s C++ boundary tests, CLI scenarios,
-and exact-output examples. Known-valid language, interop, library, and example
-sources also exercise the fixed formatting style. These checks require
-syntax preservation and stable output; formatting does not execute source code.
-See [Graver](../tools/graver/README.md) for fixture layout and commands.
+`./xmakew test -g graver` runs C++ tests for source preservation, layout,
+formatting, batch results, and file replacement. Formatting examples check exact
+output and idempotence in one process. Repository sources check syntax preservation
+and output stability after horizontal-whitespace changes. Invalid inputs check
+lexical and syntax errors.
+
+Xmake registers each CLI scenario separately for selection and reporting. The
+CLI harness checks exit codes, stdout, stderr, and filesystem changes. See
+[Graver](../tools/graver/README.md) for fixture layout and commands.

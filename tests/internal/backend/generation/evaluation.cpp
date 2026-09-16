@@ -733,3 +733,113 @@ TEST_CASE("Generation: builtin Read snapshots use unqualified value factory resu
     }
     CHECK(scalar_factories > 0uz);
 }
+
+TEST_CASE("Generation: local storage follows retained access rather than source write permission") {
+    struct Case final {
+        std::string_view name;
+        std::string_view source;
+        TargetVariableBinding expected;
+    };
+
+    const auto cases = std::array {
+        Case {
+            .name = "read-only var",
+            .source = "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
+            .expected = TargetVariableBinding::ConstValue
+        },
+        Case {
+            .name = "assignment",
+            .source =
+                "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "Write argument",
+            .source = "fn write(&value: i32) { value = 2; } "
+                      "fn probe(value: i32) { var storage = value; write(&storage); }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "Write capture",
+            .source = "fn probe(value: i32) -> i32 { var storage = value; "
+                      "let read = [&storage]() -> i32 { return storage; }; return read(); }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "let transfer",
+            .source =
+                "fn probe(value: String) -> String { let storage = value; return &&storage; }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "read field",
+            .source =
+                "struct Box { value: i32 } "
+                "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
+            .expected = TargetVariableBinding::ConstValue
+        },
+        Case {
+            .name = "write field",
+            .source = "struct Box { value: i32 } "
+                      "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "read element",
+            .source = "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
+            .expected = TargetVariableBinding::ConstValue
+        },
+        Case {
+            .name = "write element",
+            .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "write iteration",
+            .source =
+                "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
+            .expected = TargetVariableBinding::MutableValue
+        },
+        Case {
+            .name = "write pointee",
+            .source =
+                "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
+            .expected = TargetVariableBinding::ConstValue
+        },
+        Case {
+            .name = "removed write",
+            .source =
+                "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
+            .expected = TargetVariableBinding::ConstValue
+        },
+    };
+    for (const auto& scenario : cases) {
+        CAPTURE(scenario.name);
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(std::string(scenario.source)),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
+        );
+
+        struct Query final {
+            TargetVariableBinding expected;
+            std::size_t owners;
+
+            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                if (variable != nullptr && variable->name.spelling() == "storage") {
+                    ++owners;
+                    CHECK(variable->binding == expected);
+                }
+                return true;
+            }
+        };
+
+        auto query = Query {.expected = scenario.expected, .owners = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            REQUIRE(traverse_target_unit(unit.sections(), query));
+        }
+        CHECK(query.owners == 1uz);
+    }
+}

@@ -56,7 +56,7 @@ private:
 
     struct Recipe final {
         ConstructionExpressionID expression_id;
-        std::span<const ConstructionOperand> inputs;
+        std::vector<ConstructionOperand> inputs;
         std::vector<Recipe> operands;
         std::variant<std::monostate, Saved, TargetExpr, LoweringCompleted> completion;
     };

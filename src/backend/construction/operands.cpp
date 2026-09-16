@@ -16,7 +16,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
     };
     const auto receiver = [&](const SemanticExpression& input, AccessMode access) noexcept {
         add(input,
-            access == AccessMode::Write      ? ConstructionUse::Place
+            access == AccessMode::Write      ? ConstructionUse::WritePlace
                 : access == AccessMode::Take ? ConstructionUse::NativeTake
                                              : ConstructionUse::ConstPlace);
     };
@@ -50,7 +50,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             },
             [&](const SemField& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, ConstructionUse::Place);
+                    add(input, ConstructionUse::ProjectionPlace);
                 });
             },
             [&](const SemDereference& value) noexcept {
@@ -59,7 +59,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 });
             },
             [&](const SemIndex& value) noexcept {
-                add(*value.source, ConstructionUse::Place);
+                add(*value.source, ConstructionUse::ProjectionPlace);
                 add(*value.index, ConstructionUse::OperandValue);
             },
             [](const SemTestReport&) static noexcept {},
@@ -70,7 +70,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             },
             [&](const SemFormat& value) noexcept {
                 if (value.receiver) {
-                    add(**value.receiver, ConstructionUse::Place);
+                    add(**value.receiver, ConstructionUse::WritePlace);
                 }
                 for (const auto& input : value.operands) {
                     result.push_back(argument(input));
@@ -109,7 +109,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             [&](const SemClosure& value) noexcept {
                 for (const auto& capture : value.captures) {
                     add(capture.expression,
-                        capture.mode == CaptureMode::Write ? ConstructionUse::Place
+                        capture.mode == CaptureMode::Write ? ConstructionUse::WritePlace
                                                            : ConstructionUse::Consume);
                 }
             },
@@ -130,7 +130,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             },
             [&](const SemTake& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, ConstructionUse::Place);
+                    add(input, ConstructionUse::WritePlace);
                 });
             },
             [&](const SemCpp& value) noexcept {
