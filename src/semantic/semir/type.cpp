@@ -190,8 +190,20 @@ auto builtin_integer_width(BuiltinType type) noexcept -> std::optional<std::uint
     std::unreachable();
 }
 
-CanonicalTypeStore::CanonicalTypeStore(ImmutableProgramTable<CanonicalType, TypeID> values) noexcept
-    : rows(std::move(values)) {}
+CanonicalTypeStore::CanonicalTypeStore(
+    ImmutableProgramTable<CanonicalType, TypeID> values,
+    std::array<TypeID, builtin_types.size()> builtins
+) noexcept
+    : rows(std::move(values)),
+      builtins(builtins) {}
+
+auto CanonicalTypeStore::builtin_type(BuiltinType type) const noexcept -> TypeID {
+    const auto index = static_cast<std::size_t>(type);
+    if (index >= builtins.size()) {
+        invariant_violation("invalid builtin type query");
+    }
+    return builtins[index];
+}
 
 auto CanonicalTypeStore::owner() const noexcept -> ProgramIdentity {
     return rows.owner();
@@ -215,7 +227,12 @@ auto CanonicalTypeStore::size() const noexcept -> std::size_t {
 }
 
 CanonicalTypeStoreBuilder::CanonicalTypeStoreBuilder(ProgramIdentity owner) noexcept
-    : rows(owner) {}
+    : rows(owner),
+      builtins([this]<std::size_t... Index>(std::index_sequence<Index...>) noexcept {
+          return std::array<TypeID, builtin_types.size()> {intern_row(
+              CanonicalType {.value = BuiltinTypeValue {.kind = builtin_types[Index]}}
+          )...};
+      }(std::make_index_sequence<builtin_types.size()> {})) {}
 
 auto CanonicalTypeStoreBuilder::intern(const CanonicalType& type) noexcept -> TypeID {
     if (std::holds_alternative<CallableViewTypeValue>(type.value)) {
@@ -240,8 +257,12 @@ auto CanonicalTypeStoreBuilder::intern_row(const CanonicalType& type) noexcept -
     return id;
 }
 
-auto CanonicalTypeStoreBuilder::intern_builtin(BuiltinType type) noexcept -> TypeID {
-    return intern(CanonicalType {.value = BuiltinTypeValue {.kind = type}});
+auto CanonicalTypeStoreBuilder::builtin_type(BuiltinType type) const noexcept -> TypeID {
+    const auto index = static_cast<std::size_t>(type);
+    if (index >= builtins.size()) {
+        invariant_violation("invalid builtin type query");
+    }
+    return builtins[index];
 }
 
 auto CanonicalTypeStoreBuilder::copy(TypeID id) const noexcept -> CanonicalType {
@@ -268,7 +289,7 @@ auto CanonicalTypeStoreBuilder::intern_resolved_callable_view(
 }
 
 auto CanonicalTypeStoreBuilder::seal() && noexcept -> CanonicalTypeStore {
-    return CanonicalTypeStore(std::move(rows).seal());
+    return CanonicalTypeStore(std::move(rows).seal(), builtins);
 }
 
 FailureSetStore::FailureSetStore(ImmutableProgramTable<FailureSet, FailureSetID> values) noexcept

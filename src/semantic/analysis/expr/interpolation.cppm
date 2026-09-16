@@ -54,7 +54,7 @@ auto construct_interpolation(
         operands.push_back({.access = AccessMode::Read, .expression = std::move(*operand)});
     }
     return site.finish_constructed(
-        site.draft().intern_builtin_type(receiver ? BuiltinType::Void : BuiltinType::String),
+        site.draft().builtin_type(receiver ? BuiltinType::Void : BuiltinType::String),
         SemFormat {
             .specification = std::move(normalized.specification),
             .operands = std::move(operands),

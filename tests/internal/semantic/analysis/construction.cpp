@@ -156,7 +156,7 @@ TEST_CASE("Construction: pending results require completion before contract acce
             CHECK(expect_termination("duplicate-function-result-completion", [&] {
                 draft.complete_function_result(
                     function.callable,
-                    draft.intern_builtin_type(BuiltinType::I32)
+                    draft.builtin_type(BuiltinType::I32)
                 );
             }));
             REQUIRE(construction.run().has_value());

@@ -15,7 +15,7 @@ TEST_CASE("SemIR children: direct ordered borrows preserve nested storage") {
     auto diagnostics = DiagnosticSink();
     auto draft = semir_test::begin_compilation(sources, diagnostics, "semir.children");
     const auto origin = semir_test::module_facts(draft).origin;
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
     const auto constant =
         draft.intern_constant({.type = integer, .value = IntegerConstant::zero()});
     auto body = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);

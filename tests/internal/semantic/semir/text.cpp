@@ -101,8 +101,8 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
                     .items = {test},
                 }
             );
-            const auto owning = builder.intern_builtin_type(BuiltinType::String);
-            const auto result_type = builder.intern_builtin_type(scenario.result);
+            const auto owning = builder.builtin_type(BuiltinType::String);
+            const auto result_type = builder.builtin_type(scenario.result);
             builder.finish_declaration_heads();
             auto reservation = builder.reserve_body(BodyKind::Test);
             builder.define_test(
@@ -177,11 +177,11 @@ TEST_CASE("SemIR text contracts: type constraints distinguish text bytes and cha
     const auto lookup = [&](TypeID type) noexcept {
         return draft.type_copy(type);
     };
-    const auto str = draft.intern_builtin_type(BuiltinType::Str);
-    const auto string = draft.intern_builtin_type(BuiltinType::String);
-    const auto character = draft.intern_builtin_type(BuiltinType::Char);
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
-    const auto byte = draft.intern_builtin_type(BuiltinType::U8);
+    const auto str = draft.builtin_type(BuiltinType::Str);
+    const auto string = draft.builtin_type(BuiltinType::String);
+    const auto character = draft.builtin_type(BuiltinType::Char);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
+    const auto byte = draft.builtin_type(BuiltinType::U8);
     const auto bytes = draft.intern_type({.value = SliceTypeValue {.element = byte}});
     const auto integers = draft.intern_type({.value = SliceTypeValue {.element = integer}});
     const auto query = text_intrinsic_contract(TextIntrinsic::Bytes);

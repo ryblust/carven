@@ -33,8 +33,7 @@ auto read_value_argument(
     if (!operand) {
         return std::unexpected(operand.error());
     }
-    if (site.type(*operand)
-        == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::Void))) {
+    if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Void))) {
         return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeValueRequired,

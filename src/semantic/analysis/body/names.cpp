@@ -226,7 +226,7 @@ auto BodyElaborator::builtin_operation(
     std::vector<SemCallArgument> operands
 ) noexcept -> SemanticExpression {
     const auto site = origin(selection.span);
-    const auto result_type = draft().intern_builtin_type(BuiltinType::Void);
+    const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto kind = selection.function;
     if (kind == BuiltinFunction::Check
         || kind == BuiltinFunction::Require
@@ -240,11 +240,11 @@ auto BodyElaborator::builtin_operation(
         if (operands.size() > (conditional ? 1uz : 0uz)) {
             auto argument = std::move(operands.back().expression);
             if (argument.type.construction()
-                == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::String))) {
+                == ConstructionTypeRef(draft().builtin_type(BuiltinType::String))) {
                 auto inputs = std::vector<SemCallArgument>();
                 inputs.push_back({AccessMode::Read, std::move(argument)});
                 argument = builder.make_expression(
-                    draft().intern_builtin_type(BuiltinType::Str),
+                    draft().builtin_type(BuiltinType::Str),
                     builder.lifetime(),
                     site,
                     SemTextIntrinsic {TextIntrinsic::AsStr, std::move(inputs)}
@@ -319,7 +319,7 @@ auto BodyElaborator::builtin_callable(
         auto input = builder.binding_expression(binding.binding).expression;
         operands.push_back({parameter.access, std::move(input)});
     }
-    const auto result_type = draft().intern_builtin_type(BuiltinType::Void);
+    const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
     const auto exits_test = operation.exits_test;

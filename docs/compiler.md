@@ -105,6 +105,13 @@ for work; optional preparation uses runtime formatting on failure.
 state, with `expr`, `control`, and `text` implementation slices. `limits`
 names resource bounds.
 
+Every canonical type store establishes the complete builtin type domain at
+construction. Builtin identities remain stable through publication; lookup is a
+read-only operation independent of source usage and prior constant evaluation.
+Compound types remain demand-driven. Shared execution may consume either a draft
+or a published program, but type queries have the same guarantees in both contexts.
+Operations use their resolved result types where available.
+
 `semantic.semir.constant_access` separates immutable `ConstantValueReader` queries
 from `ConstantValueAccess` construction writes. `ProgramDraft` implements construction
 access; `PublishedConstantValues` adapts a sealed program for read-only consumers.

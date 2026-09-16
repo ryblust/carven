@@ -34,9 +34,9 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.complete");
     const auto facts = module_facts(builder);
-    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
-    const auto integer_type = builder.intern_builtin_type(BuiltinType::I32);
-    const auto text_type = builder.intern_builtin_type(BuiltinType::Str);
+    const auto void_type = builder.builtin_type(BuiltinType::Void);
+    const auto integer_type = builder.builtin_type(BuiltinType::I32);
+    const auto text_type = builder.builtin_type(BuiltinType::Str);
     const auto text_value = builder.intern_spelling("publication");
 
     const auto module_id = builder.reserve_module_declaration();
@@ -246,7 +246,7 @@ TEST_CASE("SemIR publication invariant: every failure-set member is nominal") {
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.failure_member");
     const auto facts = module_facts(builder);
     const auto module_id = builder.reserve_module_declaration();
-    const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
+    const auto boolean = builder.builtin_type(BuiltinType::Bool);
     static_cast<void>(builder.intern_failure_set({boolean}));
     builder.define_declaration(
         module_id,
@@ -270,7 +270,7 @@ TEST_CASE("SemIR publication invariant: every constant matches its canonical typ
     auto builder = begin_compilation(sources, diagnostics, "semir.publication.constant_fact");
     const auto facts = module_facts(builder);
     const auto module_id = builder.reserve_module_declaration();
-    const auto integer = builder.intern_builtin_type(BuiltinType::I32);
+    const auto integer = builder.builtin_type(BuiltinType::I32);
     static_cast<void>(builder.intern_constant(
         ConstantFact {
             .type = integer,

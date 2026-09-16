@@ -235,10 +235,9 @@ auto BodyElaborator::call_expression(
             auto built = build_call_argument(
                 argument.expression,
                 AccessMode::Read,
-                condition ? std::optional<ConstructionTypeRef>(
-                                draft().intern_builtin_type(BuiltinType::Bool)
-                            )
-                          : std::nullopt,
+                condition
+                    ? std::optional<ConstructionTypeRef>(draft().builtin_type(BuiltinType::Bool))
+                    : std::nullopt,
                 condition ? std::optional(DiagnosticCode::TestConditionType) : std::nullopt
             );
             if (!built) {

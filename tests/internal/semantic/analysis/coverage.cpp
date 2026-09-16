@@ -55,7 +55,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
     const auto provenance_module = compilation.provenance_module_at(0uz);
     const auto source_id = compilation.module_source(provenance_module);
     const auto origin = compilation.append_source_origin(source_id, Span::at(0u));
-    const auto boolean = compilation.intern_builtin_type(BuiltinType::Bool);
+    const auto boolean = compilation.builtin_type(BuiltinType::Bool);
 
     const auto module_id = compilation.reserve_module_declaration();
     const auto enumeration = compilation.reserve_enum_declaration();

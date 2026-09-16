@@ -61,12 +61,12 @@ TEST_CASE("SemIR publication: source format result types and Read operands are r
                     .items = {test},
                 }
             );
-            const auto owning = builder.intern_builtin_type(BuiltinType::String);
-            const auto result_type = builder.intern_builtin_type(scenario.result);
+            const auto owning = builder.builtin_type(BuiltinType::String);
+            const auto result_type = builder.builtin_type(scenario.result);
             const auto native_type = builder.intern_type({
                 .value = CppTypeValue {.form = CppConstCharPointerType {}},
             });
-            const auto boolean_type = builder.intern_builtin_type(BuiltinType::Bool);
+            const auto boolean_type = builder.builtin_type(BuiltinType::Bool);
             const auto boolean_constant = builder.intern_constant({
                 .type = boolean_type,
                 .value = BooleanConstant {.value = true},

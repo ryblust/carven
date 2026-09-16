@@ -13,6 +13,7 @@ public:
     virtual ~ConstantValueReader() = default;
     virtual auto identity() const noexcept -> ProgramIdentity = 0;
     virtual auto owns(ProgramSpellingID id) const noexcept -> bool = 0;
+    virtual auto builtin_type(BuiltinType type) const noexcept -> TypeID = 0;
     virtual auto type_copy(TypeID type) const noexcept -> CanonicalType = 0;
     virtual auto constant(ConstantID constant) const noexcept -> const ConstantFact& = 0;
     virtual auto spelling(ProgramSpellingID spelling) const noexcept -> std::string_view = 0;
@@ -23,13 +24,10 @@ public:
     virtual auto read_borrows_storage(TypeID type) const noexcept -> bool = 0;
     virtual auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> = 0;
-    virtual auto builtin_type(BuiltinType type) noexcept -> TypeID = 0;
 };
 
 class ConstantValueAccess : public ExecutionValueAccess {
 public:
-    auto builtin_type(BuiltinType type) noexcept -> TypeID override;
-    virtual auto intern_builtin_type(BuiltinType type) noexcept -> TypeID = 0;
     virtual auto intern_constant(ConstantFact fact) noexcept -> ConstantID = 0;
     virtual auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID = 0;
 };
@@ -40,7 +38,7 @@ class SemIRProgram;
 class PublishedConstantValues final : public ExecutionValueAccess {
 public:
     explicit PublishedConstantValues(const SemIRProgram& program) noexcept;
-    auto builtin_type(BuiltinType type) noexcept -> TypeID override;
+    auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
@@ -53,5 +51,4 @@ public:
 private:
     const SemIRProgram& program;
     mutable std::optional<std::vector<TypeContents>> contents;
-    std::map<BuiltinType, TypeID> builtins;
 };

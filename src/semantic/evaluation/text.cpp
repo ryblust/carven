@@ -156,12 +156,12 @@ auto SemanticExecutor::text_intrinsic(
         }
         case TextIntrinsic::Len:
             return ConstantAtom {
-                .type = values.builtin_type(BuiltinType::Usize),
+                .type = result_type,
                 .value = IntegerConstant::from_parts(bytes->size(), false),
             };
         case TextIntrinsic::IsEmpty:
             return ConstantAtom {
-                .type = values.builtin_type(BuiltinType::Bool),
+                .type = result_type,
                 .value = BooleanConstant {.value = bytes->empty()},
             };
         case TextIntrinsic::New:

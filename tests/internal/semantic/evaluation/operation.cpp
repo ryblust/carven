@@ -18,9 +18,9 @@ import std;
 TEST_CASE("Semantic constant evaluation: checked integer folds preserve diagnostic classes") {
     auto fixture = ConstantEvaluationFixture();
     ConstantValueAccess& values = fixture.compilation;
-    const auto boolean = values.intern_builtin_type(BuiltinType::Bool);
-    const auto i8 = values.intern_builtin_type(BuiltinType::I8);
-    const auto u8 = values.intern_builtin_type(BuiltinType::U8);
+    const auto boolean = values.builtin_type(BuiltinType::Bool);
+    const auto i8 = values.builtin_type(BuiltinType::I8);
+    const auto u8 = values.builtin_type(BuiltinType::U8);
 
     const auto maximum = values.intern_constant(constant_test_integer_fact(i8, 127));
     const auto one_i8 = values.intern_constant(constant_test_integer_fact(i8, 1));
@@ -69,12 +69,12 @@ TEST_CASE("Semantic constant evaluation: checked integer folds preserve diagnost
 TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canonical facts") {
     auto fixture = ConstantEvaluationFixture();
     ConstantValueAccess& values = fixture.compilation;
-    const auto i8 = values.intern_builtin_type(BuiltinType::I8);
-    const auto u8 = values.intern_builtin_type(BuiltinType::U8);
-    const auto usize = values.intern_builtin_type(BuiltinType::Usize);
-    const auto boolean = values.intern_builtin_type(BuiltinType::Bool);
-    const auto f32 = values.intern_builtin_type(BuiltinType::F32);
-    const auto f64 = values.intern_builtin_type(BuiltinType::F64);
+    const auto i8 = values.builtin_type(BuiltinType::I8);
+    const auto u8 = values.builtin_type(BuiltinType::U8);
+    const auto usize = values.builtin_type(BuiltinType::Usize);
+    const auto boolean = values.builtin_type(BuiltinType::Bool);
+    const auto f32 = values.builtin_type(BuiltinType::F32);
+    const auto f64 = values.builtin_type(BuiltinType::F64);
 
     const auto negative_one = values.intern_constant(constant_test_integer_fact(i8, -1));
     const auto wrapped = fold_cast_constant(values, CastKind::IntegerToInteger, negative_one, u8);
@@ -95,7 +95,7 @@ TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canoni
 
     const auto string_id = values.intern_constant(
         ConstantFact {
-            .type = values.intern_builtin_type(BuiltinType::Str),
+            .type = values.builtin_type(BuiltinType::Str),
             .value = StringConstant {.value = values.intern_spelling("abc")},
         }
     );
@@ -117,12 +117,12 @@ TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canoni
 }
 
 TEST_CASE("Semantic constant evaluation: operand facts retain program owner evidence") {
-    auto first = ConstantEvaluationFixture();
-    auto second = ConstantEvaluationFixture();
-    ConstantValueAccess& first_values = first.compilation;
-    ConstantValueAccess& second_values = second.compilation;
-    const auto first_i32 = first_values.intern_builtin_type(BuiltinType::I32);
-    const auto second_i32 = second_values.intern_builtin_type(BuiltinType::I32);
+    const auto first = ConstantEvaluationFixture();
+    const auto second = ConstantEvaluationFixture();
+    const ConstantValueAccess& first_values = first.compilation;
+    const ConstantValueAccess& second_values = second.compilation;
+    const auto first_i32 = first_values.builtin_type(BuiltinType::I32);
+    const auto second_i32 = second_values.builtin_type(BuiltinType::I32);
     const auto foreign = constant_test_integer_fact(first_i32, 1);
     CHECK(expect_termination("semantic-constant-foreign-owner", [&] {
         static_cast<void>(
@@ -137,7 +137,7 @@ TEST_CASE(
     auto fixture = ConstantEvaluationFixture();
     ConstantValueAccess& values = fixture.compilation;
     const auto check_zero = [&]<typename Floating>(BuiltinType builtin) noexcept {
-        const auto type = values.intern_builtin_type(builtin);
+        const auto type = values.builtin_type(builtin);
         const auto positive = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
         const auto negative = ConstantFact {.type = type, .value = Floating {.value = -0.0}};
         const auto positive_id = values.intern_constant(positive);
@@ -152,8 +152,8 @@ TEST_CASE(
 }
 
 TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand width") {
-    auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto fixture = ConstantEvaluationFixture();
+    const auto& values = fixture.compilation;
 
     struct Scenario final {
         BuiltinType type;
@@ -190,7 +190,7 @@ TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand w
         },
     };
     for (const auto& scenario : scenarios) {
-        const auto type = values.intern_builtin_type(scenario.type);
+        const auto type = values.builtin_type(scenario.type);
         const auto result = evaluate_binary_constant_value(
             values,
             scenario.operation,
@@ -205,7 +205,7 @@ TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand w
             == IntegerConstant::from_signed(scenario.expected)
         );
     }
-    const auto i8 = values.intern_builtin_type(BuiltinType::I8);
+    const auto i8 = values.builtin_type(BuiltinType::I8);
     const auto minimum = constant_test_integer_fact(i8, -128);
     const auto negated = evaluate_unary_constant_value(
         values,

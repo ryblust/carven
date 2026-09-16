@@ -69,8 +69,8 @@ auto ProgramDraft::intern_type(const CanonicalType& type) noexcept -> TypeID {
     return storage.types.intern(type);
 }
 
-auto ProgramDraft::intern_builtin_type(BuiltinType type) noexcept -> TypeID {
-    return storage.types.intern_builtin(type);
+auto ProgramDraft::builtin_type(BuiltinType type) const noexcept -> TypeID {
+    return storage.types.builtin_type(type);
 }
 
 auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {

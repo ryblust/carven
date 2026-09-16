@@ -42,6 +42,12 @@ status; termination by signal yields `128 + signal`.
 
 ## Interpretation
 
+Interpretation is an experimental subset intended for demonstrations and teaching.
+Its supported operations retain ordinary Carven semantics. Native compilation
+remains the path for the full language and C++ integration; interpreter support
+expands when concrete teaching or execution needs justify it. This subset does not
+limit language-required compile-time evaluation, which has its own admission rules.
+
 `interpret` parses and analyzes the same explicit source batch as native execution.
 Required constant initializers, compile-time printing, and `const test` execute
 through the normal analysis pipeline. The interpreter then checks the entry and

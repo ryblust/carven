@@ -40,10 +40,10 @@ auto integer_literal(
 TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sign, and spelling") {
     auto fixture = ConstantEvaluationFixture();
     auto& compilation = fixture.compilation;
-    const auto i32 = compilation.intern_builtin_type(BuiltinType::I32);
-    const auto i64 = compilation.intern_builtin_type(BuiltinType::I64);
-    const auto f32 = compilation.intern_builtin_type(BuiltinType::F32);
-    const auto f64 = compilation.intern_builtin_type(BuiltinType::F64);
+    const auto i32 = compilation.builtin_type(BuiltinType::I32);
+    const auto i64 = compilation.builtin_type(BuiltinType::I64);
+    const auto f32 = compilation.builtin_type(BuiltinType::F32);
+    const auto f64 = compilation.builtin_type(BuiltinType::F64);
 
     const auto default_integer = normalize_literal(compilation, integer_literal(42u));
     REQUIRE(default_integer.has_value());

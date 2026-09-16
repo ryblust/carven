@@ -44,12 +44,12 @@ auto convert_intrinsic_argument(
     if (source == target) {
         return true;
     }
-    if (source == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))
-        && target == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::Str))) {
+    if (source == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))
+        && target == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Str))) {
         auto converted = construct_text_value(
             site,
             TextIntrinsic::AsStr,
-            site.draft().intern_builtin_type(BuiltinType::Str),
+            site.draft().builtin_type(BuiltinType::Str),
             std::move(value),
             std::nullopt,
             span

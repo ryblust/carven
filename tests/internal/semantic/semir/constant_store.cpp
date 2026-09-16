@@ -12,7 +12,7 @@ TEST_CASE(
 ) {
     auto fixture = ConstantEvaluationFixture();
     auto& draft = fixture.compilation;
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
     const auto first = draft.intern_constant({.type = integer, .value = IntegerConstant::zero()});
     const auto* fact = &draft.constant(first);
     const auto spelling =
@@ -29,7 +29,7 @@ TEST_CASE(
     CHECK(&draft.constant(first) == fact);
     CHECK(draft.spelling(spelling).data() == text.data());
     CHECK(draft.intern_constant({.type = integer, .value = IntegerConstant::zero()}) == first);
-    const auto floating = draft.intern_builtin_type(BuiltinType::F64);
+    const auto floating = draft.builtin_type(BuiltinType::F64);
     const auto bits =
         std::array {0ull, 0x8000000000000000ull, 0x7ff8000000000001ull, 0x7ff8000000000002ull};
     auto identities = std::set<ConstantID>();

@@ -653,7 +653,7 @@ auto BodyElaborator::build_match(
         auto guard_may_reject = false;
         if (plan.source->guard.has_value()) {
             const auto id = plan.source->guard->expression;
-            auto guard = expression(id, draft().intern_builtin_type(BuiltinType::Bool));
+            auto guard = expression(id, draft().builtin_type(BuiltinType::Bool));
             if (!guard.has_value()) {
                 return std::unexpected(guard.error());
             }
@@ -699,7 +699,7 @@ auto BodyElaborator::build_match(
     }
     reachable = normal;
     auto result = make_built(
-        result_type.value_or(draft().intern_builtin_type(BuiltinType::Void)),
+        result_type.value_or(draft().builtin_type(BuiltinType::Void)),
         SemMatch {UniqueIndirect(std::move(subject_tree)), subject_is_place, std::move(arms)},
         span,
         std::move(pending)

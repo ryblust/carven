@@ -25,7 +25,7 @@ auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact {
     );
 }
 
-auto execution_value_type(ExecutionValueAccess& values, const ExecutionValue& value) noexcept
+auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> TypeID {
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
         return values.constant(*constant).type;

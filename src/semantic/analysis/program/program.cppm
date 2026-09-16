@@ -78,7 +78,7 @@ public:
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
-    auto intern_builtin_type(BuiltinType type) noexcept -> TypeID override;
+    auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;

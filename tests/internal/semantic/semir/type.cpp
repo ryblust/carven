@@ -24,8 +24,8 @@ TEST_CASE("Construction types: children must already exist in the owning store")
     const auto foreign_child = foreign_references.add(0);
     auto failures = MutableProgramTable<int, FailureTermID>(program.identity());
     const auto failure = failures.add(0);
-    auto canonical = CanonicalTypeStoreBuilder(program.identity());
-    const auto integer = canonical.intern_builtin(BuiltinType::I32);
+    const auto canonical = CanonicalTypeStoreBuilder(program.identity());
+    const auto integer = canonical.builtin_type(BuiltinType::I32);
 
     CHECK(expect_termination("type-array-child-must-exist", [&] noexcept {
         static_cast<void>(
@@ -100,7 +100,7 @@ TEST_CASE("External types: C string storage has a closed operand and type contra
 TEST_CASE("External types: query operand access participates in canonical identity") {
     const auto program = analyze_test_program("");
     auto types = CanonicalTypeStoreBuilder(program.identity());
-    const auto integer = types.intern_builtin(BuiltinType::I32);
+    const auto integer = types.builtin_type(BuiltinType::I32);
     const auto pointer = types.intern(
         {.value = PointerTypeValue {.target = integer, .access = PointerAccess::Read}}
     );
@@ -153,4 +153,31 @@ TEST_CASE("Pointer types: nested declared callable contracts have stable identit
     REQUIRE(inner != nullptr);
     CHECK_EQ(inner->access, PointerAccess::Write);
     CHECK(std::holds_alternative<CallableViewTypeValue>(program.types().type(inner->target).value));
+}
+
+TEST_CASE("Canonical types: builtin queries are complete and stable across publication") {
+    const auto program = analyze_test_program("");
+    auto builder = CanonicalTypeStoreBuilder(program.identity());
+    const auto& reader = builder;
+    auto identities = std::vector<TypeID>();
+    for (const auto kind : builtin_types) {
+        const auto id = reader.builtin_type(kind);
+        CHECK(reader.copy(id).value == CanonicalTypeValue {BuiltinTypeValue {.kind = kind}});
+        CHECK(builder.intern(CanonicalType {.value = BuiltinTypeValue {.kind = kind}}) == id);
+        identities.push_back(id);
+    }
+    const auto compound = builder.intern(
+        CanonicalType {
+            .value = ArrayTypeValue {
+                .element = reader.builtin_type(BuiltinType::I32),
+                .extent = 3u,
+            }
+        }
+    );
+    const auto store = std::move(builder).seal();
+    CHECK(store.size() == builtin_types.size() + 1uz);
+    CHECK(store.contains(compound));
+    for (auto index = 0uz; index < builtin_types.size(); ++index) {
+        CHECK(store.builtin_type(builtin_types[index]) == identities[index]);
+    }
 }

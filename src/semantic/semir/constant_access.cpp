@@ -2,7 +2,6 @@ module carven:semantic.semir.constant_access.impl;
 
 import :semantic.semir.constant_access;
 import :semantic.semir.program;
-import :support.invariant;
 import std;
 
 PublishedConstantValues::PublishedConstantValues(const SemIRProgram& program) noexcept
@@ -29,23 +28,8 @@ auto PublishedConstantValues::owns(ProgramSpellingID id) const noexcept -> bool 
     return program.provenance().contains(id);
 }
 
-auto ConstantValueAccess::builtin_type(BuiltinType type) noexcept -> TypeID {
-    return intern_builtin_type(type);
-}
-
-auto PublishedConstantValues::builtin_type(BuiltinType type) noexcept -> TypeID {
-    if (builtins.empty()) {
-        for (const auto entry : program.types().entries()) {
-            if (const auto* builtin = std::get_if<BuiltinTypeValue>(&entry.value.value)) {
-                builtins.emplace(builtin->kind, entry.id);
-            }
-        }
-    }
-    const auto found = builtins.find(type);
-    if (found == builtins.end()) {
-        invariant_violation("execution requested a builtin type absent from the semantic program");
-    }
-    return found->second;
+auto PublishedConstantValues::builtin_type(BuiltinType type) const noexcept -> TypeID {
+    return program.types().builtin_type(type);
 }
 
 auto PublishedConstantValues::read_borrows_storage(TypeID type) const noexcept -> bool {

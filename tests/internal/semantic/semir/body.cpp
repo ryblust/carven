@@ -59,7 +59,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     const auto source_id = builder.module_source(provenance_module);
     const auto origin = builder.append_source_origin(source_id, Span::at(0u));
     const auto parameter_name = builder.intern_spelling("value");
-    const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
+    const auto boolean = builder.builtin_type(BuiltinType::Bool);
     const auto module_id = builder.reserve_module_declaration();
     const auto function = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
@@ -449,7 +449,7 @@ TEST_CASE("SemIR body: normal-completion facts match the expression type and pro
                 expression.constant = std::get<SemConstant>(expression.value).constant;
             } else if (scenario == Fact::WrongType) {
                 expression.constant = prepared.builder.intern_constant(
-                    {.type = prepared.builder.intern_builtin_type(BuiltinType::I32),
+                    {.type = prepared.builder.builtin_type(BuiltinType::I32),
                      .value = IntegerConstant::zero()}
                 );
             } else if (scenario == Fact::Foreign) {

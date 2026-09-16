@@ -131,7 +131,7 @@ auto BodyExprSite::finish_short_circuit(
         return std::unexpected(second.error());
     }
     return finish(
-        draft().intern_builtin_type(BuiltinType::Bool),
+        draft().builtin_type(BuiltinType::Bool),
         SemShortCircuit {
             UniqueIndirect(std::move(*first)),
             conjunction ? ShortCircuitOperator::And : ShortCircuitOperator::Or,

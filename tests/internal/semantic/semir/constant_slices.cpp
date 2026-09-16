@@ -66,8 +66,8 @@ TEST_CASE("SemIR constants: slices intern typed ordered contents independently o
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
     auto draft = begin_compilation(sources, diagnostics);
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
-    const auto boolean = draft.intern_builtin_type(BuiltinType::Bool);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
+    const auto boolean = draft.builtin_type(BuiltinType::Bool);
     const auto one = draft.intern_constant({
         .type = integer,
         .value = IntegerConstant::from_signed(1),
@@ -131,7 +131,7 @@ TEST_CASE("SemIR constants: slices publish scalar text and nested fixed-array el
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
     auto draft = begin_compilation(sources, diagnostics);
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
     const auto one = draft.intern_constant({
         .type = integer,
         .value = IntegerConstant::from_signed(1),
@@ -149,15 +149,15 @@ TEST_CASE("SemIR constants: slices publish scalar text and nested fixed-array el
     const auto elements = std::array {
         one,
         draft.intern_constant({
-            .type = draft.intern_builtin_type(BuiltinType::Bool),
+            .type = draft.builtin_type(BuiltinType::Bool),
             .value = BooleanConstant {.value = true},
         }),
         draft.intern_constant({
-            .type = draft.intern_builtin_type(BuiltinType::Char),
+            .type = draft.builtin_type(BuiltinType::Char),
             .value = CharacterConstant {.scalar = U'我'},
         }),
         draft.intern_constant({
-            .type = draft.intern_builtin_type(BuiltinType::Str),
+            .type = draft.builtin_type(BuiltinType::Str),
             .value = StringConstant {.value = draft.intern_spelling("hello")},
         }),
         nested,
@@ -219,8 +219,8 @@ TEST_CASE("SemIR publication invariant: slice constants require exact element an
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto draft = begin_compilation(sources, diagnostics);
-            const auto integer = draft.intern_builtin_type(BuiltinType::I32);
-            const auto boolean = draft.intern_builtin_type(BuiltinType::Bool);
+            const auto integer = draft.builtin_type(BuiltinType::I32);
+            const auto boolean = draft.builtin_type(BuiltinType::Bool);
             auto child = draft.intern_constant({
                 .type = integer,
                 .value = IntegerConstant::from_signed(1),
@@ -274,7 +274,7 @@ TEST_CASE("SemIR constants invariant: slice children already belong to the same 
                 auto other_sources = SourceManager();
                 auto other_diagnostics = DiagnosticSink();
                 const auto other = begin_compilation(other_sources, other_diagnostics);
-                const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+                const auto integer = draft.builtin_type(BuiltinType::I32);
                 auto alternate = MutableProgramTable<ConstantFact, ConstantID>(
                     foreign ? other.identity() : draft.identity()
                 );

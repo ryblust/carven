@@ -59,13 +59,13 @@ auto validate_expected_type(
 }
 
 auto normalized_numeric_type(
-    ProgramDraft& draft,
+    const ProgramDraft& draft,
     NumericSuffix suffix,
     bool floating,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> TypeID {
     if (const auto suffixed = suffix_builtin(suffix)) {
-        return draft.intern_builtin_type(*suffixed);
+        return draft.builtin_type(*suffixed);
     }
     if (expected.has_value()) {
         if (const auto* concrete = std::get_if<TypeID>(&*expected)) {
@@ -77,7 +77,7 @@ auto normalized_numeric_type(
             }
         }
     }
-    return draft.intern_builtin_type(floating ? BuiltinType::F64 : BuiltinType::I32);
+    return draft.builtin_type(floating ? BuiltinType::F64 : BuiltinType::I32);
 }
 
 } // namespace
@@ -147,7 +147,7 @@ auto normalize_literal(
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
-                const auto type = draft.intern_builtin_type(BuiltinType::Bool);
+                const auto type = draft.builtin_type(BuiltinType::Bool);
                 return ConstantFact {
                     .type = type,
                     .value = BooleanConstant {.value = value.value},
@@ -156,7 +156,7 @@ auto normalize_literal(
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
-                const auto type = draft.intern_builtin_type(BuiltinType::Char);
+                const auto type = draft.builtin_type(BuiltinType::Char);
                 return ConstantFact {
                     .type = type,
                     .value = CharacterConstant {.scalar = value.scalar},
@@ -168,7 +168,7 @@ auto normalize_literal(
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
                 const auto spelling = draft.intern_spelling(value.bytes);
-                const auto type = draft.intern_builtin_type(BuiltinType::Str);
+                const auto type = draft.builtin_type(BuiltinType::Str);
                 return ConstantFact {
                     .type = type,
                     .value = StringConstant {.value = spelling},

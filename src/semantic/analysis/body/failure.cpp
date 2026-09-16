@@ -343,7 +343,7 @@ auto BodyElaborator::build_try(
         auto guard_may_reject = false;
         if (arm.guard.has_value()) {
             const auto id = arm.guard->expression;
-            auto guard = expression(id, draft().intern_builtin_type(BuiltinType::Bool));
+            auto guard = expression(id, draft().builtin_type(BuiltinType::Bool));
             if (!guard.has_value()) {
                 return std::unexpected(guard.error());
             }
@@ -407,7 +407,7 @@ auto BodyElaborator::build_try(
     draft().add_failure_contribution(outer_failure.term, incoming_failures);
     reachable = normal;
     auto result = make_built(
-        result_type.value_or(draft().intern_builtin_type(BuiltinType::Void)),
+        result_type.value_or(draft().builtin_type(BuiltinType::Void)),
         SemTry {
             UniqueIndirect(std::move(*protected_body)),
             BodyFailures(protected_failures),

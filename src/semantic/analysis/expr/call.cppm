@@ -117,7 +117,7 @@ auto interpret_call(
         }
         if (site.spelling(member->name_span) == "append_format"
             && site.type(*operand)
-                == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))) {
+                == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
             if (source.arguments.size() != 1uz) {
                 return std::unexpected(site.fail(
                     span,

@@ -6,8 +6,10 @@ module carven:test.internal.interpreter.execute;
 
 import :interpreter.execute;
 import :semantic.evaluation.execution;
+import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.type;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
@@ -122,4 +124,44 @@ TEST_CASE("Interpreter: native source initialization cannot be silently omitted"
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
     CHECK(output.empty());
+}
+
+TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
+    const auto program = analyze_test_program(R"(
+        fn classify(score: i32) -> str {
+            return match score {
+                ..0 => "invalid",
+                0..60 => "retry",
+                60..=100 => "pass",
+                101.. => "invalid",
+            };
+        }
+        fn within(value: i32, low: i32, high: i32) -> str {
+            return match value {
+                low..=high => "inside",
+                _ => "outside",
+            };
+        }
+        println(classify(-1), classify(59), classify(60), classify(100), classify(101));
+        println(within(3, 3, 3), within(3, 4, 2));
+    )");
+    const auto types = program.types().size();
+    const auto constants = program.constants().size();
+    const auto values = PublishedConstantValues(program);
+    for (const auto kind : builtin_types) {
+        CHECK(values.builtin_type(kind) == program.types().builtin_type(kind));
+    }
+    for (auto attempt = 0; attempt < 2; ++attempt) {
+        auto output = std::string();
+        const auto result = interpret(
+            program,
+            entry(program),
+            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+            InterpreterOptions {.limits = {}, .trace = {}}
+        );
+        REQUIRE(result.has_value());
+        CHECK(output == "invalid retry pass pass invalid\ninside outside\n");
+        CHECK(program.types().size() == types);
+        CHECK(program.constants().size() == constants);
+    }
 }

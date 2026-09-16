@@ -224,7 +224,7 @@ auto BodyElaborator::build_if(
         auto condition = [&]() noexcept -> AnalysisResult<BuiltExpression> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, remaining);
-            return expression(branch.condition, draft().intern_builtin_type(BuiltinType::Bool));
+            return expression(branch.condition, draft().builtin_type(BuiltinType::Bool));
         }();
         if (!condition.has_value()) {
             return std::unexpected(condition.error());
@@ -291,7 +291,7 @@ auto BodyElaborator::build_if(
     }
     reachable = normal;
     auto result = make_built(
-        merged_type.value_or(draft().intern_builtin_type(BuiltinType::Void)),
+        merged_type.value_or(draft().builtin_type(BuiltinType::Void)),
         SemIf {std::move(branches), std::move(otherwise)},
         span,
         std::move(pending)
@@ -314,7 +314,7 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
     const auto outer_reachable = reachable;
     push_frame(span);
     begin_full_expression(ast.expression(source.condition).span);
-    auto condition = expression(source.condition, draft().intern_builtin_type(BuiltinType::Bool));
+    auto condition = expression(source.condition, draft().builtin_type(BuiltinType::Bool));
     if (!condition.has_value()) {
         return std::unexpected(condition.error());
     }

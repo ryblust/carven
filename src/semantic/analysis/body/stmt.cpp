@@ -230,7 +230,7 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
             CppUpdateOperation {.increment = source.op == ASTUpdateOperator::Increment},
             std::move(operands),
             source.span,
-            draft().intern_builtin_type(BuiltinType::Void)
+            draft().builtin_type(BuiltinType::Void)
         );
         if (!updated.has_value()) {
             return std::unexpected(updated.error());
@@ -382,7 +382,7 @@ auto BodyElaborator::return_statement(
         }
     } else {
         if (!result_type.has_value()) {
-            result_type = draft().intern_builtin_type(BuiltinType::Void);
+            result_type = draft().builtin_type(BuiltinType::Void);
         } else if (!is_void_type(draft(), *result_type)) {
             return std::unexpected(fail(
                 span,

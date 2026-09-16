@@ -228,7 +228,7 @@ auto resolve_named(
     const auto component = named.components.front().name_span;
     const auto name = draft.source_slice_copy(module_id, component);
     if (const auto builtin = builtin_kind(name)) {
-        return ConstructionTypeRef {draft.intern_builtin_type(*builtin)};
+        return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
     const auto selected =
         select_global_symbol(draft, catalog, import_usage, module_id, name, component);

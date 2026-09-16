@@ -113,7 +113,7 @@ auto DeclResolver::resolve_function(
             }
             parameters.push_back({
                 .access = AccessMode::Read,
-                .type = draft.intern_builtin_type(BuiltinType::EntryArgs),
+                .type = draft.builtin_type(BuiltinType::EntryArgs),
             });
             continue;
         }
@@ -129,7 +129,7 @@ auto DeclResolver::resolve_function(
     const auto infer_result = !function.result_type.has_value() && body != nullptr;
     auto result = std::optional<ConstructionTypeRef>();
     if (!infer_result) {
-        result = draft.intern_builtin_type(BuiltinType::Void);
+        result = draft.builtin_type(BuiltinType::Void);
     }
     if (function.result_type.has_value()) {
         auto resolved = resolve_type(symbol.module_id, syntax, *function.result_type);

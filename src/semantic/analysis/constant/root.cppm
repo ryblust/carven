@@ -204,7 +204,7 @@ public:
         Span span
     ) noexcept -> Value {
         return make(
-            program.intern_builtin_type(BuiltinType::Bool),
+            program.builtin_type(BuiltinType::Bool),
             SemShortCircuit {
                 .left = OwnedSemanticExpression(std::move(left)),
                 .operation = conjunction ? ShortCircuitOperator::And : ShortCircuitOperator::Or,

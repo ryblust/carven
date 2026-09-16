@@ -61,8 +61,8 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
     CHECK(builtin_type_supports_equality(BuiltinType::Bool));
     CHECK_FALSE(builtin_type_supports_equality(BuiltinType::Void));
 
-    const auto boolean = compilation.intern_builtin_type(BuiltinType::Bool);
-    const auto integer = compilation.intern_builtin_type(BuiltinType::I32);
+    const auto boolean = compilation.builtin_type(BuiltinType::Bool);
+    const auto integer = compilation.builtin_type(BuiltinType::I32);
     const auto empty_failures = compilation.add_empty_failure_term();
     const auto provenance_module = compilation.provenance_module_at(0uz);
     const auto origin = compilation.append_source_origin(

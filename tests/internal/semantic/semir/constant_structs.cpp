@@ -44,10 +44,10 @@ auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
             .fields =
                 {
                     {.name = draft.intern_spelling("value"),
-                     .type = draft.intern_builtin_type(BuiltinType::I32),
+                     .type = draft.builtin_type(BuiltinType::I32),
                      .origin = origin},
                     {.name = draft.intern_spelling("enabled"),
-                     .type = draft.intern_builtin_type(BuiltinType::Bool),
+                     .type = draft.builtin_type(BuiltinType::Bool),
                      .origin = origin},
                 },
             .capabilities = {.equality = true},
@@ -64,12 +64,10 @@ TEST_CASE("SemIR constants: typed execution fields freeze in declaration order")
     auto& draft = fixture.compilation;
     const auto type = define_structure(draft);
     const auto integer = draft.intern_constant(
-        {.type = draft.intern_builtin_type(BuiltinType::I32),
-         .value = IntegerConstant::from_signed(7)}
+        {.type = draft.builtin_type(BuiltinType::I32), .value = IntegerConstant::from_signed(7)}
     );
     const auto boolean = draft.intern_constant(
-        {.type = draft.intern_builtin_type(BuiltinType::Bool),
-         .value = BooleanConstant {.value = true}}
+        {.type = draft.builtin_type(BuiltinType::Bool), .value = BooleanConstant {.value = true}}
     );
     const auto value = ExecutionAggregateValue {.type = type, .elements = {integer, boolean}};
     const auto frozen = freeze_constant_value(draft, value);
@@ -139,12 +137,12 @@ TEST_CASE(
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
             auto type = define_structure(draft);
-            const auto integer_type = draft.intern_builtin_type(BuiltinType::I32);
+            const auto integer_type = draft.builtin_type(BuiltinType::I32);
             const auto integer = draft.intern_constant(
                 {.type = integer_type, .value = IntegerConstant::from_signed(7)}
             );
             const auto boolean = draft.intern_constant(
-                {.type = draft.intern_builtin_type(BuiltinType::Bool),
+                {.type = draft.builtin_type(BuiltinType::Bool),
                  .value = BooleanConstant {.value = true}}
             );
             auto fields = std::vector<ConstantID> {integer, boolean};
@@ -169,7 +167,7 @@ TEST_CASE("SemIR constants invariant: struct fields belong to the receiving cons
         auto& draft = fixture.compilation;
         const auto type = define_structure(draft);
         const auto foreign = other.compilation.intern_constant({
-            .type = other.compilation.intern_builtin_type(BuiltinType::I32),
+            .type = other.compilation.builtin_type(BuiltinType::I32),
             .value = IntegerConstant::from_signed(1),
         });
         static_cast<void>(

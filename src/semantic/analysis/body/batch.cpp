@@ -63,7 +63,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
         return std::unexpected(built.error());
     }
     if (!result_type.has_value()) {
-        result_type = draft().intern_builtin_type(BuiltinType::Void);
+        result_type = draft().builtin_type(BuiltinType::Void);
     }
     if (reachable) {
         if (!is_void_type(draft(), *result_type)) {
@@ -127,7 +127,7 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
                 source_module.declaration,
                 ast,
                 std::move(reservation),
-                draft->intern_builtin_type(BuiltinType::Void),
+                draft->builtin_type(BuiltinType::Void),
                 failures,
                 false,
                 true

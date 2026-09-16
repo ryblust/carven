@@ -74,7 +74,7 @@ auto execution_equal(
     std::size_t maximum_steps
 ) noexcept -> std::optional<bool>;
 
-auto execution_value_type(ExecutionValueAccess& values, const ExecutionValue& value) noexcept
+auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> TypeID;
 
 // A stable read view over either retained children or execution-owned slots.

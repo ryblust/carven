@@ -30,6 +30,24 @@ enum class BuiltinType {
     EntryArgs,
 };
 
+// The closed builtin domain is present in every canonical store, before source analysis.
+inline constexpr auto builtin_types = std::array {
+    BuiltinType::Bool,         BuiltinType::Char, BuiltinType::I8,        BuiltinType::I16,
+    BuiltinType::I32,          BuiltinType::I64,  BuiltinType::U8,        BuiltinType::U16,
+    BuiltinType::U32,          BuiltinType::U64,  BuiltinType::Isize,     BuiltinType::Usize,
+    BuiltinType::F32,          BuiltinType::F64,  BuiltinType::String,    BuiltinType::Str,
+    BuiltinType::StrCharsView, BuiltinType::Void, BuiltinType::EntryArgs,
+};
+static_assert(builtin_types.size() == static_cast<std::size_t>(BuiltinType::EntryArgs) + 1uz);
+static_assert([]() static consteval {
+    for (auto index = 0uz; index < builtin_types.size(); ++index) {
+        if (static_cast<std::size_t>(builtin_types[index]) != index) {
+            return false;
+        }
+    }
+    return true;
+}());
+
 auto builtin_is_integer(BuiltinType type) noexcept -> bool;
 auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool;
 auto builtin_is_numeric(BuiltinType type) noexcept -> bool;
@@ -196,14 +214,19 @@ public:
     auto operator=(CanonicalTypeStore&&) -> CanonicalTypeStore& = delete;
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(TypeID id) const noexcept -> bool;
+    auto builtin_type(BuiltinType type) const noexcept -> TypeID;
     auto type(TypeID id) const noexcept -> const CanonicalType&;
     auto entries() const noexcept -> IDTableEntries<TypeID, CanonicalType, ProgramIdentity>;
     auto size() const noexcept -> std::size_t;
 
 private:
-    explicit CanonicalTypeStore(ImmutableProgramTable<CanonicalType, TypeID> rows) noexcept;
+    CanonicalTypeStore(
+        ImmutableProgramTable<CanonicalType, TypeID> rows,
+        std::array<TypeID, builtin_types.size()> builtins
+    ) noexcept;
 
     ImmutableProgramTable<CanonicalType, TypeID> rows;
+    std::array<TypeID, builtin_types.size()> builtins;
 
     friend class CanonicalTypeStoreBuilder;
 };
@@ -219,7 +242,7 @@ public:
     auto operator=(const CanonicalTypeStoreBuilder&) -> CanonicalTypeStoreBuilder& = delete;
     auto operator=(CanonicalTypeStoreBuilder&&) -> CanonicalTypeStoreBuilder& = delete;
     auto intern(const CanonicalType& type) noexcept -> TypeID;
-    auto intern_builtin(BuiltinType type) noexcept -> TypeID;
+    auto builtin_type(BuiltinType type) const noexcept -> TypeID;
     auto copy(TypeID id) const noexcept -> CanonicalType;
     auto owner() const noexcept -> ProgramIdentity;
     auto seal() && noexcept -> CanonicalTypeStore;
@@ -233,6 +256,7 @@ private:
 
     MutableProgramTable<CanonicalType, TypeID> rows;
     std::unordered_multimap<std::size_t, TypeID> candidates;
+    std::array<TypeID, builtin_types.size()> builtins;
 
     friend class ConstructionTypeStore;
 };

@@ -274,7 +274,7 @@ TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
     const auto first = builder.reserve_function_declaration();
     const auto second = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
-    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
+    const auto void_type = builder.builtin_type(BuiltinType::Void);
     builder.define_callable_contract(callable, callable_contract(builder, void_type));
     const auto function = [&](std::string_view name) noexcept {
         return FunctionDeclaration {
@@ -353,7 +353,7 @@ TEST_CASE("SemIR publication invariant: function declarations use function bodie
     const auto module_id = builder.reserve_module_declaration();
     const auto function = builder.reserve_function_declaration();
     const auto callable = builder.reserve_callable_declaration();
-    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
+    const auto void_type = builder.builtin_type(BuiltinType::Void);
     builder.define_callable_contract(callable, callable_contract(builder, void_type));
     builder.define_declaration(
         function,
@@ -394,7 +394,7 @@ TEST_CASE("SemIR declaration invariant: body ownership is unique and program-loc
     auto diagnostics = DiagnosticSink();
     auto builder = begin_compilation(sources, diagnostics, "semir.declaration.body_owner");
     builder.finish_declaration_heads();
-    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
+    const auto void_type = builder.builtin_type(BuiltinType::Void);
     const auto first = builder.append_body_callable(callable_contract(builder, void_type));
     const auto second = builder.append_body_callable(callable_contract(builder, void_type));
     const auto body = builder.reserve_body(BodyKind::Closure);
@@ -431,7 +431,7 @@ TEST_CASE("SemIR publication invariant: a closure callable has one closure opera
         }
     );
     builder.finish_declaration_heads();
-    const auto void_type = builder.intern_builtin_type(BuiltinType::Void);
+    const auto void_type = builder.builtin_type(BuiltinType::Void);
     const auto callable = builder.append_body_callable(callable_contract(builder, void_type));
     auto reservation = builder.reserve_body(BodyKind::Closure);
     const auto body_id = reservation.id();

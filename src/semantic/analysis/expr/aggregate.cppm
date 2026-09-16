@@ -213,7 +213,7 @@ auto construct_slice_call(
     }
     auto result_type = receiver_type;
     if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
-        result_type = site.draft().intern_builtin_type(*builtin);
+        result_type = site.draft().builtin_type(*builtin);
     } else if (contract.receiver == SliceIntrinsicShape::Array) {
         if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
             result_type =
@@ -236,7 +236,7 @@ auto construct_slice_call(
         const auto execution = site.enter_operand_execution(state.completes);
         auto built = site.read_argument(
             argument.expression,
-            site.draft().intern_builtin_type(contract.arguments[index])
+            site.draft().builtin_type(contract.arguments[index])
         );
         if (!built) {
             return std::unexpected(built.error());

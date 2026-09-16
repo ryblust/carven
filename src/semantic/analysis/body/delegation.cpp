@@ -57,7 +57,7 @@ auto BodyElaborator::materialize_selection(
                 if (const auto* view =
                         std::get_if<ConstructionCallableViewTypeValue>(&type.value)) {
                     if (view->result
-                        == ConstructionTypeRef(draft().intern_builtin_type(BuiltinType::Void))) {
+                        == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
                         return builtin_callable(*builtin, view->parameters);
                     }
                 }

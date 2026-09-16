@@ -67,7 +67,7 @@ auto BodyElaborator::c_style_for_statement(
     if (header.condition.has_value()) {
         const auto id = *header.condition;
         begin_full_expression(ast.expression(id).span);
-        auto value = expression(id, draft().intern_builtin_type(BuiltinType::Bool));
+        auto value = expression(id, draft().builtin_type(BuiltinType::Bool));
         if (!value.has_value()) {
             return std::unexpected(value.error());
         }
@@ -200,7 +200,7 @@ auto BodyElaborator::range_for_statement(
             } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
                        builtin != nullptr && builtin->kind == BuiltinType::StrCharsView) {
                 read_only = true;
-                element_type = draft().intern_builtin_type(BuiltinType::Char);
+                element_type = draft().builtin_type(BuiltinType::Char);
             }
         } else {
             const auto construction =

@@ -21,7 +21,7 @@ auto freeze_value(
     }
     if (const auto text = execution_text(values, value)) {
         return values.intern_constant({
-            .type = values.intern_builtin_type(BuiltinType::Str),
+            .type = values.builtin_type(BuiltinType::Str),
             .value = StringConstant {.value = values.intern_spelling(*text)},
         });
     }

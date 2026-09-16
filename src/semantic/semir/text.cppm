@@ -92,13 +92,13 @@ constexpr auto text_intrinsic_writes(TextIntrinsic intrinsic) noexcept -> bool {
 template<typename Types>
 auto resolve_text_intrinsic_type(Types& types, const TextIntrinsicType& type) noexcept -> TypeID {
     if (const auto* builtin = std::get_if<BuiltinType>(&type)) {
-        return types.intern_builtin_type(*builtin);
+        return types.builtin_type(*builtin);
     }
     switch (std::get<TextIntrinsicShape>(type)) {
         case TextIntrinsicShape::ByteSlice:
             return types.intern_type(
                 {.value = SliceTypeValue {
-                     .element = types.intern_builtin_type(BuiltinType::U8),
+                     .element = types.builtin_type(BuiltinType::U8),
                  }}
             );
         case TextIntrinsicShape::Text:

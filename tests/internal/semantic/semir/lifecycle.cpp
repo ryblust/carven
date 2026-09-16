@@ -74,9 +74,9 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto guarded_failure_name = builder.intern_spelling("GuardedFailure");
     const auto field_name = builder.intern_spelling("callback");
 
-    const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
-    CHECK(builder.intern_builtin_type(BuiltinType::Bool) == boolean);
-    const auto text = builder.intern_builtin_type(BuiltinType::Str);
+    const auto boolean = builder.builtin_type(BuiltinType::Bool);
+    CHECK(builder.builtin_type(BuiltinType::Bool) == boolean);
+    const auto text = builder.builtin_type(BuiltinType::Str);
     const auto constant = builder.intern_constant(
         ConstantFact {
             .type = text,
@@ -296,7 +296,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     const auto origin = builder.append_source_origin(program_source, Span::at(0u));
     const auto nominal_name = builder.intern_spelling(use_enum ? "Envelope" : "Holder");
     const auto member_name = builder.intern_spelling(use_enum ? "Payload" : "callback");
-    const auto boolean = builder.intern_builtin_type(BuiltinType::Bool);
+    const auto boolean = builder.builtin_type(BuiltinType::Bool);
     const auto no_failures = builder.add_empty_failure_term();
     const auto callable_view = builder.append_construction_type(
         ConstructionType {

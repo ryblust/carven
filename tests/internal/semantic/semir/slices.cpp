@@ -63,14 +63,14 @@ TEST_CASE("SemIR publication: slice extents describe sequence results and match 
                     .items = {test},
                 }
             );
-            const auto element_type = builder.intern_builtin_type(BuiltinType::I32);
+            const auto element_type = builder.builtin_type(BuiltinType::I32);
             const auto array_type = builder.intern_type({
                 .value = ArrayTypeValue {.element = element_type, .extent = 0u},
             });
             const auto slice_type = builder.intern_type({
                 .value = SliceTypeValue {.element = element_type},
             });
-            const auto size_type = builder.intern_builtin_type(BuiltinType::Usize);
+            const auto size_type = builder.builtin_type(BuiltinType::Usize);
             builder.finish_declaration_heads();
             auto reservation = builder.reserve_body(BodyKind::Test);
             builder.define_test(

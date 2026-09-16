@@ -63,7 +63,7 @@ TEST_CASE("SemIR constants: nested arrays preserve canonical type and value iden
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
     auto draft = begin_compilation(sources, diagnostics);
-    const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+    const auto integer = draft.builtin_type(BuiltinType::I32);
     const auto element = draft.intern_constant({
         .type = integer,
         .value = IntegerConstant::from_signed(42),
@@ -113,8 +113,8 @@ TEST_CASE("SemIR publication invariant: array constants match shape and exact el
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto draft = begin_compilation(sources, diagnostics);
-            const auto integer = draft.intern_builtin_type(BuiltinType::I32);
-            const auto boolean = draft.intern_builtin_type(BuiltinType::Bool);
+            const auto integer = draft.builtin_type(BuiltinType::I32);
+            const auto boolean = draft.builtin_type(BuiltinType::Bool);
             auto child = draft.intern_constant({
                 .type = integer,
                 .value = IntegerConstant::from_signed(1),
@@ -145,7 +145,7 @@ TEST_CASE("SemIR constants: array language equality recursively compares numeric
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
     auto draft = begin_compilation(sources, diagnostics);
-    const auto number = draft.intern_builtin_type(BuiltinType::F64);
+    const auto number = draft.builtin_type(BuiltinType::F64);
     const auto positive =
         draft.intern_constant({.type = number, .value = F64Constant {.value = 0.0}});
     const auto negative =
@@ -189,7 +189,7 @@ TEST_CASE("SemIR constants invariant: array children already belong to the same 
                 auto other_sources = SourceManager();
                 auto other_diagnostics = DiagnosticSink();
                 const auto other = begin_compilation(other_sources, other_diagnostics);
-                const auto integer = draft.intern_builtin_type(BuiltinType::I32);
+                const auto integer = draft.builtin_type(BuiltinType::I32);
                 auto alternate = MutableProgramTable<ConstantFact, ConstantID>(
                     foreign ? other.identity() : draft.identity()
                 );

@@ -196,11 +196,11 @@ TEST_CASE("Semantic operations: contextual binary operand planning is syntax-aut
 TEST_CASE("Semantic operations: decisions carry their stable diagnostic classification") {
     auto fixture = OperationFixture();
     auto& compilation = fixture.compilation;
-    const auto boolean = compilation.intern_builtin_type(BuiltinType::Bool);
-    const auto i32 = compilation.intern_builtin_type(BuiltinType::I32);
-    const auto i64 = compilation.intern_builtin_type(BuiltinType::I64);
-    const auto f32 = compilation.intern_builtin_type(BuiltinType::F32);
-    const auto text = compilation.intern_builtin_type(BuiltinType::Str);
+    const auto boolean = compilation.builtin_type(BuiltinType::Bool);
+    const auto i32 = compilation.builtin_type(BuiltinType::I32);
+    const auto i64 = compilation.builtin_type(BuiltinType::I64);
+    const auto f32 = compilation.builtin_type(BuiltinType::F32);
+    const auto text = compilation.builtin_type(BuiltinType::Str);
     const auto numeric_enum = add_numeric_enum(compilation, i32);
 
     CHECK(binary_operator_requires_equality(ASTBinaryOperator::Equal));
@@ -332,9 +332,9 @@ TEST_CASE("Semantic operations: decisions carry their stable diagnostic classifi
 TEST_CASE("Semantic operations: construction types expose their exact recursive shape") {
     auto fixture = OperationFixture();
     auto& compilation = fixture.compilation;
-    const auto i32 = compilation.intern_builtin_type(BuiltinType::I32);
+    const auto i32 = compilation.builtin_type(BuiltinType::I32);
     const auto text_view = compilation.intern_type(
-        {.value = SliceTypeValue {.element = compilation.intern_builtin_type(BuiltinType::U8)}}
+        {.value = SliceTypeValue {.element = compilation.builtin_type(BuiltinType::U8)}}
     );
     const auto failure = compilation.add_empty_failure_term();
     const auto first_array = compilation.append_construction_type(
@@ -387,7 +387,7 @@ TEST_CASE("Semantic operations: construction types expose their exact recursive 
 TEST_CASE("Semantic operations: evaluator failures retain stable diagnostic boundaries") {
     auto fixture = OperationFixture();
     auto& compilation = fixture.compilation;
-    const auto text = compilation.intern_builtin_type(BuiltinType::Str);
+    const auto text = compilation.builtin_type(BuiltinType::Str);
     const auto text_value = ConstantFact {
         .type = text,
         .value = StringConstant {.value = compilation.intern_spelling("abc")},
@@ -397,7 +397,7 @@ TEST_CASE("Semantic operations: evaluator failures retain stable diagnostic boun
         TextIntrinsic::Bytes,
         text_value,
         compilation.intern_type(
-            {.value = SliceTypeValue {.element = compilation.intern_builtin_type(BuiltinType::U8)}}
+            {.value = SliceTypeValue {.element = compilation.builtin_type(BuiltinType::U8)}}
         )
     );
     REQUIRE_FALSE(non_constant_view.has_value());

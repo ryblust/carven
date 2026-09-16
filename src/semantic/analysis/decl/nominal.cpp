@@ -162,7 +162,7 @@ auto DeclResolver::resolve_enum(
 
     auto representation = EnumRepresentation {PayloadEnumRepresentation {}};
     if (!payload_representation) {
-        auto underlying = ConstructionTypeRef {draft.intern_builtin_type(BuiltinType::I32)};
+        auto underlying = ConstructionTypeRef {draft.builtin_type(BuiltinType::I32)};
         if (enumeration.underlying_type.has_value()) {
             auto resolved = resolve_type(symbol.module_id, syntax, *enumeration.underlying_type);
             if (!resolved.has_value()) {

@@ -66,12 +66,11 @@ auto interpret_literal(
     auto value = site.constant(site.draft().intern_constant(std::move(*fact)), span);
     if (std::holds_alternative<StringLiteralValue>(source.value)
         && expected
-        && *expected
-            == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))) {
+        && *expected == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
         return construct_text_value(
             site,
             TextIntrinsic::FromStr,
-            site.draft().intern_builtin_type(BuiltinType::String),
+            site.draft().builtin_type(BuiltinType::String),
             std::move(value),
             std::nullopt,
             span
@@ -106,9 +105,7 @@ auto interpret_unary(
     auto operand = site.read(
         source.operand_id,
         source.op == ASTPrefixOperator::LogicalNot
-            ? std::optional<ConstructionTypeRef>(
-                  site.draft().intern_builtin_type(BuiltinType::Bool)
-              )
+            ? std::optional<ConstructionTypeRef>(site.draft().builtin_type(BuiltinType::Bool))
             : expected
     );
     if (!operand.has_value()) {
@@ -128,7 +125,7 @@ auto interpret_unary(
     }
     const auto builtin = operator_result_builtin(*decision);
     const auto type = builtin.has_value()
-        ? ConstructionTypeRef {site.draft().intern_builtin_type(*builtin)}
+        ? ConstructionTypeRef {site.draft().builtin_type(*builtin)}
         : site.type(*operand);
     auto known = std::optional<ConstantID>();
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
@@ -166,7 +163,7 @@ auto interpret_unary(
 template<typename Site>
 auto require_expression_boolean(Site& site, typename Site::Value& value, Span span) noexcept
     -> ExpressionResult<void> {
-    const auto boolean = ConstructionTypeRef {site.draft().intern_builtin_type(BuiltinType::Bool)};
+    const auto boolean = ConstructionTypeRef {site.draft().builtin_type(BuiltinType::Bool)};
     if (site.external(site.type(value))) {
         auto converted = site.convert_argument(value, boolean, span);
         if (!converted.has_value()) {
@@ -189,8 +186,7 @@ auto interpret_binary(
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionResult<typename Site::Value> {
     if (source.op == ASTBinaryOperator::LogicalAnd || source.op == ASTBinaryOperator::LogicalOr) {
-        const auto boolean =
-            ConstructionTypeRef {site.draft().intern_builtin_type(BuiltinType::Bool)};
+        const auto boolean = ConstructionTypeRef {site.draft().builtin_type(BuiltinType::Bool)};
         auto left = site.read(source.left, boolean);
         if (!left.has_value()) {
             return std::unexpected(left.error());
@@ -309,7 +305,7 @@ auto interpret_binary(
     }
     const auto builtin = operator_result_builtin(*decision);
     const auto type = builtin.has_value()
-        ? ConstructionTypeRef {site.draft().intern_builtin_type(*builtin)}
+        ? ConstructionTypeRef {site.draft().builtin_type(*builtin)}
         : site.type(*left);
     auto known = std::optional<ConstantID>();
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
@@ -380,13 +376,12 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     if (site.external(site.type(*operand)) || site.external(*target)) {
         return site.external_cast(*target, std::move(*operand), span);
     }
-    if (site.type(*operand)
-            == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::Str))
-        && *target == ConstructionTypeRef(site.draft().intern_builtin_type(BuiltinType::String))) {
+    if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Str))
+        && *target == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
         return construct_text_value(
             site,
             TextIntrinsic::FromStr,
-            site.draft().intern_builtin_type(BuiltinType::String),
+            site.draft().builtin_type(BuiltinType::String),
             std::move(*operand),
             std::nullopt,
             span

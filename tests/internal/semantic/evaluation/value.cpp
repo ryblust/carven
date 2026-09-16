@@ -15,7 +15,7 @@ TEST_CASE(
     auto& values = fixture.compilation;
     const auto bytes = std::string("a\0我", 5uz);
     const auto fact = ConstantFact {
-        .type = values.intern_builtin_type(BuiltinType::Str),
+        .type = values.builtin_type(BuiltinType::Str),
         .value = StringConstant {.value = values.intern_spelling(bytes)}
     };
     const auto retained = values.intern_constant(fact);
@@ -36,7 +36,7 @@ TEST_CASE(
     }
     const auto nontext = ExecutionValue(
         ConstantAtom {
-            .type = values.intern_builtin_type(BuiltinType::I32),
+            .type = values.builtin_type(BuiltinType::I32),
             .value = IntegerConstant::from_signed(1)
         }
     );
