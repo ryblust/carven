@@ -14,7 +14,12 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.type;
+import :source.provenance.ids;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -32,7 +37,7 @@ auto append_items(std::vector<TargetItem>& destination, std::vector<TargetItem> 
 
 auto declaration_origin(const SemIRProgram& semantic, DeclarationRef declaration) noexcept
     -> ProgramOriginID {
-    return std::visit(
+    return declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept { return semantic.declarations().function(id).origin; },
             [&](StructID id) noexcept { return semantic.declarations().structure(id).origin; },
@@ -40,8 +45,7 @@ auto declaration_origin(const SemIRProgram& semantic, DeclarationRef declaration
             [&](ModuleConstantID id) noexcept {
                 return semantic.declarations().module_constant(id).origin;
             },
-        },
-        declaration
+        }
     );
 }
 
@@ -70,7 +74,7 @@ auto lower_declaration(
         }
         return lower_enumeration(context, *enumeration);
     }
-    auto value = std::visit(
+    auto value = declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept { return lower_function(context, id, declaration_only); },
             [&](StructID id) noexcept {
@@ -87,8 +91,7 @@ auto lower_declaration(
                     "compile-time module constant reached target declaration lowering"
                 );
             },
-        },
-        declaration
+        }
     );
     auto result = std::vector<TargetItem>();
     result.push_back(source_item(
@@ -101,7 +104,7 @@ auto lower_declaration(
 
 auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef declaration) noexcept
     -> TargetItem {
-    auto value = std::visit(
+    auto value = declaration.visit(
         Overloaded {
             [&](StructID id) noexcept -> TargetDecl {
                 return TargetStructForwardDecl {
@@ -122,8 +125,7 @@ auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef de
                     ),
                 };
             },
-        },
-        declaration
+        }
     );
     return compiler_item(std::move(value), TargetCompilerReason::ArtifactScaffolding);
 }
@@ -245,75 +247,104 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
             result.private_declarations,
             lower_declaration(
                 context,
-                std::visit(
-                    []<typename ID>(ID id) noexcept -> DeclarationRef {
-                        static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
-                        return id;
-                    },
-                    nominal
-                ),
+                nominal.visit([]<typename ID>(ID id) noexcept -> DeclarationRef {
+                    static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
+                    return id;
+                }),
                 false
             )
         );
     }
-    for (const auto callable : schedule.closure_definitions) {
-        if (std::ranges::contains(schedule.interface_closures, callable)) {
-            continue;
-        }
-        const auto type_name = context.closure_type_name(callable);
-        result.private_declarations.push_back(compiler_item(
-            TargetDecl {TargetStructForwardDecl {
-                .name = type_name.components().back(),
-            }},
-            TargetCompilerReason::ArtifactScaffolding
-        ));
-    }
-    auto functions = std::vector<FunctionID>();
+    auto functions = std::flat_map<CallableID, FunctionID>();
     for (const auto item : module_decl.items) {
         const auto* function = std::get_if<FunctionID>(&item);
         if (function == nullptr) {
             continue;
         }
-        functions.push_back(*function);
-        if (declarations.function(*function).visibility == DeclarationVisibility::Module) {
-            append_items(
-                result.private_declarations,
-                lower_declaration(context, DeclarationRef {*function}, true)
-            );
+        const auto& declaration = declarations.function(*function);
+        functions.emplace(declaration.callable, *function);
+        if (declaration.visibility != DeclarationVisibility::Module) {
+            context.require_callable(declaration.callable);
         }
-    }
-    for (const auto callable : schedule.closure_definitions) {
-        if (!std::ranges::contains(schedule.interface_closures, callable)) {
-            result.private_declarations.push_back(lower_closure_type(context, callable));
-        }
-    }
-    for (const auto callable : schedule.closure_definitions) {
-        auto& destination = std::ranges::contains(schedule.interface_closures, callable)
-            ? result.module_items
-            : result.private_items;
-        destination.push_back(lower_closure_body(context, callable));
-    }
-    for (const auto function : functions) {
-        const auto& declaration = declarations.function(function);
-        auto& target = declaration.visibility == DeclarationVisibility::Module
-            ? result.private_items
-            : result.module_items;
-        append_items(target, lower_declaration(context, DeclarationRef {function}, false));
         if (declaration.cpp_export_origin.has_value()) {
-            result.cpp_export_facades.push_back(lower_cpp_export_facade(context, function));
+            result.cpp_export_facades.push_back(lower_cpp_export_facade(context, *function));
         }
         if (declaration.entry_point.has_value()) {
             if (result.entry_wrapper.has_value()) {
                 invariant_violation("module lowering observed multiple entry points");
             }
-            result.entry_wrapper = lower_entry_wrapper(context, function);
+            result.entry_wrapper = lower_entry_wrapper(context, *function);
         }
     }
-    if (!schedule.emitted_tests.empty()) {
-        auto tests = std::vector<TargetItem>();
-        for (const auto test : schedule.emitted_tests) {
-            tests.push_back(lower_test(context, test));
+    auto tests = std::vector<TargetItem>();
+    for (const auto test : schedule.emitted_tests) {
+        tests.push_back(lower_test(context, test));
+    }
+    for (const auto callable : schedule.interface_closures) {
+        context.require_callable(callable);
+    }
+
+    auto function_declarations = std::vector<TargetItem>();
+    auto function_definitions = std::flat_map<FunctionID, std::vector<TargetItem>>();
+    auto closure_types = std::flat_map<CallableID, TargetItem>();
+    auto closure_bodies = std::flat_map<CallableID, TargetItem>();
+    while (const auto callable = context.next_required_callable()) {
+        if (const auto found = functions.find(*callable); found != functions.end()) {
+            const auto function = found->second;
+            if (declarations.function(function).visibility == DeclarationVisibility::Module) {
+                append_items(
+                    function_declarations,
+                    lower_declaration(context, DeclarationRef {function}, true)
+                );
+            }
+            function_definitions.emplace(
+                function,
+                lower_declaration(context, DeclarationRef {function}, false)
+            );
+        } else {
+            if (!std::ranges::contains(schedule.closure_definitions, *callable)) {
+                invariant_violation("required callable is outside the module schedule");
+            }
+            if (!std::ranges::contains(schedule.interface_closures, *callable)) {
+                closure_types.emplace(*callable, lower_closure_type(context, *callable));
+            }
+            closure_bodies.emplace(*callable, lower_closure_body(context, *callable));
         }
+    }
+
+    // Realization discovers definitions; the schedule retains declaration order.
+    for (const auto callable : schedule.closure_definitions) {
+        if (closure_types.contains(callable)) {
+            result.private_declarations.push_back(compiler_item(
+                TargetDecl {TargetStructForwardDecl {
+                    .name = context.names()
+                                .closure_type_name(context.active_module(), callable)
+                                .components()
+                                .back(),
+                }},
+                TargetCompilerReason::ArtifactScaffolding
+            ));
+        }
+    }
+    append_items(result.private_declarations, std::move(function_declarations));
+    for (const auto callable : schedule.closure_definitions) {
+        if (const auto found = closure_types.find(callable); found != closure_types.end()) {
+            result.private_declarations.push_back(std::move(found->second));
+        }
+        if (const auto found = closure_bodies.find(callable); found != closure_bodies.end()) {
+            auto& destination = std::ranges::contains(schedule.interface_closures, callable)
+                ? result.module_items
+                : result.private_items;
+            destination.push_back(std::move(found->second));
+        }
+    }
+    for (auto&& [function, definition] : function_definitions) {
+        auto& target = declarations.function(function).visibility == DeclarationVisibility::Module
+            ? result.private_items
+            : result.module_items;
+        append_items(target, std::move(definition));
+    }
+    if (!tests.empty()) {
         result.module_items.push_back(
             namespace_item(std::nullopt, std::move(tests), TargetCompilerReason::TestHarness)
         );

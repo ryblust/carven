@@ -4,11 +4,11 @@ module;
 
 module carven:test.internal.frontend.program.parse;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
 import :frontend.program.verify;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import std;
@@ -28,11 +28,11 @@ TEST_CASE("Syntax program: real module sources publish through the program parse
     const auto source = sources.append_virtual("main.cv", "const answer: i32 = 42;\n");
     REQUIRE(source.has_value());
 
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = path("app.main"),
     }};
-    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(parsed.has_value());
     REQUIRE(verify_syntax_program(*parsed).has_value());
     CHECK_EQ(parsed->syntax_trees().size(), 1u);
@@ -46,10 +46,8 @@ TEST_CASE("Syntax program: real module sources publish through the program parse
 
 TEST_CASE("Syntax program: closed compilation rejects an empty input batch") {
     const auto sources = SourceManager();
-    const auto parsed = parse_program(
-        sources,
-        CompilationRequest {.modules = std::span<const CompilationModuleInput>()}
-    );
+    const auto parsed =
+        parse_program(sources, SourceBatch {.modules = std::span<const SourceModuleInput>()});
     REQUIRE_FALSE(parsed.has_value());
     REQUIRE_EQ(parsed.error().size(), 1u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
@@ -62,16 +60,16 @@ TEST_CASE("Syntax program: closed compilation rejects duplicate source snapshots
     const auto source = sources.append_virtual("main.cv", "fn main() {}\n");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path("app.first"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path("app.second"),
         },
     };
-    const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE_FALSE(parsed.has_value());
     REQUIRE_EQ(parsed.error().size(), 1u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
@@ -84,16 +82,16 @@ TEST_CASE("Syntax program: closed compilation rejects duplicate module paths") {
     REQUIRE(first.has_value());
     REQUIRE(second.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *first,
             .module_path = path("app.same"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *second,
             .module_path = path("app.same"),
         },
     };
-    const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE_FALSE(parsed.has_value());
     REQUIRE_EQ(parsed.error().size(), 1u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
@@ -101,11 +99,11 @@ TEST_CASE("Syntax program: closed compilation rejects duplicate module paths") {
 
 TEST_CASE("Syntax program: closed compilation rejects a missing source snapshot") {
     const auto sources = SourceManager();
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = SourceID::from_index(0),
         .module_path = path("app.missing"),
     }};
-    const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE_FALSE(parsed.has_value());
     REQUIRE_EQ(parsed.error().size(), 1u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
@@ -130,7 +128,7 @@ TEST_CASE("Syntax program: imports select official, craft root, and module direc
     for (const auto& item : cases) {
         CAPTURE(item.importer);
         auto sources = SourceManager();
-        auto inputs = std::vector<CompilationModuleInput>();
+        auto inputs = std::vector<SourceModuleInput>();
         const auto append = [&](std::string_view name, std::string_view text) noexcept {
             const auto source = sources.append_virtual(std::string(name), std::string(text));
             REQUIRE(source.has_value());
@@ -149,7 +147,7 @@ TEST_CASE("Syntax program: imports select official, craft root, and module direc
         }
         append(item.relative_target, "");
 
-        const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+        const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
         REQUIRE(parsed.has_value());
         REQUIRE(verify_syntax_program(*parsed).has_value());
         const auto provenance = parsed->provenance();
@@ -171,7 +169,7 @@ TEST_CASE("Syntax program: imports select official, craft root, and module direc
 
 TEST_CASE("Syntax program: a standard import requires the official source in the input batch") {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     for (const auto name : {"nested.main", "crafts.std.utf", "std.utf", "nested.std.utf"}) {
         const auto source = sources.append_virtual(
             name,
@@ -180,7 +178,7 @@ TEST_CASE("Syntax program: a standard import requires the official source in the
         REQUIRE(source.has_value());
         inputs.push_back({.source_id = *source, .module_path = path(name)});
     }
-    const auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE_FALSE(parsed.has_value());
     REQUIRE_EQ(parsed.error().size(), 1uz);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::ImportResolution);

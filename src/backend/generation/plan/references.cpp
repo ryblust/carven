@@ -116,7 +116,7 @@ auto DeclarationReferenceCollector::collect_type(
     if (!guard.types.insert(type_id).second) {
         return;
     }
-    std::visit(
+    semantic.types().type(type_id).value.visit(
         Overloaded {
 
             [&](const SliceTypeValue& value) noexcept {
@@ -162,8 +162,7 @@ auto DeclarationReferenceCollector::collect_type(
             [&](const CallableViewTypeValue& value) noexcept {
                 collect_signature(value.signature, guard);
             },
-        },
-        semantic.types().type(type_id).value
+        }
     );
     guard.types.erase(type_id);
 }
@@ -171,7 +170,7 @@ auto DeclarationReferenceCollector::collect_type(
 auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declaration) noexcept
     -> void {
     auto guard = RecursionGuard();
-    std::visit(
+    declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept {
                 collect_callable(semantic.declarations().function(id).callable, guard);
@@ -209,8 +208,7 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                     guard
                 );
             },
-        },
-        declaration
+        }
     );
 }
 
@@ -218,7 +216,7 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
 
 auto target_visibility(const SemIRProgram& semantic, DeclarationRef declaration) noexcept
     -> DeclarationVisibility {
-    return std::visit(
+    return declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept { return semantic.declarations().function(id).visibility; },
             [&](StructID id) noexcept { return semantic.declarations().structure(id).visibility; },
@@ -226,24 +224,20 @@ auto target_visibility(const SemIRProgram& semantic, DeclarationRef declaration)
             [&](ModuleConstantID id) noexcept {
                 return semantic.declarations().module_constant(id).visibility;
             },
-        },
-        declaration
+        }
     );
 }
 
 auto target_declaration_ref(NominalDeclarationRef nominal) noexcept -> DeclarationRef {
-    return std::visit(
-        []<typename ID>(ID id) static noexcept -> DeclarationRef {
-            static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
-            return id;
-        },
-        nominal
-    );
+    return nominal.visit([]<typename ID>(ID id) static noexcept -> DeclarationRef {
+        static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
+        return id;
+    });
 }
 
 auto target_owner_module(const SemIRProgram& semantic, DeclarationRef declaration) noexcept
     -> ModuleID {
-    return std::visit(
+    return declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept { return semantic.declarations().function(id).module_id; },
             [&](StructID id) noexcept { return semantic.declarations().structure(id).module_id; },
@@ -251,8 +245,7 @@ auto target_owner_module(const SemIRProgram& semantic, DeclarationRef declaratio
             [&](ModuleConstantID id) noexcept {
                 return semantic.declarations().module_constant(id).module_id;
             },
-        },
-        declaration
+        }
     );
 }
 

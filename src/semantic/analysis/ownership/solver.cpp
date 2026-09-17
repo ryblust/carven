@@ -177,7 +177,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
         for (const auto id : ids) {
             const auto& binding = source.binding(id);
             auto relationships = abstract_value(binding.type, binding.origin);
-            const auto borrowed = std::visit(
+            const auto borrowed = binding.storage.visit(
                 Overloaded {
                     [](const ParameterBindingStorage& value) static noexcept {
                         return value.access != AccessMode::Take;
@@ -188,8 +188,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                         return true;
                     },
                     [](const OwnerBindingStorage&) static noexcept { return false; },
-                },
-                binding.storage
+                }
             );
             auto alias = std::optional<OwnershipPlace>();
             if (borrowed) {

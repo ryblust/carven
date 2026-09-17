@@ -8,8 +8,19 @@ import :backend.preparation;
 import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.target.expr;
+import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.decl;
+import :semantic.semir.delegation;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.slice;
+import :semantic.semir.structured;
+import :semantic.semir.text;
+import :semantic.semir.type;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -171,7 +182,7 @@ auto native_call(
     const SemCppCall& call,
     std::vector<TargetExpr> values
 ) noexcept -> TargetExpr {
-    auto callee = std::visit(
+    auto callee = call.callee.visit(
         Overloaded {
             [&](const CppNameReference& name) noexcept -> TargetExpr {
                 return name_expression(context.cpp_name(name));
@@ -189,8 +200,7 @@ auto native_call(
                 values.erase(values.begin());
                 return receiver;
             }
-        },
-        call.callee
+        }
     );
     return call_expression(std::move(callee), std::move(values));
 }
@@ -219,7 +229,7 @@ auto native_operation(
             .value = TargetConstructionExpr {.type = type_id, .initializer = std::move(arguments)}
         };
     };
-    return std::visit(
+    return value.operation.visit(
         Overloaded {
             [&](const CppCStringOperation& literal) noexcept -> TargetExpr {
                 return {
@@ -287,8 +297,7 @@ auto native_operation(
                     }
                 };
             }
-        },
-        value.operation
+        }
     );
 }
 
@@ -300,7 +309,7 @@ auto realize_operation(
     const OperationPreparation* preparation,
     std::vector<TargetExpr> operands
 ) noexcept -> TargetExpr {
-    auto result = std::visit(
+    auto result = source.value.visit(
         Overloaded {
             [&](const SemCppCall& call) noexcept -> TargetExpr {
                 return native_call(context, call, std::move(operands));
@@ -593,8 +602,30 @@ auto realize_operation(
             [](const SemPropagate&) static noexcept -> TargetExpr {
                 invariant_violation("propagation forwards its operation");
             }
-        },
-        source.value
+        }
     );
     return result;
+}
+
+auto discarded_operation(
+    const ModuleLowering& context,
+    const SemanticExpression& source,
+    TargetExpr expression
+) noexcept -> TargetStmt {
+    auto implicit = context.is_void(source.type.resolved());
+    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+    if (!implicit
+        && call != nullptr
+        && !std::holds_alternative<CppTypeValue>(
+            context.semantic().types().type(source.type.resolved()).value
+        )
+        && !std::holds_alternative<SemCpp>(source.value)
+        && !std::holds_alternative<SemCppCall>(source.value)) {
+        const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+        implicit = intrinsic == nullptr || target_symbol_allows_implicit_discard(intrinsic->symbol);
+    }
+    if (implicit) {
+        return generated_statement(TargetExprStmt {.expression = std::move(expression)});
+    }
+    return generated_statement(TargetDiscardStmt {.expression = std::move(expression)});
 }

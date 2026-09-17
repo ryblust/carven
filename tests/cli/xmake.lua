@@ -203,38 +203,89 @@ local case_specs = {
     },
 }
 
-if not is_plat("windows") then
-    case_specs["commands/native_execution"] = {
-        inputs = {"input.cv", "library.cv", "arguments.hpp"},
-        steps = {
-            {
-                args = {"input.cv", "--", "--help", "space argument", "; echo injected"},
-                exit_code = 1,
-                stdout = "stdout.txt",
-                absent_files = {"input.cpp", "program"},
-            },
-            {
-                args = {"library.cv"},
-                exit_code = 1,
-                stderr_contains = {"running a program requires an entry point"},
-                absent_files = {"library.cpp", "program"},
-            },
-            {
-                args = {"input.cv", "--stdout"},
-                exit_code = 1,
-                stderr_contains = {"unknown option '--stdout'"},
-            },
+case_specs["commands/native_crafts"] = {
+    inputs = {"input.cv", "unlisted.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
+    steps = {
+        {args = {"input.cv"}, stdout = "stdout.txt"},
+        {
+            installed_toolchain = true,
+            args = {"input.cv", "./input.cv", "crafts/demo/api.cv"},
+            stdout = "stdout.txt",
+            absent_files = {"input.cpp", "program", ".carven", ".xmake"},
         },
-    }
-end
+        {
+            args = {"compile", "input.cv", "-o", "emit"},
+            exit_code = 1,
+            stderr_contains = {"CV-", "module"},
+            absent_files = {"emit/input.cpp"},
+        },
+    },
+}
+case_specs["commands/native_execution"] = {
+    inputs = {"input.cv", "library.cv", "arguments.hpp"},
+    steps = {
+        {
+            args = {"input.cv", "--", "--help", "space argument", "; echo injected", "", 'a"b', "trailing\\", 'slash\\"quote'},
+            exit_code = 1,
+            stdout = "stdout.txt",
+            absent_files = {"input.cpp", "program", "program.exe"},
+        },
+        {
+            args = {"library.cv"},
+            exit_code = 1,
+            stderr_contains = {"running a program requires an entry point"},
+            absent_files = {"library.cpp", "program"},
+        },
+        {
+            args = {"input.cv", "--stdout"},
+            exit_code = 1,
+            stderr_contains = {"unknown option '--stdout'"},
+        },
+    },
+}
 
 case_specs["commands/interpretation"] = {
-    inputs = {"input.cv", "unsupported.cv", "failure.cv", "limit.cv", "wrapping.cv"},
+    inputs = {
+        "input.cv", "unsupported.cv", "failure.cv", "limit.cv", "wrapping.cv",
+        "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv",
+    },
     steps = {
+        {
+            args = {"interpret", "typed_failures.cv"},
+            stdout = "typed_failures.txt",
+        },
+        {
+            args = {"interpret", "escaped_failure.cv"}, exit_code = 1,
+            stderr_contains = {"CV-INTERPRET-EXECUTION", "typed failure escaped", "while interpreting this function call"},
+        },
+        {
+            args = {"interpret", "floating.cv"},
+            stdout = "floating.txt",
+        },
+        {
+            args = {"interpret", "declarations.cv"},
+        },
+        {
+            args = {"interpret", "--trace", "static_only.cv", "declarations.cv"},
+            stdout = "static_only.txt",
+            absent_files = {"static_only.cpp", "declarations.cpp", "program"},
+        },
+        {
+            args = {"interpret", "static_failure.cv"}, exit_code = 1,
+            stderr_contains = {"CV-CONST-TEST"},
+        },
+        {
+            args = {"interpret", "main.cv", "declarations.cv"},
+            stdout = "main.txt",
+        },
+        {
+            args = {"interpret", "main.cv", "input.cv"}, exit_code = 1,
+            stderr_contains = {"CV-ENTRY-DUPLICATE"},
+        },
         {
             args = {"interpret", "input.cv", "--", "--help"},
             stdout = "stdout.txt",
-            absent_files = {"input.cpp", "program"},
+            absent_files = {"input.cpp", "program", "program.exe"},
         },
         {
             args = {"interpret", "--trace", "input.cv"},
@@ -265,13 +316,11 @@ case_specs["commands/interpretation"] = {
         },
     },
 }
-if not is_plat("windows") then
-    table.insert(case_specs["commands/interpretation"].steps, {
-        args = {"input.cv"},
-        stdout = "stdout.txt",
-        absent_files = {"input.cpp", "program"},
-    })
-end
+table.insert(case_specs["commands/interpretation"].steps, {
+    args = {"input.cv"},
+    stdout = "stdout.txt",
+    absent_files = {"input.cpp", "program", "program.exe"},
+})
 
 local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
 

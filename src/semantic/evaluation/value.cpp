@@ -5,24 +5,18 @@ import :semantic.evaluation.value;
 import std;
 
 auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom> {
-    return std::visit(
-        [&](const auto& value) noexcept -> std::optional<ConstantAtom> {
-            if constexpr (std::constructible_from<ConstantAtomValue, decltype(value)>) {
-                return ConstantAtom {.type = fact.type, .value = value};
-            }
-            return std::nullopt;
-        },
-        fact.value
-    );
+    return fact.value.visit([&](const auto& value) noexcept -> std::optional<ConstantAtom> {
+        if constexpr (std::constructible_from<ConstantAtomValue, decltype(value)>) {
+            return ConstantAtom {.type = fact.type, .value = value};
+        }
+        return std::nullopt;
+    });
 }
 
 auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact {
-    return std::visit(
-        [&](const auto& value) noexcept {
-            return ConstantFact {.type = atom.type, .value = value};
-        },
-        atom.value
-    );
+    return atom.value.visit([&](const auto& value) noexcept {
+        return ConstantFact {.type = atom.type, .value = value};
+    });
 }
 
 auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept
@@ -135,10 +129,7 @@ auto execution_equal(
 }
 
 auto ExecutionCompoundView::size() const noexcept -> std::size_t {
-    return std::visit(
-        [](const auto children) static noexcept { return children.size(); },
-        elements
-    );
+    return elements.visit([](const auto children) static noexcept { return children.size(); });
 }
 
 auto execution_compound_view(

@@ -1,4 +1,4 @@
-import .types using {Model, Choice, Code, Failure,};
+import .types using { Model, Choice, Code, Failure };
 
 export fn inspect(
     model: Model,

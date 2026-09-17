@@ -60,7 +60,7 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
 auto BodyElaborator::take_built(BuiltExpression& expression, Span span) noexcept
     -> SemanticExpression {
     auto& built = expression;
-    auto result = std::visit(
+    auto result = built.storage.visit(
         Overloaded {
             [&](SemanticExpression& value) noexcept { return std::move(value); },
             [&](PlaceExpression& place) noexcept {
@@ -69,8 +69,7 @@ auto BodyElaborator::take_built(BuiltExpression& expression, Span span) noexcept
                 return result;
             },
 
-        },
-        built.storage
+        }
     );
     return result;
 }
@@ -122,7 +121,7 @@ auto BodyElaborator::append_statement(
             add(*child.result);
         }
     };
-    std::visit(
+    value.visit(
         Overloaded {
             [&](const SemReturn& node) noexcept {
                 if (node.value.has_value()) {
@@ -164,8 +163,7 @@ auto BodyElaborator::append_statement(
                 add_region(*node.body);
             },
             [&](const OwnedSemanticRegion& node) noexcept { add_region(*node); },
-        },
-        value
+        }
     );
     destination.failures = BodyFailures(
         draft().add_union_failure_term({destination.failures.term(), statement_failures})

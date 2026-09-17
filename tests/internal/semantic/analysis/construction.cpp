@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.construction;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :diagnostics.sink;
@@ -19,6 +18,7 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
@@ -36,9 +36,9 @@ auto with_catalog(std::string source_text, Action action) noexcept -> void {
     auto path = CanonicalModulePath::from_value("construction");
     REQUIRE(path.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {.source_id = *source, .module_path = std::move(*path)},
+        SourceModuleInput {.source_id = *source, .module_path = std::move(*path)},
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     auto diagnostics = DiagnosticSink();
     auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);

@@ -263,6 +263,8 @@ operations, constant `str.len()` and `str.is_empty()`, and payload-case
 construction whose payloads are all constant. Direct interpolation within the
 supported builtin subset, pure String construction and text queries, and direct
 calls to constant functions with constant arguments can also produce a constant.
+Fallible calls require explicit `?`; an actual failure escaping the required
+root produces a diagnostic, while successful results may form constants.
 Owning text can be passed between these expressions; only the completed
 initializer freezes its result to `str`. Fixed-array literals, struct
 construction, indexing, and field access also produce constants for the
@@ -287,10 +289,12 @@ constant checking of its initializer: a provably overflowing literal operation
 is rejected even in a `let` initializer.
 
 Floating literals, supported casts, and equality can supply constant facts.
-General floating arithmetic and ordering do not supply constant facts; for
-example, `const sum = 1.0 + 2.0;` is rejected although the same operation may
-initialize a runtime binding. Negation of a numeric literal is normalized with
-its sign during literal checking, including through grouping parentheses.
+Required constant execution supports floating arithmetic and ordering; for
+example, `const sum = 1.0 + 2.0;` evaluates to `3.0`. Ordinary runtime floating
+arithmetic and ordering do not acquire optional constant facts from host execution;
+they retain the target's native operations. Negation of a numeric literal is
+normalized with its sign during literal checking, including through grouping
+parentheses.
 Thus `-(2147483648)` is a valid `i32` minimum even though the positive literal
 alone is out of range.
 
@@ -349,6 +353,16 @@ operations. The language does not supply a rounding-mode control or a separate
 floating exception mechanism. Native floating results depend on the selected
 C++ compiler and floating environment. Floating division follows those native
 operations, including their handling of zero divisors.
+
+Required constant execution and interpretation perform each floating operation
+using the compiler host's native `float` or `double` environment. They support
+negation, addition, subtraction, multiplication, division, comparisons, and the
+ordinary admitted numeric casts. Signed zero, infinities, and NaNs are values;
+floating division by zero does not use the integer divide-by-zero diagnostic.
+Frozen results preserve their representation when reconstructed in generated C++.
+Results can differ from runtime execution under different target settings,
+rounding modes, or optimization choices. Target-specific evaluation is not
+implemented.
 
 ### Read-only slices
 
@@ -930,8 +944,8 @@ const fn decorate(value: String) -> String => f"[{value}]";
 const decorated = decorate(label(3)); // "[000102]"
 ```
 
-Parameters use Read or Take access and have builtin integer, `bool`, `char`,
-`str`, `String`, integer ranges, or supported fixed-array and struct types. Results
+Parameters use Read or Take access and have builtin numeric, `bool`, `char`,
+`str`, `String`, integer ranges, or supported fixed-array, struct and enum types. Results
 use these types or `void`; a void result cannot initialize a constant. Ordinary
 result annotation and inference rules apply.
 The entry function and `import(cpp)` functions cannot be `const fn`.
@@ -941,8 +955,8 @@ The admitted operations are supported scalar arithmetic, comparisons, logical
 operations and casts; local initialization, assignment and Take; `if`, `match`,
 `while`, C-style loops, integer ranges and fixed-array range loops;
 `return`, `break` and `continue`;
-and direct calls to other constant functions. Match supports builtin subjects
-with literal, integer range, binding, wildcard and or patterns, including guards.
+and direct calls to other constant functions. Match supports builtin and enum subjects
+with literal, integer range, enum-case, binding, wildcard and or patterns, including guards.
 Recursion is allowed when signatures and bodies can be completed without a
 construction dependency cycle.
 
@@ -950,17 +964,24 @@ Text operations include `String::new`, `String::from_str`, the equivalent
 `str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
 `push`, `clear`, and interpolation. Constant formatting accepts default integer, bool, char and
 text formatting, plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with
-decimal width and optional zero padding. Supported dynamic width expressions
-are evaluated before formatting. Other format specifications cannot be executed
-as constants, even if valid for runtime formatting.
+decimal width and optional zero padding. Floating formatting and printing use
+native standard-library conversion for f32/f64. Floating specifications accept
+alignment, Unicode fill, sign, alternate form, zero padding, width, precision,
+and `a/A/e/E/f/F/g/G` presentations, without locale-dependent `L` formatting.
+Dynamic integer widths and floating widths/precisions evaluate before formatting;
+their values must be nonnegative integers. Width, precision, and output bytes are
+bounded by the constant text budget. Required constant execution reports invalid
+or unsupported specifications instead of deferring them to runtime.
 
 Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
 Structs support positional and named construction, field access and assignment,
 equality, independent copies, whole-binding Take, and parameters and results.
-Fields and array elements may be integers, integer ranges, `bool`, `char`, `str`,
-or recursively supported fixed arrays and structs. Construction evaluates
+Enums support case construction, payload matching, equality, copies, Take, and
+parameters and results. Fields, array elements and enum payloads may be numeric
+values, integer ranges, `bool`, `char`, `str`, `String`, or recursively supported
+fixed arrays, structs and enums. Construction evaluates
 initializers in source order. Freezing preserves nominal identity, array extents, and every field and
 element type; it does not convert owning String fields or elements to `str`.
 Empty array literals require an expected element type.
@@ -980,10 +1001,24 @@ Only the completed constant initializer freezes an owning result into immutable
 `str` bytes. Consequently `const text = label(3)` has type `str`, and an explicit
 `String` annotation on that constant is invalid.
 
-Constant execution rejects native operations,
-Write parameters or arguments, typed failures, `throw`, `try` and propagation,
-floating types and operations, enums, pointers, slices, callable
-values and indirect calls. Text byte or character iteration and unchecked text
+Typed failure contracts use the ordinary language rules in constant functions:
+`throw` creates a typed payload, `?` propagates it, and `try/catch` matches its type
+and payload. Guards, alternatives, nested recovery and `rethrow` work with the
+same execution machinery as calls and control flow. A catch binding can be taken
+without consuming the original failure retained for `rethrow`. Failure payloads
+can contain owning text and supported aggregates.
+
+At a required constant initializer or array extent, `fallible()?` explicitly
+propagates to the evaluation entry: a successful result can form the constant;
+an escaping failure produces a diagnostic at its throw site with call context.
+An unmarked fallible call remains invalid even when it succeeds during evaluation,
+and `?` on a failure-free expression remains invalid. Inferred contracts are
+validated by the same failure solver as ordinary bodies. `const test` retains its
+static rule that no typed failure may escape the test. Evaluator errors, exhausted
+budgets and failed test assertions cannot be caught as typed failures.
+
+The current constant executor rejects native operations,
+Write parameters or arguments, pointers, slices, callable values and indirect calls. Text byte or character iteration and unchecked text
 construction are also excluded. Local mutable scalar, String, and supported
 aggregate storage is allowed. Ordinary type, access, ownership and lifetime
 validation still applies; storing a text view in a struct does not prolong its backing.

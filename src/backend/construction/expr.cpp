@@ -2,7 +2,12 @@ module carven:backend.construction.expr.impl;
 
 import :backend.construction.builder;
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.evaluation;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -20,7 +25,7 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
     const auto id =
         ConstructionExpressionID(body.id(), static_cast<std::uint32_t>(expressions.size()));
     expressions.emplace_back();
-    auto value = std::visit(
+    auto value = source.value.visit(
         Overloaded {
             [&](const SemTestReport& item) noexcept -> ConstructionExpressionValue {
                 auto condition = std::optional<ConstructionExpressionID>();
@@ -152,7 +157,7 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                             continue;
                         }
                         alternatives.push_back(
-                            {.pattern = std::visit(
+                            {.pattern = alternative.pattern.visit(
                                  Overloaded {
                                      [](CatchAllPattern value) static noexcept
                                          -> decltype(ConstructionCatchAlternative::pattern) {
@@ -165,8 +170,7 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
                                              .pattern_id = value.inner
                                          };
                                      }
-                                 },
-                                 alternative.pattern
+                                 }
                              )}
                         );
                     }
@@ -211,8 +215,7 @@ auto BodyConstructionBuilder::expression(const SemanticExpression& source) noexc
             [](const SemPropagate&) static noexcept -> ConstructionExpressionValue {
                 invariant_violation("construction propagation was not forwarded");
             }
-        },
-        source.value
+        }
     );
     const auto rule = evaluation_rule(semantic, source);
     auto execution = rule.action == EvaluationAction::Required;

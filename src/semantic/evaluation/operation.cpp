@@ -78,139 +78,133 @@ auto constant_pointer_narrows(
 
 auto validate_constant_value(const ConstantValueReader& values, const ConstantValue& value) noexcept
     -> void {
-    std::visit(
-        [&](const auto& item) noexcept {
-            using Item = std::remove_cvref_t<decltype(item)>;
-            if constexpr (std::same_as<Item, StringConstant>) {
-                if (!values.owns(item.value)) {
-                    invariant_violation("evaluator received a foreign spelling");
-                }
-            } else if constexpr (std::same_as<Item, NumericEnumConstant>) {
-                if (item.enum_case.owner() != values.identity()) {
-                    invariant_violation("evaluator received a foreign enum case");
-                }
-            } else if constexpr (std::same_as<Item, PayloadEnumConstant>) {
-                if (item.enum_case.owner() != values.identity()) {
-                    invariant_violation("evaluator received a foreign enum case");
-                }
-                for (const auto child : item.payload) {
-                    static_cast<void>(values.constant(child));
-                }
-            } else if constexpr (std::same_as<Item, StructConstant>) {
-                for (const auto child : item.fields) {
-                    static_cast<void>(values.constant(child));
-                }
-            } else if constexpr (std::same_as<Item, ArrayConstant>
-                                 || std::same_as<Item, SliceConstant>) {
-                for (const auto child : item.elements) {
-                    static_cast<void>(values.constant(child));
-                }
-            } else {
-                static_assert(
-                    std::same_as<Item, RangeConstant>
-                        || std::same_as<Item, IntegerConstant>
-                        || std::same_as<Item, BooleanConstant>
-                        || std::same_as<Item, NullPointerConstant>
-                        || std::same_as<Item, F32Constant>
-                        || std::same_as<Item, F64Constant>
-                        || std::same_as<Item, CharacterConstant>,
-                    "unhandled value validation"
-                );
+    value.visit([&](const auto& item) noexcept {
+        using Item = std::remove_cvref_t<decltype(item)>;
+        if constexpr (std::same_as<Item, StringConstant>) {
+            if (!values.owns(item.value)) {
+                invariant_violation("evaluator received a foreign spelling");
             }
-        },
-        value
-    );
+        } else if constexpr (std::same_as<Item, NumericEnumConstant>) {
+            if (item.enum_case.owner() != values.identity()) {
+                invariant_violation("evaluator received a foreign enum case");
+            }
+        } else if constexpr (std::same_as<Item, PayloadEnumConstant>) {
+            if (item.enum_case.owner() != values.identity()) {
+                invariant_violation("evaluator received a foreign enum case");
+            }
+            for (const auto child : item.payload) {
+                static_cast<void>(values.constant(child));
+            }
+        } else if constexpr (std::same_as<Item, StructConstant>) {
+            for (const auto child : item.fields) {
+                static_cast<void>(values.constant(child));
+            }
+        } else if constexpr (std::same_as<Item, ArrayConstant>
+                             || std::same_as<Item, SliceConstant>) {
+            for (const auto child : item.elements) {
+                static_cast<void>(values.constant(child));
+            }
+        } else {
+            static_assert(
+                std::same_as<Item, RangeConstant>
+                    || std::same_as<Item, IntegerConstant>
+                    || std::same_as<Item, BooleanConstant>
+                    || std::same_as<Item, NullPointerConstant>
+                    || std::same_as<Item, F32Constant>
+                    || std::same_as<Item, F64Constant>
+                    || std::same_as<Item, CharacterConstant>,
+                "unhandled value validation"
+            );
+        }
+    });
 }
 
 auto validate_constant_fact(const ExecutionValueAccess& values, const ConstantFact& fact) noexcept
     -> void {
     const auto type = values.type_copy(fact.type);
     validate_constant_value(values, fact.value);
-    const auto matches = std::visit(
-        [&](const auto& value) noexcept -> bool {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, RangeConstant>) {
-                const auto* range = std::get_if<RangeTypeValue>(&type.value);
-                if (range == nullptr) {
-                    return false;
-                }
-                const auto element = values.type_copy(range->element);
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&element.value);
-                return builtin != nullptr
-                    && builtin_is_integer(builtin->kind)
-                    && integer_constant_fits(value.begin, builtin->kind)
-                    && integer_constant_fits(value.end, builtin->kind);
-            } else if constexpr (std::same_as<Value, IntegerConstant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr
-                    && builtin_is_integer(builtin->kind)
-                    && integer_constant_fits(value, builtin->kind);
-            } else if constexpr (std::same_as<Value, NullPointerConstant>) {
-                return std::holds_alternative<PointerTypeValue>(type.value);
-            } else if constexpr (std::same_as<Value, BooleanConstant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr && builtin->kind == BuiltinType::Bool;
-            } else if constexpr (std::same_as<Value, StringConstant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr && builtin->kind == BuiltinType::Str;
-            } else if constexpr (std::same_as<Value, F32Constant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr && builtin->kind == BuiltinType::F32;
-            } else if constexpr (std::same_as<Value, F64Constant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr && builtin->kind == BuiltinType::F64;
-            } else if constexpr (std::same_as<Value, CharacterConstant>) {
-                const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-                return builtin != nullptr && builtin->kind == BuiltinType::Char;
-            } else if constexpr (std::same_as<Value, NumericEnumConstant>
-                                 || std::same_as<Value, PayloadEnumConstant>) {
-                return std::holds_alternative<EnumTypeValue>(type.value);
-            } else if constexpr (std::same_as<Value, StructConstant>) {
-                const auto* structure = std::get_if<StructTypeValue>(&type.value);
-                if (structure == nullptr) {
-                    return false;
-                }
-                const auto fields = values.struct_field_types(structure->structure);
-                if (!fields || fields->size() != value.fields.size()) {
-                    return false;
-                }
-                for (const auto [child, expected] : std::views::zip(value.fields, *fields)) {
-                    if (values.constant(child).type != expected) {
-                        return false;
-                    }
-                }
-                return true;
-            } else if constexpr (std::same_as<Value, ArrayConstant>) {
-                const auto* array = std::get_if<ArrayTypeValue>(&type.value);
-                if (array == nullptr || array->extent != value.elements.size()) {
-                    return false;
-                }
-                for (const auto child : value.elements) {
-                    if (values.constant(child).type != array->element) {
-                        return false;
-                    }
-                }
-                return true;
-            } else if constexpr (std::same_as<Value, SliceConstant>) {
-                const auto* slice = std::get_if<SliceTypeValue>(&type.value);
-                if (slice == nullptr) {
-                    return false;
-                }
-                for (const auto child : value.elements) {
-                    if (values.constant(child).type != slice->element) {
-                        return false;
-                    }
-                }
-                return true;
-            } else {
-                static_assert(
-                    std::same_as<Value, void>,
-                    "new value alternative requires type validation"
-                );
+    const auto matches = fact.value.visit([&](const auto& value) noexcept -> bool {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, RangeConstant>) {
+            const auto* range = std::get_if<RangeTypeValue>(&type.value);
+            if (range == nullptr) {
+                return false;
             }
-        },
-        fact.value
-    );
+            const auto element = values.type_copy(range->element);
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&element.value);
+            return builtin != nullptr
+                && builtin_is_integer(builtin->kind)
+                && integer_constant_fits(value.begin, builtin->kind)
+                && integer_constant_fits(value.end, builtin->kind);
+        } else if constexpr (std::same_as<Value, IntegerConstant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr
+                && builtin_is_integer(builtin->kind)
+                && integer_constant_fits(value, builtin->kind);
+        } else if constexpr (std::same_as<Value, NullPointerConstant>) {
+            return std::holds_alternative<PointerTypeValue>(type.value);
+        } else if constexpr (std::same_as<Value, BooleanConstant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr && builtin->kind == BuiltinType::Bool;
+        } else if constexpr (std::same_as<Value, StringConstant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr && builtin->kind == BuiltinType::Str;
+        } else if constexpr (std::same_as<Value, F32Constant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr && builtin->kind == BuiltinType::F32;
+        } else if constexpr (std::same_as<Value, F64Constant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr && builtin->kind == BuiltinType::F64;
+        } else if constexpr (std::same_as<Value, CharacterConstant>) {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+            return builtin != nullptr && builtin->kind == BuiltinType::Char;
+        } else if constexpr (std::same_as<Value, NumericEnumConstant>
+                             || std::same_as<Value, PayloadEnumConstant>) {
+            return std::holds_alternative<EnumTypeValue>(type.value);
+        } else if constexpr (std::same_as<Value, StructConstant>) {
+            const auto* structure = std::get_if<StructTypeValue>(&type.value);
+            if (structure == nullptr) {
+                return false;
+            }
+            const auto fields = values.struct_field_types(structure->structure);
+            if (!fields || fields->size() != value.fields.size()) {
+                return false;
+            }
+            for (const auto [child, expected] : std::views::zip(value.fields, *fields)) {
+                if (values.constant(child).type != expected) {
+                    return false;
+                }
+            }
+            return true;
+        } else if constexpr (std::same_as<Value, ArrayConstant>) {
+            const auto* array = std::get_if<ArrayTypeValue>(&type.value);
+            if (array == nullptr || array->extent != value.elements.size()) {
+                return false;
+            }
+            for (const auto child : value.elements) {
+                if (values.constant(child).type != array->element) {
+                    return false;
+                }
+            }
+            return true;
+        } else if constexpr (std::same_as<Value, SliceConstant>) {
+            const auto* slice = std::get_if<SliceTypeValue>(&type.value);
+            if (slice == nullptr) {
+                return false;
+            }
+            for (const auto child : value.elements) {
+                if (values.constant(child).type != slice->element) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            static_assert(
+                std::same_as<Value, void>,
+                "new value alternative requires type validation"
+            );
+        }
+    });
     if (!matches) {
         invariant_violation("evaluator received a value with a mismatched type");
     }
@@ -314,6 +308,39 @@ auto finish_constant_integer(
         return std::unexpected(ConstantEvaluationFailure::IntegerOverflow);
     }
     return constant_integer(result, value);
+}
+
+template<typename Floating>
+auto evaluate_floating(
+    const ExecutionValueAccess& values,
+    BinaryOperator operation,
+    Floating left,
+    Floating right,
+    TypeID result,
+    TypeID operand_type
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+    const auto finish =
+        [&](auto value) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+        if (result != operand_type) {
+            return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+        }
+        return ConstantFact {.type = result, .value = Floating {.value = value}};
+    };
+    switch (operation) {
+        case BinaryOperator::Add:      return finish(left.value + right.value);
+        case BinaryOperator::Subtract: return finish(left.value - right.value);
+        case BinaryOperator::Multiply: return finish(left.value * right.value);
+        case BinaryOperator::Divide:   return finish(left.value / right.value);
+        case BinaryOperator::Less:
+            return constant_boolean(values, result, left.value < right.value);
+        case BinaryOperator::LessEqual:
+            return constant_boolean(values, result, left.value <= right.value);
+        case BinaryOperator::Greater:
+            return constant_boolean(values, result, left.value > right.value);
+        case BinaryOperator::GreaterEqual:
+            return constant_boolean(values, result, left.value >= right.value);
+        default: return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
 }
 
 auto evaluate_signed_integer(
@@ -506,57 +533,53 @@ auto constant_value_equal(
     if (left.index() != right.index()) {
         return false;
     }
-    return std::visit(
-        [&](const auto& left_value) noexcept -> bool {
-            using Value = std::remove_cvref_t<decltype(left_value)>;
-            const auto& right_value = std::get<Value>(right);
-            if constexpr (std::same_as<Value, PayloadEnumConstant>) {
-                if (left_value.enum_case != right_value.enum_case
-                    || left_value.payload.size() != right_value.payload.size()) {
-                    return false;
-                }
-                for (const auto [left_child, right_child] :
-                     std::views::zip(left_value.payload, right_value.payload)) {
-                    const auto& left_fact = values.constant(left_child);
-                    const auto& right_fact = values.constant(right_child);
-                    if (left_fact.type != right_fact.type
-                        || !constant_value_equal(values, left_fact.value, right_fact.value)) {
-                        return false;
-                    }
-                }
-                return true;
-            } else if constexpr (std::same_as<Value, ArrayConstant>
-                                 || std::same_as<Value, StructConstant>) {
-                const auto children =
-                    [](const Value& value) static noexcept -> std::span<const ConstantID> {
-                    if constexpr (std::same_as<Value, StructConstant>) {
-                        return value.fields;
-                    } else {
-                        return value.elements;
-                    }
-                };
-                if (children(left_value).size() != children(right_value).size()) {
-                    return false;
-                }
-                for (const auto [left_child, right_child] :
-                     std::views::zip(children(left_value), children(right_value))) {
-                    const auto& left_fact = values.constant(left_child);
-                    const auto& right_fact = values.constant(right_child);
-                    if (left_fact.type != right_fact.type
-                        || !constant_value_equal(values, left_fact.value, right_fact.value)) {
-                        return false;
-                    }
-                }
-                return true;
-            } else if constexpr (std::same_as<Value, F32Constant>
-                                 || std::same_as<Value, F64Constant>) {
-                return left_value.value == right_value.value;
-            } else {
-                return left_value == right_value;
+    return left.visit([&](const auto& left_value) noexcept -> bool {
+        using Value = std::remove_cvref_t<decltype(left_value)>;
+        const auto& right_value = std::get<Value>(right);
+        if constexpr (std::same_as<Value, PayloadEnumConstant>) {
+            if (left_value.enum_case != right_value.enum_case
+                || left_value.payload.size() != right_value.payload.size()) {
+                return false;
             }
-        },
-        left
-    );
+            for (const auto [left_child, right_child] :
+                 std::views::zip(left_value.payload, right_value.payload)) {
+                const auto& left_fact = values.constant(left_child);
+                const auto& right_fact = values.constant(right_child);
+                if (left_fact.type != right_fact.type
+                    || !constant_value_equal(values, left_fact.value, right_fact.value)) {
+                    return false;
+                }
+            }
+            return true;
+        } else if constexpr (std::same_as<Value, ArrayConstant>
+                             || std::same_as<Value, StructConstant>) {
+            const auto children =
+                [](const Value& value) static noexcept -> std::span<const ConstantID> {
+                if constexpr (std::same_as<Value, StructConstant>) {
+                    return value.fields;
+                } else {
+                    return value.elements;
+                }
+            };
+            if (children(left_value).size() != children(right_value).size()) {
+                return false;
+            }
+            for (const auto [left_child, right_child] :
+                 std::views::zip(children(left_value), children(right_value))) {
+                const auto& left_fact = values.constant(left_child);
+                const auto& right_fact = values.constant(right_child);
+                if (left_fact.type != right_fact.type
+                    || !constant_value_equal(values, left_fact.value, right_fact.value)) {
+                    return false;
+                }
+            }
+            return true;
+        } else if constexpr (std::same_as<Value, F32Constant> || std::same_as<Value, F64Constant>) {
+            return left_value.value == right_value.value;
+        } else {
+            return left_value == right_value;
+        }
+    });
 }
 
 auto evaluate_unary_constant_value(
@@ -576,6 +599,24 @@ auto evaluate_unary_constant_value(
             }
             break;
         case UnaryOperator::Negate:
+            if (const auto* floating = std::get_if<F32Constant>(&operand.value)) {
+                if (result != operand.type) {
+                    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                }
+                return ConstantFact {
+                    .type = result,
+                    .value = F32Constant {.value = -floating->value}
+                };
+            }
+            if (const auto* floating = std::get_if<F64Constant>(&operand.value)) {
+                if (result != operand.type) {
+                    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                }
+                return ConstantFact {
+                    .type = result,
+                    .value = F64Constant {.value = -floating->value}
+                };
+            }
             if (const auto* integer = std::get_if<IntegerConstant>(&operand.value)) {
                 const auto type = builtin_type(values, operand.type);
                 if (type.has_value() && builtin_is_integer(*type)) {
@@ -650,6 +691,20 @@ auto evaluate_binary_constant_value(
             result,
             operation == BinaryOperator::Equal ? equal : !equal
         );
+    }
+    if (const auto* floating = std::get_if<F32Constant>(&left.value)) {
+        const auto* other = std::get_if<F32Constant>(&right.value);
+        if (other == nullptr) {
+            return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+        }
+        return evaluate_floating(values, operation, *floating, *other, result, left.type);
+    }
+    if (const auto* floating = std::get_if<F64Constant>(&left.value)) {
+        const auto* other = std::get_if<F64Constant>(&right.value);
+        if (other == nullptr) {
+            return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+        }
+        return evaluate_floating(values, operation, *floating, *other, result, left.type);
     }
     if (const auto* left_integer = std::get_if<IntegerConstant>(&left.value)) {
         const auto* right_integer = std::get_if<IntegerConstant>(&right.value);
@@ -900,6 +955,11 @@ auto fold_unary_constant(
     if (!fact.has_value()) {
         return std::unexpected(fact.error());
     }
+    // Runtime floating expressions retain the native target's execution environment.
+    if (std::holds_alternative<F32Constant>((*fact)->value)
+        || std::holds_alternative<F64Constant>((*fact)->value)) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
     return evaluate_unary_constant_value(values, operation, **fact, result);
 }
 
@@ -917,6 +977,12 @@ auto fold_binary_constant(
     const auto right_fact = load_constant_fact(values, right);
     if (!right_fact.has_value()) {
         return std::unexpected(right_fact.error());
+    }
+    if (operation != BinaryOperator::Equal
+        && operation != BinaryOperator::NotEqual
+        && (std::holds_alternative<F32Constant>((*left_fact)->value)
+            || std::holds_alternative<F64Constant>((*left_fact)->value))) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
     return evaluate_binary_constant_value(values, operation, **left_fact, **right_fact, result);
 }

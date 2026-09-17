@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.fixture;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
@@ -14,6 +13,7 @@ import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import std;
@@ -28,11 +28,11 @@ auto analyze_test_errors(std::string source_text) noexcept -> Diagnostics {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("analysis.cv", std::move(source_text));
     REQUIRE(source_id.has_value());
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = *source_id,
         .module_path = semantic_test_module_path(),
     }};
-    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     if (analyzed.has_value()) {
@@ -45,11 +45,11 @@ auto analyze_test_program(std::string source_text) noexcept -> SemIRProgram {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("analysis.cv", std::move(source_text));
     REQUIRE(source_id.has_value());
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = *source_id,
         .module_path = semantic_test_module_path(),
     }};
-    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     REQUIRE(analyzed.has_value());

@@ -1,4 +1,4 @@
-import .validation using {UTF8Error, validator, push, error};
+import .validation using { UTF8Error, validator, push, error };
 
 export struct UTF8Encoded {
     bytes: [u8; 4],

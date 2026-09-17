@@ -21,7 +21,18 @@ struct ExecutionDependencyFailure final {};
 using ExecutionCallFailure = std::variant<ExecutionDiagnostic, ExecutionDependencyFailure>;
 
 // Failure has already been delivered through the execution context.
-struct ExecutionFailure final {};
+struct ExecutionStopped final {};
+
+// Immutable owned payload survives unwinding and rejected catch attempts without
+// unaccounted aggregate copies. Catch bindings obtain their own execution values.
+struct ExecutionSourceFailure final {
+    TypeID type;
+    std::shared_ptr<const ExecutionValue> payload;
+    ProgramOriginID origin;
+    std::vector<ProgramOriginID> calls;
+};
+
+using ExecutionFailure = std::variant<ExecutionStopped, ExecutionSourceFailure>;
 
 template<typename Value>
 using ExecutionResult = std::expected<Value, ExecutionFailure>;
@@ -38,18 +49,14 @@ public:
 
     template<typename Visitor>
     auto visit_pattern(PatternID id, Visitor visitor) const noexcept {
-        return std::visit(
-            [&](const auto* value) noexcept {
-                if constexpr (std::same_as<
-                                  std::remove_cvref_t<decltype(*value)>,
-                                  StructuredBodyDraft>) {
-                    return visitor(value->patterns.get(id));
-                } else {
-                    return visitor(value->pattern(id));
-                }
-            },
-            body
-        );
+        return body.visit([&](const auto* value) noexcept {
+            if constexpr (std::
+                              same_as<std::remove_cvref_t<decltype(*value)>, StructuredBodyDraft>) {
+                return visitor(value->patterns.get(id));
+            } else {
+                return visitor(value->pattern(id));
+            }
+        });
     }
 
 private:

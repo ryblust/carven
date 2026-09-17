@@ -13,8 +13,15 @@ import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
 import :backend.target;
+import :semantic.semir.body;
+import :semantic.semir.evaluation;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.table;
 import :semantic.semir.traversal;
-import :semantic.semir;
+import :semantic.semir.type;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
@@ -842,4 +849,109 @@ TEST_CASE("Generation: local storage follows retained access rather than source 
         }
         CHECK(query.owners == 1uz);
     }
+}
+
+TEST_CASE("Generation: discarded operations use their native result contract") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            struct Record { value: i32, }
+            enum Tag { First, Second, }
+            fn scalar() -> i32 => 1;
+            fn record() -> Record => Record { value: 1 };
+            fn tag() -> Tag => Tag::First;
+            fn effect() -> bool => true;
+            fn discard(value: f64, divisor: i32) {
+                scalar();
+                record();
+                tag();
+                1 / divisor;
+                value + 1.0;
+                if effect() && false { scalar(); }
+                if false && effect() { scalar(); }
+            }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
+    );
+
+    struct Query final {
+        std::flat_map<std::string, std::size_t> calls;
+        std::size_t checked_divisions = 0uz;
+        std::size_t explicit_discards = 0uz;
+        std::size_t branches = 0uz;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            branches += std::holds_alternative<TargetIfStmt>(statement.value);
+            if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
+                ++explicit_discards;
+                CHECK(std::holds_alternative<TargetBinaryExpr>(discard->expression.value));
+            }
+            if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
+                const auto* call = std::get_if<TargetCallExpr>(&expression->expression.value);
+                REQUIRE(call != nullptr);
+                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    ++calls[std::string(name->name.components().back().spelling())];
+                } else if (const auto* intrinsic =
+                               std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+                    checked_divisions += intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
+                }
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(
+        query.calls
+        == std::flat_map<std::string, std::size_t> {
+            {"scalar", 1uz},
+            {"record", 1uz},
+            {"tag", 1uz},
+            {"effect", 1uz}
+        }
+    );
+    CHECK(query.checked_divisions == 1uz);
+    CHECK(query.explicit_discards == 1uz);
+    CHECK(query.branches == 0uz);
+}
+
+TEST_CASE("Generation: boolean expressions use native short circuit without result storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn both(left: bool, right: bool) -> bool => left && right;
+            fn either(left: bool, right: bool) -> bool => left || right;
+            fn nested(a: bool, b: bool, c: bool) -> bool => a && (b || c);
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("native_short_circuit")}
+    );
+
+    struct Query final {
+        std::size_t logical = 0uz;
+
+        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
+            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
+                logical += binary->op == TargetBinaryOperator::LogicalAnd
+                    || binary->op == TargetBinaryOperator::LogicalOr;
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.logical == 4uz);
 }

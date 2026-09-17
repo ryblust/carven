@@ -1,4 +1,4 @@
-import .expression_bodies using {expression_closure, expression_nested};
+import .expression_bodies using { expression_closure, expression_nested };
 
 fn imported_closure() => expression_closure(10);
 

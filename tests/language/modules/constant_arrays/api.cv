@@ -1,4 +1,4 @@
-import .values using {advance, seed,};
+import .values using { advance, seed };
 
 export const published: [i32; 3] = answer();
 

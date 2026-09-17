@@ -30,6 +30,7 @@ struct ExecutionFrame final {
     std::optional<ExecutionBody> body;
     // Whole-binding assignment establishes a live value, including after Take.
     std::vector<ExecutionSlot> slots;
+    std::vector<ExecutionSourceFailure> caught;
 };
 
 using ExecutionOperand = std::variant<ExecutionValue, ExecutionPlace>;

@@ -134,10 +134,7 @@ TEST_CASE(
                     integer
     )
                     .has_value());
-    for (const auto type :
-         {std::optional(BuiltinType::Void),
-          std::optional(BuiltinType::F64),
-          std::optional<BuiltinType>()}) {
+    for (const auto type : {std::optional(BuiltinType::Void), std::optional<BuiltinType>()}) {
         const auto types = std::array {type};
         CHECK_FALSE(
             classify_writer_format(FormatSpec {.parts = {format_field(0uz)}}, types).has_value()
@@ -178,6 +175,36 @@ TEST_CASE(
         CHECK_FALSE(classify_writer_format(
                         FormatSpec {.parts = {format_field(0uz, {format_text(">8")})}},
                         operand
+        )
+                        .has_value());
+    }
+}
+
+TEST_CASE(
+    "Floating formatting: direct policies bound output and delegate decorated or large formats"
+) {
+    const auto types = std::array<std::optional<BuiltinType>, 1uz> {BuiltinType::F64};
+    for (const auto specification : {"", "f", ".2f", ".4e", ".17g", ".0", ".256f"}) {
+        CAPTURE(specification);
+        const auto format = FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}};
+        const auto prepared = classify_writer_format(format, types);
+        REQUIRE(prepared.has_value());
+        for (auto value :
+             {0.0,
+              -0.0,
+              std::numeric_limits<double>::max(),
+              std::numeric_limits<double>::denorm_min(),
+              std::numeric_limits<double>::infinity()}) {
+            const auto output =
+                std::vformat(std::format("{{:{}}}", specification), std::make_format_args(value));
+            CHECK(output.size() >= prepared->minimum_size);
+            CHECK(output.size() <= prepared->maximum_size);
+        }
+    }
+    for (const auto specification : {".257f", "+.2f", ">12.2f", "a", "L"}) {
+        CHECK_FALSE(classify_writer_format(
+                        FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}},
+                        types
         )
                         .has_value());
     }

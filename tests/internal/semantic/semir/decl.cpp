@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.decl;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.body.builder;
@@ -19,6 +18,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;

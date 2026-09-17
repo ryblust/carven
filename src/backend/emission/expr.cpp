@@ -70,7 +70,7 @@ auto binary_spelling(TargetBinaryOperator op) noexcept -> std::string_view {
 }
 
 auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string {
-    return std::visit(
+    return literal.visit(
         Overloaded {
             [](bool value) static noexcept { return std::string {value ? "true" : "false"}; },
             [](const TargetIntegerLiteral& value) static noexcept {
@@ -92,7 +92,7 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
                 return result;
             },
             [](const TargetFloatLiteral& value) static noexcept {
-                return std::visit(
+                return value.value.visit(
                     Overloaded {
                         [](float number) static noexcept {
                             auto result = std::format("{:.9g}", number);
@@ -109,8 +109,7 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
                             }
                             return result;
                         },
-                    },
-                    value.value
+                    }
                 );
             },
             [](const TargetCharacterLiteral& value) static noexcept {
@@ -128,13 +127,12 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
                 }
                 return result;
             },
-        },
-        literal
+        }
     );
 }
 
 auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrecedence {
-    return std::visit(
+    return expression.value.visit(
         Overloaded {
             [](const TargetBinaryExpr& value) static noexcept { return precedence(value.op); },
             [](const TargetConditionalExpr&) static noexcept {
@@ -159,8 +157,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
                 );
                 return TargetPrecedence::Primary;
             },
-        },
-        expression.value
+        }
     );
 }
 
@@ -171,7 +168,7 @@ auto TargetRenderer::render_expression(
     TargetPrecedence parent
 ) noexcept -> LayoutNodeID {
     const auto own_precedence = expression_precedence(expression);
-    auto rendered = std::visit(
+    auto rendered = expression.value.visit(
         Overloaded {
             [&](const TargetNameExpr& name) noexcept { return this->render_name(name.name); },
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
@@ -222,22 +219,17 @@ auto TargetRenderer::render_expression(
             [&](const TargetCallExpr& call) noexcept {
                 auto templates = std::vector<LayoutNodeID> {};
                 for (const auto& argument : call.template_arguments) {
-                    templates.push_back(
-                        std::visit(
-                            [&](const auto& value) noexcept {
-                                if constexpr (std::same_as<
-                                                  std::remove_cvref_t<decltype(value)>,
-                                                  TargetTypeID>) {
-                                    return render_type(value);
-                                } else {
-                                    return render_expression(
-                                        TargetExpr {.value = TargetLiteralExpr {.value = value}}
-                                    );
-                                }
-                            },
-                            argument
-                        )
-                    );
+                    templates.push_back(argument.visit([&](const auto& value) noexcept {
+                        if constexpr (std::same_as<
+                                          std::remove_cvref_t<decltype(value)>,
+                                          TargetTypeID>) {
+                            return render_type(value);
+                        } else {
+                            return render_expression(
+                                TargetExpr {.value = TargetLiteralExpr {.value = value}}
+                            );
+                        }
+                    }));
                 }
                 auto arguments = std::vector<LayoutNodeID> {};
                 for (const auto& argument : call.arguments) {
@@ -266,7 +258,7 @@ auto TargetRenderer::render_expression(
             },
             [&](const TargetConstructionExpr& construction) noexcept {
                 auto values = std::vector<LayoutNodeID> {};
-                std::visit(
+                construction.initializer.visit(
                     Overloaded {
                         [](const std::monostate&) static noexcept {},
                         [&](const std::vector<TargetExpr>& positional) noexcept {
@@ -284,8 +276,7 @@ auto TargetRenderer::render_expression(
                                 ));
                             }
                         },
-                    },
-                    construction.initializer
+                    }
                 );
                 return concat({render_type(construction.type), delimited_list(values, "{", "}")});
             },
@@ -297,7 +288,7 @@ auto TargetRenderer::render_expression(
                 );
             },
             [&](const TargetMemberExpr& member) noexcept {
-                const auto name = std::visit(
+                const auto name = member.name.visit(
                     Overloaded {
                         [&](const TargetIdentifier& value) noexcept {
                             return render_identifier(value);
@@ -305,8 +296,7 @@ auto TargetRenderer::render_expression(
                         [&](const TargetRawIdentifier& value) noexcept {
                             return text(value.spelling);
                         },
-                    },
-                    member.name
+                    }
                 );
                 const auto operand = render_expression(*member.operand, TargetPrecedence::Postfix);
                 const auto suffix = concat({text("."), name});
@@ -319,7 +309,7 @@ auto TargetRenderer::render_expression(
             },
             [&](const TargetScopeMemberExpr& member) noexcept {
                 const auto operand = render_expression(*member.operand, TargetPrecedence::Postfix);
-                const auto name = std::visit(
+                const auto name = member.name.visit(
                     Overloaded {
                         [&](const TargetIdentifier& value) noexcept {
                             return render_identifier(value);
@@ -327,8 +317,7 @@ auto TargetRenderer::render_expression(
                         [&](const TargetRawIdentifier& value) noexcept {
                             return text(value.spelling);
                         },
-                    },
-                    member.name
+                    }
                 );
                 const auto suffix = concat({text("::"), name});
                 return choice(
@@ -375,8 +364,7 @@ auto TargetRenderer::render_expression(
                 });
             },
 
-        },
-        expression.value
+        }
     );
     if (own_precedence < parent) {
         rendered = concat({text("("), rendered, text(")")});

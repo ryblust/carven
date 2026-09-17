@@ -139,3 +139,45 @@ TEST_CASE("Runtime Writer: saturated text upper bounds preserve available storag
     CHECK(output.as_str() == "prefix:ab");
     CHECK(output.as_str().data() == storage);
 }
+
+TEST_CASE("Writer: floating conversions preserve native formatting across precisions") {
+    const auto check = []<typename Float>(Float value) static noexcept {
+        auto output = carven::runtime::String();
+        auto writer = carven::runtime::Writer(output, 0uz, 2048uz);
+        writer.floating(value);
+        writer.append("/");
+        writer.fixed<2>(value);
+        writer.append("/");
+        writer.scientific<6>(value);
+        writer.append("/");
+        writer.general<0>(value);
+        writer.append("/");
+        writer.fixed<256>(value);
+        CHECK(
+            output.as_str()
+            == std::format("{}/{:.2f}/{:.6e}/{:.0g}/{:.256f}", value, value, value, value, value)
+        );
+    };
+    for (const auto value :
+         {0.0,
+          -0.0,
+          1.25,
+          -42.5,
+          1.0e20,
+          1.0e-12,
+          std::numeric_limits<double>::max(),
+          std::numeric_limits<double>::denorm_min(),
+          std::numeric_limits<double>::infinity(),
+          -std::numeric_limits<double>::infinity(),
+          std::numeric_limits<double>::quiet_NaN()}) {
+        check(value);
+    }
+    for (const auto value :
+         {0.0f,
+          -0.0f,
+          1.25f,
+          std::numeric_limits<float>::max(),
+          std::numeric_limits<float>::denorm_min()}) {
+        check(value);
+    }
+}

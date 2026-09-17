@@ -47,7 +47,7 @@ auto BodyElaborator::build_pattern(
             }
         );
     };
-    return std::visit(
+    return source.value.visit(
         Overloaded {
             [&](const ASTWildcardPattern&) noexcept -> AnalysisResult<BuiltPattern> {
                 return BuiltPattern {
@@ -76,8 +76,8 @@ auto BodyElaborator::build_pattern(
                 };
             },
             [&](const ASTNegativeNumberPattern& negative) noexcept -> AnalysisResult<BuiltPattern> {
-                auto normalized = std::visit(
-                    [&]<typename Numeric>(const Numeric& numeric) noexcept {
+                auto normalized =
+                    negative.value.visit([&]<typename Numeric>(const Numeric& numeric) noexcept {
                         static_assert(
                             std::same_as<Numeric, IntegerLiteralValue>
                                 || std::same_as<Numeric, FloatingLiteralValue>,
@@ -89,9 +89,7 @@ auto BodyElaborator::build_pattern(
                             type,
                             LiteralSign::Negative
                         );
-                    },
-                    negative.value
-                );
+                    });
                 if (!normalized.has_value()) {
                     const auto diagnostic = constant_evaluation_diagnostic(normalized.error());
                     return std::unexpected(fail(
@@ -459,8 +457,7 @@ auto BodyElaborator::build_pattern(
                     .irrefutable = irrefutable,
                 };
             },
-        },
-        source.value
+        }
     );
 }
 

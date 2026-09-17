@@ -1,0 +1,11 @@
+struct Failure {
+    code: i32
+}
+
+fn fail() -> i32 throw Failure {
+    throw Failure { 7 };
+}
+
+fn main() throw Failure {
+    fail()?;
+}

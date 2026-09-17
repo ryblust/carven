@@ -1,0 +1,194 @@
+struct ReadError {
+    code: i32
+}
+
+struct TextError {
+    text: String
+}
+
+enum DecodeError {
+    Empty,
+    Invalid(i32),
+    Pair(i32, i32)
+}
+
+const fn read(ok: bool) -> i32 throw ReadError {
+    if ok { return 42; }
+    throw ReadError { 7 };
+}
+
+private const fn inferred(ok: bool) -> i32 {
+    if ok { return 3; }
+    throw DecodeError::Invalid(9);
+}
+
+const fn recover(ok: bool) -> i32 {
+    return try {
+        read(ok)?
+    } catch {
+        ReadError(error) => error.code,
+    };
+}
+
+const fn decode(kind: i32) -> i32 throw DecodeError {
+    if kind == 0 { throw DecodeError::Empty; }
+    if kind == 1 { throw DecodeError::Invalid(73); }
+    throw DecodeError::Pair(1, 2);
+}
+
+const fn recover_decode(kind: i32) -> i32 {
+    return try {
+        decode(kind)?
+    } catch {
+        DecodeError(.Empty) => 11,
+        DecodeError(.Invalid(0..10)) => -1,
+        DecodeError(.Invalid(code)) if code < 0 => -2,
+        DecodeError(.Invalid(code)) => code,
+        DecodeError(.Pair(1, value)) | DecodeError(.Pair(value, 1)) => value,
+        DecodeError(_) => -3,
+    };
+}
+
+const fn relay() -> i32 throw ReadError {
+    return try {
+        read(false)?
+    } catch {
+        ReadError(error) => {
+            let copy = &&error;
+            let nested = try {
+                decode(0)?
+            } catch {
+                DecodeError(_) => 1,
+            };
+            if copy.code + nested == 8 { rethrow; }
+            0
+        },
+    };
+}
+
+const fn recover_relay() -> i32 {
+    return try {
+        relay()?
+    } catch {
+        ReadError(error) => error.code,
+    };
+}
+
+const fn guard_failure() -> i32 throw DecodeError {
+    return try {
+        read(false)?
+    } catch {
+        ReadError(_) if decode(1)? == 0 => 0,
+        ReadError(_) => -1,
+    };
+}
+
+const fn recover_guard() -> i32 {
+    return try {
+        guard_failure()?
+    } catch {
+        DecodeError(.Invalid(code)) => code,
+        DecodeError(_) => -2,
+    };
+}
+
+const fn text_failure() -> i32 throw TextError {
+    var text = String::from_str("original");
+    text.append(" payload");
+    let error = TextError { text };
+    throw &&error;
+}
+
+const fn text_relay() -> i32 throw TextError {
+    return try {
+        text_failure()?
+    } catch {
+        TextError(error) => {
+            let moved = &&error;
+            if moved.text.len() == 16usize { rethrow; }
+            0
+        },
+    };
+}
+
+const fn recover_text() -> String {
+    return try {
+        text_relay()?;
+        String::new()
+    } catch {
+        TextError(error) => error.text,
+    };
+}
+
+const fn operands() -> i32 {
+    var value = 5;
+    let caught = try {
+        value += read(false)?;
+        0
+    } catch {
+        ReadError(_) => 1,
+    };
+    let index = try {
+        [1, 2][read(false)?]
+    } catch {
+        ReadError(error) => error.code,
+    };
+    let formatted = try {
+        f"before {read(false)?} after"
+    } catch {
+        ReadError(_) => String::from_str("caught"),
+    };
+    return value + caught + index + (formatted.len() as i32);
+}
+
+const fn control() -> i32 {
+    var total = 0;
+    for index in 0..4 {
+        try {
+            if index == 0 { continue; }
+            if index == 3 { break; }
+            total += read(false)?;
+        } catch {
+            ReadError(error) => { total += error.code; },
+        }
+    }
+    try {
+        read(false)?;
+    } catch {
+        ReadError(_) => { return total; },
+    }
+    return -1;
+}
+
+const success = read(true)?;
+const inferred_success = inferred(true)?;
+const recovered = recover(false);
+const decoded = recover_decode(1);
+const text = recover_text();
+const values = [DecodeError::Empty, DecodeError::Invalid(12)];
+
+const test "typed failures execute with normal control and payload semantics" {
+    check(success == 42 && inferred_success == 3);
+    check(recovered == 7 && recover(true) == 42);
+    check(decoded == 73 && recover_decode(0) == 11 && recover_decode(2) == 2);
+    check(recover_relay() == 7 && recover_guard() == 73);
+    check(text == "original payload");
+    check(operands() == 19 && control() == 14);
+    check(values[1] == DecodeError::Invalid(12));
+    let result = try {
+        inferred(false)?
+    } catch {
+        DecodeError(_) => 9,
+    };
+    check(result == 9);
+}
+
+test "compile-time failure results agree with native execution" {
+    check(success == recover(true));
+    check(recovered == recover(false));
+    check(decoded == recover_decode(1));
+    check(recover_relay() == 7 && recover_guard() == 73);
+    check(recover_text().as_str() == text);
+    check(operands() == 19 && control() == 14);
+    check(values[1] == DecodeError::Invalid(12));
+}

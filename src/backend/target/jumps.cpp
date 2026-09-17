@@ -126,7 +126,7 @@ auto JumpVerifier::enter_statement(const TargetStmt& statement) noexcept -> bool
     }
     auto& state = callables.back();
     state.current_statement_order = state.next_statement_order++;
-    return std::visit(
+    return statement.value.visit(
         Overloaded {
             [](const TargetExprStmt&) static noexcept { return true; },
             [](const TargetDiscardStmt&) static noexcept { return true; },
@@ -179,8 +179,7 @@ auto JumpVerifier::enter_statement(const TargetStmt& statement) noexcept -> bool
             [](const TargetWhileStmt&) static noexcept { return true; },
             [](const TargetForStmt&) static noexcept { return true; },
             [](const TargetRangeForStmt&) static noexcept { return true; },
-        },
-        statement.value
+        }
     );
 }
 

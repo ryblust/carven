@@ -38,7 +38,7 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noe
                 if (!body.lifetime_regions().contains(statement.lifetime)) {
                     invariant_violation("statement has foreign lifetime");
                 }
-                std::visit(
+                statement.value.visit(
                     Overloaded {
                         [&](const SemReturn& value) noexcept { check_return(value.value); },
                         [&](const SemInitialize& value) noexcept {
@@ -68,8 +68,7 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source) const noe
                             }
                         },
                         [](const auto&) static noexcept {},
-                    },
-                    statement.value
+                    }
                 );
             },
         }

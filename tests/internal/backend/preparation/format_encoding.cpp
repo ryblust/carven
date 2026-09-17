@@ -36,7 +36,7 @@ TEST_CASE(
         {.expression = R"(f"{text:.2}")", .proven = false},
         {.expression = R"(f"{character:4}")", .proven = false},
         {.expression = R"(f"{flag:d}")", .proven = false},
-        {.expression = R"(f"{real}")", .proven = false},
+        {.expression = R"(f"{real}")", .proven = true},
     });
     for (const auto& scenario : scenarios) {
         CAPTURE(scenario.expression);

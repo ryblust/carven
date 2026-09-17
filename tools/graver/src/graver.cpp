@@ -1,5 +1,5 @@
 module;
-#include <stdio.h>
+#include <cstdio>
 #if defined(_WIN32)
 #include <fcntl.h>
 #include <io.h>

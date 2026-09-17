@@ -2,6 +2,7 @@ module carven:frontend.program.verify.impl;
 
 import :frontend.ast.ids;
 import :frontend.ast.storage;
+import :frontend.ast.topology;
 import :frontend.program.verify;
 import :frontend.program;
 import :source.provenance.ids;

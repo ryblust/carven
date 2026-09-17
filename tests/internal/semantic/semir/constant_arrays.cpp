@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.constant_arrays;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.program;
@@ -14,6 +13,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -28,11 +28,11 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
     REQUIRE(source.has_value());
     auto path = CanonicalModulePath::from_value("constant.arrays");
     REQUIRE(path.has_value());
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = std::move(*path),
     }};
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = draft.provenance_module_at(0uz);

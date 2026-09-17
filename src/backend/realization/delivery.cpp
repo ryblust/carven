@@ -7,6 +7,7 @@ import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
+import :support.invariant;
 import std;
 
 auto BodyRealizer::read_value(
@@ -49,9 +50,7 @@ auto BodyRealizer::deliver_result(
         emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
         initialize_deferred(initialize->storage, require_expression(std::move(value)), destination);
-    } else if (auto expression = remaining_expression(std::move(value))) {
-        destination.emit(
-            generated_statement(TargetDiscardStmt {.expression = std::move(*expression)})
-        );
+    } else if (!std::holds_alternative<LoweringCompleted>(value)) {
+        invariant_violation("discarded results must complete through expression evaluation");
     }
 }

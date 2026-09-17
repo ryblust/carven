@@ -1,4 +1,4 @@
-import <vector> using std::{vector, allocator};
+import <vector> using std::{ vector, allocator };
 
 import "provider.hpp" using native::{
     first_descriptive_exported_function,
@@ -6,4 +6,4 @@ import "provider.hpp" using native::{
     third_descriptive_exported_function,
 };
 
-import std::utf.text using {from_utf8, to_string};
+import std::utf.text using { from_utf8, to_string };

@@ -9,6 +9,7 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
 import :semantic.evaluation.execution;
 import :semantic.semir.decl;
+import :source.batch;
 import :source.text;
 import :test.internal.semantic.evaluation.fixture;
 import std;
@@ -80,11 +81,11 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("execution.cv", std::move(source_text));
     REQUIRE(source.has_value());
-    const auto inputs = std::array {CompilationModuleInput {
+    const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = constant_test_module_path("execution")
     }};
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     auto diagnostics = DiagnosticSink();
     auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);

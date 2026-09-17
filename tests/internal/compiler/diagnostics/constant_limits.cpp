@@ -4,6 +4,7 @@ module;
 
 module carven:test.internal.compiler.diagnostics.constant_limits;
 
+import :source.batch;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
@@ -46,13 +47,13 @@ TEST_CASE(
         CAPTURE(source);
         auto sources = SourceManager();
         const auto source_id = *sources.append_virtual("constant-limit.cv", std::string(source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("constant_limit"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:constant-limit").value(),

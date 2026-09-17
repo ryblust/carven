@@ -7,8 +7,8 @@ module carven:test.internal.compiler.boundary.target_validity;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -23,14 +23,14 @@ TEST_CASE("Compiler integration: C++ target validity remains downstream-owned") 
         "---\n"
         "fn value() {}\n"
     );
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("native"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:target-validity").value(),

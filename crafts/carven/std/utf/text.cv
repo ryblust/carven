@@ -1,4 +1,4 @@
-import .validation using {UTF8Error, validate_utf8};
+import .validation using { UTF8Error, validate_utf8 };
 
 export fn from_utf8(bytes: [u8]) -> str throw UTF8Error {
     validate_utf8(bytes)?;

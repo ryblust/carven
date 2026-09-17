@@ -20,7 +20,7 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                 invariant_violation("semantic operator has an incompatible result");
             }
         };
-        std::visit(
+        source.value.visit(
             Overloaded {
                 [&](const SemUnary& value) noexcept {
                     check_result(
@@ -68,8 +68,7 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
                     }
                 },
                 [](const auto&) static noexcept {},
-            },
-            source.value
+            }
         );
     });
 }
@@ -86,7 +85,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
     if (!body.lifetime_regions().contains(source.lifetime)) {
         invariant_violation("semantic expression has foreign lifetime");
     }
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const SemConstant& value) noexcept {
                 if (program.constants().constant(value.constant).type != source.type.resolved()) {
@@ -490,7 +489,6 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [](const auto&) static noexcept {},
-        },
-        source.value
+        }
     );
 }

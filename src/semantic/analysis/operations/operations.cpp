@@ -46,14 +46,14 @@ enum class ContextualOperandKind {
 };
 
 auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> ContextualOperandKind {
-    return std::visit(
+    return ast.expression(id).value.visit(
         [&]<typename Form>(const Form& form) noexcept -> ContextualOperandKind {
             if constexpr (std::same_as<Form, ASTLiteral>) {
                 if (std::holds_alternative<NullPointerLiteralValue>(form.value)) {
                     return ContextualOperandKind::NullPointer;
                 }
-                const auto unsuffixed = std::visit(
-                    []<typename Value>(const Value& value) static noexcept {
+                const auto unsuffixed =
+                    form.value.visit([]<typename Value>(const Value& value) static noexcept {
                         if constexpr (std::same_as<Value, IntegerLiteralValue>
                                       || std::same_as<Value, FloatingLiteralValue>) {
                             return value.suffix == NumericSuffix::None;
@@ -69,9 +69,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                                 "new literal form needs a contextual operand policy"
                             );
                         }
-                    },
-                    form.value
-                );
+                    });
                 return unsuffixed ? ContextualOperandKind::NumericLiteral
                                   : ContextualOperandKind::None;
             } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
@@ -110,8 +108,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                     "new expression form needs a contextual operand policy"
                 );
             }
-        },
-        ast.expression(id).value
+        }
     );
 }
 
@@ -433,7 +430,7 @@ auto supports_equality(
     EnumCapability enumeration,
     ElementCapability element
 ) noexcept -> bool {
-    return std::visit(
+    return canonical.value.visit(
         Overloaded {
             [](const BuiltinTypeValue& value) noexcept {
                 return builtin_type_supports_equality(value.kind);
@@ -448,8 +445,7 @@ auto supports_equality(
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
-        },
-        canonical.value
+        }
     );
 }
 

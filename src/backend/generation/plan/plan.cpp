@@ -380,7 +380,7 @@ auto FailureABI::members(FailureSetID set) const noexcept -> std::span<const Typ
 }
 
 auto artifact_logical_path(const TargetArtifactPlan& artifact) noexcept -> std::string_view {
-    return std::visit(
+    return artifact.visit(
         []<typename Artifact>(const Artifact& value) static noexcept -> std::string_view {
             static_assert(
                 std::same_as<Artifact, TargetInterfaceArtifact>
@@ -391,13 +391,12 @@ auto artifact_logical_path(const TargetArtifactPlan& artifact) noexcept -> std::
                 "unhandled target artifact plan"
             );
             return value.logical_path;
-        },
-        artifact
+        }
     );
 }
 
 auto artifact_role(const TargetArtifactPlan& artifact) noexcept -> GeneratedArtifactRole {
-    return std::visit(
+    return artifact.visit(
         Overloaded {
             [](const TargetInterfaceArtifact&) static noexcept {
                 return GeneratedArtifactRole::Interface;
@@ -414,14 +413,13 @@ auto artifact_role(const TargetArtifactPlan& artifact) noexcept -> GeneratedArti
             [](const TargetTestEntryArtifact&) static noexcept {
                 return GeneratedArtifactRole::TestEntry;
             },
-        },
-        artifact
+        }
     );
 }
 
 auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
     -> ArtifactSourceMappingPolicy {
-    return std::visit(
+    return artifact.visit(
         Overloaded {
             [](const TargetInterfaceArtifact&) static noexcept {
                 return ArtifactSourceMappingPolicy::StableInterface;
@@ -438,14 +436,13 @@ auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
             [](const TargetTestEntryArtifact&) static noexcept {
                 return ArtifactSourceMappingPolicy::SourceAttributed;
             },
-        },
-        artifact
+        }
     );
 }
 
 auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
     -> std::vector<TargetArtifactID> {
-    return std::visit(
+    return artifact.visit(
         Overloaded {
             [](const TargetInterfaceArtifact& value) static noexcept {
                 return value.predecessor_artifacts;
@@ -462,8 +459,7 @@ auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
             [](const TargetTestRunnerHeaderArtifact&) static noexcept {
                 return std::vector<TargetArtifactID>();
             },
-        },
-        artifact
+        }
     );
 }
 

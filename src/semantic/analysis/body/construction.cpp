@@ -120,7 +120,7 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
-    return std::visit(
+    return (*selected)->form.visit(
         Overloaded {
             [&](const CatalogConstantForm& form) noexcept
                 -> AnalysisResult<std::optional<ConstantID>> {
@@ -153,8 +153,7 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
                     std::format("'{}' does not name a constant value", name)
                 ));
             },
-        },
-        (*selected)->form
+        }
     );
 }
 

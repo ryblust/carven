@@ -4,10 +4,10 @@ module;
 
 module carven:test.internal.frontend.program;
 
-import :compiler.request;
 import :frontend.program.parse;
 import :frontend.program.verify;
 import :frontend.program;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import std;
@@ -41,16 +41,16 @@ TEST_CASE("Syntax program: publication gate correlates roots, provenance, and im
     REQUIRE(model_source.has_value());
 
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *main_source,
             .module_path = path("app.main"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *model_source,
             .module_path = path("app.model"),
         },
     };
-    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(parsed.has_value());
     const auto& program = *parsed;
     REQUIRE(verify_syntax_program(program).has_value());

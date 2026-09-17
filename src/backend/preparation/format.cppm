@@ -15,7 +15,15 @@ struct IntegerFormatField final {
     auto operator==(const IntegerFormatField&) const noexcept -> bool = default;
 };
 
-using WriterFormatField = std::variant<IntegerFormatField, BuiltinType>;
+enum class FloatingFormatMode { Shortest, Fixed, Scientific, General };
+
+struct FloatingFormatField final {
+    FloatingFormatMode mode;
+    std::uint32_t precision;
+    auto operator==(const FloatingFormatField&) const noexcept -> bool = default;
+};
+
+using WriterFormatField = std::variant<IntegerFormatField, FloatingFormatField, BuiltinType>;
 
 struct WriterFormat final {
     // Unescaped literal segments before, between, and after the ordered fields.

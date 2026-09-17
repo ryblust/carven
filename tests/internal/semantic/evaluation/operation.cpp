@@ -242,3 +242,76 @@ TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand w
     REQUIRE_FALSE(zero.has_value());
     CHECK(zero.error() == ConstantEvaluationFailure::DivideByZero);
 }
+
+TEST_CASE(
+    "Semantic execution: floating operations preserve native values without runtime folding"
+) {
+    auto fixture = ConstantEvaluationFixture();
+    ConstantValueAccess& values = fixture.compilation;
+    const auto boolean = values.builtin_type(BuiltinType::Bool);
+    const auto exercise = [&]<typename Floating>(BuiltinType builtin) noexcept {
+        const auto type = values.builtin_type(builtin);
+        const auto left = ConstantFact {.type = type, .value = Floating {.value = 6.0}};
+        const auto right = ConstantFact {.type = type, .value = Floating {.value = 2.0}};
+        struct Case final {
+            BinaryOperator operation;
+            double expected;
+        };
+        const auto cases = std::array {
+            Case {.operation = BinaryOperator::Add, .expected = 8.0},
+            Case {.operation = BinaryOperator::Subtract, .expected = 4.0},
+            Case {.operation = BinaryOperator::Multiply, .expected = 12.0},
+            Case {.operation = BinaryOperator::Divide, .expected = 3.0},
+        };
+        for (const auto item : cases) {
+            const auto result =
+                evaluate_binary_constant_value(values, item.operation, left, right, type);
+            REQUIRE(result.has_value());
+            CHECK(std::get<Floating>(result->value).value == item.expected);
+            CHECK_FALSE(fold_binary_constant(
+                            values,
+                            item.operation,
+                            values.intern_constant(left),
+                            values.intern_constant(right),
+                            type
+            )
+                            .has_value());
+        }
+        const auto zero = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
+        const auto negative =
+            evaluate_unary_constant_value(values, UnaryOperator::Negate, zero, type);
+        REQUIRE(negative.has_value());
+        CHECK(std::signbit(std::get<Floating>(negative->value).value));
+        CHECK_FALSE(
+            fold_unary_constant(values, UnaryOperator::Negate, values.intern_constant(zero), type)
+                .has_value()
+        );
+        const auto infinity =
+            evaluate_binary_constant_value(values, BinaryOperator::Divide, left, zero, type);
+        REQUIRE(infinity.has_value());
+        CHECK(std::isinf(std::get<Floating>(infinity->value).value));
+        const auto nan =
+            evaluate_binary_constant_value(values, BinaryOperator::Divide, zero, zero, type);
+        REQUIRE(nan.has_value());
+        CHECK(std::isnan(std::get<Floating>(nan->value).value));
+        const auto comparisons = std::array {
+            BinaryOperator::Equal,
+            BinaryOperator::Less,
+            BinaryOperator::LessEqual,
+            BinaryOperator::Greater,
+            BinaryOperator::GreaterEqual
+        };
+        for (const auto operation : comparisons) {
+            const auto result =
+                evaluate_binary_constant_value(values, operation, *nan, right, boolean);
+            REQUIRE(result.has_value());
+            CHECK_FALSE(std::get<BooleanConstant>(result->value).value);
+        }
+        const auto unequal =
+            evaluate_binary_constant_value(values, BinaryOperator::NotEqual, *nan, *nan, boolean);
+        REQUIRE(unequal.has_value());
+        CHECK(std::get<BooleanConstant>(unequal->value).value);
+    };
+    exercise.operator()<F32Constant>(BuiltinType::F32);
+    exercise.operator()<F64Constant>(BuiltinType::F64);
+}

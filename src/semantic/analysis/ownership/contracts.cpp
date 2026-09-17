@@ -63,7 +63,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
         body.region(),
         Overloaded {
             [&](const SemanticExpression& source) noexcept {
-                std::visit(
+                source.value.visit(
                     Overloaded {
                         [&](const SemTake& value) noexcept {
                             const auto* binding = std::get_if<SemBinding>(&value.place->value);
@@ -134,8 +134,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
                             }
                         },
                         [](const auto&) static noexcept {},
-                    },
-                    source.value
+                    }
                 );
             },
             [&](const SemanticStatement& source) noexcept {

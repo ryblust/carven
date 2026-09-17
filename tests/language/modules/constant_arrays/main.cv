@@ -1,5 +1,5 @@
-import .api using {answer, published, selected,};
-import .values using {advance, seed,};
+import .api using { answer, published, selected };
+import .values using { advance, seed };
 
 const local = advance(answer(), seed[0]);
 

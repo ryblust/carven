@@ -11,7 +11,10 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
 import :semantic.semir.contents;
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.identity;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import std;
 
 struct TargetEntityName final {

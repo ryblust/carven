@@ -35,7 +35,7 @@ TypeLookup::TypeLookup(TargetUnitIdentity identity, std::size_t count) noexcept
 auto TypeLookup::key(const TargetType& type) noexcept -> std::size_t {
     mix(type.value.index());
     mix(type.const_qualified);
-    std::visit(
+    type.value.visit(
         Overloaded {
             [&](const TargetNamedType& value) noexcept {
                 name(value.name);
@@ -55,8 +55,7 @@ auto TypeLookup::key(const TargetType& type) noexcept -> std::size_t {
             [](const TargetFunctionType&) static noexcept {},
             [](const TargetPointerType&) static noexcept {},
             [](const TargetDecltypeType&) static noexcept {},
-        },
-        type.value
+        }
     );
     static_cast<void>(visit_target_type_children(type.value, *this));
     return hash;
@@ -73,25 +72,22 @@ auto TypeLookup::visit_type(TargetTypeID child) noexcept -> bool {
 auto TypeLookup::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
     -> bool {
     mix(expression.value.index());
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, TargetNameExpr>) {
-                name(value.name);
-            } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
-                mix(static_cast<std::size_t>(value.symbol));
-            } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
-                const auto* member = std::get_if<TargetIdentifier>(&value.name);
-                if (member != nullptr) {
-                    mix(std::hash<std::string_view>()(member->spelling()));
-                }
-            } else if constexpr (std::same_as<Value, TargetPrefixExpr>
-                                 || std::same_as<Value, TargetBinaryExpr>) {
-                mix(static_cast<std::size_t>(value.op));
+    expression.value.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, TargetNameExpr>) {
+            name(value.name);
+        } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
+            mix(static_cast<std::size_t>(value.symbol));
+        } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
+            const auto* member = std::get_if<TargetIdentifier>(&value.name);
+            if (member != nullptr) {
+                mix(std::hash<std::string_view>()(member->spelling()));
             }
-        },
-        expression.value
-    );
+        } else if constexpr (std::same_as<Value, TargetPrefixExpr>
+                             || std::same_as<Value, TargetBinaryExpr>) {
+            mix(static_cast<std::size_t>(value.op));
+        }
+    });
     return true;
 }
 

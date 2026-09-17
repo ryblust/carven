@@ -112,12 +112,13 @@ TEST_CASE("Graver format: import lists include closing punctuation in the line w
     for (const auto prefix :
          {std::string_view("import <vector> using std::{"),
           std::string_view("import std::utf.text using {")}) {
-        const auto name = std::string(100uz - prefix.size() - 2uz, 'x');
-        const auto fitting = std::string(prefix) + name + "};";
+        const auto name = std::string(100uz - prefix.size() - 4uz, 'x');
+        const auto fitting = std::string(prefix) + " " + name + " };";
         check_format(fitting, fitting + "\n");
+        check_format(std::string(prefix) + name + ",};", fitting + "\n");
         check_format(
             std::string(prefix) + name + "x};",
-            std::string(prefix) + "\n    " + name + "x\n};\n"
+            std::string(prefix) + "\n    " + name + "x,\n};\n"
         );
     }
 }
@@ -126,5 +127,44 @@ TEST_CASE("Graver format: unbounded range patterns separate their guards") {
     check_format(
         "fn f(x:i32){match x{0..if ready=>{},_=>{},}}",
         "fn f(x: i32) {\n    match x {\n        0.. if ready => {},\n        _ => {},\n    }\n}\n"
+    );
+}
+
+TEST_CASE("Graver format: import trailing commas follow layout and preserve comments") {
+    const auto prefixes = std::to_array<std::string_view>({
+        "import <print> using std::{",
+        "import \"provider.hpp\" using {",
+        "import math using {",
+    });
+    for (const auto prefix : prefixes) {
+        CAPTURE(prefix);
+        check_format(
+            std::string(prefix) + "first, second,};",
+            std::string(prefix) + " first, second };\n"
+        );
+        check_format(
+            std::string(prefix) + "\nfirst,\nsecond,\n};",
+            std::string(prefix) + " first, second };\n"
+        );
+        check_format(
+            std::string(prefix) + "first // last name\n};",
+            std::string(prefix) + "\n    first, // last name\n};\n"
+        );
+        check_format(
+            std::string(prefix) + "first, // last comma\n};",
+            std::string(prefix) + "\n    first, // last comma\n};\n"
+        );
+        check_format(
+            std::string(prefix) + "first // before comma\n, // after comma\n};",
+            std::string(prefix) + "\n    first // before comma\n    , // after comma\n};\n"
+        );
+        check_format(
+            std::string(prefix) + "first\n\n};",
+            std::string(prefix) + "\n    first,\n\n};\n"
+        );
+    }
+    check_format(
+        "import math using {first,}; fn f(){call(1,);}",
+        "import math using { first };\n\nfn f() {\n    call(1,);\n}\n"
     );
 }

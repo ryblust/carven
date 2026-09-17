@@ -1,6 +1,5 @@
 module carven:frontend.program.parse.impl;
 
-import :compiler.request;
 import :diagnostics.builder;
 import :diagnostics.sink;
 import :frontend.ast.decl;
@@ -10,6 +9,7 @@ import :frontend.parse;
 import :frontend.program.parse;
 import :frontend.program.verify;
 import :frontend.program;
+import :source.batch;
 import :source.provenance;
 import :support.invariant;
 import :support.visit;
@@ -100,7 +100,7 @@ auto resolve_import_path(
 ) noexcept -> std::expected<CanonicalModulePath, ModuleReferenceResolutionError> {
     const auto domain_prefix = importer_path.module_domain_prefix();
     auto components = std::vector<std::string_view>();
-    std::visit(
+    reference.value.visit(
         Overloaded {
             [&](const ASTDomainRootModuleReference& value) noexcept {
                 append_domain_prefix(components, domain_prefix);
@@ -129,8 +129,7 @@ auto resolve_import_path(
                     components.push_back(slice(source, component));
                 }
             },
-        },
-        reference.value
+        }
     );
     auto resolved = CanonicalModulePath::from_components(components);
     if (!resolved.has_value()) {
@@ -206,7 +205,7 @@ auto close_import_graph(
 
 auto validate_inputs(
     const SourceManager& sources,
-    std::span<const CompilationModuleInput> inputs
+    std::span<const SourceModuleInput> inputs
 ) noexcept -> Diagnostics {
     auto diagnostics = Diagnostics();
     if (inputs.empty()) {
@@ -251,15 +250,15 @@ auto validate_inputs(
 
 } // namespace
 
-auto parse_program(const SourceManager& sources, CompilationRequest request) noexcept
+auto parse_program(const SourceManager& sources, SourceBatch batch) noexcept
     -> std::expected<SyntaxProgram, Diagnostics> {
-    const auto inputs = request.modules;
+    const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
     if (!input_diagnostics.empty()) {
         return std::unexpected(std::move(input_diagnostics));
     }
 
-    auto ordered_inputs = std::vector<const CompilationModuleInput*>();
+    auto ordered_inputs = std::vector<const SourceModuleInput*>();
     ordered_inputs.reserve(inputs.size());
     for (const auto& input : inputs) {
         ordered_inputs.push_back(std::addressof(input));
@@ -267,7 +266,7 @@ auto parse_program(const SourceManager& sources, CompilationRequest request) noe
     std::ranges::sort(
         ordered_inputs,
         {},
-        [](const CompilationModuleInput* input) static noexcept -> const CanonicalModulePath& {
+        [](const SourceModuleInput* input) static noexcept -> const CanonicalModulePath& {
             return input->module_path;
         }
     );

@@ -1,4 +1,4 @@
-import .settings using {ConfigError, port_or_default};
+import .settings using { ConfigError, port_or_default };
 
 fn report(label: str, primary: str, backup: str) {
     println(label);

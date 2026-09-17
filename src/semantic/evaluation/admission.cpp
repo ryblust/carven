@@ -19,13 +19,14 @@ auto supported_execution_type(
         return true;
     }
     if (std::holds_alternative<ArrayTypeValue>(canonical.value)
-        || std::holds_alternative<StructTypeValue>(canonical.value)) {
+        || std::holds_alternative<StructTypeValue>(canonical.value)
+        || std::holds_alternative<EnumTypeValue>(canonical.value)) {
         const auto shape = shapes.get(*id);
         return shape && shape->supported;
     }
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
     return builtin != nullptr
-        && (builtin_is_integer(builtin->kind)
+        && (builtin_is_numeric(builtin->kind)
             || builtin->kind == BuiltinType::Bool
             || builtin->kind == BuiltinType::Char
             || builtin->kind == BuiltinType::Str
@@ -35,13 +36,14 @@ auto supported_execution_type(
 
 auto unsupported_execution_expression(const SemanticExpression& source) noexcept
     -> std::optional<std::string_view> {
-    return std::visit(
+    return source.value.visit(
         [](const auto& value) static noexcept -> std::optional<std::string_view> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, SemCallable>
                           || std::same_as<Value, SemConstant>
                           || std::same_as<Value, SemBinding>
                           || std::same_as<Value, SemStruct>
+                          || std::same_as<Value, SemEnumCase>
                           || std::same_as<Value, SemField>
                           || std::same_as<Value, SemRange>
                           || std::same_as<Value, SemArray>
@@ -54,14 +56,19 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                           || std::same_as<Value, SemTestReport>
                           || std::same_as<Value, SemTake>
                           || std::same_as<Value, SemIf>
-                          || std::same_as<Value, SemMatch>) {
+                          || std::same_as<Value, SemMatch>
+                          || std::same_as<Value, SemTry>
+                          || std::same_as<Value, SemPropagate>) {
                 return std::nullopt;
             } else if constexpr (std::same_as<Value, SemCast>) {
                 if (value.kind != CastKind::Identity
                     && value.kind != CastKind::IntegerToInteger
                     && value.kind != CastKind::IntegerToBool
                     && value.kind != CastKind::BoolToInteger
-                    && value.kind != CastKind::CharToU32) {
+                    && value.kind != CastKind::CharToU32
+                    && value.kind != CastKind::IntegerToFloating
+                    && value.kind != CastKind::FloatingWiden
+                    && value.kind != CastKind::EnumToInteger) {
                     return "cast is not supported in execution";
                 }
             } else if constexpr (std::same_as<Value, SemCall>) {
@@ -86,17 +93,18 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                 return "operation is not supported in execution";
             }
             return std::nullopt;
-        },
-        source.value
+        }
     );
 }
 
 auto unsupported_execution_statement(const SemanticStatement& source) noexcept
     -> std::optional<std::string_view> {
-    return std::visit(
+    return source.value.visit(
         [](const auto& value) static noexcept -> std::optional<std::string_view> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, SemReturn>
+                          || std::same_as<Value, SemThrow>
+                          || std::same_as<Value, SemRethrow>
                           || std::same_as<Value, SemBreak>
                           || std::same_as<Value, SemContinue>
                           || std::same_as<Value, SemExpressionStatement>
@@ -123,7 +131,6 @@ auto unsupported_execution_statement(const SemanticStatement& source) noexcept
                 return "control operation is not supported in execution";
             }
             return std::nullopt;
-        },
-        source.value
+        }
     );
 }

@@ -103,7 +103,7 @@ auto CompilationProvenanceStorage::append_origin(ProgramOrigin origin) noexcept 
     if (origins.size() == std::numeric_limits<std::uint32_t>::max()) {
         resource_limit_exceeded("program origin identity space exhausted");
     }
-    std::visit(
+    origin.value.visit(
         Overloaded {
             [&](const ProgramSourceOrigin& value) noexcept {
                 if (!contains(value.source_id)
@@ -116,8 +116,7 @@ auto CompilationProvenanceStorage::append_origin(ProgramOrigin origin) noexcept 
                     invariant_violation("expansion program origin has no local parent");
                 }
             },
-        },
-        origin.value
+        }
     );
     origins.push_back(origin);
     return origin_id_at(origins.size() - 1uz);

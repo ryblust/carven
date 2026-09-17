@@ -13,6 +13,18 @@ struct IntegerFormatSpecification final {
     std::string_view width;
 };
 
+// Width and precision borrow decimal digits or a normalized dynamic "{}" field.
+struct FloatingFormatSpecification final {
+    std::string_view width;
+    std::optional<std::string_view> precision;
+    char presentation;
+    // No alignment, fill, sign, alternate form, zero padding, or width.
+    bool unadorned;
+};
+
+auto parse_floating_format_specification(std::string_view specification) noexcept
+    -> std::optional<FloatingFormatSpecification>;
+
 auto parse_integer_format_specification(std::string_view specification) noexcept
     -> std::optional<IntegerFormatSpecification>;
 

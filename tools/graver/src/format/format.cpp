@@ -384,23 +384,20 @@ auto SyntaxFormatter::select_compact_blocks() noexcept -> void {
         }
     }
     for (const auto& item : syntax.items()) {
-        std::visit(
-            [&](const auto& value) noexcept {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<T, ASTFunctionDecl>) {
-                    if (value.is_implicit_entry) {
-                        return;
-                    }
-                    if (const auto* body = std::get_if<ASTFunctionBody>(&value.implementation)) {
-                        if (const auto* id = std::get_if<ASTBlockID>(&body->body)) {
-                            header_starts[block_open(syntax.block(*id).span)] =
-                                token_at(item.span.start());
-                        }
+        item.value.visit([&](const auto& value) noexcept {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTFunctionDecl>) {
+                if (value.is_implicit_entry) {
+                    return;
+                }
+                if (const auto* body = std::get_if<ASTFunctionBody>(&value.implementation)) {
+                    if (const auto* id = std::get_if<ASTBlockID>(&body->body)) {
+                        header_starts[block_open(syntax.block(*id).span)] =
+                            token_at(item.span.start());
                     }
                 }
-            },
-            item.value
-        );
+            }
+        });
     }
     for (const auto& expression : syntax.expressions()) {
         if (const auto* lambda = std::get_if<ASTLambdaExpr>(&expression.value)) {
@@ -491,27 +488,24 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         separation_before[token_at(fragment.form_span.start())] = Separation::Hard;
     }
     for (const auto& type : syntax.types()) {
-        std::visit(
-            [&](const auto& value) noexcept {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<T, ASTNamedType>) {
-                    mark_named(value, type.span);
-                } else if constexpr (std::same_as<T, ASTPointerType>) {
-                    const auto start = token_at(type.span.start());
-                    const auto close = token_covering(type.span.end() - 1u);
-                    separation_before[start + 1uz] = Separation::None;
-                    separation_before[start + 2uz] = Separation::None;
-                    separation_before[close] = Separation::None;
-                    mark_access(value.access);
-                } else if constexpr (std::same_as<T, ASTArrayType>) {
-                    separation_before[token_at(syntax.expression(value.extent).span.start())] =
-                        Separation::Space;
-                } else if constexpr (std::same_as<T, ASTFunctionType>) {
-                    mark_function_type(value);
-                }
-            },
-            type.value
-        );
+        type.value.visit([&](const auto& value) noexcept {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTNamedType>) {
+                mark_named(value, type.span);
+            } else if constexpr (std::same_as<T, ASTPointerType>) {
+                const auto start = token_at(type.span.start());
+                const auto close = token_covering(type.span.end() - 1u);
+                separation_before[start + 1uz] = Separation::None;
+                separation_before[start + 2uz] = Separation::None;
+                separation_before[close] = Separation::None;
+                mark_access(value.access);
+            } else if constexpr (std::same_as<T, ASTArrayType>) {
+                separation_before[token_at(syntax.expression(value.extent).span.start())] =
+                    Separation::Space;
+            } else if constexpr (std::same_as<T, ASTFunctionType>) {
+                mark_function_type(value);
+            }
+        });
     }
     for (const auto& item : syntax.items()) {
         if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value);
@@ -521,69 +515,61 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         separation_before[token_at(item.span.start())] = Separation::Hard;
         mark_group(item.span);
         continuation_groups[token_at(item.span.start())] = false;
-        std::visit(
-            [&](const auto& value) noexcept {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<T, ASTStructDecl> || std::same_as<T, ASTEnumDecl>) {
-                    mark_block(item.span);
-                    const auto mark_members = [&](const auto& members) noexcept {
-                        for (const auto& member : members) {
-                            separation_before[token_at(member.span.start())] = Separation::Hard;
-                        }
-                    };
-                    if constexpr (std::same_as<T, ASTStructDecl>) {
-                        mark_members(value.fields);
-                    } else {
-                        mark_members(value.cases);
+        item.value.visit([&](const auto& value) noexcept {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTStructDecl> || std::same_as<T, ASTEnumDecl>) {
+                mark_block(item.span);
+                const auto mark_members = [&](const auto& members) noexcept {
+                    for (const auto& member : members) {
+                        separation_before[token_at(member.span.start())] = Separation::Hard;
                     }
-                } else if constexpr (std::same_as<T, ASTTestDecl>) {
-                    block_layouts[block_open(syntax.block(value.body).span)] =
-                        BlockLayout::Expanded;
-                } else if constexpr (std::same_as<T, ASTFunctionDecl>) {
-                    for (const auto& parameter : value.parameters) {
-                        mark_access(parameter.access);
-                    }
+                };
+                if constexpr (std::same_as<T, ASTStructDecl>) {
+                    mark_members(value.fields);
+                } else {
+                    mark_members(value.cases);
                 }
-            },
-            item.value
-        );
+            } else if constexpr (std::same_as<T, ASTTestDecl>) {
+                block_layouts[block_open(syntax.block(value.body).span)] = BlockLayout::Expanded;
+            } else if constexpr (std::same_as<T, ASTFunctionDecl>) {
+                for (const auto& parameter : value.parameters) {
+                    mark_access(parameter.access);
+                }
+            }
+        });
     }
     for (const auto& statement : syntax.statements()) {
         separation_before[token_at(statement.span.start())] = Separation::Hard;
-        std::visit(
-            [&](const auto& value) noexcept {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<T, ASTAssignment>) {
-                    const auto operation = token_at(value.operator_span.start());
-                    separation_before[operation] = Separation::Space;
-                    separation_before[operation + 1uz] = Separation::Space;
-                } else if constexpr (std::same_as<T, ASTForStmt>) {
-                    mark_group(value.header.span);
-                    const auto end = token_covering(value.header.span.end() - 1u);
-                    for (auto i = token_at(value.header.span.start()); i < end; ++i) {
-                        if (closing_indices[i] != 0) {
-                            i = closing_indices[i];
-                            continue;
-                        }
-                        if (tokens[i].kind == TokenKind::Semicolon
-                            || tokens[i].kind == TokenKind::Comma) {
-                            separation_before[i + 1uz] = Separation::SoftSpace;
-                        }
+        statement.value.visit([&](const auto& value) noexcept {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTAssignment>) {
+                const auto operation = token_at(value.operator_span.start());
+                separation_before[operation] = Separation::Space;
+                separation_before[operation + 1uz] = Separation::Space;
+            } else if constexpr (std::same_as<T, ASTForStmt>) {
+                mark_group(value.header.span);
+                const auto end = token_covering(value.header.span.end() - 1u);
+                for (auto i = token_at(value.header.span.start()); i < end; ++i) {
+                    if (closing_indices[i] != 0) {
+                        i = closing_indices[i];
+                        continue;
                     }
-                    if (const auto* range = std::get_if<ASTRangeForHeader>(&value.header.value)) {
-                        if (range->write_marker) {
-                            prefix_operators[token_at(range->write_marker->start())] = true;
-                        }
+                    if (tokens[i].kind == TokenKind::Semicolon
+                        || tokens[i].kind == TokenKind::Comma) {
+                        separation_before[i + 1uz] = Separation::SoftSpace;
                     }
                 }
-                if constexpr (std::same_as<T, ASTForStmt> || std::same_as<T, ASTWhileStmt>) {
-                    block_layouts[block_open(syntax.block(value.body).span)] =
-                        BlockLayout::Expanded;
+                if (const auto* range = std::get_if<ASTRangeForHeader>(&value.header.value)) {
+                    if (range->write_marker) {
+                        prefix_operators[token_at(range->write_marker->start())] = true;
+                    }
                 }
-                mark_control(value);
-            },
-            statement.value
-        );
+            }
+            if constexpr (std::same_as<T, ASTForStmt> || std::same_as<T, ASTWhileStmt>) {
+                block_layouts[block_open(syntax.block(value.body).span)] = BlockLayout::Expanded;
+            }
+            mark_control(value);
+        });
     }
     for (const auto& block : syntax.blocks()) {
         if (&block == top_level_body) {
@@ -599,95 +585,84 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         }
     }
     for (const auto& expression : syntax.expressions()) {
-        std::visit(
-            [&](const auto& value) noexcept {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::same_as<T, ASTPrefixExpr>) {
-                    prefix_operators[token_at(value.operator_span.start())] = true;
-                } else if constexpr (std::same_as<T, ASTAccessExpr>) {
-                    prefix_operators[token_at(value.marker_span.start())] = true;
-                } else if constexpr (std::same_as<T, ASTBinaryExpr>
-                                     || std::same_as<T, ASTCastExpr>) {
-                    infix_operators[token_at(value.operator_span.start())] = true;
-                    mark_group(expression.span);
-                } else if constexpr (std::same_as<T, ASTLambdaExpr>) {
-                    for (const auto& parameter : value.parameters) {
-                        mark_access(parameter.access);
+        expression.value.visit([&](const auto& value) noexcept {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTPrefixExpr>) {
+                prefix_operators[token_at(value.operator_span.start())] = true;
+            } else if constexpr (std::same_as<T, ASTAccessExpr>) {
+                prefix_operators[token_at(value.marker_span.start())] = true;
+            } else if constexpr (std::same_as<T, ASTBinaryExpr> || std::same_as<T, ASTCastExpr>) {
+                infix_operators[token_at(value.operator_span.start())] = true;
+                mark_group(expression.span);
+            } else if constexpr (std::same_as<T, ASTLambdaExpr>) {
+                for (const auto& parameter : value.parameters) {
+                    mark_access(parameter.access);
+                }
+                for (const auto& capture : value.captures) {
+                    if (capture.write_marker) {
+                        prefix_operators[token_at(capture.write_marker->start())] = true;
                     }
-                    for (const auto& capture : value.captures) {
-                        if (capture.write_marker) {
-                            prefix_operators[token_at(capture.write_marker->start())] = true;
-                        }
+                }
+            } else if constexpr (std::same_as<T, ASTArrayExpr>) {
+                if (std::ranges::any_of(value.element_ids, structured)) {
+                    block_layouts[token_at(expression.span.start())] = BlockLayout::Expanded;
+                    for (const auto id : value.element_ids) {
+                        separation_before[token_at(syntax.expression(id).span.start())] =
+                            Separation::Hard;
                     }
-                } else if constexpr (std::same_as<T, ASTArrayExpr>) {
-                    if (std::ranges::any_of(value.element_ids, structured)) {
-                        block_layouts[token_at(expression.span.start())] = BlockLayout::Expanded;
-                        for (const auto id : value.element_ids) {
-                            separation_before[token_at(syntax.expression(id).span.start())] =
-                                Separation::Hard;
-                        }
-                    }
-                } else if constexpr (std::same_as<T, ASTConstructionExpr>) {
-                    std::visit(
-                        [&](const auto& initializer) noexcept {
-                            using U = std::decay_t<decltype(initializer)>;
-                            if constexpr (!std::same_as<U, std::monostate>) {
-                                const auto values = [&]() noexcept {
-                                    if constexpr (std::same_as<U, ASTPositionalInitializerList>) {
-                                        return std::span(initializer.values);
-                                    } else {
-                                        return initializer.fields
-                                            | std::views::transform(
-                                                   [](
-                                                       const ASTFieldInitializer& field
-                                                   ) static noexcept { return field.value; }
-                                            );
-                                    }
-                                }();
-                                const auto expanded = [&]() noexcept {
-                                    const auto nested = std::ranges::any_of(values, structured);
-                                    if constexpr (std::same_as<U, ASTFieldInitializerList>) {
-                                        return nested || initializer.fields.size() > 1uz;
-                                    } else {
-                                        return nested;
-                                    }
-                                }();
-                                if (expanded) {
-                                    block_layouts[block_open(expression.span)] =
-                                        BlockLayout::Expanded;
-                                    if constexpr (std::same_as<U, ASTPositionalInitializerList>) {
-                                        for (const auto id : values) {
-                                            separation_before[token_at(syntax.expression(id)
-                                                                           .span.start())] =
-                                                Separation::Hard;
-                                        }
-                                    } else {
-                                        for (const auto& field : initializer.fields) {
-                                            separation_before[token_at(field.span.start())] =
-                                                Separation::Hard;
-                                        }
-                                    }
+                }
+            } else if constexpr (std::same_as<T, ASTConstructionExpr>) {
+                value.initializer.value.visit([&](const auto& initializer) noexcept {
+                    using U = std::decay_t<decltype(initializer)>;
+                    if constexpr (!std::same_as<U, std::monostate>) {
+                        const auto values = [&]() noexcept {
+                            if constexpr (std::same_as<U, ASTPositionalInitializerList>) {
+                                return std::span(initializer.values);
+                            } else {
+                                return initializer.fields
+                                    | std::views::transform(
+                                           [](const ASTFieldInitializer& field) static noexcept {
+                                               return field.value;
+                                           }
+                                    );
+                            }
+                        }();
+                        const auto expanded = [&]() noexcept {
+                            const auto nested = std::ranges::any_of(values, structured);
+                            if constexpr (std::same_as<U, ASTFieldInitializerList>) {
+                                return nested || initializer.fields.size() > 1uz;
+                            } else {
+                                return nested;
+                            }
+                        }();
+                        if (expanded) {
+                            block_layouts[block_open(expression.span)] = BlockLayout::Expanded;
+                            if constexpr (std::same_as<U, ASTPositionalInitializerList>) {
+                                for (const auto id : values) {
+                                    separation_before[token_at(syntax.expression(id)
+                                                                   .span.start())] =
+                                        Separation::Hard;
+                                }
+                            } else {
+                                for (const auto& field : initializer.fields) {
+                                    separation_before[token_at(field.span.start())] =
+                                        Separation::Hard;
                                 }
                             }
-                        },
-                        value.initializer.value
-                    );
-                    std::visit(
-                        [&](const auto& type) noexcept {
-                            using U = std::decay_t<decltype(type)>;
-                            if constexpr (std::same_as<U, ASTNamedType>) {
-                                mark_named(type, value.type.span);
-                            } else {
-                                mark_function_type(type);
-                            }
-                        },
-                        value.type.value
-                    );
-                }
-                mark_control(value);
-            },
-            expression.value
-        );
+                        }
+                    }
+                });
+                value.type.value.visit([&](const auto& type) noexcept {
+                    using U = std::decay_t<decltype(type)>;
+                    if constexpr (std::same_as<U, ASTNamedType>) {
+                        mark_named(type, value.type.span);
+                    } else {
+                        mark_function_type(type);
+                    }
+                });
+            }
+            mark_control(value);
+        });
     }
     for (const auto& pattern : syntax.patterns()) {
         if (const auto* negative = std::get_if<ASTNegativeNumberPattern>(&pattern.value)) {
@@ -909,9 +884,6 @@ auto SyntaxFormatter::sequence(
             const auto interpolation = tokens[index].kind == TokenKind::InterpolationStart
                 || tokens[index].kind == TokenKind::InterpolationOpen;
             const auto brace_list = tokens[index].kind == TokenKind::LeftBrace
-                && (index == 0uz
-                    || (tokens[index - 1uz].kind != TokenKind::ColonColon
-                        && tokens[index - 1uz].kind != TokenKind::Using))
                 && layout == BlockLayout::None
                 && close != index + 1uz;
             const auto boundary = interpolation ? Separation::None
@@ -952,23 +924,124 @@ auto comments(const Source& source, std::size_t index) noexcept -> std::vector<s
     return result;
 }
 
-auto same_tokens_and_comments(const Source& before, const Source& after) noexcept -> bool {
+// Only parsed import selections may change punctuation. Keep all other token
+// boundaries, including commas in calls and constructions, exact.
+auto import_list_bounds(const Source& source, ASTView syntax) noexcept
+    -> std::vector<std::pair<std::size_t, std::size_t>> {
+    const auto tokens = source.token_buffer().tokens();
+    auto result = std::vector<std::pair<std::size_t, std::size_t>>();
+    const auto add = [&](Span span) noexcept {
+        const auto first = std::ranges::lower_bound(
+            tokens,
+            span.start(),
+            {},
+            [](const Token& token) static noexcept { return token.span.start(); }
+        );
+        auto open = std::optional<std::size_t>();
+        for (auto token = first; token != tokens.end() && token->span.start() < span.end();
+             ++token) {
+            const auto index = static_cast<std::size_t>(token - tokens.begin());
+            if (token->kind == TokenKind::LeftBrace) {
+                open = index;
+            } else if (token->kind == TokenKind::RightBrace && open) {
+                result.emplace_back(*open, index);
+            }
+        }
+    };
+    for (const auto& item : syntax.module_imports()) {
+        add(item.selection.span);
+    }
+    for (const auto& item : syntax.ast_module().cpp_header_imports) {
+        if (item.using_clause) {
+            add(item.using_clause->span);
+        }
+    }
+    std::ranges::sort(result);
+    return result;
+}
+
+auto import_commas(const Source& source, ASTView syntax) noexcept -> std::vector<bool> {
+    const auto tokens = source.token_buffer().tokens();
+    auto result = std::vector<bool>(tokens.size(), false);
+    for (const auto [open, close] : import_list_bounds(source, syntax)) {
+        if (tokens[close - 1uz].kind == TokenKind::Comma) {
+            result[close - 1uz] = true;
+        }
+    }
+    return result;
+}
+
+auto mask_import_trailing_commas(const Source& source, ASTView syntax) noexcept -> std::string {
+    auto result = std::string(source.text());
+    const auto tokens = source.token_buffer().tokens();
+    for (const auto [open, close] : import_list_bounds(source, syntax) | std::views::reverse) {
+        const auto last = close - 1uz;
+        // A comment before an existing comma forces a multiline list. Retain
+        // that comma and its comment boundary rather than moving punctuation.
+        if (tokens[last].kind == TokenKind::Comma && comments(source, last).empty()) {
+            result[tokens[last].span.start()] = ' ';
+        }
+    }
+    return result;
+}
+
+auto with_multiline_import_commas(const Source& source, ASTView syntax, std::string output) noexcept
+    -> std::string {
+    const auto scanned =
+        lex(SourceView {
+            .source_id = source.token_buffer().source_id(),
+            .text = output,
+            .origin = "graver import punctuation",
+        });
+    const auto tokens = scanned.value.tokens();
+    if (has_errors(scanned) || tokens.size() != source.token_buffer().tokens().size()) {
+        return output; // The format boundary validates generated output.
+    }
+    for (const auto [open, close] : import_list_bounds(source, syntax) | std::views::reverse) {
+        const auto begin = tokens[open].span.start();
+        const auto end = tokens[close].span.end();
+        if (tokens[close - 1uz].kind != TokenKind::Comma
+            && std::string_view(output).substr(begin, end - begin).contains('\n')) {
+            output.insert(tokens[close - 1uz].span.end(), ",");
+        }
+    }
+    return output;
+}
+
+auto same_tokens_and_comments(
+    const Source& before,
+    ASTView before_syntax,
+    const Source& after,
+    ASTView after_syntax
+) noexcept -> bool {
     const auto left = before.token_buffer().tokens();
     const auto right = after.token_buffer().tokens();
-    if (left.size() != right.size()) {
-        return false;
-    }
-    for (auto index = 0uz; index <= left.size(); ++index) {
-        if (comments(before, index) != comments(after, index)) {
+    const auto left_commas = import_commas(before, before_syntax);
+    const auto right_commas = import_commas(after, after_syntax);
+    auto i = 0uz;
+    auto j = 0uz;
+    for (;;) {
+        auto left_comments = comments(before, i);
+        auto right_comments = comments(after, j);
+        if (i < left.size() && left_commas[i]) {
+            left_comments.append_range(comments(before, ++i));
+        }
+        if (j < right.size() && right_commas[j]) {
+            right_comments.append_range(comments(after, ++j));
+        }
+        if (left_comments != right_comments) {
             return false;
         }
-        if (index < left.size()
-            && (left[index].kind != right[index].kind
-                || before.spelling(left[index].span) != after.spelling(right[index].span))) {
+        if (i == left.size() || j == right.size()) {
+            return i == left.size() && j == right.size();
+        }
+        if (left[i].kind != right[j].kind
+            || before.spelling(left[i].span) != after.spelling(right[j].span)) {
             return false;
         }
+        ++i;
+        ++j;
     }
-    return true;
 }
 
 } // namespace
@@ -985,8 +1058,21 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
     if (!syntax) {
         return std::unexpected(syntax.error());
     }
-    auto result = SyntaxFormatter(*input, syntax->view()).format();
-    result = align_array_rows(*input, syntax->view(), std::move(result), line_width);
+    // Replacing optional commas with spaces preserves AST offsets during layout.
+    const auto layout_text = mask_import_trailing_commas(*input, syntax->view());
+    const auto layout_input = Source::scan(
+        SourceView {
+            .source_id = source_id,
+            .text = layout_text,
+            .origin = sources.view(source_id).origin,
+        }
+    );
+    if (!layout_input) {
+        return std::unexpected(layout_input.error());
+    }
+    auto result = SyntaxFormatter(*layout_input, syntax->view()).format();
+    result = align_array_rows(*layout_input, syntax->view(), std::move(result), line_width);
+    result = with_multiline_import_commas(*layout_input, syntax->view(), std::move(result));
     auto output_sources = SourceManager();
     const auto output_id = output_sources.append_virtual("graver output", result);
     if (!output_id) {
@@ -995,9 +1081,12 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
         );
     }
     const auto output = Source::scan(output_sources.view(*output_id));
-    if (!output
-        || !same_tokens_and_comments(*input, *output)
-        || !parse(output_sources, output->token_buffer())) {
+    if (!output) {
+        return std::unexpected(output.error());
+    }
+    const auto output_syntax = parse(output_sources, output->token_buffer());
+    if (!output_syntax
+        || !same_tokens_and_comments(*input, syntax->view(), *output, output_syntax->view())) {
         return std::unexpected(failure(
             source_id,
             Span::at(0),

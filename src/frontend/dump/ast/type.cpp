@@ -54,17 +54,15 @@ auto literal_kind_name(const BooleanLiteralValue& value) noexcept -> std::string
 
 template<typename... Values>
 auto literal_kind_name(const std::variant<Values...>& value) noexcept -> std::string_view {
-    return std::visit(
-        [](const auto& alternative) static noexcept { return literal_kind_name(alternative); },
-        value
-    );
+    return value.visit([](const auto& alternative) static noexcept {
+        return literal_kind_name(alternative);
+    });
 }
 
 auto numeric_value_span(const NumericLiteralValue& value) noexcept -> Span {
-    return std::visit(
-        [](const auto& alternative) static noexcept { return alternative.value_span; },
-        value
-    );
+    return value.visit([](const auto& alternative) static noexcept {
+        return alternative.value_span;
+    });
 }
 
 auto literal_value_span(Span span, const ASTLiteralValue& value) noexcept -> Span {
@@ -216,7 +214,7 @@ auto ASTDumper::render_type(
     std::string_view field
 ) noexcept -> void {
     const auto& type = ast.type(type_id);
-    std::visit(
+    type.value.visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
                 append_line(
@@ -266,8 +264,7 @@ auto ASTDumper::render_type(
                 );
                 render_function_type_children(function, child_prefix(prefix, is_last));
             },
-        },
-        type.value
+        }
     );
 }
 
@@ -276,7 +273,7 @@ auto ASTDumper::render_construction_type(
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
-    std::visit(
+    type.value.visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
                 append_line(
@@ -294,7 +291,6 @@ auto ASTDumper::render_construction_type(
                 );
                 render_function_type_children(function, child_prefix(prefix, is_last));
             },
-        },
-        type.value
+        }
     );
 }

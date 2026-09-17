@@ -1,4 +1,10 @@
-import "discarded_results/provider.hpp";
+import "discarded_results/provider.hpp" using discarded_probe::{
+    scalar,
+    result,
+    reset,
+    call_count,
+    owner_count,
+};
 
 private import(cpp) fn discarded_invalid_scalar() -> char;
 
@@ -46,4 +52,18 @@ export(cpp) fn slice_known_empty() {
 export(cpp) fn slice_known_format() {
     let array = [1];
     let _ = f"{array.as_slice().slice(0, 2).len()}";
+}
+
+private fn native_result() => result();
+
+test "discarded native results preserve calls and destruction" {
+    reset();
+    scalar();
+    check(call_count() == 1);
+    result();
+    check(call_count() == 2);
+    check(owner_count() == 0);
+    native_result();
+    check(call_count() == 3);
+    check(owner_count() == 0);
 }

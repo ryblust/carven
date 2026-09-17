@@ -64,7 +64,6 @@ TEST_CASE("Const arrays: literal context and indexing retain source diagnostics"
             .source = "const value = false && ([1, 2][true] == 0);",
             .code = DiagnosticCode::TypeIndexInteger,
         },
-        Case {.source = "const values = [1.0f32];", .code = DiagnosticCode::ConstInitializer},
         Case {
             .source = "const values: [String; 1] = [\"text\"];",
             .code = DiagnosticCode::ConstInitializer

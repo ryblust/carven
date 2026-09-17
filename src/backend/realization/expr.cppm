@@ -8,7 +8,8 @@ import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.type;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import :support.invariant;
 import std;
 

@@ -93,7 +93,9 @@ stale artifact removal, installation, and native dependency scheduling.
 
 ## Build integration
 
-The standalone CLI writes artifacts directly and does not compile C++.
+The `compile` command writes artifacts directly and does not compile C++.
+The direct-run entry collects fixed Crafts roots and invokes the native compiler
+for temporary execution as described in [CLI Reference](cli.md).
 Consumers provide the output root and installed support root as include search
 paths, compile the generated implementations, and link their C++ providers.
 Header imports do not add include directories or link inputs.

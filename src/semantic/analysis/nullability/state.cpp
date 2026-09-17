@@ -60,7 +60,7 @@ NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
       body(body),
       diagnostics(diagnostics) {
     for (const auto entry : body.bindings()) {
-        const auto aliases = std::visit(
+        const auto aliases = entry.value.storage.visit(
             Overloaded {
                 [&](const ParameterBindingStorage& storage) noexcept {
                     return storage.access == AccessMode::Write
@@ -73,8 +73,7 @@ NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
                     return storage.mode == CaptureMode::Write;
                 },
                 [](const OwnerBindingStorage&) static noexcept { return false; },
-            },
-            entry.value.storage
+            }
         );
         if (aliases) {
             input_aliases.insert(entry.id);
@@ -276,7 +275,7 @@ auto NullabilityBodyAnalyzer::scan_write(
             invalidate(state, location(value, true));
         }
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const SemTake& value) noexcept { invalidate(state, location(*value.place, true)); },
             [&](const SemCall& value) noexcept {
@@ -301,8 +300,7 @@ auto NullabilityBodyAnalyzer::scan_write(
                 }
             },
             [](const auto&) static noexcept {},
-        },
-        source.value
+        }
     );
 }
 

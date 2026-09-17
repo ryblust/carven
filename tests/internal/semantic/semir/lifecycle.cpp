@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.lifecycle;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.sink;
 import :frontend.program.parse;
@@ -21,6 +20,7 @@ import :semantic.semir.structured;
 import :semantic.semir.table;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
@@ -54,12 +54,12 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto source = sources.append_virtual("semir-fixture.cv", "");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path(module_name),
         },
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
 
     auto diagnostics = DiagnosticSink();
@@ -281,12 +281,12 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     const auto source = sources.append_virtual("callable-view-storage.cv", "");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path(use_enum ? "semir.illegal_enum" : "semir.illegal_struct"),
         },
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
 
     auto diagnostics = DiagnosticSink();

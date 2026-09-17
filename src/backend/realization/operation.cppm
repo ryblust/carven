@@ -3,7 +3,10 @@ module carven:backend.realization.operation;
 import :backend.lowering.context;
 import :backend.preparation;
 import :backend.target.expr;
-import :semantic.semir;
+import :backend.target.stmt;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.structured;
 import std;
 
 // Prepared operands preserve their use contract's native type and value category.
@@ -43,3 +46,10 @@ auto realize_callable_adaptation(
     TypeID from,
     TypeID to
 ) noexcept -> TargetExpr;
+
+// Execution and operand sequencing are already established by the caller.
+auto discarded_operation(
+    const ModuleLowering& context,
+    const SemanticExpression& source,
+    TargetExpr expression
+) noexcept -> TargetStmt;

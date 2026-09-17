@@ -27,6 +27,8 @@ auto prepare_operation(const SemIRProgram& program, const SemanticExpression& so
             if (const auto known = print->operands[index].expression.constant) {
                 const auto& fact = values.constant(*known);
                 if (std::holds_alternative<IntegerConstant>(fact.value)
+                    || std::holds_alternative<F32Constant>(fact.value)
+                    || std::holds_alternative<F64Constant>(fact.value)
                     || std::holds_alternative<BooleanConstant>(fact.value)
                     || std::holds_alternative<CharacterConstant>(fact.value)) {
                     if (auto formatted = format_builtin_value(

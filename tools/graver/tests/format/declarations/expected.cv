@@ -1,4 +1,4 @@
-import .api using {one, two,};
+import .api using { one, two };
 
 struct Pair {
     left: ptr<&i32>,

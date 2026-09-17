@@ -1,7 +1,9 @@
 module carven:backend.construction.builder;
 
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.structured;
 import std;
 
 class BodyConstructionBuilder final {

@@ -47,7 +47,7 @@ auto OwnershipBodyAnalyzer::bind_pattern(
     PatternID id,
     const OwnershipRelationships& relationships
 ) noexcept -> void {
-    std::visit(
+    body.pattern(id).value.visit(
         Overloaded {
             [&](const BindingPattern& pattern) noexcept {
                 store(
@@ -72,8 +72,7 @@ auto OwnershipBodyAnalyzer::bind_pattern(
                 }
             },
             [](const auto&) static noexcept {},
-        },
-        body.pattern(id).value
+        }
     );
 }
 

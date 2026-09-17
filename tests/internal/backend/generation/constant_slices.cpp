@@ -17,9 +17,9 @@ import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
 import :backend.target;
-import :compiler.request;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.semantic.analysis.fixture;
@@ -150,7 +150,7 @@ TEST_CASE("Generation: frozen slices reference deduplicated static array declara
 
 TEST_CASE("Generation: static slice backing names are isolated across artifact owners") {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     const auto append = [&](std::string_view name, std::string source) noexcept {
         const auto id = sources.append_virtual(std::format("{}.cv", name), std::move(source));
         REQUIRE(id.has_value());
@@ -163,7 +163,7 @@ TEST_CASE("Generation: static slice backing names are isolated across artifact o
         "export const numbers: [i32] = [1, 2]; fn provider_view() -> [i32] => numbers;"
     );
     append("consumer", "import provider using numbers; fn consumer_view() -> [i32] => numbers;");
-    auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
     REQUIRE(analyzed.has_value());

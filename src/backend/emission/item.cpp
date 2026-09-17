@@ -21,7 +21,7 @@ auto class_access_spelling(TargetClassAccess access) noexcept -> std::string_vie
 
 auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName& value) noexcept
     -> LayoutNodeID {
-    return std::visit(
+    return value.visit(
         Overloaded {
             [&](const TargetIdentifier& name) noexcept { return render_identifier(name); },
             [&](TargetOperatorName name) noexcept {
@@ -32,8 +32,7 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
                 }
                 std::unreachable();
             },
-        },
-        value
+        }
     );
 }
 
@@ -93,7 +92,7 @@ auto TargetRenderer::render_function_declarator(
 
 auto TargetRenderer::render_record_member(const TargetRecordMember& value) noexcept
     -> LayoutNodeID {
-    return std::visit(
+    return value.visit(
         Overloaded {
             [&](const TargetStructField& field) noexcept {
                 return concat(
@@ -103,8 +102,7 @@ auto TargetRenderer::render_record_member(const TargetRecordMember& value) noexc
             [&](const TargetMemberFunctionDecl& function) noexcept {
                 return render_member_function(function);
             },
-        },
-        value
+        }
     );
 }
 
@@ -135,7 +133,7 @@ auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& func
         result,
         function.const_qualified
     );
-    return std::visit(
+    return function.form.visit(
         Overloaded {
             [&](const TargetMemberFunctionDeclaration&) noexcept {
                 return concat({signature, text(";")});
@@ -146,13 +144,12 @@ auto TargetRenderer::render_member_function(const TargetMemberFunctionDecl& func
             [&](const TargetMemberFunctionDefinition& definition) noexcept {
                 return concat({signature, text(" "), render_statement_block(definition.body)});
             },
-        },
-        function.form
+        }
     );
 }
 
 auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcept -> LayoutNodeID {
-    return std::visit(
+    return value.visit(
         Overloaded {
             [&](const TargetMemberVariable& member) noexcept {
                 return concat(
@@ -230,13 +227,12 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
             [&](const TargetMemberFunctionDecl& function) noexcept {
                 return render_member_function(function);
             },
-        },
-        value
+        }
     );
 }
 
 auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> LayoutNodeID {
-    return std::visit(
+    return value.visit(
         Overloaded {
             [&](const TargetVariableDecl& variable) noexcept {
                 auto prefix = std::string();
@@ -280,7 +276,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                     function.parameters,
                     render_type_layouts(function.result)
                 );
-                return std::visit(
+                return function.form.visit(
                     Overloaded {
                         [&](const TargetFreeFunctionDeclaration&) noexcept {
                             return concat({signature, text(";")});
@@ -290,8 +286,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                                 {signature, text(" "), render_statement_block(definition.body)}
                             );
                         },
-                    },
-                    function.form
+                    }
                 );
             },
             [&](const TargetOutOfClassMemberDefinition& function) noexcept {
@@ -379,13 +374,12 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
             [&](const TargetClassForwardDecl& target_class) noexcept {
                 return concat({text("class "), render_identifier(target_class.name), text(";")});
             },
-        },
-        value
+        }
     );
 }
 
 auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeID {
-    const auto rendered = std::visit(
+    const auto rendered = item.value.visit(
         Overloaded {
             [&](const TargetDecl& value) noexcept { return render_declaration(value); },
             [&](const TargetNamespace& value) noexcept {
@@ -439,8 +433,7 @@ auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeI
                 );
             },
             [&](const TargetRawFragment& value) noexcept { return render_raw_fragment(value); },
-        },
-        item.value
+        }
     );
     return with_attribution(rendered, item.attribution);
 }

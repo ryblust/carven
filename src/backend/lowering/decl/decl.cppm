@@ -4,7 +4,8 @@ import :backend.generation.plan;
 import :backend.lowering.context;
 import :backend.target.item;
 import :backend.target.unit;
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
 import std;
 
 struct LoweredModuleSchedule final {

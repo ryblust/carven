@@ -24,23 +24,21 @@ auto entry_count(Entries entries) noexcept -> std::size_t {
 
 auto nominal_origin(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
     -> ProgramOriginID {
-    return std::visit(
+    return nominal.visit(
         Overloaded {
             [&](StructID id) noexcept { return semantic.declarations().structure(id).origin; },
             [&](EnumID id) noexcept { return semantic.declarations().enumeration(id).origin; },
-        },
-        nominal
+        }
     );
 }
 
 auto nominal_name(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
     -> ProgramSpellingID {
-    return std::visit(
+    return nominal.visit(
         Overloaded {
             [&](StructID id) noexcept { return semantic.declarations().structure(id).name; },
             [&](EnumID id) noexcept { return semantic.declarations().enumeration(id).name; },
-        },
-        nominal
+        }
     );
 }
 
@@ -56,13 +54,10 @@ auto nominal_key(const SemIRProgram& semantic, NominalDeclarationRef nominal) no
         std::string(module_path(semantic, owner)),
         semantic.provenance().location(nominal_origin(semantic, nominal)).line,
         std::string(semantic.provenance().spelling(nominal_name(semantic, nominal))),
-        std::visit(
-            []<typename ID>(ID id) static noexcept -> std::size_t {
-                static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
-                return id.index();
-            },
-            nominal
-        ),
+        nominal.visit([]<typename ID>(ID id) static noexcept -> std::size_t {
+            static_assert(std::same_as<ID, StructID> || std::same_as<ID, EnumID>);
+            return id.index();
+        }),
     };
 }
 
@@ -182,7 +177,7 @@ auto plan_artifacts(
             );
         }
         for (const auto item : module_record.value.items) {
-            std::visit(
+            item.visit(
                 Overloaded {
                     [&](FunctionID id) noexcept {
                         const auto& function = declarations.function(id);
@@ -209,8 +204,7 @@ auto plan_artifacts(
                             schedules[module_record.id.index()]->emitted_tests.push_back(id);
                         }
                     },
-                },
-                item
+                }
             );
         }
     }
@@ -390,10 +384,9 @@ auto plan_artifacts(
             const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
             interface_declarations.push_back({
                 .module_id = owner,
-                .declaration = std::visit(
+                .declaration = nominal.visit(
                     [](auto id) static noexcept
-                        -> std::variant<FunctionID, StructID, EnumID, CallableID> { return id; },
-                    nominal
+                        -> std::variant<FunctionID, StructID, EnumID, CallableID> { return id; }
                 ),
             });
         }
@@ -406,7 +399,7 @@ auto plan_artifacts(
         }
         for (const auto member : component_members[component_index]) {
             for (const auto item : declarations.module_decl(member).items) {
-                std::visit(
+                item.visit(
                     Overloaded {
                         [&](FunctionID id) noexcept {
                             if (declarations.function(id).visibility
@@ -421,8 +414,7 @@ auto plan_artifacts(
                         [](StructID) static noexcept {},
                         [](EnumID) static noexcept {},
                         [](TestID) static noexcept {},
-                    },
-                    item
+                    }
                 );
             }
         }

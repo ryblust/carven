@@ -1,4 +1,4 @@
-import .global using {make_global, global_rows};
+import .global using { make_global, global_rows };
 
 test "C++ global names: source environments follow cross-module results" {
     let point = make_global();

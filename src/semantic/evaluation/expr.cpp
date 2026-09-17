@@ -24,6 +24,91 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
     if (auto checked = step(source.origin); !checked) {
         return std::unexpected(checked.error());
     }
+    if (const auto* propagation = std::get_if<SemPropagate>(&source.value)) {
+        return expression(frame, *propagation->operand);
+    }
+    if (const auto* attempt = std::get_if<SemTry>(&source.value)) {
+        auto protected_result = region(frame, *attempt->body);
+        if (protected_result) {
+            return protected_result;
+        }
+        const auto* source_failure = std::get_if<ExecutionSourceFailure>(&protected_result.error());
+        if (source_failure == nullptr) {
+            return protected_result;
+        }
+        // The original payload remains independent of copied bindings and nested catches.
+        const auto failure = *source_failure;
+        for (const auto& arm : attempt->arms) {
+            const auto reset = [&]() noexcept {
+                for (const auto binding : arm.bindings) {
+                    frame.slots[binding.index()] = ExecutionUninitialized {};
+                }
+            };
+            auto matched = false;
+            for (const auto& alternative : arm.alternatives) {
+                if (!alternative.reachable) {
+                    continue;
+                }
+                reset();
+                if (std::holds_alternative<CatchAllPattern>(alternative.pattern)) {
+                    matched = true;
+                } else if (const auto* typed =
+                               std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                    const auto catch_type = type(typed->type.construction(), alternative.origin);
+                    if (!catch_type) {
+                        return std::unexpected(catch_type.error());
+                    }
+                    if (*catch_type != failure.type) {
+                        continue;
+                    }
+                    auto accepted =
+                        matches(frame, typed->inner, *failure.payload, arm.pattern_bounds);
+                    if (!accepted) {
+                        reset();
+                        return std::unexpected(accepted.error());
+                    }
+                    matched = *accepted;
+                }
+                if (matched) {
+                    break;
+                }
+            }
+            if (!matched) {
+                reset();
+                continue;
+            }
+            frame.caught.push_back(failure);
+            auto recover = [&]() noexcept -> ExecutionResult<std::optional<ExecutionCompletion>> {
+                if (arm.guard) {
+                    auto guard = value(frame, *arm.guard);
+                    if (!guard) {
+                        return std::unexpected(guard.error());
+                    }
+                    auto truth = boolean(*guard, arm.guard->origin);
+                    if (!truth) {
+                        return std::unexpected(truth.error());
+                    }
+                    if (!*truth) {
+                        return std::nullopt;
+                    }
+                }
+                auto result = region(frame, arm.body);
+                if (!result) {
+                    return std::unexpected(result.error());
+                }
+                return std::move(*result);
+            }();
+            frame.caught.pop_back();
+            reset();
+            if (!recover) {
+                return std::unexpected(recover.error());
+            }
+            if (*recover) {
+                return std::move(**recover);
+            }
+        }
+        return protected_result;
+    }
     if (const auto* conditional = std::get_if<SemIf>(&source.value)) {
         for (const auto& branch : conditional->branches) {
             auto condition = value(frame, branch.condition);
@@ -96,8 +181,8 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
         }
         return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }
-    auto result = std::visit(
-        [&](const auto& operation) noexcept -> ExecutionResult<ExecutionValue> {
+    auto result =
+        source.value.visit([&](const auto& operation) noexcept -> ExecutionResult<ExecutionValue> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemConstant>) {
                 return ExecutionValue(operation.constant);
@@ -187,6 +272,13 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 auto target = type(source.type.construction(), source.origin);
                 if (!target) {
                     return std::unexpected(target.error());
+                }
+                if (auto checked = check_aggregate_size(*target, source.origin); !checked) {
+                    return std::unexpected(checked.error());
+                }
+                if (auto checked = account_aggregate(operation.payload.size(), source.origin);
+                    !checked) {
+                    return std::unexpected(checked.error());
                 }
                 auto elements = std::vector<ExecutionValue>();
                 for (const auto& child : operation.payload) {
@@ -521,9 +613,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     "operation is not supported in execution"
                 ));
             }
-        },
-        source.value
-    );
+        });
     if (!result) {
         return std::unexpected(result.error());
     }
@@ -542,7 +632,7 @@ auto SemanticExecutor::matches(
             if (auto checked = step(pattern.origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            return std::visit(
+            return pattern.value.visit(
                 [&](const auto& pattern_value) noexcept -> ExecutionResult<bool> {
                     using Pattern = std::remove_cvref_t<decltype(pattern_value)>;
                     if constexpr (std::same_as<Pattern, WildcardPattern>) {
@@ -554,6 +644,44 @@ auto SemanticExecutor::matches(
                         }
                         frame.slots[pattern_value.binding.index()] = std::move(*copied);
                         return true;
+                    } else if constexpr (std::same_as<Pattern, TypeConstraintPattern>
+                                         || std::
+                                             same_as<Pattern, ElaboratedTypeConstraintPattern>) {
+                        auto expected =
+                            type(ConstructionTypeRef(pattern_value.type), pattern.origin);
+                        if (!expected) {
+                            return std::unexpected(expected.error());
+                        }
+                        return execution_value_type(values, subject) == *expected;
+                    } else if constexpr (std::same_as<Pattern, EnumCasePattern>) {
+                        const auto compound = execution_compound_view(values, subject);
+                        if (!compound) {
+                            const auto atom = execution_atom(values, subject);
+                            const auto* numeric =
+                                atom ? std::get_if<NumericEnumConstant>(&atom->value) : nullptr;
+                            return numeric != nullptr
+                                && numeric->enum_case == pattern_value.enum_case;
+                        }
+                        if (compound->enum_case != pattern_value.enum_case
+                            || compound->size() != pattern_value.payload.size()) {
+                            return false;
+                        }
+                        return compound->elements.visit(
+                            [&](const auto children) noexcept -> ExecutionResult<bool> {
+                                for (auto index = 0uz; index < children.size(); ++index) {
+                                    auto accepted = matches(
+                                        frame,
+                                        pattern_value.payload[index],
+                                        children[index],
+                                        pattern_bounds
+                                    );
+                                    if (!accepted || !*accepted) {
+                                        return accepted;
+                                    }
+                                }
+                                return true;
+                            }
+                        );
                     } else if constexpr (std::same_as<Pattern, RangePattern>) {
                         const auto read =
                             [&](const RangePatternBound& bound,
@@ -649,8 +777,7 @@ auto SemanticExecutor::matches(
                             "pattern is not supported in execution"
                         ));
                     }
-                },
-                pattern.value
+                }
             );
         }
     );

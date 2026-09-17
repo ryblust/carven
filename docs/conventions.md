@@ -166,6 +166,7 @@ source-layout and style rules apply to handwritten code.
 - Call `std::get` only immediately after checking the active alternative;
   otherwise use `std::get_if`.
 - Preserve evaluation order when simplifying expressions.
+- Use member `visit` for one variant and `std::visit` for multiple variants.
 
 ## Tests
 

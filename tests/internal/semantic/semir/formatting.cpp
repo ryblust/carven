@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.formatting;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.body.builder;
@@ -16,6 +15,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;

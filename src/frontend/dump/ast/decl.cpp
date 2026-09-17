@@ -28,7 +28,7 @@ auto ASTDumper::render_module_import(
     );
     const auto nested_prefix = child_prefix(prefix, is_last);
     const auto& reference = declaration.module_reference;
-    const auto reference_kind = std::visit(
+    const auto reference_kind = reference.value.visit(
         Overloaded {
             [](const ASTDomainRootModuleReference&) static noexcept {
                 return std::string_view("DomainRoot");
@@ -39,8 +39,7 @@ auto ASTDumper::render_module_import(
             [](const ASTCraftQualifiedModuleReference&) static noexcept {
                 return std::string_view("CraftQualified");
             },
-        },
-        reference.value
+        }
     );
     append_line(
         nested_prefix,
@@ -48,28 +47,25 @@ auto ASTDumper::render_module_import(
         std::format("module_reference {} {}", reference_kind, format_dump_span(reference.span))
     );
     const auto reference_prefix = child_prefix(nested_prefix, false);
-    std::visit(
-        [&](const auto& value) noexcept {
-            if constexpr (requires { value.name_span; }) {
-                render_span_field(reference_prefix, false, "craft", value.name_span);
-                render_span_field(reference_prefix, false, "separator", value.separator_span);
+    reference.value.visit([&](const auto& value) noexcept {
+        if constexpr (requires { value.name_span; }) {
+            render_span_field(reference_prefix, false, "craft", value.name_span);
+            render_span_field(reference_prefix, false, "separator", value.separator_span);
+        }
+        if constexpr (requires { value.prefix_span; }) {
+            render_span_field(reference_prefix, false, "prefix", value.prefix_span);
+        }
+        render_list(
+            reference_prefix,
+            true,
+            "components",
+            value.components,
+            [&](Span component, std::string_view item_prefix, bool item_last) noexcept {
+                render_span_field(item_prefix, item_last, "component", component);
             }
-            if constexpr (requires { value.prefix_span; }) {
-                render_span_field(reference_prefix, false, "prefix", value.prefix_span);
-            }
-            render_list(
-                reference_prefix,
-                true,
-                "components",
-                value.components,
-                [&](Span component, std::string_view item_prefix, bool item_last) noexcept {
-                    render_span_field(item_prefix, item_last, "component", component);
-                }
-            );
-        },
-        reference.value
-    );
-    std::visit(
+        );
+    });
+    declaration.selection.value.visit(
         Overloaded {
             [&](const ASTSingleImport& selection) noexcept {
                 append_line(
@@ -116,8 +112,7 @@ auto ASTDumper::render_module_import(
                     }
                 );
             },
-        },
-        declaration.selection.value
+        }
     );
 }
 
@@ -151,7 +146,7 @@ auto ASTDumper::render_cpp_header_import(
         for (const auto component : clause.prefix) {
             render_span_field(using_prefix, false, "prefix", component);
         }
-        std::visit(
+        clause.selection.visit(
             Overloaded {
                 [&](const ASTCppSingleSelection& value) noexcept {
                     render_span_field(using_prefix, true, "name", value.name);
@@ -169,8 +164,7 @@ auto ASTDumper::render_cpp_header_import(
                 [&](const ASTCppNamespaceSelection& value) noexcept {
                     render_span_field(using_prefix, true, "namespace", value.star);
                 },
-            },
-            clause.selection
+            }
         );
     }
 }
@@ -183,7 +177,7 @@ auto ASTDumper::render_top_level_item(
     const auto& item = ast.item(item_id);
     const auto render_visibility = [&](const ASTDeclarationVisibility& visibility,
                                        std::string_view nested_prefix) noexcept {
-        std::visit(
+        visibility.visit(
             Overloaded {
                 [&](const ASTPrivateDeclarationVisibility& value) noexcept {
                     render_span_field(
@@ -204,11 +198,10 @@ auto ASTDumper::render_top_level_item(
                         value.keyword_span
                     );
                 },
-            },
-            visibility
+            }
         );
     };
-    std::visit(
+    item.value.visit(
         Overloaded {
             [&](const ASTEnumDecl& declaration) noexcept {
                 append_line(
@@ -365,7 +358,7 @@ auto ASTDumper::render_top_level_item(
                     render_type(*definition.result_type, nested_prefix, false, "result ");
                 }
                 render_throw_clause(definition.throw_clause, nested_prefix, false);
-                std::visit(
+                definition.implementation.visit(
                     Overloaded {
                         [&](const ASTFunctionBody& implementation) noexcept {
                             render_callable_body(implementation.body, nested_prefix, true, "body ");
@@ -378,8 +371,7 @@ auto ASTDumper::render_top_level_item(
                                 implementation.span
                             );
                         },
-                    },
-                    definition.implementation
+                    }
                 );
             },
             [&](const ASTConstantDecl& declaration) noexcept {
@@ -413,7 +405,6 @@ auto ASTDumper::render_top_level_item(
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
                 render_ordinary_block(declaration.body, nested_prefix, true, "body ");
             },
-        },
-        item.value
+        }
     );
 }

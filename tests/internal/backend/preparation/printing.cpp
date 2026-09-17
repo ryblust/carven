@@ -22,7 +22,7 @@ TEST_CASE("Print preparation: known scalar text retains the complete source oper
         "false",
         std::nullopt,
         std::nullopt,
-        std::nullopt,
+        "1.25",
         std::nullopt,
         std::nullopt,
     };

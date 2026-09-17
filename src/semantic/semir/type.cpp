@@ -30,69 +30,61 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
     const auto text = [&](std::string_view value) noexcept {
         mix(std::hash<std::string_view>()(value));
     };
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, BuiltinTypeValue>) {
-                mix(static_cast<std::size_t>(value.kind));
-            } else if constexpr (std::same_as<Value, StructTypeValue>) {
-                child(value.structure, "struct type used a foreign program");
-            } else if constexpr (std::same_as<Value, EnumTypeValue>) {
-                child(value.enumeration, "enum type used a foreign program");
-            } else if constexpr (std::same_as<Value, PointerTypeValue>) {
-                child(value.target, "ptr type used a foreign target");
-                mix(static_cast<std::size_t>(value.access));
-            } else if constexpr (std::same_as<Value, SliceTypeValue>
-                                 || std::same_as<Value, RangeTypeValue>) {
-                child(value.element, "slice type used a foreign element type");
-            } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
-                child(value.element, "array type used a foreign element type");
-                mix(std::hash<std::uint64_t>()(value.extent));
-            } else if constexpr (std::same_as<Value, FunctionTypeValue>
-                                 || std::same_as<Value, ClosureTypeValue>) {
-                child(value.callable, "callable type used a foreign program");
-            } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
-                child(value.signature, "callable view type used a foreign signature");
-            } else {
-                static_assert(std::same_as<Value, CppTypeValue>);
-                mix(value.form.index());
-                if (const auto* name = cpp_type_name(value)) {
-                    child(name->context_module, "C++ type used a foreign module");
-                    mix(static_cast<std::size_t>(name->lookup));
-                    for (const auto& component : name->components) {
-                        text(component);
-                    }
-                }
-                for (const auto reference : cpp_type_references(value)) {
-                    child(reference, "C++ type used a foreign argument");
-                }
-                if (const auto* query = std::get_if<CppQueryType>(&value.form)) {
-                    mix(query->expression.index());
-                    std::visit(
-                        [&](const auto& expression) noexcept {
-                            using Expression = std::remove_cvref_t<decltype(expression)>;
-                            if constexpr (std::same_as<Expression, CppMemberQuery>) {
-                                text(expression.member);
-                            } else if constexpr (std::same_as<Expression, CppUnaryQuery>
-                                                 || std::same_as<Expression, CppBinaryQuery>) {
-                                mix(static_cast<std::size_t>(expression.operation));
-                            } else if constexpr (std::same_as<Expression, CppCallQuery>) {
-                                mix(expression.callee.index());
-                                if (const auto* member =
-                                        std::get_if<CppMemberCallee<CppTypeOperand>>(
-                                            &expression.callee
-                                        )) {
-                                    text(member->member);
-                                }
-                            }
-                        },
-                        query->expression
-                    );
+    type.value.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, BuiltinTypeValue>) {
+            mix(static_cast<std::size_t>(value.kind));
+        } else if constexpr (std::same_as<Value, StructTypeValue>) {
+            child(value.structure, "struct type used a foreign program");
+        } else if constexpr (std::same_as<Value, EnumTypeValue>) {
+            child(value.enumeration, "enum type used a foreign program");
+        } else if constexpr (std::same_as<Value, PointerTypeValue>) {
+            child(value.target, "ptr type used a foreign target");
+            mix(static_cast<std::size_t>(value.access));
+        } else if constexpr (std::same_as<Value, SliceTypeValue>
+                             || std::same_as<Value, RangeTypeValue>) {
+            child(value.element, "slice type used a foreign element type");
+        } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
+            child(value.element, "array type used a foreign element type");
+            mix(std::hash<std::uint64_t>()(value.extent));
+        } else if constexpr (std::same_as<Value, FunctionTypeValue>
+                             || std::same_as<Value, ClosureTypeValue>) {
+            child(value.callable, "callable type used a foreign program");
+        } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
+            child(value.signature, "callable view type used a foreign signature");
+        } else {
+            static_assert(std::same_as<Value, CppTypeValue>);
+            mix(value.form.index());
+            if (const auto* name = cpp_type_name(value)) {
+                child(name->context_module, "C++ type used a foreign module");
+                mix(static_cast<std::size_t>(name->lookup));
+                for (const auto& component : name->components) {
+                    text(component);
                 }
             }
-        },
-        type.value
-    );
+            for (const auto reference : cpp_type_references(value)) {
+                child(reference, "C++ type used a foreign argument");
+            }
+            if (const auto* query = std::get_if<CppQueryType>(&value.form)) {
+                mix(query->expression.index());
+                query->expression.visit([&](const auto& expression) noexcept {
+                    using Expression = std::remove_cvref_t<decltype(expression)>;
+                    if constexpr (std::same_as<Expression, CppMemberQuery>) {
+                        text(expression.member);
+                    } else if constexpr (std::same_as<Expression, CppUnaryQuery>
+                                         || std::same_as<Expression, CppBinaryQuery>) {
+                        mix(static_cast<std::size_t>(expression.operation));
+                    } else if constexpr (std::same_as<Expression, CppCallQuery>) {
+                        mix(expression.callee.index());
+                        if (const auto* member =
+                                std::get_if<CppMemberCallee<CppTypeOperand>>(&expression.callee)) {
+                            text(member->member);
+                        }
+                    }
+                });
+            }
+        }
+    });
     return hash;
 }
 
@@ -406,42 +398,36 @@ ConstructionTypeStore::ConstructionTypeStore(ProgramIdentity owner) noexcept
 
 auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID {
     const auto validate_ref = [this](ConstructionTypeRef ref) noexcept {
-        std::visit(
-            [this](const auto id) noexcept {
-                using ID = std::remove_cvref_t<decltype(id)>;
-                static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
-                require_owner(id.owner(), rows.owner(), "construction type used a foreign child");
-                if constexpr (std::same_as<ID, TypeTermID>) {
-                    if (!rows.contains(id)) {
-                        invariant_violation("construction type requires an existing child term");
-                    }
+        ref.visit([this](const auto id) noexcept {
+            using ID = std::remove_cvref_t<decltype(id)>;
+            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+            require_owner(id.owner(), rows.owner(), "construction type used a foreign child");
+            if constexpr (std::same_as<ID, TypeTermID>) {
+                if (!rows.contains(id)) {
+                    invariant_violation("construction type requires an existing child term");
                 }
-            },
-            ref
-        );
-    };
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
-                          || std::same_as<Value, ConstructionSliceTypeValue>) {
-                validate_ref(value.element);
-            } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
-                for (const auto& parameter : value.parameters) {
-                    validate_ref(parameter.type);
-                }
-                validate_ref(value.result);
-                require_owner(
-                    value.failures.owner(),
-                    rows.owner(),
-                    "construction callable type used a foreign failure term"
-                );
-            } else {
-                static_assert(std::same_as<Value, void>);
             }
-        },
-        type.value
-    );
+        });
+    };
+    type.value.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                      || std::same_as<Value, ConstructionSliceTypeValue>) {
+            validate_ref(value.element);
+        } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
+            for (const auto& parameter : value.parameters) {
+                validate_ref(parameter.type);
+            }
+            validate_ref(value.result);
+            require_owner(
+                value.failures.owner(),
+                rows.owner(),
+                "construction callable type used a foreign failure term"
+            );
+        } else {
+            static_assert(std::same_as<Value, void>);
+        }
+    });
     return rows.add(std::move(type));
 }
 
@@ -467,19 +453,16 @@ auto TypeResolution::contains(TypeTermID term) const noexcept -> bool {
 }
 
 auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
-    return std::visit(
-        [&](auto id) noexcept -> TypeID {
-            if (id.owner() != owner()) {
-                invariant_violation("type resolution used a foreign identity");
-            }
-            if constexpr (std::same_as<decltype(id), TypeID>) {
-                return id;
-            } else {
-                return type(id);
-            }
-        },
-        reference
-    );
+    return reference.visit([&](auto id) noexcept -> TypeID {
+        if (id.owner() != owner()) {
+            invariant_violation("type resolution used a foreign identity");
+        }
+        if constexpr (std::same_as<decltype(id), TypeID>) {
+            return id;
+        } else {
+            return type(id);
+        }
+    });
 }
 
 TypeResolution::TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept

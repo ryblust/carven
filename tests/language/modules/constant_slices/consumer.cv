@@ -1,4 +1,4 @@
-import .data using {table, empty, rows, from_provider, provider_row,};
+import .data using { table, empty, rows, from_provider, provider_row };
 
 const selected = table[1];
 const tail = table.slice(1, table.len());

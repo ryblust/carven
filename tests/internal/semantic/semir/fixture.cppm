@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.fixture;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.body.builder;
@@ -14,6 +13,7 @@ import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -32,20 +32,20 @@ auto begin_compilation_batch(
     DiagnosticSink& diagnostics,
     std::span<const std::string_view> module_names
 ) noexcept -> ProgramDraft {
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     inputs.reserve(module_names.size());
     for (auto index = 0uz; index < module_names.size(); ++index) {
         const auto source =
             sources.append_virtual(std::format("semir-publication-{}.cv", index), "");
         REQUIRE(source.has_value());
         inputs.push_back(
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = *source,
                 .module_path = path(module_names[index]),
             }
         );
     }
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }

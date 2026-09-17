@@ -76,8 +76,8 @@ From the repository root, build the compiler and run the example:
 ```
 
 It prints `Hello World`. Bare source invocation compiles and runs a native program
-on POSIX hosts. Use `interpret` to execute the supported semantic subset without
-native compilation, or `compile` to inspect or retain C++ artifacts:
+using a native C++ toolchain. Use `interpret` to execute the supported semantic
+subset without native compilation, or `compile` to inspect or retain C++ artifacts:
 
 ```shell
 ./xmakew run carven interpret examples/helloworld/main.cv
@@ -89,6 +89,12 @@ compile-time output, static tests, and ordinary function calls. `compile --stdou
 displays generated artifacts; `compile -o <dir>` writes them below the selected
 directory. With no destination option, `compile` writes below the current directory.
 The [CLI reference](docs/cli.md) defines execution limits and supported platforms.
+
+Direct execution collects sources from the compiler's `crafts/carven/` and the
+working directory's `crafts/`. Application sources remain explicit, for example
+`carven main.cv helpers.cv`. `CXX` selects the native compiler, defaulting to
+`clang++`. See [native execution](docs/cli.md#native-execution) for source discovery,
+toolchain layout, and process behavior.
 
 ## C++ project integration
 
@@ -126,7 +132,7 @@ clang++ -std=c++20 -Iout/manual -Icrafts \
 ./out/manual/hello-carven
 ```
 
-Carven does not discover imported source modules. For a `main.cv` that imports
+`carven compile` does not discover imported source modules. For a `main.cv` that imports
 `std::utf.text`, explicitly include the package modules and their generated implementations:
 
 ```shell

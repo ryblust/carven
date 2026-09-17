@@ -1,6 +1,6 @@
-import std::utf.scalar using {UnicodeScalarError, char_from_u32, char_to_u32};
-import std::utf.codec using {decode_utf8, encode_utf8};
-import std::utf.validation using {UTF8Error, validate_utf8};
+import std::utf.scalar using { UnicodeScalarError, char_from_u32, char_to_u32 };
+import std::utf.codec using { decode_utf8, encode_utf8 };
+import std::utf.validation using { UTF8Error, validate_utf8 };
 
 test "UTF8: prefix decoding stops before later bytes" {
     try {

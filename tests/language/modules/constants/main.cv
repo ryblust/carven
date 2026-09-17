@@ -1,5 +1,5 @@
-import .api using {combined, constants_cross_lambda_without_capture,};
-import .values using {constants_preserve_enum_identity, published,};
+import .api using { combined, constants_cross_lambda_without_capture };
+import .values using { constants_preserve_enum_identity, published };
 
 test "Modules: module constants elaborate through one compilation graph" {
     check(published == 42);

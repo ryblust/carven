@@ -90,8 +90,14 @@ auto ConstantBodyAdmission::run() noexcept -> AnalysisResult<void> {
                 );
             }
         }
-        if (!draft.construction_failure_term_copy(contract.failures).direct_members.empty()) {
-            reject(declaration.origin, "const fn cannot declare typed failures");
+        for (const auto type :
+             draft.construction_failure_term_copy(contract.failures).direct_members) {
+            if (!supported_type(type)) {
+                reject(
+                    declaration.origin,
+                    "const fn failure payload requires a supported execution type"
+                );
+            }
         }
     }
     for (const auto entry : body.bindings.entries()) {

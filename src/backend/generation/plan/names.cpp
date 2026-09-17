@@ -89,7 +89,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 
     for (const auto module_record : declarations.modules()) {
         for (const auto item : module_record.value.items) {
-            std::visit(
+            item.visit(
                 Overloaded {
                     [&](FunctionID id) noexcept {
                         const auto& callable =
@@ -108,8 +108,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                     [](StructID) static noexcept {},
                     [](EnumID) static noexcept {},
                     [](ModuleConstantID) static noexcept {},
-                },
-                item
+                }
             );
         }
     }
@@ -123,7 +122,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         if (!active_types.insert(type_id).second) {
             invariant_violation("closure capture target type contains a structural cycle");
         }
-        std::visit(
+        semantic.types().type(type_id).value.visit(
             Overloaded {
                 [](const BuiltinTypeValue&) static noexcept {},
                 [](const PointerTypeValue&) static noexcept {},
@@ -148,8 +147,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                         self(argument, destination, active_types);
                     }
                 },
-            },
-            semantic.types().type(type_id).value
+            }
         );
         active_types.erase(type_id);
     };
@@ -282,7 +280,7 @@ auto plan_names(
         };
 
     const auto allocate_item = [&](ModuleID module_id, ModuleItem item, bool published) noexcept {
-        std::visit(
+        item.visit(
             Overloaded {
                 [&](FunctionID id) noexcept {
                     const auto& value = declarations.function(id);
@@ -307,8 +305,7 @@ auto plan_names(
                 },
                 [](ModuleConstantID) static noexcept {},
                 [](TestID) static noexcept {},
-            },
-            item
+            }
         );
     };
 

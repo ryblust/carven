@@ -12,12 +12,18 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target;
-import :compiler.request;
 import :frontend.program.parse;
 import :semantic.analyze;
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.identity;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.table;
+import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
+import :source.provenance;
 import :support.visit;
 import :test.internal.harness.death;
 import std;
@@ -26,7 +32,7 @@ namespace {
 
 auto analyze_failure_profiles() noexcept -> SemIRProgram {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     const auto append = [&](std::string_view path_text, std::string source_text) noexcept {
         const auto source =
             sources.append_virtual(std::format("{}.cv", path_text), std::move(source_text));
@@ -47,7 +53,7 @@ auto analyze_failure_profiles() noexcept -> SemIRProgram {
         "private fn same_module() throw YFailure + BFailure {}\n"
         "private fn combined() throw AFailure + YFailure + ZFailure + BFailure {}\n"
     );
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     auto semantic = analyze(std::move(*syntax));
     REQUIRE(semantic.has_value());
@@ -76,7 +82,7 @@ auto function_named(const SemIRProgram& semantic, std::string_view name) noexcep
 }
 
 auto failure_name(const SemIRProgram& semantic, TypeID type) noexcept -> std::string_view {
-    return std::visit(
+    return semantic.types().type(type).value.visit(
         Overloaded {
             [&](const StructTypeValue& value) noexcept {
                 return semantic.provenance().spelling(
@@ -92,8 +98,7 @@ auto failure_name(const SemIRProgram& semantic, TypeID type) noexcept -> std::st
                 FAIL_CHECK("failure ABI member is not nominal");
                 return {};
             },
-        },
-        semantic.types().type(type).value
+        }
     );
 }
 
@@ -103,8 +108,8 @@ auto public_names(std::string source_text) noexcept -> std::array<std::string, 2
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("support");
     REQUIRE(path.has_value());
-    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
-    auto syntax = parse_program(sources, CompilationRequest {.modules = std::span(&input, 1)});
+    const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
+    auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
     REQUIRE(syntax.has_value());
     auto analyzed = analyze(std::move(*syntax));
     REQUIRE(analyzed.has_value());
@@ -249,11 +254,11 @@ TEST_CASE("Target generation: declared entry failures retain the ABI and argumen
     auto sources = SourceManager();
     const auto source =
         *sources.append_virtual("entry.cv", "struct E {} private fn main(args) throw E {}");
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source,
         .module_path = *CanonicalModulePath::from_value("entry"),
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = std::span(&input, 1)});
+    auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
     REQUIRE(syntax.has_value());
     auto semantic = analyze(std::move(*syntax));
     REQUIRE(semantic.has_value());

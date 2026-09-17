@@ -82,7 +82,15 @@ function main(target, opt, case_specs)
     for index, step in ipairs(case_spec.steps or {case_spec}) do
         local stdout_file = path.join(work_dir, ".stdout-" .. index)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
-        local exit_code, run_error = os.execv(program, step.args, {
+        local step_program = program
+        if step.installed_toolchain then
+            local prefix = path.join(work_dir, "toolchain with spaces")
+            step_program = path.join(prefix, "bin", path.filename(program))
+            os.mkdir(path.directory(step_program))
+            os.cp(program, step_program)
+            os.cp(path.join(os.projectdir(), "crafts", "carven"), path.join(prefix, "crafts", "carven"))
+        end
+        local exit_code, run_error = os.execv(step_program, step.args, {
             try = true, timeout = 30000, curdir = work_dir,
             stdout = stdout_file, stderr = stderr_file,
         })

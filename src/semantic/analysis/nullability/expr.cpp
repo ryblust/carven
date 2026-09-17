@@ -111,7 +111,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
         invalidate_exposed(flow.normal->state);
         flow.normal->value = {};
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const SemConstant&) noexcept { set_value(constant_value(source)); },
             [&](const SemBinding& value) noexcept {
@@ -291,8 +291,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
             [&](const SemTry& value) noexcept {
                 flow = attempt(value, std::move(flow.normal->state));
             },
-        },
-        source.value
+        }
     );
     return flow;
 }

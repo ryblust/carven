@@ -8,7 +8,9 @@ import :backend.realization.operation;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
-import :semantic.semir;
+import :semantic.semir.delegation;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import std;
 
 auto BodyRealizer::ExpressionBuilder::discard_pending(Recipe& recipe) noexcept -> void {
@@ -21,11 +23,7 @@ auto BodyRealizer::ExpressionBuilder::discard_pending(Recipe& recipe) noexcept -
     }
     if (source(recipe).executes_operation
         || std::holds_alternative<TargetExpr>(recipe.completion)) {
-        if (owner.context.is_void(source(recipe).type)) {
-            statements.emit(generated_statement(TargetExprStmt {.expression = raw(recipe)}));
-        } else {
-            statements.emit(generated_statement(TargetDiscardStmt {.expression = raw(recipe)}));
-        }
+        statements.emit(discarded_operation(owner.context, source(recipe).operation, raw(recipe)));
         complete(recipe, LoweringCompleted {});
         return;
     }

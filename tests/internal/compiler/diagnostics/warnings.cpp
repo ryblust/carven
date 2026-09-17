@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.warnings;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -25,14 +25,14 @@ TEST_CASE("Compiler diagnostics: successful compilation retains warning location
         "}\n"
     );
     const auto source_id = *sources.append_virtual("warning.cv", source);
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("warning"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
@@ -62,13 +62,13 @@ TEST_CASE("Compiler diagnostics: global references do not consume explicit C++ i
     auto sources = SourceManager();
     const auto source_id =
         *sources.append_virtual("global.cv", "import <native> using value; fn f() { ::value(); }");
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("global"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1uz)},
+        SourceBatch {.modules = std::span(&input, 1uz)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:global-unused").value(),
@@ -90,13 +90,13 @@ TEST_CASE(
         "import <native> using vendor::{used, unused}; "
         "import <native> using vendor::used; fn f() { used(); }"
     );
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("selection"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:selections").value(),

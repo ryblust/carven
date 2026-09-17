@@ -90,8 +90,8 @@ auto BodyBuilder::place_access(const PlaceExpression& place) const noexcept -> A
             }
         }
     }
-    return std::visit(
-        [](const auto& storage) static noexcept -> AccessMode {
+    return bindings.copy(*place.root)
+        .storage.visit([](const auto& storage) static noexcept -> AccessMode {
             using Storage = std::remove_cvref_t<decltype(storage)>;
             if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
                 return storage.writable ? AccessMode::Write : AccessMode::Read;
@@ -100,7 +100,5 @@ auto BodyBuilder::place_access(const PlaceExpression& place) const noexcept -> A
             } else {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
             }
-        },
-        bindings.copy(*place.root).storage
-    );
+        });
 }

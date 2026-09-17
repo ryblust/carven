@@ -1,7 +1,17 @@
 module carven:semantic.semir.evaluation.impl;
 
+import :semantic.semir.body;
+import :semantic.semir.constant;
+import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.evaluation;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.slice;
+import :semantic.semir.structured;
+import :semantic.semir.text;
+import :semantic.semir.type;
 import :support.visit;
 import std;
 
@@ -41,7 +51,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                              const SemanticExpression* second = nullptr) static noexcept {
         return EvaluationRule {.action = EvaluationAction::Operands, .operands = {&first, second}};
     };
-    return std::visit(
+    return expression.value.visit(
         Overloaded {
             [&](const SemConstant&) noexcept { return none; },
             [&](const SemBinding&) noexcept { return none; },
@@ -144,7 +154,6 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             [&](const SemIf&) noexcept { return required; },
             [&](const SemMatch&) noexcept { return required; },
             [&](const SemTry&) noexcept { return required; }
-        },
-        expression.value
+        }
     );
 }

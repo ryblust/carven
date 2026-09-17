@@ -6,7 +6,12 @@ import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.target.expr;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.constant;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.type;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -40,6 +45,38 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
         case BuiltinType::EntryArgs:    return TargetIntegerSuffix::None;
     }
     std::unreachable();
+}
+
+template<typename Floating>
+auto floating_expression(ModuleLowering& context, Floating value, TypeID type) noexcept
+    -> TargetExpr {
+    if (std::isfinite(value)) {
+        return {.value = TargetLiteralExpr {.value = TargetFloatLiteral {.value = value}}};
+    }
+    using Bits = std::conditional_t<std::same_as<Floating, float>, std::uint32_t, std::uint64_t>;
+    const auto storage =
+        std::same_as<Floating, float> ? TargetSymbol::StdUInt32 : TargetSymbol::StdUInt64;
+    auto bits = TargetExpr {
+        .value = TargetConstructionExpr {
+            .type = context.intrinsic_type(storage),
+            .initializer = target_expressions(
+                TargetExpr {
+                    .value = TargetLiteralExpr {
+                        .value = TargetIntegerLiteral {
+                            .negative = false,
+                            .magnitude = std::bit_cast<Bits>(value),
+                            .suffix = TargetIntegerSuffix::UnsignedLongLong,
+                        },
+                    },
+                }
+            ),
+        },
+    };
+    return template_call_expression(
+        intrinsic_expression(TargetSymbol::StdBitCast),
+        {context.lower_type(type)},
+        target_expressions(std::move(bits))
+    );
 }
 
 } // namespace
@@ -106,7 +143,7 @@ auto constant_expression(
     ConstantLiteralContext use
 ) noexcept -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
-    return std::visit(
+    return fact.value.visit(
         Overloaded {
             [&](const RangeConstant& value) noexcept -> TargetExpr {
                 const auto& range =
@@ -142,19 +179,11 @@ auto constant_expression(
                     TargetStringLiteralKind::StringView
                 );
             },
-            [](const F32Constant& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetLiteralExpr {
-                        .value = TargetFloatLiteral {.value = value.value},
-                    },
-                };
+            [&](const F32Constant& value) noexcept -> TargetExpr {
+                return floating_expression(context, value.value, fact.type);
             },
-            [](const F64Constant& value) noexcept -> TargetExpr {
-                return {
-                    .value = TargetLiteralExpr {
-                        .value = TargetFloatLiteral {.value = value.value},
-                    },
-                };
+            [&](const F64Constant& value) noexcept -> TargetExpr {
+                return floating_expression(context, value.value, fact.type);
             },
             [](const CharacterConstant& value) noexcept -> TargetExpr {
                 return {
@@ -254,8 +283,7 @@ auto constant_expression(
                     target_expressions(name_expression(std::move(*storage)))
                 );
             },
-        },
-        fact.value
+        }
     );
 }
 

@@ -186,8 +186,6 @@ TEST_CASE("Constant arrays: equality compares nested values after independent co
 
 TEST_CASE("Constant arrays: unsupported element types are rejected without executing a call") {
     const auto sources = std::to_array<std::string_view>({
-        "const fn invalid(value: [String; 1]) -> [String; 1] => value;",
-        "const fn invalid(value: [[f64; 1]; 1]) -> [[f64; 1]; 1] => value;",
         "const fn invalid(value: [ptr<i32>; 1]) -> [ptr<i32>; 1] => value;",
         "const fn invalid(value: [[i32]; 1]) -> [[i32]; 1] => value;",
     });

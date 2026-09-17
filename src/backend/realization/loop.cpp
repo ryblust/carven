@@ -6,7 +6,12 @@ import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import std;
 
 auto BodyRealizer::lower_loop(

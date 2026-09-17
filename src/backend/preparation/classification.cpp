@@ -77,6 +77,9 @@ auto format_preserves_utf8(
             if (builtin_is_integer(type)) {
                 return parse_integer_format_specification(specification).has_value();
             }
+            if (type == BuiltinType::F32 || type == BuiltinType::F64) {
+                return parse_floating_format_specification(specification).has_value();
+            }
             return specification.empty()
                 && (type == BuiltinType::Bool
                     || type == BuiltinType::Char
@@ -115,6 +118,42 @@ auto classify_writer_format(
                 return false;
             }
             const auto type = *operands[index];
+            if (type == BuiltinType::F32 || type == BuiltinType::F64) {
+                const auto parsed = parse_floating_format_specification(specification);
+                if (!parsed || !parsed->unadorned) {
+                    return false;
+                }
+                auto mode = FloatingFormatMode::Shortest;
+                switch (parsed->presentation) {
+                    case '\0':
+                        mode = parsed->precision ? FloatingFormatMode::General
+                                                 : FloatingFormatMode::Shortest;
+                        break;
+                    case 'f': mode = FloatingFormatMode::Fixed; break;
+                    case 'e': mode = FloatingFormatMode::Scientific; break;
+                    case 'g': mode = FloatingFormatMode::General; break;
+                    default:  return false;
+                }
+                auto precision = std::uint32_t {6};
+                if (parsed->precision) {
+                    const auto digits = *parsed->precision;
+                    const auto converted =
+                        std::from_chars(digits.data(), digits.data() + digits.size(), precision);
+                    // Bound the specialized stack buffer; larger precision uses std::format.
+                    if (converted.ec != std::errc() || precision > 256u) {
+                        return false;
+                    }
+                }
+                result.fields.emplace_back(
+                    FloatingFormatField {.mode = mode, .precision = precision}
+                );
+                result.text.emplace_back();
+                const auto exponent = type == BuiltinType::F32
+                    ? std::numeric_limits<float>::max_exponent10
+                    : std::numeric_limits<double>::max_exponent10;
+                add_size(1u, static_cast<std::uint64_t>(exponent) + precision + 32u);
+                return true;
+            }
             if (!builtin_is_integer(type)) {
                 if (!specification.empty()) {
                     return false;

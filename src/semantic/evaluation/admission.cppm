@@ -18,9 +18,15 @@ auto unsupported_execution_statement(const SemanticStatement& source) noexcept
 // Draft and published patterns share these executable alternatives.
 template<typename Pattern>
 auto supported_execution_pattern(const Pattern& pattern) noexcept -> bool {
-    return std::holds_alternative<WildcardPattern>(pattern)
-        || std::holds_alternative<LiteralPattern>(pattern)
-        || std::holds_alternative<RangePattern>(pattern)
-        || std::holds_alternative<BindingPattern>(pattern)
-        || std::holds_alternative<OrPattern>(pattern);
+    return pattern.visit([](const auto& value) static noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        return std::same_as<Value, WildcardPattern>
+            || std::same_as<Value, LiteralPattern>
+            || std::same_as<Value, RangePattern>
+            || std::same_as<Value, BindingPattern>
+            || std::same_as<Value, OrPattern>
+            || std::same_as<Value, EnumCasePattern>
+            || std::same_as<Value, TypeConstraintPattern>
+            || std::same_as<Value, ElaboratedTypeConstraintPattern>;
+    });
 }

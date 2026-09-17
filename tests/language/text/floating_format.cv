@@ -1,0 +1,66 @@
+const fn label(value: f64, width: i32, precision: i32) -> String {
+    var text: String = "value=";
+    text.append_format(f"{value:{width}.{precision}f}");
+    return text;
+}
+
+const fn plain(value: f64) -> String => f"{value}";
+const fn fixed(value: f64) -> String => f"{value:.2f}";
+const fn scientific(value: f32) -> String => f"{value:.4e}";
+const fn decorated(value: f64) -> String => f"{value:*>+12.3G}";
+const fn fixed_precision(value: f64) -> String => f"{value:.{2}f}";
+const fn specials(value: f64) -> String => f"{value}/{value:+08.2F}";
+
+const padded = label(1.25, 8, 2);
+const unpadded = label(1.25, 0, 0);
+const plain_value = plain(1.25);
+const fixed_value = fixed(1.25);
+const scientific_value = scientific(1.25f32);
+const decorated_value = decorated(1.25);
+const precise_value = fixed_precision(1.25);
+const infinite = specials(1.0 / 0.0);
+const negative_zero = specials(-0.0);
+
+const test "Floating format: constant execution uses native specifications" {
+    check(padded == "value=    1.25");
+    check(unpadded == "value=1");
+    check(plain_value == "1.25");
+    check(fixed_value == "1.25");
+    check(scientific_value == "1.2500e+00");
+    check(decorated_value == "*******+1.25");
+    check(precise_value == "1.25");
+    check(negative_zero == "-0/-0000.00");
+}
+
+test "Floating format: native dynamic and specialized paths agree with constants" {
+    check(label(1.25, 8, 2).as_str() == padded);
+    check(label(1.25, 0, 0).as_str() == unpadded);
+    check(plain(1.25).as_str() == plain_value);
+    check(fixed(1.25).as_str() == fixed_value);
+    check(scientific(1.25f32).as_str() == scientific_value);
+    check(decorated(1.25).as_str() == decorated_value);
+    check(fixed_precision(1.25).as_str() == precise_value);
+    check(specials(1.0 / 0.0).as_str() == infinite);
+    check(specials(-0.0).as_str() == negative_zero);
+}
+
+fn observe(&trace: i32, digit: i32) -> f64 {
+    trace = trace * 10 + digit;
+    return digit as f64;
+}
+
+test "Floating format: all operands execute before writing and folded operands retain effects" {
+    var trace = 0;
+    var text: String = "prefix:";
+    text.append_format(f"{observe(&trace, 1):.2f}/{observe(&trace, 2):.1e}");
+    check(trace == 12);
+    check(text == "prefix:1.00/2.0e+00");
+    let result = f"{if observe(&trace, 3) > 0.0 { 1.25 } else { 1.25 }}";
+    check(trace == 123);
+    check(result == "1.25");
+    let precision = if observe(&trace, 4) > 0.0 { 2 } else { 2 };
+    text.clear();
+    text.append_format(f"{observe(&trace, 5):.{precision}f}");
+    check(trace == 12345);
+    check(text == "5.00");
+}

@@ -46,7 +46,7 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
         }
         static_cast<void>(require_type(pattern.type));
         require_origin(pattern.origin);
-        std::visit(
+        pattern.value.visit(
             Overloaded {
                 [](const WildcardPattern&) static noexcept {},
                 [&](const RangePattern& value) noexcept {
@@ -118,15 +118,14 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
                         }
                     }
                 },
-            },
-            pattern.value
+            }
         );
     }
 }
 
 auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
     -> std::vector<LocalBindingID> {
-    return std::visit(
+    return body.pattern(id).value.visit(
         Overloaded {
             [](const WildcardPattern&) static noexcept { return std::vector<LocalBindingID>(); },
             [](const RangePattern&) static noexcept { return std::vector<LocalBindingID>(); },
@@ -161,8 +160,7 @@ auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
                 }
                 return result;
             },
-        },
-        body.pattern(id).value
+        }
     );
 }
 
@@ -175,7 +173,7 @@ auto BodyContractVerifier::signature_for_callable(CallableID id) const noexcept
 }
 
 auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> CallableSignatureID {
-    return std::visit(
+    return require_type(type).value.visit(
         Overloaded {
             [&](const FunctionTypeValue& value) noexcept {
                 return signature_for_callable(value.callable);
@@ -198,8 +196,7 @@ auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> Cal
                 );
                 invariant_violation("value or place does not have a callable type");
             },
-        },
-        require_type(type).value
+        }
     );
 }
 

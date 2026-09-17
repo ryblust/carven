@@ -4,9 +4,14 @@ module;
 
 module carven:test.internal.backend.construction.construction;
 
-import :backend.construction;
 import :backend.construction.verify;
-import :semantic.semir;
+import :backend.construction;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.table;
 import :test.internal.backend.construction.fixture;
 import :test.internal.semantic.analysis.fixture;
 import std;

@@ -41,7 +41,7 @@ public:
             if constexpr (std::invocable<Visitor&, Node<SemanticStatement>&>) {
                 std::invoke(visitor, statement);
             }
-            std::visit(
+            statement.value.visit(
                 Overloaded {
                     [&](Node<SemReturn>& value) noexcept {
                         if (value.value.has_value()) {
@@ -71,8 +71,7 @@ public:
                         child(*value.body);
                     },
                     [&](Node<OwnedSemanticRegion>& value) noexcept { child(*value); },
-                },
-                statement.value
+                }
             );
         }
         if (region.result.has_value()) {

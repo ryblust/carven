@@ -5,5 +5,5 @@ import std::utf.text using {
 
 import <vector> using std::{ // containers
     vector,
-    allocator
+    allocator,
 };

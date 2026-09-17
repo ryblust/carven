@@ -1,6 +1,15 @@
 module carven:frontend.ast.storage.impl;
 
+import :frontend.ast.decl;
+import :frontend.ast.expr;
+import :frontend.ast.ids;
+import :frontend.ast.pattern;
+import :frontend.ast.stmt;
 import :frontend.ast.storage;
+import :frontend.ast.type;
+import :source.text;
+import :support.id_table;
+import :support.typed_id;
 import std;
 
 ASTView::ASTView(const ASTStorage& storage, const ASTModule& ast_module, SourceID source) noexcept

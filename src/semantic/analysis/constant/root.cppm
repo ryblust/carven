@@ -14,6 +14,7 @@ import :semantic.analysis.expr.projection;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.text;
+import :semantic.analysis.failure;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.evaluation.freeze;
@@ -118,7 +119,7 @@ public:
               .kind = LifetimeRegionKind::FullExpression,
               .origin = program.append_source_origin(program.module_source(module), root_span),
           })),
-          failures(program.intern_failure_set({})) {
+          empty_failures(program.intern_failure_set({})) {
         if (syntax.source_id() != program.syntax_tree(module).view().source_id()) {
             invariant_violation("constant expression mixed a module with another syntax tree");
         }
@@ -240,13 +241,33 @@ public:
         return constant(**resolved, span);
     }
 
+    auto extension(
+        const ASTPropagationExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionResult<Value> {
+        const auto first = pending_failures.size();
+        auto operand = read(source.operand_id, expected);
+        if (!operand) {
+            return std::unexpected(operand.error());
+        }
+        auto terms =
+            std::vector<FailureTermID>(pending_failures.begin() + first, pending_failures.end());
+        pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
+        program.require_non_empty_failures(
+            program.add_union_failure_term(std::move(terms)),
+            program.append_source_origin(program.module_source(module), source.operator_span)
+        );
+        const auto result_type = type(*operand);
+        return make(result_type, SemPropagate {OwnedSemanticExpression(std::move(*operand))}, span);
+    }
+
     template<typename Form>
     auto extension(const Form&, Span, std::optional<ConstructionTypeRef>) const noexcept
         -> ExpressionResult<Value> {
         static_assert(
             std::same_as<Form, ASTCppNameExpr>
             || std::same_as<Form, ASTAccessExpr>
-            || std::same_as<Form, ASTPropagationExpr>
             || std::same_as<Form, ASTIfForm>
             || std::same_as<Form, ASTLambdaExpr>
             || std::same_as<Form, ASTMatchForm>
@@ -297,7 +318,15 @@ public:
 
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionResult<ResolvedEnumCase> {
-        return scope.resolve_enum_case(type, name, span);
+        auto selected = scope.resolve_enum_case(type, name, span);
+        if (!selected) {
+            return std::unexpected(selected.error());
+        }
+        auto prepared = scope.construction_requests().ensure_type(type, module, span);
+        if (!prepared) {
+            return std::unexpected(prepared.error());
+        }
+        return selected;
     }
 
     auto invalid_enum_qualifier(Span) const noexcept -> ExpressionResult<Value> {
@@ -464,45 +493,51 @@ public:
             program.intern_type({.value = FunctionTypeValue {.callable = declaration.callable}});
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
+        pending_failures.push_back(contract.failures);
         return make(
             contract.result,
             SemCall {
                 .callee = OwnedSemanticExpression(std::move(selected_callee)),
                 .arguments = std::move(arguments),
-                .callee_failures = failures
+                .callee_failures = BodyFailures(contract.failures)
             },
             span
         );
     }
 
     auto admits(const ASTExpr& expression) const noexcept -> bool {
-        return std::visit(
-            [&](const auto& form) noexcept {
-                using Form = std::remove_cvref_t<decltype(form)>;
-                if constexpr (std::same_as<Form, ASTLiteral>
-                              || std::same_as<Form, ASTGroupExpr>
-                              || std::same_as<Form, ASTNameExpr>
-                              || std::same_as<Form, ASTContextualCaseExpr>
-                              || std::same_as<Form, ASTPrefixExpr>
-                              || std::same_as<Form, ASTRangeExpr>
-                              || std::same_as<Form, ASTBinaryExpr>
-                              || std::same_as<Form, ASTCastExpr>
-                              || std::same_as<Form, ASTInterpolationExpr>
-                              || std::same_as<Form, ASTConstructionExpr>
-                              || std::same_as<Form, ASTArrayExpr>
-                              || std::same_as<Form, ASTIndexExpr>
-                              || std::same_as<Form, ASTMemberExpr>
-                              || std::same_as<Form, ASTCallExpr>) {
-                    return true;
-                } else {
-                    return false;
-                }
-            },
-            expression.value
-        );
+        return expression.value.visit([&](const auto& form) noexcept {
+            using Form = std::remove_cvref_t<decltype(form)>;
+            if constexpr (std::same_as<Form, ASTLiteral>
+                          || std::same_as<Form, ASTGroupExpr>
+                          || std::same_as<Form, ASTNameExpr>
+                          || std::same_as<Form, ASTContextualCaseExpr>
+                          || std::same_as<Form, ASTPrefixExpr>
+                          || std::same_as<Form, ASTRangeExpr>
+                          || std::same_as<Form, ASTBinaryExpr>
+                          || std::same_as<Form, ASTCastExpr>
+                          || std::same_as<Form, ASTInterpolationExpr>
+                          || std::same_as<Form, ASTConstructionExpr>
+                          || std::same_as<Form, ASTArrayExpr>
+                          || std::same_as<Form, ASTIndexExpr>
+                          || std::same_as<Form, ASTMemberExpr>
+                          || std::same_as<Form, ASTPropagationExpr>
+                          || std::same_as<Form, ASTCallExpr>) {
+                return true;
+            } else {
+                return false;
+            }
+        });
     }
 
     auto evaluate(const Value& value) noexcept -> AnalysisResult<ExecutionValue> {
+        if (!pending_failures.empty()) {
+            program.require_empty_failures(
+                program.add_union_failure_term(std::move(pending_failures)),
+                value.origin,
+                EmptyFailureRequirementKind::OrdinaryConsumption
+            );
+        }
         return evaluate_constant_root(program, scope.construction_requests(), value);
     }
 
@@ -518,7 +553,7 @@ private:
             .lifetime = lifetime,
             .origin = program.append_source_origin(program.module_source(module), span),
             .constant = known,
-            .failures = failures,
+            .failures = empty_failures,
             .exits_test = false,
             .category = SemanticValueCategory::Value,
             .value = std::move(operation),
@@ -539,7 +574,8 @@ private:
     Scope& scope;
     MutableBodyTable<LifetimeRegion, LifetimeRegionID> lifetimes;
     LifetimeRegionID lifetime;
-    BodyFailures failures;
+    BodyFailures empty_failures;
+    std::vector<FailureTermID> pending_failures;
     std::size_t aggregate_work = 0uz;
 
     struct AggregateDepth final {

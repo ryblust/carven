@@ -39,6 +39,15 @@ auto DeclResolver::ensure_available(
     }
     if (const auto* function = std::get_if<CatalogFunctionForm>(&symbol.form)) {
         const auto pending = draft.pending_function_contract_copy(function->callable);
+        const auto failures = pending
+            ? pending->failures
+            : draft.construction_callable_contract_copy(function->callable).failures;
+        for (const auto type : draft.construction_failure_term_copy(failures).direct_members) {
+            completed = prepare_type(type, requester, origin);
+            if (!completed) {
+                return completed;
+            }
+        }
         if (pending) {
             for (const auto& parameter : pending->parameters) {
                 completed = prepare_type(parameter.type, requester, origin);
@@ -97,48 +106,39 @@ auto DeclResolver::prepare_type_dependencies(
 ) noexcept -> AnalysisResult<void> {
     if (const auto* term = std::get_if<TypeTermID>(&type)) {
         const auto construction = draft.construction_type_copy(*term);
-        return std::visit(
-            [&](const auto& value) noexcept -> AnalysisResult<void> {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
-                    for (const auto& parameter : value.parameters) {
-                        auto result = prepare_type_dependencies(
-                            parameter.type,
-                            requester,
-                            span,
-                            visiting,
-                            prepared
-                        );
-                        if (!result) {
-                            return result;
-                        }
+        return construction.value.visit([&](const auto& value) noexcept -> AnalysisResult<void> {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
+                for (const auto& parameter : value.parameters) {
+                    auto result = prepare_type_dependencies(
+                        parameter.type,
+                        requester,
+                        span,
+                        visiting,
+                        prepared
+                    );
+                    if (!result) {
+                        return result;
                     }
-                    return prepare_type_dependencies(
-                        value.result,
-                        requester,
-                        span,
-                        visiting,
-                        prepared
-                    );
-                } else {
-                    return prepare_type_dependencies(
-                        value.element,
-                        requester,
-                        span,
-                        visiting,
-                        prepared
-                    );
                 }
-            },
-            construction.value
-        );
+                return prepare_type_dependencies(value.result, requester, span, visiting, prepared);
+            } else {
+                return prepare_type_dependencies(
+                    value.element,
+                    requester,
+                    span,
+                    visiting,
+                    prepared
+                );
+            }
+        });
     }
     const auto concrete = std::get<TypeID>(type);
     if (!visiting.insert(concrete).second) {
         return {};
     }
     const auto canonical = draft.type_copy(concrete);
-    return std::visit(
+    return canonical.value.visit(
         Overloaded {
             [&](const StructTypeValue& value) noexcept -> AnalysisResult<void> {
                 const auto id = catalog.struct_symbol(value.structure);
@@ -202,8 +202,7 @@ auto DeclResolver::prepare_type_dependencies(
                 return prepare_type_dependencies(value.target, requester, span, visiting, prepared);
             },
             [](const auto&) static noexcept -> AnalysisResult<void> { return {}; },
-        },
-        canonical.value
+        }
     );
 }
 
@@ -212,7 +211,7 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
     if (published[symbol.symbol_id.index()]) {
         return {};
     }
-    std::visit(
+    symbol.form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& form) noexcept {
                 if (cpp_import_origins[form.callable.index()]) {
@@ -246,8 +245,7 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
             [&](const CatalogConstantForm& form) noexcept {
                 draft.define_declaration(form.constant, *module_constants[form.constant.index()]);
             },
-        },
-        symbol.form
+        }
     );
     published[symbol.symbol_id.index()] = true;
     return {};

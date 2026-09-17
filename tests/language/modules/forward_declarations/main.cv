@@ -1,4 +1,4 @@
-import .types using {Model, Choice, Code,};
+import .types using { Model, Choice, Code };
 
 test "Modules: interface forward declarations preserve nominal forms" {
     let model = Model { value: 42 };

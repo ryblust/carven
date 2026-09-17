@@ -13,8 +13,15 @@ import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
+import :semantic.semir.body;
+import :semantic.semir.constant;
+import :semantic.semir.delegation;
 import :semantic.semir.format;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -347,6 +354,9 @@ auto BodyRealizer::ExpressionBuilder::build(
         return recipe;
     }
     if (const auto* logic = std::get_if<ConstructionShortCircuit>(&value.value)) {
+        if (!result_needed && !owner.construction.expression(logic->selected).requires_execution) {
+            return build(logic->condition, pending, false, ConstructionUse::OperandValue);
+        }
         const auto constant = owner.construction.expression(logic->condition).constant;
         const auto* known = constant
             ? std::get_if<BooleanConstant>(
@@ -376,6 +386,34 @@ auto BodyRealizer::ExpressionBuilder::build(
             }
             return recipe;
         }
+        preserve_borrows(condition);
+        auto test = emit(condition, ConstructionUse::OperandValue);
+        auto previous = std::move(statements);
+        statements = LoweringStmtBuilder();
+        auto selected =
+            build(logic->selected, nullptr, result_needed, ConstructionUse::OperandValue);
+        auto selected_value = std::optional<TargetExpr>();
+        if (statements.continues()) {
+            preserve_borrows(selected);
+            if (result_needed) {
+                selected_value = emit(selected, ConstructionUse::OperandValue);
+            } else {
+                discard_pending(selected);
+            }
+        }
+        if (selected_value && statements.empty()) {
+            statements = std::move(previous);
+            complete(
+                recipe,
+                binary_expression(
+                    std::move(test),
+                    logic->operation == ShortCircuitOperator::And ? TargetBinaryOperator::LogicalAnd
+                                                                  : TargetBinaryOperator::LogicalOr,
+                    std::move(*selected_value)
+                )
+            );
+            return recipe;
+        }
         auto name = std::optional<TargetIdentifier>();
         if (result_needed) {
             name = owner.names.fresh(TargetTemporaryNameKind::Operand);
@@ -388,29 +426,18 @@ auto BodyRealizer::ExpressionBuilder::build(
                     .initializer = bool_expression(logic->operation == ShortCircuitOperator::Or)
                 }
             ));
-        }
-        preserve_borrows(condition);
-        auto test = emit(condition, ConstructionUse::OperandValue);
-        if (logic->operation == ShortCircuitOperator::Or) {
-            test = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(test));
-        }
-        auto previous = std::move(statements);
-        statements = LoweringStmtBuilder();
-        auto selected =
-            build(logic->selected, nullptr, result_needed, ConstructionUse::OperandValue);
-        if (statements.continues()) {
-            preserve_borrows(selected);
-            if (result_needed) {
+            if (selected_value) {
                 statements.emit(generated_statement(
                     TargetAssignmentStmt {
                         .target = name_expression(*name),
                         .op = TargetAssignmentOperator::Assign,
-                        .value = emit(selected, ConstructionUse::OperandValue)
+                        .value = std::move(*selected_value)
                     }
                 ));
-            } else {
-                discard_pending(selected);
             }
+        }
+        if (logic->operation == ShortCircuitOperator::Or) {
+            test = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(test));
         }
         previous.record_exits(statements.exits());
         auto branches = std::vector<TargetIfBranch>();
@@ -609,20 +636,9 @@ auto BodyRealizer::expression(
     ResultDemand demand
 ) noexcept -> Lowered<LoweringResult> {
     if (active_frame != nullptr && active_frame->owns(source)) {
-        return active_frame->evaluate(
-            source,
-            literal,
-            demand,
-            demand == ResultDemand::Observe ? ConstructionUse::ReadBorrow : ConstructionUse::Consume
-        );
+        return active_frame->evaluate(source, literal, demand, ConstructionUse::Consume);
     }
-    return ExpressionBuilder(*this, source)
-        .finish(
-            source,
-            literal,
-            demand,
-            demand == ResultDemand::Observe ? ConstructionUse::ReadBorrow : ConstructionUse::Consume
-        );
+    return ExpressionBuilder(*this, source).finish(source, literal, demand);
 }
 
 auto BodyRealizer::operand(ConstructionOperand source, ConstantLiteralContext literal) noexcept
@@ -653,43 +669,34 @@ auto BodyRealizer::discard(ConstructionExpressionID source) noexcept -> Lowered<
 auto BodyRealizer::condition(ConstructionExpressionID source) noexcept
     -> Lowered<LoweringPredicate> {
     const auto& source_value = construction.expression(source);
-    if (source_value.constant && !source_value.requires_execution) {
+    const auto shared = active_frame != nullptr && active_frame->owns(source);
+    if (source_value.constant) {
         if (const auto* known = std::get_if<BooleanConstant>(
                 &context.semantic().constants().constant(*source_value.constant).value
             )) {
-            return LoweringStmtBuilder().complete<LoweringPredicate>(
-                LoweringKnownBool {known->value}
-            );
-        }
-    }
-    const auto shared = active_frame != nullptr && active_frame->owns(source);
-    auto statements = LoweringStmtBuilder();
-    auto value =
-        statements.accept(expression(source, ConstantLiteralContext::Exact, ResultDemand::Observe));
-    if (!value) {
-        return std::move(statements).complete<LoweringPredicate>(std::nullopt);
-    }
-    if (const auto constant = construction.expression(source).constant) {
-        if (const auto* known = std::get_if<BooleanConstant>(
-                &context.semantic().constants().constant(*constant).value
-            )) {
-            if (auto evaluation = remaining_expression(std::move(*value))) {
-                statements.emit(
-                    generated_statement(TargetDiscardStmt {.expression = std::move(*evaluation)})
-                );
-            }
+            auto statements = LoweringStmtBuilder();
+            const auto completion = statements.accept(discard(source));
             if (!shared) {
                 auto completed = LoweringStmtBuilder();
                 completed.scope(std::move(statements));
-                return std::move(completed).complete<LoweringPredicate>(
-                    LoweringKnownBool {known->value}
-                );
+                statements = std::move(completed);
             }
             return std::move(statements)
-                .complete<LoweringPredicate>(LoweringKnownBool {known->value});
+                .complete<LoweringPredicate>(
+                    completion ? std::optional<LoweringPredicate>(LoweringKnownBool {known->value})
+                               : std::nullopt
+                );
         }
     }
-    auto expression_value = require_expression(std::move(*value));
+    auto statements = LoweringStmtBuilder();
+    auto value = statements.accept(operand(
+        {.expression = source, .use = ConstructionUse::OperandValue},
+        ConstantLiteralContext::Exact
+    ));
+    if (!value) {
+        return std::move(statements).complete<LoweringPredicate>(std::nullopt);
+    }
+    auto expression_value = std::move(*value);
     if (shared || statements.empty()) {
         return std::move(statements)
             .complete<LoweringPredicate>(LoweringDynamicBool {std::move(expression_value)});

@@ -1,15 +1,16 @@
 module carven:backend.construction.stmt.impl;
 
-import :backend.construction;
 import :backend.construction.builder;
-import :semantic.semir;
+import :backend.construction;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import :support.invariant;
 import :support.visit;
 import std;
 
 auto BodyConstructionBuilder::statement(const SemanticStatement& source) noexcept
     -> ConstructionStatement {
-    const auto value = std::visit(
+    const auto value = source.value.visit(
         Overloaded {
             [&](const SemReturn& item) noexcept -> ConstructionStatementValue {
                 auto result = std::optional<ConstructionExpressionID>();
@@ -120,8 +121,7 @@ auto BodyConstructionBuilder::statement(const SemanticStatement& source) noexcep
                 return ConstructionScope {.region = identity};
             },
 
-        },
-        source.value
+        }
     );
     return {.lifetime = source.lifetime, .origin = source.origin, .value = value};
 }

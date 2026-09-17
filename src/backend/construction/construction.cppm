@@ -1,7 +1,11 @@
 module carven:backend.construction;
 
 import :backend.preparation;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
 import :support.invariant;
 import std;
 

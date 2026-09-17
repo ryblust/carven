@@ -1,10 +1,10 @@
 module carven:driver.analysis.impl;
 
 import :compiler.analysis;
-import :compiler.request;
 import :diagnostics.report;
 import :driver.analysis;
 import :driver.input_path;
+import :source.batch;
 import :source.manager;
 import :source.text;
 import std;
@@ -15,7 +15,7 @@ auto load_and_analyze_sources(
 ) noexcept -> std::optional<SemIRProgram> {
     auto has_error = false;
     auto sources = SourceManager();
-    auto module_inputs = std::vector<CompilationModuleInput> {};
+    auto module_inputs = std::vector<SourceModuleInput> {};
     module_inputs.reserve(input_paths.size());
     for (const auto input_path : input_paths) {
         auto module_path = derive_input_module_path(input_path);
@@ -44,8 +44,7 @@ auto load_and_analyze_sources(
         return std::nullopt;
     }
 
-    auto result =
-        analyze_compilation(sources, CompilationRequest {.modules = module_inputs}, output);
+    auto result = analyze_compilation(sources, SourceBatch {.modules = module_inputs}, output);
     if (!result) {
         std::print(std::cerr, "{}", render_diagnostics(result.error(), sources));
         return std::nullopt;

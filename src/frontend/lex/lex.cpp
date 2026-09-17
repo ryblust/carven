@@ -429,12 +429,9 @@ auto Lexer::scan_number() noexcept -> void {
     const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
     position = token_start + static_cast<std::uint32_t>(consumed);
     if (scanned.has_value()) {
-        std::visit(
-            [&](auto value) noexcept {
-                append_literal_token(TokenLiteralValue {std::move(value)});
-            },
-            scanned->value
-        );
+        scanned->value.visit([&](auto value) noexcept {
+            append_literal_token(TokenLiteralValue {std::move(value)});
+        });
     } else {
         diagnose_invalid(
             scanned.error().has_base_prefix ? "malformed has_base_prefix integer literal"

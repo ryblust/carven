@@ -4,7 +4,8 @@ import :backend.lowering.context;
 import :backend.target.decl;
 import :backend.target.item;
 import :backend.target.stmt;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import std;
 
 auto is_char_type(const SemIRProgram& semantic, TypeID type) noexcept -> bool;

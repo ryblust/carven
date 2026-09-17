@@ -85,7 +85,7 @@ auto verify_compilation_provenance(CompilationProvenanceView provenance) noexcep
     for (auto index = 0uz; index < origins.size(); ++index) {
         const auto origin_id = provenance.origin_id_at(index);
         const auto& origin = origins[index];
-        const auto result = std::visit(
+        const auto result = origin.value.visit(
             Overloaded {
                 [&](const ProgramSourceOrigin& value) noexcept
                     -> std::expected<void, CompilationProvenanceError> {
@@ -123,8 +123,7 @@ auto verify_compilation_provenance(CompilationProvenanceView provenance) noexcep
                     }
                     return {};
                 },
-            },
-            origin.value
+            }
         );
         if (!result.has_value()) {
             return result;

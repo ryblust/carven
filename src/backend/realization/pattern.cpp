@@ -11,7 +11,11 @@ import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.structured;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -99,7 +103,7 @@ auto PatternRealizer::match(
             }
         ));
     };
-    std::visit(
+    pattern.value.visit(
         Overloaded {
             [&](const WildcardPattern&) noexcept { set(bool_expression(true)); },
             [&](const RangePattern& value) noexcept {
@@ -240,8 +244,7 @@ auto PatternRealizer::match(
                     branch(name_expression(state.matched), std::move(child), destination);
                 }
             }
-        },
-        pattern.value
+        }
     );
 }
 

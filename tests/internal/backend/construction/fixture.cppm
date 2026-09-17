@@ -1,7 +1,7 @@
 module carven:test.internal.backend.construction.fixture;
 
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.ids;
 import std;
 
 // Malformed construction is confined to tests; production only publishes a

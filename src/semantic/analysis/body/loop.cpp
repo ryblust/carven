@@ -35,7 +35,7 @@ auto BodyElaborator::c_style_for_statement(
     regions.push_back(empty_region(source.header.span));
     if (!std::holds_alternative<std::monostate>(header.initializer.value)) {
         begin_full_expression(header.initializer.span);
-        auto initialized = std::visit(
+        auto initialized = header.initializer.value.visit(
             Overloaded {
                 [](std::monostate) static noexcept -> AnalysisResult<void> { return {}; },
                 [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
@@ -52,8 +52,7 @@ auto BodyElaborator::c_style_for_statement(
                     append_expression(*value, ast.expression(id).span);
                     return {};
                 }
-            },
-            header.initializer.value
+            }
         );
         if (!initialized.has_value()) {
             return std::unexpected(initialized.error());
@@ -108,7 +107,7 @@ auto BodyElaborator::c_style_for_statement(
             condition_reachable && step_reachable && (!known.has_value() || *known)
         );
         begin_full_expression(step.span);
-        auto result = std::visit(
+        auto result = step.value.visit(
             Overloaded {
                 [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
                 [&](const ASTUpdate& value) noexcept { return update_statement(value); },
@@ -124,8 +123,7 @@ auto BodyElaborator::c_style_for_statement(
                     append_expression(*value, ast.expression(id).span);
                     return {};
                 }
-            },
-            step.value
+            }
         );
         if (!result.has_value()) {
             return std::unexpected(result.error());
@@ -326,7 +324,7 @@ auto BodyElaborator::range_for_statement(
 
 auto BodyElaborator::for_statement(const ASTForStmt& source, Span span) noexcept
     -> AnalysisResult<void> {
-    return std::visit(
+    return source.header.value.visit(
         Overloaded {
             [&](const ASTCStyleForHeader& header) noexcept {
                 return c_style_for_statement(source, header, span);
@@ -334,8 +332,7 @@ auto BodyElaborator::for_statement(const ASTForStmt& source, Span span) noexcept
             [&](const ASTRangeForHeader& header) noexcept {
                 return range_for_statement(source, header, span);
             },
-        },
-        source.header.value
+        }
     );
 }
 
@@ -347,7 +344,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
     ensure_reachable_diagnostics(source.span);
     [[maybe_unused]] const auto reference_path =
         BodyReferencePathGuard(reference_path_reachable, reachable);
-    const auto owns_full_expression = std::visit(
+    const auto owns_full_expression = source.value.visit(
         Overloaded {
             [](const ASTVariableDecl&) static noexcept { return true; },
             [](const ASTAssignment&) static noexcept { return true; },
@@ -359,13 +356,12 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
             [](const ASTWhileStmt&) static noexcept { return false; },
             [](const ASTForStmt&) static noexcept { return false; },
             [](const ASTIfForm&) static noexcept { return false; },
-        },
-        source.value
+        }
     );
     if (owns_full_expression) {
         begin_full_expression(source.span);
     }
-    auto result = std::visit(
+    auto result = source.value.visit(
         Overloaded {
             [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
             [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
@@ -394,8 +390,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisResult<void> {
             [&](const ASTTryForm& value) noexcept -> AnalysisResult<void> {
                 return try_statement(value, source.span);
             },
-        },
-        source.value
+        }
     );
     if (owns_full_expression && active_full_expression.has_value()) {
         if (result.has_value()) {

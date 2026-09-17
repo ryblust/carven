@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.flow;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -60,13 +60,13 @@ TEST_CASE("Compiler diagnostics: inline-test whole-test transfer controls reacha
         "}\n"
     );
     const auto source_id = *sources.append_virtual("test-flow.cv", source);
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("test_flow"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),
@@ -105,13 +105,13 @@ TEST_CASE("Compiler diagnostics: covered match arms retain warning identity and 
             entry.patterns
         );
         const auto source_id = *sources.append_virtual("covered-match-arm.cv", source);
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("covered_match_arm"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:flow").value(),

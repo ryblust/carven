@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.semir.body;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.body.builder;
@@ -19,6 +18,7 @@ import :semantic.semir.program;
 import :semantic.semir.table;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -47,12 +47,12 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     const auto source = sources.append_virtual("semir-function-body.cv", "");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path("semir.function_body"),
         },
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = builder.provenance_module_at(0uz);

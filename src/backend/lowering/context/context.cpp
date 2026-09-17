@@ -103,7 +103,11 @@ auto ModuleLowering::names() const noexcept -> const TargetNamePlan& {
 }
 
 auto ModuleLowering::global_function_name(FunctionID id) noexcept -> TargetName {
-    const auto provider = semantic().declarations().function(id).module_id;
+    const auto& function = semantic().declarations().function(id);
+    const auto provider = function.module_id;
+    if (provider == module_id) {
+        require_callable(function.callable);
+    }
     artifact_lowering.record_provider_interface(module_id, provider);
     return names().global_function_name(id);
 }
@@ -121,13 +125,37 @@ auto ModuleLowering::enumeration_name(EnumID id) noexcept -> TargetName {
 }
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
-    artifact_lowering.record_provider_interface(module_id, names().callable_owner(id));
+    const auto provider = names().callable_owner(id);
+    if (provider == module_id) {
+        require_callable(id);
+    }
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().callable_name(module_id, id);
 }
 
 auto ModuleLowering::closure_type_name(CallableID id) noexcept -> TargetName {
-    artifact_lowering.record_provider_interface(module_id, names().closure_owner(id));
+    const auto provider = names().closure_owner(id);
+    if (provider == module_id) {
+        require_callable(id);
+    }
+    artifact_lowering.record_provider_interface(module_id, provider);
     return names().closure_type_name(module_id, id);
+}
+
+auto ModuleLowering::require_callable(CallableID id) noexcept -> void {
+    static_cast<void>(semantic().declarations().callable(id));
+    if (required_callables.insert(id).second) {
+        pending_callables.push_back(id);
+    }
+}
+
+auto ModuleLowering::next_required_callable() noexcept -> std::optional<CallableID> {
+    if (pending_callables.empty()) {
+        return std::nullopt;
+    }
+    const auto result = pending_callables.front();
+    pending_callables.pop_front();
+    return result;
 }
 
 auto ModuleLowering::payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames& {

@@ -6,7 +6,7 @@ import std;
 
 auto TargetRenderer::item_category(const TargetItem& item) const noexcept
     -> std::optional<TargetItemCategory> {
-    return std::visit(
+    return item.value.visit(
         Overloaded {
             [](const TargetRawFragment&) static noexcept -> std::optional<TargetItemCategory> {
                 return std::nullopt;
@@ -18,7 +18,7 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
                 return TargetItemCategory::OtherDeclaration;
             },
             [](const TargetDecl& declaration) static noexcept -> std::optional<TargetItemCategory> {
-                return std::visit(
+                return declaration.visit(
                     []<typename Value>(const Value&) static noexcept -> TargetItemCategory {
                         if constexpr (std::same_as<Value, TargetFunctionDecl>
                                       || std::same_as<Value, TargetOutOfClassMemberDefinition>
@@ -37,12 +37,10 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
                                 "unhandled target declaration category"
                             );
                         }
-                    },
-                    declaration
+                    }
                 );
             },
-        },
-        item.value
+        }
     );
 }
 

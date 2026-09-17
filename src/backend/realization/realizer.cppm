@@ -9,7 +9,8 @@ import :backend.realization.composition;
 import :backend.realization.pattern;
 import :backend.target.expr;
 import :backend.target.stmt;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import std;
 
 class BodyRealizer final {
@@ -37,7 +38,7 @@ private:
     };
 
 
-    enum class ResultDemand { Value, DirectReturn, Observe, Discard, PropagateOutcome };
+    enum class ResultDemand { Value, DirectReturn, Discard, PropagateOutcome };
     auto expression(
         ConstructionExpressionID source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,

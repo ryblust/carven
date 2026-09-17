@@ -44,13 +44,29 @@ auto freeze_value(
         const auto* structure = std::get_if<StructTypeValue>(&canonical.value);
         const auto fields =
             structure ? values.struct_field_types(structure->structure) : std::nullopt;
-        if (!enum_case && !slice) {
+        auto payload = std::optional<std::vector<TypeID>>();
+        if (const auto* enumeration_type = std::get_if<EnumTypeValue>(&canonical.value)) {
+            const auto cases = values.enum_case_types(enumeration_type->enumeration);
+            if (!cases) {
+                return std::nullopt;
+            }
+            for (const auto& item : *cases) {
+                if (item.id == enum_case) {
+                    payload = item.payload_types;
+                    break;
+                }
+            }
+            if (!payload || payload->size() != children.size()) {
+                return std::nullopt;
+            }
+        }
+        if (!slice) {
             const auto shape = shapes.get(type);
             if (!shape
                 || !shape->supported
                 || shape->elements > maximum_constant_aggregate_elements
                 || (array && children.size() != array->extent)
-                || (!array && (!fields || fields->size() != children.size()))) {
+                || (!array && !enum_case && (!fields || fields->size() != children.size()))) {
                 return std::nullopt;
             }
         }
@@ -62,6 +78,7 @@ auto freeze_value(
             const auto expected = array ? array->element
                 : slice                 ? slice->element
                 : fields                ? (*fields)[index]
+                : payload               ? (*payload)[index]
                                         : actual;
             if (actual != expected) {
                 return std::nullopt;

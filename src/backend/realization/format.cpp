@@ -9,7 +9,10 @@ import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import std;
 
@@ -204,6 +207,23 @@ auto realize_writer_statements(
                  field->zero_pad},
                 target_expressions(std::move(argument), size_expression(field->width))
             )));
+        } else if (const auto* field = std::get_if<FloatingFormatField>(&format.fields[index])) {
+            const auto method = field->mode == FloatingFormatMode::Shortest ? "floating"
+                : field->mode == FloatingFormatMode::Fixed                  ? "fixed"
+                : field->mode == FloatingFormatMode::Scientific             ? "scientific"
+                                                                            : "general";
+            auto member =
+                member_expression(name_expression(writer), TargetIdentifier::from_spelling(method));
+            auto arguments = target_expressions(std::move(argument));
+            statements.push_back(statement_expression(
+                field->mode == FloatingFormatMode::Shortest
+                    ? call_expression(std::move(member), std::move(arguments))
+                    : template_call_expression(
+                          std::move(member),
+                          {integer_literal(field->precision)},
+                          std::move(arguments)
+                      )
+            ));
         } else {
             const auto method = *builtin == BuiltinType::Bool ? "boolean"
                 : *builtin == BuiltinType::Char               ? "character"

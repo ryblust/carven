@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.constant_functions;
 
-import :compiler.request;
 import :diagnostics.code;
 import :frontend.program.parse;
 import :semantic.analyze;
@@ -16,6 +15,7 @@ import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.semantic.analysis.fixture;
@@ -229,7 +229,7 @@ TEST_CASE(
 
 TEST_CASE("Const functions: forward body requests cross the compilation module graph") {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     const auto append = [&](std::string_view name, std::string text) noexcept {
         const auto source = sources.append_virtual(std::format("{}.cv", name), std::move(text));
         REQUIRE(source.has_value());
@@ -249,7 +249,7 @@ TEST_CASE("Const functions: forward body requests cross the compilation module g
         "values",
         "export const seed: i32 = 41; export const fn increment(value: i32) -> i32 => value + 1;"
     );
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     const auto analyzed = analyze(std::move(*syntax));
     REQUIRE(analyzed.has_value());
@@ -352,4 +352,139 @@ TEST_CASE("Const functions: nested retained children become independent mutable 
     )");
     require_integer(module_constant(program, "result"), 10);
     require_integer(module_constant(program, "unchanged"), 1);
+}
+
+TEST_CASE("Const functions: floating formatting executes through native conversion") {
+    const auto program = analyze_test_program(R"(
+        const fn label(value: f64) -> String => f"{value:.2f}";
+        const text = label(1.5);
+        const length = text.len();
+    )");
+    require_integer(module_constant(program, "length"), 4);
+}
+
+TEST_CASE("Const functions: invalid floating specifications and dimensions are diagnosed") {
+    for (const auto source : {
+             R"(const text = f"{1.25:.}";)",
+             R"(const text = f"{1.25:.{-1}f}";)",
+             R"(const text = f"{1.25:{-1}.2f}";)",
+             R"(const text = f"{1.25:.{true}f}";)",
+             R"(const text = f"{1.25:00}";)",
+         }) {
+        CAPTURE(source);
+        CHECK(
+            contains_diagnostic_code(analyze_test_errors(source), DiagnosticCode::ConstEvaluation)
+        );
+    }
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors(R"(const text = f"{1.25:.1048577f}";)"),
+        DiagnosticCode::ConstLimit
+    ));
+}
+
+TEST_CASE("Const failures: root propagation uses inferred contracts and preserves static gates") {
+    const auto program = analyze_test_program(R"(
+        struct Failure { code: i32 }
+        private const fn inner(ok: bool) -> i32 {
+            if ok { return 2; }
+            throw Failure { 7 };
+        }
+        private const fn outer(value: i32) -> i32 {
+            if value > 0 { return value + 1; }
+            throw Failure { 9 };
+        }
+        const nested = outer(inner(true)?)?;
+        const combined = (inner(true) + outer(2))?;
+        const extent: [i32; inner(true)?] = [1, 2];
+    )");
+    require_integer(module_constant(program, "nested"), 3);
+    require_integer(module_constant(program, "combined"), 5);
+
+    struct Scenario final {
+        std::string_view source;
+        DiagnosticCode code;
+    };
+
+    const auto scenarios = std::to_array<Scenario>({
+        {R"(struct Failure {} private const fn call(ok: bool) -> i32 {
+            if ok { return 1; } throw Failure {};
+        } const value = call(true);)",
+         DiagnosticCode::EffectUnmarked},
+        {R"(private const fn call() -> i32 => 1; const value = call()?;)",
+         DiagnosticCode::EffectPropagateRedundant},
+        {R"(struct Failure {} const fn call() -> i32 throw Failure {
+            throw Failure {};
+        } const value = call()?;)",
+         DiagnosticCode::ConstEvaluation},
+        {R"(struct Failure {} const fn call(ok: bool) -> i32 throw Failure {
+            if ok { return 1; } throw Failure {};
+        } const fn add(a: i32, b: i32) -> i32 => a + b;
+        const value = add(call(true)?, call(true));)",
+         DiagnosticCode::EffectUnmarked},
+        {R"(struct Failure {} const fn call() -> i32 throw Failure { return 1; }
+        const test "static root" { check(call()? == 1); })",
+         DiagnosticCode::EffectRootUnhandled},
+        {R"(struct Failure {} const fn call() -> i32 throw Failure { return 1; }
+        const fn wrapper() -> i32 => call(); const value = wrapper();)",
+         DiagnosticCode::EffectUnmarked},
+        {R"(struct Failure {} const fn call() -> i32 { throw Failure {}; })",
+         DiagnosticCode::EffectThrowPublished},
+        {R"(const fn call() { rethrow; })", DiagnosticCode::EffectRethrowContext},
+    });
+    for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.source);
+        CHECK(contains_diagnostic_code(
+            analyze_test_errors(std::string(scenario.source)),
+            scenario.code
+        ));
+    }
+}
+
+TEST_CASE("Const failures: language recovery cannot catch evaluator errors or failed tests") {
+    const auto arithmetic = analyze_test_errors(R"(
+        struct Failure {}
+        const fn overflow(value: i32) -> i32 throw Failure { return value + 1; }
+        const fn recover() -> i32 {
+            return try { overflow(2147483647)? } catch { _ => 0, };
+        }
+        const value = recover();
+    )");
+    CHECK(contains_diagnostic_code(arithmetic, DiagnosticCode::ConstOverflow));
+    const auto checks = analyze_test_errors(R"(
+        struct Failure {}
+        const fn fail() throw Failure { check(false); }
+        const test "cannot catch assertions" {
+            try { fail()?; } catch { _ => {}, }
+        }
+    )");
+    CHECK(contains_diagnostic_code(checks, DiagnosticCode::ConstTest));
+}
+
+TEST_CASE("Const aggregates: owning text executes but does not freeze into nominal str fields") {
+    const auto program = analyze_test_program(R"(
+        struct Text { value: String }
+        enum Message { Owned(String), Empty }
+        const fn length() -> usize {
+            let values = [String::from_str("one"), String::from_str("two")];
+            let text = Text { values[0] };
+            let message = Message::Owned(text.value);
+            return match message { .Owned(value) => value.len(), .Empty => 0usize, };
+        }
+        const size = length();
+    )");
+    require_integer(module_constant(program, "size"), 3);
+    for (const auto source : std::to_array<std::string_view>({
+             R"(struct Text { value: String }
+            const fn make() -> Text => Text { String::from_str("one") };
+            const value = make();)",
+             R"(enum Text { Owned(String) }
+            const fn make() -> Text => Text::Owned(String::from_str("one"));
+            const value = make();)",
+         })) {
+        CAPTURE(source);
+        CHECK(contains_diagnostic_code(
+            analyze_test_errors(std::string(source)),
+            DiagnosticCode::ConstInitializer
+        ));
+    }
 }

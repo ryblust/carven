@@ -109,7 +109,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
         complete(false, std::nullopt, std::move(flow.normal->state), std::move(flow.normal->value));
     }
     for (auto& exit : flow.exits) {
-        std::visit(
+        exit.payload.visit(
             Overloaded {
                 [&](OwnershipReturn& value) noexcept {
                     complete(false, std::nullopt, std::move(exit.state), std::move(value.value));
@@ -123,8 +123,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
                 [](const auto&) static noexcept {
                     invariant_violation("loop transfer escaped its callable");
                 }
-            },
-            exit.payload
+            }
         );
     }
     for (auto& completion : result) {

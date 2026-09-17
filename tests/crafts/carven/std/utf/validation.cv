@@ -5,7 +5,7 @@ import std::utf.validation using {
     validator,
     push,
     feed,
-    finish
+    finish,
 };
 
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {

@@ -220,7 +220,7 @@ auto OwnershipBodyAnalyzer::expression(
             restore_storage_readers(previous_readers);
             accesses.resize(previous);
         };
-        std::visit(
+        source.value.visit(
             Overloaded {
                 [](const SemConstant&) static noexcept {},
                 [&](const SemBinding&) noexcept {
@@ -829,8 +829,7 @@ auto OwnershipBodyAnalyzer::expression(
                 [&](const SemTry& value) noexcept {
                     flow = attempt(value, std::move(flow.normal->state));
                 },
-                },
-                source.value
+                }
         );
     }
     if (flow.normal.has_value()) {

@@ -19,7 +19,7 @@ auto ASTDumper::render_for_header(
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
-    std::visit(
+    header.value.visit(
         Overloaded {
             [&](const ASTRangeForHeader& range) noexcept {
                 append_line(
@@ -54,7 +54,7 @@ auto ASTDumper::render_for_header(
                     std::format("header CStyleForHeader {}", format_dump_span(header.span))
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
-                std::visit(
+                c_style.initializer.value.visit(
                     Overloaded {
                         [&](std::monostate) noexcept {
                             append_line(nested_prefix, false, "initializer <absent>");
@@ -78,8 +78,7 @@ auto ASTDumper::render_for_header(
                         [&](ASTExprID expression) noexcept {
                             render_expression(expression, nested_prefix, false, "initializer ");
                         },
-                    },
-                    c_style.initializer.value
+                    }
                 );
                 if (!c_style.condition.has_value()) {
                     append_line(nested_prefix, false, "condition <absent>");
@@ -94,7 +93,7 @@ auto ASTDumper::render_for_header(
                     [&](const ASTForStep& step,
                         std::string_view item_prefix,
                         bool item_last) noexcept {
-                        std::visit(
+                        step.value.visit(
                             Overloaded {
                                 [&](const ASTAssignment& assignment) noexcept {
                                     render_assignment(
@@ -110,14 +109,12 @@ auto ASTDumper::render_for_header(
                                 [&](ASTExprID expression) noexcept {
                                     render_expression(expression, item_prefix, item_last);
                                 },
-                            },
-                            step.value
+                            }
                         );
                     }
                 );
             },
-        },
-        header.value
+        }
     );
 }
 
@@ -127,7 +124,7 @@ auto ASTDumper::render_statement(
     bool is_last
 ) noexcept -> void {
     const auto& statement = ast.statement(statement_id);
-    std::visit(
+    statement.value.visit(
         Overloaded {
             [&](const ASTVariableDecl& declaration) noexcept {
                 render_variable_declaration(declaration, prefix, is_last, statement.span);
@@ -179,7 +176,6 @@ auto ASTDumper::render_statement(
             [&](const ASTIfForm& form) noexcept { render_if_form(form, prefix, is_last); },
             [&](const ASTMatchForm& form) noexcept { render_match_form(form, prefix, is_last); },
             [&](const ASTTryForm& form) noexcept { render_try_form(form, prefix, is_last); },
-        },
-        statement.value
+        }
     );
 }

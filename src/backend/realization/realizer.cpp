@@ -13,7 +13,12 @@ import :backend.target.expr;
 import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.table;
+import :source.provenance;
 import :support.invariant;
 import std;
 

@@ -43,19 +43,16 @@ auto validate_expected_type(
     if (!expected.has_value()) {
         return;
     }
-    std::visit(
-        [&](const auto id) noexcept {
-            using ID = std::remove_cvref_t<decltype(id)>;
-            if constexpr (std::same_as<ID, TypeID>) {
-                static_cast<void>(draft.type_copy(id));
-            } else if constexpr (std::same_as<ID, TypeTermID>) {
-                static_cast<void>(draft.construction_type_copy(id));
-            } else {
-                static_assert(std::same_as<ID, void>, "unhandled expected type reference");
-            }
-        },
-        *expected
-    );
+    expected->visit([&](const auto id) noexcept {
+        using ID = std::remove_cvref_t<decltype(id)>;
+        if constexpr (std::same_as<ID, TypeID>) {
+            static_cast<void>(draft.type_copy(id));
+        } else if constexpr (std::same_as<ID, TypeTermID>) {
+            static_cast<void>(draft.construction_type_copy(id));
+        } else {
+            static_assert(std::same_as<ID, void>, "unhandled expected type reference");
+        }
+    });
 }
 
 auto normalized_numeric_type(
@@ -90,7 +87,7 @@ auto normalize_literal(
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_expected_type(draft, expected);
     const auto negative = sign == LiteralSign::Negative;
-    return std::visit(
+    return literal.value.visit(
         [&](const auto& value) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, IntegerLiteralValue>) {
@@ -176,7 +173,6 @@ auto normalize_literal(
             } else {
                 static_assert(std::same_as<Value, void>, "new literal form requires normalization");
             }
-        },
-        literal.value
+        }
     );
 }

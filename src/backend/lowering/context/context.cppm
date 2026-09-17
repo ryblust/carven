@@ -10,7 +10,10 @@ import :backend.target.item;
 import :backend.target.stmt;
 import :backend.target.type;
 import :backend.target;
-import :semantic.semir;
+import :semantic.semir.delegation;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.type;
 import :support.unique_indirect;
 import std;
 
@@ -75,6 +78,8 @@ public:
     auto enumeration_name(EnumID id) noexcept -> TargetName;
     auto callable_name(CallableID id) noexcept -> TargetName;
     auto closure_type_name(CallableID id) noexcept -> TargetName;
+    auto require_callable(CallableID id) noexcept -> void;
+    auto next_required_callable() noexcept -> std::optional<CallableID>;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
     auto name_allocator() noexcept -> TargetNameAllocator&;
     auto constant_storage() noexcept -> ConstantStorage&;
@@ -107,6 +112,8 @@ private:
     ArtifactLowering& artifact_lowering;
     ModuleID module_id;
     TargetNameAllocator allocator;
+    std::flat_set<CallableID> required_callables;
+    std::deque<CallableID> pending_callables;
     std::map<TypeID, TypeState> type_cache;
     std::map<std::pair<CallableSignatureID, bool>, TypeState> signature_result_cache;
 };

@@ -114,7 +114,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
         }
     }
     if (!entry) {
-        return fail("program has no entry point");
+        return 0;
     }
     auto options = InterpreterOptions {.limits = limits, .trace = {}};
     if (trace) {

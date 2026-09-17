@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.operations;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.sink;
 import :frontend.ast.control;
@@ -23,6 +22,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -42,12 +42,12 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
     const auto source = sources.append_virtual("operations.cv", "");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = path("operations"),
         },
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }

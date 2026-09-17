@@ -1,0 +1,4 @@
+const test "without runtime entry" {
+    println("static only");
+    check(1 + 1 == 2);
+}

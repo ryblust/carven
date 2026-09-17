@@ -11,7 +11,7 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
     -> std::tuple<std::string, std::string, std::uint8_t> {
     const auto& declarations = semantic.declarations();
     const auto provenance = semantic.provenance();
-    return std::visit(
+    return semantic.types().type(id).value.visit(
         Overloaded {
             [&](const StructTypeValue& value) noexcept {
                 const auto& declaration = declarations.structure(value.structure);
@@ -51,8 +51,7 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                 );
                 invariant_violation("failure set contains a non-nominal type");
             },
-        },
-        semantic.types().type(id).value
+        }
     );
 }
 

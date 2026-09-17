@@ -61,7 +61,7 @@ auto TargetDependencyCollector::visit_type(TargetTypeID id) noexcept -> bool {
     }
     visited_types[id.index()] = true;
     const auto& value = types[id.index()].value;
-    std::visit(
+    value.visit(
         Overloaded {
             [](const TargetDecltypeType&) static noexcept {},
             [](const TargetNamedType&) static noexcept {},
@@ -72,8 +72,7 @@ auto TargetDependencyCollector::visit_type(TargetTypeID id) noexcept -> bool {
             },
             [](const TargetPointerType&) static noexcept {},
             [](const TargetReferenceType&) static noexcept {},
-        },
-        value
+        }
     );
     return visit_target_type_children(value, *this);
 }
@@ -82,7 +81,7 @@ auto TargetDependencyCollector::enter_expression(
     const TargetExpr& expression,
     TargetExpressionRole
 ) noexcept -> bool {
-    std::visit(
+    expression.value.visit(
         Overloaded {
             [](const TargetNameExpr&) static noexcept {},
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
@@ -106,8 +105,7 @@ auto TargetDependencyCollector::enter_expression(
             [](const TargetStaticMemberExpr&) static noexcept {},
             [](const TargetStaticCastExpr&) static noexcept {},
             [](const TargetLambdaExpr&) static noexcept {},
-        },
-        expression.value
+        }
     );
     return true;
 }
@@ -183,6 +181,7 @@ auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> vo
         case TargetSymbol::StdAddConst:
         case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
         case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
+        case TargetSymbol::StdBitCast:               include("bit"); break;
         case TargetSymbol::StdAddressof:             include("memory"); break;
         case TargetSymbol::StdGetIf:
         case TargetSymbol::StdVariant:               include("variant"); break;

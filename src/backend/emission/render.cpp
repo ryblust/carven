@@ -9,18 +9,15 @@ import std;
 TargetRenderer::TargetRenderer(const TargetUnit& unit, EmissionPolicy policy) noexcept
     : unit(unit),
       generated_origin(
-          std::visit(
-              []<typename Policy>(const Policy& value) noexcept -> std::string {
-                  if constexpr (std::same_as<Policy, SourceAttributedEmission>) {
-                      return std::string(value.generated_origin);
-                  } else if constexpr (std::same_as<Policy, StableInterfaceEmission>) {
-                      return {};
-                  } else {
-                      static_assert(std::same_as<Policy, void>, "unhandled emission policy");
-                  }
-              },
-              policy
-          )
+          policy.visit([]<typename Policy>(const Policy& value) noexcept -> std::string {
+              if constexpr (std::same_as<Policy, SourceAttributedEmission>) {
+                  return std::string(value.generated_origin);
+              } else if constexpr (std::same_as<Policy, StableInterfaceEmission>) {
+                  return {};
+              } else {
+                  static_assert(std::same_as<Policy, void>, "unhandled emission policy");
+              }
+          })
       ),
       stable_interface(std::holds_alternative<StableInterfaceEmission>(policy)) {}
 
@@ -161,7 +158,7 @@ auto TargetRenderer::with_attribution(
     if (stable_interface) {
         return value;
     }
-    return std::visit(
+    return attribution.visit(
         Overloaded {
             [&](const TargetSourceOwnedAttribution& source) noexcept {
                 return concat({
@@ -194,7 +191,6 @@ auto TargetRenderer::with_attribution(
             [&](const TargetCompilerOwnedAttribution&) noexcept {
                 return concat({generated_transition(), value});
             },
-        },
-        attribution
+        }
     );
 }

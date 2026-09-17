@@ -35,14 +35,11 @@ auto require_ids_owner(
 }
 
 auto validate_construction_type(ConstructionTypeRef type, ProgramIdentity owner) noexcept -> void {
-    std::visit(
-        [owner](const auto id) noexcept {
-            using ID = std::remove_cvref_t<decltype(id)>;
-            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
-            require_owner(id.owner(), owner, "construction type used a foreign program");
-        },
-        type
-    );
+    type.visit([owner](const auto id) noexcept {
+        using ID = std::remove_cvref_t<decltype(id)>;
+        static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+        require_owner(id.owner(), owner, "construction type used a foreign program");
+    });
 }
 
 auto resolve_construction_type(
@@ -71,19 +68,16 @@ auto validate_callable_contract(
 
 auto implementation_body_id(const CallableImplementation& implementation) noexcept
     -> std::optional<BodyID> {
-    return std::visit(
-        [](const auto& value) static noexcept -> std::optional<BodyID> {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, FunctionBodyImplementation>
-                          || std::same_as<Value, ClosureBodyImplementation>) {
-                return value.body;
-            } else {
-                static_assert(std::same_as<Value, CppImportImplementation>);
-                return std::nullopt;
-            }
-        },
-        implementation
-    );
+    return implementation.visit([](const auto& value) static noexcept -> std::optional<BodyID> {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, FunctionBodyImplementation>
+                      || std::same_as<Value, ClosureBodyImplementation>) {
+            return value.body;
+        } else {
+            static_assert(std::same_as<Value, CppImportImplementation>);
+            return std::nullopt;
+        }
+    });
 }
 
 } // namespace
@@ -463,20 +457,17 @@ auto DeclarationBuilder::define(ModuleID id, ModuleDeclaration declaration) noex
         );
     }
     for (const auto& item : declaration.items) {
-        std::visit(
-            [this](const auto item_id) noexcept {
-                using ID = std::remove_cvref_t<decltype(item_id)>;
-                static_assert(
-                    std::same_as<ID, FunctionID>
-                    || std::same_as<ID, StructID>
-                    || std::same_as<ID, EnumID>
-                    || std::same_as<ID, ModuleConstantID>
-                    || std::same_as<ID, TestID>
-                );
-                require_owner(item_id.owner(), program_identity, "module used a foreign item");
-            },
-            item
-        );
+        item.visit([this](const auto item_id) noexcept {
+            using ID = std::remove_cvref_t<decltype(item_id)>;
+            static_assert(
+                std::same_as<ID, FunctionID>
+                || std::same_as<ID, StructID>
+                || std::same_as<ID, EnumID>
+                || std::same_as<ID, ModuleConstantID>
+                || std::same_as<ID, TestID>
+            );
+            require_owner(item_id.owner(), program_identity, "module used a foreign item");
+        });
     }
     modules.define(id, std::move(declaration));
 }
@@ -565,21 +556,18 @@ auto DeclarationBuilder::define(EnumID id, EnumDeclaration declaration) noexcept
         program_identity,
         "enum used a foreign case"
     );
-    std::visit(
-        [this](const auto& representation) noexcept {
-            using Representation = std::remove_cvref_t<decltype(representation)>;
-            if constexpr (std::same_as<Representation, NumericEnumRepresentation>) {
-                require_owner(
-                    representation.underlying_type.owner(),
-                    program_identity,
-                    "enum underlying type used a foreign program"
-                );
-            } else {
-                static_assert(std::same_as<Representation, PayloadEnumRepresentation>);
-            }
-        },
-        declaration.representation
-    );
+    declaration.representation.visit([this](const auto& representation) noexcept {
+        using Representation = std::remove_cvref_t<decltype(representation)>;
+        if constexpr (std::same_as<Representation, NumericEnumRepresentation>) {
+            require_owner(
+                representation.underlying_type.owner(),
+                program_identity,
+                "enum underlying type used a foreign program"
+            );
+        } else {
+            static_assert(std::same_as<Representation, PayloadEnumRepresentation>);
+        }
+    });
     enumerations.define(id, std::move(declaration));
 }
 
@@ -685,23 +673,20 @@ auto DeclarationBuilder::complete_callable(
     CallableImplementation implementation
 ) noexcept -> void {
     require_constructing_callables();
-    std::visit(
-        [this](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, FunctionBodyImplementation>
-                          || std::same_as<Value, ClosureBodyImplementation>) {
-                require_owner(value.body.owner(), program_identity, "callable used a foreign body");
-            } else {
-                static_assert(std::same_as<Value, CppImportImplementation>);
-                require_provenance_owner(
-                    value.form_origin.owner(),
-                    provenance_identity,
-                    "C++ import callable used a foreign origin"
-                );
-            }
-        },
-        implementation
-    );
+    implementation.visit([this](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, FunctionBodyImplementation>
+                      || std::same_as<Value, ClosureBodyImplementation>) {
+            require_owner(value.body.owner(), program_identity, "callable used a foreign body");
+        } else {
+            static_assert(std::same_as<Value, CppImportImplementation>);
+            require_provenance_owner(
+                value.form_origin.owner(),
+                provenance_identity,
+                "C++ import callable used a foreign origin"
+            );
+        }
+    });
     callable_implementations.define(id, implementation);
     if (const auto body = implementation_body_id(implementation)) {
         if (!body_callables.emplace(*body, id).second) {

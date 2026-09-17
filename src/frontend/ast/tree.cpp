@@ -1,6 +1,9 @@
 module carven:frontend.ast.tree.impl;
 
+import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :source.text;
+import std;
 
 SyntaxTree::SyntaxTree(ASTStorage storage, ASTModule ast_module, SourceID source) noexcept
     : ast_storage(std::move(storage)),

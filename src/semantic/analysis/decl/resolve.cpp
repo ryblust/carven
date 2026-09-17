@@ -43,7 +43,7 @@ auto DeclResolver::supports_equality(
     if (!visiting.insert(concrete).second) {
         return true;
     }
-    const auto result = std::visit(
+    const auto result = draft.type_copy(concrete).value.visit(
         Overloaded {
             [](const BuiltinTypeValue& value) noexcept {
                 return builtin_type_supports_equality(value.kind);
@@ -88,8 +88,7 @@ auto DeclResolver::supports_equality(
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
-        },
-        draft.type_copy(concrete).value
+        }
     );
     visiting.erase(concrete);
     return result;
@@ -170,20 +169,17 @@ auto DeclResolver::publish_modules() noexcept -> void {
         }
         declaration.items.reserve(module_record.items.size());
         for (const auto& item : module_record.items) {
-            declaration.items.push_back(
-                std::visit(
-                    Overloaded {
-                        [](FunctionID id) static noexcept -> ModuleItem { return id; },
-                        [](StructID id) static noexcept -> ModuleItem { return id; },
-                        [](EnumID id) static noexcept -> ModuleItem { return id; },
-                        [](ModuleConstantID id) static noexcept -> ModuleItem { return id; },
-                        [](const CatalogTestForm& test) static noexcept -> ModuleItem {
-                            return test.test;
-                        },
+            declaration.items.push_back(item.form.visit(
+                Overloaded {
+                    [](FunctionID id) static noexcept -> ModuleItem { return id; },
+                    [](StructID id) static noexcept -> ModuleItem { return id; },
+                    [](EnumID id) static noexcept -> ModuleItem { return id; },
+                    [](ModuleConstantID id) static noexcept -> ModuleItem { return id; },
+                    [](const CatalogTestForm& test) static noexcept -> ModuleItem {
+                        return test.test;
                     },
-                    item.form
-                )
-            );
+                }
+            ));
         }
         draft.define_declaration(module_record.declaration, std::move(declaration));
     }
@@ -194,7 +190,7 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         if (published[symbol.symbol_id.index()]) {
             continue;
         }
-        std::visit(
+        symbol.form.visit(
             Overloaded {
                 [](const CatalogFunctionForm&) static noexcept {},
                 [&](const CatalogStructForm& form) noexcept {
@@ -233,8 +229,7 @@ auto DeclResolver::finish_declarations() noexcept -> void {
                         *module_constants[form.constant.index()]
                     );
                 },
-            },
-            symbol.form
+            }
         );
     }
     draft.finish_declaration_heads();
@@ -374,7 +369,7 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
     }
     const auto syntax = draft.syntax_tree(symbol.module_id).view();
     const auto& item = syntax.item(symbol.item_id);
-    return std::visit(
+    return symbol.form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& form) noexcept -> AnalysisResult<void> {
                 const auto* source = std::get_if<ASTFunctionDecl>(&item.value);
@@ -407,8 +402,7 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
             [](const CatalogEnumCaseForm&) static noexcept -> AnalysisResult<void> {
                 invariant_violation("enum case entered top-level declaration resolution");
             },
-        },
-        symbol.form
+        }
     );
 }
 

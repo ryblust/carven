@@ -82,7 +82,10 @@ functions. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
 
 Required constant calls and direct constant expressions arrive as completed
-semantic values. Text constants become byte literals with explicit lengths,
+semantic values. Finite floating values use round-tripping literals; nonfinite
+values lower to typed `std::bit_cast` calls from their stored integer bits, with
+ordinary target-symbol and type dependencies. Emission only serializes those
+constructed expressions. Text constants become byte literals with explicit lengths,
 including internal NUL. Fixed arrays and structs become typed initializers of
 their completed children. These value initializers establish no source address
 identity and do not extend temporary backing lifetimes.
@@ -241,6 +244,16 @@ initialization, and discard. Discard preserves required execution without
 extracting an unused success payload. Operand realization determines storage
 identity and observation or transfer behavior before composing the result.
 
+Discarded results pass through expression evaluation. Known conditions request
+execution without a value and retain their full-expression cleanup boundary.
+An unused short-circuit result needs no branch when its selected operand has
+no execution obligation. After required execution is selected,
+`discarded_operation` chooses the C++ statement form. Calls with known Carven
+or runtime callable and result contracts use ordinary expression statements.
+Non-void native calls, opaque result types, and other retained value expressions
+use explicit void conversion. Intrinsic call policy
+belongs to `TargetSymbol`; it does not grant permission to omit execution.
+
 Function-body completion derives parameter names and local unused attributes
 from the retained target tree while preserving initialization and lifetime.
 Source unused diagnostics belong to semantic analysis.
@@ -380,8 +393,10 @@ the existing operand storage contract.
 
 ## Control
 
-Conditionals, returns, and scopes lower directly. Ordinary loops use an
-initializer scope and a while loop; condition sequencing executes on every
+Conditionals, returns, and scopes lower directly. Boolean short-circuit values
+use C++ `&&` and `||` when the selected operand needs no preceding statements;
+otherwise a branch contains that operand's evaluation and result delivery.
+Ordinary loops use an initializer scope and a while loop; condition sequencing executes on every
 test. A loop with steps gives continue a local step target during construction.
 Known consumers receive results directly, including returns from selected branches.
 Expression-position value branches with no outward failure or test exit use local
@@ -454,10 +469,17 @@ interface. Function declaration return types, including Outcome and arrays,
 require only declarations of their component types. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
 
-Schedules own the ordered interface definitions and function declarations, C++
-façades, private nominal and closure ordering, and selected tests. Ordinary module
-items are scanned from SemIR. Lowering records providers of actually emitted names and
-types. These transient provider sets are consumed into include directives.
+Schedules own interface definitions, C++ façades, private nominal and closure
+ordering, and selected tests. Module lowering starts with externally visible
+functions, process and C++ export entries, interface closures, and enabled runtime
+tests. Realizing native function references and closure types requests their local
+definitions through `ModuleLowering`. Each callable is lowered once; its references
+can request further definitions. Unrequested private functions and closures have
+no native declarations or definitions. Constant execution retains its SemIR bodies
+independently of this native selection.
+
+Lowering also records providers of emitted names and types. These transient
+provider sets are consumed into include directives.
 
 Each runtime test becomes a function. Static tests have already executed during
 analysis and receive no target function name or runner entry. Module runners call
@@ -544,9 +566,12 @@ writer selection consumes prepared text and fields without native serialization.
 Delegated residual formatting additionally budgets escaped braces and field
 spellings through the bounded `semantic.format` serializer. Over-budget or
 unsupported work retains runtime formatting. Serialization of the source
-fallback is outside the optional materialization budget. Known dynamic integer
-widths may become static specifications. Writer classification accepts static
-integer specifications and default text, boolean, and character fields. It
+fallback is outside the optional materialization budget. Supported, known dynamic
+integer widths and floating widths/precisions resolve to static specification text
+within the preparation budget. Writer classification accepts static integer specifications,
+default floating output, fixed/scientific/general floating presentations with
+precision up to 256, and default text, boolean, and character fields. Larger
+precisions and decorated floating fields retain the standard formatter. It
 computes size bounds without allocating padding; the bounds exclude dynamic text
 bytes. Native/custom formatters retain all original arguments because they can
 inspect the argument pack.
@@ -603,8 +628,11 @@ parameters use the existing Read storage policy.
 
 Both forms append static text and call
 `integer<base, uppercase, zero_pad>(value, width)` in order, copy text fields,
-select boolean text, and encode Unicode scalars directly. Existing construction
-machinery preserves operand evaluation, failures, scalar snapshots, and borrowed
+select boolean text, and encode Unicode scalars directly. Floating fields call
+`floating(value)`, `fixed<precision>(value)`, `scientific<precision>(value)`, or
+`general<precision>(value)`. These small runtime entries use `std::to_chars` with
+a bounded stack buffer and append converted bytes directly to the destination.
+Existing construction machinery preserves operand evaluation, failures, scalar snapshots, and borrowed
 backing before any reservation or write; statement emission never occurs as a
 side effect of requesting a residual expression.
 

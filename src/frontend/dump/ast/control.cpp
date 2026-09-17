@@ -184,7 +184,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
             }
         );
     };
-    std::visit(
+    pattern.value.visit(
         Overloaded {
             [&](const ASTWildcardPattern& wildcard) noexcept {
                 append_line(
@@ -226,7 +226,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                 );
                 const auto nested = child_prefix(prefix, is_last);
                 render_span_field(nested, false, "is", constraint.is_span);
-                std::visit(
+                constraint.operand.value.visit(
                     Overloaded {
                         [&](const ASTQualifiedName& name) noexcept {
                             render_name(name, nested, true, "operand ");
@@ -244,8 +244,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                             render_type(array.element_type, operand, false, "element ");
                             render_expression(array.extent, operand, true, "extent ");
                         },
-                    },
-                    constraint.operand.value
+                    }
                 );
             },
             [&](const ASTCasePattern& case_pattern) noexcept {
@@ -255,7 +254,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                     std::format("CasePattern {}", format_dump_span(pattern.span))
                 );
                 const auto nested = child_prefix(prefix, is_last);
-                std::visit(
+                case_pattern.qualifier.visit(
                     Overloaded {
                         [&](const ASTContextualCaseQualifier& qualifier) noexcept {
                             render_span_field(
@@ -280,8 +279,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                             );
                             render_span_field(nested, false, "separator", qualifier.separator_span);
                         },
-                    },
-                    case_pattern.qualifier
+                    }
                 );
                 render_span_field(nested, false, "name", case_pattern.name_span);
                 if (case_pattern.payload.has_value()) {
@@ -353,8 +351,7 @@ auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is
                     }
                 );
             },
-        },
-        pattern.value
+        }
     );
 }
 
@@ -424,7 +421,7 @@ auto ASTDumper::render_match_form(
                 append_line(arm_prefix, false, "guard <absent>");
             }
             render_span_field(arm_prefix, false, "arrow", arm.arrow_span);
-            std::visit(
+            arm.body.value.visit(
                 Overloaded {
                     [&](ASTExprID expression) noexcept {
                         render_expression(expression, arm_prefix, true, "body ");
@@ -435,8 +432,7 @@ auto ASTDumper::render_match_form(
                     [&](ASTBranchBlockID block) noexcept {
                         render_branch_block(block, arm_prefix, true, "body ");
                     },
-                },
-                arm.body.value
+                }
             );
         }
     );
@@ -473,7 +469,7 @@ auto ASTDumper::render_try_form(
                 [&](const ASTCatchPatternAtom& atom,
                     std::string_view atom_prefix,
                     bool atom_last) noexcept {
-                    std::visit(
+                    atom.value.visit(
                         Overloaded {
                             [&](const ASTCatchWildcardPattern& wildcard) noexcept {
                                 render_span_field(
@@ -489,8 +485,7 @@ auto ASTDumper::render_try_form(
                                 render_type(typed.type, typed_prefix, false, "type ");
                                 render_pattern(typed.inner, typed_prefix, true);
                             },
-                        },
-                        atom.value
+                        }
                     );
                 }
             );
@@ -501,7 +496,7 @@ auto ASTDumper::render_try_form(
                 append_line(contents, false, "guard <absent>");
             }
             render_span_field(contents, false, "arrow", arm.arrow_span);
-            std::visit(
+            arm.body.value.visit(
                 Overloaded {
                     [&](ASTExprID expression) noexcept {
                         render_expression(expression, contents, true, "body ");
@@ -512,8 +507,7 @@ auto ASTDumper::render_try_form(
                     [&](ASTBranchBlockID block) noexcept {
                         render_branch_block(block, contents, true, "body ");
                     },
-                },
-                arm.body.value
+                }
             );
         }
     );

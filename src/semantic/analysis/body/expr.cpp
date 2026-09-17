@@ -185,7 +185,7 @@ auto BodyElaborator::lambda_expression(
                 "callable views cannot be captured by a lambda"
             ));
         }
-        auto storage = std::visit(
+        auto storage = local->storage.visit(
             Overloaded {
                 [&](const BoundStorage& value) noexcept -> BodyExpressionStorage {
                     return active_builder().binding_expression(value.binding);
@@ -193,8 +193,7 @@ auto BodyElaborator::lambda_expression(
                 [](ConstantID) noexcept -> BodyExpressionStorage {
                     invariant_violation("compile-time constant reached runtime capture");
                 },
-            },
-            local->storage
+            }
         );
         auto built = BuiltExpression {BuiltExpression {
             .storage = std::move(storage),

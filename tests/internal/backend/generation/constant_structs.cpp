@@ -98,6 +98,7 @@ TEST_CASE(
             const entries: [Entry] = [Entry { 1 }, Entry { 2 }];
             return entries[index].key;
         }
+        fn exercise() -> i32 => frozen().key + ordinary(2).key + read(0);
     )"),
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("constant_structs")}

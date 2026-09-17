@@ -43,7 +43,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             flow.normal.reset();
         }
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const SemReturn& value) noexcept {
                 if (value.value) {
@@ -95,8 +95,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             [&](const OwnedSemanticRegion& value) noexcept {
                 flow = region(*value, std::move(flow.normal->state));
             },
-        },
-        source.value
+        }
     );
     if (flow.normal) {
         flow.normal->value = {};
@@ -136,7 +135,7 @@ auto NullabilityBodyAnalyzer::bind_pattern(
     PatternID id,
     const NullValue& value
 ) const noexcept -> void {
-    std::visit(
+    body.pattern(id).value.visit(
         Overloaded {
             [&](const BindingPattern& pattern) noexcept {
                 store(state, {.root = pattern.binding, .path = {}}, value);
@@ -153,13 +152,12 @@ auto NullabilityBodyAnalyzer::bind_pattern(
                 }
             },
             [](const auto&) static noexcept {},
-        },
-        body.pattern(id).value
+        }
     );
 }
 
 auto NullabilityBodyAnalyzer::irrefutable(PatternID id) const noexcept -> bool {
-    return std::visit(
+    return body.pattern(id).value.visit(
         Overloaded {
             [](const WildcardPattern&) static noexcept { return true; },
             [](const BindingPattern&) static noexcept { return true; },
@@ -170,8 +168,7 @@ auto NullabilityBodyAnalyzer::irrefutable(PatternID id) const noexcept -> bool {
                 });
             },
             [](const auto&) static noexcept { return false; },
-        },
-        body.pattern(id).value
+        }
     );
 }
 

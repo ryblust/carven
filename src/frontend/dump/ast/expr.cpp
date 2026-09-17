@@ -21,12 +21,9 @@ auto ASTDumper::render_expression(
     std::string_view field
 ) noexcept -> void {
     const auto& expression = ast.expression(expression_id);
-    std::visit(
-        [&](const auto& value) noexcept {
-            render_expression(value, expression_id, prefix, is_last, field);
-        },
-        expression.value
-    );
+    expression.value.visit([&](const auto& value) noexcept {
+        render_expression(value, expression_id, prefix, is_last, field);
+    });
 }
 
 auto ASTDumper::render_expression(
@@ -182,7 +179,7 @@ auto ASTDumper::render_expression(
     );
     const auto nested_prefix = child_prefix(prefix, is_last);
     render_construction_type(construction.type, nested_prefix, false);
-    std::visit(
+    construction.initializer.value.visit(
         Overloaded {
             [&](std::monostate) noexcept {
                 append_line(nested_prefix, true, "initializer <absent>");
@@ -218,8 +215,7 @@ auto ASTDumper::render_expression(
                     }
                 );
             },
-        },
-        construction.initializer.value
+        }
     );
 }
 

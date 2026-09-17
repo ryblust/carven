@@ -13,7 +13,7 @@ using SemanticChildNode = std::conditional_t<std::is_const_v<Owner>, const Value
 template<typename Operation, typename Visitor>
 auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> void {
     if constexpr (std::same_as<std::remove_const_t<Operation>, SemanticExpressionValue>) {
-        std::visit([&](auto& node) noexcept { visit_semantic_children(node, visitor); }, operation);
+        operation.visit([&](auto& node) noexcept { visit_semantic_children(node, visitor); });
     } else {
         const auto child = [&](auto& value) noexcept {
             std::invoke(visitor, value);
@@ -29,7 +29,7 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
             }
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCppCall>) {
             auto& value = operation;
-            std::visit(
+            value.callee.visit(
                 Overloaded {
                     [](SemanticChildNode<Operation, CppNameReference>&) static noexcept {},
                     [&](
@@ -38,8 +38,7 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
                     [&](SemanticChildNode<Operation, SemCppOperand>& callee) noexcept {
                         child(*callee.expression);
                     },
-                },
-                value.callee
+                }
             );
             for (auto& argument : value.arguments) {
                 child(argument.expression);

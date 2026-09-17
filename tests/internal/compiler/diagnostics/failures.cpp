@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.failures;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -35,14 +35,14 @@ TEST_CASE("Compiler diagnostics: failure copyability closes after nominal signat
         "struct Wrapper { cause: Later } "
         "struct Later {}"
     );
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("forward.failure"),
     };
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
@@ -82,13 +82,13 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
         auto sources = SourceManager();
         const auto source_id =
             *sources.append_virtual("catch-warning.cv", std::string(expectation.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("catch_warning"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:catch-warnings").value(),
@@ -389,14 +389,14 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
         auto sources = SourceManager();
         const auto source_id =
             *sources.append_virtual("diagnostic.cv", std::string(expectation.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("diagnostic"),
         };
 
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
@@ -446,13 +446,13 @@ TEST_CASE("Compiler diagnostics: entry failure contracts are explicit regardless
         CAPTURE(item.source);
         auto sources = SourceManager();
         const auto source = *sources.append_virtual("entry.cv", std::string(item.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source,
             .module_path = *CanonicalModulePath::from_value("entry"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:entry"),
@@ -522,13 +522,13 @@ TEST_CASE("Compiler diagnostics: failure explanations describe resolved source c
         CAPTURE(item.source);
         auto sources = SourceManager();
         const auto source = *sources.append_virtual("app.cv", std::string(item.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source,
             .module_path = *CanonicalModulePath::from_value("app"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:failure-explanations"),
@@ -561,15 +561,15 @@ TEST_CASE("Compiler diagnostics: catch type names distinguish modules in stable 
             "fn main() { try { second()?; first()?; } catch {} }"
         );
         auto inputs = std::array {
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = zeta,
                 .module_path = *CanonicalModulePath::from_value("zeta")
             },
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = alpha,
                 .module_path = *CanonicalModulePath::from_value("alpha")
             },
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = app,
                 .module_path = *CanonicalModulePath::from_value("app")
             },
@@ -579,7 +579,7 @@ TEST_CASE("Compiler diagnostics: catch type names distinguish modules in stable 
         }
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = inputs},
+            SourceBatch {.modules = inputs},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:catch-type-names"),
@@ -608,13 +608,13 @@ TEST_CASE("Compiler: array adoption preserves equal nested callable contracts") 
         "fn slices(source: [[fn() -> i32 throw A + B]; 0]) { "
         "let target: [[fn() -> i32 throw B + A]; 0] = source; }"
     );
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = source_id,
         .module_path = *CanonicalModulePath::from_value("adoption"),
     };
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),

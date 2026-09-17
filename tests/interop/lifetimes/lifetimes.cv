@@ -106,6 +106,9 @@ test "Lifetimes: condition evaluation ends before branch execution" {
     reset();
     if (Owner { 2 }.probe() as bool) && false { mark(9); }
     check(matches("2 12 -2 "));
+    reset();
+    if (Owner { 3 }.probe() as bool) || true { mark(9); }
+    check(matches("3 13 -3 9 "));
 }
 
 test "Lifetimes: return and failure leave their owning lexical region" {

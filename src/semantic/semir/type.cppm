@@ -362,47 +362,44 @@ public:
         TypeResolver resolve_ref,
         FailureResolver resolve_failure
     ) noexcept -> TypeID {
-        return std::visit(
-            [&](const auto& value) noexcept -> TypeID {
-                using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
-                    return types.intern(
-                        CanonicalType {
-                            .value = ArrayTypeValue {
-                                .element = resolve_ref(value.element),
-                                .extent = value.extent,
-                            },
-                        }
-                    );
-                } else if constexpr (std::same_as<Value, ConstructionSliceTypeValue>) {
-                    return types.intern(
-                        {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
-                    );
-                } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
-                    auto parameters = std::vector<CallableParameter>();
-                    parameters.reserve(value.parameters.size());
-                    for (const auto& parameter : value.parameters) {
-                        parameters.push_back(
-                            CallableParameter {
-                                .access = parameter.access,
-                                .type = resolve_ref(parameter.type),
-                            }
-                        );
+        return type.value.visit([&](const auto& value) noexcept -> TypeID {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+                return types.intern(
+                    CanonicalType {
+                        .value = ArrayTypeValue {
+                            .element = resolve_ref(value.element),
+                            .extent = value.extent,
+                        },
                     }
-                    const auto signature = signatures.intern(
-                        CallableSignature {
-                            .parameters = std::move(parameters),
-                            .result = resolve_ref(value.result),
-                            .failures = resolve_failure(value.failures),
+                );
+            } else if constexpr (std::same_as<Value, ConstructionSliceTypeValue>) {
+                return types.intern(
+                    {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
+                );
+            } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
+                auto parameters = std::vector<CallableParameter>();
+                parameters.reserve(value.parameters.size());
+                for (const auto& parameter : value.parameters) {
+                    parameters.push_back(
+                        CallableParameter {
+                            .access = parameter.access,
+                            .type = resolve_ref(parameter.type),
                         }
                     );
-                    return types.intern_resolved_callable_view(signature, signatures);
-                } else {
-                    static_assert(std::same_as<Value, void>, "unhandled construction type shape");
                 }
-            },
-            type.value
-        );
+                const auto signature = signatures.intern(
+                    CallableSignature {
+                        .parameters = std::move(parameters),
+                        .result = resolve_ref(value.result),
+                        .failures = resolve_failure(value.failures),
+                    }
+                );
+                return types.intern_resolved_callable_view(signature, signatures);
+            } else {
+                static_assert(std::same_as<Value, void>, "unhandled construction type shape");
+            }
+        });
     }
 
     template<FailureResolutionReader FailureReader>

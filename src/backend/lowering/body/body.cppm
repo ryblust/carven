@@ -3,7 +3,7 @@ module carven:backend.lowering.body;
 import :backend.lowering.context;
 import :backend.target.name;
 import :backend.target.stmt;
-import :semantic.semir;
+import :semantic.semir.ids;
 import std;
 
 struct CallableBodyExit final {

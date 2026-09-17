@@ -3,3 +3,7 @@ running 1
 --help
 space argument
 ; echo injected
+
+a"b
+trailing\
+slash\"quote

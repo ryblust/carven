@@ -1,7 +1,7 @@
 module carven:backend.construction.verify;
 
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.structured;
 import std;
 
 enum class ConstructionViolationKind {

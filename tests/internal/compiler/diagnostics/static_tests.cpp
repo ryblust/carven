@@ -6,9 +6,9 @@ module carven:test.internal.compiler.diagnostics.static_tests;
 
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.code;
 import :semantic.evaluation.output;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.compiler.diagnostics.fixture;
@@ -19,13 +19,13 @@ namespace {
 auto compile_static(std::string source, std::string& output, std::string& errors) noexcept {
     auto sources = SourceManager();
     const auto id = *sources.append_virtual("static.cv", std::move(source));
-    const auto input = CompilationModuleInput {
+    const auto input = SourceModuleInput {
         .source_id = id,
         .module_path = *CanonicalModulePath::from_value("static")
     };
     return compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("static-tests")

@@ -4,7 +4,7 @@ import :backend.lowering.context;
 import :backend.preparation.format;
 import :backend.target.expr;
 import :backend.target.stmt;
-import :semantic.semir;
+import :semantic.semir.structured;
 import std;
 
 // Operands have completed the ordinary Read/Write preparation. Parsed fields

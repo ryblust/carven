@@ -1,0 +1,3 @@
+import "demo/native.hpp" using native_answer;
+
+export fn answer() -> i32 => native_answer();

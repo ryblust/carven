@@ -7,7 +7,7 @@ module carven:test.internal.compiler.generation.interfaces;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -25,7 +25,7 @@ auto compile_modules(
     std::string_view linkage_domain = "test:interfaces"
 ) noexcept -> GeneratedArtifactSet {
     auto sources = SourceManager();
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     inputs.reserve(modules.size());
     for (const auto& fixture : modules) {
         const auto source =
@@ -37,7 +37,7 @@ auto compile_modules(
     }
     auto result = compile(
         sources,
-        CompilationRequest {.modules = inputs},
+        SourceBatch {.modules = inputs},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value(std::string(linkage_domain)).value(),
@@ -176,10 +176,10 @@ TEST_CASE("Interface components: implementation-only references do not merge sur
     constexpr auto provider = "export fn answer() -> i32 { return 42; }\n";
     constexpr auto consumer_used = "import provider using answer;\n"
                                    "export struct Consumer { value: i32, }\n"
-                                   "private fn use_answer() -> i32 { return answer(); }\n";
+                                   "fn use_answer() -> i32 { return answer(); }\n";
     constexpr auto consumer_unused = "import provider using answer;\n"
                                      "export struct Consumer { value: i32, }\n"
-                                     "private fn local_value() -> i32 { return 0; }\n";
+                                     "fn local_value() -> i32 { return 0; }\n";
     const auto used = compile_modules(
         std::array {
             ModuleFixture {"provider", provider},

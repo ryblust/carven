@@ -105,27 +105,24 @@ auto align_array_rows(
             .line_start = line_start,
             .line_end = next_line == std::string::npos ? output.size() : next_line,
         };
-        std::visit(
-            [&](const auto& initializer) noexcept {
-                using T = std::decay_t<decltype(initializer)>;
-                if constexpr (std::same_as<T, ASTPositionalInitializerList>) {
-                    row.signature += "#positional";
-                    for (const auto value : initializer.values) {
-                        row.columns.push_back(
-                            rendered[index_at(syntax.expression(value).span.start())].span.start()
-                        );
-                    }
-                } else if constexpr (std::same_as<T, ASTFieldInitializerList>) {
-                    row.signature += "#named";
-                    for (const auto& field : initializer.fields) {
-                        row.signature += ':';
-                        row.signature += spelling(field.name_span);
-                        row.columns.push_back(rendered[index_at(field.span.start())].span.start());
-                    }
+        construction->initializer.value.visit([&](const auto& initializer) noexcept {
+            using T = std::decay_t<decltype(initializer)>;
+            if constexpr (std::same_as<T, ASTPositionalInitializerList>) {
+                row.signature += "#positional";
+                for (const auto value : initializer.values) {
+                    row.columns.push_back(
+                        rendered[index_at(syntax.expression(value).span.start())].span.start()
+                    );
                 }
-            },
-            construction->initializer.value
-        );
+            } else if constexpr (std::same_as<T, ASTFieldInitializerList>) {
+                row.signature += "#named";
+                for (const auto& field : initializer.fields) {
+                    row.signature += ':';
+                    row.signature += spelling(field.name_span);
+                    row.columns.push_back(rendered[index_at(field.span.start())].span.start());
+                }
+            }
+        });
         if (row.columns.empty()) {
             return std::nullopt;
         }

@@ -7,7 +7,9 @@ import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -17,7 +19,7 @@ auto BodyRealizer::structured_expression(
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    std::visit(
+    construction.expression(source).value.visit(
         Overloaded {
             [&](const ConstructionConditional& value) noexcept {
                 lower_if(value, result, destination);
@@ -31,8 +33,7 @@ auto BodyRealizer::structured_expression(
             [](const auto&) static noexcept {
                 invariant_violation("expected a structured semantic expression");
             },
-        },
-        construction.expression(source).value
+        }
     );
 }
 

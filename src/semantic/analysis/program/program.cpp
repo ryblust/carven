@@ -708,3 +708,20 @@ auto ProgramDraft::write_output(ExecutionOutputStream stream, std::string_view b
         output(stream, bytes);
     }
 }
+
+auto ProgramDraft::enum_case_types(EnumID enumeration) const noexcept
+    -> std::optional<std::vector<EnumCaseTypes>> {
+    auto result = std::vector<EnumCaseTypes>();
+    for (const auto id : enum_declaration_copy(enumeration).cases) {
+        auto item = EnumCaseTypes {.id = id, .payload_types = {}};
+        for (const auto& field : construction_enum_case_declaration_copy(id).payload_types) {
+            const auto* type = std::get_if<TypeID>(&field);
+            if (type == nullptr) {
+                return std::nullopt;
+            }
+            item.payload_types.push_back(*type);
+        }
+        result.push_back(std::move(item));
+    }
+    return result;
+}

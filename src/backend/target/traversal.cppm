@@ -163,7 +163,7 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
             return visit_target_type(visitor, id);
         });
     };
-    return std::visit(
+    return value.visit(
         Overloaded {
             [&](const TargetDecltypeType& deduced) noexcept {
                 return traverse_target_expression(deduced.expression(), visitor);
@@ -192,8 +192,7 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
             [&](const TargetReferenceType& reference) noexcept {
                 return visit_target_type(visitor, reference.referent);
             },
-        },
-        value
+        }
     );
 }
 
@@ -237,7 +236,7 @@ auto traverse_target_expression(
     if (!enter_target_expression(visitor, expression, role)) {
         return false;
     }
-    const auto children = std::visit(
+    const auto children = expression.value.visit(
         Overloaded {
             [](TargetTraversalNode<Node, TargetNameExpr>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetIntrinsicNameExpr>&) static noexcept {
@@ -283,7 +282,7 @@ auto traverse_target_expression(
                 if (!visit_target_type(visitor, value.type)) {
                     return false;
                 }
-                return std::visit(
+                return value.initializer.visit(
                     Overloaded {
                         [](const std::monostate&) static noexcept { return true; },
                         [&](TargetTraversalNode<Node, std::vector<TargetExpr>>& values) noexcept {
@@ -296,8 +295,7 @@ auto traverse_target_expression(
                                 return traverse_target_expression(*field.value, visitor);
                             });
                         },
-                    },
-                    value.initializer
+                    }
                 );
             },
             [&](TargetTraversalNode<Node, TargetIndexExpr>& value) noexcept {
@@ -338,8 +336,7 @@ auto traverse_target_expression(
                            }
                     );
             },
-        },
-        expression.value
+        }
     );
     return children && leave_target_expression(visitor, expression);
 }
@@ -377,7 +374,7 @@ auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bo
     if (!enter_target_statement(visitor, statement)) {
         return false;
     }
-    const auto children = std::visit(
+    const auto children = statement.value.visit(
         Overloaded {
             [&](TargetTraversalNode<Node, TargetExprStmt>& value) noexcept {
                 return traverse_target_expression(value.expression, visitor);
@@ -492,12 +489,9 @@ auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bo
                     },
                     [&]() noexcept {
                         if (value.initializer.has_value()
-                            && !std::visit(
-                                [&](auto& clause) noexcept {
-                                    return traverse_target_for_clause(clause, visitor);
-                                },
-                                value.initializer->value
-                            )) {
+                            && !value.initializer->value.visit([&](auto& clause) noexcept {
+                                   return traverse_target_for_clause(clause, visitor);
+                               })) {
                             return false;
                         }
                         if (value.condition.has_value()
@@ -505,12 +499,9 @@ auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bo
                             return false;
                         }
                         for (auto& step : value.steps) {
-                            if (!std::visit(
-                                    [&](auto& clause) noexcept {
-                                        return traverse_target_for_clause(clause, visitor);
-                                    },
-                                    step.value
-                                )) {
+                            if (!step.value.visit([&](auto& clause) noexcept {
+                                    return traverse_target_for_clause(clause, visitor);
+                                })) {
                                 return false;
                             }
                         }
@@ -518,8 +509,7 @@ auto traverse_target_statement(Node& statement, Visitor& visitor) noexcept -> bo
                     }
                 );
             },
-        },
-        statement.value
+        }
     );
     return children && leave_target_statement(visitor, statement);
 }
@@ -558,7 +548,7 @@ auto traverse_target_member_function(
 template<typename Visitor>
 auto traverse_target_record_member(const TargetRecordMember& member, Visitor& visitor) noexcept
     -> bool {
-    return std::visit(
+    return member.visit(
         Overloaded {
             [&](const TargetStructField& field) noexcept {
                 return visit_target_type(visitor, field.type);
@@ -566,15 +556,14 @@ auto traverse_target_record_member(const TargetRecordMember& member, Visitor& vi
             [&](const TargetMemberFunctionDecl& function) noexcept {
                 return traverse_target_member_function(function, visitor);
             },
-        },
-        member
+        }
     );
 }
 
 template<typename Visitor>
 auto traverse_target_class_member(const TargetClassMember& member, Visitor& visitor) noexcept
     -> bool {
-    return std::visit(
+    return member.visit(
         Overloaded {
             [&](const TargetMemberVariable& value) noexcept {
                 return visit_target_type(visitor, value.type);
@@ -599,8 +588,7 @@ auto traverse_target_class_member(const TargetClassMember& member, Visitor& visi
             [&](const TargetMemberFunctionDecl& value) noexcept {
                 return traverse_target_member_function(value, visitor);
             },
-        },
-        member
+        }
     );
 }
 
@@ -609,7 +597,7 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
     if (!enter_target_declaration(visitor, declaration)) {
         return false;
     }
-    const auto children = std::visit(
+    const auto children = declaration.visit(
         Overloaded {
             [&](const TargetFunctionDecl& value) noexcept {
                 if (!traverse_target_parameters(value.parameters, visitor)
@@ -655,8 +643,7 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
                 return true;
             },
             [](const TargetClassForwardDecl&) static noexcept { return true; },
-        },
-        declaration
+        }
     );
     return children && leave_target_declaration(visitor, declaration);
 }
@@ -676,7 +663,7 @@ auto traverse_target_item(const TargetItem& item, Visitor& visitor) noexcept -> 
     if (!enter_target_item(visitor, item)) {
         return false;
     }
-    const auto children = std::visit(
+    const auto children = item.value.visit(
         Overloaded {
             [&](const TargetDecl& declaration) noexcept {
                 return traverse_target_declaration(declaration, visitor);
@@ -695,8 +682,7 @@ auto traverse_target_item(const TargetItem& item, Visitor& visitor) noexcept -> 
             },
             [](const TargetUsing&) static noexcept { return true; },
             [](const TargetRawFragment&) static noexcept { return true; },
-        },
-        item.value
+        }
     );
     return children && leave_target_item(visitor, item);
 }

@@ -5,46 +5,15 @@ import :semantic.format.builtin;
 import :semantic.format;
 import std;
 
-namespace {
-
-auto static_specification(const ResolvedBuiltinFormatSpecification& specification) noexcept
-    -> std::optional<std::string> {
-    if (!specification.width) {
-        return specification.text;
-    }
-    if (*specification.width
-        > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
-        return std::nullopt;
-    }
-    const auto parsed = parse_integer_format_specification(specification.text);
-    if (!parsed || !parsed->width.empty()) {
-        return std::nullopt;
-    }
-    auto result = parsed->zero_pad ? std::string("0") : std::string();
-    if (*specification.width != 0) {
-        result += std::to_string(*specification.width);
-    }
-    const auto presentation = specification.text.empty() ? '0' : specification.text.back();
-    if (std::string_view("bBdoxX").find(presentation) != std::string_view::npos) {
-        result.push_back(presentation);
-    }
-    return result;
-}
-
-} // namespace
-
 auto prepared_format_operands(const PreparedFormat& preparation) noexcept
     -> std::span<const std::size_t> {
-    return std::visit(
-        [](const auto& value) static noexcept -> std::span<const std::size_t> {
-            if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, PreparedFormatText>) {
-                return {};
-            } else {
-                return value.operand_indices;
-            }
-        },
-        preparation
-    );
+    return preparation.visit([](const auto& value) static noexcept -> std::span<const std::size_t> {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, PreparedFormatText>) {
+            return {};
+        } else {
+            return value.operand_indices;
+        }
+    });
 }
 
 auto prepare_format(
@@ -102,28 +71,29 @@ auto prepare_format(
             continue;
         }
         auto hole = std::get<FormatHole>(part.value);
-        const auto evaluated =
-            resolve_builtin_format_specification(hole, arguments, maximum_prepared_format_bytes);
+        const auto evaluated = resolve_builtin_format_specification(
+            hole,
+            arguments,
+            maximum_prepared_format_bytes,
+            types[hole.operand_index]
+                && (*types[hole.operand_index] == BuiltinType::F32
+                    || *types[hole.operand_index] == BuiltinType::F64)
+        );
         if (evaluated) {
             if (known[hole.operand_index]) {
                 auto folded = format_builtin_value(
                     arguments[hole.operand_index],
-                    evaluated->text,
-                    maximum_prepared_format_bytes,
-                    evaluated->width
+                    *evaluated,
+                    maximum_prepared_format_bytes
                 );
                 if (folded) {
                     append_text(std::move(*folded));
                     continue;
                 }
             }
-            if (evaluated->width
-                && types[hole.operand_index]
-                && builtin_is_integer(*types[hole.operand_index])) {
-                if (const auto text = static_specification(*evaluated)) {
-                    hole.specification = {{FormatText {.bytes = *text}}};
-                    hole.has_specification = true;
-                }
+            if (types[hole.operand_index] && builtin_is_numeric(*types[hole.operand_index])) {
+                hole.specification = {{FormatText {.bytes = *evaluated}}};
+                hole.has_specification = !evaluated->empty();
             }
         }
         prepared.parts.push_back({std::move(hole)});

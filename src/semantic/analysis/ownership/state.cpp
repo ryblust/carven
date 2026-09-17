@@ -105,14 +105,11 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     }
     for (auto& exit : flow.exits) {
         release(exit.state);
-        std::visit(
-            [&](const auto& payload) noexcept {
-                if constexpr (requires { payload.value; }) {
-                    check(payload.value, exit.state);
-                }
-            },
-            exit.payload
-        );
+        exit.payload.visit([&](const auto& payload) noexcept {
+            if constexpr (requires { payload.value; }) {
+                check(payload.value, exit.state);
+            }
+        });
     }
 }
 
@@ -304,7 +301,7 @@ auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noe
 }
 
 auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {
-    return std::visit(
+    return body.binding(id).storage.visit(
         Overloaded {
             [](const OwnerBindingStorage& value) static noexcept { return value.writable; },
             [](const ParameterBindingStorage& value) static noexcept {
@@ -313,8 +310,7 @@ auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> boo
             [](const CaptureBindingStorage& value) static noexcept {
                 return value.mode == CaptureMode::Write;
             },
-        },
-        body.binding(id).storage
+        }
     );
 }
 

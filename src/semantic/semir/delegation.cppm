@@ -103,17 +103,14 @@ using CppCallee = std::variant<CppNameReference, CppMemberCallee<Operand>, Opera
 
 template<typename Operand, typename Visitor>
 auto visit_cpp_callee_operand(const CppCallee<Operand>& callee, Visitor visit) noexcept -> void {
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, Operand>) {
-                visit(value);
-            } else if constexpr (std::same_as<Value, CppMemberCallee<Operand>>) {
-                visit(value.receiver);
-            }
-        },
-        callee
-    );
+    callee.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, Operand>) {
+            visit(value);
+        } else if constexpr (std::same_as<Value, CppMemberCallee<Operand>>) {
+            visit(value.receiver);
+        }
+    });
 }
 
 struct CppCallQuery final {

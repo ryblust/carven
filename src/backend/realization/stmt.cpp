@@ -9,7 +9,14 @@ import :backend.target.expr;
 import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
+import :source.provenance.ids;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -141,7 +148,7 @@ auto BodyRealizer::dispatch_failure(
                 .maybe_unused = false,
                 .name = projection,
                 .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
-                .initializer = std::visit(
+                .initializer = source.visit(
                     Overloaded {
                         [&](const OutcomeFailureSource& outcome) noexcept {
                             auto storage = name_expression(outcome.storage);
@@ -166,8 +173,7 @@ auto BodyRealizer::dispatch_failure(
                                 ))
                             );
                         }
-                    },
-                    source
+                    }
                 )
             }
         ));
@@ -274,7 +280,7 @@ auto BodyRealizer::statement(
     ConstructionRegionID owner
 ) noexcept -> Lowered<LoweringCompleted> {
     auto destination = LoweringStmtBuilder();
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const ConstructionReturn& value) noexcept {
                 if (value.value) {
@@ -334,8 +340,7 @@ auto BodyRealizer::statement(
             [&](const ConstructionRangeLoop& value) noexcept {
                 lower_range(owner, value, destination);
             },
-        },
-        source.value
+        }
     );
     destination.attribute(
         TargetSourceExpansionAttribution {

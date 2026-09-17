@@ -2,7 +2,9 @@ module carven:backend.lowering.constant;
 
 import :backend.lowering.context;
 import :backend.target.expr;
-import :semantic.semir;
+import :semantic.semir.constant;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import std;
 
 enum class ConstantLiteralContext { Exact, TargetTyped };

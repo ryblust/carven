@@ -105,7 +105,7 @@ auto BodyResolver::operator()(SemTry& value) const noexcept -> void {
                 failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
             auto useful = false;
             for (auto& alternative : arm.alternatives) {
-                const auto matches = std::visit(
+                const auto matches = alternative.pattern.visit(
                     Overloaded {
                         [&](CatchAllPattern) noexcept { return !accepted.members.empty(); },
                         [&](const SemTypedCatchPattern& pattern) noexcept {
@@ -114,8 +114,7 @@ auto BodyResolver::operator()(SemTry& value) const noexcept -> void {
                                 types.resolve(pattern.type.construction())
                             );
                         },
-                    },
-                    alternative.pattern
+                    }
                 );
                 alternative.reachable = alternative.reachable && matches;
                 useful = useful || alternative.reachable;
@@ -164,17 +163,17 @@ auto BodyResolver::operator()(ElaboratedLocalBinding&& value) const noexcept -> 
 auto BodyResolver::operator()(ElaboratedPattern&& value) const noexcept -> Pattern {
     return {
         .type = (*this)(value.type),
-        .value = std::visit(
-            Overloaded {
-                [&](ElaboratedTypeConstraintPattern pattern) noexcept -> PatternValue {
-                    return TypeConstraintPattern {.type = (*this)(pattern.type)};
-                },
-                [](auto&& pattern) static noexcept -> PatternValue {
-                    return std::forward<decltype(pattern)>(pattern);
-                },
-            },
-            std::move(value.value)
-        ),
+        .value = std::move(value.value)
+                     .visit(
+                         Overloaded {
+                             [&](ElaboratedTypeConstraintPattern pattern) noexcept -> PatternValue {
+                                 return TypeConstraintPattern {.type = (*this)(pattern.type)};
+                             },
+                             [](auto&& pattern) static noexcept -> PatternValue {
+                                 return std::forward<decltype(pattern)>(pattern);
+                             },
+                         }
+                     ),
         .origin = value.origin,
     };
 }

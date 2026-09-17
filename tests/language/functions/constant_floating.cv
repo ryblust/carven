@@ -1,0 +1,90 @@
+struct Samples {
+    values: [f64; 3],
+    scale: f32
+}
+
+const fn transform(value: f64) -> f64 => -(value * 2.0 - 1.0) / 2.0;
+
+const fn samples() -> Samples {
+    var values = [1.0, 2.0, 3.0];
+    for &value in values {
+        value += 0.5;
+    }
+    var result = Samples {
+        values: values,
+        scale: 2.0f32
+    };
+    result.scale *= 1.5f32;
+    return result;
+}
+
+const fn sum(value: Samples) -> f64 {
+    var result = 0.0;
+    for item in value.values {
+        result += item;
+    }
+    return result * (value.scale as f64);
+}
+
+const fn divide(value: f64, divisor: f64) -> f64 => value / divisor;
+const fn narrow_divide(value: f32, divisor: f32) -> f32 => value / divisor;
+const fn negate(value: f64) -> f64 => -value;
+
+const transformed = transform(4.0);
+const data = samples();
+const total = sum(data);
+const direct = (3 as f64) / 2.0;
+const infinity = divide(1.0, 0.0);
+const nan = divide(0.0, 0.0);
+const negative_zero = negate(0.0);
+const narrow_infinity = narrow_divide(1.0f32, 0.0f32);
+const narrow_nan = narrow_divide(0.0f32, 0.0f32);
+const rounded = 16777216.0f32 + 1.0f32;
+const overflow = 3.0e38f32 * 2.0f32;
+const underflow = 1.0e-30f32 * 1.0e-20f32;
+const nonfinite_array = [nan, infinity];
+
+const fn classify(value: f64) -> i32 {
+    return match value {
+        1.5 => 1,
+        other if other > 1.5 => 2,
+        _ => 0,
+    };
+}
+
+const test "floating execution composes calls storage and control" {
+    check(transformed == -3.5);
+    check(total == 22.5);
+    check(direct == 1.5);
+    check(data.values[1] == 2.5);
+    check(infinity > 1.0);
+    check(nan != nan);
+    check(!(nan < 0.0) && !(nan >= 0.0));
+    check(divide(1.0, negative_zero) < 0.0);
+    check(narrow_infinity > 0.0f32);
+    check(narrow_nan != narrow_nan);
+    check(rounded == 16777216.0f32);
+    check(overflow == narrow_infinity);
+    check(underflow == 0.0f32);
+    check(nonfinite_array != nonfinite_array);
+    check(classify(1.5) == 1 && classify(2.0) == 2 && classify(nan) == 0);
+    check(transform(1.0) == -0.5);
+}
+
+test "floating constants survive native reconstruction" {
+    check(transformed == transform(4.0));
+    check(total == sum(samples()));
+    check(direct == 1.5);
+    check(infinity > 1.0);
+    check(infinity + 1.0 == infinity);
+    check(nan != nan);
+    check(!(nan <= 0.0) && !(nan > 0.0));
+    check(divide(1.0, negative_zero) < 0.0);
+    check(narrow_infinity > 0.0f32);
+    check(narrow_nan != narrow_nan);
+    check(rounded == 16777216.0f32);
+    check(overflow == narrow_infinity);
+    check(underflow == 0.0f32);
+    check(nonfinite_array != nonfinite_array);
+    check(classify(1.5) == 1 && classify(2.0) == 2 && classify(nan) == 0);
+}

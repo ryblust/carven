@@ -346,7 +346,7 @@ auto resolve_type_value(
     const ASTType& source_type,
     const ArrayExtentResolver& resolve_extent
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return std::visit(
+    return source_type.value.visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
                 return resolve_named(
@@ -478,8 +478,7 @@ auto resolve_type_value(
                     resolve_extent
                 );
             },
-        },
-        source_type.value
+        }
     );
 }
 
@@ -523,7 +522,7 @@ auto resolve_source_construction_type(
     const ASTConstructionType& source_type,
     const ArrayExtentResolver& resolve_extent
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return std::visit(
+    return source_type.value.visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept {
                 return resolve_named(
@@ -548,8 +547,7 @@ auto resolve_source_construction_type(
                     resolve_extent
                 );
             },
-        },
-        source_type.value
+        }
     );
 }
 
@@ -562,7 +560,7 @@ auto resolve_source_constraint_type(
     const ASTConstraintOperand& source_type,
     const ArrayExtentResolver& resolve_extent
 ) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return std::visit(
+    return source_type.value.visit(
         Overloaded {
             [&](const ASTQualifiedName& qualified) noexcept {
                 auto components = qualified.components
@@ -599,8 +597,7 @@ auto resolve_source_constraint_type(
                     resolve_extent
                 );
             },
-        },
-        source_type.value
+        }
     );
 }
 
@@ -658,7 +655,7 @@ auto resolve_failure_types(
         const auto* concrete = std::get_if<TypeID>(&*built);
         const auto nominal = concrete == nullptr
             ? false
-            : std::visit(
+            : draft.type_copy(*concrete).value.visit(
                   Overloaded {
                       [](const StructTypeValue&) static noexcept { return true; },
                       [](const EnumTypeValue&) static noexcept { return true; },
@@ -677,8 +674,7 @@ auto resolve_failure_types(
                           );
                           return false;
                       },
-                  },
-                  draft.type_copy(*concrete).value
+                  }
               );
         if (!nominal) {
             return std::unexpected(fail(

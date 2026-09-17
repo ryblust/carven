@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.imports;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -31,15 +31,15 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
         "fn read() -> i32 { return selected(); }\n"
     );
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = used_provider,
             .module_path = *CanonicalModulePath::from_value("used_provider"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = unused_provider,
             .module_path = *CanonicalModulePath::from_value("unused_provider"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = app,
             .module_path = *CanonicalModulePath::from_value("app"),
         },
@@ -47,7 +47,7 @@ TEST_CASE("Compiler diagnostics: unused imports are tracked per import declarati
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = inputs},
+        SourceBatch {.modules = inputs},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),
@@ -78,15 +78,15 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
         "const selected = value;\n"
     );
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = first,
             .module_path = *CanonicalModulePath::from_value("first")
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = second,
             .module_path = *CanonicalModulePath::from_value("second")
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = app,
             .module_path = *CanonicalModulePath::from_value("app")
         },
@@ -94,7 +94,7 @@ TEST_CASE("Compiler diagnostics: multiple wildcard providers remain ambiguous at
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = inputs},
+        SourceBatch {.modules = inputs},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:imports").value(),

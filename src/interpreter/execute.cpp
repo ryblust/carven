@@ -98,9 +98,11 @@ auto Interpreter::admit(FunctionID function) noexcept -> void {
         return;
     }
     const auto& signature = program.callable_signatures().signature(callable.signature);
-    if (!program.failure_sets().failure_set(signature.failures).members.empty()) {
-        reject(declaration.origin, "typed failures are not supported by the interpreter");
-        return;
+    for (const auto type : program.failure_sets().failure_set(signature.failures).members) {
+        if (!supported(type)) {
+            reject(declaration.origin, "failure payload type is not supported by the interpreter");
+            return;
+        }
     }
     if (!supported(signature.result, true)) {
         reject(declaration.origin, "function result type is not supported by the interpreter");

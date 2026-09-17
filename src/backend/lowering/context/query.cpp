@@ -77,7 +77,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
             std::unreachable();
         },
     };
-    return std::visit(
+    return query.expression.visit(
         Overloaded {
             [&](const CppNameReference& name) noexcept -> TargetExpr {
                 return {.value = TargetNameExpr {.name = cpp_name(name)}};
@@ -111,7 +111,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
                 };
             },
             [&](const CppCallQuery& call) noexcept -> TargetExpr {
-                auto callee = std::visit(
+                auto callee = call.callee.visit(
                     Overloaded {
                         [&](const CppNameReference& name) noexcept -> TargetExpr {
                             return {.value = TargetNameExpr {.name = cpp_name(name)}};
@@ -120,8 +120,7 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
                             return member(value.receiver, value.member);
                         },
                         [&](const CppTypeOperand& value) noexcept { return operand(value); }
-                    },
-                    call.callee
+                    }
                 );
                 auto arguments = std::vector<TargetExpr>();
                 for (const auto& value : call.arguments) {
@@ -135,7 +134,6 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
                     }
                 };
             }
-        },
-        query.expression
+        }
     );
 }

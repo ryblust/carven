@@ -17,7 +17,7 @@ import std;
 namespace {
 
 auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
-    return std::visit(
+    return item.value.visit(
         Overloaded {
             [](const ASTEnumDecl& value) static noexcept -> std::optional<Span> {
                 return value.name_span;
@@ -32,14 +32,13 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
                 return value.name_span;
             },
             [](const ASTTestDecl&) static noexcept -> std::optional<Span> { return std::nullopt; },
-        },
-        item.value
+        }
     );
 }
 
 auto semantic_visibility(const ASTDeclarationVisibility& visibility) noexcept
     -> DeclarationVisibility {
-    return std::visit(
+    return visibility.visit(
         Overloaded {
             [](const ASTPrivateDeclarationVisibility&) static noexcept {
                 return DeclarationVisibility::Module;
@@ -50,13 +49,12 @@ auto semantic_visibility(const ASTDeclarationVisibility& visibility) noexcept
             [](const ASTExportDeclarationVisibility&) static noexcept {
                 return DeclarationVisibility::Compilation;
             },
-        },
-        visibility
+        }
     );
 }
 
 auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibility {
-    return std::visit(
+    return item.value.visit(
         Overloaded {
             [](const ASTEnumDecl& value) static noexcept {
                 return semantic_visibility(value.visibility);
@@ -72,8 +70,7 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
                 return semantic_visibility(value.visibility);
             },
             [](const ASTTestDecl&) static noexcept { return DeclarationVisibility::Module; },
-        },
-        item.value
+        }
     );
 }
 
@@ -457,7 +454,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             }
             const auto symbol_id =
                 CatalogSymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
-            auto form = std::visit(
+            auto form = item.value.visit(
                 Overloaded {
                     [&](const ASTFunctionDecl&) noexcept -> CatalogSymbolForm {
                         const auto function = draft.reserve_function_declaration();
@@ -504,8 +501,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     [](const ASTTestDecl&) static noexcept -> CatalogSymbolForm {
                         invariant_violation("catalog declaration item has no symbol form");
                     },
-                },
-                item.value
+                }
             );
             result.symbols.push_back({
                 .symbol_id = symbol_id,
@@ -525,7 +521,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 );
             }
 
-            std::visit(
+            result.symbols[symbol_id.index()].form.visit(
                 Overloaded {
                     [&](const CatalogFunctionForm& value) noexcept {
                         catalog_module.items.push_back({
@@ -554,8 +550,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     [](const CatalogEnumCaseForm&) static noexcept {
                         invariant_violation("enum case cannot be a module declaration item");
                     },
-                },
-                result.symbols[symbol_id.index()].form
+                }
             );
 
             const auto* enumeration = std::get_if<ASTEnumDecl>(&item.value);
@@ -651,7 +646,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     .origin = leaf,
                 });
             };
-            std::visit(
+            clause.selection.visit(
                 Overloaded {
                     [&](const ASTCppSingleSelection& value) noexcept { append(value.name, false); },
                     [&](const ASTCppListSelection& value) noexcept {
@@ -662,8 +657,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     [&](const ASTCppNamespaceSelection& value) noexcept {
                         append(value.star, true);
                     },
-                },
-                clause.selection
+                }
             );
         }
         result.cpp_bindings.push_back(std::move(cpp_bindings));
@@ -706,7 +700,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
 
             auto selected_names = std::vector<Span>();
             auto selection_kind = CatalogImportSelectionKind::Single;
-            std::visit(
+            module_import.selection.value.visit(
                 [&]<typename Selection>(const Selection& selection) noexcept {
                     if constexpr (std::same_as<Selection, ASTSingleImport>) {
                         selected_names.push_back(selection.name_span);
@@ -718,8 +712,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     } else {
                         static_assert(std::same_as<Selection, void>, "unhandled import selection");
                     }
-                },
-                module_import.selection.value
+                }
             );
 
             if (result.import_bindings.size() == std::numeric_limits<std::uint32_t>::max()) {

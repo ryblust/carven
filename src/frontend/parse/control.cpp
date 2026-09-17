@@ -19,20 +19,19 @@ import std;
 namespace {
 
 auto ast_literal_value(const TokenLiteralValue& value) noexcept -> ASTLiteralValue {
-    return std::visit(
+    return value.visit(
         []<typename Value>(const Value& alternative) static noexcept -> ASTLiteralValue {
             if constexpr (std::same_as<Value, InterpolationTextValue>) {
                 invariant_violation("interpolation text used as an ordinary literal");
             } else {
                 return alternative;
             }
-        },
-        value
+        }
     );
 }
 
 auto numeric_literal_value(const TokenLiteralValue& value) noexcept -> NumericLiteralValue {
-    return std::visit(
+    return value.visit(
         []<typename Value>(const Value& alternative) static noexcept -> NumericLiteralValue {
             if constexpr (std::same_as<Value, IntegerLiteralValue>
                           || std::same_as<Value, FloatingLiteralValue>) {
@@ -40,8 +39,7 @@ auto numeric_literal_value(const TokenLiteralValue& value) noexcept -> NumericLi
             } else {
                 invariant_violation("number token does not carry a numeric literal value");
             }
-        },
-        value
+        }
     );
 }
 

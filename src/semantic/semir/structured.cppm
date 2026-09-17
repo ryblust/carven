@@ -417,22 +417,19 @@ auto cpp_call_query(const SemCppCall& call, TypeReader type) noexcept -> CppQuer
             .access = operand.access
         };
     };
-    auto callee = std::visit(
-        [&](const auto& value) noexcept -> CppCallee<CppTypeOperand> {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, CppNameReference>) {
-                return value;
-            } else if constexpr (std::same_as<Value, CppMemberCallee<SemCppOperand>>) {
-                return CppMemberCallee<CppTypeOperand> {
-                    .receiver = operand_type(value.receiver),
-                    .member = value.member
-                };
-            } else {
-                return operand_type(value);
-            }
-        },
-        call.callee
-    );
+    auto callee = call.callee.visit([&](const auto& value) noexcept -> CppCallee<CppTypeOperand> {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, CppNameReference>) {
+            return value;
+        } else if constexpr (std::same_as<Value, CppMemberCallee<SemCppOperand>>) {
+            return CppMemberCallee<CppTypeOperand> {
+                .receiver = operand_type(value.receiver),
+                .member = value.member
+            };
+        } else {
+            return operand_type(value);
+        }
+    });
     auto arguments = std::vector<CppTypeOperand>();
     for (const auto& argument : call.arguments) {
         arguments.push_back(

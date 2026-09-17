@@ -15,55 +15,49 @@ auto valid_cpp_name(const CppNameReference& name) noexcept -> bool {
 
 auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arity) noexcept
     -> bool {
-    return std::visit(
-        [arity](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, CppNameOperation>) {
-                return arity == 0uz && valid_cpp_name(value.name);
-            } else if constexpr (std::same_as<Value, CppCStringOperation>) {
-                return arity == 0uz
-                    && !value.bytes.contains('\0')
-                    && UTF8Decoder::is_valid(value.bytes);
-            } else if constexpr (std::same_as<Value, CppConstructOperation>) {
-                return true;
-            } else if constexpr (std::same_as<Value, CppMemberOperation>) {
-                return arity == 1uz && !value.name.empty();
-            } else if constexpr (std::same_as<Value, CppIndexOperation>
-                                 || std::same_as<Value, CppBinaryOperation>) {
-                return arity == 2uz;
-            } else {
-                return arity == 1uz;
-            }
-        },
-        operation
-    );
+    return operation.visit([arity](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, CppNameOperation>) {
+            return arity == 0uz && valid_cpp_name(value.name);
+        } else if constexpr (std::same_as<Value, CppCStringOperation>) {
+            return arity == 0uz
+                && !value.bytes.contains('\0')
+                && UTF8Decoder::is_valid(value.bytes);
+        } else if constexpr (std::same_as<Value, CppConstructOperation>) {
+            return true;
+        } else if constexpr (std::same_as<Value, CppMemberOperation>) {
+            return arity == 1uz && !value.name.empty();
+        } else if constexpr (std::same_as<Value, CppIndexOperation>
+                             || std::same_as<Value, CppBinaryOperation>) {
+            return arity == 2uz;
+        } else {
+            return arity == 1uz;
+        }
+    });
 }
 
 namespace {
 template<typename Visitor>
 auto visit_query_operands(const CppQueryType& query, Visitor visit) noexcept -> void {
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, CppCallQuery>) {
-                visit_cpp_callee_operand(value.callee, visit);
-                for (const auto& argument : value.arguments) {
-                    visit(argument);
-                }
-            } else if constexpr (std::same_as<Value, CppMemberQuery>) {
-                visit(value.receiver);
-            } else if constexpr (std::same_as<Value, CppIndexQuery>) {
-                visit(value.receiver);
-                visit(value.index);
-            } else if constexpr (std::same_as<Value, CppUnaryQuery>) {
-                visit(value.operand);
-            } else if constexpr (std::same_as<Value, CppBinaryQuery>) {
-                visit(value.left);
-                visit(value.right);
+    query.expression.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, CppCallQuery>) {
+            visit_cpp_callee_operand(value.callee, visit);
+            for (const auto& argument : value.arguments) {
+                visit(argument);
             }
-        },
-        query.expression
-    );
+        } else if constexpr (std::same_as<Value, CppMemberQuery>) {
+            visit(value.receiver);
+        } else if constexpr (std::same_as<Value, CppIndexQuery>) {
+            visit(value.receiver);
+            visit(value.index);
+        } else if constexpr (std::same_as<Value, CppUnaryQuery>) {
+            visit(value.operand);
+        } else if constexpr (std::same_as<Value, CppBinaryQuery>) {
+            visit(value.left);
+            visit(value.right);
+        }
+    });
 }
 } // namespace
 
@@ -74,7 +68,7 @@ auto cpp_query_type(
     if (!cpp_operation_accepts_arity(operation, operands.size())) {
         invariant_violation("C++ query operands disagree with the operation");
     }
-    return std::visit(
+    return operation.visit(
         Overloaded {
             [&](const CppNameOperation& value) noexcept -> CppQueryType {
                 return {.expression = value.name};
@@ -107,8 +101,7 @@ auto cpp_query_type(
             [](const auto&) static noexcept -> CppQueryType {
                 invariant_violation("operation requires an explicit result type");
             }
-        },
-        operation
+        }
     );
 }
 
@@ -160,20 +153,15 @@ auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool {
             || operand.access == AccessMode::Write
             || operand.access == AccessMode::Take;
     });
-    return valid
-        && std::visit(
-               [](const auto& value) static noexcept {
-                   using Value = std::remove_cvref_t<decltype(value)>;
-                   if constexpr (std::same_as<Value, CppMemberQuery>) {
-                       return is_supported_cpp_identifier(value.member);
-                   } else if constexpr (std::same_as<Value, CppCallQuery>) {
-                       const auto* member =
-                           std::get_if<CppMemberCallee<CppTypeOperand>>(&value.callee);
-                       return member == nullptr || is_supported_cpp_identifier(member->member);
-                   } else {
-                       return true;
-                   }
-               },
-               query->expression
-        );
+    return valid && query->expression.visit([](const auto& value) static noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, CppMemberQuery>) {
+            return is_supported_cpp_identifier(value.member);
+        } else if constexpr (std::same_as<Value, CppCallQuery>) {
+            const auto* member = std::get_if<CppMemberCallee<CppTypeOperand>>(&value.callee);
+            return member == nullptr || is_supported_cpp_identifier(member->member);
+        } else {
+            return true;
+        }
+    });
 }

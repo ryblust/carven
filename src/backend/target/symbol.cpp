@@ -74,6 +74,7 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::StdGetIf:            return "std::get_if";
         case TargetSymbol::StdDeclval:          return "::std::declval";
         case TargetSymbol::StdForward:          return "std::forward";
+        case TargetSymbol::StdBitCast:          return "std::bit_cast";
         case TargetSymbol::StdMove:             return "std::move";
         case TargetSymbol::StdAsConst:          return "std::as_const";
         case TargetSymbol::StdNullopt:          return "std::nullopt";
@@ -86,4 +87,37 @@ auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view {
         case TargetSymbol::TestingReporter:     return "carven::runtime::TestReporter";
     }
     std::unreachable();
+}
+
+auto target_symbol_allows_implicit_discard(TargetSymbol symbol) noexcept -> bool {
+    switch (symbol) {
+        case TargetSymbol::RuntimeTransfer:
+        case TargetSymbol::RuntimeUnwrapNativeResult:
+        case TargetSymbol::RuntimeCurrentTest:
+        case TargetSymbol::RuntimeAsSlice:
+        case TargetSymbol::RuntimeAdoptArray:
+        case TargetSymbol::RuntimePrint:
+        case TargetSymbol::RuntimePrintln:
+        case TargetSymbol::RuntimeEprint:
+        case TargetSymbol::RuntimeEprintln:
+        case TargetSymbol::RuntimeFormat:
+        case TargetSymbol::RuntimeFormatValidUTF8:
+        case TargetSymbol::RuntimeAppendFormat:
+        case TargetSymbol::RuntimeAppendFormatValidUTF8:
+        case TargetSymbol::RuntimeEntryArgs:
+        case TargetSymbol::RuntimeTextBytes:
+        case TargetSymbol::RuntimeTextChars:
+        case TargetSymbol::RuntimeIntegerNegate:
+        case TargetSymbol::RuntimeIntegerAdd:
+        case TargetSymbol::RuntimeIntegerSubtract:
+        case TargetSymbol::RuntimeIntegerMultiply:
+        case TargetSymbol::RuntimeIntegerDivide:
+        case TargetSymbol::RuntimeIntegerRemainder:
+        case TargetSymbol::RuntimeIntegerLeftShift:
+        case TargetSymbol::RuntimeIntegerRightShift:
+        case TargetSymbol::RuntimeCheckedArrayIndex:
+        case TargetSymbol::RuntimeCheckedUnicodeScalar:
+        case TargetSymbol::RuntimeUTF8Text:              return true;
+        default:                                         return false;
+    }
 }

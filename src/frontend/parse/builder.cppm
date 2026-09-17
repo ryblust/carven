@@ -7,6 +7,7 @@ import :frontend.ast.ids;
 import :frontend.ast.pattern;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
+import :frontend.ast.topology;
 import :frontend.ast.tree;
 import :frontend.ast.type;
 import :source.text;

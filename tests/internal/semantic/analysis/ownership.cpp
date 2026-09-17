@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.ownership;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
@@ -15,6 +14,7 @@ import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.harness.death;

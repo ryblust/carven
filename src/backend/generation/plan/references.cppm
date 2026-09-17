@@ -1,6 +1,8 @@
 module carven:backend.generation.plan.references;
 
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
+import :semantic.semir.program;
 import :semantic.visibility;
 import std;
 

@@ -6,21 +6,30 @@ batch through publication of an immutable semantic program.
 
 ## Pipeline
 
-`compiler.request` defines the closed source batch using source types.
+`source.batch` defines `SourceBatch` and its `SourceModuleInput` records using
+source identities and canonical module paths.
 `compiler.analysis` sequences parsing and semantic analysis through
 `analyze_compilation`, returning a published program and structured diagnostics.
 `compiler.compile` calls this entry and generates artifacts. Execution output is
 delivered synchronously to the supplied recipient.
 
 `driver/` owns command options, file loading, diagnostic presentation, artifact
-output, and native process execution. `load_and_analyze_sources` prepares the batch,
-calls `analyze_compilation`, and renders diagnostics using the source manager.
+output, and native process execution. `driver.process` owns POSIX/Windows
+process launching, executable lookup, and temporary run-directory creation.
+The direct-run driver invokes the native compiler without a build-system dependency;
+external builds and tests continue to use their build-system integration.
+`load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
+renders diagnostics using the source manager.
 Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Dump commands consume lexical or syntax results directly.
 
 ```text
-CompilationRequest → SyntaxProgram → ProgramDraft → SemIRProgram
+SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 ```
+
+`frontend.ast.tree` owns the syntax tree and its root. `frontend.ast.storage`
+provides node storage and read-only views. `frontend.ast.topology` supplies
+structural traversal for syntax construction and validation.
 
 `parse_program` parses the closed source batch and resolves module imports.
 `analyze` constructs declarations and typed structured bodies, solves types and
@@ -30,37 +39,16 @@ a successful result.
 
 ## Design considerations
 
-When extending the language, first consider whether existing semantic operations
-and construction paths can express the feature. Reusing a path can also reuse its
-typing, ownership, failure handling, and realization rules. New syntax may select
-existing operations; a new context may add admission or completion requirements.
-For example, `const fn` shares ordinary function-body construction. Admission
-checks the completed body, and required evaluation executes that body.
+Carven establishes source types, coverage, evaluation order, ownership, and
+failure contracts. Required constants, static tests, and interpretation execute
+shared semantic operations with separate admission and completion rules.
+`const fn` uses ordinary function-body construction; admission checks the
+completed body before execution.
 
-At stage boundaries, consider which layer has the information and native
-mechanisms needed for a decision. Carven retains source evaluation, ownership,
-and failure contracts. C++ types, initialization, scopes, and template constraints
-can realize those contracts and resolve native type properties. Types and explicit
-interfaces can carry the required distinctions and check the handoff. Structured
-operations preserve information useful to both source analysis and C++ generation;
-additional representations should serve a concrete semantic or implementation need.
-
-Assess reuse by the semantic rules shared and the coordination an extension
-requires. Evaluation order, diagnostics, ownership, and supported behavior are
-part of that assessment. New control flow, storage lifetimes, or completion
-requirements may call for extending or revising the underlying contracts. These
-considerations guide exploration; the appropriate boundary depends on the
-feature's semantics.
-
-Carven establishes source types, coverage, evaluation order, ownership, and failure
-contracts through structured analysis and bounded constant execution. Simplification
-preserves required evaluation, failures, storage observations, and lifetimes.
-C++ compilation owns native optimization, including storage elimination.
-
-Generated code can use established semantic facts to express the required
-behavior directly. Where type context and native C++ constructs satisfy the
-contract, prefer those forms. Additional storage, conversions, and helper calls
-should serve a concrete evaluation, lifetime, or representation requirement.
+The backend specializes operations using established semantic facts while
+preserving effects, storage observations, and lifetimes. C++ supplies native type
+properties, template instantiation, optimization, and machine code. Runtime
+support uses standard-library numerical conversion.
 
 ## Subsystem ownership
 
@@ -97,7 +85,7 @@ the depth limit, including containment cycles, produce no cache entry. Cached su
 remain subject to the caller's nesting depth. `operation` supplies
 checked scalar operations and retained-input queries. `freeze` interns completed
 results. `semantic.format.builtin` supplies the bounded builtin formatter to both
-execution and backend preparation. It accepts integers, bools, chars, borrowed
+execution and backend preparation. It accepts numeric values, bools, chars, borrowed
 text, and an unavailable-input alternative. Callers adapt their input storage and
 supply a byte budget. Execution translates failures into diagnostics and accounts
 for work; optional preparation uses runtime formatting on failure.
@@ -421,7 +409,12 @@ undergo normal semantic and ownership validation.
 
 `evaluation.execution` executes admitted operations using body-local slots,
 structured control flow and direct callable identities. It reuses checked scalar
-constant evaluation and the builtin constant-formatting implementation. Steps,
+constant evaluation and the builtin constant-formatting implementation. Floating
+execution uses host native scalar operations. Optional runtime folding retains a
+separate admission boundary for floating arithmetic and ordering, so adding an
+executor operation does not authorize host precomputation of runtime expressions.
+The builtin formatter validates its supported specifications and bounds width and
+precision before calling the host C++ standard formatter. Steps,
 nested calls, text construction, aggregate size and copying work are bounded.
 `ExecutionLimits` supplies cumulative step, text-work, and aggregate-work
 allowances at the execution entry. Nested calls share those allowances; each root
@@ -442,7 +435,8 @@ Execution slots distinguish uninitialized, available, and taken states. Whole-bi
 Take moves owned storage and marks its source unavailable; assignment may initialize
 that source again. Aggregate values own typed elements; enum values separately own
 their selected case and payload. Fixed arrays and
-structs freeze recursively into `ArrayConstant` and `StructConstant` children
+structs and payload enums freeze recursively into `ArrayConstant`, `StructConstant`
+and `PayloadEnumConstant` children
 without changing element types, nominal identities, or field types. Struct fields
 use declaration order. Publication verifies the type, arity, and exact child
 types; compound constants reference already interned children.
@@ -468,6 +462,35 @@ for normal failure solving, complete-program type and ownership validation, and
 runtime lowering. A failure at any publication gate prevents artifact delivery.
 Ordinary runtime calls to `const fn` remain `SemCall` operations; the qualifier
 does not add a known call-result fact.
+
+### Failure execution
+
+`ExecutionFailure` distinguishes a source failure from an evaluator stop whose
+reason has already been reported. `ExecutionSourceFailure` retains its nominal
+type, immutable owned payload, throw origin and call trace. Calls, operands and
+regions pass it through the common execution result. Root entry points diagnose
+an escaping failure using their execution context. Resource exhaustion and evaluator errors remain outside
+source recovery.
+
+`try` matches the actual type and payload, then evaluates one guard and handler.
+Rejected guards proceed to the next arm. Handler and guard failures propagate
+outward. Each frame retains a stack of original caught failures independently of
+pattern bindings, so Take and nested recovery cannot invalidate `rethrow`.
+Binding copies use the normal text and aggregate work budgets. The same machinery
+serves required constants, static tests and interpretation.
+
+Required roots are constructed before global failure solving. Calls retain their
+actual callee failure terms. A root `?` consumes its operand's pending terms and
+registers the ordinary nonempty requirement; remaining unmarked terms register
+ordinary empty-consumption requirements before evaluation. Successful execution
+never replaces final failure solving or publication validation. Root propagation
+can succeed for the selected inputs; an actual escaping failure is a diagnostic.
+Static test roots retain their static no-escaping-failures requirement.
+
+Declaration preparation includes failure payload types alongside parameter and
+result types. Enum case construction prepares the complete nominal dependency
+graph before execution shape queries. Shape and freezing validate case identity,
+arity and payload types. Freezing preserves nominal field types.
 
 ### Known results and execution requirements
 
@@ -497,9 +520,8 @@ array views to report the exact array extent and rejects extent metadata on
 scalar query results. Extents do not change slice type identity.
 
 `SemPrint` retains the original Read operands and normal-completion facts.
-Optional conversion of known integer, bool, or char values into print text belongs
-to backend preparation. Text, String, floating-point values, unknown scalars, and
-dynamic calls through builtin callable values keep their ordinary conversion paths.
+Optional conversion of known numeric, bool, or char values into print text
+belongs to backend preparation. Text, String, unknown scalars, and dynamic calls through builtin callable values keep their ordinary conversion paths.
 
 The read-only SemIR evaluation contract classifies an operation as requiring
 execution, requiring only its executed operands, selecting short-circuit
@@ -674,6 +696,13 @@ prevent publication. Published test declarations retain their explicit execution
 stage so target planning selects only runtime tests.
 
 ## Interpreted execution
+
+Each source batch admits at most one entry: an explicit `main` or the implicit
+function containing one file's top-level statements. Multiple entries are rejected
+by shared semantic analysis. Declaration-only files do not acquire empty entries.
+Compilation does not require an entry; native run commands do. Interpretation
+executes the entry when present. Without an entry, successful analysis, including
+required constant execution and static tests, completes the command successfully.
 
 `interpreter/` consumes a published `SemIRProgram`. It validates the interpreter
 operation subset from the entry through direct callees, then invokes the shared

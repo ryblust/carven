@@ -85,6 +85,8 @@ public:
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID override;
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
+    auto enum_case_types(EnumID enumeration) const noexcept
+        -> std::optional<std::vector<EnumCaseTypes>> override;
     auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;

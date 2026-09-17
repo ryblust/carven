@@ -215,7 +215,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
     if (!inserted) {
         invariant_violation("recursive structural type reached target lowering");
     }
-    auto lowered = std::visit(
+    auto lowered = semantic().types().type(id).value.visit(
         Overloaded {
             [&](const PointerTypeValue& value) noexcept -> TargetType {
                 auto pointee = lower_type(value.target);
@@ -350,8 +350,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
             [&](const CallableViewTypeValue& value) noexcept -> TargetType {
                 return function_type(value.signature, true);
             },
-        },
-        semantic().types().type(id).value
+        }
     );
     const auto result = target().intern_type(std::move(lowered));
     state = result;

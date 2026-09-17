@@ -336,7 +336,7 @@ using-list = "{", IDENTIFIER, { ",", IDENTIFIER }, [ "," ], "}";
 Module components accept every identifier-shaped spelling, including keywords.
 C++ selection lists contain only simple identifiers; qualified names, nested
 lists, aliases, and wildcards are not list items. A shared C++ path precedes
-the list: `import <print> using std::{print, println};`.
+the list: `import <print> using std::{ print, println };`.
 
 The semicolon terminates the complete import declaration. A closing brace ends
 only the nested `using-list`.
@@ -347,7 +347,7 @@ Accepted shapes include:
 import math using answer;
 import .math using *;
 import json::parser using parse;
-import geometry.vector using { Point, length, };
+import geometry.vector using { Point, length };
 import <cstdint>;
 import "native/provider.hpp";
 ```

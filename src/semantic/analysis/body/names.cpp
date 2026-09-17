@@ -99,7 +99,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     if (!selected.has_value()) {
         return std::unexpected(selected.error());
     }
-    return std::visit(
+    return (*selected)->form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& function) noexcept -> AnalysisResult<BuiltExpression> {
                 auto completed =
@@ -148,8 +148,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                     std::format("'{}' does not name a runtime value", text)
                 ));
             },
-        },
-        (*selected)->form
+        }
     );
 }
 

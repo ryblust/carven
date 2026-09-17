@@ -48,3 +48,14 @@ auto PublishedConstantValues::struct_field_types(StructID structure) const noexc
     }
     return fields;
 }
+
+auto PublishedConstantValues::enum_case_types(EnumID enumeration) const noexcept
+    -> std::optional<std::vector<EnumCaseTypes>> {
+    auto result = std::vector<EnumCaseTypes>();
+    for (const auto id : program.declarations().enumeration(enumeration).cases) {
+        result.push_back(
+            {.id = id, .payload_types = program.declarations().enum_case(id).payload_types}
+        );
+    }
+    return result;
+}

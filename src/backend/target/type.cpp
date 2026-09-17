@@ -7,7 +7,7 @@ import std;
 
 namespace {
 auto valid_query(const TargetExpr& expression) noexcept -> bool {
-    return std::visit(
+    return expression.value.visit(
         Overloaded {
             [](const TargetNameExpr&) static noexcept { return true; },
             [](const TargetIntrinsicNameExpr&) static noexcept { return true; },
@@ -32,8 +32,7 @@ auto valid_query(const TargetExpr& expression) noexcept -> bool {
                 return valid_query(*value.left) && valid_query(*value.right);
             },
             [](const auto&) static noexcept { return false; }
-        },
-        expression.value
+        }
     );
 }
 
@@ -41,37 +40,33 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
     if (left.value.index() != right.value.index()) {
         return false;
     }
-    return std::visit(
-        [&](const auto& value) noexcept -> bool {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            const auto& other = std::get<Value>(right.value);
-            if constexpr (std::same_as<Value, TargetNameExpr>) {
-                return value.name == other.name;
-            } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
-                return value.symbol == other.symbol;
-            } else if constexpr (std::same_as<Value, TargetCallExpr>) {
-                return equal_query(*value.callee, *other.callee)
-                    && value.template_arguments == other.template_arguments
-                    && std::ranges::equal(value.arguments, other.arguments, equal_query);
-            } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
-                return std::get<TargetIdentifier>(value.name)
-                    == std::get<TargetIdentifier>(other.name)
-                    && equal_query(*value.operand, *other.operand);
-            } else if constexpr (std::same_as<Value, TargetIndexExpr>) {
-                return equal_query(*value.operand, *other.operand)
-                    && equal_query(*value.index, *other.index);
-            } else if constexpr (std::same_as<Value, TargetPrefixExpr>) {
-                return value.op == other.op && equal_query(*value.operand, *other.operand);
-            } else if constexpr (std::same_as<Value, TargetBinaryExpr>) {
-                return value.op == other.op
-                    && equal_query(*value.left, *other.left)
-                    && equal_query(*value.right, *other.right);
-            } else {
-                std::unreachable();
-            }
-        },
-        left.value
-    );
+    return left.value.visit([&](const auto& value) noexcept -> bool {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        const auto& other = std::get<Value>(right.value);
+        if constexpr (std::same_as<Value, TargetNameExpr>) {
+            return value.name == other.name;
+        } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
+            return value.symbol == other.symbol;
+        } else if constexpr (std::same_as<Value, TargetCallExpr>) {
+            return equal_query(*value.callee, *other.callee)
+                && value.template_arguments == other.template_arguments
+                && std::ranges::equal(value.arguments, other.arguments, equal_query);
+        } else if constexpr (std::same_as<Value, TargetMemberExpr>) {
+            return std::get<TargetIdentifier>(value.name) == std::get<TargetIdentifier>(other.name)
+                && equal_query(*value.operand, *other.operand);
+        } else if constexpr (std::same_as<Value, TargetIndexExpr>) {
+            return equal_query(*value.operand, *other.operand)
+                && equal_query(*value.index, *other.index);
+        } else if constexpr (std::same_as<Value, TargetPrefixExpr>) {
+            return value.op == other.op && equal_query(*value.operand, *other.operand);
+        } else if constexpr (std::same_as<Value, TargetBinaryExpr>) {
+            return value.op == other.op
+                && equal_query(*value.left, *other.left)
+                && equal_query(*value.right, *other.right);
+        } else {
+            std::unreachable();
+        }
+    });
 }
 }
 

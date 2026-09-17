@@ -56,7 +56,7 @@ auto BodyBuilder::make_expression(
         }
         return std::nullopt;
     };
-    std::visit(
+    value.visit(
         Overloaded {
             [&](const SemShortCircuit& node) noexcept {
                 add(*node.left);
@@ -184,8 +184,7 @@ auto BodyBuilder::make_expression(
                     );
                 }
             },
-            },
-            value
+            }
     );
     return {
         .type = BodyType(type),

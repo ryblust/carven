@@ -7,9 +7,9 @@ module carven:test.internal.compiler.diagnostics.constants;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -34,7 +34,7 @@ struct VisibilityExpectation final {
 
 auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modules) noexcept
     -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
-    auto inputs = std::vector<CompilationModuleInput>();
+    auto inputs = std::vector<SourceModuleInput>();
     inputs.reserve(modules.size());
     for (const auto& source_module : modules) {
         const auto source_id = sources.append_virtual(
@@ -51,7 +51,7 @@ auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modu
     }
     return compile(
         sources,
-        CompilationRequest {.modules = inputs},
+        SourceBatch {.modules = inputs},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:constants").value(),

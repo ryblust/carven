@@ -20,7 +20,7 @@ auto interpret_expression(
     if (!site.admits(source)) {
         return std::unexpected(ExpressionNotAdmitted {});
     }
-    return std::visit(
+    return source.value.visit(
         [&](const auto& form) noexcept -> ExpressionResult<typename Site::Selection> {
             using Form = std::remove_cvref_t<decltype(form)>;
             if constexpr (std::same_as<Form, ASTLiteral>) {
@@ -56,7 +56,6 @@ auto interpret_expression(
             } else {
                 return site.extension(form, source.span, expected);
             }
-        },
-        source.value
+        }
     );
 }

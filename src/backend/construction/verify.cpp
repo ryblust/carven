@@ -2,7 +2,11 @@ module carven:backend.construction.verify.impl;
 
 import :backend.construction.verify;
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.body;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
+import :semantic.semir.table;
+import :source.provenance.ids;
 import :support.visit;
 import std;
 
@@ -210,7 +214,7 @@ void ConstructionVerifier::expression(
         return;
     }
     lifetime(source.lifetime, source.origin);
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const ConstructionShortCircuit& value) noexcept {
                 expression(value.condition, control, source.origin);
@@ -290,8 +294,7 @@ void ConstructionVerifier::expression(
                     expression(input.expression, control, source.origin);
                 }
             }
-        },
-        source.value
+        }
     );
     expressions[id.index()] = Visit::Complete;
 }
@@ -305,7 +308,7 @@ void ConstructionVerifier::statement(
     const auto input = [&](ConstructionExpressionID id) noexcept {
         expression(id, control, source.origin);
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const ConstructionReturn& value) noexcept {
                 if (value.value) {
@@ -379,8 +382,7 @@ void ConstructionVerifier::statement(
                 region(value.body, nested, source.origin);
             },
 
-        },
-        source.value
+        }
     );
 }
 

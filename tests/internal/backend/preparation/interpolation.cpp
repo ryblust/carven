@@ -25,7 +25,7 @@ TEST_CASE("Format preparation: known contents retain owning operations and sourc
         {R"(let text = "我\0"; return f"{text}";)", std::string_view("我\0", 4)},
         {R"(return f"{touch() && false}";)", "false"},
         {R"(var version = 42; return f"{version}";)", std::nullopt},
-        {R"(return f"{1.25}";)", std::nullopt},
+        {R"(return f"{1.25}";)", "1.25"},
         {R"(return f"{42:>{4}}";)", std::nullopt},
         {R"(return f"{42:+04}";)", std::nullopt},
         {R"(return f"{42:00}";)", std::nullopt},
@@ -112,14 +112,15 @@ TEST_CASE("Format preparation: mixed builtin holes publish an ordered residual f
                     CHECK_FALSE(std::holds_alternative<PreparedFormatText>(preparation));
                     CHECK(format->operands.size() == scenario.operands);
                     const auto* delegated = std::get_if<PreparedDelegatedFormat>(&preparation);
-                    REQUIRE(delegated != nullptr);
+                    const auto indices = prepared_format_operands(preparation);
                     REQUIRE(
-                        (delegated->operand_indices.size() < format->operands.size())
-                        == scenario.remainder.has_value()
+                        (indices.size() < format->operands.size()) == scenario.remainder.has_value()
                     );
                     if (scenario.remainder) {
-                        CHECK(delegated->operand_indices == scenario.indices);
-                        CHECK(delegated->format_string == *scenario.remainder);
+                        CHECK(std::ranges::equal(indices, scenario.indices));
+                        if (delegated != nullptr) {
+                            CHECK(delegated->format_string == *scenario.remainder);
+                        }
                     }
                 }
             );
@@ -129,11 +130,11 @@ TEST_CASE("Format preparation: mixed builtin holes publish an ordered residual f
 }
 
 TEST_CASE("Format preparation: delegated residual byte budgets include escaped braces") {
-    for (const auto length : {32766uz, 32767uz}) {
+    for (const auto length : {32765uz, 32766uz}) {
         const auto braces = std::string(length, '{');
         const auto program = analyze_test_program(
             std::format(
-                "fn format(value: f64) -> String {{ let text = \"{}\"; return f\"{{text}}{{value}}\"; }}",
+                "fn format(value: f64) -> String {{ let text = \"{}\"; return f\"{{text}}{{value:a}}\"; }}",
                 braces
             )
         );
@@ -149,7 +150,7 @@ TEST_CASE("Format preparation: delegated residual byte budgets include escaped b
                         ++count;
                         CHECK(
                             (prepared_format_operands(preparation).size() < format->operands.size())
-                            == (length == 32766uz)
+                            == (length == 32765uz)
                         );
                     }
                 }

@@ -4,7 +4,8 @@ import :backend.generation.names;
 import :backend.lowering.context;
 import :backend.realization.composition;
 import :backend.target.expr;
-import :semantic.semir;
+import :semantic.semir.ids;
+import :semantic.semir.structured;
 import std;
 
 struct PatternSubject final {

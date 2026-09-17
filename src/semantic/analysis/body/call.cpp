@@ -34,7 +34,7 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft().type_copy(*concrete);
         auto callable = std::optional<CallableID>();
-        std::visit(
+        canonical.value.visit(
             Overloaded {
                 [&](const FunctionTypeValue& value) noexcept { callable = value.callable; },
                 [&](const ClosureTypeValue& value) noexcept { callable = value.callable; },
@@ -52,8 +52,7 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
                         "unhandled non-owning callable type"
                     );
                 },
-            },
-            canonical.value
+            }
         );
         if (callable.has_value()) {
             return draft().construction_callable_contract_copy(*callable);

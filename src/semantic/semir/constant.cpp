@@ -139,7 +139,7 @@ ConstantStoreBuilder::ConstantStoreBuilder(
 
 auto constant_children(const ConstantValue& value) noexcept
     -> std::optional<std::span<const ConstantID>> {
-    return std::visit(
+    return value.visit(
         [](const auto& stored) static noexcept -> std::optional<std::span<const ConstantID>> {
             using Value = std::remove_cvref_t<decltype(stored)>;
             if constexpr (std::same_as<Value, PayloadEnumConstant>) {
@@ -151,8 +151,7 @@ auto constant_children(const ConstantValue& value) noexcept
                 return stored.elements;
             }
             return std::nullopt;
-        },
-        value
+        }
     );
 }
 
@@ -164,47 +163,44 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
             std::hash<std::uint64_t>()(value) + 0x9e3779b97f4a7c15ull + (hash << 6u) + (hash >> 2u);
     };
     mix(fact.value.index());
-    std::visit(
-        [&](const auto& value) noexcept {
-            using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, StringConstant>) {
-                if (value.value.owner() != provenance_identity) {
-                    invariant_violation("string constant used a foreign spelling");
-                }
-                mix(value.value.index());
-            } else if constexpr (std::same_as<Value, RangeConstant>) {
-                mix(value.begin.magnitude());
-                mix(value.begin.negative());
-                mix(value.end.magnitude());
-                mix(value.end.negative());
-                mix(value.inclusive);
-            } else if constexpr (std::same_as<Value, IntegerConstant>) {
-                mix(value.magnitude());
-                mix(value.negative());
-            } else if constexpr (std::same_as<Value, BooleanConstant>) {
-                mix(value.value);
-            } else if constexpr (std::same_as<Value, CharacterConstant>) {
-                mix(value.scalar);
-            } else if constexpr (std::same_as<Value, F32Constant>) {
-                mix(std::bit_cast<std::uint32_t>(value.value));
-            } else if constexpr (std::same_as<Value, F64Constant>) {
-                mix(std::bit_cast<std::uint64_t>(value.value));
-            } else if constexpr (std::same_as<Value, NumericEnumConstant>
-                                 || std::same_as<Value, PayloadEnumConstant>) {
-                require_owner(
-                    value.enum_case.owner(),
-                    program_identity,
-                    "constant used a foreign enum case"
-                );
-                mix(value.enum_case.index());
-                if constexpr (std::same_as<Value, NumericEnumConstant>) {
-                    mix(value.value.magnitude());
-                    mix(value.value.negative());
-                }
+    fact.value.visit([&](const auto& value) noexcept {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, StringConstant>) {
+            if (value.value.owner() != provenance_identity) {
+                invariant_violation("string constant used a foreign spelling");
             }
-        },
-        fact.value
-    );
+            mix(value.value.index());
+        } else if constexpr (std::same_as<Value, RangeConstant>) {
+            mix(value.begin.magnitude());
+            mix(value.begin.negative());
+            mix(value.end.magnitude());
+            mix(value.end.negative());
+            mix(value.inclusive);
+        } else if constexpr (std::same_as<Value, IntegerConstant>) {
+            mix(value.magnitude());
+            mix(value.negative());
+        } else if constexpr (std::same_as<Value, BooleanConstant>) {
+            mix(value.value);
+        } else if constexpr (std::same_as<Value, CharacterConstant>) {
+            mix(value.scalar);
+        } else if constexpr (std::same_as<Value, F32Constant>) {
+            mix(std::bit_cast<std::uint32_t>(value.value));
+        } else if constexpr (std::same_as<Value, F64Constant>) {
+            mix(std::bit_cast<std::uint64_t>(value.value));
+        } else if constexpr (std::same_as<Value, NumericEnumConstant>
+                             || std::same_as<Value, PayloadEnumConstant>) {
+            require_owner(
+                value.enum_case.owner(),
+                program_identity,
+                "constant used a foreign enum case"
+            );
+            mix(value.enum_case.index());
+            if constexpr (std::same_as<Value, NumericEnumConstant>) {
+                mix(value.value.magnitude());
+                mix(value.value.negative());
+            }
+        }
+    });
     if (const auto children = constant_children(fact.value)) {
         for (const auto child : *children) {
             static_cast<void>(constant(child));

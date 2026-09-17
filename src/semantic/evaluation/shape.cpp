@@ -53,13 +53,33 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
                 result.supported &= child->supported;
                 result.elements += std::min(child->elements, saturated - result.elements);
             }
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+            const auto cases = values.enum_case_types(enumeration->enumeration);
+            if (!cases) {
+                return std::nullopt;
+            }
+            result = {.supported = true, .depth = 1uz, .elements = 0uz};
+            for (const auto& item : *cases) {
+                auto count = std::min(item.payload_types.size(), saturated);
+                for (const auto field : item.payload_types) {
+                    const auto child = compute(field, depth + 1uz);
+                    if (!child) {
+                        return std::nullopt;
+                    }
+                    result.depth = std::max(result.depth, child->depth + 1uz);
+                    result.supported &= child->supported;
+                    count += std::min(child->elements, saturated - count);
+                }
+                result.elements = std::max(result.elements, count);
+            }
         } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
             result.supported = true;
         } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
-            result.supported = builtin_is_integer(builtin->kind)
+            result.supported = builtin_is_numeric(builtin->kind)
                 || builtin->kind == BuiltinType::Bool
                 || builtin->kind == BuiltinType::Char
-                || builtin->kind == BuiltinType::Str;
+                || builtin->kind == BuiltinType::Str
+                || builtin->kind == BuiltinType::String;
         }
         return result;
     };

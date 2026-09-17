@@ -8,7 +8,8 @@ import :backend.target.item;
 import :backend.target.name;
 import :backend.target.unit;
 import :backend.target;
-import :semantic.semir;
+import :semantic.semir.decl;
+import :semantic.semir.ids;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -78,23 +79,20 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
             active.emplace(context, planned.module_id);
         }
         auto& module_context = *active;
-        std::visit(
-            [&](auto id) noexcept {
-                if constexpr (std::same_as<decltype(id), CallableID>) {
-                    module_items.push_back(lower_closure_type(module_context, id));
-                } else {
-                    append_items(
-                        module_items,
-                        lower_declaration(
-                            module_context,
-                            DeclarationRef {id},
-                            std::same_as<decltype(id), FunctionID>
-                        )
-                    );
-                }
-            },
-            planned.declaration
-        );
+        planned.declaration.visit([&](auto id) noexcept {
+            if constexpr (std::same_as<decltype(id), CallableID>) {
+                module_items.push_back(lower_closure_type(module_context, id));
+            } else {
+                append_items(
+                    module_items,
+                    lower_declaration(
+                        module_context,
+                        DeclarationRef {id},
+                        std::same_as<decltype(id), FunctionID>
+                    )
+                );
+            }
+        });
     }
     flush();
     return {
@@ -179,7 +177,7 @@ auto lower_module(
 auto lower_artifact(const PlannedCompilation& compilation, TargetArtifactID artifact_id) noexcept
     -> TargetUnit {
     auto context = ArtifactLowering(compilation, artifact_id);
-    auto sections = std::visit(
+    auto sections = context.artifact().visit(
         Overloaded {
             [&](const TargetInterfaceArtifact& artifact) noexcept {
                 return lower_interface(context, artifact);
@@ -194,8 +192,7 @@ auto lower_artifact(const PlannedCompilation& compilation, TargetArtifactID arti
                 return lower_test_runner_header(context, artifact);
             },
             [&](const TargetTestEntryArtifact&) noexcept { return lower_test_entry(context); },
-        },
-        context.artifact()
+        }
     );
     return std::move(context).finish(std::move(sections));
 }

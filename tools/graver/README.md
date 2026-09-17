@@ -53,9 +53,11 @@ Graver uses one fixed style: four-space indentation and a target line width of 1
 - Named constructions with multiple fields expand one field per line.
   Constructions containing a nested construction or array also expand.
   Single-field and positional leaf constructions may remain on one line.
-- Import selections attach braces to `::` and omit inner padding, as in
-  `std::{vector, allocator}` and `using {from_utf8, to_string}`. Long
-  selections put one name per line.
+- Import selections attach braces to `::` and use one space inside single-line
+  braces, as in `std::{ vector, allocator }` and `using { from_utf8, to_string }`. Long
+  selections put one name per line. Single-line selections omit the trailing
+  comma; multiline selections include it. An existing trailing comma does not
+  force a line break.
 - Adjacent single-line constructions in an array align their columns and closing
   braces when their written types and field layouts match. Comments, blank lines,
   multiline rows, and differing layouts separate groups. Padding is omitted for
@@ -76,7 +78,8 @@ Graver uses one fixed style: four-space indentation and a target line width of 1
   comments stay with the declaration, after any added separator.
 
 Ordinary line endings become LF. Nonempty output ends in a newline. Token and
-literal spelling, punctuation, comment text and token-gap position, interpolation
+literal spelling, punctuation other than import-list trailing commas, comment text
+and token-gap position (allowing insertion/removal of those commas), interpolation
 text/specifications, and fenced C++ content are preserved. Expressions inside
 interpolation holes are formatted. Output is re-lexed, compared with the input,
 and parsed before it is returned.
@@ -84,7 +87,7 @@ and parsed before it is returned.
 Width counts UTF-8 bytes, so non-ASCII text may wrap early. Indivisible tokens,
 comments, C++ fragments, and type-argument lists may exceed the target.
 
-## Tests and implementation
+## Tests
 
 The `graver` group covers:
 
@@ -101,7 +104,73 @@ Each CLI scenario is registered separately with Xmake. The harness checks exit
 status, both streams, and file changes in an isolated temporary directory.
 Scenarios are declared in `tests/cli/cases.lua` and run by `tests/cli/cli.lua`.
 Failed scenarios retain their files and captured streams. Run one scenario with
-`./xmakew test graver-cli-test/mixed_write_failure`.
+`./xmakew test graver-test-cli/mixed_write_failure`.
 
-See [implementation design](design.md) for component responsibilities
-and ownership. Build targets are in `tools/graver/xmake.lua`.
+## Implementation
+
+Components under `src/` have these responsibilities:
+
+| Component | Responsibility |
+| --- | --- |
+| `graver.cpp` | Command selection, source loading, diagnostics, output |
+| `source/` | Owned source bytes, compiler token buffer, trivia between tokens |
+| `format/` | AST annotations, document construction, output validation |
+| `layout/` | Text, breaks, indentation, groups, and width-based rendering |
+| `files/` | Path collection, deduplication, file replacement |
+| `batch/` | Ordered formatting, accumulated diagnostics, check reports, batch writing |
+
+`xmake.lua` collects all components except the CLI entry in `graver-modules`,
+which depends on `carven-modules`. The `graver` executable and
+`graver-test-internal` consume these modules; `graver-test-cli` exercises the
+executable. Both test targets belong to the `graver` group.
+
+```text
+CLI arguments -> input paths -> SourceManager
+    -> format_batch -> format each source -> FormattedBatch
+    -> stdout / check report / file replacement
+
+format: source bytes -> lexer + trivia -> parser -> import comma normalization
+    -> layout document -> rendered bytes -> multiline import commas
+    -> token/comment comparison + parse validation
+```
+
+### Ownership and output
+
+The CLI loads all sources before formatting. `Source::scan` owns bytes, compiler
+tokens, and trivia; its immutable views remain valid while that object stays in
+place. Token source IDs refer to the source manager used for parsing. The
+formatter normalizes uncommented import-list trailing commas before layout. It
+replaces their bytes with spaces, preserving the original AST offsets. Document
+construction borrows that scanned source and the original AST. After alignment,
+it adds trailing commas to multiline imports. Validation compares against the
+original source, allowing only import-list trailing commas to differ.
+
+`format_batch` runs serially in input order, collects diagnostics from failed
+inputs, and returns a `FormattedBatch` only if every input succeeds. The batch
+owns formatted strings and paths and borrows original bytes from `SourceManager`.
+Keep the manager alive, unmoved, and unchanged through reporting and writing.
+Batch file views end when the batch moves or is destroyed. `write_batch` checks
+every destination before the first replacement; replacements remain per-file,
+with the failure behavior described above.
+
+### Layout construction
+
+For N tokens, N+1 gaps hold whitespace and comments. The AST identifies operator
+roles, type syntax, blocks, and groups; original tokens determine spelling and
+order. A parser span can end inside a `>>` token, so range lookup maps that offset
+to the containing token. The parser's synthetic entry function and block add no
+layout: their statements participate directly in top-level spacing.
+
+Token-indexed annotations describe blocks and grouping ranges. Compact
+candidates are rendered, then lexer offsets reveal whether headers and bodies
+span lines. Decisions move only from compact to expanded, and branches in the
+same if-chain or match/catch arm list share the expansion decision. Branch spans
+include their conditions or patterns. Once layouts settle, declaration spacing
+and array-row alignment are applied. Alignment adds spaces without changing line
+breaks and skips groups that would exceed the line width. The final output must
+pass token/comment comparison and parse validation.
+
+`Document` owns text and child IDs in an arena, caches flat widths, and renders
+with an explicit stack. Fit checks include following material such as closing
+punctuation. Indentation is emitted when text begins a line, keeping blank lines
+free of generated spaces.

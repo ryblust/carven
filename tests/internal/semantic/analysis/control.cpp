@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.control;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
@@ -15,6 +14,7 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.provenance;
@@ -163,11 +163,11 @@ TEST_CASE("Functions: expression result dependencies are independent of module o
         REQUIRE(consumer.has_value());
         REQUIRE(producer.has_value());
         auto inputs = std::array {
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = *consumer,
                 .module_path = *CanonicalModulePath::from_value("consumer")
             },
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = *producer,
                 .module_path = *CanonicalModulePath::from_value("producer")
             },
@@ -175,7 +175,7 @@ TEST_CASE("Functions: expression result dependencies are independent of module o
         if (reverse) {
             std::ranges::reverse(inputs);
         }
-        auto parsed = parse_program(sources, CompilationRequest {.modules = inputs});
+        auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
         REQUIRE(parsed.has_value());
         auto result = analyze(std::move(*parsed));
         REQUIRE(result.has_value());

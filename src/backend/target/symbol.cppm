@@ -65,6 +65,7 @@ enum class TargetSymbol {
     StdTypeIdentity,
     StdReferenceWrapper,
     StdAddressof,
+    StdBitCast,
     StdGetIf,
     StdDeclval,
     StdForward,
@@ -82,3 +83,6 @@ enum class TargetSymbol {
 };
 
 auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view;
+
+// This call-result contract does not imply that execution can be omitted.
+auto target_symbol_allows_implicit_discard(TargetSymbol symbol) noexcept -> bool;

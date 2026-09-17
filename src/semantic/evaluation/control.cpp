@@ -32,7 +32,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
     if (auto checked = step(source.origin); !checked) {
         return std::unexpected(checked.error());
     }
-    return std::visit(
+    return source.value.visit(
         [&](const auto& operation) noexcept -> ExecutionResult<ExecutionCompletion> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemReturn>) {
@@ -45,6 +45,32 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     .flow = ExecutionFlow::Return,
                     .value = std::move(*result)
                 };
+            } else if constexpr (std::same_as<Operation, SemThrow>) {
+                auto payload = value(frame, operation.value);
+                if (!payload) {
+                    return std::unexpected(payload.error());
+                }
+                auto owned = own_storage(std::move(*payload), source.origin);
+                if (!owned) {
+                    return std::unexpected(owned.error());
+                }
+                return std::unexpected(
+                    ExecutionFailure {ExecutionSourceFailure {
+                        .type = operation.failure_type,
+                        .payload = std::make_shared<const ExecutionValue>(std::move(*owned)),
+                        .origin = source.origin,
+                        .calls = calls,
+                    }}
+                );
+            } else if constexpr (std::same_as<Operation, SemRethrow>) {
+                if (frame.caught.empty()) {
+                    return std::unexpected(fail(
+                        source.origin,
+                        DiagnosticCode::ConstEvaluation,
+                        "rethrow has no active caught failure"
+                    ));
+                }
+                return std::unexpected(ExecutionFailure {frame.caught.back()});
             } else if constexpr (std::same_as<Operation, SemBreak>) {
                 return ExecutionCompletion {
                     .flow = ExecutionFlow::Break,
@@ -148,8 +174,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     "statement is not supported in execution"
                 ));
             }
-        },
-        source.value
+        }
     );
 }
 

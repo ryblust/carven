@@ -4,9 +4,9 @@ import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.ids;
+import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.pattern;
-import :frontend.ast.interop;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
@@ -71,12 +71,11 @@ auto ASTDumper::render() noexcept -> std::string {
         imports.emplace_back(std::addressof(header));
     }
     const auto import_span = [&](const Import& value) noexcept {
-        return std::visit(
+        return value.visit(
             Overloaded {
                 [&](ASTModuleImportID id) noexcept { return ast.module_import(id).span; },
                 [](const ASTCppHeaderImport* header) static noexcept { return header->span; },
-            },
-            value
+            }
         );
     };
     std::ranges::sort(imports, {}, [&](const Import& value) noexcept {
@@ -88,7 +87,7 @@ auto ASTDumper::render() noexcept -> std::string {
         "imports",
         imports,
         [&](const Import& value, std::string_view prefix, bool is_last) noexcept {
-            std::visit(
+            value.visit(
                 Overloaded {
                     [&](ASTModuleImportID declaration) noexcept {
                         render_module_import(declaration, prefix, is_last);
@@ -96,8 +95,7 @@ auto ASTDumper::render() noexcept -> std::string {
                     [&](const ASTCppHeaderImport* header) noexcept {
                         render_cpp_header_import(*header, prefix, is_last);
                     },
-                },
-                value
+                }
             );
         }
     );

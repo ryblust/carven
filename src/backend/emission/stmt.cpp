@@ -34,7 +34,7 @@ auto update_spelling(TargetUpdateOperator op) noexcept -> std::string_view {
 } // namespace
 
 auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> LayoutNodeID {
-    const auto rendered = std::visit(
+    const auto rendered = statement.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
                 return concat({render_expression(value.expression), text(";")});
@@ -210,15 +210,14 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                      render_statement_block(value.body)}
                 );
             },
-        },
-        statement.value
+        }
     );
     return with_attribution(rendered, statement.attribution);
 }
 
 auto TargetRenderer::render_for_initializer(const TargetForInitializer& initializer) noexcept
     -> LayoutNodeID {
-    return std::visit(
+    return initializer.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
                 return render_expression(value.expression);
@@ -263,13 +262,12 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                      render_expression(value.target, TargetPrecedence::Prefix)}
                 );
             },
-        },
-        initializer.value
+        }
     );
 }
 
 auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> LayoutNodeID {
-    return std::visit(
+    return step.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
                 return render_expression(value.expression);
@@ -294,7 +292,6 @@ auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> Layo
                      render_expression(value.target, TargetPrecedence::Prefix)}
                 );
             },
-        },
-        step.value
+        }
     );
 }

@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.interop;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -88,11 +88,11 @@ TEST_CASE("Compiler diagnostics: C++ API namespace collisions are Carven-owned")
     const auto child_source =
         *sources.append_virtual("nested.cv", "export(cpp) fn value() -> i32 { return 2; }");
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = parent_source,
             .module_path = *CanonicalModulePath::from_value("surface"),
         },
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = child_source,
             .module_path = *CanonicalModulePath::from_value("surface.nested"),
         },
@@ -100,7 +100,7 @@ TEST_CASE("Compiler diagnostics: C++ API namespace collisions are Carven-owned")
 
     const auto result = compile(
         sources,
-        CompilationRequest {.modules = inputs},
+        SourceBatch {.modules = inputs},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:cpp-collision").value(),
@@ -180,18 +180,18 @@ TEST_CASE("Compiler diagnostics: C++ imports are confined to their owning module
         );
         const auto consumer = *sources.append_virtual("consumer.cv", std::string(test.consumer));
         const auto inputs = std::array {
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = provider,
                 .module_path = *CanonicalModulePath::from_value("provider")
             },
-            CompilationModuleInput {
+            SourceModuleInput {
                 .source_id = consumer,
                 .module_path = *CanonicalModulePath::from_value("consumer")
             },
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = inputs},
+            SourceBatch {.modules = inputs},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value()
@@ -238,13 +238,13 @@ TEST_CASE("Compiler: external validity is delegated to C++") {
         CAPTURE(test.name);
         auto sources = SourceManager();
         const auto source_id = *sources.append_virtual("delegation.cv", std::string(test.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("delegation"),
         };
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:cpp-delegation").value(),

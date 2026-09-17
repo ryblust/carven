@@ -276,7 +276,7 @@ auto solve_failure_constraints(
         return values[term.index()];
     };
     for (const auto& constraint : constraints.constraints()) {
-        std::visit(
+        constraint.visit(
             Overloaded {
                 [&](const RequiresEmptyFailure& requirement) noexcept {
                     if (!members(requirement.term).empty()) {
@@ -332,8 +332,7 @@ auto solve_failure_constraints(
                         );
                     }
                 },
-            },
-            constraint
+            }
         );
     }
     if (failure.has_value()) {

@@ -4,12 +4,12 @@ module;
 
 module carven:test.internal.semantic.evaluation.fixture;
 
-import :compiler.request;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.program;
 import :semantic.semir.constant;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import std;
@@ -25,12 +25,12 @@ auto begin_constant_test_compilation(SourceManager& sources, DiagnosticSink& dia
     const auto source = sources.append_virtual("constant-evaluate.cv", "");
     REQUIRE(source.has_value());
     const auto inputs = std::array {
-        CompilationModuleInput {
+        SourceModuleInput {
             .source_id = *source,
             .module_path = constant_test_module_path("constant.evaluate"),
         },
     };
-    auto syntax = parse_program(sources, CompilationRequest {.modules = inputs});
+    auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }

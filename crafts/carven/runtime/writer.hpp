@@ -92,7 +92,52 @@ public:
         storage.append(buffer.data(), digits);
     }
 
+    template<typename Float>
+    auto floating(Float value) noexcept -> void {
+        write_floating<std::chars_format::general, 0, false>(value);
+    }
+
+    template<int Precision = 6, typename Float>
+    auto fixed(Float value) noexcept -> void {
+        write_floating<std::chars_format::fixed, Precision, true>(value);
+    }
+
+    template<int Precision = 6, typename Float>
+    auto scientific(Float value) noexcept -> void {
+        write_floating<std::chars_format::scientific, Precision, true>(value);
+    }
+
+    template<int Precision = 6, typename Float>
+    auto general(Float value) noexcept -> void {
+        write_floating<std::chars_format::general, Precision, true>(value);
+    }
+
 private:
+    template<std::chars_format Format, int Precision, bool WithPrecision, typename Float>
+    auto write_floating(Float value) noexcept -> void {
+        static_assert(std::is_same_v<Float, float> || std::is_same_v<Float, double>);
+        static_assert(Precision >= 0 && Precision <= 256);
+        // Includes the largest fixed integer part, fractional digits, sign and exponent.
+        std::array<char, std::numeric_limits<Float>::max_exponent10 + Precision + 32> buffer;
+        const auto converted = [&]() noexcept {
+            if constexpr (WithPrecision) {
+                return std::to_chars(
+                    buffer.data(),
+                    buffer.data() + buffer.size(),
+                    value,
+                    Format,
+                    Precision
+                );
+            } else {
+                return std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+            }
+        }();
+        if (converted.ec != std::errc()) {
+            std::terminate();
+        }
+        storage.append(buffer.data(), static_cast<std::size_t>(converted.ptr - buffer.data()));
+    }
+
     auto reserve(std::size_t minimum_size, std::size_t maximum_size) noexcept -> void {
         const auto available = storage.max_size() - storage.size();
         if (minimum_size > available) {

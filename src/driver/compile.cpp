@@ -20,7 +20,7 @@ auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
     if (options.linkage_domain.has_value()) {
         return std::move(*options.linkage_domain);
     }
-    const auto root = std::visit(
+    const auto root = options.destination.visit(
         Overloaded {
             [](const DirectoryArtifactDestination& destination) static noexcept {
                 return destination.root;
@@ -28,8 +28,7 @@ auto resolve_linkage_domain(CompileCommandOptions& options) noexcept
             [](const StandardOutputArtifactDestination&) static noexcept {
                 return std::filesystem::path(".");
             },
-        },
-        options.destination
+        }
     );
     auto error = std::error_code();
     const auto absolute = std::filesystem::absolute(root, error);
@@ -93,7 +92,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         }
     );
 
-    const auto written = std::visit(
+    const auto written = request->destination.visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {
                 return write_artifacts(destination.root, artifacts);
@@ -103,8 +102,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
                 print_artifacts(artifacts);
                 return {};
             },
-        },
-        request->destination
+        }
     );
     if (!written) {
         std::println(std::cerr, "carven: error: {}", written.error());

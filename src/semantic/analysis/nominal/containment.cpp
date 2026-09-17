@@ -19,12 +19,11 @@ struct NominalContainmentGraph final {
 
 auto declaration_index(std::size_t struct_count, NominalDeclarationRef declaration) noexcept
     -> std::size_t {
-    return std::visit(
+    return declaration.visit(
         Overloaded {
             [](StructID id) static noexcept -> std::size_t { return id.index(); },
             [&](EnumID id) noexcept -> std::size_t { return struct_count + id.index(); },
-        },
-        declaration
+        }
     );
 }
 
@@ -37,35 +36,35 @@ auto nominal_declaration(ProgramDraft& draft, ConstructionTypeRef type) noexcept
         }
         return std::nullopt;
     }
-    return std::visit(
-        Overloaded {
-            [](const StructTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
-                return NominalDeclarationRef {value.structure};
-            },
-            [](const EnumTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
-                return NominalDeclarationRef {value.enumeration};
-            },
-            [&](const ArrayTypeValue& array) noexcept {
-                return nominal_declaration(draft, ConstructionTypeRef {array.element});
-            },
-            []<typename Value>(const Value&) static noexcept
-                -> std::optional<NominalDeclarationRef> {
-                static_assert(
-                    std::same_as<Value, BuiltinTypeValue>
-                        || std::same_as<Value, FunctionTypeValue>
-                        || std::same_as<Value, ClosureTypeValue>
-                        || std::same_as<Value, CallableViewTypeValue>
-                        || std::same_as<Value, CppTypeValue>
-                        || std::same_as<Value, PointerTypeValue>
-                        || std::same_as<Value, SliceTypeValue>
-                        || std::same_as<Value, RangeTypeValue>,
-                    "unhandled non-containing canonical type"
-                );
-                return std::nullopt;
-            },
-        },
-        draft.type_copy(std::get<TypeID>(type)).value
-    );
+    return draft.type_copy(std::get<TypeID>(type))
+        .value.visit(
+            Overloaded {
+                [](const StructTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
+                    return NominalDeclarationRef {value.structure};
+                },
+                [](const EnumTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
+                    return NominalDeclarationRef {value.enumeration};
+                },
+                [&](const ArrayTypeValue& array) noexcept {
+                    return nominal_declaration(draft, ConstructionTypeRef {array.element});
+                },
+                []<typename Value>(const Value&) static noexcept
+                    -> std::optional<NominalDeclarationRef> {
+                    static_assert(
+                        std::same_as<Value, BuiltinTypeValue>
+                            || std::same_as<Value, FunctionTypeValue>
+                            || std::same_as<Value, ClosureTypeValue>
+                            || std::same_as<Value, CallableViewTypeValue>
+                            || std::same_as<Value, CppTypeValue>
+                            || std::same_as<Value, PointerTypeValue>
+                            || std::same_as<Value, SliceTypeValue>
+                            || std::same_as<Value, RangeTypeValue>,
+                        "unhandled non-containing canonical type"
+                    );
+                    return std::nullopt;
+                },
+            }
+        );
 }
 
 auto append_dependency(
@@ -102,7 +101,7 @@ auto build_containment_graph(ProgramDraft& draft) noexcept -> NominalContainment
     }
     graph.dependencies.resize(graph.declarations.size());
     for (auto owner = 0uz; owner < graph.declarations.size(); ++owner) {
-        std::visit(
+        graph.declarations[owner].visit(
             Overloaded {
                 [&](StructID id) noexcept {
                     for (const auto& field :
@@ -120,8 +119,7 @@ auto build_containment_graph(ProgramDraft& draft) noexcept -> NominalContainment
                         }
                     }
                 },
-            },
-            graph.declarations[owner]
+            }
         );
     }
     return graph;
@@ -129,14 +127,13 @@ auto build_containment_graph(ProgramDraft& draft) noexcept -> NominalContainment
 
 auto declaration_origin(ProgramDraft& draft, NominalDeclarationRef declaration) noexcept
     -> ProgramOriginID {
-    return std::visit(
+    return declaration.visit(
         Overloaded {
             [&](StructID id) noexcept {
                 return draft.construction_struct_declaration_copy(id).origin;
             },
             [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).origin; },
-        },
-        declaration
+        }
     );
 }
 

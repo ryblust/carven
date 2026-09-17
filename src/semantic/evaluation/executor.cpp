@@ -127,7 +127,7 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             if (auto checked = check_aggregate_size(compound->type, origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            auto copied = std::visit(
+            auto copied = compound->elements.visit(
                 [&](const auto children) noexcept -> ExecutionResult<std::vector<ExecutionValue>> {
                     if (auto checked = account_aggregate(children.size(), origin); !checked) {
                         return std::unexpected(checked.error());
@@ -142,8 +142,7 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
                         elements.push_back(std::move(*copy));
                     }
                     return elements;
-                },
-                compound->elements
+                }
             );
             if (!copied) {
                 return std::unexpected(copied.error());
@@ -438,6 +437,7 @@ auto SemanticExecutor::invoke(
         auto frame = ExecutionFrame {
             .body = body,
             .slots = std::vector<ExecutionSlot>(body.binding_count()),
+            .caught = {},
         };
         for (auto index = 0uz; index < arguments.size(); ++index) {
             const auto actual = ConstructionTypeRef(execution_value_type(values, arguments[index]));
@@ -475,7 +475,7 @@ auto SemanticExecutor::invoke(
 
 auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
     -> ExecutionResult<ExecutionValue> {
-    auto frame = ExecutionFrame {.body = std::nullopt, .slots = {}};
+    auto frame = ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}};
     return value(frame, source);
 }
 
@@ -493,10 +493,14 @@ auto SemanticExecutor::evaluate_test(const StructuredBodyDraft& body) noexcept
     testing = true;
     auto frame = ExecutionFrame {
         .body = ExecutionBody(body),
-        .slots = std::vector<ExecutionSlot>(body.bindings.size())
+        .slots = std::vector<ExecutionSlot>(body.bindings.size()),
+        .caught = {}
     };
     const auto result = region(frame, body.region);
-    if (!result || test_failed) {
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    if (test_failed) {
         return std::unexpected(ExecutionFailure {});
     }
     return {};

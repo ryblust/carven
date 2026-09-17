@@ -1,5 +1,5 @@
-import .left using {Left, read_right,};
-import .right using {Right, read_left,};
+import .left using { Left, read_right };
+import .right using { Right, read_left };
 
 test "Modules: Read parameters admit mutually incomplete nominal declarations" {
     let left = Left { value: 1 };

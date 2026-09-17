@@ -4,7 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.loans;
 
-import :compiler.request;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :frontend.program.parse;
@@ -14,6 +13,7 @@ import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.semantic.analysis.fixture;

@@ -2,8 +2,15 @@ module carven:backend.construction.operands.impl;
 
 import :backend.construction.builder;
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.body;
 import :semantic.semir.children;
+import :semantic.semir.decl;
+import :semantic.semir.delegation;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -27,7 +34,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
         }
         result.push_back(prepared);
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [](const SemConstant&) static noexcept {},
             [](const SemBinding&) static noexcept {},
@@ -149,7 +156,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                 }
             },
             [&](const SemCppCall& value) noexcept {
-                std::visit(
+                value.callee.visit(
                     Overloaded {
                         [](const CppNameReference&) static noexcept {},
                         [&](const CppMemberCallee<SemCppOperand>& member) noexcept {
@@ -158,8 +165,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
                         [&](const SemCppOperand& callee) noexcept {
                             receiver(*callee.expression, callee.access);
                         }
-                    },
-                    value.callee
+                    }
                 );
                 for (const auto& input : value.arguments) {
                     native(input);
@@ -200,8 +206,7 @@ auto BodyConstructionBuilder::operands(const SemanticExpression& source) noexcep
             [](const SemPropagate&) static noexcept {
                 invariant_violation("propagation forwards its operation");
             }
-        },
-        source.value
+        }
     );
     return result;
 }

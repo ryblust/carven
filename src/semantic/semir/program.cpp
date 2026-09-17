@@ -60,7 +60,7 @@ auto SemIRProgram::may_stop_test(TypeID type) const noexcept -> bool {
 }
 
 auto SemIRProgram::call_signature(TypeID type) const noexcept -> CallableSignatureID {
-    return std::visit(
+    return type_store.type(type).value.visit(
         [&](const auto& value) noexcept -> CallableSignatureID {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, CallableViewTypeValue>) {
@@ -71,8 +71,7 @@ auto SemIRProgram::call_signature(TypeID type) const noexcept -> CallableSignatu
             } else {
                 invariant_violation("non-callable has no signature");
             }
-        },
-        type_store.type(type).value
+        }
     );
 }
 

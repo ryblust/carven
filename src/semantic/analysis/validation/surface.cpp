@@ -97,7 +97,7 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
     if (surface_visibility == DeclarationVisibility::Module || !visited_types.insert(type).second) {
         return;
     }
-    std::visit(
+    program.types().type(type).value.visit(
         Overloaded {
             [](const BuiltinTypeValue&) static noexcept {},
             [&](const StructTypeValue& value) noexcept {
@@ -130,8 +130,7 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
                     validate(referenced);
                 }
             },
-        },
-        program.types().type(type).value
+        }
     );
 }
 

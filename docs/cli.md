@@ -1,6 +1,6 @@
 # Command-line interface
 
-The `carven` command runs an explicit batch of `.cv` source files, generates
+The `carven` command runs `.cv` source files with fixed Crafts roots, generates
 C++ artifacts, and inspects frontend representations. This
 document defines invocation, input paths, output writes, and process behavior.
 
@@ -21,56 +21,68 @@ the top-level help and succeeds.
 
 ## Native execution
 
-A bare source invocation compiles the batch to C++, compiles and links a native
-program, then executes it. Native header lookup includes the working directory. The batch must have a program entry point. Carven
-reports a missing entry before invoking the native compiler. Multiple entries
-are rejected during semantic analysis.
+A bare source invocation combines explicit application inputs with `.cv` and
+`.cpp` files recursively collected from the toolchain's `crafts/carven/` and the
+working directory's optional `crafts/`. Application files outside these roots
+must be named explicitly. Sources are sorted by path spelling and deduplicated by
+canonical path; distinct files with conflicting module identities are errors. Directory symlinks
+are not recursively followed.
 
-Arguments before `--` belong to Carven; arguments after it are passed unchanged
-to the program, including `--help` and strings containing shell syntax. Native
-execution accepts source paths only before the separator. Artifact destinations
-and test-emission options belong to `compile`.
+Carven analyzes all collected modules, generates C++, compiles and links a native
+program, then executes it. The batch must have one entry point. Native header
+lookup includes the generated directory, both Crafts include roots, and the
+working directory. Arguments before `--` are source paths; arguments after it
+are passed unchanged to the program. Artifact and test-emission options belong
+to `compile`.
 
-Native execution currently supports POSIX hosts. `CXX` selects one compiler
-executable name or path, defaulting to `clang++`; its value is not split into
-shell words. Carven requests C++20 and locates Crafts beside an installed binary
-or in the source checkout containing the development binary. Generated files
-and the executable live in a unique temporary directory removed when the driver
-returns after execution or a handled failure. Child processes inherit the working directory and standard streams.
-Carven returns the native compiler's failure status or the program's exit
-status; termination by signal yields `128 + signal`.
+`CXX` selects one compiler executable name or path, defaulting to `clang++`.
+GCC-style drivers use `-std=c++20`; `cl` and `clang-cl` use MSVC-style arguments
+and separate temporary object files. The compiler, SDK, and linker must be
+available in the current environment. POSIX and Windows process adapters invoke
+children directly, inheriting the working directory, environment, and standard
+streams. `CXX` is not split into shell words.
+
+The installed layout is `<prefix>/bin/carven` with matching resources in
+`<prefix>/crafts/carven/`. Development binaries locate Crafts in their containing
+source checkout. Additional native libraries, compiler flags, dependency
+downloads, and build scheduling belong to an external build system.
+
+Generated files and the executable reside in a unique temporary directory,
+removed when the driver returns after execution or a handled failure. Carven
+returns the native compiler's failure status or the program's exit status. On
+POSIX, termination by signal yields `128 + signal`.
 
 ## Interpretation
 
-Interpretation is an experimental subset intended for demonstrations and teaching.
-Its supported operations retain ordinary Carven semantics. Native compilation
-remains the path for the full language and C++ integration; interpreter support
-expands when concrete teaching or execution needs justify it. This subset does not
-limit language-required compile-time evaluation, which has its own admission rules.
+Interpretation executes a subset of Carven's semantic operations. Native C++
+integration requires compiled execution.
 
-`interpret` parses and analyzes the same explicit source batch as native execution.
-Required constant initializers, compile-time printing, and `const test` execute
+`interpret` parses and analyzes only its explicitly supplied source batch; it does
+not collect Crafts automatically. Required constant initializers, compile-time
+printing, and `const test` execute
 through the normal analysis pipeline. The interpreter then checks the entry and
 its transitive direct callees against its execution subset and executes the
-published semantic operations. Admission covers all branches of those bodies.
+published semantic operations. Without an entry, successful analysis completes
+the command, including required constant execution and static tests.
+Admission covers all branches of those bodies.
 Unused functions still receive ordinary language checks; they do not have to
 belong to the interpreter subset. No C++ artifacts or native executable are written.
 
-The current subset supports integer, bool, char, str, and owning String locals;
-supported structs and fixed arrays; direct Carven calls; local mutation; conditional
-control, loops and supported matching; builtin printing and formatting. It shares
-the shared structured executor's operation support, but ordinary calls do not require
+The subset supports numeric, bool, char, str, and String locals; supported structs,
+enums and fixed arrays; typed failures and recovery; direct Carven calls; local
+mutation; conditional control, loops and matching; builtin printing and
+formatting. It uses the shared structured executor. Ordinary calls do not require
 `const fn`. Runtime integer operations use the language's wrapping rules; required
 constant arithmetic remains checked. A const function called at runtime also uses
-runtime arithmetic and output behavior.
+runtime arithmetic and output behavior. Floating operations use the compiler host's
+native environment. Floating printing and formatting use the host standard library,
+including dynamic width and precision within execution budgets.
 
-Native headers and source fragments, native calls, floating operations, callable
-values, typed failures, Write parameters,
-slices in executed bodies, and entry argument values are not yet supported.
+Native headers and source fragments, native calls, callable values, Write
+parameters, slices in executed bodies, and entry argument values are unsupported.
 Unsupported uses report `CV-INTERPRET-ADMISSION`; interpretation does not fall back
 to native compilation. The entry must currently take no parameters. Arguments
-after `--` are ignored by such an entry, as in native execution. This mode adds no
-language syntax, global-variable behavior, or interpreter-only builtin names.
+after `--` are ignored by such an entry, as in native execution.
 
 `--trace` reports executed statement locations and function calls and successful
 returns to stderr, indented by call depth. It describes interpreted execution after
@@ -93,7 +105,9 @@ completion returns 0, following the existing entry-result convention.
 ## Source inputs
 
 A source invocation requires one or more explicitly named source files. The
-compiler analyzes that complete batch; imports resolve among those inputs.
+compiler analyzes that complete batch; imports resolve among those inputs. Native
+execution additionally collects the fixed Crafts roots described above. `compile`
+and `interpret` keep their explicit-input contracts.
 
 Input paths use UTF-8, `/` separators, and a `.cv` extension. Relative paths
 determine module identities after lexical normalization:

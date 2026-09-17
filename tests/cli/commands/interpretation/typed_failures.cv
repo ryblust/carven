@@ -1,0 +1,33 @@
+enum Failure {
+    Invalid(i32),
+    Empty
+}
+
+fn read(ok: bool) -> i32 throw Failure {
+    if ok { return 42; }
+    throw Failure::Invalid(7);
+}
+
+fn relay() -> i32 throw Failure {
+    return try {
+        read(false)?
+    } catch {
+        Failure(_) => rethrow,
+    };
+}
+
+fn main() {
+    let result = try {
+        relay()?
+    } catch {
+        Failure(.Invalid(code)) => code,
+        Failure(.Empty) => 0,
+    };
+    println(result);
+    let success = try {
+        read(true)?
+    } catch {
+        _ => -1,
+    };
+    println(success);
+}

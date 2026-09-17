@@ -11,7 +11,7 @@ auto TargetRenderer::render_type(TargetTypeID id, bool constant) noexcept -> Lay
 
 auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcept -> SyntaxLayouts {
     const auto& value = unit.type(id);
-    auto rendered = std::visit(
+    auto rendered = value.value.visit(
         Overloaded {
             [&](const TargetDecltypeType& deduced) noexcept -> SyntaxLayouts {
                 const auto result = concat(
@@ -103,8 +103,7 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcep
                     .wrapping = concat({referent.wrapping, suffix}),
                 };
             },
-        },
-        value.value
+        }
     );
     if (value.const_qualified || constant) {
         if (std::holds_alternative<TargetPointerType>(value.value)) {

@@ -1,7 +1,7 @@
 module carven:backend.construction.impl;
 
 import :backend.construction;
-import :semantic.semir;
+import :semantic.semir.ids;
 import :support.invariant;
 import std;
 

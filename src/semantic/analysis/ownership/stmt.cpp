@@ -81,7 +81,7 @@ auto OwnershipBodyAnalyzer::statement(
             result.normal.reset();
         }
     };
-    std::visit(
+    source.value.visit(
         Overloaded {
             [&](const SemReturn& value) noexcept {
                 if (value.value.has_value()) {
@@ -160,8 +160,7 @@ auto OwnershipBodyAnalyzer::statement(
             [&](const OwnedSemanticRegion& value) noexcept {
                 result = region(*value, std::move(result.normal->state));
             },
-        },
-        source.value
+        }
     );
     if (result.normal) {
         result.normal->value = {};

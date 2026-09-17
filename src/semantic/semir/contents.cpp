@@ -64,7 +64,7 @@ auto TypeContentsQuery<Types, Declarations>::contents(TypeID type) noexcept -> T
         destination.callable_view |= source.callable_view;
         destination.storage_owner |= source.storage_owner;
     };
-    const auto result = std::visit(
+    const auto result = canonical.value.visit(
         Overloaded {
             [](const ClosureTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = true, .callable_view = false, .storage_owner = false};
@@ -140,8 +140,7 @@ auto TypeContentsQuery<Types, Declarations>::contents(TypeID type) noexcept -> T
             [](const FunctionTypeValue&) static noexcept -> TypeContents {
                 return {.closure_owner = false, .callable_view = false, .storage_owner = false};
             },
-        },
-        canonical.value
+        }
     );
     cached = result;
     return result;

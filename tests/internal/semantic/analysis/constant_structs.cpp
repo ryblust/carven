@@ -58,8 +58,7 @@ TEST_CASE("Constant structs: field order and nominal types survive array and sli
 }
 
 TEST_CASE("Constant structs: unsupported fields are rejected even in unused definitions") {
-    const auto types =
-        std::to_array<std::string_view>({"String", "f64", "ptr<i32>", "[i32]", "[String; 1]"});
+    const auto types = std::to_array<std::string_view>({"ptr<i32>", "[i32]"});
     for (const auto type : types) {
         CAPTURE(type);
         const auto diagnostics = analyze_test_errors(

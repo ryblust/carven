@@ -138,7 +138,7 @@ auto fits(
         const auto command = commands.back();
         commands.pop_back();
         const auto& current = nodes[command.node_id.value];
-        const auto result = std::visit(
+        const auto result = current.value.visit(
             Overloaded {
                 [&](const LayoutText& value) noexcept -> std::optional<bool> {
                     if (line_start) {
@@ -227,8 +227,7 @@ auto fits(
                     });
                     return std::nullopt;
                 },
-            },
-            current.value
+            }
         );
         if (result.has_value()) {
             return *result;
@@ -278,7 +277,7 @@ auto render_layout(const LayoutDocument& document, std::size_t line_width) noexc
         const auto command = commands.back();
         commands.pop_back();
         const auto& current = document.nodes[command.node_id.value];
-        std::visit(
+        current.value.visit(
             Overloaded {
                 [&](const LayoutText& value) noexcept {
                     if (line_start && !value.value.empty()) {
@@ -409,8 +408,7 @@ auto render_layout(const LayoutDocument& document, std::size_t line_width) noexc
                         .node_id = reset.child,
                     });
                 },
-            },
-            current.value
+            }
         );
     }
     while (output.size() > preserved_prefix

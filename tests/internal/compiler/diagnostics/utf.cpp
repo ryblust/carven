@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.utf;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnosed;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :test.internal.compiler.diagnostics.fixture;
@@ -45,7 +45,7 @@ public:
     auto run() noexcept {
         return compile(
             sources,
-            CompilationRequest {.modules = inputs},
+            SourceBatch {.modules = inputs},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:utf"),
@@ -54,7 +54,7 @@ public:
     }
 
     SourceManager sources;
-    std::vector<CompilationModuleInput> inputs;
+    std::vector<SourceModuleInput> inputs;
 };
 
 } // namespace

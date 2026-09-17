@@ -142,77 +142,72 @@ auto validate_publication_topology(
             "provenance module was assigned to more than one semantic module"
         );
         for (const auto& item : declaration.items) {
-            std::visit(
-                [&](const auto item_id) noexcept {
-                    using ID = std::remove_cvref_t<decltype(item_id)>;
-                    if constexpr (std::same_as<ID, FunctionID>) {
-                        if (!declarations.contains(item_id)) {
-                            invariant_violation("module listed an invalid function");
-                        }
-                        if (declarations.function(item_id).module_id != module_id) {
-                            invariant_violation("function disagreed with its containing module");
-                        }
-                        claim_once(
-                            function_claims,
-                            item_id.index(),
-                            "function was listed by more than one module item"
-                        );
-                    } else if constexpr (std::same_as<ID, StructID>) {
-                        if (!declarations.contains(item_id)) {
-                            invariant_violation("module listed an invalid structure");
-                        }
-                        if (declarations.structure(item_id).module_id != module_id) {
-                            invariant_violation("structure disagreed with its containing module");
-                        }
-                        claim_once(
-                            structure_claims,
-                            item_id.index(),
-                            "structure was listed by more than one module item"
-                        );
-                    } else if constexpr (std::same_as<ID, EnumID>) {
-                        if (!declarations.contains(item_id)) {
-                            invariant_violation("module listed an invalid enum");
-                        }
-                        if (declarations.enumeration(item_id).module_id != module_id) {
-                            invariant_violation("enum disagreed with its containing module");
-                        }
-                        claim_once(
-                            enum_claims,
-                            item_id.index(),
-                            "enum was listed by more than one module item"
-                        );
-                    } else if constexpr (std::same_as<ID, ModuleConstantID>) {
-                        if (!declarations.contains(item_id)) {
-                            invariant_violation("module listed an invalid module constant");
-                        }
-                        if (declarations.module_constant(item_id).module_id != module_id) {
-                            invariant_violation(
-                                "module constant disagreed with its containing module"
-                            );
-                        }
-                        claim_once(
-                            constant_claims,
-                            item_id.index(),
-                            "module constant was listed by more than one module item"
-                        );
-                    } else if constexpr (std::same_as<ID, TestID>) {
-                        if (!tests.contains(item_id)) {
-                            invariant_violation("module listed an invalid test");
-                        }
-                        if (tests.test(item_id).module_id != module_id) {
-                            invariant_violation("test disagreed with its containing module");
-                        }
-                        claim_once(
-                            test_claims,
-                            item_id.index(),
-                            "test was listed by more than one module item"
-                        );
-                    } else {
-                        static_assert(std::same_as<ID, void>);
+            item.visit([&](const auto item_id) noexcept {
+                using ID = std::remove_cvref_t<decltype(item_id)>;
+                if constexpr (std::same_as<ID, FunctionID>) {
+                    if (!declarations.contains(item_id)) {
+                        invariant_violation("module listed an invalid function");
                     }
-                },
-                item
-            );
+                    if (declarations.function(item_id).module_id != module_id) {
+                        invariant_violation("function disagreed with its containing module");
+                    }
+                    claim_once(
+                        function_claims,
+                        item_id.index(),
+                        "function was listed by more than one module item"
+                    );
+                } else if constexpr (std::same_as<ID, StructID>) {
+                    if (!declarations.contains(item_id)) {
+                        invariant_violation("module listed an invalid structure");
+                    }
+                    if (declarations.structure(item_id).module_id != module_id) {
+                        invariant_violation("structure disagreed with its containing module");
+                    }
+                    claim_once(
+                        structure_claims,
+                        item_id.index(),
+                        "structure was listed by more than one module item"
+                    );
+                } else if constexpr (std::same_as<ID, EnumID>) {
+                    if (!declarations.contains(item_id)) {
+                        invariant_violation("module listed an invalid enum");
+                    }
+                    if (declarations.enumeration(item_id).module_id != module_id) {
+                        invariant_violation("enum disagreed with its containing module");
+                    }
+                    claim_once(
+                        enum_claims,
+                        item_id.index(),
+                        "enum was listed by more than one module item"
+                    );
+                } else if constexpr (std::same_as<ID, ModuleConstantID>) {
+                    if (!declarations.contains(item_id)) {
+                        invariant_violation("module listed an invalid module constant");
+                    }
+                    if (declarations.module_constant(item_id).module_id != module_id) {
+                        invariant_violation("module constant disagreed with its containing module");
+                    }
+                    claim_once(
+                        constant_claims,
+                        item_id.index(),
+                        "module constant was listed by more than one module item"
+                    );
+                } else if constexpr (std::same_as<ID, TestID>) {
+                    if (!tests.contains(item_id)) {
+                        invariant_violation("module listed an invalid test");
+                    }
+                    if (tests.test(item_id).module_id != module_id) {
+                        invariant_violation("test disagreed with its containing module");
+                    }
+                    claim_once(
+                        test_claims,
+                        item_id.index(),
+                        "test was listed by more than one module item"
+                    );
+                } else {
+                    static_assert(std::same_as<ID, void>);
+                }
+            });
         }
     }
     require_complete(
@@ -252,7 +247,7 @@ auto validate_publication_topology(
     auto body_claims = std::vector<std::uint8_t>(bodies.size(), 0u);
     for (const auto [callable_id, declaration] : declarations.callables()) {
         const auto named = named_callables[callable_id.index()] == 1u;
-        std::visit(
+        declaration.implementation.visit(
             Overloaded {
                 [&](const FunctionBodyImplementation& implementation) noexcept {
                     if (!named) {
@@ -298,8 +293,7 @@ auto validate_publication_topology(
                         invariant_violation("C++ import callable had no function declaration");
                     }
                 },
-            },
-            declaration.implementation
+            }
         );
     }
     for (const auto [test_id, declaration] : tests.entries()) {
@@ -332,7 +326,7 @@ auto validate_publication_facts(
 
     for (const auto [type_id, type] : types.entries()) {
         static_cast<void>(type_id);
-        std::visit(
+        type.value.visit(
             Overloaded {
                 [&](const CppTypeValue& value) noexcept {
                     if (!valid_cpp_type(value)) {
@@ -405,8 +399,7 @@ auto validate_publication_facts(
                         invariant_violation("callable-view type used an unpublished signature");
                     }
                 },
-            },
-            type.value
+            }
         );
     }
 
@@ -442,7 +435,7 @@ auto validate_publication_facts(
             invariant_violation("constant used an unpublished type");
         }
         const auto& canonical = types.type(fact.type).value;
-        const auto valid = std::visit(
+        const auto valid = fact.value.visit(
             Overloaded {
                 [&](const RangeConstant& value) noexcept {
                     const auto* range = std::get_if<RangeTypeValue>(&canonical);
@@ -552,8 +545,7 @@ auto validate_publication_facts(
                     }
                     return true;
                 },
-            },
-            fact.value
+            }
         );
         if (!valid) {
             invariant_violation("constant value differs from its canonical type");
@@ -569,7 +561,7 @@ auto validate_publication_facts(
         }
     }
     for (const auto [enum_id, declaration] : declarations.enumerations()) {
-        std::visit(
+        declaration.representation.visit(
             Overloaded {
                 [](const PayloadEnumRepresentation&) static noexcept {},
                 [&](const NumericEnumRepresentation& representation) noexcept {
@@ -583,8 +575,7 @@ auto validate_publication_facts(
                         invariant_violation("numeric enum representation is not an integer type");
                     }
                 },
-            },
-            declaration.representation
+            }
         );
         for (const auto case_id : declaration.cases) {
             const auto& enum_case = declarations.enum_case(case_id);

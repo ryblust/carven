@@ -50,7 +50,7 @@ using Row = std::vector<CoveragePattern>;
 using Matrix = std::vector<Row>;
 
 auto pattern_type(const CoveragePattern& pattern) noexcept -> ConstructionTypeRef {
-    return std::visit(
+    return pattern.value.visit(
         []<typename Value>(const Value& value) static noexcept -> ConstructionTypeRef {
             static_assert(
                 std::same_as<Value, CoverageAny>
@@ -61,13 +61,12 @@ auto pattern_type(const CoveragePattern& pattern) noexcept -> ConstructionTypeRe
                 "unhandled coverage pattern"
             );
             return value.type;
-        },
-        pattern.value
+        }
     );
 }
 
 auto children(const CoveragePattern& pattern) noexcept -> std::span<const CoveragePattern> {
-    return std::visit(
+    return pattern.value.visit(
         Overloaded {
             [](const CoverageCase& value) static noexcept -> std::span<const CoveragePattern> {
                 return value.payload;
@@ -84,8 +83,7 @@ auto children(const CoveragePattern& pattern) noexcept -> std::span<const Covera
             [](const CoverageAtom&) static noexcept -> std::span<const CoveragePattern> {
                 return {};
             },
-        },
-        pattern.value
+        }
     );
 }
 
@@ -393,13 +391,10 @@ public:
 
 private:
     auto owned(ConstructionTypeRef type) const noexcept -> bool {
-        return std::visit(
-            [&]<typename ID>(ID id) noexcept {
-                static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
-                return id.owner() == program.identity();
-            },
-            type
-        );
+        return type.visit([&]<typename ID>(ID id) noexcept {
+            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+            return id.owner() == program.identity();
+        });
     }
 
     template<typename SourcePattern>
@@ -412,7 +407,7 @@ private:
         if (source_type != expected_type) {
             return std::unexpected("coverage pattern type differs from its subject");
         }
-        return std::visit(
+        return pattern.value.visit(
             Overloaded {
                 [&](const WildcardPattern&) -> std::expected<CoveragePattern, std::string> {
                     return CoveragePattern {.value = CoverageAny {.type = expected_type}};
@@ -558,8 +553,7 @@ private:
                         },
                     };
                 },
-            },
-            pattern.value
+            }
         );
     }
 

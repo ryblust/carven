@@ -44,6 +44,29 @@ auto ExecutionBody::binding_type(LocalBindingID id) const noexcept -> Constructi
     return ConstructionTypeRef(std::get<const SemIRBody*>(body)->binding(id).type);
 }
 
+namespace {
+
+template<typename Value>
+auto finish_execution(SemanticExecutionContext& context, ExecutionResult<Value> result) noexcept
+    -> ExecutionResult<Value> {
+    if (!result) {
+        if (const auto* failure = std::get_if<ExecutionSourceFailure>(&result.error())) {
+            context.report(
+                ExecutionDiagnostic {
+                    .origin = failure->origin,
+                    .code = DiagnosticCode::ConstEvaluation,
+                    .message = "typed failure escaped execution without recovery",
+                    .calls = failure->calls,
+                }
+            );
+            return std::unexpected(ExecutionFailure {});
+        }
+    }
+    return result;
+}
+
+} // namespace
+
 auto execute_constant_root(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
@@ -51,7 +74,7 @@ auto execute_constant_root(
     ExecutionLimits limits
 ) noexcept -> ExecutionResult<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    return executor.evaluate_root(expression);
+    return finish_execution(context, executor.evaluate_root(expression));
 }
 
 auto execute_constant_test(
@@ -61,7 +84,7 @@ auto execute_constant_test(
     ExecutionLimits limits
 ) noexcept -> ExecutionResult<void> {
     auto executor = SemanticExecutor(values, context, limits);
-    return executor.evaluate_test(body);
+    return finish_execution(context, executor.evaluate_test(body));
 }
 
 auto execute_function(
@@ -73,5 +96,5 @@ auto execute_function(
     ExecutionLimits limits
 ) noexcept -> ExecutionResult<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    return executor.invoke(function, std::move(arguments), origin);
+    return finish_execution(context, executor.invoke(function, std::move(arguments), origin));
 }

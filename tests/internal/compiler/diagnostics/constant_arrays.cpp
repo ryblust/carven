@@ -7,16 +7,16 @@ module carven:test.internal.compiler.diagnostics.constant_arrays;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-TEST_CASE("Const arrays: unsupported owning elements and views are diagnosed at definition") {
+TEST_CASE("Const arrays: owning elements require execution storage and views require admission") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "owning elements do not acquire a recursively frozen source type",
-         .source = R"(const fn make() -> [String; 1] => ["text"];)",
-         .code = "CV-CONST-ADMISSION",
-         .primary_text = R"(const fn make() -> [String; 1] => ["text"];)"},
-        {.name = "nested owning elements are outside the admitted subset",
-         .source = R"(const fn make() -> [[String; 1]; 1] => [["text"]];)",
-         .code = "CV-CONST-ADMISSION",
-         .primary_text = R"(const fn make() -> [[String; 1]; 1] => [["text"]];)"},
+         .source = R"(const fn make() -> [String; 1] => ["text"]; const value = make();)",
+         .code = "CV-CONST-INITIALIZER",
+         .primary_text = "make()"},
+        {.name = "nested owning elements cannot freeze into borrowed elements",
+         .source = R"(const fn make() -> [[String; 1]; 1] => [["text"]]; const value = make();)",
+         .code = "CV-CONST-INITIALIZER",
+         .primary_text = "make()"},
         {.name = "array views are not const operations",
          .source = "const fn size(values: [i32; 2]) -> usize => values.as_slice().len();",
          .code = "CV-CONST-ADMISSION",

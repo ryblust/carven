@@ -4,7 +4,7 @@ import :backend.construction;
 import :backend.lowering.body;
 import :backend.lowering.context;
 import :backend.realization.realizer;
-import :semantic.semir;
+import :semantic.semir.ids;
 import std;
 
 auto lower_body(ModuleLowering& context, BodyID body_id, BodyLoweringInputs inputs) noexcept

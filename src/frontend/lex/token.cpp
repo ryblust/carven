@@ -21,23 +21,20 @@ auto require_token_capacity(std::size_t token_count) noexcept -> void {
 }
 
 auto literal_token_kind(const TokenLiteralValue& value) noexcept -> TokenKind {
-    return std::visit(
-        []<typename Value>(const Value&) static noexcept -> TokenKind {
-            if constexpr (std::same_as<Value, IntegerLiteralValue>
-                          || std::same_as<Value, FloatingLiteralValue>) {
-                return TokenKind::NumberLiteral;
-            } else if constexpr (std::same_as<Value, InterpolationTextValue>) {
-                return TokenKind::InterpolationText;
-            } else if constexpr (std::same_as<Value, StringLiteralValue>) {
-                return TokenKind::StringLiteral;
-            } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
-                return TokenKind::CStringLiteral;
-            } else {
-                return TokenKind::CharLiteral;
-            }
-        },
-        value
-    );
+    return value.visit([]<typename Value>(const Value&) static noexcept -> TokenKind {
+        if constexpr (std::same_as<Value, IntegerLiteralValue>
+                      || std::same_as<Value, FloatingLiteralValue>) {
+            return TokenKind::NumberLiteral;
+        } else if constexpr (std::same_as<Value, InterpolationTextValue>) {
+            return TokenKind::InterpolationText;
+        } else if constexpr (std::same_as<Value, StringLiteralValue>) {
+            return TokenKind::StringLiteral;
+        } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
+            return TokenKind::CStringLiteral;
+        } else {
+            return TokenKind::CharLiteral;
+        }
+    });
 }
 
 } // namespace

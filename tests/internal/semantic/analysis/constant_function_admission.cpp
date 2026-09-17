@@ -11,6 +11,10 @@ import std;
 TEST_CASE("Const fn admission: supported definitions do not require a call site") {
     const auto sources = std::to_array<std::string_view>({
         R"(const fn empty() {})",
+        R"(struct Failure {} const fn fail() throw Failure { throw Failure {}; })",
+        R"(struct Failure {} private const fn fail() { throw Failure {}; })",
+        R"(enum Value { One, Two }
+            const fn select(value: Value) -> bool { return value == Value::One; })",
         R"(const fn output() { println(1); })",
         R"(const fn inactive() { if false { println(1); } })",
         R"(const fn report() { check(true); })",
@@ -83,19 +87,11 @@ TEST_CASE("Const fn admission: unsupported operations are rejected in unused and
         {"inactive short circuit call", R"(fn ordinary() -> bool => true;
             const fn invalid() -> bool { return false && ordinary(); })"},
         {"Write parameter", R"(const fn invalid(&value: i32) { value = 1; })"},
-        {"declared typed failure", R"(struct Failure {}
-            const fn invalid() throw Failure {})"},
-        {"throw operation", R"(struct Failure {}
-            private const fn invalid() { throw Failure {}; })"},
-        {"floating signature", R"(const fn invalid(value: f64) -> f64 { return value; })"},
-        {"floating expression", R"(const fn invalid() { let value = 1.0 + 2.0; })"},
         {"pointer signature", R"(const fn invalid(value: ptr<i32>) -> bool {
             return value == nullptr;
         })"},
         {"slice signature", R"(const fn invalid(value: [i32]) -> usize { return value.len(); })"},
         {"array operation", R"(const fn invalid() -> usize { return [1, 2].as_slice().len(); })"},
-        {"enum signature", R"(enum Value { One, Two }
-            const fn invalid(value: Value) -> bool { return value == Value::One; })"},
         {"closure value", R"(const fn invalid() -> i32 { let call = []() => 1; return call(); })"},
         {"unchecked scalar construction", R"(const fn invalid() -> char {
             return char::from_u32_unchecked(65u32);

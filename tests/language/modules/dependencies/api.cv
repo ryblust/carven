@@ -1,4 +1,4 @@
-import .model using {Model, make_model,};
+import .model using { Model, make_model };
 import .implementation using normalize;
 
 export fn identity(model: Model) -> Model => model;

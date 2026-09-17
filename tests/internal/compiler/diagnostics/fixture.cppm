@@ -7,8 +7,8 @@ module carven:test.internal.compiler.diagnostics.fixture;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.diagnostic;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -38,14 +38,14 @@ auto check_compiler_errors(std::span<const CompilerErrorExpectation> cases) noex
         auto sources = SourceManager();
         const auto source_id =
             *sources.append_virtual("diagnostic.cv", std::string(expectation.source));
-        const auto input = CompilationModuleInput {
+        const auto input = SourceModuleInput {
             .source_id = source_id,
             .module_path = *CanonicalModulePath::from_value("diagnostic"),
         };
 
         const auto result = compile(
             sources,
-            CompilationRequest {.modules = std::span(&input, 1)},
+            SourceBatch {.modules = std::span(&input, 1)},
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),

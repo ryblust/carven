@@ -1,9 +1,14 @@
 module carven:backend.construction.builder.impl;
 
-import :backend.construction;
 import :backend.construction.builder;
 import :backend.construction.verify;
-import :semantic.semir;
+import :backend.construction;
+import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
+import :source.provenance.ids;
 import :support.invariant;
 import std;
 

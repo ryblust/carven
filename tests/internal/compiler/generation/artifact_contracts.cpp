@@ -7,8 +7,8 @@ module carven:test.internal.compiler.generation.artifact_contracts;
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :compiler.request;
 import :diagnostics.code;
+import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -61,10 +61,10 @@ fn fail_value() -> i32 throw Failure {
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("dependencies");
     REQUIRE(path.has_value());
-    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
+    const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
@@ -89,10 +89,10 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
     REQUIRE(source.has_value());
     const auto path = CanonicalModulePath::from_value("opaque");
     REQUIRE(path.has_value());
-    const auto input = CompilationModuleInput {.source_id = *source, .module_path = *path};
+    const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
-        CompilationRequest {.modules = std::span(&input, 1)},
+        SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
