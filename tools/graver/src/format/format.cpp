@@ -529,7 +529,8 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                 } else {
                     mark_members(value.cases);
                 }
-            } else if constexpr (std::same_as<T, ASTTestDecl>) {
+            } else if constexpr (std::same_as<T, ASTTestDecl>
+                                 || std::same_as<T, ASTConstantBlock>) {
                 block_layouts[block_open(syntax.block(value.body).span)] = BlockLayout::Expanded;
             } else if constexpr (std::same_as<T, ASTFunctionDecl>) {
                 for (const auto& parameter : value.parameters) {

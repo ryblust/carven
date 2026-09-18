@@ -134,18 +134,18 @@ auto evaluate_constant_root(
     invariant_violation("constant root execution failed without a diagnostic");
 }
 
-auto evaluate_constant_test(
+auto evaluate_constant_body(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     BodyID body
 ) noexcept -> AnalysisTask<void> {
     auto context = ConstantAnalysisContext(draft, requests);
-    const auto result = (co_await execute_constant_test(draft, context, draft.body_draft(body)));
+    const auto result = (co_await execute_constant_body(draft, context, draft.body_draft(body)));
     if (!result) {
         if (const auto failure = draft.diagnostics().failure()) {
             co_return std::unexpected(*failure);
         }
-        invariant_violation("constant test execution failed without a diagnostic");
+        invariant_violation("constant body execution failed without a diagnostic");
     }
     co_return {};
 }

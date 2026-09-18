@@ -21,7 +21,7 @@ auto select_structure_initializers(
     auto result = std::vector<StructureInitializer>();
     if (const auto* positional =
             std::get_if<ASTPositionalInitializerList>(&source.initializer.value)) {
-        if (positional->values.size() != fields.size()) {
+        if (positional->values.size() > fields.size()) {
             return fail(
                 positional->span,
                 DiagnosticCode::TypeConstructArity,
@@ -32,6 +32,11 @@ auto select_structure_initializers(
             result.push_back(
                 {.declaration_index = static_cast<std::uint32_t>(index),
                  .expression = positional->values[index]}
+            );
+        }
+        for (auto index = positional->values.size(); index < fields.size(); ++index) {
+            result.push_back(
+                {.declaration_index = static_cast<std::uint32_t>(index), .expression = std::nullopt}
             );
         }
         return result;
@@ -63,21 +68,41 @@ auto select_structure_initializers(
                 {.declaration_index = static_cast<std::uint32_t>(index), .expression = field.value}
             );
         }
-        if (result.size() != fields.size()) {
-            return fail(
-                named->span,
-                DiagnosticCode::TypeConstructArity,
-                "named initializer omits one or more fields"
-            );
+        for (auto index = 0uz; index < fields.size(); ++index) {
+            if (!initialized[index]) {
+                result.push_back(
+                    {.declaration_index = static_cast<std::uint32_t>(index),
+                     .expression = std::nullopt}
+                );
+            }
         }
         return result;
     }
-    if (!fields.empty()) {
-        return fail(
-            source.type.span,
-            DiagnosticCode::TypeConstructArity,
-            "structure initializer omits required fields"
+    for (auto index = 0uz; index < fields.size(); ++index) {
+        result.push_back(
+            {.declaration_index = static_cast<std::uint32_t>(index), .expression = std::nullopt}
         );
     }
     return result;
+}
+
+auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> DefaultInitialization {
+    return query_default_initialization(
+        type,
+        [&](ConstructionTypeRef reference) noexcept -> InitializationType {
+            if (const auto* concrete = std::get_if<TypeID>(&reference)) {
+                return draft.type_copy(*concrete);
+            }
+            return draft.construction_type_copy(std::get<TypeTermID>(reference));
+        },
+        [&](StructID structure) noexcept {
+            const auto declaration = draft.construction_struct_declaration_copy(structure);
+            auto fields = std::vector<ConstructionTypeRef>();
+            for (const auto& field : declaration.fields) {
+                fields.push_back(field.type);
+            }
+            return fields;
+        }
+    );
 }

@@ -1,0 +1,18 @@
+const {
+    println("module");
+}
+
+fn work() {
+    const {
+        var value = 1;
+        const {
+            println("nested");
+        }
+        println(value);
+    }
+}
+
+const test "kept" {
+    const {}
+    check(true);
+}

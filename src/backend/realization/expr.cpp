@@ -574,7 +574,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     }
     const auto& inputs = recipe.inputs;
     recipe.operands.reserve(inputs.size());
-    const auto needs_order = unordered(value);
+    const auto suffix_begin = sequenced_suffix_begin(value);
     auto current = PendingOperation {
         .previous = pending,
         .recipe = recipe,
@@ -611,8 +611,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         // Each predecessor enters one source-ordered queue and leaves it
         // once. A later read commits effects; a later effect also commits
         // reads. Selected short-circuit paths keep their own execution.
-        if (needs_order && (has_effect(child) || has_storage_read(child))) {
-            (co_await commit_predecessors(current, has_effect(child)));
+        if (suffix_begin != 0uz && (has_effect(child) || has_storage_read(child))) {
+            (co_await commit_predecessors(current, has_effect(child), false, suffix_begin));
         }
         if (index >= current.postfix_end) {
             if (has_effect(child)) {

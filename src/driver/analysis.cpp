@@ -7,12 +7,15 @@ import :driver.input_path;
 import :source.batch;
 import :source.manager;
 import :source.text;
+import :support.timing;
 import std;
 
 auto load_and_analyze_sources(
     std::span<const std::string_view> input_paths,
-    const ExecutionOutput& output
+    const ExecutionOutput& output,
+    TimingRecorder* timings
 ) noexcept -> std::optional<SemIRProgram> {
+    auto loading = TimingScope(timings, TimingStage::SourceLoading);
     auto has_error = false;
     auto sources = SourceManager();
     auto module_inputs = std::vector<SourceModuleInput> {};
@@ -40,11 +43,13 @@ auto load_and_analyze_sources(
             .module_path = std::move(*module_path),
         });
     }
+    loading.stop();
     if (has_error) {
         return std::nullopt;
     }
 
-    auto result = analyze_compilation(sources, SourceBatch {.modules = module_inputs}, output);
+    auto result =
+        analyze_compilation(sources, SourceBatch {.modules = module_inputs}, output, timings);
     if (!result) {
         std::print(std::cerr, "{}", render_diagnostics(result.error(), sources));
         return std::nullopt;

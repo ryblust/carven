@@ -37,6 +37,101 @@ local case_specs = {
             },
         },
     },
+    ["commands/timings"] = {
+        inputs = {"input.cv"},
+        fixtures = {
+            ["../interpretation/declarations.cv"] = "declarations.cv",
+            ["../interpretation/escaped_failure.cv"] = "failure.cv",
+            ["../../diagnostics/syntax/input.cv"] = "syntax.cv",
+            ["../dump/lexical_error.cv"] = "lexical.cv",
+            ["../../diagnostics/warning/input.cv"] = "warning.cv",
+            ["../../output/state/preexisting.fixture"] = "blocked",
+        },
+        steps = {
+            {args = {"check", "input.cv"}, stdout = "compile.txt"},
+            {
+                args = {"check", "--timings", "input.cv", "--timings", "declarations.cv"}, stdout = "compile.txt",
+                stderr_ordered = {"carven: check passed in ", "Source loading", "Lexing", "Parsing", "Semantic analysis"},
+                stderr_not_contains = {"C++ generation", "Program execution"},
+            },
+            {
+                args = {"compile", "input.cv", "--timings", "-o", "emit"}, stdout = "compile.txt",
+                stderr_ordered = {"carven: compilation finished in ", "Source loading", "Lexing", "Parsing", "Semantic analysis", "C++ generation", "Artifact writing"},
+                output_files = {"emit/input.cpp"},
+            },
+            {
+                args = {"compile", "input.cv", "--stdout", "--timings"},
+                stdout_contains = {"==> input.cpp <=="},
+                stderr_ordered = {"prepared", "carven: compilation finished in ", "Artifact writing"},
+            },
+            {
+                args = {"interpret", "--timings", "--trace", "input.cv"}, stdout = "run.txt",
+                stderr_ordered = {"statement", "carven: interpretation finished in ", "Semantic analysis", "Program execution"},
+                stderr_not_contains = {"C++ generation", "Native compilation"},
+            },
+            {
+                args = {"--timings", "input.cv"}, stdout = "run.txt",
+                stderr_ordered = {"carven: run exited with code 0 in ", "Source collection", "Source loading", "Lexing", "Parsing", "Semantic analysis", "C++ generation", "Artifact writing", "Native compilation", "Program execution"},
+            },
+            {args = {"interpret", "input.cv", "--", "--timings"}, stdout = "run.txt"},
+            {args = {"input.cv", "--", "--timings"}, stdout = "run.txt"},
+            {
+                args = {"interpret", "--timings", "declarations.cv"},
+                stderr_contains = {"carven: interpretation finished (no entry point) in "},
+                stderr_not_contains = {"Program execution"},
+            },
+            {
+                args = {"check", "--timings", "missing.cv"}, exit_code = 1,
+                stderr_ordered = {"cannot read source file", "carven: check failed in ", "Source loading"},
+                stderr_not_contains = {"Lexing", "Parsing", "Semantic analysis", "passed"},
+            },
+            {
+                args = {"check", "--timings", "lexical.cv"}, exit_code = 1,
+                stderr_ordered = {"CV-", "carven: check failed in ", "Lexing"},
+                stderr_not_contains = {"Parsing", "Semantic analysis"},
+            },
+            {
+                args = {"check", "--timings", "syntax.cv"}, exit_code = 1,
+                stderr_ordered = {"CV-SYNTAX", "carven: check failed in ", "Parsing"},
+                stderr_not_contains = {"Semantic analysis"},
+            },
+            {
+                args = {"check", "--timings", "warning.cv"},
+                stderr_ordered = {"CV-LINT-UNUSED-LOCAL", "carven: check passed in "},
+            },
+            {
+                args = {"compile", "--timings", "input.cv", "-o", "blocked"}, exit_code = 1,
+                stdout = "compile.txt",
+                stderr_ordered = {"cannot create directory", "carven: compilation failed in ", "Artifact writing"},
+            },
+            {
+                args = {"interpret", "--timings", "failure.cv"}, exit_code = 1,
+                stderr_ordered = {"CV-INTERPRET-EXECUTION", "carven: interpretation failed in ", "Program execution"},
+            },
+            {
+                args = {"--timings", "failure.cv"}, exit_code = 1,
+                stderr_ordered = {"carven: run exited with code 1 in ", "Program execution"},
+            },
+        },
+    },
+    ["commands/default_initialization"] = {
+        inputs = {"input.cv"},
+        steps = {
+            {args = {"check", "input.cv"}, stdout = "compile.txt"},
+            {args = {"interpret", "input.cv"}, stdout = "run.txt"},
+            {args = {"input.cv"}, stdout = "run.txt"},
+        },
+    },
+    ["commands/constant_blocks"] = {
+        inputs = {"input.cv", "helper.cv"},
+        steps = {
+            {args = {"check", "input.cv", "helper.cv"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
+            {args = {"compile", "input.cv", "helper.cv", "-o", "emit"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
+            {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
+            {args = {"input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
+            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstantBlock", "ConstTestDeclaration"}},
+        },
+    },
     ["commands/static_execution"] = {
         inputs = {"input.cv"},
         steps = {

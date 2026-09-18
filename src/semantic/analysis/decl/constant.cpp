@@ -74,7 +74,10 @@ auto DeclResolver::resolve_module_constant(
     }
     const auto constant = *result;
     const auto& fact = draft.constant(constant);
-    const auto selected = declared_type.value_or(ConstructionTypeRef {fact.type});
+    // Clang 23 can miscompile value_or with a fallback temporary in a coroutine,
+    // retaining its resume-stack address across suspension. Keep this explicit
+    // selection instead of value_or.
+    const auto selected = declared_type ? *declared_type : ConstructionTypeRef {fact.type};
     auto value_type = require_source_value_type(
         draft,
         selected,

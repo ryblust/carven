@@ -40,6 +40,7 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
         [](const auto& value) static noexcept -> std::optional<std::string_view> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, SemCallable>
+                          || std::same_as<Value, SemDefault>
                           || std::same_as<Value, SemConstant>
                           || std::same_as<Value, SemBinding>
                           || std::same_as<Value, SemStruct>

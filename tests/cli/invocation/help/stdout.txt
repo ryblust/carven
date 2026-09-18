@@ -1,7 +1,7 @@
 Carven compiler and runner
 
 Usage:
-  carven <source-file>... [-- <arguments>...]
+  carven [options] <source-file>... [-- <arguments>...]
   carven <command> [options] <source-file>...
 
 Commands:
@@ -11,6 +11,7 @@ Commands:
   dump         Inspect tokens or the syntax tree
 
 Options:
+      --timings    Show total and stage timings on stderr
   -h, --help       Show this help
   -V, --version    Show the version
 

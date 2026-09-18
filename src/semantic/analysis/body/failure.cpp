@@ -406,8 +406,10 @@ auto BodyElaborator::build_try(
     }
     draft().add_failure_contribution(outer_failure.term, incoming_failures);
     reachable = normal;
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
-        result_type.value_or(draft().builtin_type(BuiltinType::Void)),
+        result_type ? *result_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
         SemTry {
             UniqueIndirect(std::move(*protected_body)),
             BodyFailures(protected_failures),

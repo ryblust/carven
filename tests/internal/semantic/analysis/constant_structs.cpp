@@ -79,7 +79,8 @@ TEST_CASE("Constant structs: source field errors and nominal mismatches retain t
     };
 
     const auto cases = std::to_array<Scenario>({
-        {"struct Entry { value: i32 } const value = Entry {};", DiagnosticCode::TypeConstructArity},
+        {"enum Choice { Item } struct Entry { value: Choice } const value = Entry {};",
+         DiagnosticCode::TypeDefaultInitialization},
         {"struct Entry { value: i32 } const value = Entry { extra: 1 };",
          DiagnosticCode::TypeConstructUnknownField},
         {"struct Entry { value: i32 } const value = Entry { value: 1, value: 2 };",

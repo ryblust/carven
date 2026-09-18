@@ -15,6 +15,7 @@ Test options:
                             (default: no runtime test artifacts)
 
 Options:
+      --timings             Show total and stage timings on stderr
   -h, --help                Show this help
 
 Imports resolve among the supplied sources. C++ compilation and linking

@@ -299,6 +299,21 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
             .value = std::move(definition),
         });
     }
+    if (is_bare
+        && !cpp_export
+        && !cpp_import
+        && check(TokenKind::Const)
+        && check_next(TokenKind::LeftBrace)) {
+        const auto keyword = consume();
+        const auto body = parse_ordinary_block();
+        if (!body) {
+            return std::nullopt;
+        }
+        return builder.append_item({
+            .span = join(start, builder.block(*body).span),
+            .value = ASTConstantBlock {.keyword_span = keyword.span, .body = *body},
+        });
+    }
     if (check(TokenKind::Const)) {
         auto parsed = parse_constant(visibility);
         if (!parsed) {

@@ -2,7 +2,9 @@ module carven:semantic.analysis.validation.operations.impl;
 
 import :semantic.analysis.validation.context;
 import :semantic.format;
+import :semantic.semir.constant_access;
 import :semantic.semir.format;
+import :semantic.semir.initialization;
 import :support.utf8;
 import std;
 
@@ -87,6 +89,13 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
     }
     source.value.visit(
         Overloaded {
+            [&](const SemDefault&) noexcept {
+                const auto types = PublishedConstantValues(program);
+                if (default_initialization(types, source.type.resolved())
+                    == DefaultInitialization::Unavailable) {
+                    invariant_violation("default initialization requires a defaultable type");
+                }
+            },
             [&](const SemConstant& value) noexcept {
                 if (program.constants().constant(value.constant).type != source.type.resolved()) {
                     invariant_violation("constant expression type mismatch");

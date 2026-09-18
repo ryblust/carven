@@ -304,7 +304,12 @@ auto validate_publication_topology(
             "body was assigned to more than one declaration"
         );
     }
-    require_complete(body_claims, "published body had no callable or test declaration");
+    for (const auto [id, body] : bodies.entries()) {
+        if (body.kind() == BodyKind::ConstantBlock) {
+            claim_once(body_claims, id.index(), "constant block was assigned to a declaration");
+        }
+    }
+    require_complete(body_claims, "published body had no callable, test, or constant-block owner");
 }
 
 auto validate_publication_facts(

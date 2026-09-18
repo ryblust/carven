@@ -7,9 +7,11 @@ import :backend.generation.request;
 import :driver.analysis;
 import :driver.compile;
 import :driver.options;
+import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :support.invariant;
+import :support.timing;
 import :support.visit;
 import std;
 
@@ -81,6 +83,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             "                            (default: no runtime test artifacts)\n"
             "\n"
             "Options:\n"
+            "      --timings             Show total and stage timings on stderr\n"
             "  -h, --help                Show this help\n"
             "\n"
             "Imports resolve among the supplied sources. C++ compilation and linking\n"
@@ -95,6 +98,7 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         return 1;
     }
 
+    auto timings = CommandTimings(request->timings, "compilation");
     auto linkage_domain = resolve_linkage_domain(*request);
     if (!linkage_domain.has_value()) {
         std::println(std::cerr, "carven: error: {}", linkage_domain.error());
@@ -107,11 +111,13 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             const auto to_error = stream == ExecutionOutputStream::Error
                 || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
             std::print(to_error ? std::cerr : std::cout, "{}", bytes);
-        }
+        },
+        timings.recorder()
     );
     if (!semantic) {
         return 1;
     }
+    auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
@@ -120,6 +126,8 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         }
     );
 
+    generation.stop();
+    auto writing = TimingScope(timings.recorder(), TimingStage::ArtifactWriting);
     const auto written = request->destination.visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {
@@ -132,9 +140,11 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             },
         }
     );
+    writing.stop();
     if (!written) {
         std::println(std::cerr, "carven: error: {}", written.error());
         return 1;
     }
+    timings.set_outcome("finished");
     return 0;
 }

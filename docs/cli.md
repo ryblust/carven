@@ -7,10 +7,10 @@ document defines invocation, input paths, output writes, and process behavior.
 ## Invocation
 
 ```text
-carven <source-file>... [-- <arguments>...]
+carven [--timings] <source-file>... [-- <arguments>...]
 carven compile [options...] <source-file>...
-carven check <source-file>...
-carven interpret [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
+carven check [--timings] <source-file>...
+carven interpret [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump tokens <source-file>
 carven dump ast <source-file>
 ```
@@ -33,8 +33,8 @@ are not recursively followed.
 Carven analyzes all collected modules, generates C++, compiles and links a native
 program, then executes it. The batch must have one entry point. Native header
 lookup includes the generated directory, both Crafts include roots, and the
-working directory. Arguments before `--` are source paths; arguments after it
-are passed unchanged to the program. Artifact and test-emission options belong
+working directory. Before `--`, arguments are source paths or `--timings`;
+arguments after it are passed unchanged to the program. Artifact and test-emission options belong
 to `compile`.
 
 `CXX` selects one compiler executable name or path, defaulting to `clang++`.
@@ -54,6 +54,34 @@ removed when the driver returns after execution or a handled failure. Carven
 returns the native compiler's failure status or the program's exit status. On
 POSIX, termination by signal yields `128 + signal`.
 
+## Timing reports
+
+`--timings` enables a human-readable report on standard error for `check`,
+`compile`, `interpret`, and direct native execution:
+
+```shell
+carven check --timings main.cv
+carven compile --timings main.cv -o emit
+carven interpret --timings main.cv
+carven --timings main.cv -- argument
+```
+
+The report shows the outcome, total wall-clock duration, and the stages executed,
+with aligned durations in milliseconds or seconds. Lexing and parsing accumulate
+across sources. Semantic analysis includes constant evaluation and static tests.
+Native runs also report source collection, C++ compilation and linking, and
+program execution; `compile` ends with C++ artifact output.
+
+Total time includes pipeline setup, diagnostics and command-resource cleanup, so
+it can exceed the sum of stage durations. Failed commands report the stages
+attempted. Native runs report the program's exit code. Invalid command options
+produce diagnostics without a timing report.
+
+Timing reports use stderr and leave program and artifact streams intact.
+`interpret --trace --timings` includes both execution traces and the final report.
+For interpretation and native runs, `--` ends command-option parsing. Reports
+are intended for human reading.
+
 ## Checking
 
 `check` analyzes the explicit source batch through the same pipeline as `compile`,
@@ -65,7 +93,7 @@ The command completes after semantic analysis and produces no artifacts. Native
 overload resolution, template instantiation, and native type properties are
 checked by the C++ compiler.
 
-`check` requires at least one source file. Its only options are standalone
+`check` requires at least one source file. It accepts `--timings` and standalone
 `--help` and `-h`. Invocation, input, and analysis errors return status 1;
 success returns 0, including when warnings are reported.
 

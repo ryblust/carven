@@ -66,7 +66,8 @@ auto BodyBuilder::make_expression(
                 }
             },
             [&]<typename Operation>(const Operation& node) noexcept
-                requires std::same_as<Operation, SemConstant>
+                requires std::same_as<Operation, SemDefault>
+                             || std::same_as<Operation, SemConstant>
                              || std::same_as<Operation, SemBinding>
                              || std::same_as<Operation, SemCallable>
                              || std::same_as<Operation, SemEnumConstructor>

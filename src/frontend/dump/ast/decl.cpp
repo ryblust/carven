@@ -390,6 +390,16 @@ auto ASTDumper::render_top_level_item(
                 }
                 render_expression(declaration.initializer, nested_prefix, true, "initializer ");
             },
+            [&](const ASTConstantBlock& block) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("ConstantBlock {}", format_dump_span(item.span))
+                );
+                const auto nested_prefix = child_prefix(prefix, is_last);
+                render_span_field(nested_prefix, false, "keyword", block.keyword_span);
+                render_ordinary_block(block.body, nested_prefix, true, "body ");
+            },
             [&](const ASTTestDecl& declaration) noexcept {
                 append_line(
                     prefix,

@@ -10,9 +10,16 @@ local function compare_output(failures, label, actual, expected)
     end
 end
 
-local function check_stream(failures, label, actual, exact, contains, ordered)
+local function sorted_lines(value)
+    local lines = value:split("\n", {plain = true, strict = true})
+    table.sort(lines)
+    return table.concat(lines, "\n")
+end
+
+local function check_stream(failures, label, actual, exact, contains, ordered, unordered)
     if exact ~= nil then
-        compare_output(failures, label, actual, exact)
+        compare_output(failures, label, unordered and sorted_lines(actual) or actual,
+            unordered and sorted_lines(exact) or exact)
     elseif not contains and not ordered then
         compare_output(failures, label, actual, "")
     end
@@ -113,9 +120,14 @@ function main(target, opt, case_specs)
             return filename and normalize_newlines(io.readfile(case_path(filename))) or nil
         end
         check_stream(failures, prefix .. "stdout", stdout, expected_output(step.stdout),
-            step.stdout_contains, step.stdout_ordered)
+            step.stdout_contains, step.stdout_ordered, step.stdout_unordered)
         check_stream(failures, prefix .. "stderr", stderr, expected_output(step.stderr),
-            step.stderr_contains)
+            step.stderr_contains, step.stderr_ordered)
+        for _, fragment in ipairs(step.stderr_not_contains or {}) do
+            if stderr:find(fragment, 1, true) then
+                table.insert(failures, prefix .. "stderr unexpectedly contains: " .. fragment)
+            end
+        end
         for _, filename in ipairs(step.output_files or {}) do
             if not os.isfile(path.join(work_dir, filename)) then
                 table.insert(failures, prefix .. "missing output file: " .. filename)

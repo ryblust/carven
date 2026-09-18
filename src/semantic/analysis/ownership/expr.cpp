@@ -237,6 +237,9 @@ auto OwnershipBodyAnalyzer::expression(
         };
         (co_await source.value.visit(
             Overloaded {
+                [](const SemDefault&) static noexcept -> ContinuationTask<std::monostate> {
+                    co_return {};
+                },
                 [](const SemConstant&) static noexcept -> ContinuationTask<std::monostate> {
                     co_return {};
                 },

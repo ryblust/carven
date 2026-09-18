@@ -45,6 +45,8 @@ struct SemanticRegion;
 using OwnedSemanticExpression = UniqueIndirect<SemanticExpression>;
 using OwnedSemanticRegion = UniqueIndirect<SemanticRegion>;
 
+struct SemDefault final {};
+
 struct SemConstant final {
     ConstantID constant;
 };
@@ -239,6 +241,7 @@ struct SemanticExpression final {
     bool exits_test;
     SemanticValueCategory category;
     std::variant<
+        SemDefault,
         SemConstant,
         SemBinding,
         SemCallable,

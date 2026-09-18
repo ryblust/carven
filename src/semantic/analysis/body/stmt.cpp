@@ -104,7 +104,9 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     if (!value.has_value()) {
         co_return std::unexpected(value.error());
     }
-    const auto binding_type = declared.value_or(value->type.construction());
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
+    const auto binding_type = declared ? *declared : value->type.construction();
     const auto name = named == nullptr ? std::string("_") : spelling(named->name_span);
     const auto writable = source.kind == ASTBindingKind::Var;
     const auto storage = body_builder.add_owner_binding(

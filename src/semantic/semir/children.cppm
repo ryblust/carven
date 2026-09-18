@@ -18,7 +18,8 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
         const auto child = [&](auto& value) noexcept {
             std::invoke(visitor, value);
         };
-        if constexpr (std::same_as<std::remove_const_t<Operation>, SemConstant>) {
+        if constexpr (std::same_as<std::remove_const_t<Operation>, SemDefault>
+                      || std::same_as<std::remove_const_t<Operation>, SemConstant>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemBinding>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCallable>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemEnumConstructor>) {

@@ -185,7 +185,7 @@ auto validate_constant_function(
     return ConstantBodyAdmission(draft, function, body).run();
 }
 
-auto validate_constant_test(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
+auto validate_constant_body(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
     -> AnalysisResult<void> {
     return ConstantBodyAdmission(draft, std::nullopt, body).run();
 }

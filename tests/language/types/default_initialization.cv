@@ -1,0 +1,91 @@
+struct Defaults {
+    number: i32,
+    flag: bool,
+    character: char,
+    small: f32,
+    large: f64,
+    text: String,
+    view: str,
+}
+
+struct Nested {
+    inner: Defaults,
+    values: [i32; 3],
+    labels: [String; 2],
+    pointer: ptr<i32>,
+    slice: [i32],
+    interval: range<i32>,
+}
+
+enum Choice {
+    Item,
+    Other
+}
+
+struct Selected {
+    choice: Choice,
+    count: i32
+}
+
+struct EmptyChoices {
+    values: [Choice; 0]
+}
+
+const fn constant_total() -> i32 {
+    var record = Defaults {};
+    record.text.append("hello");
+    let array = EmptyChoices {};
+    var count = 0;
+    for _ in array.values {
+        ++count;
+    }
+    return record.number + count + record.text.len() as i32;
+}
+
+const total = constant_total();
+
+const test "Defaults: scalar and owning defaults execute in constant contexts" {
+    check(total == 5);
+    const zero = i32 {};
+    const empty = str {};
+    let owned = String {};
+    check(owned.is_empty());
+    check(zero == 0);
+    check(empty.is_empty());
+    let values = Defaults { number: 7 };
+    check(values.number == 7);
+    check(values.text.is_empty());
+    check(values.view.is_empty());
+    check(values.character == '\0');
+    check(!values.flag);
+    check(values.small == 0.0f32);
+    check(values.large == 0.0f64);
+}
+
+test "Defaults: nested aggregates retain independent initialized storage" {
+    var value = Nested {};
+    check(value.inner.number == 0);
+    check(value.inner.text.is_empty());
+    check(value.values == [0, 0, 0]);
+    check(value.pointer == nullptr);
+    check(value.slice.is_empty());
+    var count = 0;
+    for _ in value.interval {
+        ++count;
+    }
+    check(count == 0);
+    value.labels[0].append("first");
+    check(value.labels[0].as_str() == "first");
+    check(value.labels[1].is_empty());
+    value.values[1] = 9;
+    check(value.values == [0, 9, 0]);
+    let named = Defaults {
+        flag: true,
+        number: 8
+    };
+    let positional = Defaults { 8, true };
+    check(named == positional);
+    let chosen = Selected { choice: Choice::Other };
+    check(chosen.choice == .Other);
+    check(chosen.count == 0);
+}

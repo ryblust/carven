@@ -145,6 +145,11 @@ struct ASTConstantDecl final {
     ASTExprID initializer;
 };
 
+struct ASTConstantBlock final {
+    Span keyword_span;
+    ASTBlockID body;
+};
+
 struct ASTTestDecl final {
     bool is_const;
     Span keyword_span;
@@ -155,5 +160,12 @@ struct ASTTestDecl final {
 
 struct ASTItem final {
     Span span;
-    std::variant<ASTEnumDecl, ASTStructDecl, ASTFunctionDecl, ASTConstantDecl, ASTTestDecl> value;
+    std::variant<
+        ASTEnumDecl,
+        ASTStructDecl,
+        ASTFunctionDecl,
+        ASTConstantDecl,
+        ASTConstantBlock,
+        ASTTestDecl>
+        value;
 };

@@ -77,14 +77,14 @@ auto execute_constant_root(
     co_return finish_execution(context, (co_await executor.evaluate_root(expression)));
 }
 
-auto execute_constant_test(
+auto execute_constant_body(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const StructuredBodyDraft& body,
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<void> {
     auto executor = SemanticExecutor(values, context, limits);
-    co_return finish_execution(context, (co_await executor.evaluate_test(body)));
+    co_return finish_execution(context, (co_await executor.evaluate_body(body)));
 }
 
 auto execute_function(

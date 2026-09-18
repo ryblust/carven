@@ -1,0 +1,34 @@
+Foo {
+    a: 0,
+    b: "",
+}
+Values {
+    items: [
+        Foo {
+            a: 0,
+            b: "",
+        },
+        Foo {
+            a: 0,
+            b: "",
+        },
+    ],
+    enabled: true,
+}
+Foo {
+    a: 0,
+    b: "",
+}
+Values {
+    items: [
+        Foo {
+            a: 0,
+            b: "",
+        },
+        Foo {
+            a: 0,
+            b: "",
+        },
+    ],
+    enabled: true,
+}

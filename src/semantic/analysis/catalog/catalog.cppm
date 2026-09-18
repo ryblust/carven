@@ -65,8 +65,15 @@ struct CatalogTestForm final {
     TestID test;
 };
 
-using CatalogModuleItemForm =
-    std::variant<FunctionID, StructID, EnumID, ModuleConstantID, CatalogTestForm>;
+struct CatalogConstantBlockForm final {};
+
+using CatalogModuleItemForm = std::variant<
+    FunctionID,
+    StructID,
+    EnumID,
+    ModuleConstantID,
+    CatalogTestForm,
+    CatalogConstantBlockForm>;
 
 struct CatalogModuleItem final {
     ASTItemID item_id;

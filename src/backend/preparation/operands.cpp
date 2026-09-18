@@ -35,6 +35,7 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
     };
     source.value.visit(
         Overloaded {
+            [](const SemDefault&) static noexcept {},
             [](const SemConstant&) static noexcept {},
             [](const SemBinding&) static noexcept {},
             [](const SemCallable&) static noexcept {},

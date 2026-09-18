@@ -178,6 +178,14 @@ auto BodyElaborator::lambda_expression(
                 std::format("'{}' is not a runtime local that can be captured", name)
             ));
         }
+        if (const auto* storage = std::get_if<BoundStorage>(&local->storage);
+            storage != nullptr && storage->binding.owner() != active_builder().identity()) {
+            co_return std::unexpected(fail(
+                capture.name_span,
+                DiagnosticCode::ConstAdmission,
+                "constant block cannot capture a value from an enclosing execution frame"
+            ));
+        }
         if (type_contains_callable_view(draft(), local->type)) {
             co_return std::unexpected(fail(
                 capture.name_span,
@@ -241,29 +249,9 @@ auto BodyElaborator::lambda_expression(
         true,
         false
     );
-    auto inherited_constants = std::vector<std::string>();
-    auto inherited_names = std::flat_set<std::string, std::less<>>();
-    for (auto frame = frames.rbegin(); frame != frames.rend(); ++frame) {
-        for (const auto& [name, local] : frame->names) {
-            if (!inherited_names.insert(name).second) {
-                continue;
-            }
-            const auto* constant = std::get_if<ConstantID>(&local.storage);
-            if (constant == nullptr) {
-                continue;
-            }
-            child.frames.front().names.emplace(
-                name,
-                BodyLocalStorage {
-                    .storage = *constant,
-                    .type = local.type,
-                    .used = false,
-                    .takeable = false,
-                    .role = BodyLocalRole::Local,
-                    .unused_candidate = std::nullopt,
-                }
-            );
-            inherited_constants.push_back(name);
+    for (const auto& [name, local] : visible_locals()) {
+        if (std::holds_alternative<ConstantID>(local.storage)) {
+            child.inherited_locals.emplace(name, local);
         }
     }
     for (const auto& capture : captures) {
@@ -281,15 +269,6 @@ auto BodyElaborator::lambda_expression(
     auto child_body = (co_await child.run(source.body));
     if (!child_body.has_value()) {
         co_return std::unexpected(child_body.error());
-    }
-    for (const auto& name : inherited_constants) {
-        if (!child.local_was_used(name)) {
-            continue;
-        }
-        const auto* local = use_local(name);
-        if (local == nullptr || !std::holds_alternative<ConstantID>(local->storage)) {
-            invariant_violation("inherited lambda constant no longer names its source");
-        }
     }
     const auto resolved_result = child.inferred_result_type();
     if (expected_view.has_value() && !compatible(resolved_result, expected_view->result)) {

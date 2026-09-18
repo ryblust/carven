@@ -4,6 +4,7 @@ import :diagnostics.builder;
 import :diagnostics.report;
 import :driver.analysis;
 import :driver.interpret;
+import :driver.timings;
 import :interpreter.execute;
 import :semantic.evaluation.execution;
 import :semantic.semir.decl;
@@ -11,6 +12,7 @@ import :source.manager;
 import :source.provenance;
 import :source.text;
 import :support.invariant;
+import :support.timing;
 import std;
 
 namespace {
@@ -62,6 +64,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
             "  carven interpret [options] <source-file>... [-- <arguments>...]\n"
             "\n"
             "Options:\n"
+            "      --timings        Show total and stage timings on stderr\n"
             "      --trace          Show executed statements, calls, and returns on stderr\n"
             "      --max-steps <n>  Set the execution step budget (default: 100000)\n"
             "  -h, --help           Show this help\n"
@@ -74,6 +77,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
     }
     auto paths = std::vector<std::string_view>();
     auto trace = false;
+    auto show_timings = false;
     auto limits = constant_execution_limits();
     auto seen_steps = false;
     for (auto index = 0uz; index < args.size(); ++index) {
@@ -82,7 +86,9 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
             // A no-argument main ignores process arguments, as in native execution.
             break;
         }
-        if (arg == "--trace") {
+        if (arg == "--timings") {
+            show_timings = true;
+        } else if (arg == "--trace") {
             if (trace) {
                 return fail("--trace may be specified only once");
             }
@@ -109,11 +115,12 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
     if (paths.empty()) {
         return fail("interpret requires at least one source file");
     }
+    auto timings = CommandTimings(show_timings, "interpretation");
     const auto output =
         ExecutionOutput([](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         });
-    const auto program = load_and_analyze_sources(paths, output);
+    const auto program = load_and_analyze_sources(paths, output, timings.recorder());
     if (!program) {
         return 1;
     }
@@ -124,6 +131,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
         }
     }
     if (!entry) {
+        timings.set_outcome("finished (no entry point)");
         return 0;
     }
     auto options = InterpreterOptions {.limits = limits, .trace = {}};
@@ -150,10 +158,13 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
             );
         };
     }
+    auto execution = TimingScope(timings.recorder(), TimingStage::ProgramExecution);
     const auto result = interpret(*program, *entry, output, options);
+    execution.stop();
     if (!result) {
         report_execution_error(*program, result.error());
         return 1;
     }
+    timings.set_outcome("finished");
     return 0;
 }

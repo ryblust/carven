@@ -31,6 +31,9 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
             [](const ASTConstantDecl& value) static noexcept -> std::optional<Span> {
                 return value.name_span;
             },
+            [](const ASTConstantBlock&) static noexcept -> std::optional<Span> {
+                return std::nullopt;
+            },
             [](const ASTTestDecl&) static noexcept -> std::optional<Span> { return std::nullopt; },
         }
     );
@@ -70,6 +73,7 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
                 return semantic_visibility(value.visibility);
             },
             [](const ASTTestDecl&) static noexcept { return DeclarationVisibility::Module; },
+            [](const ASTConstantBlock&) static noexcept { return DeclarationVisibility::Module; },
         }
     );
 }
@@ -420,6 +424,12 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             }
             const auto name_span = declaration_name(item);
             if (!name_span.has_value()) {
+                if (std::holds_alternative<ASTConstantBlock>(item.value)) {
+                    catalog_module.items.push_back({
+                        .item_id = item_id,
+                        .form = CatalogConstantBlockForm {},
+                    });
+                }
                 if (std::holds_alternative<ASTTestDecl>(item.value)) {
                     catalog_module.items.push_back({
                         .item_id = item_id,
@@ -497,6 +507,9 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                         }
                         result.module_constant_symbols.push_back(symbol_id);
                         return CatalogConstantForm {.constant = constant};
+                    },
+                    [](const ASTConstantBlock&) static noexcept -> CatalogSymbolForm {
+                        invariant_violation("constant block has no symbol form");
                     },
                     [](const ASTTestDecl&) static noexcept -> CatalogSymbolForm {
                         invariant_violation("catalog declaration item has no symbol form");

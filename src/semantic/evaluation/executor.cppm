@@ -42,7 +42,7 @@ public:
         SemanticExecutionContext& context,
         ExecutionLimits limits
     ) noexcept;
-    auto evaluate_test(const StructuredBodyDraft& body) noexcept -> ExecutionTask<void>;
+    auto evaluate_body(const StructuredBodyDraft& body) noexcept -> ExecutionTask<void>;
     auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto invoke(
         FunctionID function,
@@ -51,6 +51,8 @@ public:
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
 private:
+    auto default_value(TypeID type, ProgramOriginID origin) noexcept
+        -> ExecutionTask<ExecutionValue>;
     auto fail(ProgramOriginID origin, DiagnosticCode code, std::string message) noexcept
         -> ExecutionFailure;
     auto step(ProgramOriginID origin) noexcept -> ExecutionResult<void>;

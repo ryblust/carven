@@ -215,9 +215,9 @@ throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
 
 CLI execution cases cover the shared top-level language surface, analysis-time
-output and static tests, native argument forwarding, interpreter admission,
-source traces, runtime arithmetic, and resource failures. Interpreter acceptance
-uses expected program results; compiled execution also exercises generated C++.
+output, constant blocks and static tests, native argument forwarding, interpreter
+admission, source traces, runtime arithmetic, and resource failures. Interpreter
+acceptance uses expected program results; compiled execution also exercises generated C++.
 
 ## Graver
 

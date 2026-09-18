@@ -16,6 +16,7 @@ enum class BodyKind {
     Function,
     Closure,
     Test,
+    ConstantBlock,
 };
 
 enum class LifetimeRegionKind {

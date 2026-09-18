@@ -73,9 +73,9 @@ auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noe
 
 auto BodyContractVerifier::body_callable() const noexcept -> std::optional<CallableID> {
     const auto callable = program.declarations().callable_for_body(body.id());
-    if (body.kind() == BodyKind::Test) {
+    if (body.kind() == BodyKind::Test || body.kind() == BodyKind::ConstantBlock) {
         if (callable.has_value()) {
-            invariant_violation("test body is owned by a callable declaration");
+            invariant_violation("independent body is owned by a callable declaration");
         }
         return std::nullopt;
     }
@@ -89,7 +89,7 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
     const auto callable = body_callable();
     if (!callable.has_value()) {
         if (!body.inputs().parameters.empty() || !body.inputs().captures.empty()) {
-            invariant_violation("test body has language parameters or captures");
+            invariant_violation("independent body has language parameters or captures");
         }
         return;
     }
@@ -122,6 +122,10 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
 
 auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const noexcept -> void {
     const auto callable = body_callable();
+    if (body.kind() == BodyKind::ConstantBlock) {
+        static_cast<void>(require_failure_set(failures));
+        return;
+    }
     if (!callable.has_value()) {
         invariant_violation("test body exposes a failure contract");
     }

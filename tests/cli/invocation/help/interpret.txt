@@ -4,6 +4,7 @@ Usage:
   carven interpret [options] <source-file>... [-- <arguments>...]
 
 Options:
+      --timings        Show total and stage timings on stderr
       --trace          Show executed statements, calls, and returns on stderr
       --max-steps <n>  Set the execution step budget (default: 100000)
   -h, --help           Show this help

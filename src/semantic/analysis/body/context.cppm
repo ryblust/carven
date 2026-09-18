@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.context;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.diagnostic;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
@@ -23,6 +24,7 @@ import :semantic.evaluation.operation;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :source.text;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -43,9 +45,11 @@ struct BodyLocalStorage final {
     std::optional<Span> unused_candidate;
 };
 
+using BodyLocalNames = std::flat_map<std::string, BodyLocalStorage, std::less<>>;
+
 struct BodyLocalFrame final {
     LifetimeRegionID lifetime;
-    std::flat_map<std::string, BodyLocalStorage, std::less<>> names;
+    BodyLocalNames names;
 };
 
 using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
@@ -222,6 +226,7 @@ class BodyBatchElaborator;
 
 class BodyElaborator final {
     friend class BodyExprSite;
+    friend class BodyBatchElaborator;
 
 public:
     BodyElaborator(
@@ -322,7 +327,8 @@ private:
     ) noexcept -> AnalysisTask<BuiltExpression>;
     auto push_frame(Span span) noexcept -> void;
     auto pop_frame(bool diagnose = true) noexcept -> void;
-    auto diagnose_unused(const BodyLocalFrame& frame) noexcept -> void;
+    auto collect_unused_locals(const BodyLocalFrame& frame) noexcept -> void;
+    auto visible_locals() const noexcept -> BodyLocalNames;
     auto bind_local(Span name, BodyLocalStorage storage, DiagnosticCode duplicate_code) noexcept
         -> AnalysisResult<void>;
     auto find_local(std::string_view name) const noexcept -> const BodyLocalStorage*;
@@ -518,6 +524,7 @@ private:
         std::optional<DiagnosticCode> mismatch_code = std::nullopt
     ) noexcept -> AnalysisTask<BuiltCallArgument>;
 
+    BodyLocalNames inherited_locals;
     BodyBatchElaborator* batch;
     ProgramModuleID source_module_id;
     ModuleID semantic_module_id;
@@ -541,6 +548,8 @@ private:
 };
 
 class BodyBatchElaborator final {
+    friend class BodyElaborator;
+
 public:
     BodyBatchElaborator(
         ProgramDraft& builder,
@@ -549,6 +558,11 @@ public:
         ConstructionRequests& requests
     ) noexcept;
     auto run() noexcept -> AnalysisTask<void>;
+    auto defer_constant_block(
+        ProgramModuleID module,
+        const ASTConstantBlock& source,
+        BodyLocalNames locals = {}
+    ) noexcept -> void;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
@@ -560,6 +574,14 @@ public:
     ConstructionRequests& requests;
 
 private:
+    struct PendingConstantBlock final {
+        ProgramModuleID module;
+        ASTConstantBlock syntax;
+        BodyLocalNames locals;
+    };
+
+    auto build_constant_block(PendingConstantBlock source) noexcept -> AnalysisTask<void>;
+
     struct Unvisited final {};
 
     struct Analyzing final {};
@@ -577,4 +599,8 @@ private:
     std::vector<State> states;
     std::vector<std::optional<BodyID>> body_ids;
     std::vector<FunctionID> active_path;
+    std::vector<BodyID> constant_roots;
+    std::vector<PendingConstantBlock> constant_blocks;
+    std::map<std::pair<SourceID, Span>, Diagnostic> unused_locals;
+    std::set<std::pair<SourceID, Span>> used_locals;
 };

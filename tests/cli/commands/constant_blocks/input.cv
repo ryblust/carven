@@ -1,0 +1,24 @@
+import .helper using announce;
+
+const {
+    announce();
+    println("module");
+}
+
+fn work() {
+    const label = "local";
+    const {
+        println(label);
+    }
+    println("runtime");
+}
+
+fn main() {
+    work();
+    work();
+}
+
+const test "unchanged" {
+    check(true);
+    println("test");
+}

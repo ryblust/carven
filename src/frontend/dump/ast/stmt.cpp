@@ -126,6 +126,16 @@ auto ASTDumper::render_statement(
     const auto& statement = ast.statement(statement_id);
     statement.value.visit(
         Overloaded {
+            [&](const ASTConstantBlock& block) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("ConstantBlock {}", format_dump_span(statement.span))
+                );
+                const auto nested_prefix = child_prefix(prefix, is_last);
+                render_span_field(nested_prefix, false, "keyword", block.keyword_span);
+                render_ordinary_block(block.body, nested_prefix, true, "body ");
+            },
             [&](const ASTVariableDecl& declaration) noexcept {
                 render_variable_declaration(declaration, prefix, is_last, statement.span);
             },

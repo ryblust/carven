@@ -103,6 +103,7 @@ struct ASTForStmt final {
 struct ASTStmt final {
     Span span;
     std::variant<
+        ASTConstantBlock,
         ASTVariableDecl,
         ASTAssignment,
         ASTUpdate,

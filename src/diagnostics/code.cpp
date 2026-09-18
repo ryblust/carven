@@ -177,6 +177,10 @@ namespace {
       "Non-owning callable view escapes its invocation lifetime.")                                 \
     X(TypeCast, "CV-TYPE-CAST", Error, "Invalid explicit conversion.")                             \
     X(TypeConditionBool, "CV-TYPE-CONDITION-BOOL", Error, "Boolean condition required.")           \
+    X(TypeDefaultInitialization,                                                                   \
+      "CV-TYPE-DEFAULT-INITIALIZATION",                                                            \
+      Error,                                                                                       \
+      "Type has no default value.")                                                                \
     X(TypeConstructArity, "CV-TYPE-CONSTRUCT-ARITY", Error, "Invalid construction arity.")         \
     X(TypeConstructDuplicateField,                                                                 \
       "CV-TYPE-CONSTRUCT-DUPLICATE-FIELD",                                                         \

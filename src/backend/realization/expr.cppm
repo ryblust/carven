@@ -110,7 +110,8 @@ private:
     auto commit_predecessors(
         PendingOperation& operation,
         bool include_reads,
-        bool prefix_ready = false
+        bool prefix_ready = false,
+        std::size_t before = std::numeric_limits<std::size_t>::max()
     ) noexcept -> ContinuationTask<std::monostate>;
     auto flush_pending(PendingOperation* operation) noexcept -> ContinuationTask<std::monostate>;
     auto build(
@@ -127,7 +128,7 @@ private:
         const PreparedWriterFormat& preparation,
         std::optional<TargetIdentifier> output
     ) noexcept -> ContinuationTask<std::monostate>;
-    auto unordered(const PreparedOperation& value) const noexcept -> bool;
+    auto sequenced_suffix_begin(const PreparedOperation& value) const noexcept -> std::size_t;
     auto first_unsequenced(const PreparedOperation& value) const noexcept -> std::size_t;
     auto preserve_borrows(Recipe& recipe) noexcept -> ContinuationTask<std::monostate>;
     auto raw(

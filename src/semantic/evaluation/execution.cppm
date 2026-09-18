@@ -103,7 +103,7 @@ auto execute_constant_root(
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<ExecutionValue>;
 
-auto execute_constant_test(
+auto execute_constant_body(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const StructuredBodyDraft& body,

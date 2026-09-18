@@ -265,3 +265,20 @@ TEST_CASE("Parser: ranges require value endpoints and a closed upper bound") {
         check_invalid(source);
     }
 }
+
+TEST_CASE("Parser: constant blocks compose with constants functions tests and nested statements") {
+    const auto tree = parse_valid(R"(
+        const { const { println("nested"); } }
+        const answer = 42;
+        const fn compute() -> i32 { const {} return answer; }
+        const test "answer" { const {} check(compute() == answer); }
+    )");
+    const auto ast = tree.view();
+    REQUIRE(root(tree).items.size() == 4uz);
+    const auto& block = get<ASTConstantBlock>(item(tree, 0));
+    REQUIRE(ast.block(block.body).statements.size() == 1uz);
+    CHECK(is<ASTConstantBlock>(ast.statement(ast.block(block.body).statements.front())));
+    CHECK(is<ASTConstantDecl>(item(tree, 1)));
+    CHECK(get<ASTFunctionDecl>(item(tree, 2)).const_span.has_value());
+    CHECK(get<ASTTestDecl>(item(tree, 3)).is_const);
+}

@@ -13,6 +13,7 @@ This document defines the validity and observable behavior of Carven programs.
 - [Values and constants](#values-and-constants)
   - [Module constants](#module-constants)
   - [Constant expressions](#constant-expressions)
+  - [Constant blocks](#constant-blocks)
   - [Numeric types and conversions](#numeric-types-and-conversions)
   - [Read-only slices](#read-only-slices)
   - [Unicode text](#unicode-text)
@@ -103,10 +104,10 @@ resolve Carven modules.
 
 ### Declarations and names
 
-Modules may declare functions, structures, enums, constants, tests, and C++
-source fragments. Function, structure, enum, and constant names share one module
-namespace. Duplicate module declarations are invalid; function overloading is
-not supported.
+Modules may declare functions, structures, enums, constants, tests, constant
+blocks, and C++ source fragments. Function, structure, enum, and constant names
+share one module namespace. Duplicate module declarations are invalid; function
+overloading is not supported.
 
 Nominal and callable identities are collected across the closed compilation.
 Declaration signatures, required constant facts, and any function bodies needed
@@ -311,6 +312,52 @@ initializer. For example, `(source() == 1) && false` still contains a general
 call and is not a constant expression. In a runtime expression, knowing the
 result does not remove evaluation of operands that execute under the ordinary
 short-circuit rules.
+
+### Constant blocks
+
+`const { ... }` executes a statement block during Carven semantic analysis.
+It may appear at module scope or wherever a block accepts statements:
+
+```carven
+const {
+    var total = 0;
+    for index in 0..10 { total += index; }
+    println(total);
+}
+
+fn example() {
+    const label = "prepared";
+    const { println(label); }
+}
+```
+
+Blocks use the shared constant-execution type and operation rules, including
+mutable locals, control flow, aggregates, text, `const fn` calls and failure
+recovery. Type checking, ownership and lifetime validation apply to their bodies.
+
+Each block is an independent required evaluation with its own lexical scope,
+execution storage and resource budget. Visible module and local constants are
+available through ordinary lookup and shadowing. Enclosing execution-frame
+values, including parameters and mutable locals, are unavailable. Declarations
+and object lifetimes end within their block.
+
+The result is `void`; `return;` or a void return operand ends that block. Loop
+transfers refer to loops inside the block. Nested blocks are independent roots.
+Each block executes once during semantic analysis, including those in uncalled
+functions and runtime branches or loops. Runtime execution never repeats it.
+
+Cross-block execution order is unspecified. Imports resolve declarations and
+immutable values; they do not establish initialization ordering between blocks.
+Output and diagnostics are visible to the compiler's caller and cannot be read
+back by another block. Operations requiring a sequence belong in one block.
+
+Explicit `?` propagates a fallible call to the block's execution boundary.
+Escaping failures, execution errors and exhausted budgets are compilation errors.
+Completed output remains observable if execution or later validation fails.
+
+A constant block creates no test context. Executing `check`, `require`, or `fail`
+requires an active `const test`. Blocks execute independently of test-artifact
+selection, including in `check`, and produce no runtime code or test entries.
 
 ### Numeric types and conversions
 
@@ -1196,17 +1243,55 @@ required. An annotated `fn(...) -> R` binding requests a view instead.
 ### Structures and arrays
 
 A structure is a nominal product with ordered, uniquely named fields. Field
-access selects by name. Positional construction maps values to fields in
-declaration order; named construction maps each initializer to its declared
-field. Both forms must initialize every field exactly once. Duplicate, unknown,
-missing, or extra initializers and incompatible field values are invalid. Empty
-construction is valid only for a structure with no fields. Initializer
-expressions run once in source order, including when named initializers are
-written out of declaration order.
+access selects by name. Positional construction maps supplied values to fields
+in declaration order; named construction maps each initializer to its declared
+field. Supplied expressions execute once in source order. Omitted fields are
+then default-initialized in declaration order, including trailing positional
+fields. Duplicate, unknown, extra, or incompatible initializers remain invalid.
 
-For Carven types, `T { ... }` constructs structures only. It is invalid for
-builtin, enum, and function-view types; literal and cast expressions, enum-case construction, and
-callable adoption are separate forms.
+```carven
+struct Config { attempts: i32, enabled: bool, label: String }
+let empty = Config {};                    // 0, false, empty String
+let named = Config { enabled: true };      // 0, true, empty String
+let positional = Config { 3, true };       // 3, true, empty String
+```
+
+Default initialization is a type operation with these values:
+
+| Type | Default |
+| --- | --- |
+| Integer or floating-point | Zero (positive floating-point zero) |
+| `bool` | `false` |
+| `char` | Unicode scalar U+0000 |
+| `str` or `String` | Empty text; String owns its independent storage |
+| `ptr<T>` or `ptr<&T>` | Null pointer, subject to ordinary non-null checks |
+| `[T]` | Empty read-only slice |
+| `range<T>` | Empty exclusive range from zero to zero |
+| `[T; N]` | N independently default-initialized elements |
+| Structure | All fields recursively default-initialized |
+| External C++ type | Native value initialization, validated by C++ |
+
+A zero-length array requires no element default. Numeric and payload enums,
+callable values and views, `void`, and entry or iteration-only opaque types have
+no default value. A structure or nonempty array containing such a type requires
+an explicit value for the affected component. Carven does not select an enum
+case or invent a callable target. `CV-TYPE-DEFAULT-INITIALIZATION` identifies a
+requested default that is unavailable. External constructors and their effects
+retain the native boundary's existing requirements.
+
+An empty `T {}` requests this operation for types accepted by construction
+syntax, including builtin types such as `i32 {}` and `String {}`. Nonempty Carven
+construction requires a structure; enum-case construction and callable adoption
+retain their separate forms. Every completed structure construction still
+initializes every field exactly once. Local binding declarations continue to
+require an initializer, and array literals retain their exact element-count rules.
+
+The same defaults apply during runtime, interpretation and required constant
+execution, within each execution mode's admitted type and operation subset.
+Default construction does not extend borrowed lifetimes or relax access rules.
+Constant results retain the existing freezing rules; default owning text remains
+an owning value during execution. Native defaults remain delegated to C++ and
+are outside Carven's interpreter and constant executor.
 
 An array type has one element type and a constant nonnegative extent. A
 zero-length array type is valid and still carries its element type. Without an
@@ -1758,9 +1843,9 @@ As with interpolation, scalar Read values are saved and String Read values alias
 their owners. Text views retain their backing throughout argument evaluation
 and printing.
 
-Direct printing is admitted in `const fn` and `const test` for the types supported
-by constant execution. Required constant execution delivers output synchronously
-to the compiler host; runtime calls use the runtime streams. Declaring a function
+Direct printing is admitted in `const fn`, `const` blocks and `const test` for
+the types supported by constant execution. Required constant execution delivers
+output synchronously to the compiler host; runtime calls use the runtime streams. Declaring a function
 `const fn` does not itself execute it. Optional precomputation does not produce
 compile-time output or remove required runtime printing. Printing follows the
 same argument, separator, newline, and text rules in both stages. Output bytes

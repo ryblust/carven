@@ -53,6 +53,17 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
     };
     return expression.value.visit(
         Overloaded {
+            [&](const SemDefault&) noexcept {
+                const auto& type = semantic.types().type(expression.type.resolved()).value;
+                if (const auto* builtin = std::get_if<BuiltinTypeValue>(&type)) {
+                    return builtin->kind == BuiltinType::String ? required : none;
+                }
+                return std::holds_alternative<PointerTypeValue>(type)
+                        || std::holds_alternative<SliceTypeValue>(type)
+                        || std::holds_alternative<RangeTypeValue>(type)
+                    ? none
+                    : required;
+            },
             [&](const SemConstant&) noexcept { return none; },
             [&](const SemBinding&) noexcept { return none; },
             [&](const SemCallable&) noexcept { return none; },

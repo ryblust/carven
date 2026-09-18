@@ -12,5 +12,5 @@ auto validate_constant_function(
     const StructuredBodyDraft& body
 ) noexcept -> AnalysisResult<void>;
 
-auto validate_constant_test(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
+auto validate_constant_body(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
     -> AnalysisResult<void>;

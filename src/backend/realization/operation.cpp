@@ -318,6 +318,24 @@ auto realize_operation(
             [&](const SemCpp& value) noexcept -> TargetExpr {
                 return native_operation(context, source, value, std::move(operands));
             },
+            [&](const SemDefault&) noexcept -> TargetExpr {
+                if (std::holds_alternative<PointerTypeValue>(
+                        context.semantic().types().type(source.type.resolved()).value
+                    )) {
+                    return {
+                        .value = TargetStaticCastExpr {
+                            .type = context.lower_type(source.type.resolved()),
+                            .operand = target_child(intrinsic_expression(TargetSymbol::StdNullptr)),
+                        }
+                    };
+                }
+                return {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(source.type.resolved()),
+                        .initializer = {}
+                    }
+                };
+            },
             [&](const SemConstant& value) noexcept -> TargetExpr {
                 return constant_expression(context, value.constant);
             },

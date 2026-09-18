@@ -707,8 +707,10 @@ auto BodyElaborator::build_match(
         pop_frame();
     }
     reachable = normal;
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
-        result_type.value_or(draft().builtin_type(BuiltinType::Void)),
+        result_type ? *result_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
         SemMatch {UniqueIndirect(std::move(subject_tree)), subject_is_place, std::move(arms)},
         span,
         std::move(pending)

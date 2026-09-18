@@ -93,6 +93,21 @@ Target variable declarations participate in ordinary traversal, verification,
 dependency collection, and emission. The existing runtime slice supplies the
 read-only access and bounds operations.
 
+Constant blocks have already executed during semantic analysis. Their independent
+bodies remain available for semantic validation but have no callable or module
+item to schedule, so they produce no C++ body or runtime call.
+
+`SemDefault` realizes as typed C++ value initialization (`T {}`), with pointers
+using a typed null cast. Semantic analysis has already established Carven default
+availability and completed all structure fields. Explicit operands precede
+implicit defaults in field declaration order. Aggregate operand scheduling
+preserves this order, snapshots and cleanup. Empty structures and default arrays
+stay compact in generated syntax. Scalar, pointer, slice and range defaults need no execution
+when discarded.
+Native default constructors remain observable even when the result is discarded,
+and C++ checks their availability and access. Required constant defaults arrive
+at lowering as completed values through the usual freezing path.
+
 Constant functions also retain ordinary runtime bodies. Runtime calls use normal
 lowering, operand evaluation, ownership, cleanup, and wrapping integer arithmetic.
 The qualifier alone supplies no call-result fact or permission to discard a call.
@@ -413,6 +428,14 @@ Tests must establish the new operation's behavior and interactions with existing
 contracts. Scheduling, storage and cleanup consume those contracts. New control
 scopes, ownership modes or partial-object lifetimes require design and checks at
 their owning boundaries.
+
+Structure operands retain source order while C++ initializes fields in declaration
+order. Realization identifies the suffix whose effects and storage reads retain
+their required order in C++. Pure values impose no ordering constraint.
+Conflict barriers complete the preceding operands; the suffix, including implicit
+defaults, constructs directly in the final initializer.
+Nested expressions that emit statements still complete pending predecessors before
+those statements.
 
 Aggregate operands may be completed in separate storage before the final
 initializer consumes them. An immovable native component saved across a failure

@@ -72,7 +72,8 @@ auto BodyRealizer::ExpressionBuilder::commit_postfix(PendingOperation& operation
 auto BodyRealizer::ExpressionBuilder::commit_predecessors(
     PendingOperation& operation,
     bool include_reads,
-    bool prefix_ready
+    bool prefix_ready,
+    std::size_t before
 ) noexcept -> ContinuationTask<std::monostate> {
     auto began_prefix = prefix_ready;
     while (operation.effect_cursor < operation.effects.size()
@@ -84,6 +85,9 @@ auto BodyRealizer::ExpressionBuilder::commit_predecessors(
             ? operation.reads[operation.read_cursor]
             : std::numeric_limits<std::size_t>::max();
         const auto index = std::min(effect, read);
+        if (index >= before) {
+            break;
+        }
         if (effect < read) {
             ++operation.effect_cursor;
         } else {
@@ -120,23 +124,32 @@ auto BodyRealizer::ExpressionBuilder::flush_pending(PendingOperation* operation)
     co_return {};
 }
 
-auto BodyRealizer::ExpressionBuilder::unordered(const PreparedOperation& value) const noexcept
-    -> bool {
+auto BodyRealizer::ExpressionBuilder::sequenced_suffix_begin(
+    const PreparedOperation& value
+) const noexcept -> std::size_t {
     if (const auto* structure = std::get_if<SemStruct>(&value.operation.value)) {
-        // C++ aggregate initialization follows declaration order. A source
-        // permutation therefore uses the same actual-conflict barriers as
-        // unordered call operands before the final field rearrangement.
-        return !std::ranges::is_sorted(
-            structure->fields,
-            {},
-            &SemFieldInitializer::declaration_index
-        );
+        // Pure values impose no ordering constraint. Preserve declaration order
+        // among effects and storage reads so the suffix can initialize in place.
+        auto next = std::numeric_limits<std::uint32_t>::max();
+        for (auto index = structure->fields.size(); index != 0uz;) {
+            --index;
+            const auto& operand = owner.preparation.operation(*value.operands[index].expression);
+            if (!operand.requires_execution && !operand.reads_storage) {
+                continue;
+            }
+            const auto field = structure->fields[index].declaration_index;
+            if (field > next) {
+                return index + 1uz;
+            }
+            next = field;
+        }
+        return 0uz;
     }
     if (std::holds_alternative<SemArray>(value.operation.value)
         || std::holds_alternative<SemClosure>(value.operation.value)) {
-        return false;
+        return 0uz;
     }
-    return true;
+    return value.operands.size();
 }
 
 auto BodyRealizer::ExpressionBuilder::first_unsequenced(

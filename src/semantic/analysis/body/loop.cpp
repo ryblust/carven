@@ -264,7 +264,9 @@ auto BodyElaborator::range_for_statement(
         ));
     }
     const auto header_reachable = reachable;
-    const auto type = declared.value_or(*element_type);
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
+    const auto type = declared ? *declared : *element_type;
     auto binding = std::optional<LocalBindingID>();
     push_frame(((ast.block(source.body))).span);
     if (const auto* named = std::get_if<ASTNamedBindingTarget>(&header.target)) {
@@ -347,6 +349,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
         BodyReferencePathGuard(reference_path_reachable, reachable);
     const auto owns_full_expression = source.value.visit(
         Overloaded {
+            [](const ASTConstantBlock&) static noexcept { return false; },
             [](const ASTVariableDecl&) static noexcept { return true; },
             [](const ASTAssignment&) static noexcept { return true; },
             [](const ASTUpdate&) static noexcept { return true; },
@@ -364,6 +367,10 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
     }
     auto result = (co_await source.value.visit(
         Overloaded {
+            [&](const ASTConstantBlock& value) noexcept -> AnalysisTask<void> {
+                batch->defer_constant_block(source_module_id, value, visible_locals());
+                co_return {};
+            },
             [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
             [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
             [&](const ASTUpdate& value) noexcept { return update_statement(value); },

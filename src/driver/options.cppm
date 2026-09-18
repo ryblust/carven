@@ -17,6 +17,7 @@ struct CompileCommandOptions final {
     TestGenerationMode test_mode;
     std::optional<LinkageDomain> linkage_domain;
     std::vector<std::string_view> input_paths;
+    bool timings;
 };
 
 enum class CompileOptionErrorKind {

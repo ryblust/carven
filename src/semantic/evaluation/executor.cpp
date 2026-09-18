@@ -488,9 +488,9 @@ auto SemanticExecutor::read_borrows_storage(TypeID type) noexcept -> bool {
     return borrows;
 }
 
-auto SemanticExecutor::evaluate_test(const StructuredBodyDraft& body) noexcept
+auto SemanticExecutor::evaluate_body(const StructuredBodyDraft& body) noexcept
     -> ExecutionTask<void> {
-    testing = true;
+    testing = body.kind == BodyKind::Test;
     auto frame = ExecutionFrame {
         .body = ExecutionBody(body),
         .slots = std::vector<ExecutionSlot>(body.bindings.size()),

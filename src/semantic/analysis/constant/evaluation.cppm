@@ -12,7 +12,7 @@ auto evaluate_constant_root(
     const SemanticExpression& expression
 ) noexcept -> AnalysisTask<ExecutionValue>;
 
-auto evaluate_constant_test(
+auto evaluate_constant_body(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     BodyID body

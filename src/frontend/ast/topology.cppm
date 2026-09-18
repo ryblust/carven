@@ -330,6 +330,10 @@ private:
         visit_fields(value.visibility, value.name_span, value.type, value.initializer);
     }
 
+    auto visit(const ASTConstantBlock& value) noexcept -> void {
+        visit_fields(value.keyword_span, value.body);
+    }
+
     auto visit(const ASTTestDecl& value) noexcept -> void {
         visit_fields(value.keyword_span, value.name_span, value.body);
     }

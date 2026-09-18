@@ -297,8 +297,10 @@ auto BodyElaborator::build_if(
         normal = normal || remaining;
     }
     reachable = normal;
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
-        merged_type.value_or(draft().builtin_type(BuiltinType::Void)),
+        merged_type ? *merged_type : ConstructionTypeRef {draft().builtin_type(BuiltinType::Void)},
         SemIf {std::move(branches), std::move(otherwise)},
         span,
         std::move(pending)

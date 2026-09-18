@@ -8,11 +8,13 @@ import :driver.analysis;
 import :driver.input_path;
 import :driver.process;
 import :driver.run;
+import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :support.path;
+import :support.timing;
 import std;
 
 namespace {
@@ -162,10 +164,15 @@ auto collect_run_sources(
 
 auto run_native_command(std::string_view executable, std::span<const char* const> args) noexcept
     -> int {
+    auto show_timings = false;
     auto input_paths = std::vector<std::string_view> {};
     auto separator = 0uz;
     for (; separator < args.size() && std::string_view(args[separator]) != "--"; ++separator) {
         const auto argument = std::string_view(args[separator]);
+        if (argument == "--timings") {
+            show_timings = true;
+            continue;
+        }
         if (argument.starts_with('-')) {
             return fail(
                 std::format("unknown option '{}'\nRun 'carven --help' for usage.", argument)
@@ -178,6 +185,8 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             "running a program requires at least one source file\nRun 'carven --help' for usage."
         );
     }
+    auto timings = CommandTimings(show_timings, "run");
+    auto collection = TimingScope(timings.recorder(), TimingStage::SourceCollection);
     const auto crafts = find_crafts_directory(executable);
     if (crafts.empty()) {
         return fail("cannot locate Crafts in the Carven installation or source checkout");
@@ -186,6 +195,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (!sources) {
         return fail(sources.error());
     }
+    collection.stop();
     // Own all path strings before forming the views consumed by analysis.
     input_paths.clear();
     for (const auto& input : sources->carven) {
@@ -195,7 +205,8 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         input_paths,
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
-        }
+        },
+        timings.recorder()
     );
     if (!semantic) {
         return 1;
@@ -207,6 +218,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (!has_entry) {
         return fail("running a program requires an entry point");
     }
+    auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
@@ -214,6 +226,8 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),
         }
     );
+    generation.stop();
+    auto writing = TimingScope(timings.recorder(), TimingStage::ArtifactWriting);
     const auto directory = create_run_directory();
     if (!directory) {
         return fail(directory.error());
@@ -223,6 +237,8 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (const auto written = write_artifacts(output_directory, artifacts); !written) {
         return fail(written.error());
     }
+    writing.stop();
+    auto compilation = TimingScope(timings.recorder(), TimingStage::NativeCompilation);
 #ifdef _WIN32
     const auto binary = path_to_generic_utf8(*directory / "program.exe");
 #else
@@ -305,12 +321,18 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (*compiled != 0) {
         return *compiled;
     }
+    compilation.stop();
     auto program_args = std::vector<std::string> {binary};
     if (separator < args.size()) {
         for (const auto argument : args.subspan(separator + 1)) {
             program_args.emplace_back(argument);
         }
     }
+    auto execution = TimingScope(timings.recorder(), TimingStage::ProgramExecution);
     const auto executed = run_process(std::move(program_args));
+    execution.stop();
+    if (executed) {
+        timings.set_outcome(std::format("exited with code {}", *executed));
+    }
     return executed ? *executed : fail(executed.error());
 }

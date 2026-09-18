@@ -113,6 +113,7 @@ enum class DiagnosticCode {
     TypeCallableViewEscape,
     TypeCast,
     TypeConditionBool,
+    TypeDefaultInitialization,
     TypeConstructArity,
     TypeConstructDuplicateField,
     TypeConstructNotStruct,

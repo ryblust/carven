@@ -211,12 +211,18 @@ auto DeclResolver::publish_modules() noexcept -> void {
         }
         declaration.items.reserve(module_record.items.size());
         for (const auto& item : module_record.items) {
+            if (std::holds_alternative<CatalogConstantBlockForm>(item.form)) {
+                continue;
+            }
             declaration.items.push_back(item.form.visit(
                 Overloaded {
                     [](FunctionID id) static noexcept -> ModuleItem { return id; },
                     [](StructID id) static noexcept -> ModuleItem { return id; },
                     [](EnumID id) static noexcept -> ModuleItem { return id; },
                     [](ModuleConstantID id) static noexcept -> ModuleItem { return id; },
+                    [](const CatalogConstantBlockForm&) static noexcept -> ModuleItem {
+                        invariant_violation("constant block has no runtime module item");
+                    },
                     [](const CatalogTestForm& test) static noexcept -> ModuleItem {
                         return test.test;
                     },

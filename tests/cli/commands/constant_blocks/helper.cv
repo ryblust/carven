@@ -1,0 +1,7 @@
+export const fn announce() {
+    println("helper call");
+}
+
+const {
+    println("helper block");
+}

@@ -1,0 +1,62 @@
+import "lifetimes/default_initialization.hpp" using default_probe::{
+    Item,
+    Fixed,
+    mark,
+    reset,
+    observed,
+    owners,
+};
+
+struct Mixed {
+    first: Item,
+    second: Item,
+    number: i32
+}
+
+struct Immovable {
+    first: Fixed,
+    second: Fixed,
+    number: i32
+}
+
+fn construct() {
+    let value = Mixed { number: mark(7) };
+    check(value.number == 7);
+    check(observed() == 711);
+    check(owners() == 2);
+}
+
+fn construct_fixed() {
+    let value = Immovable { number: mark(7) };
+    check(value.number == 7);
+    check(observed() == 722);
+    check(owners() == 2);
+}
+
+struct OrderedEffects {
+    number: i32,
+    first: Fixed,
+    second: Fixed
+}
+
+fn construct_ordered_effects() {
+    let value = OrderedEffects {
+        first: Fixed {},
+        number: 0
+    };
+    check(value.number == 0);
+    check(observed() == 22);
+    check(owners() == 2);
+}
+
+test "Defaults: native construction preserves ordering lifetime and direct initialization" {
+    reset();
+    construct();
+    check(owners() == 0);
+    reset();
+    construct_fixed();
+    check(owners() == 0);
+    reset();
+    construct_ordered_effects();
+    check(owners() == 0);
+}

@@ -1,0 +1,17 @@
+struct Foo {
+    a: i32,
+    b: String
+}
+
+struct Values {
+    items: [Foo; 2],
+    enabled: bool
+}
+
+const {
+    println(Foo {});
+    println(Values { enabled: true });
+}
+
+println(Foo {});
+println(Values { enabled: true });

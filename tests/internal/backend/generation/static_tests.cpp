@@ -12,7 +12,10 @@ import std;
 TEST_CASE("Generation: only runtime tests enter module schedules") {
     for (const auto runtime : {false, true}) {
         CAPTURE(runtime);
-        const auto source = std::string(R"(const test "static" { check(2 + 2 == 4); })")
+        const auto source =
+            std::string(
+                R"(const {} const { var n = 1; ++n; } const test "static" { check(2 + 2 == 4); })"
+            )
             + (runtime ? R"(test "runtime" { check(3 + 3 == 6); })" : "");
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(source),

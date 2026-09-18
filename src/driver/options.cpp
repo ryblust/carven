@@ -30,6 +30,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         .test_mode = TestGenerationMode::None,
         .linkage_domain = std::nullopt,
         .input_paths = {},
+        .timings = false,
     };
     auto has_test_option = false;
     auto has_destination_option = false;
@@ -77,7 +78,9 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
 
     for (auto index = 0uz; index < args.size(); ++index) {
         const auto arg = std::string_view(args[index]);
-        if (arg == "--tests=default" || arg == "--tests=external") {
+        if (arg == "--timings") {
+            request.timings = true;
+        } else if (arg == "--tests=default" || arg == "--tests=external") {
             if (has_test_option) {
                 return std::unexpected(
                     compile_option_error(CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce)

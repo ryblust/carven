@@ -108,7 +108,11 @@ fn total() -> i32 {
 ```
 
 Structure construction initializes every field. Positional construction is
-also available: `Point { 20, 22 }`. Array indices start at zero.
+also available: `Point { 20, 22 }`. Omitted fields use their type's default:
+`Point {}` has two zero coordinates, and `Point { x: 20 }` has `y == 0`.
+Numbers default to zero, booleans to false, and text to empty text. Arrays and
+nested structures recursively default their contents. Fields without a default,
+such as enums, require an explicit value. Array indices start at zero.
 
 ## Enums and matches
 
@@ -441,7 +445,23 @@ A failed `check` reports and continues. A failed `require` reports and exits
 the test. `fail()` reports and exits unconditionally. Tests are analyzed with
 the source; generating a test executable requires selecting test emission.
 
-## Compile-time tests
+## Compile-time execution
+
+Use `const { ... }` to execute code during compilation without declaring a test
+or binding a result:
+
+```carven
+const {
+    var total = 0;
+    for value in 1..=4 { total += value; }
+    println(total); // printed by the Carven compiler
+}
+```
+
+Constant blocks also work inside function bodies and can read visible constants.
+They execute during semantic analysis even if the function is never called;
+calling the function does not repeat the block. Their locals and control flow
+follow the same supported execution rules as `const fn`.
 
 Use `const test` to execute a test during compilation. It shares the ordinary
 `check`, `require`, `fail`, and print operations, within the supported constant

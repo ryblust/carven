@@ -1,5 +1,6 @@
 module carven:semantic.analysis.body.locals.impl;
 
+import :diagnostics.builder;
 import :diagnostics.code;
 import :frontend.ast.decl;
 import :semantic.analysis.body.context;
@@ -29,32 +30,42 @@ auto BodyElaborator::pop_frame(bool diagnose) noexcept -> void {
         invariant_violation("body producer popped its root frame");
     }
     if (diagnose) {
-        diagnose_unused(frames.back());
+        collect_unused_locals(frames.back());
     }
     frames.pop_back();
 }
 
-auto BodyElaborator::diagnose_unused(const BodyLocalFrame& frame) noexcept -> void {
-    auto candidates = std::vector<const BodyLocalStorage*>();
+auto BodyElaborator::collect_unused_locals(const BodyLocalFrame& frame) noexcept -> void {
     for (const auto& [name, storage] : frame.names) {
         static_cast<void>(name);
-        if (!storage.used
-            && storage.unused_candidate.has_value()
-            && storage.role != BodyLocalRole::Capture) {
-            candidates.push_back(std::addressof(storage));
+        if (!storage.used && storage.unused_candidate && storage.role != BodyLocalRole::Capture) {
+            const auto span = *storage.unused_candidate;
+            const auto parameter = storage.role == BodyLocalRole::Parameter;
+            batch->unused_locals.try_emplace(
+                std::pair(ast.source_id(), span),
+                DiagnosticBuilder(
+                    parameter ? DiagnosticCode::LintUnusedParameter
+                              : DiagnosticCode::LintUnusedLocal,
+                    parameter ? "unused function parameter" : "unused local binding"
+                )
+                    .primary(locate(ast.source_id(), span))
+                    .build()
+            );
         }
     }
-    std::ranges::sort(candidates, {}, [](const BodyLocalStorage* storage) noexcept {
-        return storage->unused_candidate->start();
-    });
-    for (const auto* storage : candidates) {
-        const auto parameter = storage->role == BodyLocalRole::Parameter;
-        warn(
-            *storage->unused_candidate,
-            parameter ? DiagnosticCode::LintUnusedParameter : DiagnosticCode::LintUnusedLocal,
-            parameter ? "unused function parameter" : "unused local binding"
-        );
+}
+
+auto BodyElaborator::visible_locals() const noexcept -> BodyLocalNames {
+    auto names = BodyLocalNames();
+    for (const auto& frame : frames | std::views::reverse) {
+        for (const auto& [name, storage] : frame.names) {
+            names.try_emplace(name, storage);
+        }
     }
+    for (const auto& [name, storage] : inherited_locals) {
+        names.try_emplace(name, storage);
+    }
+    return names;
 }
 
 auto BodyElaborator::bind_local(
@@ -82,17 +93,27 @@ auto BodyElaborator::find_local(std::string_view name) const noexcept -> const B
             return std::addressof(found->second);
         }
     }
-    return nullptr;
+    const auto inherited = inherited_locals.find(name);
+    return inherited == inherited_locals.end() ? nullptr : std::addressof(inherited->second);
 }
 
 auto BodyElaborator::use_local(std::string_view name) noexcept -> BodyLocalStorage* {
+    const auto mark = [&](BodyLocalStorage& storage) noexcept -> BodyLocalStorage* {
+        if (reachable && reference_path_reachable) {
+            storage.used = true;
+            if (storage.unused_candidate) {
+                batch->used_locals.emplace(ast.source_id(), *storage.unused_candidate);
+            }
+        }
+        return std::addressof(storage);
+    };
     for (auto iterator = frames.rbegin(); iterator != frames.rend(); ++iterator) {
         if (const auto found = iterator->names.find(name); found != iterator->names.end()) {
-            found->second.used |= reachable && reference_path_reachable;
-            return std::addressof(found->second);
+            return mark(found->second);
         }
     }
-    return nullptr;
+    const auto inherited = inherited_locals.find(name);
+    return inherited == inherited_locals.end() ? nullptr : mark(inherited->second);
 }
 
 auto BodyElaborator::local_was_used(std::string_view name) const noexcept -> bool {

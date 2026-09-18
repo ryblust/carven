@@ -189,7 +189,13 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
     auto result = (co_await source.value.visit(
         [&](const auto& operation) noexcept -> ExecutionTask<ExecutionValue> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
-            if constexpr (std::same_as<Operation, SemConstant>) {
+            if constexpr (std::same_as<Operation, SemDefault>) {
+                const auto target = type(source.type.construction(), source.origin);
+                if (!target) {
+                    co_return std::unexpected(target.error());
+                }
+                co_return (co_await default_value(*target, source.origin));
+            } else if constexpr (std::same_as<Operation, SemConstant>) {
                 co_return ExecutionValue(operation.constant);
             } else if constexpr (std::same_as<Operation, SemBinding>) {
                 auto local = slot_value(frame, operation.binding.index(), source.origin);

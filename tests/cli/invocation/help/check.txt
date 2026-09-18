@@ -1,9 +1,10 @@
 Check sources and run required constant evaluation and const tests.
 
 Usage:
-  carven check <source-file>...
+  carven check [options] <source-file>...
 
 Options:
+      --timings Show total and stage timings on stderr
   -h, --help    Show this help
 
 Imports resolve among the supplied sources. No entry point is required.

@@ -74,7 +74,11 @@ auto ProgramDraft::verify_body(
         invariant_violation("final body disagreed with its reservation metadata");
     }
     const auto callable = declaration_view.callable_for_body(body_id);
-    if (kind == BodyKind::Test) {
+    if (kind == BodyKind::ConstantBlock) {
+        if (callable.has_value() || storage.bodies[body_id.index()].test.has_value()) {
+            invariant_violation("constant block has a callable or test owner");
+        }
+    } else if (kind == BodyKind::Test) {
         if (callable.has_value() || !storage.bodies[body_id.index()].test.has_value()) {
             invariant_violation("test body was not assigned exactly one test declaration");
         }

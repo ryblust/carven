@@ -6,6 +6,7 @@ import :frontend.ast.storage;
 import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.semir.body;
+import :semantic.semir.initialization;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import std;
@@ -31,9 +32,12 @@ using CastDecision = std::expected<CastKind, OperationDiagnostic>;
 using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
 using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
+auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> DefaultInitialization;
+
 struct StructureInitializer final {
     std::uint32_t declaration_index;
-    ASTExprID expression;
+    std::optional<ASTExprID> expression;
 };
 
 auto select_structure_initializers(

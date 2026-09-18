@@ -96,7 +96,9 @@ auto BodyElaborator::build_call_argument(
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }
-    const auto type = expected.value_or(built->type());
+    // Keep explicit type selection for the Clang 23 coroutine workaround.
+    // Do not replace with value_or; see decl/constant.cpp.
+    const auto type = expected ? *expected : built->type();
     if (mismatch_code && !is_cpp_type(built->type()) && !compatible(built->type(), type)) {
         co_return std::unexpected(
             fail(source.span, *mismatch_code, "argument does not match the required parameter type")

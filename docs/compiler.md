@@ -25,6 +25,11 @@ Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Check completes after successful analysis without invoking a
 backend or interpreter. Dump commands consume lexical or syntax results directly.
 
+The driver owns optional timing measurements and their report. `support.timing`
+uses a monotonic clock; parsing and analysis accumulate durations through a
+borrowed recorder. Disabled scopes do not read the clock. Reporting follows
+command-resource cleanup.
+
 ```text
 SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 ```
@@ -42,8 +47,9 @@ a successful result.
 ## Design considerations
 
 Carven establishes source types, coverage, evaluation order, ownership, and
-failure contracts. Required constants, static tests, and interpretation execute
-shared semantic operations with separate admission and completion rules.
+failure contracts. Required constants, constant blocks, static tests, and
+interpretation execute shared semantic operations with separate admission and
+completion rules.
 `const fn` uses ordinary function-body construction; admission checks the
 completed body before execution.
 
@@ -164,6 +170,27 @@ require both operands to succeed. Binary expressions and integer ranges share
 numeric operand context selection. It may require constructing the right operand
 first when the left is a direct unsuffixed literal. Typed operations retain
 source operand order for execution.
+
+### Default initialization
+
+`semir.initialization` defines default availability and native-construction
+classification over type shapes. Construction and published-program adapters use
+the same traversal, including unresolved array and slice type terms during
+construction. Empty arrays have no element-construction requirement. Enum and
+callable types have no implicit selected value.
+
+Shared aggregate expression construction selects explicit fields in source order
+and appends defaulted fields in declaration order. Each omitted field becomes a
+typed `SemDefault` operation; published `SemStruct` values still contain every
+field exactly once. An empty `T {}` uses one `SemDefault` for the whole value.
+Default aggregates remain compact, independently of their array extents.
+
+The executor realizes defaults using ordinary owned values and aggregate slots,
+charging execution steps and aggregate work before materialization. Existing
+admission and freezing rules apply. Publication rechecks type defaultability;
+ownership treats defaults as fresh values without input loans, and nullability
+invalidates exposed facts when defaults can invoke native construction. Native
+constructor validity remains delegated to C++.
 
 ### Craft implementation boundary
 
@@ -725,7 +752,7 @@ remains authoritative for execution. Publication verifies this metadata's shape
 and spelling ownership. The executor observes values from the original condition
 execution; constant tests report failures with their structural explanations.
 
-## Compile-time output and tests
+## Compile-time blocks, output and tests
 
 Constant execution delivers output bytes and a stream selection through its
 context. The analysis adapter forwards them to the synchronous `ExecutionOutput`
@@ -735,12 +762,31 @@ diagnostic text within its cumulative text-work budget. The driver owns
 stream presentation. Ordinary output is separate from error diagnostics and is
 not stored in the published semantic program.
 
+`ASTConstantBlock` is shared by module items and statements. Body construction
+produces a `BodyKind::ConstantBlock` with independent local storage, a void result
+and an inferred outward failure term. Registration snapshots the visible lexical
+names. Constants retain their values; execution-frame bindings retain only their
+lookup identity and cannot be read across the boundary.
+
+Module, local and nested constant blocks are independent roots. The body batch
+registers their syntax and lexical snapshots without building their bodies, so
+they introduce no dependency from the enclosing callable. After callable bodies
+are complete, it builds the blocks and executes them alongside static tests,
+using a fresh executor per root. Body kind selects test reporting.
+
+Closures and constant blocks preserve the source identity of inherited constants.
+The batch records uses and reports unused locals after all bodies are built;
+copying a lexical snapshot does not count as a use.
+
+Completed block bodies remain in the semantic body store for failure solving,
+ownership analysis and publication validation. They have no callable, test
+declaration or target module item. An escaping failure diagnoses the root;
+successful execution need not have an empty static failure set.
+
 `const test` bodies use ordinary test construction and shared constant-body
-admission. The body batch executes them once after all bodies have been constructed,
-using the existing declaration-request adapter and a fresh executor per test.
-Required initializers execute when declaration or body construction requests them;
-these outputs can precede static tests. Later validation can still reject the
-program. Failed checks report diagnostics while allowing execution to continue;
+admission. Required initializers execute when declaration or body construction
+requests them; these outputs can precede queued roots. Later validation can still
+reject the program. Failed checks report diagnostics while allowing execution to continue;
 requirements stop the root through the executor's failure transport. Test errors
 prevent publication. Published test declarations retain their explicit execution
 stage so target planning selects only runtime tests.

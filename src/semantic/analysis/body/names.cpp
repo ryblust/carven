@@ -47,6 +47,13 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             };
         }
         const auto& runtime = std::get<BoundStorage>(local->storage);
+        if (runtime.binding.owner() != active_builder().identity()) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::ConstAdmission,
+                "constant block cannot access a value from an enclosing execution frame"
+            ));
+        }
         if (local->role == BodyLocalRole::RangeRead) {
             auto value = active_builder().binding_expression(runtime.binding).expression;
             value.category = SemanticValueCategory::Value;

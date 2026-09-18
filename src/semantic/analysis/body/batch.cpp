@@ -40,6 +40,48 @@ auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisTask<void> {
     co_return {};
 }
 
+auto BodyBatchElaborator::defer_constant_block(
+    ProgramModuleID module,
+    const ASTConstantBlock& source,
+    BodyLocalNames locals
+) noexcept -> void {
+    constant_blocks.push_back({.module = module, .syntax = source, .locals = std::move(locals)});
+}
+
+auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noexcept
+    -> AnalysisTask<void> {
+    const auto module = source.module;
+    const auto* declaration = catalog_data.find_module(module);
+    if (declaration == nullptr) {
+        invariant_violation("constant block belongs to an unknown module");
+    }
+    auto reservation = draft->reserve_body(BodyKind::ConstantBlock);
+    const auto id = reservation.id();
+    auto elaborator = BodyElaborator(
+        *this,
+        module,
+        declaration->declaration,
+        draft->syntax_tree(module).view(),
+        std::move(reservation),
+        draft->builtin_type(BuiltinType::Void),
+        draft->add_empty_failure_term(),
+        true,
+        false
+    );
+    elaborator.inherited_locals = std::move(source.locals);
+    auto body = (co_await elaborator.run(source.syntax.body));
+    if (!body) {
+        co_return std::unexpected(body.error());
+    }
+    auto admitted = validate_constant_body(*draft, *body);
+    if (!admitted) {
+        co_return std::unexpected(admitted.error());
+    }
+    draft->add_body_draft(std::move(*body));
+    constant_roots.push_back(id);
+    co_return {};
+}
+
 auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     -> AnalysisTask<StructuredBodyDraft> {
     const auto* block_body = std::get_if<ASTBlockID>(&source_body);
@@ -86,13 +128,12 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
             EmptyFailureRequirementKind::RootBoundary
         );
     }
-    diagnose_unused(frames.front());
+    collect_unused_locals(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
     co_return std::move(body_builder).finish(std::move(regions.front()));
 }
 
 auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
-    auto static_tests = std::vector<BodyID>();
     for (const auto& source_module : catalog_data.modules()) {
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
@@ -102,6 +143,10 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 if (!result.has_value()) {
                     co_return std::unexpected(result.error());
                 }
+                continue;
+            }
+            if (const auto* block = std::get_if<ASTConstantBlock>(&item.value)) {
+                defer_constant_block(source_module.module_id, *block);
                 continue;
             }
             const auto* test_form = std::get_if<CatalogTestForm>(&source_item.form);
@@ -141,8 +186,8 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 co_return std::unexpected(body.error());
             }
             if (test.is_const) {
-                static_tests.push_back(body_id);
-                auto admitted = validate_constant_test(*draft, *body);
+                constant_roots.push_back(body_id);
+                auto admitted = validate_constant_body(*draft, *body);
                 if (!admitted) {
                     co_return admitted;
                 }
@@ -150,8 +195,20 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             draft->add_body_draft(std::move(*body));
         }
     }
-    for (const auto body : static_tests) {
-        static_cast<void>((co_await evaluate_constant_test(*draft, requests, body)));
+    for (auto index = 0uz; index < constant_blocks.size(); ++index) {
+        auto result = (co_await build_constant_block(std::move(constant_blocks[index])));
+        if (!result) {
+            co_return result;
+        }
+    }
+    for (const auto& [location, diagnostic] : unused_locals) {
+        if (!used_locals.contains(location)) {
+            draft->diagnostics().warning(diagnostic);
+        }
+    }
+    for (auto index = 0uz; index < constant_roots.size(); ++index) {
+        const auto body = constant_roots[index];
+        static_cast<void>((co_await evaluate_constant_body(*draft, requests, body)));
     }
     if (const auto failure = draft->diagnostics().failure()) {
         co_return std::unexpected(*failure);
