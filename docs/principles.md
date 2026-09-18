@@ -20,8 +20,10 @@ the enclosing construct.
 ## Compile-time computation and specialization
 
 Use established types, values, structure, access, lifetimes, and failure contracts
-to select and implement operations. For each operation, identify the available
-facts, the work they can remove, and the native operations that can consume them.
+to select native implementations. Format structure, extents, and result uses can
+resolve work before it becomes C++ calls and temporary objects. For each operation,
+identify the available facts, the work they remove, and the native operations
+that consume them.
 
 An operation can combine complete precomputation, preparation of known parts,
 and specialized runtime calls. Use general runtime work where available facts
@@ -37,6 +39,11 @@ its structure. Constant arguments expose choices when visible to the native
 optimizer; template arguments preserve static choices across function boundaries.
 Runtime APIs should consume prepared facts directly. Use access and lifetime
 facts to guide storage, snapshots, and native argument passing.
+
+Facts identify their subject and validity domain. Writes and calls invalidate
+assumptions they may change; a control-flow join retains facts established on
+every reachable incoming path. Publish facts with their semantic owner so later
+stages consume them directly.
 
 Knowing a result and proving execution removable are separate facts. Preserve
 required evaluation, storage observations, ownership, cleanup, and failure
@@ -101,10 +108,20 @@ handling, and lifetimes. Use shared runtime operations to keep generated uses
 small where appropriate. Evaluate generated clarity, runtime cost, and native
 compilation cost together.
 
-Carven uses established semantic facts for language analysis, constant execution,
-and bounded specialization. Delegate general runtime optimization to the C++
-compiler, including range analysis, loop transformations, and interprocedural
-optimization.
+Resolve source-level choices before emitting C++: compute known parts, select
+runtime policies, construct directly into the required destination, and retain
+only necessary execution and storage. The C++ compiler owns general range and
+loop optimization, interprocedural optimization, and machine-code selection.
+
+## Optimization analysis boundary
+
+Optional analysis uses structured semantic operations for a concrete
+implementation choice. Each analysis defines its fact domain, invalidation
+rules, and stopping condition. Unknown facts retain the ordinary operation.
+
+Ownership, nullability, types, and failures have their own correctness analyses
+and solvers. Their published facts can guide implementation selection. Required
+semantic checks and constant execution follow their language contracts.
 
 ## Build on the C++ ecosystem
 

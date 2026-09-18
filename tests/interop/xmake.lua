@@ -141,3 +141,18 @@ target("carven-test-interop-print")
         return true
     end)
 target_end()
+
+target("carven-test-interop-structural")
+    set_default(false)
+    add_rules("@carven/carven")
+    set_languages("c++20")
+    add_includedirs(interop_dir)
+    add_files(path.join(interop_dir, "printing", "structural.cv"))
+    add_tests("output", {group = "interop"})
+    on_test(function (target)
+        local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
+        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n" and errors == "",
+            "structural display invoked a custom formatter or changed output: " .. output .. errors)
+        return true
+    end)
+target_end()

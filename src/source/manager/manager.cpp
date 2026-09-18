@@ -99,3 +99,14 @@ auto SourceManager::location(SourceSpan span) const noexcept -> SourceLocation {
     }
     return entries[span.source_id.index()].location(span.span);
 }
+
+auto SourceManager::SourceRecord::line_span(std::uint32_t line) const noexcept -> Span {
+    return lines.line_span(line);
+}
+
+auto SourceManager::line_span(SourceID source_id, std::uint32_t line) const noexcept -> Span {
+    if (!contains(source_id)) {
+        invariant_violation("source line lookup used an invalid source identity");
+    }
+    return entries[source_id.index()].line_span(line);
+}

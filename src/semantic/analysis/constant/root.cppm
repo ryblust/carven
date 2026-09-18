@@ -36,8 +36,10 @@ public:
     static constexpr auto mode = ExpressionMode::RequiredRoot;
 
     struct OperandState final {
-        bool completes = true;
+        bool completes;
     };
+
+    static auto operand_state() noexcept -> OperandState { return {.completes = true}; }
 
     auto module_id() const noexcept -> ProgramModuleID { return module; }
 
@@ -48,13 +50,13 @@ public:
     }
 
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
-        -> ExpressionResult<ConstructionTypeRef> {
-        return scope.resolve_construction_type(type);
+        -> ExpressionTask<ConstructionTypeRef> {
+        co_return (co_await scope.resolve_construction_type(type));
     }
 
     auto cpp_construct(const ASTConstructionExpr&, ConstructionTypeRef, Span) const noexcept
-        -> ExpressionResult<Value> {
-        return std::unexpected(ExpressionNotAdmitted {});
+        -> ExpressionTask<Value> {
+        co_return std::unexpected(ExpressionNotAdmitted {});
     }
 
     auto aggregate_cost(std::size_t count, Span span) noexcept -> AnalysisResult<void> {
@@ -136,12 +138,12 @@ public:
     }
 
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
-        -> ExpressionResult<Value> {
+        -> ExpressionTask<Value> {
         const auto& source = ast.expression(id);
         const auto aggregate = std::holds_alternative<ASTArrayExpr>(source.value)
             || std::holds_alternative<ASTConstructionExpr>(source.value);
         if (aggregate && aggregate_depth >= maximum_constant_aggregate_depth) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 source.span,
                 DiagnosticCode::ConstLimit,
                 "constant aggregate exceeds its nesting budget"
@@ -149,15 +151,15 @@ public:
         }
         aggregate_depth += aggregate;
         const auto depth = AggregateDepth {.depth = aggregate_depth, .entered = aggregate};
-        return interpret_expression(*this, id, expected);
+        co_return (co_await interpret_expression(*this, id, expected));
     }
 
     auto read_array_element(
         ASTExprID id,
         std::optional<ConstructionTypeRef> expected,
         bool
-    ) noexcept -> ExpressionResult<Value> {
-        return read(id, expected);
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await read(id, expected));
     }
 
     auto type(const Value& value) const noexcept -> ConstructionTypeRef {
@@ -183,8 +185,8 @@ public:
         return concrete != nullptr && scope.is_numeric_enum(*concrete);
     }
 
-    auto resolve_type(ASTTypeID type) noexcept -> ExpressionResult<ConstructionTypeRef> {
-        return scope.resolve_type(type);
+    auto resolve_type(ASTTypeID type) noexcept -> ExpressionTask<ConstructionTypeRef> {
+        co_return (co_await scope.resolve_type(type));
     }
 
     auto c_string(std::string_view, Span) const noexcept -> ExpressionResult<Value> {
@@ -229,27 +231,29 @@ public:
     }
 
     auto extension(const ASTNameExpr& name, Span span, std::optional<ConstructionTypeRef>) noexcept
-        -> ExpressionResult<Value> {
-        auto resolved =
-            scope.resolve_name(program.source_slice_copy(module, name.name_span), name.name_span);
+        -> ExpressionTask<Value> {
+        auto resolved = (co_await scope.resolve_name(
+            program.source_slice_copy(module, name.name_span),
+            name.name_span
+        ));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         if (!resolved->has_value()) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         }
-        return constant(**resolved, span);
+        co_return constant(**resolved, span);
     }
 
     auto extension(
         const ASTPropagationExpr& source,
         Span span,
         std::optional<ConstructionTypeRef> expected
-    ) noexcept -> ExpressionResult<Value> {
+    ) noexcept -> ExpressionTask<Value> {
         const auto first = pending_failures.size();
-        auto operand = read(source.operand_id, expected);
+        auto operand = (co_await read(source.operand_id, expected));
         if (!operand) {
-            return std::unexpected(operand.error());
+            co_return std::unexpected(operand.error());
         }
         auto terms =
             std::vector<FailureTermID>(pending_failures.begin() + first, pending_failures.end());
@@ -259,12 +263,16 @@ public:
             program.append_source_origin(program.module_source(module), source.operator_span)
         );
         const auto result_type = type(*operand);
-        return make(result_type, SemPropagate {OwnedSemanticExpression(std::move(*operand))}, span);
+        co_return make(
+            result_type,
+            SemPropagate {OwnedSemanticExpression(std::move(*operand))},
+            span
+        );
     }
 
     template<typename Form>
     auto extension(const Form&, Span, std::optional<ConstructionTypeRef>) const noexcept
-        -> ExpressionResult<Value> {
+        -> ExpressionTask<Value> {
         static_assert(
             std::same_as<Form, ASTCppNameExpr>
             || std::same_as<Form, ASTAccessExpr>
@@ -273,60 +281,60 @@ public:
             || std::same_as<Form, ASTMatchForm>
             || std::same_as<Form, ASTTryForm>
         );
-        return std::unexpected(ExpressionNotAdmitted {});
+        co_return std::unexpected(ExpressionNotAdmitted {});
     }
 
     auto extension(
         const ASTConstructionExpr& source,
         Span span,
         std::optional<ConstructionTypeRef>
-    ) noexcept -> ExpressionResult<Value> {
-        return construct_structure_expression(*this, source, span);
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await construct_structure_expression(*this, source, span));
     }
 
     auto extension(
         const ASTArrayExpr& source,
         Span span,
         std::optional<ConstructionTypeRef> expected
-    ) noexcept -> ExpressionResult<Value> {
-        return construct_array_expression(*this, source, span, expected);
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await construct_array_expression(*this, source, span, expected));
     }
 
     auto extension(
         const ASTIndexExpr& source,
         Span span,
         std::optional<ConstructionTypeRef>
-    ) noexcept -> ExpressionResult<Value> {
-        return construct_index_expression(*this, source, span);
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await construct_index_expression(*this, source, span));
     }
 
     auto extension(
         const ASTInterpolationExpr& source,
         Span span,
         std::optional<ConstructionTypeRef>
-    ) noexcept -> ExpressionResult<Value> {
-        return construct_interpolation(*this, source, span);
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await construct_interpolation(*this, source, span));
     }
 
     auto spelling(Span span) const noexcept -> std::string {
         return program.source_slice_copy(module, span);
     }
 
-    auto resolve_enum_qualifier(ASTExprID id) noexcept -> ExpressionResult<std::optional<TypeID>> {
-        return scope.resolve_enum_qualifier(id);
+    auto resolve_enum_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
+        co_return (co_await scope.resolve_enum_qualifier(id));
     }
 
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
-        -> ExpressionResult<ResolvedEnumCase> {
-        auto selected = scope.resolve_enum_case(type, name, span);
+        -> ExpressionTask<ResolvedEnumCase> {
+        auto selected = (co_await scope.resolve_enum_case(type, name, span));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
-        auto prepared = scope.construction_requests().ensure_type(type, module, span);
+        auto prepared = (co_await scope.construction_requests().ensure_type(type, module, span));
         if (!prepared) {
-            return std::unexpected(prepared.error());
+            co_return std::unexpected(prepared.error());
         }
-        return selected;
+        co_return selected;
     }
 
     auto invalid_enum_qualifier(Span) const noexcept -> ExpressionResult<Value> {
@@ -380,8 +388,8 @@ public:
         return shape ? shape->extent : std::nullopt;
     }
 
-    auto dereference(const ASTPrefixExpr&, Span) const noexcept -> ExpressionResult<Value> {
-        return std::unexpected(ExpressionNotAdmitted {});
+    auto dereference(const ASTPrefixExpr&, Span) const noexcept -> ExpressionTask<Value> {
+        co_return std::unexpected(ExpressionNotAdmitted {});
     }
 
     auto external_index(Value, Value, Span) const noexcept -> ExpressionResult<Value> {
@@ -426,38 +434,39 @@ public:
     }
 
     auto member_call(const ASTCallExpr&, const ASTMemberExpr&, Value, Span) const noexcept
-        -> ExpressionResult<Value> {
-        return std::unexpected(ExpressionNotAdmitted {});
+        -> ExpressionTask<Value> {
+        co_return std::unexpected(ExpressionNotAdmitted {});
     }
 
-    auto call(const ASTCallExpr& source, Span span) noexcept -> ExpressionResult<Value> {
+    auto call(const ASTCallExpr& source, Span span) noexcept -> ExpressionTask<Value> {
         auto callee = source.callee;
         while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(callee).value)) {
             callee = group->expression;
         }
         const auto* name = std::get_if<ASTNameExpr>(&ast.expression(callee).value);
         if (name == nullptr) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         }
-        auto selected = scope.resolve_function(spelling(name->name_span), name->name_span);
+        auto selected =
+            (co_await scope.resolve_function(spelling(name->name_span), name->name_span));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
         if (!*selected) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         }
         const auto declaration = program.function_declaration_copy(**selected);
         if (!declaration.is_const) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         }
         auto& requests = scope.construction_requests();
-        auto completed = requests.ensure_function_signature(**selected, module, span);
+        auto completed = (co_await requests.ensure_function_signature(**selected, module, span));
         if (!completed) {
-            return std::unexpected(completed.error());
+            co_return std::unexpected(completed.error());
         }
         const auto contract = program.construction_callable_contract_copy(declaration.callable);
         if (contract.parameters.size() != source.arguments.size()) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::TypeCallArity,
                 "function call has the wrong number of arguments"
@@ -469,15 +478,15 @@ public:
             const auto& parameter = contract.parameters[index];
             const auto selected = call_argument_operand(ast, source_argument.expression);
             if (selected.access != parameter.access) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     span,
                     DiagnosticCode::AccessCallMismatch,
                     "constant call argument access does not match the parameter"
                 ));
             }
-            auto argument = read(selected.expression, parameter.type);
+            auto argument = (co_await read(selected.expression, parameter.type));
             if (!argument) {
-                return std::unexpected(argument.error());
+                co_return std::unexpected(argument.error());
             }
             auto checked = convert_argument(
                 *argument,
@@ -485,7 +494,7 @@ public:
                 ast.expression(source_argument.expression).span
             );
             if (!checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             arguments.push_back({.access = selected.access, .expression = std::move(*argument)});
         }
@@ -494,7 +503,7 @@ public:
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
         pending_failures.push_back(contract.failures);
-        return make(
+        co_return make(
             contract.result,
             SemCall {
                 .callee = OwnedSemanticExpression(std::move(selected_callee)),
@@ -530,7 +539,7 @@ public:
         });
     }
 
-    auto evaluate(const Value& value) noexcept -> AnalysisResult<ExecutionValue> {
+    auto evaluate(const Value& value) noexcept -> AnalysisTask<ExecutionValue> {
         if (!pending_failures.empty()) {
             program.require_empty_failures(
                 program.add_union_failure_term(std::move(pending_failures)),
@@ -538,7 +547,7 @@ public:
                 EmptyFailureRequirementKind::OrdinaryConsumption
             );
         }
-        return evaluate_constant_root(program, scope.construction_requests(), value);
+        co_return (co_await evaluate_constant_root(program, scope.construction_requests(), value));
     }
 
 private:
@@ -562,8 +571,8 @@ private:
 
 public:
     auto read_argument(ASTExprID expression, std::optional<ConstructionTypeRef> expected) noexcept
-        -> ExpressionResult<Value> {
-        return read_value_argument(*this, expression, expected);
+        -> ExpressionTask<Value> {
+        co_return (co_await read_value_argument(*this, expression, expected));
     }
 
 private:
@@ -596,34 +605,34 @@ auto evaluate_constant_expression(
     Scope& scope,
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected = std::nullopt
-) noexcept -> ExpressionResult<ConstantID> {
+) noexcept -> ExpressionTask<ConstantID> {
     auto site = ConstantRootSite(draft, module, syntax, scope, syntax.expression(expression).span);
-    auto result = site.read(expression, expected);
+    auto result = (co_await site.read(expression, expected));
     if (!result.has_value()) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     if (expected) {
         auto checked =
             site.convert_argument(*result, *expected, syntax.expression(expression).span);
         if (!checked) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
     }
-    auto evaluated = site.evaluate(*result);
+    auto evaluated = (co_await site.evaluate(*result));
     if (!evaluated) {
-        return std::unexpected(evaluated.error());
+        co_return std::unexpected(evaluated.error());
     }
     if (const auto constant = freeze_constant_value(draft, std::move(*evaluated))) {
         if (expected && !type_shapes_compatible(draft, draft.constant(*constant).type, *expected)) {
-            return std::unexpected(site.fail(
+            co_return std::unexpected(site.fail(
                 syntax.expression(expression).span,
                 DiagnosticCode::TypeMismatch,
                 "expression has an incompatible type"
             ));
         }
-        return *constant;
+        co_return *constant;
     }
-    return std::unexpected(ExpressionNotAdmitted {});
+    co_return std::unexpected(ExpressionNotAdmitted {});
 }
 
 template<typename Scope>
@@ -633,19 +642,19 @@ auto evaluate_array_extent(
     ASTView syntax,
     Scope& scope,
     ASTExprID expression
-) noexcept -> AnalysisResult<std::uint64_t> {
+) noexcept -> AnalysisTask<std::uint64_t> {
     auto site = ConstantRootSite(draft, module, syntax, scope, syntax.expression(expression).span);
-    auto value = site.read(expression, std::nullopt);
+    auto value = (co_await site.read(expression, std::nullopt));
     if (!value) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&value.error())) {
-            return std::unexpected(*diagnostic);
+            co_return std::unexpected(*diagnostic);
         }
     }
     auto fact = std::optional<ConstantAtom>();
     if (value) {
-        auto evaluated = site.evaluate(*value);
+        auto evaluated = (co_await site.evaluate(*value));
         if (!evaluated) {
-            return std::unexpected(evaluated.error());
+            co_return std::unexpected(evaluated.error());
         }
         if (const auto result = execution_atom(draft, *evaluated)) {
             fact = *result;
@@ -654,18 +663,18 @@ auto evaluate_array_extent(
     const auto* integer = fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
     const auto span = syntax.expression(expression).span;
     if (integer == nullptr) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::ConstArrayExtent,
             "array extent must be a constant integer"
         ));
     }
     if (integer->negative()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::ConstNegativeArrayExtent,
             "array extent cannot be negative"
         ));
     }
-    return integer->magnitude();
+    co_return integer->magnitude();
 }

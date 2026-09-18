@@ -17,12 +17,12 @@ fn owned_failure(text: str) throw TextError {
 }
 
 fn taken_failure() throw TextError {
-    let error = TextError { message: String::from_str("taken") };
+    let error = TextError { message: "taken" };
     throw &&error;
 }
 
 fn borrowed_failure(text: String) throw ViewError {
-    throw ViewError { message: text.as_str() };
+    throw ViewError { message: text };
 }
 
 fn forward_failure(text: String) throw ViewError {
@@ -55,30 +55,30 @@ test "String failures: owning payloads copy Take and survive rejected guards" {
     } catch {
         TextError(error) => error.message,
     };
-    check(result.as_str() == "é我😀");
+    check(result == "é我😀");
     let taken = try {
         taken_failure()?;
         String::new()
     } catch {
         TextError(error) => error.message,
     };
-    check(taken.as_str() == "taken");
+    check(taken == "taken");
 }
 
 test "String failures: borrowed payloads preserve caller backing and owning recovery releases it" {
-    var text = String::from_str("outer");
+    var text: String = "outer";
     let copy = recovered(text, false);
     text.clear();
-    check(copy.as_str() == "outer");
-    let owner = String::from_str("enum");
+    check(copy == "outer");
+    let owner: String = "enum";
     let result = try {
-        throw TextFailure::Borrowed(owner.as_str());
+        throw TextFailure::Borrowed(owner);
         String::new()
     } catch {
         TextFailure(.Borrowed(v)) => String::from_str(v),
         TextFailure(.Owned(s)) => s,
     };
-    check(result.as_str() == "enum");
+    check(result == "enum");
 }
 
 struct TextSource {

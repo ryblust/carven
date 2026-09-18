@@ -95,7 +95,7 @@ private:
     static auto enter_depth(std::uint32_t& depth) noexcept -> DepthGuard;
     auto enter_syntax_nesting() noexcept -> DepthGuard;
     auto preflight_delimiter_nesting() noexcept -> bool;
-    auto synchronize_top_level_item() noexcept -> void;
+    auto synchronize_top_level_item(std::size_t item_start) noexcept -> void;
     auto at_end() const noexcept -> bool;
     auto current() const noexcept -> Token;
     auto check(TokenKind kind) const noexcept -> bool;

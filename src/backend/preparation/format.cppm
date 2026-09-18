@@ -11,7 +11,8 @@ struct IntegerFormatField final {
     int base;
     bool uppercase;
     bool zero_pad;
-    std::uint32_t width;
+    // An absent width consumes the operand immediately after the field value.
+    std::optional<std::uint32_t> static_width;
     auto operator==(const IntegerFormatField&) const noexcept -> bool = default;
 };
 
@@ -29,8 +30,8 @@ struct WriterFormat final {
     // Unescaped literal segments before, between, and after the ordered fields.
     std::vector<std::string> text;
     std::vector<WriterFormatField> fields;
-    // Bounds exclude dynamic text bytes, added from completed operands by Writer.
-    // Equal bounds give an exact size after those text lengths are added.
+    // Reservation bounds exclude dynamic-width fields and dynamic text bytes.
+    // Text lengths are added by Writer; dynamic-width writes grow as needed.
     std::uint64_t minimum_size;
     std::uint64_t maximum_size;
     auto operator==(const WriterFormat&) const noexcept -> bool = default;
@@ -60,7 +61,9 @@ using PreparedFormat =
 auto prepared_format_operands(const PreparedFormat& preparation) noexcept
     -> std::span<const std::size_t>;
 
-// Classifies supported builtin fields and computes bounds excluding dynamic text.
+auto writer_field_operand_count(const WriterFormatField& field) noexcept -> std::size_t;
+
+// Classifies fields; reservation bounds exclude dynamic text and dynamic-width fields.
 auto classify_writer_format(
     const FormatSpec& format,
     std::span<const std::optional<BuiltinType>> operands

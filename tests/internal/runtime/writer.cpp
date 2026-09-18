@@ -181,3 +181,51 @@ TEST_CASE("Writer: floating conversions preserve native formatting across precis
         check(value);
     }
 }
+
+TEST_CASE("Runtime Writer: dynamic integer widths match native formatting") {
+    const auto check =
+        []<typename Value, typename Width>(Value value, Width width) static noexcept {
+            auto output = carven::runtime::String::from_str("prefix:");
+            auto writer = carven::runtime::Writer(output, 0uz, 0uz);
+            writer.integer_dynamic_width<2, false, false>(value, width);
+            writer.append("/");
+            writer.integer_dynamic_width<2, true, true>(value, width);
+            writer.append("/");
+            writer.integer_dynamic_width<8, false, false>(value, width);
+            writer.append("/");
+            writer.integer_dynamic_width<10, false, true>(value, width);
+            writer.append("/");
+            writer.integer_dynamic_width<16, false, true>(value, width);
+            writer.append("/");
+            writer.integer_dynamic_width<16, true, false>(value, width);
+            CHECK(
+                output.as_str()
+                == std::format(
+                    "prefix:{0:{1}b}/{0:0{1}B}/{0:{1}o}/{0:0{1}d}/{0:0{1}x}/{0:{1}X}",
+                    value,
+                    width
+                )
+            );
+        };
+    for (const auto width : {0, 1, 8, 80}) {
+        CAPTURE(width);
+        for (const auto value :
+             {0ll,
+              -1ll,
+              std::numeric_limits<long long>::min(),
+              std::numeric_limits<long long>::max()}) {
+            CAPTURE(value);
+            check(value, width);
+        }
+        check(std::numeric_limits<unsigned long long>::max(), width);
+        check(std::int8_t {-128}, static_cast<short>(width));
+    }
+}
+
+TEST_CASE("Runtime Writer: negative dynamic widths terminate") {
+    CHECK(expect_termination("writer-negative-width", []() static noexcept {
+        auto output = carven::runtime::String();
+        auto writer = carven::runtime::Writer(output, 0uz, 0uz);
+        writer.integer_dynamic_width<16, true, true>(-7, -1);
+    }));
+}

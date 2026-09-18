@@ -4,14 +4,13 @@ module;
 
 module carven:test.internal.backend.generation.constant_slices;
 
-import :artifacts;
-import :backend.emission.emit;
 import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target.decl;
 import :backend.target.expr;
+import :backend.target.item;
 import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
@@ -29,16 +28,31 @@ namespace {
 
 struct StaticSliceFacts final {
     const TargetUnit& unit;
-    std::size_t declarations = 0;
-    std::size_t slices = 0;
-    std::size_t empty_arrays = 0;
+    std::size_t declarations;
+    std::size_t slices;
+    std::size_t empty_arrays;
     std::vector<std::string> referenced_names;
+    bool saw_function_definition;
+    std::vector<std::string_view> source_names;
+
+    auto enter_item(const TargetItem& item) noexcept -> bool {
+        if (const auto* space = std::get_if<TargetNamespace>(&item.value); space && space->name) {
+            const auto name = space->name->components().back().spelling();
+            CHECK_FALSE(std::ranges::contains(source_names, name));
+        }
+        return true;
+    }
 
     auto enter_declaration(const TargetDecl& declaration) noexcept -> bool {
         const auto* variable = std::get_if<TargetVariableDecl>(&declaration);
         if (variable == nullptr) {
+            if (const auto* function = std::get_if<TargetFunctionDecl>(&declaration)) {
+                saw_function_definition |=
+                    std::holds_alternative<TargetFreeFunctionDefinition>(function->form);
+            }
             return true;
         }
+        CHECK_FALSE(saw_function_definition);
         ++declarations;
         CHECK(variable->inline_specifier);
         CHECK(variable->constexpr_specifier);
@@ -99,6 +113,8 @@ TEST_CASE("Generation: frozen slices reference deduplicated static array declara
             const nested: [[i32; 2]] = [[1, 2], [3, 4]];
             const text: [str] = ["我\0", "😀"];
             const fn make() -> [i32; 2] => [1, 2];
+            fn constant_data_1() -> i32 => 1;
+            fn constant_data_1_2() -> i32 => 2;
             fn first() -> [i32] => numbers;
             fn second() -> [i32] => numbers;
             fn empty_view() -> [i32] => empty;
@@ -113,8 +129,16 @@ TEST_CASE("Generation: frozen slices reference deduplicated static array declara
     auto slices = 0uz;
     auto empty_arrays = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {
-        auto unit = lower_artifact(compilation, artifact.id);
-        auto facts = StaticSliceFacts {.unit = unit, .referenced_names = {}};
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto facts = StaticSliceFacts {
+            .unit = unit,
+            .declarations = 0uz,
+            .slices = 0uz,
+            .empty_arrays = 0uz,
+            .referenced_names = {},
+            .saw_function_definition = false,
+            .source_names = {"constant_data_1", "constant_data_1_2"}
+        };
         REQUIRE(traverse_target_unit(unit.sections(), facts));
         declarations += facts.declarations;
         slices += facts.slices;
@@ -126,21 +150,6 @@ TEST_CASE("Generation: frozen slices reference deduplicated static array declara
             );
             CHECK(unique.size() == facts.declarations);
             CHECK(facts.slices > facts.declarations);
-            const auto generated = emit(
-                std::move(unit),
-                "constant_slices.cpp",
-                GeneratedArtifactRole::ModuleImplementation,
-                SourceAttributedEmission {.generated_origin = "constant_slices.cpp"}
-            );
-            CHECK(generated.content.contains("inline constexpr auto "));
-            CHECK(generated.content.contains("carven::runtime::as_slice("));
-            CHECK(generated.content.contains("::carven::generated::"));
-            CHECK(generated.content.contains("#include <array>"));
-            CHECK(generated.content.contains("#include <string_view>"));
-            CHECK(generated.content.contains("#include <carven/runtime/slice.hpp>"));
-            CHECK(
-                generated.content.find("inline constexpr") < generated.content.find("auto first(")
-            );
         }
     }
     CHECK(declarations == 4uz);
@@ -176,7 +185,15 @@ TEST_CASE("Generation: static slice backing names are isolated across artifact o
     auto declarations = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        auto facts = StaticSliceFacts {.unit = unit, .referenced_names = {}};
+        auto facts = StaticSliceFacts {
+            .unit = unit,
+            .declarations = 0uz,
+            .slices = 0uz,
+            .empty_arrays = 0uz,
+            .referenced_names = {},
+            .saw_function_definition = false,
+            .source_names = {}
+        };
         REQUIRE(traverse_target_unit(unit.sections(), facts));
         declarations += facts.declarations;
         for (const auto& name : facts.referenced_names) {

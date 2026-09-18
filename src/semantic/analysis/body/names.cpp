@@ -28,7 +28,7 @@ import :support.visit;
 import std;
 
 auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
-    -> AnalysisResult<SelectedExpression> {
+    -> AnalysisTask<SelectedExpression> {
     const auto text = spelling(name.name_span);
     if (const auto* local = use_local(text)) {
         if (const auto* constant = std::get_if<ConstantID>(&local->storage)) {
@@ -38,11 +38,12 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 origin(span),
                 SemConstant {.constant = *constant}
             );
-            return BuiltExpression {
+            co_return BuiltExpression {
                 .storage = std::move(value),
 
                 .pending_failures = {},
                 .takeable = false,
+                .completes = true,
             };
         }
         const auto& runtime = std::get<BoundStorage>(local->storage);
@@ -51,18 +52,20 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             value.category = SemanticValueCategory::Value;
             value.lifetime = active_builder().lifetime();
             value.origin = origin(span);
-            return BuiltExpression {
+            co_return BuiltExpression {
                 .storage = std::move(value),
 
                 .pending_failures = {},
-                .takeable = false
+                .takeable = false,
+                .completes = true,
             };
         }
-        return BuiltExpression {
+        co_return BuiltExpression {
             .storage = active_builder().binding_expression(runtime.binding),
 
             .pending_failures = {},
             .takeable = local->takeable,
+            .completes = true,
         };
     }
     if (catalog().lookup(source_module_id, text).empty()) {
@@ -75,10 +78,10 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             std::span(&name.name_span, 1uz)
         );
         if (!name_reference.has_value()) {
-            return std::unexpected(name_reference.error());
+            co_return std::unexpected(name_reference.error());
         }
         if (name_reference->has_value() && (**name_reference).lookup == CppNameLookup::Global) {
-            return CppSelection {.target = std::move(**name_reference), .span = span};
+            co_return CppSelection {.target = std::move(**name_reference), .span = span};
         }
         const auto builtin = text == "print" ? std::optional(BuiltinFunction::Print)
             : text == "println"              ? std::optional(BuiltinFunction::Println)
@@ -89,31 +92,39 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             : text == "fail"                 ? std::optional(BuiltinFunction::Fail)
                                              : std::nullopt;
         if (builtin) {
-            return BuiltinSelection {*builtin, span, std::nullopt};
+            co_return BuiltinSelection {
+                .function = *builtin,
+                .span = span,
+                .condition_source = std::nullopt,
+                .operand_sources = std::nullopt
+            };
         }
         if (name_reference->has_value()) {
-            return CppSelection {.target = std::move(**name_reference), .span = span};
+            co_return CppSelection {.target = std::move(**name_reference), .span = span};
         }
     }
-    auto selected = find_global(text, name.name_span);
+    auto selected = (co_await find_global(text, name.name_span));
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
-    return (*selected)->form.visit(
+    co_return (co_await (*selected)->form.visit(
         Overloaded {
-            [&](const CatalogFunctionForm& function) noexcept -> AnalysisResult<BuiltExpression> {
+            [&](const CatalogFunctionForm& function) noexcept -> AnalysisTask<BuiltExpression> {
                 auto completed =
-                    batch->ensure_function_signature(function.function, source_module_id, span);
+                    (co_await batch
+                         ->ensure_function_signature(function.function, source_module_id, span));
                 if (!completed.has_value()) {
-                    return std::unexpected(completed.error());
+                    co_return std::unexpected(completed.error());
                 }
                 auto value = active_builder().callable_expression(function.callable, origin(span));
-                return BuiltExpression {
+                co_return BuiltExpression {
                     .storage = std::move(value),
                     .pending_failures = {},
+                    .takeable = true,
+                    .completes = true,
                 };
             },
-            [&](const CatalogConstantForm& constant) noexcept -> AnalysisResult<BuiltExpression> {
+            [&](const CatalogConstantForm& constant) noexcept -> AnalysisTask<BuiltExpression> {
                 const auto declaration =
                     draft().module_constant_declaration_copy(constant.constant);
                 auto value = active_builder().make_expression(
@@ -122,34 +133,35 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                     origin(span),
                     SemConstant {.constant = declaration.value}
                 );
-                return BuiltExpression {
+                co_return BuiltExpression {
                     .storage = std::move(value),
 
                     .pending_failures = {},
                     .takeable = false,
+                    .completes = true,
                 };
             },
-            [&](const CatalogEnumCaseForm& enum_case) noexcept -> AnalysisResult<BuiltExpression> {
+            [&](const CatalogEnumCaseForm& enum_case) noexcept -> AnalysisTask<BuiltExpression> {
                 const auto type = draft().intern_type(
                     CanonicalType {
                         .value = EnumTypeValue {.enumeration = enum_case.owner},
                     }
                 );
-                return enum_case_reference(type, text, span, span);
+                co_return (co_await enum_case_reference(type, text, span, span));
             },
-            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<BuiltExpression> {
+            [&]<typename Form>(const Form&) noexcept -> AnalysisTask<BuiltExpression> {
                 static_assert(
                     std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
                     "unhandled non-value catalog symbol"
                 );
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     name.name_span,
                     DiagnosticCode::TypeValueRequired,
                     std::format("'{}' does not name a runtime value", text)
                 ));
             },
         }
-    );
+    ));
 }
 
 auto BodyElaborator::validate_builtin(
@@ -201,19 +213,13 @@ auto BodyElaborator::validate_builtin(
             continue;
         }
         if (parameter.access != AccessMode::Read
-            || type == nullptr
-            || !(
-                builtin_is_numeric(type->kind)
-                || type->kind == BuiltinType::Bool
-                || type->kind == BuiltinType::Char
-                || type->kind == BuiltinType::Str
-                || type->kind == BuiltinType::String
-            )) {
-            return std::unexpected(fail(
-                parameter_span,
-                DiagnosticCode::TypeMismatch,
-                "printing requires a Read builtin scalar or text argument"
-            ));
+            || (type != nullptr
+                && (type->kind == BuiltinType::Void
+                    || type->kind == BuiltinType::EntryArgs
+                    || type->kind == BuiltinType::StrCharsView))) {
+            return std::unexpected(
+                fail(parameter_span, DiagnosticCode::TypeMismatch, "printing requires a Read value")
+            );
         }
     }
     return {};
@@ -251,6 +257,11 @@ auto BodyElaborator::builtin_operation(
             }
             message = UniqueIndirect(std::move(argument));
         }
+        const auto operand_sources = condition
+                && (std::holds_alternative<SemBinary>((*condition)->value)
+                    || std::holds_alternative<SemShortCircuit>((*condition)->value))
+            ? selection.operand_sources
+            : std::nullopt;
         return builder.make_expression(
             result_type,
             builder.lifetime(),
@@ -261,7 +272,8 @@ auto BodyElaborator::builtin_operation(
                                                        : TestReportKind::Fail,
                 .condition = std::move(condition),
                 .message = std::move(message),
-                .condition_source = selection.condition_source
+                .condition_source = selection.condition_source,
+                .operand_sources = operand_sources
             }
         );
     }
@@ -357,6 +369,8 @@ auto BodyElaborator::builtin_callable(
             site,
             SemClosure {.callable = callable, .captures = {}}
         ),
-        .pending_failures = {}
+        .pending_failures = {},
+        .takeable = true,
+        .completes = true,
     };
 }

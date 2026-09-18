@@ -8,6 +8,7 @@ import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
 import :support.visit;
+import :support.task;
 import std;
 
 // A missing component denotes an unknown array element. Paths describe storage,
@@ -59,7 +60,7 @@ struct OwnershipRelationships final {
 };
 
 struct OwnershipObjectState final {
-    bool available = false;
+    bool available;
     std::optional<ProgramOriginID> taken;
     OwnershipRelationships relationships;
 
@@ -163,7 +164,7 @@ struct OwnershipCallQuery final {
     OwnershipCallInput input;
     std::vector<OwnershipCallCompletion> answer;
     std::flat_set<std::size_t> consumers;
-    bool queued = false;
+    bool queued;
 };
 
 struct OwnershipLocalObject final {
@@ -287,22 +288,28 @@ private:
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
     auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
-        -> OwnershipFlow;
+        -> ContinuationTask<OwnershipFlow>;
     auto expression(
         const SemanticExpression& source,
         OwnershipState state,
         bool direct = false
-    ) noexcept -> OwnershipFlow;
+    ) noexcept -> ContinuationTask<OwnershipFlow>;
     auto complete_expression(const SemanticExpression& source, OwnershipState state) noexcept
-        -> OwnershipFlow;
+        -> ContinuationTask<OwnershipFlow>;
     auto region(const SemanticRegion& source, OwnershipState state, bool release = true) noexcept
-        -> OwnershipFlow;
-    auto statement(const SemanticStatement& source, OwnershipState state) noexcept -> OwnershipFlow;
-    auto conditional(const SemIf& value, OwnershipState state) noexcept -> OwnershipFlow;
-    auto match(const SemMatch& value, OwnershipState state) noexcept -> OwnershipFlow;
-    auto attempt(const SemTry& value, OwnershipState state) noexcept -> OwnershipFlow;
-    auto loop(const SemLoop& value, OwnershipState state) noexcept -> OwnershipFlow;
-    auto range(const SemRangeLoop& value, OwnershipState state) noexcept -> OwnershipFlow;
+        -> ContinuationTask<OwnershipFlow>;
+    auto statement(const SemanticStatement& source, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
+    auto conditional(const SemIf& value, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
+    auto match(const SemMatch& value, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
+    auto attempt(const SemTry& value, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
+    auto loop(const SemLoop& value, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
+    auto range(const SemRangeLoop& value, OwnershipState state) noexcept
+        -> ContinuationTask<OwnershipFlow>;
     auto call(
         CallableID callable,
         const OwnershipRelationships& captures,
@@ -320,7 +327,7 @@ private:
         PatternID pattern,
         std::span<const SemPatternBounds> bounds,
         OwnershipState state
-    ) noexcept -> OwnershipCondition;
+    ) noexcept -> ContinuationTask<OwnershipCondition>;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto object_type(std::size_t object) const noexcept -> TypeID;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;

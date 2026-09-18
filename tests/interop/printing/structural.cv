@@ -1,0 +1,13 @@
+import "printing/structural.hpp";
+
+struct Envelope {
+    value: ::DisplayCopyable
+}
+
+fn main() {
+    let value = ::DisplayNative();
+    println(value);
+    println(f"{value}");
+    let record = Envelope { ::DisplayCopyable() };
+    println(record);
+}

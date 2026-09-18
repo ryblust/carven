@@ -1,0 +1,66 @@
+Order {
+    price: Money {
+        cents: 1250,
+    },
+    names: [
+        "a",
+        "b\n",
+    ],
+}
+Status::Done(
+    42,
+)
+[
+    1,
+    2,
+    3,
+]
+[
+    ',',
+    '我',
+]
+1..=3
+[
+    Money {
+        cents: 7,
+    },
+]
+Empty {} [] Status::Pending
+1
+2
+Pair {
+    first: Money {
+        cents: 1,
+    },
+    second: Money {
+        cents: 2,
+    },
+}
+Order {
+    price: Money {
+        cents: 1250,
+    },
+    names: [
+        "a",
+        "b\n",
+    ],
+}
+Status::Done(
+    42,
+)
+[
+    1,
+    2,
+    3,
+]
+[
+    ',',
+    '我',
+]
+1..=3
+[
+    Money {
+        cents: 7,
+    },
+]
+Empty {} [] Status::Pending

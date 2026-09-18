@@ -23,16 +23,16 @@ auto construct_interpolation(
     const ASTInterpolationExpr& source,
     Span span,
     std::optional<typename Site::Value> receiver = std::nullopt
-) noexcept -> ExpressionResult<typename Site::Value> {
-    auto state = typename Site::OperandState();
+) noexcept -> ExpressionTask<typename Site::Value> {
+    auto state = Site::operand_state();
     auto destination = std::optional<OwnedSemanticExpression>();
     if (receiver) {
         if constexpr (Site::mode == ExpressionMode::RequiredRoot) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         } else {
             auto place = site.consume_write(state, std::move(*receiver), span);
             if (!place) {
-                return std::unexpected(place.error());
+                co_return std::unexpected(place.error());
             }
             destination = OwnedSemanticExpression(std::move(*place));
         }
@@ -42,18 +42,18 @@ auto construct_interpolation(
     operands.reserve(normalized.operands.size());
     for (const auto expression : normalized.operands) {
         const auto execution = site.enter_operand_execution(state.completes);
-        auto built = site.read_argument(expression, std::nullopt);
+        auto built = (co_await site.read_argument(expression, std::nullopt));
         if (!built) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
         auto operand =
             site.consume_read(state, std::move(*built), site.syntax().expression(expression).span);
         if (!operand) {
-            return std::unexpected(operand.error());
+            co_return std::unexpected(operand.error());
         }
         operands.push_back({.access = AccessMode::Read, .expression = std::move(*operand)});
     }
-    return site.finish_constructed(
+    co_return site.finish_constructed(
         site.draft().builtin_type(receiver ? BuiltinType::Void : BuiltinType::String),
         SemFormat {
             .specification = std::move(normalized.specification),

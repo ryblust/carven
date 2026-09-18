@@ -114,6 +114,8 @@ also supports local rule repositories used in dual-repository checkouts.
 | Workload | Sizes |
 | --- | --- |
 | Independent functions and call chains in caller-first and callee-first declaration order | 64, 128, 256 functions |
+| Shared nominal field dependencies | Depths 8, 16, 24 |
+| Shared native result queries | Depths 4, 8, 12 |
 | Repeated and distinct constants | 128, 256, 512, 1024 functions |
 | Nested loops that exit with `break` | Depths 4, 8, 12, 16 |
 | Wide operand lists with reads or interleaved effects | 64, 128, 256 operands |

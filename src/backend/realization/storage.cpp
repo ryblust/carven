@@ -1,9 +1,10 @@
 module carven:backend.realization.storage.impl;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
+import :backend.realization.report;
 import :backend.realization.expr;
 import :backend.realization.operation;
 import :backend.realization.realizer;
@@ -32,17 +33,31 @@ auto BodyRealizer::ExpressionBuilder::take_statements(bool shared) noexcept -> L
     return std::move(declarations);
 }
 
-auto BodyRealizer::ExpressionBuilder::preserve_borrows(Recipe& recipe) noexcept -> void {
+auto BodyRealizer::ExpressionBuilder::borrowed_owner(
+    const PreparedOperation& value,
+    PreparedUse use
+) const noexcept -> bool {
+    return value.operation.category == SemanticValueCategory::Value
+        && !scalar(value.operation.type.resolved())
+        && !std::holds_alternative<SliceTypeValue>(
+               owner.context.semantic().types().type(value.operation.type.resolved()).value
+        )
+        && use != PreparedUse::Consume
+        && use != PreparedUse::NativeTake;
+}
+
+auto BodyRealizer::ExpressionBuilder::preserve_borrows(Recipe& recipe) noexcept
+    -> ContinuationTask<std::monostate> {
     if (!std::holds_alternative<std::monostate>(recipe.completion)
         || std::holds_alternative<SemBinding>(source(recipe).operation.value)
-        || (source(recipe).constant
+        || (source(recipe).operation.constant
             && !source(recipe).requires_execution
-            && scalar(source(recipe).type))) {
-        return;
+            && scalar(source(recipe).operation.type.resolved()))) {
+        co_return {};
     }
     const auto& inputs = recipe.inputs;
     for (auto index = 0uz; index < inputs.size(); ++index) {
-        auto& child = recipe.operands[index];
+        auto& child = *recipe.operands[index];
         const auto& value = source(child);
         // Named storage already has its source lifetime. Sequencing owns any
         // snapshot needed before a later operand executes.
@@ -50,28 +65,34 @@ auto BodyRealizer::ExpressionBuilder::preserve_borrows(Recipe& recipe) noexcept 
             || std::holds_alternative<SemBinding>(value.operation.value)) {
             continue;
         }
-        if (!scalar(value.type)
-            && value.category == SemanticValueCategory::Value
-            && inputs[index].use != ConstructionUse::Consume
-            && inputs[index].use != ConstructionUse::NativeTake) {
-            anchor(child, inputs[index].use, true);
+        if (!scalar(value.operation.type.resolved())
+            && value.operation.category == SemanticValueCategory::Value
+            && inputs[index].use != PreparedUse::Consume
+            && inputs[index].use != PreparedUse::NativeTake) {
+            (co_await anchor(child, inputs[index].use, true));
         } else if (!saved(child) && !std::holds_alternative<SemBinding>(value.operation.value)) {
-            preserve_borrows(child);
+            (co_await preserve_borrows(child));
         }
     }
+    co_return {};
 }
 
 auto BodyRealizer::ExpressionBuilder::raw(Recipe& recipe, ConstantLiteralContext literal) noexcept
-    -> TargetExpr {
+    -> ContinuationTask<TargetExpr> {
     const auto& value = source(recipe);
-    if (value.constant && !value.requires_execution && scalar(value.type)) {
-        return constant_expression(owner.context, *value.constant, literal);
+    const auto observed =
+        owner.test_observation && owner.test_observation->expression == recipe.expression;
+    if (!observed
+        && value.operation.constant
+        && !value.requires_execution
+        && scalar(value.operation.type.resolved())) {
+        co_return constant_expression(owner.context, *value.operation.constant, literal);
     }
     if (std::holds_alternative<LoweringCompleted>(recipe.completion)) {
         invariant_violation("completed operation has no residual value");
     }
     if (auto* residual = std::get_if<TargetExpr>(&recipe.completion)) {
-        return std::move(*residual);
+        co_return std::move(*residual);
     }
     if (saved(recipe)) {
         auto result = name_expression(saved(recipe)->name);
@@ -83,30 +104,32 @@ auto BodyRealizer::ExpressionBuilder::raw(Recipe& recipe, ConstantLiteralContext
         if (saved(recipe)->kind == SavedKind::Success) {
             result = member_expression(std::move(result), TargetIdentifier::from_spelling("value"));
         }
-        return result;
+        co_return result;
     }
     if (const auto* binding = std::get_if<SemBinding>(&value.operation.value)) {
-        return owner.binding_expression(binding->binding);
+        co_return owner.binding_expression(binding->binding);
     }
     if (const auto* constant = std::get_if<SemConstant>(&value.operation.value)) {
-        return constant_expression(owner.context, constant->constant, literal);
+        co_return constant_expression(owner.context, constant->constant, literal);
     }
     if (std::holds_alternative<SemTake>(value.operation.value)) {
-        return transfer_expression(emit(recipe.operands.front(), ConstructionUse::WritePlace));
+        co_return transfer_expression(
+            (co_await emit(*recipe.operands.front(), PreparedUse::WritePlace))
+        );
     }
     if (const auto* adoption = std::get_if<SemArrayAdopt>(&value.operation.value)) {
-        return realize_callable_adaptation(
+        co_return realize_callable_adaptation(
             owner.context,
-            raw(recipe.operands.front()),
+            (co_await raw(*recipe.operands.front())),
             adoption->source->type.resolved(),
-            value.type
+            value.operation.type.resolved()
         );
     }
 
     // These checked helpers take both operands as their explicit <T>.
     const auto* binary = std::get_if<SemBinary>(&value.operation.value);
     const auto typed_arithmetic = binary != nullptr
-        && owner.context.is_integer(value.type)
+        && owner.context.is_integer(value.operation.type.resolved())
         && (binary->operation == BinaryOperator::Add
             || binary->operation == BinaryOperator::Subtract
             || binary->operation == BinaryOperator::Multiply
@@ -118,44 +141,50 @@ auto BodyRealizer::ExpressionBuilder::raw(Recipe& recipe, ConstantLiteralContext
     }
     auto operands = std::vector<TargetExpr>();
     operands.reserve(inputs.size());
-    const auto append_operand = [&](std::size_t index) noexcept {
-        operands.push_back(emit(
-            recipe.operands[index],
+    const auto append_operand =
+        [&](std::size_t index) noexcept -> ContinuationTask<std::monostate> {
+        operands.push_back((co_await emit(
+            *recipe.operands[index],
             inputs[index].use,
-            inputs[index].use == ConstructionUse::OperandValue
+            inputs[index].use == PreparedUse::OperandValue
                 ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped : literal)
                 : std::holds_alternative<SemArray>(value.operation.value)
                 ? ConstantLiteralContext::TargetTyped
                 : ConstantLiteralContext::Exact
-        ));
+        )));
+        co_return {};
     };
     for (auto index = 0uz; index < inputs.size(); ++index) {
-        if (inputs[index].demand == ConstructionDemand::Value) {
-            append_operand(index);
+        if (inputs[index].demand == PreparedDemand::Value) {
+            (co_await append_operand(index));
         }
     }
-    const auto* operation = std::get_if<ConstructionOperation>(&value.value);
-    if (operation == nullptr) {
-        invariant_violation("ordinary realization requires an operation");
+    if (observed && binary != nullptr) {
+        co_return realize_observed_comparison(
+            owner.context,
+            *binary,
+            std::move(operands),
+            owner.test_observation->writer,
+            owner.test_observation->sources
+        );
     }
-    return realize_operation(
+    co_return realize_operation(
         owner.context,
         value.operation,
-        operation->preparation.get(),
+        value.preparation.get(),
         std::move(operands)
     );
 }
 
 auto BodyRealizer::ExpressionBuilder::emit(
     Recipe& recipe,
-    ConstructionUse use,
+    PreparedUse use,
     ConstantLiteralContext literal
-) noexcept -> TargetExpr {
-    if (use == ConstructionUse::ProjectionPlace) {
+) noexcept -> ContinuationTask<TargetExpr> {
+    if (use == PreparedUse::ProjectionPlace) {
         invariant_violation("projection access was not resolved before realization");
     }
-    if (!saved(recipe)
-        && (use == ConstructionUse::WritePlace || use == ConstructionUse::NativeTake)) {
+    if (!saved(recipe) && (use == PreparedUse::WritePlace || use == PreparedUse::NativeTake)) {
         if (const auto* binding = std::get_if<SemBinding>(&source(recipe).operation.value);
             binding != nullptr
             && std::holds_alternative<OwnerBindingStorage>(
@@ -164,60 +193,62 @@ auto BodyRealizer::ExpressionBuilder::emit(
             owner.mutable_owners.emplace(owner.binding_names.at(binding->binding).spelling());
         }
     }
-    if (use == ConstructionUse::NativeTake) {
+    if (use == PreparedUse::NativeTake) {
         // The query promises T&&. Do not first turn a trivial Take into
         // const T& via Carven transfer and then cast away constness.
         auto value = saved(recipe) == nullptr
                 && std::holds_alternative<SemTake>(source(recipe).operation.value)
-            ? emit(recipe.operands.front(), ConstructionUse::WritePlace)
-            : raw(recipe, literal);
-        return TargetExpr {
+            ? (co_await emit(*recipe.operands.front(), PreparedUse::WritePlace))
+            : (co_await raw(recipe, literal));
+        co_return TargetExpr {
             .value = TargetStaticCastExpr {
-                .type =
-                    owner.context
-                        .reference_type(owner.context.lower_type(source(recipe).type), false, true),
+                .type = owner.context.reference_type(
+                    owner.context.lower_type(source(recipe).operation.type.resolved()),
+                    false,
+                    true
+                ),
                 .operand = target_child(std::move(value))
             }
         };
     }
-    auto result = raw(recipe, literal);
-    if (use == ConstructionUse::Consume
+    auto result = (co_await raw(recipe, literal));
+    if (use == PreparedUse::Consume
         && saved(recipe)
         && saved(recipe)->kind != SavedKind::Place
         && saved(recipe)->kind != SavedKind::StoredPlace) {
-        if (saved(recipe)->kind == SavedKind::Success && scalar(source(recipe).type)) {
+        if (saved(recipe)->kind == SavedKind::Success
+            && scalar(source(recipe).operation.type.resolved())) {
             // Scalar transfer observes const T&; the success projection
             // already promises const access and cannot call transfer(T&).
-            return TargetExpr {
+            co_return TargetExpr {
                 .value = TargetStaticCastExpr {
                     .type = owner.context.reference_type(
-                        owner.context.lower_type(source(recipe).type),
+                        owner.context.lower_type(source(recipe).operation.type.resolved()),
                         true
                     ),
                     .operand = target_child(std::move(result))
                 }
             };
         }
-        return transfer_expression(std::move(result));
+        co_return transfer_expression(std::move(result));
     }
     const auto& value = source(recipe);
-    const auto copy_binding =
-        (use == ConstructionUse::Consume || use == ConstructionUse::OperandValue)
+    const auto copy_binding = (use == PreparedUse::Consume || use == PreparedUse::OperandValue)
         && !saved(recipe)
         && std::holds_alternative<SemBinding>(value.operation.value)
-        && !scalar(value.type);
+        && !scalar(value.operation.type.resolved());
     // Named values copy even at C++ automatic-move return sites.
     if (copy_binding) {
-        return call_expression(
+        co_return call_expression(
             intrinsic_expression(TargetSymbol::StdAsConst),
             target_expressions(std::move(result))
         );
     }
-    if (use == ConstructionUse::ReadBorrow
-        || use == ConstructionUse::ConstPlace
-        || use == ConstructionUse::AddressValue) {
-        const auto type = owner.context.lower_type(source(recipe).type);
-        if (use == ConstructionUse::AddressValue && !saved(recipe)) {
+    if (use == PreparedUse::ReadBorrow
+        || use == PreparedUse::ConstPlace
+        || use == PreparedUse::AddressValue) {
+        const auto type = owner.context.lower_type(source(recipe).operation.type.resolved());
+        if (use == PreparedUse::AddressValue && !saved(recipe)) {
             result = TargetExpr {
                 .value =
                     TargetStaticCastExpr {.type = type, .operand = target_child(std::move(result))}
@@ -230,117 +261,120 @@ auto BodyRealizer::ExpressionBuilder::emit(
             }
         };
     }
-    return result;
+    co_return result;
 }
 
 auto BodyRealizer::ExpressionBuilder::anchor(
     Recipe& recipe,
-    ConstructionUse use,
+    PreparedUse use,
     bool force,
     bool direct_scalar
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     if (!pending(recipe)) {
-        return;
+        co_return {};
     }
     const auto& value = source(recipe);
     if (!force && !value.reads_storage && !value.requires_execution) {
-        return;
+        co_return {};
     }
-    if (value.category == SemanticValueCategory::Value
-        && !scalar(value.type)
+    if (value.operation.category == SemanticValueCategory::Value
+        && !scalar(value.operation.type.resolved())
         && !std::holds_alternative<SemBinding>(value.operation.value)
-        && value.lifetime != cleanup) {
+        && value.operation.lifetime != cleanup) {
         invariant_violation("owner anchoring requires its source cleanup frame");
     }
     if (std::holds_alternative<SemBinding>(value.operation.value)
-        && (use == ConstructionUse::WritePlace || use == ConstructionUse::ConstPlace)) {
-        return;
+        && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace)) {
+        co_return {};
     }
     if (!std::holds_alternative<SemBinding>(value.operation.value)) {
-        preserve_borrows(recipe);
+        (co_await preserve_borrows(recipe));
     }
     const auto name = owner.names.fresh(TargetTemporaryNameKind::Owner);
-    if ((direct_scalar || use == ConstructionUse::OperandValue || use == ConstructionUse::Consume)
-        && scalar(value.type)
-        && use != ConstructionUse::WritePlace
-        && use != ConstructionUse::ConstPlace
+    if ((direct_scalar || use == PreparedUse::OperandValue || use == PreparedUse::Consume)
+        && scalar(value.operation.type.resolved())
+        && use != PreparedUse::WritePlace
+        && use != PreparedUse::ConstPlace
         && std::holds_alternative<BuiltinTypeValue>(
-            owner.context.semantic().types().type(value.type).value
+            owner.context.semantic().types().type(value.operation.type.resolved()).value
         )) {
         statements.emit(generated_statement(
             TargetVariableStmt {
-                .binding = use == ConstructionUse::Consume || use == ConstructionUse::NativeTake
+                .binding = use == PreparedUse::Consume || use == PreparedUse::NativeTake
                     ? TargetVariableBinding::MutableValue
                     : TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .name = name,
-                .type = owner.context.lower_type(value.type),
-                .initializer = raw(recipe)
+                .type = owner.context.lower_type(value.operation.type.resolved()),
+                .initializer = (co_await raw(recipe))
             }
         ));
         complete(recipe, Saved {.name = name, .kind = SavedKind::Value});
-        return;
+        co_return {};
     }
     if (std::holds_alternative<SemCppCall>(value.operation.value)
-        && use != ConstructionUse::Consume
-        && use != ConstructionUse::NativeTake) {
-        const auto* native =
-            std::get_if<CppTypeValue>(&owner.context.semantic().types().type(value.type).value);
+        && use != PreparedUse::Consume
+        && use != PreparedUse::NativeTake) {
+        const auto* native = std::get_if<CppTypeValue>(
+            &owner.context.semantic().types().type(value.operation.type.resolved()).value
+        );
         const auto* query = native == nullptr ? nullptr : std::get_if<CppQueryType>(&native->form);
         if (query == nullptr) {
             invariant_violation("native call has no result query");
         }
-        const auto exact = owner.context.target().intern_type(
-            {.value = TargetDecltypeType(owner.context.cpp_type_query(*query)),
-             .const_qualified = false}
-        );
+        const auto exact = owner.context.lower_cpp_query(*query);
         const auto storage = LoweringDeferredStorage {.name = name, .value_type = exact};
         owner.declare_deferred(storage, false, declarations);
         owner.initialize_deferred(
             storage,
-            raw(recipe),
+            (co_await raw(recipe)),
             statements,
             owner.context.intrinsic_type(TargetSymbol::DecltypeAuto)
         );
         complete(recipe, Saved {.name = name, .kind = SavedKind::StoredValue});
-        return;
+        co_return {};
     }
     // Consume completes a value snapshot at this barrier, not merely a
     // native invocation. Returning the normalized object type copies a
     // native T&/const T&, moves T&&, and directly constructs a prvalue.
-    const auto place = (value.category == SemanticValueCategory::Place || names_storage(value))
-        && (use == ConstructionUse::WritePlace || use == ConstructionUse::ConstPlace);
+    const auto place =
+        (value.operation.category == SemanticValueCategory::Place || names_storage(value))
+        && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace);
     // Read describes the consumer, not ownership of a newly produced value.
     // A factory cannot extend a prvalue lifetime by returning const T&.
-    const auto read = use == ConstructionUse::ReadBorrow
-        && (value.category == SemanticValueCategory::Place || names_storage(value));
+    const auto read = use == PreparedUse::ReadBorrow
+        && (value.operation.category == SemanticValueCategory::Place || names_storage(value));
     // By-value builtin snapshots store the value type, not a const parameter type.
-    const auto read_value = read
+    const auto read_value =
+        read
         && std::holds_alternative<BuiltinTypeValue>(
-                                owner.context.semantic().types().type(value.type).value
+            owner.context.semantic().types().type(value.operation.type.resolved()).value
         )
-        && !owner.context.plan().read_borrows_storage(value.type);
-    const auto type = place
-        ? owner.context.reference_type(
-              owner.context.lower_type(value.type),
-              use == ConstructionUse::ConstPlace || value.category != SemanticValueCategory::Place
-          )
+        && !owner.context.plan().read_borrows_storage(value.operation.type.resolved());
+    const auto type = place ? owner.context.reference_type(
+                                  owner.context.lower_type(value.operation.type.resolved()),
+                                  use == PreparedUse::ConstPlace
+                                      || value.operation.category != SemanticValueCategory::Place
+                              )
         : read && !read_value
-        ? owner.context.lower_parameter({.access = AccessMode::Read, .type = value.type})
-        : owner.context.lower_type(value.type);
+        ? owner.context.lower_parameter(
+              {.access = AccessMode::Read, .type = value.operation.type.resolved()}
+          )
+        : owner.context.lower_type(value.operation.type.resolved());
     const auto storage = LoweringDeferredStorage {.name = name, .value_type = type};
     owner.declare_deferred(storage, false, declarations);
     owner.initialize_deferred(
         storage,
-        use == ConstructionUse::Consume
-                || use == ConstructionUse::OperandValue
-                || use == ConstructionUse::WritePlace
-            ? emit(recipe, use)
-            : raw(recipe),
+        use == PreparedUse::Consume
+                || use == PreparedUse::OperandValue
+                || use == PreparedUse::WritePlace
+            ? (co_await emit(recipe, use))
+            : (co_await raw(recipe)),
         statements
     );
     complete(
         recipe,
         Saved {.name = name, .kind = place ? SavedKind::StoredPlace : SavedKind::StoredValue}
     );
+    co_return {};
 }

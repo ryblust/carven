@@ -11,7 +11,7 @@ the current implementation.
 SemIRProgram + TargetPlanningRequest
   → PlannedCompilation
   → lower_artifact
-      → BodyConstruction → body realization → target syntax
+      → BodyPreparation → body realization → target syntax
   → TargetUnit
   → emit
   → GeneratedArtifactSet
@@ -24,40 +24,27 @@ and target-unit identity. Repeated lowering produces independent units. Type and
 signature-result caches belong to that artifact lowering and track incomplete
 resolution separately from completed target identities.
 
-`lower_body` constructs `BodyConstruction` and synchronously finishes
-`BodyRealizer` while the construction remains alive. `BodyLoweringInputs`
-supplies parameter and capture names and the exit contract; `LoweredBody`
-returns target statements and referenced-parameter facts.
-`BodyConstruction` invokes `backend/preparation` and owns its optional implementation
-plans, ordered operands, value/effects demands, use contracts, execution summaries,
-structured regions and control destinations. It borrows the frozen SemIR operations
-and pattern identities through realization. Its expression and region IDs carry
-the source `BodyID`; semantic type, binding, lifetime, failure and provenance IDs
-retain their existing owners. The published semantic program outlives this data.
-Ordinary operation realization reads the original resolved operation and consumes
-prepared Target operands.
+`lower_body` prepares a published semantic body and finishes `BodyRealizer` while
+that preparation remains alive. `BodyLoweringInputs` supplies parameter and capture
+names and the exit contract; `LoweredBody` returns target statements and
+referenced-parameter facts.
 
-Within `realization/`, `expr` owns the private expression builder contract and
-expression construction. Its `sequencing`, `storage`, and `call` implementation
-slices preserve execution order, materialize retained results, and complete
-fallible calls. These slices share the builder's state and cleanup lifetime.
+`BodyPreparation` borrows semantic expression occurrences and owns operand uses,
+value/effects demands, execution summaries, and optional operation plans. SemIR
+owns types, lifetimes, origins, constants, effects, patterns, and structured control
+flow. Preparation maps propagation markers to their operand operation and stores
+no separate plan for those markers. Operation lookup rejects foreign operations.
+The published semantic program outlives preparation and realization.
 
-Construction completion runs one read-only structural check before realization.
-It checks expression and region ID ownership and bounds, unique execution
-ownership, execution cycles and rows without execution owners, lifetime and pattern
-membership, loop target kind and body scope, protected-region failure destinations,
-and the selected catch arm behind a rethrow. Control references are not execution
-children: a handler is active only for its protected region, and a loop target
-only for its body. Catch guards and bodies send failures to the enclosing target.
-Violations retain the containing source origin when one is available. Malformed
-inputs are available only through the internal testing fixture.
+`BodyRealizer` traverses those structured regions directly. A failure receiver is
+active only in its protected region; a loop target is active only in its body.
+Catch guards and bodies send failures to the enclosing receiver. The active catch
+retains the payload and accepted failure set needed by a rethrow.
 
-These checks cover relationships introduced by construction. Semantic publication
-owns type legality, binding contracts, ownership and lifetime analysis. Native C++
-compilation owns delegated operation and construction viability. Function return,
-test exit and function failure destinations implicitly refer to the current body;
-thrown types come from their values and call transport cleanup comes from the
-call's lifetime.
+Within `realization/`, `expr` owns the private expression builder. Its `sequencing`,
+`storage`, and `call` slices preserve execution order, retain borrowed results,
+and complete fallible calls. Semantic publication owns source legality and
+lifetime contracts; native compilation checks delegated C++ operations.
 
 `TargetUnitBuilder::finish` verifies the target tree, derives dependencies, and
 materializes directives. Rendering serializes that finished tree. Filesystem
@@ -92,7 +79,8 @@ identity and do not extend temporary backing lifetimes.
 
 `SliceConstant` instead requests persistent backing for its completed elements.
 `backend.lowering.constant` reconstructs completed values. `ArtifactLowering`
-owns one `ConstantStorage` that deduplicates backing by constant identity within
+owns one `ConstantStorage` that allocates its namespace against the module's
+reserved identifiers and deduplicates backing by constant identity within
 the artifact. It emits an `inline constexpr` declaration initialized by a typed
 `std::array` and realizes the slice as `runtime::as_slice` of that named array.
 Generated names distinguish linkage domains, source modules, and artifacts;
@@ -125,7 +113,7 @@ types in a callable signature. Declaration ordering includes these requirements;
 cycles in type formation remain C++ errors.
 
 Native Take query operands require `T&&`, including scalar and pointer types.
-`BodyConstruction` records this as `NativeTake`, separately from Carven owning
+Operand preparation records this as `NativeTake`, separately from Carven owning
 `Consume`. Realization must preserve the complete operand type when producing
 that rvalue reference. A sequencing barrier first completes the owning snapshot;
 its subsequent native delivery retains the queried `T&&` and its constness.
@@ -175,7 +163,12 @@ it, with no copy, assignment, or default construction. Function-pointer thunks
 restore the original pointer type before invocation.
 
 Bindings initialize in their natural scopes. Assignment uses C++ assignment
-and requires an assignable destination. Delayed construction uses
+and requires an assignable destination. A binding initializer without outward
+failure or test exit initializes its final C++ object directly. When it requires
+statements or local backing, a typed factory contains the complete initializer
+and constructs the result before that backing is destroyed. Escaping structured
+initializers deliver directly into their final deferred destination. Delayed
+construction uses
 local result storage only where direct initialization cannot preserve control
 flow and temporary lifetimes. `runtime::DeferredResult<Result>` initializes once
 from a typed factory. At C++ template instantiation, `std::is_reference_v<Result>`
@@ -208,7 +201,7 @@ use the same transport, with result adaptation lifting ordinary returns.
 Unaffected concrete callables retain their ordinary return representation.
 
 Prepared scalar print operands pass their known text to the ordinary runtime
-printing entry. Construction retains the original operand's execution under its
+printing entry. Preparation retains the original operand's execution under its
 normal access and sequencing rules. The fallback writes the prepared bytes directly;
 when library feature detection admits `std::print`, it prints the text through that
 facility. Earlier values and separators remain observable if a later value's
@@ -217,6 +210,29 @@ its owning construction, before
 subsequent print arguments execute. Allocation counts and incidental buffers
 inside scalar output conversion are not source guarantees; source String
 construction and operand completion retain their boundaries.
+
+Structural print operands use a borrowing wrapper with a generated typed display
+lambda. `realization.display` reads published nominal fields and enum cases and
+constructs direct field accesses and writer statements. Within each display
+invocation, compound emitters are shared by semantic type and display depth.
+Local lambdas are defined in dependency order and borrow earlier helpers for the
+duration of that invocation. Generated size follows the reachable type-depth
+pairs and their fields. Field layout is emitted as literal text;
+sequence emitters receive the known depth for indentation and visit runtime
+elements within display limits. `DisplayWriter` handles scalar conversion, nested text
+escaping, and bounded output. External and
+callable leaves remain opaque; no user formatter participates. The wrapper is
+consumed synchronously after ordinary Read argument sequencing.
+
+Direct comparison explanations intercept the condition's existing expression
+recipe after operand sequencing. The observer in `testing.hpp` compares once and renders
+its operands only on failure. Observation prevents replacing that comparison with
+a known Boolean while retaining operand preparation and snapshots. Short-circuit
+explanations use ordinary expression construction: selected branches observe the
+right Boolean result, and a skipped failing branch records `<not evaluated>`.
+Known left operands select their branch during realization. Explanation
+storage is local to the report operation and is completed before message evaluation;
+`TestFailure` borrows it only during the reporter callback.
 
 Calls that project results check `TestStopped` before success or typed failures.
 Propagation returns through each Carven frame, preserving C++ scope cleanup;
@@ -245,14 +261,16 @@ extracting an unused success payload. Operand realization determines storage
 identity and observation or transfer behavior before composing the result.
 
 Discarded results pass through expression evaluation. Known conditions request
-execution without a value and retain their full-expression cleanup boundary.
-An unused short-circuit result needs no branch when its selected operand has
-no execution obligation. After required execution is selected,
-`discarded_operation` chooses the C++ statement form. Calls with known Carven
-or runtime callable and result contracts use ordinary expression statements.
+execution without a value and retain their full-expression cleanup boundary. An
+unused short-circuit result needs no branch when its selected operand has no
+execution obligation. After required execution is selected,
+`discarded_operation` chooses the C++ statement form. Calls with known Carven or
+runtime callable and result contracts use ordinary expression statements.
 Non-void native calls, opaque result types, and other retained value expressions
-use explicit void conversion. Intrinsic call policy
-belongs to `TargetSymbol`; it does not grant permission to omit execution.
+use explicit void conversion. `TargetSymbolInfo` owns each intrinsic's spelling,
+defining header, and call-result discard policy. Emission, dependency
+collection, and realization consume that record. Discard policy does not grant
+permission to omit execution.
 
 Function-body completion derives parameter names and local unused attributes
 from the retained target tree while preserving initialization and lifetime.
@@ -310,8 +328,11 @@ callable views retain a target description. Neither choice copies capture conten
 Source and full-expression scopes preserve lifetimes.
 
 `BodyRealizer::ExpressionBuilder` composes private recipes from prepared operations.
-A recipe retains an unevaluated operation and its operands, or a completed target
-expression or stable result. Recipes are temporary realization state. Operation
+A recipe retains an unevaluated operation and borrowed child recipes, or a completed
+target expression or stable result. The expression builder owns recipes in stable,
+flat storage. `ContinuationTask` drives their mutually dependent construction and
+completion without a host call frame for each ordinary operand. Structured region
+lowering retains its lexical entry points. Operation
 emission consumes their prepared operands through `realize_operation`.
 
 Before delivering a residual expression, its frame retains temporary backing
@@ -319,7 +340,7 @@ needed by borrowed operands. Reports, match subjects, and range sources use the
 same operand delivery path. Nested consumption within one source lifetime shares
 the frame; retained storage follows that lifetime's cleanup scope.
 
-Recipes borrow the ordered operand contracts from body construction. Completion
+Recipes derive their operand uses from body preparation. Completion
 produces a saved result, a residual target expression, or completed evaluation
 without a residual value. Prepared summaries borrow stable semantic nodes and
 end with body lowering.
@@ -352,6 +373,14 @@ Discard demand removes unneeded pure results through the same expression lowerin
 that handles retained results. Short-circuit control has one construction path;
 execution and lifetime requirements remain active when the result is discarded.
 
+A known scalar result uses literal delivery when the operation itself needs no
+execution and selects no storage. The ordinary discard path completes its
+operands before delivering the constant. Effects-only evaluation preserves
+borrowed temporary owners through their source cleanup boundary.
+For `values.slice(0, 2).len()`, realization executes the checked slice and returns
+`2`; the slice result needs no storage or size query. Failure still prevents
+result delivery.
+
 An independent full-expression root call can initialize an ordinary Outcome local
 when it shares no retained storage or cleanup frame with other operands. Nested
 calls and conditional execution use deferred storage where needed. Both paths
@@ -362,7 +391,7 @@ all retained owners.
 
 Semantic analysis publishes the operation's type, evaluation and lifetime contracts.
 For ordinary operations using existing contracts, the backend describes ordered
-inputs and uses in `construction/operands.cpp` and realizes C++ syntax in
+inputs and uses in `preparation/operands.cpp` and realizes C++ syntax in
 `realization/operation.cpp`. Inputs with a uniform storage use share the direct
 child definition in `semantic.semir.children`; mixed uses retain their operand
 adapters. Both visitors enumerate the semantic expression alternatives explicitly.
@@ -396,8 +425,9 @@ the existing operand storage contract.
 Conditionals, returns, and scopes lower directly. Boolean short-circuit values
 use C++ `&&` and `||` when the selected operand needs no preceding statements;
 otherwise a branch contains that operand's evaluation and result delivery.
-Ordinary loops use an initializer scope and a while loop; condition sequencing executes on every
-test. A loop with steps gives continue a local step target during construction.
+Loops use native while conditions when condition evaluation needs no preceding
+statements. Otherwise the iteration body sequences the condition before its exit
+test. Step loops retain a local continue target.
 Known consumers receive results directly, including returns from selected branches.
 Expression-position value branches with no outward failure or test exit use local
 value lambdas; branches with those exits use deferred initialization. Function
@@ -496,8 +526,9 @@ order. Target type IDs belong to one unit. Source attribution and function forms
 use exact variants.
 
 Type construction accepts only children already present in the same unit;
-append-only insertion establishes acyclicity. Finishing validates occurrence
-type references and local control transfers.
+append-only insertion establishes acyclicity. Finishing names registered
+namespace-visible query types before their first declaration use, then validates
+occurrence type references and local control transfers.
 Target verification does not recheck Carven evaluation order, object lifetime
 semantics, or C++ overload and constructor feasibility. Realization preserves
 those input contracts through operand use, frame ownership, result destinations
@@ -507,11 +538,13 @@ collection traverses the finished tree and referenced types, producing the
 required standard and runtime headers. Unreferenced interned types add no headers.
 
 The renderer serializes the verified nodes, directives, source mapping, and
-whitespace. Binary rendering preserves the expression tree using C++ precedence
-and associativity. Nested comparisons on either side receive explicit parentheses
-to make their grouping visible. Semantic inference and target syntax construction
-finish before rendering. Artifact collection checks logical paths, uniqueness,
-and prefix safety.
+whitespace. Layout alternatives inspect borrowed pending commands up to the next
+line boundary; they do not copy the remaining document. Binary rendering
+preserves the expression tree using C++ precedence and associativity. Nested
+comparisons on either side receive explicit parentheses to make their grouping
+visible. Semantic inference and target syntax construction finish before
+rendering. Artifact collection checks logical paths, uniqueness, and prefix
+safety.
 
 ## External names and operations
 
@@ -533,11 +566,20 @@ expression's type and value category as `decltype((...))`. Semantic object types
 explicitly wrap that query in `std::remove_cvref_t`; normalization belongs to
 representation selection. Restricted query shapes have structural equality for
 type interning; general target expressions remain move-only and have no equality
-protocol. Executed calls and type queries
-consume the explicit semantic callee and operand access. Executed calls use
-ordinary argument sequencing and access lowering. Receiver access is preserved
-independently of storage made mutable to realize a later Take. Discarded external
-calls need no result storage, so void-returning providers remain usable.
+protocol. Lowering registers external queries for artifact-local type aliases.
+Finishing collects occupied names across the complete unit, merging reopened and
+qualified namespace paths, then allocates aliases in their destination namespace.
+Aliases precede their first use in dependency order, after preceding nominal
+definitions. References use qualified alias names; exact
+references and cv-qualification remain in the alias definition. Generic local
+`decltype` expressions retain their local scope. This preserves shared query
+dependencies in the generated C++.
+
+Executed calls and type queries consume the explicit semantic callee and operand
+access. Executed calls use ordinary argument sequencing and access lowering.
+Receiver access is preserved independently of storage made mutable to realize a
+later Take. Discarded external calls need no result storage, so void-returning
+providers remain usable.
 
 C string literal operations have an intrinsic external `const char*` type.
 Lowering emits byte-escaped narrow literal storage with `static_cast<const char*>`,
@@ -549,12 +591,15 @@ string literals retain `std::string_view` realization.
 `backend/preparation` consumes immutable semantic operations and their known
 normal-completion values. It owns prepared bytes, integer field plans, residual
 operand mappings, size bounds, and UTF-8 proofs. It never interns into semantic
-stores. `ConstructionOperation` optionally owns a plan through realization.
+stores. `PreparedOperation` optionally owns a plan through realization.
 Operations without preparation and print calls without known scalar text hold no
 plan payload.
 
 `PreparedFormatText` owns the complete text. `PreparedWriterFormat` owns literal
-segments, builtin fields, added-byte bounds, and retained operand indices.
+segments, builtin fields, reservation bounds, and retained operand indices.
+Fields consume the retained operands in order: one value, followed by a width
+when the integer field has no static width. Retained operand indices map this
+pack to the original source expressions.
 `PreparedDelegatedFormat` owns native format bytes in `format_string`, retained
 operand indices, and an encoding guarantee. `PreparedPrint` owns optional scalar
 text for each source operand. Published semantics retain the source operation and
@@ -568,15 +613,23 @@ spellings through the bounded `semantic.format` serializer. Over-budget or
 unsupported work retains runtime formatting. Serialization of the source
 fallback is outside the optional materialization budget. Supported, known dynamic
 integer widths and floating widths/precisions resolve to static specification text
-within the preparation budget. Writer classification accepts static integer specifications,
-default floating output, fixed/scientific/general floating presentations with
-precision up to 256, and default text, boolean, and character fields. Larger
-precisions and decorated floating fields retain the standard formatter. It
-computes size bounds without allocating padding; the bounds exclude dynamic text
-bytes. Native/custom formatters retain all original arguments because they can
-inspect the argument pack.
+within the preparation budget. Writer classification accepts static integer
+specifications and dynamic widths of type `i8`, `u8`, `i16`, `u16`, or `i32`,
+with optional zero padding and an optional `b`, `B`, `o`, `d`, `x`, or `X`
+presentation.
+These width types fit the runtime entry's signed 32-bit parameter; negative
+widths terminate. Wider width types and unsupported specifications use general
+formatting.
 
-Construction translates each selection into a generic input demand: value or
+Writer also accepts default floating output, fixed/scientific/general floating
+presentations with precision up to 256, and default text, boolean, and character
+fields. Larger precisions and decorated floating fields retain the standard
+formatter. Reservation bounds exclude dynamic text bytes and dynamic-width
+fields. Text lengths contribute after operand completion; dynamic-width fields
+grow storage as needed. Native/custom formatters retain all original arguments
+because they can inspect the argument pack.
+
+Preparation translates each selection into a generic input demand: value or
 execution effects. Every original operand remains in source order. Realization
 uses these demands to preserve effects, failures, scalar snapshots, storage reads,
 and temporary backing, while passing only demanded values to the native operation.
@@ -603,19 +656,15 @@ borrow the receiver's text storage.
 Native byte storage enters through `String::from_utf8`, which validates UTF-8
 before adopting it.
 
-An owning `SemFormat` with `PreparedFormatText` lowers to `String::from_str` with an explicit
-byte-length literal. Realization completes required hole execution and retains
-temporary backing before constructing the owning result, including when that
-result is discarded. Ordinary local bindings and their initialization remain;
-known contents do not substitute static storage for the String owner.
+All formatting forms complete their hole operands in source order under the
+Read storage policy before constructing or appending text. Scalar snapshots,
+String aliases, failures, and temporary backing follow ordinary operand
+construction. Discarding an owning result retains String construction.
 
-Owning mixed builtin `SemFormat` operations retaining a subset of source
-operands evaluate every original operand in order. Retained values use their
-original Read storage policy, keeping scalar snapshots and String aliases;
-folded values keep their execution and temporary backing. Realization consumes
-the selected preparation and its mapped operands. String contents are still
-observed after all holes complete. Discarding the result retains this
-construction path.
+An owning `SemFormat` with `PreparedFormatText` lowers to `String::from_str` with
+an explicit byte-length literal. Mixed preparation maps retained operands to the
+selected format; folded operands retain their execution obligations. String
+contents are observed after all holes complete.
 
 `PreparedWriterFormat` lowers through the shared statement builder in
 `realization.format` to `runtime::Writer` in `writer.hpp`. Formatted append emits
@@ -627,33 +676,35 @@ expression lambda to preserve their construction and delivery boundary. Its
 parameters use the existing Read storage policy.
 
 Both forms append static text and call
-`integer<base, uppercase, zero_pad>(value, width)` in order, copy text fields,
-select boolean text, and encode Unicode scalars directly. Floating fields call
+`integer<base, uppercase, zero_pad>(value, width)` or
+`integer_dynamic_width<base, uppercase, zero_pad>(value, width)` in order, copy
+text fields, select boolean text, and encode Unicode scalars directly. Floating fields call
 `floating(value)`, `fixed<precision>(value)`, `scientific<precision>(value)`, or
 `general<precision>(value)`. These small runtime entries use `std::to_chars` with
 a bounded stack buffer and append converted bytes directly to the destination.
-Existing construction machinery preserves operand evaluation, failures, scalar snapshots, and borrowed
-backing before any reservation or write; statement emission never occurs as a
-side effect of requesting a residual expression.
+Writer realization consumes completed operands before emitting reservation and
+field writes.
 
-The prepared minimum and maximum added-byte counts reach the writer as ordinary
-arguments, followed by an initializer list of explicit dynamic text byte
-lengths. Carven emits each `.size()` query after all holes complete. Runtime
+The prepared minimum and maximum byte counts for statically bounded fragments
+reach the writer as ordinary arguments, followed by an initializer list of
+explicit dynamic text byte lengths. Carven emits each `.size()` query after all
+holes complete. Runtime
 adds these lengths to both bounds with checked arithmetic; it does not
 rediscover field types or parse format policies.
 
 When the minimum exceeds available capacity, runtime reserves for the maximum, capped at the
 destination's size limit. Otherwise normal storage growth applies. Equal bounds
-reserve for an exact size. An upper bound alone does not force allocation for a
-short result. Runtime checks size arithmetic and performs integer conversion
+reserve an exact size for the counted fragments; dynamic-width fields are excluded.
+An upper bound alone does not force allocation for a short result. Runtime checks
+size arithmetic and performs integer conversion
 with `std::to_chars`, sign handling, and padding. Writer integer inputs use the
 same `runtime::Integer` domain as arithmetic; boolean and character fields use
 their separate operations.
 
-The writer borrows private String storage and requires valid text and disjoint inputs. It has no format
-parser or output validation scan. Unsupported remaining fields retain the
-complete selected general format call. Parsed paths need no `<format>`
-dependency; fully precomputed contents still use the existing direct text
+The writer borrows private String storage and requires valid text and disjoint
+inputs. Direct conversions need no format parsing or output validation scan.
+Unsupported fields retain the complete selected general format call. Writer
+paths have no `<format>` dependency; fully precomputed contents use direct text
 construction or append.
 
 Reservation requests do not prescribe the native String's exact capacity or
@@ -662,17 +713,15 @@ allocation alignment; the native String implementation selects both.
 Other owning `SemFormat` operations pass their selected argument pack. The
 prepared `PreparedDelegatedFormat::encoding` selects `format_valid_utf8` for
 `ValidUTF8` and `format` for `Unproven`. Realization embeds the prepared bytes as a
-compile-time `std::string_view` with an explicit byte length. Realization completes
-the ordered Read operands before invoking the formatter. Inside that call, String
+compile-time `std::string_view` with an explicit byte length. Inside that call, String
 aliases provide text views and `char` values encode to UTF-8 Strings. C++ checks
 `std::format_string` and formatter availability; source directives attribute those diagnostics to the
 interpolation. Both entries are `noexcept` and use the same argument adapters
 and `std::format` call. The general entry passes the completed buffer through
-`String::from_utf8`; the proved entry adopts it without scanning it again. Both
-share the private String move constructor. The proved entry removes only the
-validation scan: it adopts the same completed buffer without an additional byte
-copy or allocation. `StringFormatAccess` privately adopts the completed buffer for
-the proved entry. Entry selection consumes the preparation-owned encoding proof.
+`String::from_utf8`; the proved entry adopts it without scanning it again.
+`StringFormatAccess` privately adopts that buffer using the shared String move
+constructor, without an additional byte copy or allocation. Entry selection
+consumes the preparation-owned encoding proof.
 
 An append `SemFormat` places its Write receiver before the hole operands in target
 construction. Realization selects the receiver once, then completes all holes using

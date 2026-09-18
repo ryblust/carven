@@ -31,36 +31,36 @@ auto BodyElaborator::branch_block(
     bool consume_result,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
-    const auto& source = ast.branch_block(id);
+) noexcept -> AnalysisTask<std::optional<BuiltExpression>> {
+    const auto& source = ((ast.branch_block(id)));
     const auto enclosing_full_expression = active_full_expression;
     active_full_expression.reset();
     for (const auto statement_id : source.statements) {
-        auto built = statement(statement_id);
+        auto built = (co_await statement(statement_id));
         if (!built.has_value()) {
             active_full_expression = enclosing_full_expression;
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
     }
     if (!source.result.has_value()) {
         active_full_expression = enclosing_full_expression;
-        return std::optional<BuiltExpression>();
+        co_return std::optional<BuiltExpression>();
     }
     ensure_reachable_diagnostics(ast.expression(*source.result).span);
-    auto result = expression(*source.result, expected, allow_pointer_narrowing);
+    auto result = (co_await expression(*source.result, expected, allow_pointer_narrowing));
     if (!result.has_value()) {
         active_full_expression = enclosing_full_expression;
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     if (consume_result) {
         auto consumed = consume_pending(*result, ast.expression(*source.result).span);
         if (!consumed.has_value()) {
             active_full_expression = enclosing_full_expression;
-            return std::unexpected(consumed.error());
+            co_return std::unexpected(consumed.error());
         }
     }
     active_full_expression = enclosing_full_expression;
-    return std::optional<BuiltExpression>(std::move(*result));
+    co_return std::optional<BuiltExpression>(std::move(*result));
 }
 
 auto BodyElaborator::build_branch(
@@ -69,18 +69,18 @@ auto BodyElaborator::build_branch(
     std::optional<ConstructionTypeRef>& merged_type,
     BodyPendingFailureTerms& pending,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<SemanticRegion> {
-    const auto span = ast.branch_block(id).span;
+) noexcept -> AnalysisTask<SemanticRegion> {
+    const auto span = ((ast.branch_block(id))).span;
     regions.push_back(empty_region(span));
     if (value_form) {
         value_boundary_loop_depths.push_back(loops.size());
     }
-    auto result = branch_block(id, !value_form, merged_type, allow_pointer_narrowing);
+    auto result = (co_await branch_block(id, !value_form, merged_type, allow_pointer_narrowing));
     if (value_form) {
         value_boundary_loop_depths.pop_back();
     }
     if (!result.has_value()) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     if (result->has_value()) {
         auto& value = **result;
@@ -89,13 +89,13 @@ auto BodyElaborator::build_branch(
             if (!merged_type.has_value()) {
                 auto inferred = infer_value_type(value, span);
                 if (!inferred.has_value()) {
-                    return std::unexpected(inferred.error());
+                    co_return std::unexpected(inferred.error());
                 }
                 merged_type = *inferred;
             }
             if (!allow_pointer_narrowing
                 && pointer_narrows(draft(), (value).type(), *merged_type)) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     span,
                     DiagnosticCode::TypeMismatch,
                     "mixed ptr target permissions require an explicit result type"
@@ -103,11 +103,11 @@ auto BodyElaborator::build_branch(
             }
             auto coerced = coerce_to(value, *merged_type, span);
             if (!coerced.has_value()) {
-                return std::unexpected(coerced.error());
+                co_return std::unexpected(coerced.error());
             }
             auto read = consume_value(value, span, AccessMode::Read);
             if (!read.has_value()) {
-                return std::unexpected(read.error());
+                co_return std::unexpected(read.error());
             }
             regions.back().result = std::move(*read);
             regions.back().failures = BodyFailures(
@@ -121,7 +121,7 @@ auto BodyElaborator::build_branch(
             append_expression(value, span);
         }
     } else if (value_form && reachable) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::FlowValueBranchResult,
             "value-control branch requires a result"
@@ -129,7 +129,7 @@ auto BodyElaborator::build_branch(
     }
     auto region = std::move(regions.back());
     regions.pop_back();
-    return region;
+    co_return region;
 }
 
 auto BodyElaborator::build_arm(
@@ -138,31 +138,36 @@ auto BodyElaborator::build_arm(
     std::optional<ConstructionTypeRef>& type,
     BodyPendingFailureTerms& pending,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<SemanticRegion> {
+) noexcept -> AnalysisTask<SemanticRegion> {
     if (const auto* branch = std::get_if<ASTBranchBlockID>(&source.value)) {
-        return build_branch(*branch, value_form, type, pending, allow_pointer_narrowing);
+        co_return (
+            co_await build_branch(*branch, value_form, type, pending, allow_pointer_narrowing)
+        );
     }
     regions.push_back(empty_region(source.span));
     if (value_form) {
         value_boundary_loop_depths.push_back(loops.size());
     }
     if (const auto* expression_id = std::get_if<ASTExprID>(&source.value)) {
-        auto built =
-            expression(*expression_id, value_form ? type : std::nullopt, allow_pointer_narrowing);
+        auto built = (co_await expression(
+            *expression_id,
+            value_form ? type : std::nullopt,
+            allow_pointer_narrowing
+        ));
         if (!built.has_value()) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
         if (value_form && (!does_not_complete(*built) || !is_void_type(draft(), built->type()))) {
             collect_pending(pending, *built);
             if (!type.has_value()) {
                 auto inferred = infer_value_type(*built, source.span);
                 if (!inferred.has_value()) {
-                    return std::unexpected(inferred.error());
+                    co_return std::unexpected(inferred.error());
                 }
                 type = *inferred;
             }
             if (!allow_pointer_narrowing && pointer_narrows(draft(), (*built).type(), *type)) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     source.span,
                     DiagnosticCode::TypeMismatch,
                     "mixed ptr target permissions require an explicit result type"
@@ -170,11 +175,11 @@ auto BodyElaborator::build_arm(
             }
             auto coerced = coerce_to(*built, *type, source.span);
             if (!coerced.has_value()) {
-                return std::unexpected(coerced.error());
+                co_return std::unexpected(coerced.error());
             }
             auto checked = consume_value(*built, source.span, AccessMode::Read);
             if (!checked.has_value()) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             regions.back().result = std::move(*checked);
             regions.back().failures = BodyFailures(
@@ -186,14 +191,14 @@ auto BodyElaborator::build_arm(
         } else {
             auto consumed = consume_pending(*built, source.span);
             if (!consumed.has_value()) {
-                return std::unexpected(consumed.error());
+                co_return std::unexpected(consumed.error());
             }
             append_expression(*built, source.span);
         }
     } else {
-        auto built = transfer_statement(std::get<ASTControlTransfer>(source.value));
+        auto built = (co_await transfer_statement(std::get<ASTControlTransfer>(source.value)));
         if (!built.has_value()) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
     }
     if (value_form) {
@@ -201,7 +206,7 @@ auto BodyElaborator::build_arm(
     }
     auto region = std::move(regions.back());
     regions.pop_back();
-    return region;
+    co_return region;
 }
 
 auto BodyElaborator::build_if(
@@ -210,7 +215,7 @@ auto BodyElaborator::build_if(
     std::optional<ConstructionTypeRef> expected,
     bool value_form,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     auto branches = std::vector<SemConditionalBranch>();
     auto pending = BodyPendingFailureTerms();
     auto merged_type = expected;
@@ -221,13 +226,15 @@ auto BodyElaborator::build_if(
         if (!value_form) {
             begin_full_expression(condition_span);
         }
-        auto condition = [&]() noexcept -> AnalysisResult<BuiltExpression> {
+        auto condition = co_await [&]() noexcept -> AnalysisTask<BuiltExpression> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, remaining);
-            return expression(branch.condition, draft().builtin_type(BuiltinType::Bool));
+            co_return (
+                co_await expression(branch.condition, draft().builtin_type(BuiltinType::Bool))
+            );
         }();
         if (!condition.has_value()) {
-            return std::unexpected(condition.error());
+            co_return std::unexpected(condition.error());
         }
         const auto known = known_boolean_constant(draft(), condition->constant());
         if (value_form) {
@@ -235,28 +242,28 @@ auto BodyElaborator::build_if(
         }
         auto check = require_bool(*condition, condition_span);
         if (!check.has_value()) {
-            return std::unexpected(check.error());
+            co_return std::unexpected(check.error());
         }
         auto condition_tree = std::move(*check);
         if (!value_form) {
             end_full_expression(condition_span);
         }
         const auto selected = remaining && condition->completes && (!known.has_value() || *known);
-        push_frame(ast.branch_block(branch.body).span);
+        push_frame(((ast.branch_block(branch.body))).span);
         reachable = true;
-        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
+        auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, selected);
-            return build_branch(
+            co_return (co_await build_branch(
                 branch.body,
                 value_form,
                 merged_type,
                 pending,
                 expected.has_value() && allow_pointer_narrowing
-            );
+            ));
         }();
         if (!body.has_value()) {
-            return std::unexpected(body.error());
+            co_return std::unexpected(body.error());
         }
         normal = normal || (selected && reachable);
         pop_frame();
@@ -267,21 +274,21 @@ auto BodyElaborator::build_if(
     auto otherwise = std::optional<OwnedSemanticRegion>();
     if (source.else_branch.has_value()) {
         const auto id = *source.else_branch;
-        push_frame(ast.branch_block(id).span);
+        push_frame(((ast.branch_block(id))).span);
         reachable = true;
-        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
+        auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto path =
                 BodyReferencePathGuard(reference_path_reachable, remaining);
-            return build_branch(
+            co_return (co_await build_branch(
                 id,
                 value_form,
                 merged_type,
                 pending,
                 expected.has_value() && allow_pointer_narrowing
-            );
+            ));
         }();
         if (!body.has_value()) {
-            return std::unexpected(body.error());
+            co_return std::unexpected(body.error());
         }
         normal = normal || (remaining && reachable);
         otherwise.emplace(UniqueIndirect(std::move(*body)));
@@ -296,50 +303,51 @@ auto BodyElaborator::build_if(
         span,
         std::move(pending)
     );
-    return normal ? std::move(result) : mark_noncompleting(std::move(result));
+    co_return normal ? std::move(result) : mark_noncompleting(std::move(result));
 }
 
 auto BodyElaborator::if_statement(const ASTIfForm& source, Span span) noexcept
-    -> AnalysisResult<void> {
-    auto expression = build_if(source, span, std::nullopt, false);
+    -> AnalysisTask<void> {
+    auto expression = (co_await build_if(source, span, std::nullopt, false));
     if (!expression.has_value()) {
-        return std::unexpected(expression.error());
+        co_return std::unexpected(expression.error());
     }
     append_expression(*expression, span);
-    return {};
+    co_return {};
 }
 
 auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noexcept
-    -> AnalysisResult<void> {
+    -> AnalysisTask<void> {
     const auto outer_reachable = reachable;
     push_frame(span);
     begin_full_expression(ast.expression(source.condition).span);
-    auto condition = expression(source.condition, draft().builtin_type(BuiltinType::Bool));
+    auto condition =
+        (co_await expression(source.condition, draft().builtin_type(BuiltinType::Bool)));
     if (!condition.has_value()) {
-        return std::unexpected(condition.error());
+        co_return std::unexpected(condition.error());
     }
     const auto known = known_boolean_constant(draft(), condition->constant());
     auto check = require_bool(*condition, ast.expression(source.condition).span);
     if (!check.has_value()) {
-        return std::unexpected(check.error());
+        co_return std::unexpected(check.error());
     }
     auto condition_tree = std::move(*check);
     end_full_expression(span);
     auto initializer = empty_region(span);
     auto steps = empty_region(span);
-    push_frame(ast.block(source.body).span);
-    regions.push_back(empty_region(ast.block(source.body).span));
-    loops.push_back({});
+    push_frame(((ast.block(source.body))).span);
+    regions.push_back(empty_region(((ast.block(source.body))).span));
+    loops.push_back({.has_break = false, .has_continue = false});
     reachable = true;
-    auto result = [&]() noexcept {
+    auto result = co_await [&]() noexcept -> AnalysisTask<void> {
         [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
             outer_reachable && condition->completes && (!known.has_value() || *known)
         );
-        return block(source.body);
+        co_return (co_await block(source.body));
     }();
     if (!result.has_value()) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     auto body = std::move(regions.back());
     regions.pop_back();
@@ -357,5 +365,5 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
         },
         origin(span)
     );
-    return {};
+    co_return {};
 }

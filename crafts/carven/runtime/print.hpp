@@ -1,6 +1,6 @@
 #pragma once
 
-#include "format.hpp"
+#include "display.hpp"
 
 #include <cstdio>
 #include <exception>
@@ -35,6 +35,13 @@ auto print_value(std::FILE* stream, const T& value) noexcept -> void {
         print_bytes(stream, std::format("{}", carven::runtime::format_argument(value)));
     }
 #endif
+}
+
+template<typename T, typename Emit>
+auto print_value(std::FILE* stream, const StructuralDisplay<T, Emit>& value) noexcept -> void {
+    auto writer = DisplayWriter();
+    value.emit(writer, value.value);
+    print_bytes(stream, writer.result());
 }
 
 template<bool Newline, typename First, typename... Rest>

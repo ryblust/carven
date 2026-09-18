@@ -36,3 +36,30 @@ TEST_CASE("Source: line lookup uses one-based lines and byte columns") {
     CHECK_EQ(index.location(99).line, 3u);
     CHECK_EQ(index.location(99).column, 4u);
 }
+
+TEST_CASE("Source: indexed line ranges retain terminators and the final line") {
+    struct Case final {
+        std::string_view text;
+        std::vector<std::string_view> lines;
+    };
+
+    const auto cases = std::array {
+        Case {.text = "", .lines = {""}},
+        Case {.text = "last", .lines = {"last"}},
+        Case {.text = "a\n", .lines = {"a\n", ""}},
+        Case {.text = "a\r\n\r\nlast\r", .lines = {"a\r\n", "\r\n", "last\r"}},
+    };
+    for (const auto& value : cases) {
+        CAPTURE(value.text);
+        const auto index = LineIndex(value.text);
+        auto offset = 0u;
+        for (auto line = 1u; line <= value.lines.size(); ++line) {
+            const auto span = index.line_span(line);
+            CHECK_EQ(span.start(), offset);
+            CHECK_EQ(slice(value.text, span), value.lines[line - 1]);
+            CHECK_EQ(index.location(span.start()).line, line);
+            offset = span.end();
+        }
+        CHECK_EQ(offset, value.text.size());
+    }
+}

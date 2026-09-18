@@ -10,7 +10,7 @@ import :semantic.analysis.program;
 import :semantic.semir.program;
 import std;
 
-using ArrayExtentResolver = std::function<AnalysisResult<std::uint64_t>(ASTExprID)>;
+using ArrayExtentResolver = std::function<AnalysisTask<std::uint64_t>(ASTExprID)>;
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode;
 
@@ -22,7 +22,7 @@ auto resolve_source_type(
     ASTView syntax,
     ASTTypeID source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef>;
+) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_construction_type(
     ProgramDraft& draft,
@@ -32,7 +32,7 @@ auto resolve_source_construction_type(
     ASTView syntax,
     const ASTConstructionType& source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef>;
+) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_constraint_type(
     ProgramDraft& draft,
@@ -42,7 +42,7 @@ auto resolve_source_constraint_type(
     ASTView syntax,
     const ASTConstraintOperand& source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef>;
+) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto require_source_value_type(
     const ProgramDraft& draft,
@@ -60,4 +60,4 @@ auto resolve_failure_types(
     ASTView syntax,
     const ASTThrowClause& clause,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<std::vector<TypeID>>;
+) noexcept -> AnalysisTask<std::vector<TypeID>>;

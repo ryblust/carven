@@ -50,7 +50,7 @@ TEST_CASE("Interpreter: argument observation follows shared storage and evaluati
             CHECK(stream == ExecutionOutputStream::Standard);
             output.append(bytes);
         },
-        InterpreterOptions {.limits = {}, .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
     );
     REQUIRE(result.has_value());
     CHECK(output == "argument;1 ab 2\n");
@@ -70,7 +70,7 @@ TEST_CASE("Interpreter: unused native functions do not constrain executed bodies
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = {}, .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
     );
     REQUIRE(result.has_value());
     CHECK(output == "ready\n");
@@ -88,7 +88,7 @@ TEST_CASE("Interpreter: transitive admission rejects untaken unsupported calls b
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = {}, .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
@@ -100,8 +100,12 @@ TEST_CASE("Interpreter: budgets cover ordinary recursive calls") {
         fn recurse(value: i32) -> i32 { return recurse(value); }
         recurse(1);
     )");
-    const auto result =
-        interpret(program, entry(program), {}, InterpreterOptions {.limits = {}, .trace = {}});
+    const auto result = interpret(
+        program,
+        entry(program),
+        {},
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+    );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretLimit);
     CHECK(!result.error().calls.empty());
@@ -119,7 +123,7 @@ TEST_CASE("Interpreter: native source initialization cannot be silently omitted"
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = {}, .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
@@ -157,7 +161,7 @@ TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
             program,
             entry(program),
             [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-            InterpreterOptions {.limits = {}, .trace = {}}
+            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
         );
         REQUIRE(result.has_value());
         CHECK(output == "invalid retry pass pass invalid\ninside outside\n");

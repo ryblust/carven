@@ -26,7 +26,7 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> std::expected<ExecutionCallBody, ExecutionCallFailure> override;
+        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> override;
     auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
     auto trace(const ExecutionTraceEvent& event) noexcept -> void override;
@@ -189,11 +189,11 @@ auto Interpreter::expression(const SemanticExpression& source) noexcept -> void 
 }
 
 auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> std::expected<ExecutionCallBody, ExecutionCallFailure> {
+    -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> {
     const auto& declaration = program.declarations().function(function);
     const auto body = callable_body_id(program.declarations().callable(declaration.callable));
     if (!body || !parameters.contains(function)) {
-        return std::unexpected(
+        co_return std::unexpected(
             ExecutionDiagnostic {
                 .origin = origin,
                 .code = DiagnosticCode::InterpretAdmission,
@@ -202,7 +202,7 @@ auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noex
             }
         );
     }
-    return ExecutionCallBody {
+    co_return ExecutionCallBody {
         .body = ExecutionBody(program.bodies().body(*body)),
         .parameter_types = parameters.at(function)
     };
@@ -259,7 +259,7 @@ auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, Executio
         return std::unexpected(std::move(*error));
     }
     const auto result =
-        execute_function(values, *this, entry, {}, declaration.origin, options.limits);
+        execute_function(values, *this, entry, {}, declaration.origin, options.limits).run();
     if (error) {
         return std::unexpected(std::move(*error));
     }

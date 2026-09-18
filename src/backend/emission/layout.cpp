@@ -127,16 +127,37 @@ auto push_children(
     }
 }
 
+struct LayoutContinuation final {
+    std::span<const LayoutCommand> commands;
+    const LayoutContinuation* parent;
+};
+
 auto fits(
     std::span<const LayoutNode> nodes,
     std::size_t line_width,
     std::size_t column,
     bool line_start,
-    std::vector<LayoutCommand> commands
+    LayoutCommand first,
+    LayoutContinuation remaining
 ) noexcept -> bool {
-    while (!commands.empty()) {
-        const auto command = commands.back();
-        commands.pop_back();
+    auto commands = std::vector<LayoutCommand> {first};
+    while (true) {
+        while (commands.empty() && remaining.commands.empty() && remaining.parent != nullptr) {
+            remaining = *remaining.parent;
+        }
+        if (commands.empty() && remaining.commands.empty()) {
+            return true;
+        }
+        const auto command = [&]() noexcept {
+            if (!commands.empty()) {
+                const auto next = commands.back();
+                commands.pop_back();
+                return next;
+            }
+            const auto next = remaining.commands.back();
+            remaining.commands = remaining.commands.first(remaining.commands.size() - 1);
+            return next;
+        }();
         const auto& current = nodes[command.node_id.value];
         const auto result = current.value.visit(
             Overloaded {
@@ -199,13 +220,19 @@ auto fits(
                         return std::nullopt;
                     }
                     for (const auto alternative : choice.alternatives) {
-                        auto candidate = commands;
-                        candidate.push_back({
+                        const auto candidate = LayoutCommand {
                             .indent = command.indent,
                             .force_preferred_choices = false,
                             .node_id = alternative,
-                        });
-                        if (fits(nodes, line_width, column, line_start, std::move(candidate))) {
+                        };
+                        if (fits(
+                                nodes,
+                                line_width,
+                                column,
+                                line_start,
+                                candidate,
+                                {.commands = commands, .parent = &remaining}
+                            )) {
                             return true;
                         }
                     }
@@ -233,7 +260,6 @@ auto fits(
             return *result;
         }
     }
-    return true;
 }
 
 } // namespace
@@ -371,18 +397,18 @@ auto render_layout(const LayoutDocument& document, std::size_t line_width) noexc
                     auto selected = choice.alternatives.back();
                     for (auto index = 0uz; index + 1 < choice.alternatives.size(); ++index) {
                         const auto alternative = choice.alternatives[index];
-                        auto candidate = commands;
-                        candidate.push_back({
+                        const auto candidate = LayoutCommand {
                             .indent = command.indent,
                             .force_preferred_choices = false,
                             .node_id = alternative,
-                        });
+                        };
                         if (fits(
                                 document.nodes,
                                 line_width,
                                 column,
                                 line_start,
-                                std::move(candidate)
+                                candidate,
+                                {.commands = commands, .parent = nullptr}
                             )) {
                             selected = alternative;
                             break;

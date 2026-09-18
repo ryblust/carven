@@ -31,11 +31,11 @@ auto DeclResolver::resolve_function(
     ASTView syntax,
     const ASTFunctionDecl& function,
     Span item_span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto entry = symbol.name == "main" && !cpp_import;
     if (function.const_span && (cpp_import || entry)) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             *function.const_span,
@@ -44,7 +44,7 @@ auto DeclResolver::resolve_function(
         ));
     }
     if (entry && function.parameters.size() > 1uz) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             function.name_span,
@@ -76,7 +76,7 @@ auto DeclResolver::resolve_function(
             locate(declaration_source_id(draft, symbol.module_id), prior->second),
             "first declaration"
         );
-        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+        co_return std::unexpected(draft.diagnostics().error(diagnostic.build()));
     }
 
     auto parameters = std::vector<ConstructionCallableParameter>();
@@ -84,7 +84,7 @@ auto DeclResolver::resolve_function(
     for (const auto& parameter : function.parameters) {
         const auto access = semantic_access_mode(parameter.access);
         if (entry && access != AccessMode::Read) {
-            return std::unexpected(declaration_failure(
+            co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 parameter.access.marker.value_or(parameter.span),
@@ -93,7 +93,7 @@ auto DeclResolver::resolve_function(
             ));
         }
         if (entry && parameter.type.has_value()) {
-            return std::unexpected(declaration_failure(
+            co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 parameter.span,
@@ -103,7 +103,7 @@ auto DeclResolver::resolve_function(
         }
         if (!parameter.type.has_value()) {
             if (!entry) {
-                return std::unexpected(declaration_failure(
+                co_return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     parameter.span,
@@ -117,10 +117,14 @@ auto DeclResolver::resolve_function(
             });
             continue;
         }
-        auto type =
-            resolve_value_type(symbol.module_id, syntax, *parameter.type, "function parameter");
+        auto type = (co_await resolve_value_type(
+            symbol.module_id,
+            syntax,
+            *parameter.type,
+            "function parameter"
+        ));
         if (!type.has_value()) {
-            return std::unexpected(type.error());
+            co_return std::unexpected(type.error());
         }
         parameters.push_back({.access = access, .type = *type});
     }
@@ -132,9 +136,9 @@ auto DeclResolver::resolve_function(
         result = draft.builtin_type(BuiltinType::Void);
     }
     if (function.result_type.has_value()) {
-        auto resolved = resolve_type(symbol.module_id, syntax, *function.result_type);
+        auto resolved = (co_await resolve_type(symbol.module_id, syntax, *function.result_type));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         result = *resolved;
     }
@@ -142,9 +146,10 @@ auto DeclResolver::resolve_function(
     auto failures = std::optional<FailureTermID>();
     auto policy = FailureContractPolicy::Declared;
     if (function.throw_clause.has_value()) {
-        auto resolved = resolve_failures(symbol.module_id, syntax, *function.throw_clause);
+        auto resolved =
+            (co_await resolve_failures(symbol.module_id, syntax, *function.throw_clause));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         failures = draft.add_concrete_failure_term(std::move(*resolved));
     } else if (cpp_import) {
@@ -158,13 +163,13 @@ auto DeclResolver::resolve_function(
 
     auto head_boundary = validate_cpp_boundary_head(draft, symbol.module_id, function, parameters);
     if (!head_boundary.has_value()) {
-        return std::unexpected(head_boundary.error());
+        co_return std::unexpected(head_boundary.error());
     }
     if (result.has_value()) {
         auto boundary =
             validate_cpp_boundary_result(draft, symbol.module_id, syntax, function, *result);
         if (!boundary.has_value()) {
-            return std::unexpected(boundary.error());
+            co_return std::unexpected(boundary.error());
         }
     }
     draft.define_declaration(
@@ -215,5 +220,5 @@ auto DeclResolver::resolve_function(
             std::get<ASTCppImportForm>(function.implementation).span
         );
     }
-    return {};
+    co_return {};
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "display.hpp"
+
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
@@ -8,6 +10,48 @@
 #include <string_view>
 
 namespace carven::runtime {
+
+template<typename Left, typename EmitLeft, typename Right, typename EmitRight, typename Compare>
+auto observe_comparison(
+    DisplayWriter& writer,
+    const StructuralDisplay<Left, EmitLeft>& left,
+    const StructuralDisplay<Right, EmitRight>& right,
+    Compare compare,
+    std::string_view left_source,
+    std::string_view right_source
+) noexcept -> bool {
+    const auto passed = compare(left.value, right.value);
+    if (!passed) {
+        writer.text("  ");
+        writer.text(left_source);
+        writer.text(": ");
+        left.emit(writer, left.value);
+        writer.text("\n  ");
+        writer.text(right_source);
+        writer.text(": ");
+        right.emit(writer, right.value);
+        writer.text("\n");
+    }
+    return passed;
+}
+
+inline auto observe_short_circuit(
+    DisplayWriter& writer,
+    bool left,
+    std::optional<bool> right,
+    std::string_view left_source,
+    std::string_view right_source
+) noexcept -> bool {
+    const auto passed = right.value_or(left);
+    if (!passed) {
+        writer.text("  ");
+        writer.text(left_source);
+        writer.text(left ? ": true\n  " : ": false\n  ");
+        writer.text(right_source);
+        writer.text(right ? ": false\n" : ": <not evaluated>\n");
+    }
+    return passed;
+}
 
 struct TestStopped final {};
 
@@ -28,6 +72,7 @@ struct TestFailure final {
     std::string_view operation;
     std::optional<std::string_view> condition;
     std::optional<std::string_view> message;
+    std::string_view explanation;
 };
 
 using TestReporter = void (*)(const TestFailure&) noexcept;
@@ -52,6 +97,9 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
         write("condition: ");
         write(*failure.condition);
         write("\n");
+    }
+    if (!failure.explanation.empty()) {
+        write(failure.explanation);
     }
     if (failure.message.has_value()) {
         write("message: ");
@@ -96,7 +144,8 @@ public:
         std::uint32_t line,
         std::string_view operation,
         std::optional<std::string_view> condition,
-        std::optional<std::string_view> message
+        std::optional<std::string_view> message,
+        std::string_view explanation
     ) noexcept -> void {
         if (!active.has_value()) {
             detail::testing_contract_error();
@@ -110,6 +159,7 @@ public:
             .operation = operation,
             .condition = condition,
             .message = message,
+            .explanation = explanation,
         });
     }
 

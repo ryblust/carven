@@ -10,10 +10,10 @@ auto evaluate_constant_root(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     const SemanticExpression& expression
-) noexcept -> AnalysisResult<ExecutionValue>;
+) noexcept -> AnalysisTask<ExecutionValue>;
 
 auto evaluate_constant_test(
     ProgramDraft& draft,
     ConstructionRequests& requests,
     BodyID body
-) noexcept -> AnalysisResult<void>;
+) noexcept -> AnalysisTask<void>;

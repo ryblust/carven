@@ -218,21 +218,54 @@ TEST_CASE("Functions: expression body returns retain expansion provenance") {
     CHECK_EQ(program.provenance().slice(statement.origin), "=>");
 }
 
-TEST_CASE("Semantic control: test stop follows concrete calls independently of signatures") {
-    const auto program = analyze_test_program(
-        "fn stop() { fail(); }\n"
-        "fn forward() { stop(); }\n"
-        "fn ordinary() {}\n"
-        "private import(cpp) fn native();\n"
-        "fn call_view(action: fn() -> void) { action(); }\n"
-    );
+TEST_CASE("Semantic control: test stop propagates through callable dependencies") {
+    const auto program = analyze_test_program(R"(
+        fn forward() { middle(); middle(); }
+        fn middle() { stop(); }
+        fn stop() { fail(); }
+        fn cycle(flag: bool) -> void { if flag { back(false); } else { stop(); } }
+        fn back(flag: bool) -> void { cycle(flag); }
+        fn quiet(flag: bool) -> void { if flag { quiet_back(false); } }
+        fn quiet_back(flag: bool) -> void { quiet(flag); }
+        fn ordinary() { check(true); }
+        private import(cpp) fn native();
+        fn call_view(action: fn() -> void) { action(); }
+        fn closure() { []() { fail(); }(); }
+    )");
+    const auto expected =
+        std::array {true, true, true, true, true, false, false, false, false, true, true};
     const auto callables = test_function_callables(program);
-    REQUIRE(callables.size() == 5uz);
-    CHECK(program.may_stop_test(callables[0]));
-    CHECK(program.may_stop_test(callables[1]));
-    CHECK_FALSE(program.may_stop_test(callables[2]));
-    CHECK_FALSE(program.may_stop_test(callables[3]));
-    CHECK(program.may_stop_test(callables[4]));
+    REQUIRE(callables.size() == expected.size());
+    for (auto index = 0uz; index < expected.size(); ++index) {
+        CAPTURE(index);
+        CHECK(program.may_stop_test(callables[index]) == expected[index]);
+    }
+}
+
+TEST_CASE("Semantic control: published expressions include conservative call effects") {
+    const auto program = analyze_test_program(R"(
+        fn direct() -> i32 { return if false { require(false); 1 } else { 2 }; }
+        fn indirect() -> i32 { return if false { stop(); 1 } else { 2 }; }
+        fn stop() { fail(); }
+        test "nested calls" { let observed = if true { stop(); 1 } else { 2 }; check(observed == 1); }
+    )");
+    const auto callables = test_function_callables(program);
+    REQUIRE(callables.size() == 3uz);
+    for (auto index = 0uz; index < 2uz; ++index) {
+        const auto& body =
+            program.bodies().body(*program.declarations().body_for_callable(callables[index]));
+        const auto* returned = std::get_if<SemReturn>(&body.region().statements.front().value);
+        REQUIRE(returned != nullptr);
+        REQUIRE(returned->value.has_value());
+        CHECK(returned->value->exits_test == (index == 1uz));
+    }
+    for (const auto entry : program.tests().entries()) {
+        const auto& body = program.bodies().body(entry.value.body);
+        const auto* initialized =
+            std::get_if<SemInitialize>(&body.region().statements.front().value);
+        REQUIRE(initialized != nullptr);
+        CHECK(initialized->initializer.exits_test);
+    }
 }
 
 TEST_CASE("Semantic control: native invocations inherit argument completion") {
@@ -330,6 +363,41 @@ TEST_CASE("Semantic ranges: bounds and element types obey integer contracts") {
             "different value bounds",
             "fn f(a: i32, b: u8) { let r = a..b; }",
             DiagnosticCode::TypeRangeBounds
+        },
+        Case {
+            .name = "suffixed lower bound keeps its type",
+            .source = "fn f(end: usize) { let r = 0i32..end; }",
+            .code = DiagnosticCode::TypeRangeBounds,
+        },
+        Case {
+            .name = "inferred binding keeps its type",
+            .source = "fn f(end: usize) { let begin = 0; let r = begin..end; }",
+            .code = DiagnosticCode::TypeRangeBounds,
+        },
+        Case {
+            .name = "grouped lower bound does not select sibling context",
+            .source = "fn f(end: usize) { let r = (0)..end; }",
+            .code = DiagnosticCode::TypeRangeBounds,
+        },
+        Case {
+            .name = "negative lower bound does not select sibling context",
+            .source = "fn f(end: usize) { let r = -1..end; }",
+            .code = DiagnosticCode::TypeRangeBounds,
+        },
+        Case {
+            .name = "contextual lower bound must fit",
+            .source = "fn f(end: u8) { let r = 256..end; }",
+            .code = DiagnosticCode::ConstLiteralRange,
+        },
+        Case {
+            .name = "required contextual lower bound must fit",
+            .source = "const end = 3u8; const r = 256..=end;",
+            .code = DiagnosticCode::ConstLiteralRange,
+        },
+        Case {
+            .name = "floating sibling is not converted to an integer bound",
+            .source = "fn f(end: f64) { let r = 0..end; }",
+            .code = DiagnosticCode::TypeRangeBounds,
         },
         Case {
             "different pattern bound",

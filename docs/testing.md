@@ -157,11 +157,17 @@ them. Use the internal death-test harness to check SIGABRT at terminating
 boundaries. Give each input, including loop iterations and subcases, a distinct
 scenario name within its test case.
 
-Runtime cost and compilation time are measured separately.
+For implementation selection, identify the source fact, work removed, and
+obligations preserved. Test semantic and generated-structure contracts at their
+owning boundaries. Measure runtime cost and compilation time separately;
+code size alone establishes neither. Keep measurement logs outside reference
+documents.
+
 `xmake/build_pulse.lua` measures fresh build throughput, module scaling, and
-private-edit locality. `xmake/analysis_pulse.lua` measures call-chain ordering
-and structured loop depth. Run instructions and sampling options are in the
-[Xmake support README](../xmake/README.md#performance-pulses).
+private-edit locality. `xmake/analysis_pulse.lua` measures call-chain ordering,
+shared nominal and native-query dependencies, and structured loop depth. Run
+instructions and sampling options are in the [Xmake support
+README](../xmake/README.md#performance-pulses).
 
 ## Organization
 

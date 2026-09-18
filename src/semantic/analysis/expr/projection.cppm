@@ -12,27 +12,28 @@ import std;
 
 template<typename Site>
 auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span span) noexcept
-    -> ExpressionResult<typename Site::Value> {
-    auto receiver =
-        ExpressionResult<typename Site::Value>(site.read(source.operand_id, std::nullopt));
+    -> ExpressionTask<typename Site::Value> {
+    auto receiver = ExpressionResult<typename Site::Value>(
+        (co_await site.read(source.operand_id, std::nullopt))
+    );
     if (!receiver && std::holds_alternative<AnalysisFailure>(receiver.error())) {
-        return std::unexpected(receiver.error());
+        co_return std::unexpected(receiver.error());
     }
     // The index is independently checked even when its receiver is not admitted.
     // Type and bounds rules below require both operands to have been constructed.
-    auto index = site.read(source.index, std::nullopt);
+    auto index = (co_await site.read(source.index, std::nullopt));
     if (!index) {
-        return std::unexpected(index.error());
+        co_return std::unexpected(index.error());
     }
     if (!receiver) {
-        return std::unexpected(receiver.error());
+        co_return std::unexpected(receiver.error());
     }
     if (site.external(site.type(*receiver))) {
-        return site.external_index(std::move(*receiver), std::move(*index), span);
+        co_return site.external_index(std::move(*receiver), std::move(*index), span);
     }
     const auto shape = sequence_shape(site.draft(), site.type(*receiver));
     if (!shape) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeNotIndexable,
             "indexing requires an array or slice value"
@@ -44,7 +45,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
         concrete ? std::optional(site.draft().type_copy(*concrete)) : std::nullopt;
     const auto* builtin = canonical ? std::get_if<BuiltinTypeValue>(&canonical->value) : nullptr;
     if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             site.syntax().expression(source.index).span,
             DiagnosticCode::TypeIndexInteger,
             "array index requires an integer"
@@ -56,7 +57,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
             const auto& fact = site.draft().constant(*known);
             if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
                 if (integer->negative() || integer->magnitude() >= *shape->extent) {
-                    return std::unexpected(site.fail(
+                    co_return std::unexpected(site.fail(
                         site.syntax().expression(source.index).span,
                         DiagnosticCode::ConstIndexBounds,
                         "constant array index is out of bounds"
@@ -66,7 +67,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
             }
         }
     }
-    return site.finish_index(
+    co_return site.finish_index(
         shape->element,
         shape->extent.has_value(),
         bounds,

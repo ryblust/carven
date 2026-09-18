@@ -33,9 +33,9 @@ auto DeclResolver::resolve_module_constant(
     ASTView syntax,
     const ASTConstantDecl& declaration,
     Span item_span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     if (symbol.visibility == DeclarationVisibility::Compilation && !declaration.type.has_value()) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             declaration.name_span,
@@ -45,26 +45,26 @@ auto DeclResolver::resolve_module_constant(
     }
     auto declared_type = std::optional<ConstructionTypeRef>();
     if (declaration.type.has_value()) {
-        auto resolved = resolve_type(symbol.module_id, syntax, *declaration.type);
+        auto resolved = (co_await resolve_type(symbol.module_id, syntax, *declaration.type));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         declared_type = *resolved;
     }
     auto scope = ConstantScope {*this, symbol.module_id, syntax};
-    auto result = evaluate_constant_expression(
+    auto result = (co_await evaluate_constant_expression(
         draft,
         symbol.module_id,
         syntax,
         scope,
         declaration.initializer,
         declared_type
-    );
+    ));
     if (!result) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-            return std::unexpected(*diagnostic);
+            co_return std::unexpected(*diagnostic);
         }
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.expression(declaration.initializer).span,
@@ -84,11 +84,11 @@ auto DeclResolver::resolve_module_constant(
         "constant"
     );
     if (!value_type.has_value()) {
-        return std::unexpected(value_type.error());
+        co_return std::unexpected(value_type.error());
     }
     const auto* concrete = std::get_if<TypeID>(&*value_type);
     if (concrete == nullptr) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.expression(declaration.initializer).span,
@@ -109,55 +109,55 @@ auto DeclResolver::resolve_module_constant(
         .visibility = symbol.visibility,
         .value = constant,
     };
-    return {};
+    co_return {};
 }
 
 auto DeclResolver::resolve_constant_name(
     ProgramModuleID module_id,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<std::optional<ConstantID>> {
+) noexcept -> AnalysisTask<std::optional<ConstantID>> {
     auto selected = select_symbol(module_id, name, origin);
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     if (const auto* form = std::get_if<CatalogConstantForm>(&(*selected)->form)) {
-        auto result = resolve((*selected)->symbol_id, module_id, origin);
+        auto result = (co_await resolve((*selected)->symbol_id, module_id, origin));
         if (!result.has_value()) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
         const auto& declaration = module_constants[form->constant.index()];
         if (!declaration.has_value()) {
             invariant_violation("resolved module constant has no declaration fact");
         }
-        return declaration->value;
+        co_return declaration->value;
     }
-    return std::nullopt;
+    co_return std::nullopt;
 }
 
 auto DeclResolver::resolve_enum_qualifier(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTExprID expression
-) noexcept -> AnalysisResult<std::optional<TypeID>> {
+) noexcept -> AnalysisTask<std::optional<TypeID>> {
     auto current = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&syntax.expression(current).value)) {
         current = group->expression;
     }
     const auto* name = std::get_if<ASTNameExpr>(&syntax.expression(current).value);
     if (name == nullptr) {
-        return std::optional<TypeID>();
+        co_return std::optional<TypeID>();
     }
     const auto spelling = draft.source_slice_copy(module_id, name->name_span);
     auto selected = select_symbol(module_id, spelling, name->name_span);
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
     if (enumeration == nullptr) {
-        return std::optional<TypeID>();
+        co_return std::optional<TypeID>();
     }
-    return std::optional(draft.intern_type(
+    co_return std::optional(draft.intern_type(
         CanonicalType {
             .value = EnumTypeValue {.enumeration = enumeration->enumeration},
         }
@@ -169,11 +169,11 @@ auto DeclResolver::resolve_constant_enum_case(
     TypeID type,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<ResolvedEnumCase> {
+) noexcept -> AnalysisTask<ResolvedEnumCase> {
     const auto canonical = draft.type_copy(type);
     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
     if (nominal == nullptr) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             module_id,
             origin,
@@ -182,9 +182,9 @@ auto DeclResolver::resolve_constant_enum_case(
         ));
     }
     const auto owner_symbol_id = catalog.enum_symbol(nominal->enumeration);
-    auto owner_result = resolve(owner_symbol_id, module_id, origin);
+    auto owner_result = (co_await resolve(owner_symbol_id, module_id, origin));
     if (!owner_result.has_value()) {
-        return std::unexpected(owner_result.error());
+        co_return std::unexpected(owner_result.error());
     }
     const auto& owner_symbol = require_catalog_symbol(catalog, owner_symbol_id);
     const auto& owner_form = std::get<CatalogEnumForm>(owner_symbol.form);
@@ -193,22 +193,22 @@ auto DeclResolver::resolve_constant_enum_case(
         if (candidate.name != name) {
             continue;
         }
-        auto result = resolve(candidate.symbol_id, module_id, origin);
+        auto result = (co_await resolve(candidate.symbol_id, module_id, origin));
         if (!result.has_value()) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
         const auto& declaration = enum_cases[case_id.index()];
         if (!declaration.has_value()) {
             invariant_violation("resolved enum case has no declaration fact");
         }
-        return ResolvedEnumCase {
+        co_return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration->owner,
             .payload_types = declaration->payload_types,
             .constant = declaration->constant,
         };
     }
-    return std::unexpected(declaration_failure(
+    co_return std::unexpected(declaration_failure(
         draft,
         module_id,
         origin,

@@ -24,6 +24,7 @@ public:
 private:
     const PlannedCompilation& compilation;
     TargetArtifactID artifact_id;
+    std::optional<TargetIdentifier> storage_namespace;
     std::map<ConstantID, TargetName> names;
     std::vector<TargetItem> items;
 };

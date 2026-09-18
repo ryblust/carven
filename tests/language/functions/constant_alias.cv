@@ -92,7 +92,7 @@ const fn constant_extend_owned(&&text: String) -> String {
 const fn constant_restore_taken() -> String {
     var text: String = "a";
     let first = &&text;
-    text = String::from_str("b");
+    text = "b";
     text = constant_extend_owned(&&text);
     return f"{first}:{text}";
 }

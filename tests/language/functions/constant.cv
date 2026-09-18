@@ -19,7 +19,7 @@ const fn make_label(count: i32) -> String {
     var result = String::new();
     for index in 0..count {
         let piece = f"{index:02}";
-        result.append(piece.as_str());
+        result.append(piece);
         if index + 1 < count { result.push(','); }
     }
     return result;

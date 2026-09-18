@@ -725,3 +725,25 @@ auto ProgramDraft::enum_case_types(EnumID enumeration) const noexcept
     }
     return result;
 }
+
+auto ProgramDraft::display_names(TypeID type) const noexcept -> ExecutionDisplayNames {
+    auto result = ExecutionDisplayNames {.name = {}, .fields = {}, .cases = {}};
+    const auto canonical = type_copy(type);
+    if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
+        const auto declaration = construction_struct_declaration_copy(structure->structure);
+        result.name = spelling(declaration.name);
+        for (const auto& field : declaration.fields) {
+            result.fields.emplace_back(spelling(field.name));
+        }
+    } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+        const auto declaration = enum_declaration_copy(enumeration->enumeration);
+        result.name = spelling(declaration.name);
+        for (const auto id : declaration.cases) {
+            result.cases.emplace_back(
+                id,
+                spelling(construction_enum_case_declaration_copy(id).name)
+            );
+        }
+    }
+    return result;
+}

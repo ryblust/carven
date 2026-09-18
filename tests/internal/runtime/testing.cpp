@@ -15,7 +15,8 @@ TEST_CASE("Runtime: nested test contexts restore the caller and isolate failure 
     CHECK(std::addressof(carven::runtime::current_test()) == std::addressof(outer));
     inner.begin_case("module", "inner");
     CHECK(std::addressof(carven::runtime::current_test()) == std::addressof(inner));
-    carven::runtime::current_test().report_failure("test.cv", 1, "check", "false", std::nullopt);
+    carven::runtime::current_test()
+        .report_failure("test.cv", 1, "check", "false", std::nullopt, {});
     inner.end_case();
     CHECK(inner.result() == 1);
     CHECK(std::addressof(carven::runtime::current_test()) == std::addressof(outer));

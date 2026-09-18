@@ -14,17 +14,17 @@ public:
         CatalogSymbolID id,
         ProgramModuleID requester,
         Span span
-    ) noexcept -> AnalysisResult<void> = 0;
+    ) noexcept -> AnalysisTask<void> = 0;
     virtual auto ensure_function_signature(
         FunctionID id,
         ProgramModuleID requester,
         Span span
-    ) noexcept -> AnalysisResult<void> = 0;
+    ) noexcept -> AnalysisTask<void> = 0;
     virtual auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<BodyID> = 0;
+        -> AnalysisTask<BodyID> = 0;
     virtual auto ensure_type(
         ConstructionTypeRef type,
         ProgramModuleID requester,
         Span span
-    ) noexcept -> AnalysisResult<void> = 0;
+    ) noexcept -> AnalysisTask<void> = 0;
 };

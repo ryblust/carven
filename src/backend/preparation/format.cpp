@@ -5,6 +5,11 @@ import :semantic.format.builtin;
 import :semantic.format;
 import std;
 
+auto writer_field_operand_count(const WriterFormatField& field) noexcept -> std::size_t {
+    const auto* integer = std::get_if<IntegerFormatField>(&field);
+    return integer != nullptr && !integer->static_width ? 2uz : 1uz;
+}
+
 auto prepared_format_operands(const PreparedFormat& preparation) noexcept
     -> std::span<const std::size_t> {
     return preparation.visit([](const auto& value) static noexcept -> std::span<const std::size_t> {

@@ -50,7 +50,7 @@ const fn append_current_length() -> String {
     text.append_format(f"/{text.len()}");
     text.append_format(
         f"{if true {
-                text = String::from_str("new");
+                text = "new";
                 7
             } else {
                 0
@@ -71,7 +71,7 @@ test "Formatted append: destination queries and independent projections remain a
     };
     pair.first.append_format(f"{pair.second}");
     check(pair.first == "value");
-    var array = [String::new(), String::from_str("other")];
+    var array: [String; 2] = ["", "other"];
     array[0].append_format(f"{array[1]}");
     check(array[0] == "other");
     check(appended_current_length == "new7");
@@ -143,7 +143,7 @@ test "Formatted append: a failing hole skips later holes and destination mutatio
 }
 
 test "Formatted append: receiver failure and completed hole mutations keep their order" {
-    var values = [String::from_str("unchanged")];
+    var values: [String; 1] = ["unchanged"];
     var effects = 0;
     let receiver_failure = try {
         values[fail_append_value(&effects)? as usize].append_format(

@@ -42,14 +42,13 @@ public:
         SemanticExecutionContext& context,
         ExecutionLimits limits
     ) noexcept;
-    auto evaluate_test(const StructuredBodyDraft& body) noexcept -> ExecutionResult<void>;
-    auto evaluate_root(const SemanticExpression& source) noexcept
-        -> ExecutionResult<ExecutionValue>;
+    auto evaluate_test(const StructuredBodyDraft& body) noexcept -> ExecutionTask<void>;
+    auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto invoke(
         FunctionID function,
         std::vector<ExecutionValue> arguments,
         ProgramOriginID origin
-    ) noexcept -> ExecutionResult<ExecutionValue>;
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
 private:
     auto fail(ProgramOriginID origin, DiagnosticCode code, std::string message) noexcept
@@ -85,7 +84,7 @@ private:
         -> ExecutionResult<ExecutionValue*>;
     static auto local_place(const SemanticExpression& expression) noexcept -> bool;
     auto place(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-        -> ExecutionResult<ExecutionPlace>;
+        -> ExecutionTask<ExecutionPlace>;
     auto located(
         ExecutionFrame& frame,
         const ExecutionPlace& place,
@@ -94,42 +93,42 @@ private:
     auto offset(const ExecutionValue& value, std::size_t extent, ProgramOriginID origin) noexcept
         -> ExecutionResult<std::size_t>;
     auto value(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-        -> ExecutionResult<ExecutionValue>;
+        -> ExecutionTask<ExecutionValue>;
     auto read_operand(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-        -> ExecutionResult<ExecutionOperand>;
+        -> ExecutionTask<ExecutionOperand>;
     auto materialize(
         ExecutionFrame& frame,
         ExecutionOperand operand,
         ProgramOriginID origin
     ) noexcept -> ExecutionResult<ExecutionValue>;
     auto expression(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-        -> ExecutionResult<ExecutionCompletion>;
+        -> ExecutionTask<ExecutionCompletion>;
     auto statement(ExecutionFrame& frame, const SemanticStatement& statement) noexcept
-        -> ExecutionResult<ExecutionCompletion>;
+        -> ExecutionTask<ExecutionCompletion>;
     auto region(ExecutionFrame& frame, const SemanticRegion& region) noexcept
-        -> ExecutionResult<ExecutionCompletion>;
+        -> ExecutionTask<ExecutionCompletion>;
     auto loop(ExecutionFrame& frame, const SemLoop& loop, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionCompletion>;
+        -> ExecutionTask<ExecutionCompletion>;
     auto range_loop(
         ExecutionFrame& frame,
         const SemRangeLoop& loop,
         ProgramOriginID origin
-    ) noexcept -> ExecutionResult<ExecutionCompletion>;
+    ) noexcept -> ExecutionTask<ExecutionCompletion>;
     auto matches(
         ExecutionFrame& frame,
         PatternID pattern,
         const ExecutionValue& value,
         std::span<const SemPatternBounds> pattern_bounds
-    ) noexcept -> ExecutionResult<bool>;
+    ) noexcept -> ExecutionTask<bool>;
     auto format(ExecutionFrame& frame, const SemFormat& format, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionValue>;
+        -> ExecutionTask<ExecutionValue>;
     auto print(ExecutionFrame& frame, const SemPrint& operation, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionValue>;
+        -> ExecutionTask<ExecutionValue>;
     auto test_report(
         ExecutionFrame& frame,
         const SemTestReport& operation,
         ProgramOriginID origin
-    ) noexcept -> ExecutionResult<ExecutionValue>;
+    ) noexcept -> ExecutionTask<ExecutionValue>;
     auto text_storage(
         ExecutionFrame& frame,
         const ExecutionPlace& place,
@@ -146,8 +145,21 @@ private:
         const SemTextIntrinsic& operation,
         TypeID result_type,
         ProgramOriginID origin
-    ) noexcept -> ExecutionResult<ExecutionValue>;
+    ) noexcept -> ExecutionTask<ExecutionValue>;
 
+    struct TestObservation final {
+        const SemanticExpression* condition;
+        std::array<ProgramSpellingID, 2> sources;
+        std::string* explanation;
+    };
+
+    std::optional<TestObservation> test_observation;
+    auto observe_test(
+        const SemanticExpression& source,
+        const ExecutionValue& left,
+        const ExecutionValue* right,
+        bool passed
+    ) noexcept -> void;
     ExecutionValueAccess& values;
     SemanticExecutionContext& context;
     const ExecutionLimits limits;

@@ -25,7 +25,7 @@ struct PatternState final {
 };
 
 // The caller keeps the subject storage alive through matching and selected
-// binding construction. Failed partial matches only write address slots.
+// binding preparation. Failed partial matches only write address slots.
 using PatternBoundRealizer =
     std::function<std::optional<TargetExpr>(PatternID, bool, LoweringStmtBuilder&)>;
 

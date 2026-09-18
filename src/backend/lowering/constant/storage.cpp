@@ -12,7 +12,19 @@ ConstantStorage::ConstantStorage(
     TargetArtifactID artifact
 ) noexcept
     : compilation(compilation),
-      artifact_id(artifact) {}
+      artifact_id(artifact) {
+    if (const auto* implementation = std::get_if<TargetModuleImplementationArtifact>(
+            &compilation.target().artifact(artifact)
+        )) {
+        storage_namespace = TargetNameAllocator::artifact_storage_namespace(
+            artifact.index(),
+            compilation.target()
+                .names()
+                .module_names(implementation->schedule.module_id)
+                .reserved_identifiers
+        );
+    }
+}
 
 auto ConstantStorage::find(ConstantID id) const noexcept -> std::optional<TargetName> {
     const auto found = names.find(id);
@@ -49,7 +61,7 @@ auto ConstantStorage::append(ConstantID id, TargetTypeID type, TargetExpr initia
                                      .module_namespace_name.components()) {
         components.push_back(component);
     }
-    components.push_back(TargetNameAllocator::artifact_storage_namespace(artifact_id.index()));
+    components.push_back(*storage_namespace);
     components.push_back(identifier);
     auto name = TargetName::globally_qualified(std::move(components));
     names.emplace(id, name);
@@ -76,7 +88,7 @@ auto ConstantStorage::take() noexcept -> std::vector<TargetItem> {
         invariant_violation("constant storage requires a module implementation artifact");
     }
     auto storage = namespace_item(
-        TargetName(TargetNameAllocator::artifact_storage_namespace(artifact_id.index())),
+        TargetName(*storage_namespace),
         std::exchange(items, {}),
         TargetCompilerReason::ArtifactScaffolding,
         false

@@ -29,21 +29,21 @@ import :support.visit;
 import std;
 
 auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
-    -> AnalysisResult<BuiltExpression> {
-    auto operand = expression(source.operand_id);
+    -> AnalysisTask<BuiltExpression> {
+    auto operand = (co_await expression(source.operand_id));
     if (!operand) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     const auto pointer = pointer_shape(draft(), operand->type());
     if (!pointer) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             source.operator_span,
             DiagnosticCode::TypeMismatch,
             "dereference requires a ptr value"
         ));
     }
     if (is_void_type(draft(), pointer->target)) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             source.operator_span,
             DiagnosticCode::TypeValueRequired,
             "ptr<void> has no object to dereference"
@@ -52,9 +52,9 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
     auto pending = take_pending_failures(*operand);
     auto value = consume_value(*operand, span, AccessMode::Read);
     if (!value) {
-        return std::unexpected(value.error());
+        co_return std::unexpected(value.error());
     }
-    return BuiltExpression {
+    co_return BuiltExpression {
         .storage = active_builder().make_place(
             std::nullopt,
             pointer->target,
@@ -69,7 +69,7 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
 
 auto BodyExprSite::external_index(Value receiver, Value index, Span span) noexcept
     -> ExpressionResult<Value> {
-    auto state = OperandState();
+    auto state = operand_state();
     auto subscript = consume_read(state, std::move(index), span);
     if (!subscript) {
         return std::unexpected(subscript.error());
@@ -106,7 +106,7 @@ auto BodyExprSite::finish_index(
     Value index,
     Span span
 ) noexcept -> ExpressionResult<Value> {
-    auto state = OperandState();
+    auto state = operand_state();
     state.completes = receiver.completes;
     append_pending_failures(state.pending, take_pending_failures(receiver));
     auto subscript = consume_read(state, std::move(index), span);
@@ -126,6 +126,7 @@ auto BodyExprSite::finish_index(
                 body.origin(span)
             ),
             .pending_failures = std::move(state.pending),
+            .takeable = true,
             .completes = state.completes
         };
     }
@@ -156,10 +157,11 @@ auto BodyExprSite::finish_field(
                 body.origin(span)
             ),
             .pending_failures = take_pending_failures(receiver),
+            .takeable = true,
             .completes = receiver.completes
         };
     }
-    auto state = OperandState();
+    auto state = operand_state();
     auto value = consume_read(state, std::move(receiver), span);
     if (!value) {
         return std::unexpected(value.error());
@@ -173,17 +175,17 @@ auto BodyExprSite::finish_field(
 }
 
 auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
-    -> AnalysisResult<BuiltExpression> {
-    auto operand = expression(source.operand_id);
+    -> AnalysisTask<BuiltExpression> {
+    auto operand = (co_await expression(source.operand_id));
     if (!operand.has_value()) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     auto propagated = propagate_pending(*operand, span);
     if (!propagated.has_value()) {
-        return std::unexpected(propagated.error());
+        co_return std::unexpected(propagated.error());
     }
     const auto type = operand->type();
     auto result = make_built(type, SemPropagate {UniqueIndirect(take_built(*operand, span))}, span);
     result.completes = operand->completes;
-    return result;
+    co_return result;
 }

@@ -1,0 +1,54 @@
+struct Money {
+    cents: i64
+}
+
+struct Pair {
+    first: Money,
+    second: Money
+}
+
+fn make_money(value: i64) -> Money {
+    println(value);
+    return Money { value };
+}
+
+struct Empty {}
+
+struct Order {
+    price: Money,
+    names: [str; 2]
+}
+
+enum Status {
+    Pending,
+    Done(i32)
+}
+
+const fn display() {
+    println(
+        Order {
+            Money { 1250 },
+            ["a", "b\n"]
+        }
+    );
+    println(Status::Done(42));
+    println([1, 2, 3]);
+    println([',', '我']);
+    println(1..=3);
+    println(
+        [
+            Money { 7 }
+        ]
+    );
+    let empty: [i32; 0] = [];
+    println(Empty {}, empty, Status::Pending);
+}
+
+const test "structural output" {
+    display();
+}
+
+fn main() {
+    println(Pair { make_money(1), make_money(2) });
+    display();
+}

@@ -2,6 +2,7 @@ module carven:backend.lowering.context.impl;
 
 import :backend.lowering.context;
 import :support.invariant;
+import :support.visit;
 import std;
 
 ArtifactLowering::ArtifactLowering(
@@ -10,9 +11,7 @@ ArtifactLowering::ArtifactLowering(
 ) noexcept
     : planned_compilation(compilation),
       artifact_id(artifact),
-      constants(compilation, artifact) {
-    static_cast<void>(compilation.target().artifact(artifact));
-}
+      constants(compilation, artifact) {}
 
 auto ArtifactLowering::semantic() const noexcept -> const SemIRProgram& {
     return planned_compilation.semantic();
@@ -170,4 +169,13 @@ auto ModuleLowering::name_allocator() noexcept -> TargetNameAllocator& {
 
 auto ModuleLowering::make_callable_name_allocator() const noexcept -> TargetNameAllocator {
     return TargetNameAllocator(plan().names().module_names(module_id).reserved_identifiers);
+}
+
+auto ArtifactLowering::name_query_type(TargetTypeID type) noexcept -> void {
+    target_builder.name_namespace_type(
+        type,
+        TargetIdentifier::from_spelling(
+            std::format("CppQuery_{}_{}", artifact_id.index(), type.index())
+        )
+    );
 }

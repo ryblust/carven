@@ -299,12 +299,6 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
             .primary_text = "print()",
         },
         {
-            .name = "print rejects an aggregate among scalar arguments",
-            .source = "fn invalid() { print(1, [1, 2], true); }",
-            .code = "CV-TYPE-MISMATCH",
-            .primary_text = "[1, 2]",
-        },
-        {
             .name = "builtin callable requires a concrete signature",
             .source = "fn invalid() { let output = println; }",
             .code = "CV-TYPE-NOT-CALLABLE",

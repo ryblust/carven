@@ -35,7 +35,7 @@ auto BodyElaborator::build_pattern(
     bool allow_new_bindings,
     std::flat_set<std::string, std::less<>>& used_bindings,
     std::vector<SemPatternBounds>& pattern_bounds
-) noexcept -> AnalysisResult<BuiltPattern> {
+) noexcept -> AnalysisTask<BuiltPattern> {
     const auto& source = ast.pattern(source_id);
     const auto pattern_origin = origin(source.span);
     const auto add = [&](ElaboratedPatternValue value) noexcept {
@@ -47,20 +47,20 @@ auto BodyElaborator::build_pattern(
             }
         );
     };
-    return source.value.visit(
+    co_return (co_await source.value.visit(
         Overloaded {
-            [&](const ASTWildcardPattern&) noexcept -> AnalysisResult<BuiltPattern> {
-                return BuiltPattern {
+            [&](const ASTWildcardPattern&) noexcept -> AnalysisTask<BuiltPattern> {
+                co_return BuiltPattern {
                     .pattern = add(WildcardPattern {}),
                     .bindings = {},
                     .irrefutable = true,
                 };
             },
-            [&](const ASTLiteral& literal) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTLiteral& literal) noexcept -> AnalysisTask<BuiltPattern> {
                 auto normalized = normalize_literal(draft(), literal, type);
                 if (!normalized.has_value()) {
                     const auto diagnostic = constant_evaluation_diagnostic(normalized.error());
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         diagnostic.has_value() ? diagnostic->code
                                                : DiagnosticCode::TypeMatchPattern,
@@ -69,13 +69,13 @@ auto BodyElaborator::build_pattern(
                     ));
                 }
                 const auto constant = draft().intern_constant(std::move(*normalized));
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
                     .irrefutable = false,
                 };
             },
-            [&](const ASTNegativeNumberPattern& negative) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTNegativeNumberPattern& negative) noexcept -> AnalysisTask<BuiltPattern> {
                 auto normalized =
                     negative.value.visit([&]<typename Numeric>(const Numeric& numeric) noexcept {
                         static_assert(
@@ -92,7 +92,7 @@ auto BodyElaborator::build_pattern(
                     });
                 if (!normalized.has_value()) {
                     const auto diagnostic = constant_evaluation_diagnostic(normalized.error());
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         diagnostic.has_value() ? diagnostic->code
                                                : DiagnosticCode::TypeMatchPattern,
@@ -101,16 +101,16 @@ auto BodyElaborator::build_pattern(
                     ));
                 }
                 const auto constant = draft().intern_constant(std::move(*normalized));
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
                     .irrefutable = false,
                 };
             },
-            [&](const ASTRangePattern& range) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTRangePattern& range) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto* concrete = std::get_if<TypeID>(&type);
                 if (concrete == nullptr) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeMatchPattern,
                         "range pattern needs an integer subject"
@@ -119,7 +119,7 @@ auto BodyElaborator::build_pattern(
                 const auto canonical = draft().type_copy(*concrete);
                 const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
                 if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeMatchPattern,
                         "range pattern needs an integer subject"
@@ -136,16 +136,16 @@ auto BodyElaborator::build_pattern(
                                              std::optional<ASTExprID> id,
                                              std::optional<RangePatternBound>& bound,
                                              std::optional<SemanticExpression>& operation
-                                         ) noexcept -> AnalysisResult<void> {
+                                         ) noexcept -> AnalysisTask<void> {
                     if (!id) {
-                        return {};
+                        co_return {};
                     }
-                    auto value = expression(*id, type);
+                    auto value = (co_await expression(*id, type));
                     if (!value) {
-                        return std::unexpected(value.error());
+                        co_return std::unexpected(value.error());
                     }
                     if (!compatible(type, value->type())) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             ast.expression(*id).span,
                             DiagnosticCode::TypeRangeBounds,
                             "range bound differs from subject type"
@@ -154,7 +154,7 @@ auto BodyElaborator::build_pattern(
                     auto checked =
                         consume_value(*value, ast.expression(*id).span, AccessMode::Read);
                     if (!checked) {
-                        return std::unexpected(checked.error());
+                        co_return std::unexpected(checked.error());
                     }
                     auto uses_pattern_binding = false;
                     visit_semantic_nodes(*checked, [&](const SemanticExpression& expr) noexcept {
@@ -167,7 +167,7 @@ auto BodyElaborator::build_pattern(
                         }
                     });
                     if (uses_pattern_binding) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             ast.expression(*id).span,
                             DiagnosticCode::TypeMatchPattern,
                             "range bounds cannot refer to bindings introduced by the same pattern"
@@ -214,15 +214,15 @@ auto BodyElaborator::build_pattern(
                     if (!known) {
                         operation = std::move(*checked);
                     }
-                    return {};
+                    co_return {};
                 };
-                auto checked = build_bound(range.begin, pattern.begin, first);
+                auto checked = (co_await build_bound(range.begin, pattern.begin, first));
                 if (!checked) {
-                    return std::unexpected(checked.error());
+                    co_return std::unexpected(checked.error());
                 }
-                checked = build_bound(range.end, pattern.end, last);
+                checked = (co_await build_bound(range.end, pattern.end, last));
                 if (!checked) {
-                    return std::unexpected(checked.error());
+                    co_return std::unexpected(checked.error());
                 }
                 const auto id = add(pattern);
                 if (first || last) {
@@ -230,12 +230,12 @@ auto BodyElaborator::build_pattern(
                         {.pattern = id, .begin = std::move(first), .end = std::move(last)}
                     );
                 }
-                return BuiltPattern {.pattern = id, .bindings = {}, .irrefutable = false};
+                co_return BuiltPattern {.pattern = id, .bindings = {}, .irrefutable = false};
             },
-            [&](const ASTBindingPattern& binding) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTBindingPattern& binding) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto name = spelling(binding.name_span);
                 if (!used_bindings.insert(name).second) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         binding.name_span,
                         DiagnosticCode::NameDuplicateLocal,
                         std::format("pattern binds '{}' more than once", name)
@@ -244,7 +244,7 @@ auto BodyElaborator::build_pattern(
                 auto found = bindings.find(name);
                 if (found == bindings.end()) {
                     if (!allow_new_bindings) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             binding.name_span,
                             DiagnosticCode::MatchBindingMismatch,
                             "or-pattern alternatives must bind the same names"
@@ -262,12 +262,15 @@ auto BodyElaborator::build_pattern(
                         BodyLocalStorage {
                             .storage = storage,
                             .type = type,
+                            .used = false,
+                            .takeable = true,
+                            .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
                         },
                         DiagnosticCode::MatchBindingMismatch
                     );
                     if (!published.has_value()) {
-                        return std::unexpected(published.error());
+                        co_return std::unexpected(published.error());
                     }
                     found = bindings
                                 .emplace(
@@ -276,40 +279,40 @@ auto BodyElaborator::build_pattern(
                                 )
                                 .first;
                 } else if (!compatible(found->second.type, type)) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         binding.name_span,
                         DiagnosticCode::MatchBindingMismatch,
                         "or-pattern binding has a different type in another alternative"
                     ));
                 }
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern = add(BindingPattern {.binding = found->second.storage.binding}),
                     .bindings = {found->second.storage.binding},
                     .irrefutable = true,
                 };
             },
-            [&](const ASTConstraintPattern& constraint) noexcept -> AnalysisResult<BuiltPattern> {
-                auto constrained = resolve_pattern_constraint(constraint.operand);
+            [&](const ASTConstraintPattern& constraint) noexcept -> AnalysisTask<BuiltPattern> {
+                auto constrained = (co_await resolve_pattern_constraint(constraint.operand));
                 if (!constrained.has_value()) {
-                    return std::unexpected(constrained.error());
+                    co_return std::unexpected(constrained.error());
                 }
                 if (!compatible(type, *constrained)) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         constraint.operand.span,
                         DiagnosticCode::TypeMatchConstraint,
                         "type constraint is incompatible with the match subject"
                     ));
                 }
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern = add(ElaboratedTypeConstraintPattern {.type = *constrained}),
                     .bindings = {},
                     .irrefutable = true,
                 };
             },
-            [&](const ASTCasePattern& case_pattern) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTCasePattern& case_pattern) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto* concrete = std::get_if<TypeID>(&type);
                 if (concrete == nullptr) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeMatchPattern,
                         "enum case pattern requires a concrete enum subject"
@@ -318,7 +321,7 @@ auto BodyElaborator::build_pattern(
                 const auto canonical = draft().type_copy(*concrete);
                 const auto* subject_enum = std::get_if<EnumTypeValue>(&canonical.value);
                 if (subject_enum == nullptr) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeMatchPattern,
                         "case pattern requires an enum subject"
@@ -331,13 +334,14 @@ auto BodyElaborator::build_pattern(
                         invariant_violation("qualified case pattern has no qualifier");
                     }
                     const auto qualifier_name = spelling(qualified->components.back());
-                    auto selected = find_global(qualifier_name, qualified->components.back());
+                    auto selected =
+                        (co_await find_global(qualifier_name, qualified->components.back()));
                     if (!selected.has_value()) {
-                        return std::unexpected(selected.error());
+                        co_return std::unexpected(selected.error());
                     }
                     const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
                     if (enumeration == nullptr || enumeration->enumeration != owner) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             qualified->span,
                             DiagnosticCode::TypeMatchPattern,
                             "case pattern qualifier differs from the subject enum"
@@ -357,7 +361,7 @@ auto BodyElaborator::build_pattern(
                     }
                 }
                 if (!selected.has_value()) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         case_pattern.name_span,
                         DiagnosticCode::TypeMatchPattern,
                         std::format("enum has no case named '{}'", case_name)
@@ -367,7 +371,7 @@ auto BodyElaborator::build_pattern(
                     ? std::span<const ASTPatternID>(case_pattern.payload->patterns)
                     : std::span<const ASTPatternID>();
                 if (payload_ids.size() != selected->payload_types.size()) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.span,
                         DiagnosticCode::TypeEnumCaseArity,
                         "enum case pattern payload arity does not match"
@@ -376,16 +380,16 @@ auto BodyElaborator::build_pattern(
                 auto payload = std::vector<PatternID>();
                 auto result_bindings = std::vector<LocalBindingID>();
                 for (auto index = 0uz; index < payload_ids.size(); ++index) {
-                    auto child = build_pattern(
+                    auto child = (co_await build_pattern(
                         payload_ids[index],
                         selected->payload_types[index],
                         bindings,
                         allow_new_bindings,
                         used_bindings,
                         pattern_bounds
-                    );
+                    ));
                     if (!child.has_value()) {
-                        return std::unexpected(child.error());
+                        co_return std::unexpected(child.error());
                     }
                     payload.push_back(child->pattern);
                     result_bindings.insert(
@@ -395,7 +399,7 @@ auto BodyElaborator::build_pattern(
                     );
                 }
                 std::ranges::sort(result_bindings, {}, &LocalBindingID::index);
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern =
                         add(EnumCasePattern {
                             .enum_case = *selected_id,
@@ -405,7 +409,7 @@ auto BodyElaborator::build_pattern(
                     .irrefutable = false,
                 };
             },
-            [&](const ASTOrPattern& or_pattern) noexcept -> AnalysisResult<BuiltPattern> {
+            [&](const ASTOrPattern& or_pattern) noexcept -> AnalysisTask<BuiltPattern> {
                 if (or_pattern.alternatives.empty()) {
                     invariant_violation("or-pattern has no alternatives");
                 }
@@ -415,21 +419,21 @@ auto BodyElaborator::build_pattern(
                 auto irrefutable = false;
                 for (auto index = 0uz; index < or_pattern.alternatives.size(); ++index) {
                     auto alternative_names = std::flat_set<std::string, std::less<>>();
-                    auto alternative = build_pattern(
+                    auto alternative = (co_await build_pattern(
                         or_pattern.alternatives[index],
                         type,
                         bindings,
                         index == 0uz && allow_new_bindings,
                         alternative_names,
                         pattern_bounds
-                    );
+                    ));
                     if (!alternative.has_value()) {
-                        return std::unexpected(alternative.error());
+                        co_return std::unexpected(alternative.error());
                     }
                     if (!expected_names.has_value()) {
                         expected_names = alternative_names;
                     } else if (*expected_names != alternative_names) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             ast.pattern(or_pattern.alternatives[index]).span,
                             DiagnosticCode::MatchBindingMismatch,
                             "or-pattern alternatives must bind the same names"
@@ -440,7 +444,7 @@ auto BodyElaborator::build_pattern(
                 }
                 for (const auto& name : *expected_names) {
                     if (!used_bindings.insert(name).second) {
-                        return std::unexpected(fail(
+                        co_return std::unexpected(fail(
                             source.span,
                             DiagnosticCode::NameDuplicateLocal,
                             std::format("pattern binds '{}' more than once", name)
@@ -451,19 +455,19 @@ auto BodyElaborator::build_pattern(
                     result_bindings.push_back(bindings.at(name).storage.binding);
                 }
                 std::ranges::sort(result_bindings, {}, &LocalBindingID::index);
-                return BuiltPattern {
+                co_return BuiltPattern {
                     .pattern = add(OrPattern {.alternatives = std::move(alternatives)}),
                     .bindings = std::move(result_bindings),
                     .irrefutable = irrefutable,
                 };
             },
         }
-    );
+    ));
 }
 
 auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
-    -> AnalysisResult<ConstructionTypeRef> {
-    return resolve_source_constraint_type(
+    -> AnalysisTask<ConstructionTypeRef> {
+    co_return (co_await resolve_source_constraint_type(
         draft(),
         catalog(),
         import_usage(),
@@ -471,7 +475,7 @@ auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& oper
         ast,
         operand,
         [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
-    );
+    ));
 }
 
 auto BodyElaborator::build_match(
@@ -480,10 +484,10 @@ auto BodyElaborator::build_match(
     std::optional<ConstructionTypeRef> expected,
     bool value_form,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
-    auto subject = expression(source.subject);
+) noexcept -> AnalysisTask<std::optional<BuiltExpression>> {
+    auto subject = (co_await expression(source.subject));
     if (!subject.has_value()) {
-        return std::unexpected(subject.error());
+        co_return std::unexpected(subject.error());
     }
     auto pending = BodyPendingFailureTerms();
     auto result_type = expected;
@@ -492,12 +496,12 @@ auto BodyElaborator::build_match(
     }
     auto consumed = consume_pending(*subject, ast.expression(source.subject).span);
     if (!consumed.has_value()) {
-        return std::unexpected(consumed.error());
+        co_return std::unexpected(consumed.error());
     }
     const auto selection_reachable = reachable;
     const auto subject_type = subject->type();
     if (is_void_type(draft(), subject_type)) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             ast.expression(source.subject).span,
             DiagnosticCode::TypeValueRequired,
             "void expression cannot be used as a value"
@@ -506,7 +510,9 @@ auto BodyElaborator::build_match(
     const auto subject_is_place = std::holds_alternative<PlaceExpression>(subject->storage);
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
     if (source.arms.empty()) {
-        return std::unexpected(fail(span, DiagnosticCode::MatchNonExhaustive, "match has no arms"));
+        co_return std::unexpected(
+            fail(span, DiagnosticCode::MatchNonExhaustive, "match has no arms")
+        );
     }
 
     struct ArmPlan final {
@@ -529,11 +535,17 @@ auto BodyElaborator::build_match(
         const auto outer = failure_context_for_current_path();
         const auto range_failures = draft().add_empty_failure_term();
         failure_contexts.push_back({range_failures, outer.accepts_catch_residual});
-        auto pattern =
-            build_pattern(arm.pattern, subject_type, bindings, true, used, pattern_bounds);
+        auto pattern = (co_await build_pattern(
+            arm.pattern,
+            subject_type,
+            bindings,
+            true,
+            used,
+            pattern_bounds
+        ));
         failure_contexts.pop_back();
         if (!pattern.has_value()) {
-            return std::unexpected(pattern.error());
+            co_return std::unexpected(pattern.error());
         }
         pattern->bindings.clear();
         for (const auto& [name, binding] : bindings) {
@@ -583,7 +595,7 @@ auto BodyElaborator::build_match(
         coverage_arms
     );
     if (!coverage.has_value()) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeMatchPattern,
             std::format("invalid match pattern coverage: {}", coverage.error())
@@ -597,7 +609,7 @@ auto BodyElaborator::build_match(
         if (disjunction != nullptr && redundant.alternative < disjunction->alternatives.size()) {
             diagnostic_span = ast.pattern(disjunction->alternatives[redundant.alternative]).span;
         }
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             diagnostic_span,
             DiagnosticCode::MatchDuplicateAlternative,
             "match or-pattern contains a repeated or subsumed alternative"
@@ -619,7 +631,7 @@ auto BodyElaborator::build_match(
         }
     }
     if (!coverage->exhaustive) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::MatchNonExhaustive,
             std::format(
@@ -650,9 +662,9 @@ auto BodyElaborator::build_match(
         auto guard_may_reject = false;
         if (plan.source->guard.has_value()) {
             const auto id = plan.source->guard->expression;
-            auto guard = expression(id, draft().builtin_type(BuiltinType::Bool));
+            auto guard = (co_await expression(id, draft().builtin_type(BuiltinType::Bool)));
             if (!guard.has_value()) {
-                return std::unexpected(guard.error());
+                co_return std::unexpected(guard.error());
             }
             if (value_form) {
                 collect_pending(pending, *guard);
@@ -660,7 +672,7 @@ auto BodyElaborator::build_match(
             const auto known = known_boolean_constant(draft(), guard->constant());
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             guard_tree = std::move(*checked);
             body_reachable = guard->completes && (!known.has_value() || *known);
@@ -669,19 +681,19 @@ auto BodyElaborator::build_match(
         if (plan.pattern.irrefutable && !guard_may_reject) {
             remaining = false;
         }
-        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
+        auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
-            return build_arm(
+            co_return (co_await build_arm(
                 plan.source->body,
                 value_form,
                 result_type,
                 pending,
                 expected.has_value() && allow_pointer_narrowing
-            );
+            ));
         }();
         if (!body.has_value()) {
-            return std::unexpected(body.error());
+            co_return std::unexpected(body.error());
         }
         normal = normal || (useful && body_reachable && reachable);
         arms.push_back(
@@ -703,9 +715,9 @@ auto BodyElaborator::build_match(
     );
     if (!value_form) {
         append_expression(result, span);
-        return std::optional<BuiltExpression>();
+        co_return std::optional<BuiltExpression>();
     }
-    return std::optional(normal ? std::move(result) : mark_noncompleting(std::move(result)));
+    co_return std::optional(normal ? std::move(result) : mark_noncompleting(std::move(result)));
 }
 
 auto BodyElaborator::match_expression(
@@ -713,22 +725,22 @@ auto BodyElaborator::match_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<BuiltExpression> {
-    auto built = build_match(source, span, expected, true, allow_pointer_narrowing);
+) noexcept -> AnalysisTask<BuiltExpression> {
+    auto built = (co_await build_match(source, span, expected, true, allow_pointer_narrowing));
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
     if (!built->has_value()) {
         invariant_violation("value match did not produce a value");
     }
-    return std::move(**built);
+    co_return std::move(**built);
 }
 
 auto BodyElaborator::match_statement(const ASTMatchForm& source, Span span) noexcept
-    -> AnalysisResult<void> {
-    auto built = build_match(source, span, std::nullopt, false);
+    -> AnalysisTask<void> {
+    auto built = (co_await build_match(source, span, std::nullopt, false));
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
-    return {};
+    co_return {};
 }

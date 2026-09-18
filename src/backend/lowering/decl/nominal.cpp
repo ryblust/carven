@@ -43,8 +43,12 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
             TargetMemberFunctionDecl {
                 .name = TargetOperatorName::Equality,
                 .parameters = target_parameters(
-                    {.name = std::nullopt, .type = context.reference_type(type, true)},
-                    {.name = std::nullopt, .type = context.reference_type(type, true)}
+                    {.name = std::nullopt,
+                     .type = context.reference_type(type, true),
+                     .default_value = std::nullopt},
+                    {.name = std::nullopt,
+                     .type = context.reference_type(type, true),
+                     .default_value = std::nullopt}
                 ),
                 .result = context.intrinsic_type(TargetSymbol::Bool),
                 .form = TargetMemberFunctionDefaulted {},
@@ -123,10 +127,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         auto parameters = std::vector<TargetParameter>();
         const auto& source = context.semantic().declarations().enum_case(sum_case.id);
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
-            parameters.push_back({
-                .name = TargetNameAllocator::enum_payload_field(index),
-                .type = context.lower_type(source.payload_types[index]),
-            });
+            parameters.push_back(
+                {.name = TargetNameAllocator::enum_payload_field(index),
+                 .type = context.lower_type(source.payload_types[index]),
+                 .default_value = std::nullopt}
+            );
         }
         public_members.push_back(
             TargetMemberFunctionDecl {
@@ -148,8 +153,12 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             TargetMemberFunctionDecl {
                 .name = TargetOperatorName::Equality,
                 .parameters = target_parameters(
-                    {.name = std::nullopt, .type = context.reference_type(enum_type, true)},
-                    {.name = std::nullopt, .type = context.reference_type(enum_type, true)}
+                    {.name = std::nullopt,
+                     .type = context.reference_type(enum_type, true),
+                     .default_value = std::nullopt},
+                    {.name = std::nullopt,
+                     .type = context.reference_type(enum_type, true),
+                     .default_value = std::nullopt}
                 ),
                 .result = context.intrinsic_type(TargetSymbol::Bool),
                 .form = TargetMemberFunctionDefaulted {},
@@ -183,8 +192,12 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 TargetMemberFunctionDecl {
                     .name = TargetOperatorName::Equality,
                     .parameters = target_parameters(
-                        {.name = std::nullopt, .type = context.reference_type(record_type, true)},
-                        {.name = std::nullopt, .type = context.reference_type(record_type, true)}
+                        {.name = std::nullopt,
+                         .type = context.reference_type(record_type, true),
+                         .default_value = std::nullopt},
+                        {.name = std::nullopt,
+                         .type = context.reference_type(record_type, true),
+                         .default_value = std::nullopt}
                     ),
                     .result = context.intrinsic_type(TargetSymbol::Bool),
                     .form = TargetMemberFunctionDefaulted {},
@@ -236,10 +249,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
     private_members.push_back(
         TargetConstructorDecl {
             .name = enum_name,
-            .parameters = target_parameters({
-                .name = representation.storage_member,
-                .type = context.reference_type(storage_type, false, true),
-            }),
+            .parameters = target_parameters(
+                {.name = representation.storage_member,
+                 .type = context.reference_type(storage_type, false, true),
+                 .default_value = std::nullopt}
+            ),
             .initializers = std::move(initializers),
             .constexpr_specifier = false,
             .explicit_specifier = true,
@@ -319,10 +333,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         const auto& source = context.semantic().declarations().enum_case(sum_case.id);
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
             const auto name = TargetNameAllocator::enum_payload_field(index);
-            parameters.push_back({
-                .name = name,
-                .type = context.lower_type(source.payload_types[index]),
-            });
+            parameters.push_back(
+                {.name = name,
+                 .type = context.lower_type(source.payload_types[index]),
+                 .default_value = std::nullopt}
+            );
             arguments.push_back(transfer_expression(name_expression(name)));
         }
         auto record_arguments = std::move(arguments);

@@ -131,28 +131,37 @@ auto OwnershipBodyAnalyzer::references(
 ) const noexcept -> std::vector<OwnershipCapture> {
     auto result = std::vector<OwnershipCapture>();
     auto visited = std::flat_set<OwnershipPlace>();
-    const auto inspect = [&](this const auto& self,
-                             const OwnershipRelationships& value) noexcept -> void {
-        const auto follow = [&](const OwnershipPlace& target) noexcept {
-            if (visited.insert(target).second) {
-                self(
-                    project_relationships(state.objects[target.object].relationships, target.path)
-                );
-            }
-        };
-        for (const auto& capture : value.captures) {
+
+    struct PendingRelationships final {
+        OwnershipRelationships value;
+        std::size_t capture;
+        std::size_t loan;
+    };
+
+    auto pending = std::vector<PendingRelationships> {{relationships, 0uz, 0uz}};
+    while (!pending.empty()) {
+        auto& current = pending.back();
+        auto target = std::optional<OwnershipPlace>();
+        if (current.capture < current.value.captures.size()) {
+            const auto& capture = current.value.captures[current.capture++];
             if (!std::ranges::contains(result, capture)) {
                 result.push_back(capture);
             }
-            follow(capture.target);
+            target = capture.target;
+        } else if (current.loan < current.value.callable_loans.size()) {
+            target = current.value.callable_loans[current.loan++].backing;
+        } else {
+            pending.pop_back();
+            continue;
         }
-        for (const auto& loan : value.callable_loans) {
-            if (loan.backing.has_value()) {
-                follow(*loan.backing);
-            }
+        if (target && visited.insert(*target).second) {
+            pending.push_back(
+                {project_relationships(state.objects[target->object].relationships, target->path),
+                 0uz,
+                 0uz}
+            );
         }
-    };
-    inspect(relationships);
+    }
     return result;
 }
 
@@ -266,38 +275,42 @@ auto OwnershipBodyAnalyzer::binding_place(LocalBindingID binding) const noexcept
 
 auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noexcept
     -> std::optional<OwnershipPlace> {
-    if (const auto* foreign = std::get_if<SemCpp>(&source.value);
-        foreign != nullptr && source.category == SemanticValueCategory::Place) {
-        return location(foreign->operands.front().expression);
-    }
-    if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
-        if (const auto found = read_storage.find(binding->binding); found != read_storage.end()) {
-            return found->second.size() == 1 ? std::optional(found->second.front()) : std::nullopt;
-        }
-        return binding_place(binding->binding);
-    }
-    if (const auto* field = std::get_if<SemField>(&source.value)) {
-        auto result = location(*field->source);
-        if (result.has_value()) {
-            result->path.push_back(field->field.field_index);
-        }
-        return result;
-    }
-    if (const auto* index = std::get_if<SemIndex>(&source.value)) {
-        if (std::holds_alternative<SliceTypeValue>(
-                program.types().type(index->source->type.resolved()).value
-            )) {
-            // Elements live in the borrowed backing, not inside the slice value.
-            // Their internal relationships are projected by expression().
+    auto* current = std::addressof(source);
+    auto projection = OwnershipProjectionPath();
+    for (;;) {
+        if (const auto* foreign = std::get_if<SemCpp>(&current->value);
+            foreign != nullptr && current->category == SemanticValueCategory::Place) {
+            current = std::addressof(foreign->operands.front().expression);
+        } else if (const auto* binding = std::get_if<SemBinding>(&current->value)) {
+            auto result = std::optional<OwnershipPlace>();
+            if (const auto found = read_storage.find(binding->binding);
+                found != read_storage.end()) {
+                if (found->second.size() == 1uz) {
+                    result = found->second.front();
+                }
+            } else {
+                result = binding_place(binding->binding);
+            }
+            if (result) {
+                result->path.append_range(projection | std::views::reverse);
+            }
+            return result;
+        } else if (const auto* field = std::get_if<SemField>(&current->value)) {
+            projection.push_back(field->field.field_index);
+            current = std::addressof(*field->source);
+        } else if (const auto* index = std::get_if<SemIndex>(&current->value)) {
+            if (std::holds_alternative<SliceTypeValue>(
+                    program.types().type(index->source->type.resolved()).value
+                )) {
+                // Slice elements live in borrowed backing, outside the slice object.
+                return std::nullopt;
+            }
+            projection.push_back(constant_index(*index->index));
+            current = std::addressof(*index->source);
+        } else {
             return std::nullopt;
         }
-        auto result = location(*index->source);
-        if (result.has_value()) {
-            result->path.push_back(constant_index(*index->index));
-        }
-        return result;
     }
-    return std::nullopt;
 }
 
 auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {

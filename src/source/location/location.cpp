@@ -1,6 +1,7 @@
 module carven:source.location.impl;
 
 import :source.location;
+import :support.invariant;
 import std;
 
 LineIndex::LineIndex(std::string_view text) noexcept
@@ -27,4 +28,14 @@ auto LineIndex::location(std::uint32_t offset) const noexcept -> SourceLocation 
         .line = index + 1,
         .column = offset - line_starts[index] + 1,
     };
+}
+
+auto LineIndex::line_span(std::uint32_t line) const noexcept -> Span {
+    if (line == 0 || line > line_starts.size()) {
+        invariant_violation("source line lookup used an invalid line number");
+    }
+    return Span::from_bounds(
+        line_starts[line - 1],
+        line < line_starts.size() ? line_starts[line] : text_size
+    );
 }

@@ -68,6 +68,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
                 TargetFreeFunctionDefinition {
                     .body = std::move(lowered.statements),
                 },
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }}
@@ -112,13 +113,15 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
     return compiler_item(
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().module_runner(context.active_module())},
-            .parameters = target_parameters({
-                .name = TargetNameAllocator::test_context(),
-                .type =
-                    context.reference_type(context.intrinsic_type(TargetSymbol::TestingContext)),
-            }),
+            .parameters = target_parameters(
+                {.name = TargetNameAllocator::test_context(),
+                 .type =
+                     context.reference_type(context.intrinsic_type(TargetSymbol::TestingContext)),
+                 .default_value = std::nullopt}
+            ),
             .result = context.intrinsic_type(TargetSymbol::Void),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }},
@@ -145,8 +148,11 @@ auto lower_process_entry(
         const auto argument_vector = context.pointer_type(character_pointer);
         parameters = target_parameters(
             {.name = TargetNameAllocator::process_argument_count(),
-             .type = context.intrinsic_type(TargetSymbol::Int)},
-            {.name = TargetNameAllocator::process_argument_vector(), .type = argument_vector}
+             .type = context.intrinsic_type(TargetSymbol::Int),
+             .default_value = std::nullopt},
+            {.name = TargetNameAllocator::process_argument_vector(),
+             .type = argument_vector,
+             .default_value = std::nullopt}
         );
     }
     return compiler_item(
@@ -155,6 +161,7 @@ auto lower_process_entry(
             .parameters = std::move(parameters),
             .result = context.intrinsic_type(TargetSymbol::Int),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }},
@@ -174,12 +181,14 @@ auto lower_test_runner_header(
         module_items.push_back(compiler_item(
             TargetDecl {TargetFunctionDecl {
                 .name = TargetName {artifact.plan().names().module_runner(module_id)},
-                .parameters = target_parameters({
-                    .name = TargetNameAllocator::test_context(),
-                    .type = context.reference_type(testing_context),
-                }),
+                .parameters = target_parameters(
+                    {.name = TargetNameAllocator::test_context(),
+                     .type = context.reference_type(testing_context),
+                     .default_value = std::nullopt}
+                ),
                 .result = context.intrinsic_type(TargetSymbol::Void),
                 .form = TargetFreeFunctionDeclaration {},
+                .constexpr_specifier = false,
                 .static_specifier = false,
                 .inline_specifier = false,
             }},
@@ -236,6 +245,7 @@ auto lower_test_runner_header(
             }),
             .result = context.intrinsic_type(TargetSymbol::Int),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = true,
             .inline_specifier = false,
         }},

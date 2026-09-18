@@ -20,6 +20,19 @@ fn effect_array(&trace: i32, marker: i32, fail: bool) -> [i32; 2] throw ReadErro
 
 fn pair_values(left: i32, right: i32) -> i32 => left * 10 + right;
 
+test "Failure contracts: known normal results retain failing operands" {
+    var trace = 0;
+    let result = try {
+        let known = effect_bool(&trace, 1, true, true)? && false;
+        let _ = effect_value(&trace, 2, false, 0)?;
+        known
+    } catch {
+        ReadError(error) => error.code == 1,
+    };
+    check(result);
+    check(trace == 1);
+}
+
 test "Failure contracts: effectful expressions preserve lexical placement" {
     var trace = 0;
     let composite = try {

@@ -79,11 +79,11 @@ auto BodyElaborator::build_call_argument(
     AccessMode access_mode,
     std::optional<ConstructionTypeRef> expected,
     std::optional<DiagnosticCode> mismatch_code
-) noexcept -> AnalysisResult<BuiltCallArgument> {
+) noexcept -> AnalysisTask<BuiltCallArgument> {
     const auto& source = ast.expression(source_id);
     const auto selected = call_argument_operand(ast, source_id);
     if (selected.access != access_mode) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             source.span,
             DiagnosticCode::AccessCallMismatch,
             access_mode == AccessMode::Write ? "Write parameter requires an explicit Write argument"
@@ -92,13 +92,13 @@ auto BodyElaborator::build_call_argument(
                 : "argument access marker differs from the parameter"
         ));
     }
-    auto built = expression(selected.expression, expected);
+    auto built = (co_await expression(selected.expression, expected));
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
     const auto type = expected.value_or(built->type());
     if (mismatch_code && !is_cpp_type(built->type()) && !compatible(built->type(), type)) {
-        return std::unexpected(
+        co_return std::unexpected(
             fail(source.span, *mismatch_code, "argument does not match the required parameter type")
         );
     }
@@ -106,11 +106,11 @@ auto BodyElaborator::build_call_argument(
     if (access_mode == AccessMode::Write) {
         auto compatible_storage = require_invariant_type(built->type(), type, source.span);
         if (!compatible_storage.has_value()) {
-            return std::unexpected(compatible_storage.error());
+            co_return std::unexpected(compatible_storage.error());
         }
         auto place = consume_place(*built, source.span);
         if (!place.has_value()) {
-            return std::unexpected(place.error());
+            co_return std::unexpected(place.error());
         }
         if (place->expression.type.construction() != type) {
             *place = active_builder().cpp_place(
@@ -121,14 +121,14 @@ auto BodyElaborator::build_call_argument(
                 origin(source.span)
             );
         }
-        return BuiltCallArgument {
+        co_return BuiltCallArgument {
             .argument = SemCallArgument {AccessMode::Write, std::move(place->expression)},
             .pending_failures = std::move(pending_failures),
             .completes = built->completes,
         };
     }
     if (access_mode == AccessMode::Take && pointer_shape(draft(), type) && built->type() != type) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             source.span,
             DiagnosticCode::TypeMismatch,
             "Take requires the same complete ptr type"
@@ -138,19 +138,19 @@ auto BodyElaborator::build_call_argument(
     if (access_mode == AccessMode::Take && !built->is_function_reference()) {
         auto taken = consume_value(*built, source.span, AccessMode::Take);
         if (!taken) {
-            return std::unexpected(taken.error());
+            co_return std::unexpected(taken.error());
         }
         built->storage = std::move(*taken);
     }
     auto coerced = coerce_to(*built, type, source.span);
     if (!coerced.has_value()) {
-        return std::unexpected(coerced.error());
+        co_return std::unexpected(coerced.error());
     }
     auto value = consume_value(*built, source.span, AccessMode::Read);
     if (!value.has_value()) {
-        return std::unexpected(value.error());
+        co_return std::unexpected(value.error());
     }
-    return BuiltCallArgument {
+    co_return BuiltCallArgument {
         .argument = {access_mode, std::move(*value)},
         .pending_failures = std::move(pending_failures),
         .completes = built->completes,
@@ -162,25 +162,25 @@ auto BodyElaborator::enum_case_reference(
     std::string_view case_name,
     Span span,
     Span case_span
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     auto site = BodyExprSite(*this);
-    return require_body_expression(
-        interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false)
-    );
+    co_return require_body_expression((
+        co_await interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false)
+    ));
 }
 
 auto BodyElaborator::call_expression(
     const ASTCallExpr& source,
     Span span,
     std::optional<SelectedExpression> prepared_callee
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     const auto& callee_source = ast.expression(source.callee);
     if (const auto* name = std::get_if<ASTNameExpr>(&callee_source.value)) {
         const auto text = spelling(name->name_span);
         if (find_local(text) == nullptr && !catalog().lookup(source_module_id, text).empty()) {
-            auto selected = find_global(text, name->name_span);
+            auto selected = (co_await find_global(text, name->name_span));
             if (!selected.has_value()) {
-                return std::unexpected(selected.error());
+                co_return std::unexpected(selected.error());
             }
             if (const auto* enum_case = std::get_if<CatalogEnumCaseForm>(&(*selected)->form)) {
                 const auto type = draft().intern_type(
@@ -189,7 +189,7 @@ auto BodyElaborator::call_expression(
                     }
                 );
                 auto site = BodyExprSite(*this);
-                return require_body_expression(interpret_enum_case(
+                co_return require_body_expression((co_await interpret_enum_case(
                     site,
                     type,
                     text,
@@ -197,18 +197,18 @@ auto BodyElaborator::call_expression(
                     source.arguments,
                     span,
                     true
-                ));
+                )));
             }
         }
     }
-    auto selected_callee = [&]() noexcept -> AnalysisResult<SelectedExpression> {
+    auto selected_callee = co_await [&]() noexcept -> AnalysisTask<SelectedExpression> {
         if (prepared_callee.has_value()) {
-            return std::move(*prepared_callee);
+            co_return std::move(*prepared_callee);
         }
-        return select_expression(source.callee);
+        co_return (co_await select_expression(source.callee));
     }();
     if (!selected_callee.has_value()) {
-        return std::unexpected(selected_callee.error());
+        co_return std::unexpected(selected_callee.error());
     }
     if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
         builtin->span = span;
@@ -228,19 +228,34 @@ auto BodyElaborator::call_expression(
                         ast.expression(argument.expression).span
                     )
                 );
+                auto condition_id = argument.expression;
+                while (const auto* group =
+                           std::get_if<ASTGroupExpr>(&ast.expression(condition_id).value)) {
+                    condition_id = group->expression;
+                }
+                if (const auto* binary =
+                        std::get_if<ASTBinaryExpr>(&ast.expression(condition_id).value)) {
+                    const auto capture = [&](ASTExprID id) noexcept {
+                        return draft().intern_spelling(
+                            draft().source_slice_copy(source_module_id, ast.expression(id).span)
+                        );
+                    };
+                    builtin->operand_sources =
+                        std::array {capture(binary->left), capture(binary->right)};
+                }
             }
             const auto argument_span = ast.expression(argument.expression).span;
             argument_spans.push_back(argument_span);
-            auto built = build_call_argument(
+            auto built = (co_await build_call_argument(
                 argument.expression,
                 AccessMode::Read,
                 condition
                     ? std::optional<ConstructionTypeRef>(draft().builtin_type(BuiltinType::Bool))
                     : std::nullopt,
                 condition ? std::optional(DiagnosticCode::TestConditionType) : std::nullopt
-            );
+            ));
             if (!built) {
-                return std::unexpected(built.error());
+                co_return std::unexpected(built.error());
             }
             parameters.push_back(
                 {AccessMode::Read, built->argument.expression.type.construction()}
@@ -251,27 +266,28 @@ auto BodyElaborator::call_expression(
         }
         auto valid = validate_builtin(*builtin, parameters, argument_spans);
         if (!valid) {
-            return std::unexpected(valid.error());
+            co_return std::unexpected(valid.error());
         }
-        return BuiltExpression {
+        co_return BuiltExpression {
             .storage = builtin_operation(active_builder(), *builtin, std::move(arguments)),
             .pending_failures = std::move(pending),
+            .takeable = true,
             .completes = completes && builtin->function != BuiltinFunction::Fail
         };
     }
     if (std::holds_alternative<CppSelection>(*selected_callee)
         || is_cpp_type(std::get<BuiltExpression>(*selected_callee).type())) {
-        return cpp_call(std::move(*selected_callee), source, span);
+        co_return (co_await cpp_call(std::move(*selected_callee), source, span));
     }
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
     auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {
-        return std::unexpected(contract.error());
+        co_return std::unexpected(contract.error());
     }
     if (source.arguments.size() != contract->parameters.size()) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeCallArity,
             std::format(
@@ -287,7 +303,7 @@ auto BodyElaborator::call_expression(
     } else {
         auto value = consume_value(*callee, ast.expression(source.callee).span, AccessMode::Read);
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         callee_operand = std::move(*value);
     }
@@ -295,13 +311,13 @@ auto BodyElaborator::call_expression(
     auto arguments = std::vector<SemCallArgument>();
     arguments.reserve(source.arguments.size());
     for (auto index = 0uz; index < source.arguments.size(); ++index) {
-        auto argument = build_call_argument(
+        auto argument = (co_await build_call_argument(
             source.arguments[index].expression,
             contract->parameters[index].access,
             contract->parameters[index].type
-        );
+        ));
         if (!argument.has_value()) {
-            return std::unexpected(argument.error());
+            co_return std::unexpected(argument.error());
         }
         append_pending_failures(pending_failures, argument->pending_failures);
         completes &= argument->completes;
@@ -319,10 +335,11 @@ auto BodyElaborator::call_expression(
             .callee_failures = BodyFailures(failures)
         }
     );
-    return BuiltExpression {
+    co_return BuiltExpression {
         .storage = std::move(result),
 
         .pending_failures = std::move(pending_failures),
+        .takeable = true,
         .completes = completes,
     };
 }

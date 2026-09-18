@@ -17,7 +17,7 @@ auto construct_cast(
     std::optional<ConstantID> known,
     Span span
 ) noexcept -> ExpressionResult<typename Site::Value> {
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto operand = site.consume_read(state, std::move(value), span);
     if (!operand) {
         return std::unexpected(operand.error());
@@ -67,8 +67,23 @@ auto convert_intrinsic_argument(
                 !checked) {
                 return std::unexpected(checked.error());
             }
-            auto converted =
-                construct_slice_call(site, SliceIntrinsic::FromArray, std::move(value), {}, span);
+            const auto extent = site.known_sequence_extent(value);
+            auto state = Site::operand_state();
+            auto receiver = site.consume_read(state, std::move(value), span);
+            if (!receiver) {
+                return std::unexpected(receiver.error());
+            }
+            auto operands = std::vector<SemCallArgument>();
+            operands.push_back({.access = AccessMode::Read, .expression = std::move(*receiver)});
+            auto converted = construct_slice_value(
+                site,
+                SliceIntrinsic::FromArray,
+                source,
+                extent,
+                std::move(operands),
+                std::move(state),
+                span
+            );
             if (!converted) {
                 return std::unexpected(converted.error());
             }

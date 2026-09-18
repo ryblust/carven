@@ -108,6 +108,10 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                                     TypeID type,
                                     ProgramOriginID origin) noexcept -> OwnershipRelationships {
         auto relationships = OwnershipRelationships {};
+        const auto facts = contents(type);
+        if (!facts.closure_owner && !facts.callable_view) {
+            return relationships;
+        }
         const auto value = program.types().type(type).value;
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
             relationships.callable_loans.push_back({{}, std::nullopt, std::nullopt, origin, false});

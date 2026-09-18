@@ -24,6 +24,6 @@ auto writer_header_contract() noexcept -> bool {
     auto writer = carven::runtime::Writer(output, 11, 11);
     writer.integer<16, true, true>(42u, 8);
     writer.append("/");
-    writer.integer<10, false, false>(-7, 0);
+    writer.integer_dynamic_width<10, false, false>(-7, 0);
     return output.as_str() == "prefix:0000002A/-7";
 }

@@ -130,3 +130,53 @@ test "Writer delivery: direct return retains temporary text through later effect
     check(result == "dynamic text long enough to require independent heap storage 我/8");
     check(trace == 8);
 }
+
+fn dynamic_integer_record(
+    value: i64,
+    width: i32,
+    text: str
+) -> String => f"{42:04}/{value:0{width}x}/{text}/{value:{width}d}";
+
+fn dynamic_integer_failure(
+    value: i32,
+    width: i32,
+    &trace: i32
+) -> String throw WriterFailure => f"{value:0{width}x}/{writer_fail(&trace)?}";
+
+fn dynamic_integer_append(&output: String, &text: String, &width: i32, &trace: i32) {
+    output.append_format(
+        f"{text}/{-7:0{width}x}/{advance_integer(&width)}/{writer_change(
+                &text,
+                &trace
+            )}/{text}/{width}"
+    );
+}
+
+test "Dynamic integer width: direct nested and append delivery preserve mixed operands" {
+    check(dynamic_integer_record(-7, 4, "我\0") == "0042/-007/我\0/  -7");
+    check(dynamic_integer_record(-7, 0, "text") == "0042/-7/text/-7");
+    var width = 4;
+    check(f"{-7:0{width}x}".len() == 4usize);
+    var text: String = "before storage long enough to allocate";
+    var output: String = "prefix:";
+    var trace = 0;
+    dynamic_integer_append(&output, &text, &width, &trace);
+    check(output == "prefix:after我/-007/5/1/after我/5");
+    check(width == 5 && trace == 1);
+    let temporary = f"{String::from_str(text.as_str()).as_str()}/{-7:0{width}x}/{advance_integer(
+            &width
+        )}";
+    text.clear();
+    check(temporary == "after我/-0007/6");
+}
+
+test "Dynamic integer width: later source failure precedes invalid width formatting" {
+    var trace = 0;
+    let code = try {
+        dynamic_integer_failure(42, -1, &trace)?;
+        0
+    } catch {
+        WriterFailure(error) => error.code
+    };
+    check(code == 1 && trace == 1);
+}

@@ -195,3 +195,17 @@ TEST_CASE("Parser: incomplete construction fields require an initializer") {
         "expected ':' after initializer field name"
     );
 }
+
+TEST_CASE("Parser: recovery ignores declaration starts inside a failed item's nested blocks") {
+    const auto result = parse_source(
+        "fn valid() { if true { let value = 1; } }\n"
+        "fn broken() { if true { let x = ; fn nested(1) {} } }\n"
+        "fn next(2) {}\n"
+        "fn last(3) {}\n"
+    );
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE_EQ(result.error().size(), 3uz);
+    CHECK_EQ(result.error()[0].finding.message, "expected expression");
+    CHECK_EQ(result.error()[1].finding.message, "expected parameter name");
+    CHECK_EQ(result.error()[2].finding.message, "expected parameter name");
+}

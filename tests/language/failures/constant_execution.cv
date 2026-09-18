@@ -93,7 +93,7 @@ const fn recover_guard() -> i32 {
 }
 
 const fn text_failure() -> i32 throw TextError {
-    var text = String::from_str("original");
+    var text: String = "original";
     text.append(" payload");
     let error = TextError { text };
     throw &&error;

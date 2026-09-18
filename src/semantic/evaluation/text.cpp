@@ -1,5 +1,6 @@
 module carven:semantic.evaluation.text.impl;
 
+import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
 import :semantic.format.builtin;
@@ -48,55 +49,55 @@ auto SemanticExecutor::text_intrinsic(
     const SemTextIntrinsic& operation,
     TypeID result_type,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     switch (operation.intrinsic) {
-        case TextIntrinsic::New:    return ExecutionOwnedText {.bytes = {}};
+        case TextIntrinsic::New:    co_return ExecutionOwnedText {.bytes = {}};
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:   {
-            auto receiver = place(frame, operation.operands[0].expression);
+            auto receiver = (co_await place(frame, operation.operands[0].expression));
             if (!receiver) {
-                return std::unexpected(receiver.error());
+                co_return std::unexpected(receiver.error());
             }
             if (operation.intrinsic == TextIntrinsic::Clear) {
                 auto target = text_storage(frame, *receiver, origin);
                 if (!target) {
-                    return std::unexpected(target.error());
+                    co_return std::unexpected(target.error());
                 }
                 (*target)->bytes.clear();
-                return ExecutionVoid {};
+                co_return ExecutionVoid {};
             }
-            auto operand = value(frame, operation.operands[1].expression);
+            auto operand = (co_await value(frame, operation.operands[1].expression));
             if (!operand) {
-                return std::unexpected(operand.error());
+                co_return std::unexpected(operand.error());
             }
             auto suffix = std::string();
             if (operation.intrinsic == TextIntrinsic::Append) {
                 auto bytes = text(*operand, origin);
                 if (!bytes) {
-                    return std::unexpected(bytes.error());
+                    co_return std::unexpected(bytes.error());
                 }
                 suffix = *bytes;
             } else if (operation.intrinsic == TextIntrinsic::Push) {
                 auto fact = read_fact(*operand, origin);
                 if (!fact) {
-                    return std::unexpected(fact.error());
+                    co_return std::unexpected(fact.error());
                 }
                 const auto* character = std::get_if<CharacterConstant>(&fact->value);
                 if (character == nullptr) {
-                    return std::unexpected(
+                    co_return std::unexpected(
                         fail(origin, DiagnosticCode::ConstEvaluation, "String.push requires a char")
                     );
                 }
                 append_utf8(suffix, character->scalar);
             } else {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     origin,
                     DiagnosticCode::ConstEvaluation,
                     "operation does not implement text mutation"
                 ));
             }
-            return append_text(frame, *receiver, suffix, origin);
+            co_return append_text(frame, *receiver, suffix, origin);
         }
         case TextIntrinsic::Len:
         case TextIntrinsic::IsEmpty:
@@ -107,36 +108,36 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::FromU32Unchecked:
         case TextIntrinsic::AsStr:             break;
     }
-    auto operand = read_operand(frame, operation.operands[0].expression);
+    auto operand = (co_await read_operand(frame, operation.operands[0].expression));
     if (!operand) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     const auto* receiver = std::get_if<ExecutionValue>(&*operand);
     if (receiver == nullptr) {
         auto selected = located(frame, std::get<ExecutionPlace>(*operand), origin);
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
         receiver = *selected;
     }
     auto bytes = text(*receiver, origin);
     if (!bytes) {
-        return std::unexpected(bytes.error());
+        co_return std::unexpected(bytes.error());
     }
     switch (operation.intrinsic) {
         case TextIntrinsic::FromStr:
             if (auto checked = account_text(bytes->size(), origin); !checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
-            return ExecutionOwnedText {.bytes = std::string(*bytes)};
+            co_return ExecutionOwnedText {.bytes = std::string(*bytes)};
         case TextIntrinsic::AsStr:
             if (auto checked = account_text(bytes->size(), origin); !checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
-            return ExecutionText {.bytes = std::make_shared<const std::string>(*bytes)};
+            co_return ExecutionText {.bytes = std::make_shared<const std::string>(*bytes)};
         case TextIntrinsic::Bytes: {
             if (auto checked = account_aggregate(bytes->size(), origin); !checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             const auto element_type = values.builtin_type(BuiltinType::U8);
             auto elements = std::vector<ExecutionValue>();
@@ -149,18 +150,18 @@ auto SemanticExecutor::text_intrinsic(
                     }
                 );
             }
-            return ExecutionAggregateValue {
+            co_return ExecutionAggregateValue {
                 .type = result_type,
                 .elements = std::move(elements),
             };
         }
         case TextIntrinsic::Len:
-            return ConstantAtom {
+            co_return ConstantAtom {
                 .type = result_type,
                 .value = IntegerConstant::from_parts(bytes->size(), false),
             };
         case TextIntrinsic::IsEmpty:
-            return ConstantAtom {
+            co_return ConstantAtom {
                 .type = result_type,
                 .value = BooleanConstant {.value = bytes->empty()},
             };
@@ -171,7 +172,7 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromUTF8Unchecked:
         case TextIntrinsic::FromU32Unchecked:
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 origin,
                 DiagnosticCode::ConstEvaluation,
                 "text operation is not supported in execution"
@@ -184,20 +185,20 @@ auto SemanticExecutor::format(
     ExecutionFrame& frame,
     const SemFormat& operation,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     auto destination = std::optional<ExecutionPlace>();
     if (operation.receiver) {
-        auto selected = place(frame, **operation.receiver);
+        auto selected = (co_await place(frame, **operation.receiver));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
         destination = std::move(*selected);
     }
     auto operands = std::vector<ExecutionOperand>();
     for (const auto& operand : operation.operands) {
-        auto result = read_operand(frame, operand.expression);
+        auto result = (co_await read_operand(frame, operand.expression));
         if (!result) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
         operands.push_back(std::move(*result));
     }
@@ -205,7 +206,7 @@ auto SemanticExecutor::format(
     for (auto& operand : operands) {
         auto result = materialize(frame, std::move(operand), origin);
         if (!result) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
         arguments.push_back(std::move(*result));
     }
@@ -222,7 +223,7 @@ auto SemanticExecutor::format(
     }
     auto result = format_builtin(operation.specification, observed, maximum_constant_text_bytes);
     if (!result) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             origin,
             result.error().kind == BuiltinFormatFailureKind::Limit
                 ? DiagnosticCode::ConstLimit
@@ -231,24 +232,24 @@ auto SemanticExecutor::format(
         ));
     }
     if (auto checked = account_text(result->size(), origin); !checked) {
-        return std::unexpected(checked.error());
+        co_return std::unexpected(checked.error());
     }
     if (destination) {
-        return append_text(frame, *destination, *result, origin);
+        co_return append_text(frame, *destination, *result, origin);
     }
-    return ExecutionOwnedText {.bytes = std::move(*result)};
+    co_return ExecutionOwnedText {.bytes = std::move(*result)};
 }
 
 auto SemanticExecutor::print(
     ExecutionFrame& frame,
     const SemPrint& operation,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     auto operands = std::vector<ExecutionOperand>();
     for (const auto& operand : operation.operands) {
-        auto result = read_operand(frame, operand.expression);
+        auto result = (co_await read_operand(frame, operand.expression));
         if (!result) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
         operands.push_back(std::move(*result));
     }
@@ -265,37 +266,29 @@ auto SemanticExecutor::print(
     for (auto index = 0uz; index < operands.size(); ++index) {
         auto argument = materialize(frame, std::move(operands[index]), origin);
         if (!argument) {
-            return std::unexpected(argument.error());
+            co_return std::unexpected(argument.error());
         }
-        auto observed = BuiltinFormatValue();
-        if (const auto bytes = execution_text(values, *argument)) {
-            observed = *bytes;
-        } else if (const auto atom = execution_atom(values, *argument)) {
-            observed = builtin_format_value(values, constant_fact(*atom));
-        }
-        auto formatted = format_builtin_value(observed, {}, maximum_constant_text_bytes);
+        auto formatted = display_execution_value(values, *argument);
         if (!formatted) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 origin,
-                formatted.error() == BuiltinFormatFailureKind::Limit
-                    ? DiagnosticCode::ConstLimit
-                    : DiagnosticCode::ConstEvaluation,
-                "value cannot be printed within the execution limits"
+                DiagnosticCode::ConstEvaluation,
+                "value cannot be structurally displayed during execution"
             ));
         }
         if (index != 0) {
-            if (auto written = write(" "); !written) {
-                return std::unexpected(written.error());
+            if (auto written = (write(" ")); !written) {
+                co_return std::unexpected(written.error());
             }
         }
-        if (auto written = write(*formatted); !written) {
-            return std::unexpected(written.error());
+        if (auto written = (write(*formatted)); !written) {
+            co_return std::unexpected(written.error());
         }
     }
     if (operation.kind == PrintKind::Println || operation.kind == PrintKind::Eprintln) {
-        if (auto written = write("\n"); !written) {
-            return std::unexpected(written.error());
+        if (auto written = (write("\n")); !written) {
+            co_return std::unexpected(written.error());
         }
     }
-    return ExecutionVoid {};
+    co_return ExecutionVoid {};
 }

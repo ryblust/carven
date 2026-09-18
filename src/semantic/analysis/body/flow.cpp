@@ -94,7 +94,9 @@ auto BodyElaborator::make_built(
     return BuiltExpression {
         .storage = std::move(expression),
 
-        .pending_failures = std::move(pending)
+        .pending_failures = std::move(pending),
+        .takeable = true,
+        .completes = true,
     };
 }
 

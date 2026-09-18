@@ -137,3 +137,12 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
         }
     );
 }
+
+auto ModuleLowering::lower_cpp_query(const CppQueryType& query) noexcept -> TargetTypeID {
+    const auto type = target().intern_type({
+        .value = TargetDecltypeType(cpp_type_query(query)),
+        .const_qualified = false,
+    });
+    artifact_lowering.name_query_type(type);
+    return type;
+}

@@ -6,36 +6,38 @@ import :support.visit;
 import std;
 
 auto NullabilityBodyAnalyzer::region(const SemanticRegion& source, NullState state) noexcept
-    -> NullFlow {
+    -> ContinuationTask<NullFlow> {
     auto flow =
         NullFlow {.normal = NullNormal {.state = std::move(state), .value = {}}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!flow.normal) {
             break;
         }
-        auto next = statement(item, std::move(flow.normal->state));
+        auto next = (co_await statement(item, std::move(flow.normal->state)));
         flow.normal = std::move(next.normal);
         append_null_exits(flow.exits, std::move(next.exits));
     }
     if (flow.normal && source.result) {
-        auto next = expression(*source.result, std::move(flow.normal->state));
+        auto next = (co_await expression(*source.result, std::move(flow.normal->state)));
         flow.normal = std::move(next.normal);
         append_null_exits(flow.exits, std::move(next.exits));
     }
-    return flow;
+    co_return flow;
 }
 
 auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullState state) noexcept
-    -> NullFlow {
+    -> ContinuationTask<NullFlow> {
     auto flow =
         NullFlow {.normal = NullNormal {.state = std::move(state), .value = {}}, .exits = {}};
-    const auto evaluate = [&](const SemanticExpression& value) noexcept {
+    const auto evaluate =
+        [&](const SemanticExpression& value) noexcept -> ContinuationTask<std::monostate> {
         if (!flow.normal) {
-            return;
+            co_return {};
         }
-        auto next = expression(value, std::move(flow.normal->state));
+        auto next = (co_await expression(value, std::move(flow.normal->state)));
         flow.normal = std::move(next.normal);
         append_null_exits(flow.exits, std::move(next.exits));
+        co_return {};
     };
     const auto transfer = [&](NullExitPayload payload) noexcept {
         if (flow.normal) {
@@ -43,41 +45,54 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             flow.normal.reset();
         }
     };
-    source.value.visit(
+    (co_await source.value.visit(
         Overloaded {
-            [&](const SemReturn& value) noexcept {
+            [&](const SemReturn& value) noexcept -> ContinuationTask<std::monostate> {
                 if (value.value) {
-                    evaluate(*value.value);
+                    (co_await evaluate(*value.value));
                 }
                 transfer(NullTransfer::Return);
+                co_return {};
             },
-            [&](const SemBreak&) noexcept { transfer(NullTransfer::Break); },
-            [&](const SemContinue&) noexcept { transfer(NullTransfer::Continue); },
-            [&](const SemRethrow&) noexcept {
+            [&](const SemBreak&) noexcept -> ContinuationTask<std::monostate> {
+                transfer(NullTransfer::Break);
+                co_return {};
+            },
+            [&](const SemContinue&) noexcept -> ContinuationTask<std::monostate> {
+                transfer(NullTransfer::Continue);
+                co_return {};
+            },
+            [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
                 if (flow.normal) {
                     for (const auto type : caught) {
                         flow.exits.push_back({.payload = type, .state = flow.normal->state});
                     }
                     flow.normal.reset();
                 }
+                co_return {};
             },
-            [&](const SemThrow& value) noexcept {
-                evaluate(value.value);
+            [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.value));
                 transfer(value.failure_type);
+                co_return {};
             },
-            [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
-            [&](const SemInitialize& value) noexcept {
-                evaluate(value.initializer);
+            [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.expression));
+                co_return {};
+            },
+            [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
                 if (flow.normal) {
                     const auto facts = flow.normal->value;
                     store(flow.normal->state, {.root = value.binding, .path = {}}, facts);
                 }
+                co_return {};
             },
-            [&](const SemAssign& value) noexcept {
-                evaluate(value.target);
-                evaluate(value.value);
+            [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.target));
+                (co_await evaluate(value.value));
                 if (!flow.normal) {
-                    return;
+                    co_return {};
                 }
                 const auto facts = flow.normal->value;
                 if (const auto target = location(value.target)) {
@@ -85,49 +100,53 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                 } else {
                     invalidate(flow.normal->state, location(value.target, true));
                 }
+                co_return {};
             },
-            [&](const SemLoop& value) noexcept {
-                flow = loop(value, std::move(flow.normal->state));
+            [&](const SemLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                flow = (co_await loop(value, std::move(flow.normal->state)));
+                co_return {};
             },
-            [&](const SemRangeLoop& value) noexcept {
-                flow = range(value, std::move(flow.normal->state));
+            [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                flow = (co_await range(value, std::move(flow.normal->state)));
+                co_return {};
             },
-            [&](const OwnedSemanticRegion& value) noexcept {
-                flow = region(*value, std::move(flow.normal->state));
+            [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
+                flow = (co_await region(*value, std::move(flow.normal->state)));
+                co_return {};
             },
         }
-    );
+    ));
     if (flow.normal) {
         flow.normal->value = {};
     }
-    return flow;
+    co_return flow;
 }
 
 auto NullabilityBodyAnalyzer::conditional(const SemIf& source, NullState state) noexcept
-    -> NullFlow {
+    -> ContinuationTask<NullFlow> {
     auto remaining = std::optional(NullNormal {.state = std::move(state), .value = {}});
     auto result = NullFlow();
     for (const auto& branch : source.branches) {
         if (!remaining) {
             break;
         }
-        auto checked = condition(branch.condition, std::move(remaining->state));
+        auto checked = (co_await condition(branch.condition, std::move(remaining->state)));
         remaining = std::move(checked.no);
         append_null_exits(result.exits, std::move(checked.exits));
         if (checked.yes) {
-            auto selected = region(branch.body, std::move(checked.yes->state));
+            auto selected = (co_await region(branch.body, std::move(checked.yes->state)));
             join_null_normal(result.normal, selected.normal);
             append_null_exits(result.exits, std::move(selected.exits));
         }
     }
     if (remaining && source.otherwise) {
-        auto selected = region(**source.otherwise, std::move(remaining->state));
+        auto selected = (co_await region(**source.otherwise, std::move(remaining->state)));
         join_null_normal(result.normal, selected.normal);
         append_null_exits(result.exits, std::move(selected.exits));
     } else {
         join_null_normal(result.normal, remaining);
     }
-    return result;
+    co_return result;
 }
 
 auto NullabilityBodyAnalyzer::bind_pattern(
@@ -176,21 +195,22 @@ auto NullabilityBodyAnalyzer::pattern_condition(
     PatternID id,
     std::span<const SemPatternBounds> bounds,
     NullState state
-) noexcept -> NullCondition {
+) noexcept -> ContinuationTask<NullCondition> {
     auto result = NullCondition {
         .yes = NullNormal {.state = std::move(state), .value = {}},
         .no = {},
         .exits = {}
     };
     const auto& pattern = body.pattern(id).value;
-    const auto sequence = [&](PatternID child) noexcept {
+    const auto sequence = [&](PatternID child) noexcept -> ContinuationTask<std::monostate> {
         if (!result.yes) {
-            return;
+            co_return {};
         }
-        auto next = pattern_condition(child, bounds, std::move(result.yes->state));
+        auto next = (co_await pattern_condition(child, bounds, std::move(result.yes->state)));
         result.yes = std::move(next.yes);
         join_null_normal(result.no, next.no);
         append_null_exits(result.exits, std::move(next.exits));
+        co_return {};
     };
     if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
         result.no = std::move(result.yes);
@@ -199,7 +219,7 @@ auto NullabilityBodyAnalyzer::pattern_condition(
             if (!result.no) {
                 break;
             }
-            auto next = pattern_condition(child, bounds, std::move(result.no->state));
+            auto next = (co_await pattern_condition(child, bounds, std::move(result.no->state)));
             join_null_normal(result.yes, next.yes);
             result.no = std::move(next.no);
             append_null_exits(result.exits, std::move(next.exits));
@@ -210,7 +230,7 @@ auto NullabilityBodyAnalyzer::pattern_condition(
             result.no = result.yes;
         }
         for (const auto child : enumeration->payload) {
-            sequence(child);
+            (co_await sequence(child));
         }
     } else {
         const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
@@ -219,7 +239,7 @@ auto NullabilityBodyAnalyzer::pattern_condition(
                 if (!*bound || !result.yes) {
                     continue;
                 }
-                auto next = expression(**bound, std::move(result.yes->state));
+                auto next = (co_await expression(**bound, std::move(result.yes->state)));
                 result.yes = std::move(next.normal);
                 append_null_exits(result.exits, std::move(next.exits));
             }
@@ -229,11 +249,12 @@ auto NullabilityBodyAnalyzer::pattern_condition(
     if (irrefutable(id)) {
         result.no.reset();
     }
-    return result;
+    co_return result;
 }
 
-auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noexcept -> NullFlow {
-    auto subject = expression(*source.subject, std::move(state));
+auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noexcept
+    -> ContinuationTask<NullFlow> {
+    auto subject = (co_await expression(*source.subject, std::move(state)));
     auto result = NullFlow {.normal = {}, .exits = std::move(subject.exits)};
     auto remaining = std::move(subject.normal);
     const auto saved = remaining ? remaining->value : NullValue();
@@ -244,28 +265,32 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
         auto selected = *remaining;
         const auto place = source.subject_is_place ? location(*source.subject) : std::nullopt;
         bind_pattern(selected.state, arm.pattern, place ? value_at(selected.state, *place) : saved);
-        auto checked_pattern =
-            pattern_condition(arm.pattern, arm.pattern_bounds, std::move(selected.state));
+        auto checked_pattern = (co_await pattern_condition(
+            arm.pattern,
+            arm.pattern_bounds,
+            std::move(selected.state)
+        ));
         auto accepted = std::move(checked_pattern.yes);
         remaining = std::move(checked_pattern.no);
         append_null_exits(result.exits, std::move(checked_pattern.exits));
         if (accepted && arm.guard) {
-            auto checked = condition(*arm.guard, std::move(accepted->state));
+            auto checked = (co_await condition(*arm.guard, std::move(accepted->state)));
             accepted = std::move(checked.yes);
             join_null_normal(remaining, checked.no);
             append_null_exits(result.exits, std::move(checked.exits));
         }
         if (accepted) {
-            auto branch = region(arm.body, std::move(accepted->state));
+            auto branch = (co_await region(arm.body, std::move(accepted->state)));
             join_null_normal(result.normal, branch.normal);
             append_null_exits(result.exits, std::move(branch.exits));
         }
     }
-    return result;
+    co_return result;
 }
 
-auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noexcept -> NullFlow {
-    auto protected_flow = region(*source.body, std::move(state));
+auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noexcept
+    -> ContinuationTask<NullFlow> {
+    auto protected_flow = (co_await region(*source.body, std::move(state)));
     auto result = NullFlow {.normal = std::move(protected_flow.normal), .exits = {}};
     auto pending = std::vector<NullExit>();
     for (auto& exit : protected_flow.exits) {
@@ -322,8 +347,11 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                 if (typed.type.resolved() != *type) {
                     continue;
                 }
-                auto checked =
-                    pattern_condition(typed.inner, arm.pattern_bounds, std::move(remaining->state));
+                auto checked = (co_await pattern_condition(
+                    typed.inner,
+                    arm.pattern_bounds,
+                    std::move(remaining->state)
+                ));
                 join_null_normal(accepted, checked.yes);
                 remaining = std::move(checked.no);
                 append_null_exits(result.exits, std::move(checked.exits));
@@ -332,13 +360,13 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                 remaining.reset();
             }
             if (accepted && arm.guard) {
-                auto checked = condition(*arm.guard, std::move(accepted->state));
+                auto checked = (co_await condition(*arm.guard, std::move(accepted->state)));
                 accepted = std::move(checked.yes);
                 join_null_normal(remaining, checked.no);
                 append_null_exits(result.exits, std::move(checked.exits));
             }
             if (accepted) {
-                auto handled = region(arm.body, std::move(accepted->state));
+                auto handled = (co_await region(arm.body, std::move(accepted->state)));
                 join_null_normal(result.normal, handled.normal);
                 append_null_exits(result.exits, std::move(handled.exits));
             }
@@ -350,14 +378,15 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
         pending = std::move(rejected);
     }
     append_null_exits(result.exits, std::move(pending));
-    return result;
+    co_return result;
 }
 
-auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexcept -> NullFlow {
-    auto initial = region(*source.initializer, std::move(state));
+auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexcept
+    -> ContinuationTask<NullFlow> {
+    auto initial = (co_await region(*source.initializer, std::move(state)));
     auto result = NullFlow {.normal = {}, .exits = std::move(initial.exits)};
     if (!initial.normal) {
-        return result;
+        co_return result;
     }
     auto head = std::move(initial.normal->state);
     scan_writes(head, *source.body);
@@ -366,7 +395,7 @@ auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexc
         scan_writes(head, *source.condition);
     }
     auto branches = source.condition
-        ? condition(*source.condition, std::move(head))
+        ? (co_await condition(*source.condition, std::move(head)))
         : NullCondition {
               .yes = NullNormal {.state = std::move(head), .value = {}},
               .no = {},
@@ -375,9 +404,9 @@ auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexc
     result.normal = std::move(branches.no);
     append_null_exits(result.exits, std::move(branches.exits));
     if (!branches.yes) {
-        return result;
+        co_return result;
     }
-    auto iteration = region(*source.body, std::move(branches.yes->state));
+    auto iteration = (co_await region(*source.body, std::move(branches.yes->state)));
     auto step_input = std::move(iteration.normal);
     for (auto& exit : iteration.exits) {
         const auto* transfer = std::get_if<NullTransfer>(&exit.payload);
@@ -393,18 +422,18 @@ auto NullabilityBodyAnalyzer::loop(const SemLoop& source, NullState state) noexc
         }
     }
     if (step_input) {
-        auto steps = region(*source.steps, std::move(step_input->state));
+        auto steps = (co_await region(*source.steps, std::move(step_input->state)));
         append_null_exits(result.exits, std::move(steps.exits));
     }
-    return result;
+    co_return result;
 }
 
 auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state) noexcept
-    -> NullFlow {
-    auto initial = expression(source.source, std::move(state));
+    -> ContinuationTask<NullFlow> {
+    auto initial = (co_await expression(source.source, std::move(state)));
     auto result = NullFlow {.normal = {}, .exits = std::move(initial.exits)};
     if (!initial.normal) {
-        return result;
+        co_return result;
     }
     auto head = std::move(initial.normal->state);
     const auto previous_aliases = range_aliases;
@@ -418,7 +447,7 @@ auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state)
     scan_writes(head, *source.body);
     // The zero-iteration/normal exhausted edge uses the pre-invalidated state.
     result.normal = NullNormal {.state = head, .value = {}};
-    auto iteration = region(*source.body, std::move(head));
+    auto iteration = (co_await region(*source.body, std::move(head)));
     for (auto& exit : iteration.exits) {
         const auto* transfer = std::get_if<NullTransfer>(&exit.payload);
         if (transfer != nullptr && *transfer == NullTransfer::Break) {
@@ -431,5 +460,5 @@ auto NullabilityBodyAnalyzer::range(const SemRangeLoop& source, NullState state)
         }
     }
     range_aliases = previous_aliases;
-    return result;
+    co_return result;
 }

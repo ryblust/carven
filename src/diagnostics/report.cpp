@@ -18,12 +18,6 @@ struct NormalizedSpan final {
     std::size_t end;
 };
 
-struct SourceLine final {
-    std::size_t begin;
-    std::size_t end;
-    std::size_t number;
-};
-
 struct DisplayLine final {
     std::string text;
     std::vector<std::size_t> columns;
@@ -34,49 +28,14 @@ struct LabelFrame final {
     NormalizedSpan span;
     char marker;
     std::size_t order;
-    std::size_t first_line;
-    std::size_t last_line;
+    std::uint32_t first_line;
+    std::uint32_t last_line;
 };
 
 auto normalize_span(Span span, std::size_t source_size) noexcept -> NormalizedSpan {
     const auto start = std::min<std::size_t>(span.start(), source_size);
     const auto end = std::min<std::size_t>(span.end(), source_size);
     return {.start = start, .end = std::max(start, end)};
-}
-
-auto source_lines(std::string_view text) noexcept -> std::vector<SourceLine> {
-    auto lines = std::vector<SourceLine> {};
-    lines.reserve(text.size() / 40 + 1);
-
-    auto begin = 0uz;
-    auto number = 1uz;
-    for (auto index = 0uz; index < text.size(); ++index) {
-        if (text[index] != '\n') {
-            continue;
-        }
-
-        auto end = index;
-        if (end > begin && text[end - 1] == '\r') {
-            --end;
-        }
-        lines.push_back({.begin = begin, .end = end, .number = number++});
-        begin = index + 1;
-    }
-
-    lines.push_back({.begin = begin, .end = text.size(), .number = number});
-    return lines;
-}
-
-auto line_containing(std::span<const SourceLine> lines, std::size_t offset) noexcept
-    -> std::size_t {
-    auto result = 0uz;
-    for (auto index = 1uz; index < lines.size(); ++index) {
-        if (lines[index].begin > offset) {
-            break;
-        }
-        result = index;
-    }
-    return result;
 }
 
 auto display_line(std::string_view text) noexcept -> DisplayLine {
@@ -158,16 +117,23 @@ auto append_ellipsis(std::string& output, std::size_t gutter_width) noexcept -> 
 auto append_source_line(
     std::string& output,
     std::string_view text,
-    const SourceLine& line,
+    Span line,
+    std::uint32_t line_number,
     std::size_t gutter_width,
     std::size_t marker_begin,
     std::size_t marker_end,
     char marker,
     std::string_view message
 ) noexcept -> void {
-    const auto raw = text.substr(line.begin, line.end - line.begin);
+    auto raw = slice(text, line);
+    if (raw.ends_with('\n')) {
+        raw.remove_suffix(1);
+        if (raw.ends_with('\r')) {
+            raw.remove_suffix(1);
+        }
+    }
     const auto displayed = display_line(raw);
-    const auto number = std::to_string(line.number);
+    const auto number = std::to_string(line_number);
 
     output.append(gutter_width - number.size(), ' ');
     output += number;
@@ -175,8 +141,8 @@ auto append_source_line(
     output += displayed.text;
     output += '\n';
 
-    const auto relative_begin = std::min(marker_begin - line.begin, raw.size());
-    const auto relative_end = std::min(marker_end - line.begin, raw.size());
+    const auto relative_begin = std::min(marker_begin - line.start(), raw.size());
+    const auto relative_end = std::min(marker_end - line.start(), raw.size());
     const auto first_column = displayed.columns[relative_begin];
     const auto last_column = displayed.columns[std::max(relative_begin, relative_end)];
 
@@ -194,16 +160,18 @@ auto append_source_line(
 auto append_frame(
     std::string& output,
     std::string_view text,
-    std::span<const SourceLine> lines,
+    const SourceManager& sources,
+    SourceID source_id,
     const LabelFrame& frame,
     std::size_t gutter_width
 ) noexcept -> void {
-    const auto& first = lines[frame.first_line];
+    const auto first = sources.line_span(source_id, frame.first_line);
     if (frame.first_line == frame.last_line) {
         append_source_line(
             output,
             text,
             first,
+            frame.first_line,
             gutter_width,
             frame.span.start,
             frame.span.end,
@@ -217,9 +185,10 @@ auto append_frame(
         output,
         text,
         first,
+        frame.first_line,
         gutter_width,
         frame.span.start,
-        first.end,
+        first.end(),
         frame.marker,
         {}
     );
@@ -227,13 +196,14 @@ auto append_frame(
         append_ellipsis(output, gutter_width);
     }
 
-    const auto& last = lines[frame.last_line];
+    const auto last = sources.line_span(source_id, frame.last_line);
     append_source_line(
         output,
         text,
         last,
+        frame.last_line,
         gutter_width,
-        last.begin,
+        last.start(),
         frame.span.end,
         frame.marker,
         frame.label->message
@@ -276,7 +246,6 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
     for (auto source_index = 0uz; source_index < source_order.size(); ++source_index) {
         const auto source_id = source_order[source_index];
         const auto source = sources.view(source_id);
-        const auto lines = source_lines(source.text);
         auto frames = std::vector<LabelFrame> {};
         frames.reserve(attachment.related.size() + 1);
 
@@ -292,8 +261,18 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
                     .span = span,
                     .marker = marker,
                     .order = order,
-                    .first_line = line_containing(lines, span.start),
-                    .last_line = line_containing(lines, last_offset),
+                    .first_line =
+                        sources
+                            .location(
+                                locate(source_id, Span::at(static_cast<std::uint32_t>(span.start)))
+                            )
+                            .line,
+                    .last_line =
+                        sources
+                            .location(
+                                locate(source_id, Span::at(static_cast<std::uint32_t>(last_offset)))
+                            )
+                            .line,
                 });
             };
         collect_frame(primary, '^', 0);
@@ -324,7 +303,7 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
 
         auto largest_line = 1uz;
         for (const auto& frame : frames) {
-            largest_line = std::max(largest_line, lines[frame.last_line].number);
+            largest_line = std::max(largest_line, static_cast<std::size_t>(frame.last_line));
         }
         const auto gutter_width = decimal_width(largest_line);
         append_separator(output, gutter_width);
@@ -332,7 +311,7 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
             if (index > 0) {
                 append_separator(output, gutter_width);
             }
-            append_frame(output, source.text, lines, frames[index], gutter_width);
+            append_frame(output, source.text, sources, source_id, frames[index], gutter_width);
         }
     }
     for (const auto& note : attachment.notes) {

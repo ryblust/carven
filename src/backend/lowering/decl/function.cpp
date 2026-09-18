@@ -77,10 +77,11 @@ auto lower_cpp_import(
         if (name.has_value()) {
             argument_names.push_back(*name);
         }
-        parameters.push_back({
-            .name = std::move(name),
-            .type = context.lower_parameter(semantic_signature.parameters[index]),
-        });
+        parameters.push_back(
+            {.name = std::move(name),
+             .type = context.lower_parameter(semantic_signature.parameters[index]),
+             .default_value = std::nullopt}
+        );
     }
     auto body = std::vector<TargetStmt>();
     if (!declaration_only) {
@@ -136,6 +137,7 @@ auto lower_cpp_import(
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
                                        .body = std::move(body),
                                    }},
+        .constexpr_specifier = false,
         .static_specifier = false,
         .inline_specifier = false,
     };
@@ -175,10 +177,11 @@ auto lower_carven_function(
         if (name.has_value()) {
             inputs.parameters.push_back(*name);
         }
-        parameters.push_back({
-            .name = std::move(name),
-            .type = context.lower_parameter(signature.parameters[index]),
-        });
+        parameters.push_back(
+            {.name = std::move(name),
+             .type = context.lower_parameter(signature.parameters[index]),
+             .default_value = std::nullopt}
+        );
     }
     auto statements = std::vector<TargetStmt>();
     if (!declaration_only) {
@@ -201,6 +204,7 @@ auto lower_carven_function(
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
                                        .body = std::move(statements),
                                    }},
+        .constexpr_specifier = false,
         .static_specifier = false,
         .inline_specifier = false,
     };

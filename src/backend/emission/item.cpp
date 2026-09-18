@@ -234,6 +234,15 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
 auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> LayoutNodeID {
     return value.visit(
         Overloaded {
+            [&](const TargetTypeAlias& alias) noexcept {
+                return concat(
+                    {text("using "),
+                     render_identifier(alias.name),
+                     text(" = "),
+                     render_type(alias.type),
+                     text(";")}
+                );
+            },
             [&](const TargetVariableDecl& variable) noexcept {
                 auto prefix = std::string();
                 if (variable.inline_specifier) {

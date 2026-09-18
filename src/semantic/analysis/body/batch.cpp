@@ -30,44 +30,48 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisResult<void> {
-    for (const auto statement_id : ast.block(id).statements) {
-        auto built = statement(statement_id);
+auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisTask<void> {
+    for (const auto statement_id : ((ast.block(id))).statements) {
+        auto built = (co_await statement(statement_id));
         if (!built.has_value()) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
     }
-    return {};
+    co_return {};
 }
 
 auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
-    -> AnalysisResult<StructuredBodyDraft> {
+    -> AnalysisTask<StructuredBodyDraft> {
     const auto* block_body = std::get_if<ASTBlockID>(&source_body);
     const auto span = block_body != nullptr
-        ? ast.block(*block_body).span
+        ? ((ast.block(*block_body))).span
         : Span::from_bounds(
               std::get<ASTExpressionBody>(source_body).arrow_span.start(),
               ast.expression(std::get<ASTExpressionBody>(source_body).expression).span.end()
           );
     auto built = AnalysisResult<void>();
     if (block_body != nullptr) {
-        built = block(*block_body);
+        built = (co_await block(*block_body));
     } else {
         const auto& expression_body = std::get<ASTExpressionBody>(source_body);
         begin_full_expression(span);
-        built =
-            return_statement(expression_body.expression, span, expression_body.arrow_span, true);
+        built = (co_await return_statement(
+            expression_body.expression,
+            span,
+            expression_body.arrow_span,
+            true
+        ));
         end_full_expression(span);
     }
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
     if (!result_type.has_value()) {
         result_type = draft().builtin_type(BuiltinType::Void);
     }
     if (reachable) {
         if (!is_void_type(draft(), *result_type)) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::FlowMissingReturn,
                 "reachable path of value-returning callable has no return"
@@ -84,19 +88,19 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     }
     diagnose_unused(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
-    return std::move(body_builder).finish(std::move(regions.front()));
+    co_return std::move(body_builder).finish(std::move(regions.front()));
 }
 
-auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
+auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
     auto static_tests = std::vector<BodyID>();
     for (const auto& source_module : catalog_data.modules()) {
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
             const auto& item = ast.item(source_item.item_id);
             if (const auto* function_id = std::get_if<FunctionID>(&source_item.form)) {
-                auto result = complete_function(*function_id);
+                auto result = (co_await complete_function(*function_id));
                 if (!result.has_value()) {
-                    return std::unexpected(result.error());
+                    co_return std::unexpected(result.error());
                 }
                 continue;
             }
@@ -132,42 +136,43 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisResult<void> {
                 false,
                 true
             );
-            auto body = elaborator.run(test.body);
+            auto body = (co_await elaborator.run(test.body));
             if (!body.has_value()) {
-                return std::unexpected(body.error());
+                co_return std::unexpected(body.error());
             }
             if (test.is_const) {
                 static_tests.push_back(body_id);
                 auto admitted = validate_constant_test(*draft, *body);
                 if (!admitted) {
-                    return admitted;
+                    co_return admitted;
                 }
             }
             draft->add_body_draft(std::move(*body));
         }
     }
     for (const auto body : static_tests) {
-        static_cast<void>(evaluate_constant_test(*draft, requests, body));
+        static_cast<void>((co_await evaluate_constant_test(*draft, requests, body)));
     }
     if (const auto failure = draft->diagnostics().failure()) {
-        return std::unexpected(*failure);
+        co_return std::unexpected(*failure);
     }
-    return {};
+    co_return {};
 }
 
 auto BodyBatchElaborator::ensure_function_signature(
     FunctionID id,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<void> {
-    auto completed = requests.ensure_declaration(catalog_data.function_symbol(id), requester, span);
+) noexcept -> AnalysisTask<void> {
+    auto completed =
+        (co_await requests.ensure_declaration(catalog_data.function_symbol(id), requester, span));
     if (!completed) {
-        return completed;
+        co_return completed;
     }
 
     const auto declaration = draft->function_declaration_copy(id);
     if (!draft->pending_function_contract_copy(declaration.callable).has_value()) {
-        return {};
+        co_return {};
     }
     if (std::holds_alternative<Analyzing>(states.at(id.index()))) {
         auto diagnostic = DiagnosticBuilder(
@@ -186,22 +191,22 @@ auto BodyBatchElaborator::ensure_function_signature(
                 std::format("result of '{}' is being inferred", symbol.name)
             );
         }
-        return std::unexpected(draft->diagnostics().error(diagnostic.build()));
+        co_return std::unexpected(draft->diagnostics().error(diagnostic.build()));
     }
-    return complete_function(id);
+    co_return (co_await complete_function(id));
 }
 
 auto BodyBatchElaborator::ensure_function_body(
     FunctionID id,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<BodyID> {
-    auto completed = ensure_function_signature(id, requester, span);
+) noexcept -> AnalysisTask<BodyID> {
+    auto completed = (co_await ensure_function_signature(id, requester, span));
     if (!completed) {
-        return std::unexpected(completed.error());
+        co_return std::unexpected(completed.error());
     }
     if (std::holds_alternative<Analyzing>(states.at(id.index()))) {
-        return std::unexpected(draft->diagnostics().error(
+        co_return std::unexpected(draft->diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::ConstEvaluation,
                 "constant evaluation depends on an unfinished function body"
@@ -210,12 +215,12 @@ auto BodyBatchElaborator::ensure_function_body(
                 .build()
         ));
     }
-    completed = complete_function(id);
+    completed = (co_await complete_function(id));
     if (!completed) {
-        return std::unexpected(completed.error());
+        co_return std::unexpected(completed.error());
     }
     if (!body_ids.at(id.index())) {
-        return std::unexpected(draft->diagnostics().error(
+        co_return std::unexpected(draft->diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::ConstAdmission,
                 "constant evaluation requires a Carven function body"
@@ -224,16 +229,16 @@ auto BodyBatchElaborator::ensure_function_body(
                 .build()
         ));
     }
-    return *body_ids.at(id.index());
+    co_return *body_ids.at(id.index());
 }
 
-auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisResult<void> {
+auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisTask<void> {
     auto& state = states.at(id.index());
     if (std::holds_alternative<Complete>(state)) {
-        return {};
+        co_return {};
     }
     if (const auto* failed = std::get_if<Failed>(&state)) {
-        return std::unexpected(failed->failure);
+        co_return std::unexpected(failed->failure);
     }
     if (!std::holds_alternative<Unvisited>(state)) {
         invariant_violation("function body completion reentered without a signature dependency");
@@ -241,38 +246,39 @@ auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisR
 
     const auto& symbol = *functions.at(id.index());
     auto completed =
-        requests.ensure_declaration(symbol.symbol_id, symbol.module_id, symbol.declaration_span);
+        (co_await requests
+             .ensure_declaration(symbol.symbol_id, symbol.module_id, symbol.declaration_span));
     if (!completed) {
         state = Failed {.failure = completed.error()};
-        return completed;
+        co_return completed;
     }
     if (std::holds_alternative<Complete>(state)) {
-        return {};
+        co_return {};
     }
     if (const auto* failed = std::get_if<Failed>(&state)) {
-        return std::unexpected(failed->failure);
+        co_return std::unexpected(failed->failure);
     }
 
     state = Analyzing {};
     active_path.push_back(id);
-    auto result = elaborate_function(id);
+    auto result = (co_await elaborate_function(id));
     active_path.pop_back();
     if (!result.has_value()) {
         state = Failed {.failure = result.error()};
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     state = Complete {};
-    return {};
+    co_return {};
 }
 
-auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> AnalysisResult<void> {
+auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> AnalysisTask<void> {
     const auto& symbol = *functions.at(id.index());
     const auto ast = draft->syntax_tree(symbol.module_id).view();
     const auto& item = ast.item(symbol.item_id);
     const auto& function = std::get<ASTFunctionDecl>(item.value);
     const auto* implementation = std::get_if<ASTFunctionBody>(&function.implementation);
     if (implementation == nullptr) {
-        return {};
+        co_return {};
     }
     const auto declaration = draft->function_declaration_copy(id);
     const auto pending = draft->pending_function_contract_copy(declaration.callable);
@@ -318,12 +324,12 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     for (auto index = 0uz; index < function.parameters.size(); ++index) {
         auto parameter = elaborator.add_parameter(function.parameters[index], parameters[index]);
         if (!parameter.has_value()) {
-            return std::unexpected(parameter.error());
+            co_return std::unexpected(parameter.error());
         }
     }
-    auto body = elaborator.run(implementation->body);
+    auto body = (co_await elaborator.run(implementation->body));
     if (!body.has_value()) {
-        return std::unexpected(body.error());
+        co_return std::unexpected(body.error());
     }
     if (pending.has_value()) {
         const auto result = elaborator.inferred_result_type();
@@ -331,15 +337,15 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         auto boundary =
             validate_cpp_boundary_result(*draft, symbol.module_id, ast, function, result);
         if (!boundary.has_value()) {
-            return std::unexpected(boundary.error());
+            co_return std::unexpected(boundary.error());
         }
     }
     if (declaration.is_const) {
         auto admitted = validate_constant_function(*draft, id, *body);
         if (!admitted) {
-            return std::unexpected(admitted.error());
+            co_return std::unexpected(admitted.error());
         }
     }
     draft->add_body_draft(std::move(*body));
-    return {};
+    co_return {};
 }

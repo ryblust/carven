@@ -165,3 +165,16 @@ TEST_CASE("Layout: reset indent places directives at column zero") {
     );
     CHECK_EQ(finish(std::move(builder), nested), "    body\n#line 1\n    tail\n");
 }
+
+TEST_CASE("Layout: independent lines keep local choices across a wide continuation") {
+    auto builder = LayoutBuilder();
+    auto rows = std::vector<LayoutNodeID>();
+    auto expected = std::string();
+    for (auto index = 0uz; index < 4096uz; ++index) {
+        rows.push_back(choose(builder, {builder.text("wide value"), builder.text("x")}));
+        rows.push_back(builder.line());
+        expected += "x\n";
+    }
+    const auto root = builder.concat(std::move(rows));
+    CHECK_EQ(finish(std::move(builder), root, 1uz), expected);
+}

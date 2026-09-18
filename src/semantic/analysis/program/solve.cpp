@@ -6,54 +6,54 @@ import :semantic.semir.traversal;
 import :support.invariant;
 import std;
 
-namespace {
-
-auto solve_test_stops(
+auto ProgramDraft::solve_test_stops(
     const CanonicalTypeStore& types,
-    const DeclarationStore& declarations,
-    const BodyStore& bodies
-) noexcept -> std::vector<bool> {
-    auto stops = std::vector<bool>(
-        static_cast<std::size_t>(std::ranges::distance(declarations.callables())),
-        false
-    );
-    auto changed = true;
-    while (changed) {
-        changed = false;
-        for (const auto entry : declarations.callables()) {
-            const auto body_id = callable_body_id(entry.value);
-            if (!body_id || stops[entry.id.index()]) {
-                continue;
-            }
-            auto exits = false;
-            visit_semantic_nodes(
-                bodies.body(*body_id).region(),
-                [&](const SemanticExpression& expression) noexcept {
-                    if (const auto* report = std::get_if<SemTestReport>(&expression.value)) {
-                        exits |= report->kind != TestReportKind::Check;
-                    }
-                    if (const auto* call = std::get_if<SemCall>(&expression.value)) {
-                        const auto& type = types.type(call->callee->type.resolved()).value;
-                        if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
-                            exits |= stops[function->callable.index()];
-                        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
-                            exits |= stops[closure->callable.index()];
-                        } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
-                            exits = true;
-                        }
+    const TypeResolution& resolved_types,
+    const DeclarationStore& declarations
+) const noexcept -> std::vector<bool> {
+    const auto count = static_cast<std::size_t>(std::ranges::distance(declarations.callables()));
+    auto stops = std::vector<bool>(count, false);
+    auto callers = std::vector<std::vector<CallableID>>(count);
+    auto pending = std::vector<CallableID>();
+    const auto mark = [&](CallableID callable) noexcept {
+        if (!stops[callable.index()]) {
+            stops[callable.index()] = true;
+            pending.push_back(callable);
+        }
+    };
+    for (const auto entry : declarations.callables()) {
+        const auto body_id = callable_body_id(entry.value);
+        if (!body_id) {
+            continue;
+        }
+        visit_semantic_nodes(
+            storage.bodies[body_id->index()].definition->region,
+            [&](const SemanticExpression& expression) noexcept {
+                if (const auto* report = std::get_if<SemTestReport>(&expression.value);
+                    report != nullptr && report->kind != TestReportKind::Check) {
+                    mark(entry.id);
+                }
+                if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                    const auto& type =
+                        types.type(resolved_types.resolve(call->callee->type.construction())).value;
+                    if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
+                        callers[function->callable.index()].push_back(entry.id);
+                    } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
+                        callers[closure->callable.index()].push_back(entry.id);
+                    } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
+                        mark(entry.id);
                     }
                 }
-            );
-            if (exits) {
-                stops[entry.id.index()] = true;
-                changed = true;
             }
+        );
+    }
+    for (auto next = 0uz; next < pending.size(); ++next) {
+        for (const auto caller : callers[pending[next].index()]) {
+            mark(caller);
         }
     }
     return stops;
 }
-
-} // namespace
 
 auto ProgramDraft::verify_body(
     const SemIRBody& body,
@@ -130,11 +130,14 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     auto constants = std::move(input.constants).seal();
     auto failure_sets = std::move(input.failure_sets).seal();
     auto signatures = std::move(input.callable_signatures).seal();
+    auto test_stops = solve_test_stops(types, resolved_types, declarations);
     auto bodies = MutableProgramTable<SemIRBody, BodyID>(program_identity);
     for (auto& slot : input.bodies) {
         auto body = resolve_body(
             std::move(*slot.definition),
             resolved_types,
+            types,
+            test_stops,
             *failures,
             failure_sets,
             provenance_appender.reader(),
@@ -148,7 +151,6 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     }
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
-    auto test_stops = solve_test_stops(types, declarations, final_bodies);
     return SemIRProgram(
         program_identity,
         std::move(provenance_appender).finish(),

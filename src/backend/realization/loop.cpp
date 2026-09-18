@@ -14,12 +14,9 @@ import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
 
-auto BodyRealizer::lower_loop(
-    ConstructionRegionID identity,
-    const ConstructionLoop& value,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
-    auto initializer = region(value.initializer, LoweringDiscardResult {});
+auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
+    -> void {
+    auto initializer = region(*value.initializer, LoweringDiscardResult {});
     if (!initializer.continues()) {
         destination.scope(std::move(initializer));
         return;
@@ -38,25 +35,28 @@ auto BodyRealizer::lower_loop(
         destination.scope(std::move(initializer));
         return;
     }
-    const auto step = construction.region(value.steps).statements.empty()
+    const auto step = value.steps->statements.empty()
         ? std::nullopt
         : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
-    loops.emplace(
-        identity,
-        LoopContinuation {
-            .step = step,
-            .target = exit_target(LoweringExitKind::Continue),
-            .break_target = exit_target(LoweringExitKind::Break)
-        }
-    );
-    auto body_statements = region(value.body, LoweringDiscardResult {});
-    const auto continuation = loops.at(identity);
+    const auto continuation = LoopContinuation {
+        .step = step,
+        .target = exit_target(LoweringExitKind::Continue),
+        .break_target = exit_target(LoweringExitKind::Break)
+    };
+    const auto outer_loop = std::exchange(current_loop, continuation);
+    auto body_statements = region(*value.body, LoweringDiscardResult {});
+    current_loop = outer_loop;
     const auto continued = body_statements.exits().contains(continuation.target);
     const auto breaks = body_statements.exits().contains(continuation.break_target);
     const auto run_steps = body_statements.continues() || continued;
-    auto steps = run_steps ? region(value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
+    auto steps = run_steps ? region(*value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
+    const auto conditional = known_predicate(condition) != true;
+    auto loop_condition = bool_expression(true);
+    const auto direct_condition = condition_statements.empty();
     auto iteration = std::move(condition_statements);
-    if (known_predicate(condition) != true) {
+    if (direct_condition) {
+        loop_condition = predicate_expression(std::move(*condition));
+    } else if (conditional) {
         auto exit_body = LoweringStmtBuilder();
         exit_body.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
         auto branches = std::vector<TargetIfBranch>();
@@ -86,45 +86,44 @@ auto BodyRealizer::lower_loop(
     initializer.emit(
         generated_statement(
             TargetWhileStmt {
-                .condition = bool_expression(true),
+                .condition = std::move(loop_condition),
                 .body = std::move(iteration).finish()
             }
         ),
-        breaks || (known_predicate(condition) != true)
+        breaks || conditional
     );
     destination.scope(std::move(initializer));
 }
 
-auto BodyRealizer::lower_range(
-    ConstructionRegionID identity,
-    const ConstructionRangeLoop& value,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
+auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
+    -> void {
     auto scope = LoweringStmtBuilder();
     const auto index = names.fresh(TargetTemporaryNameKind::Operand);
     const auto range_value = std::holds_alternative<RangeTypeValue>(
-        context.semantic().types().type(construction.expression(value.source).type).value
+        context.semantic()
+            .types()
+            .type(preparation.operation(value.source).operation.type.resolved())
+            .value
     );
-    auto iterable = scope.accept(operand({
-        .expression = value.source,
-        .use = range_value                      ? ConstructionUse::OperandValue
-            : value.access == AccessMode::Write ? ConstructionUse::WritePlace
-                                                : ConstructionUse::ReadBorrow,
-    }));
+    auto iterable = scope.accept(operand(
+        {.expression = std::addressof(value.source),
+         .use = range_value                      ? PreparedUse::OperandValue
+             : value.access == AccessMode::Write ? PreparedUse::WritePlace
+                                                 : PreparedUse::ReadBorrow,
+         .demand = PreparedDemand::Value}
+    ));
     if (!scope.continues()) {
         destination.scope(std::move(scope));
         return;
     }
-    loops.emplace(
-        identity,
-        LoopContinuation {
-            .step = std::nullopt,
-            .target = exit_target(LoweringExitKind::Continue),
-            .break_target = exit_target(LoweringExitKind::Break)
-        }
-    );
-    auto iteration = region(value.body, LoweringDiscardResult {});
-    const auto continuation = loops.at(identity);
+    const auto continuation = LoopContinuation {
+        .step = std::nullopt,
+        .target = exit_target(LoweringExitKind::Continue),
+        .break_target = exit_target(LoweringExitKind::Break)
+    };
+    const auto outer_loop = std::exchange(current_loop, continuation);
+    auto iteration = region(*value.body, LoweringDiscardResult {});
+    current_loop = outer_loop;
     static_cast<void>(iteration.consume_exit(continuation.target));
     static_cast<void>(iteration.consume_exit(continuation.break_target));
     scope.record_exits(iteration.exits());
@@ -147,7 +146,7 @@ auto BodyRealizer::lower_range(
                              ))
                     : context.intrinsic_type(TargetSymbol::Auto),
                 .range = range_value ? TargetExpr {.value = TargetConstructionExpr {
-                    .type = context.lower_type(construction.expression(value.source).type),
+                    .type = context.lower_type(preparation.operation(value.source).operation.type.resolved()),
                     .initializer = target_expressions(std::move(*iterable))}} : std::move(*iterable),
                 .body = std::move(iteration).finish()
             }

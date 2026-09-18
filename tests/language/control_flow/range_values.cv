@@ -8,6 +8,75 @@ const fn sum_interval(values: range<i32>) -> i32 {
 
 const fn make_interval(end: i32) -> range<i32> => 1..=end;
 
+const fn sum_size_interval(values: range<usize>) -> usize {
+    var sum = 0usize;
+    for value in values {
+        sum += value;
+    }
+    return sum;
+}
+
+const fn make_size_interval() -> range<usize> => 0..4;
+
+const range_end = 4usize;
+const frozen_size_interval = 0..range_end;
+
+const fn check_literal_bounds(end: usize) {
+    let exclusive = 0..end;
+    let inclusive = 0..=end;
+    check(sum_size_interval(exclusive) == 6usize);
+    check(sum_size_interval(inclusive) == 10usize);
+    let grouped: range<usize> = (0)..end;
+    check(sum_size_interval(grouped) == 6usize);
+    let begin = 1usize;
+    let right_literal = begin..4;
+    check(sum_size_interval(right_literal) == 6usize);
+
+    let defaulted = 0..4;
+    check(sum_interval(defaulted) == 6);
+    let contextual: range<usize> = 0..=4;
+    check(sum_size_interval(contextual) == 10usize);
+    check(sum_size_interval(0..4) == 6usize);
+    check(sum_size_interval(make_size_interval()) == 6usize);
+    check(sum_size_interval(frozen_size_interval) == 6usize);
+}
+
+fn range_endpoint(&trace: i32, digit: i32, value: usize) -> usize {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+fn check_bound_evaluation() {
+    var trace = 0;
+    let exclusive = 0..range_endpoint(&trace, 1, 4usize);
+    check(trace == 1);
+    check(sum_size_interval(exclusive) == 6usize);
+    check(trace == 1);
+
+    trace = 0;
+    let inclusive = 0..=range_endpoint(&trace, 2, 4usize);
+    check(trace == 2);
+    check(sum_size_interval(inclusive) == 10usize);
+    check(trace == 2);
+
+    trace = 0;
+    let ordered = range_endpoint(&trace, 1, 1usize)..range_endpoint(&trace, 2, 4usize);
+    check(trace == 12);
+    check(sum_size_interval(ordered) == 6usize);
+    check(trace == 12);
+}
+
+const test "Range values: literal bounds adopt endpoint and destination types" {
+    check_literal_bounds(4usize);
+}
+
+test "Range values: native literal bounds preserve contextual types and evaluation" {
+    var end = 3usize;
+    end += 1usize;
+    check_literal_bounds(end);
+    check_bound_evaluation();
+}
+
 const test "Range values: constants and calls share interval semantics" {
     let interval = make_interval(4);
     check(sum_interval(interval) == 10);

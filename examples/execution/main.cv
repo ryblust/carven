@@ -9,6 +9,39 @@ const test "prepared heading" {
     check(heading == "Build 0042");
 }
 
+enum SampleError {
+    InvalidCount(i32),
+}
+
+const fn mean(total: f64, count: i32) -> f64 throw SampleError {
+    return match count {
+        ..=0 => throw SampleError::InvalidCount(count),
+        _ => total / (count as f64),
+    };
+}
+
+const fn mean_label(total: f64, count: i32) -> String {
+    return try {
+        let value = mean(total, count)?;
+        f"Mean: {value:.2f}"
+    } catch {
+        SampleError(.InvalidCount(count)) => f"No mean for {count} samples",
+    };
+}
+
+// A successful fallible call can initialize a constant; an escaping failure cannot.
+const average = mean(7.5, 3)?;
+const measurement = mean_label(7.5, 3);
+const missing_measurement = mean_label(0.0, 0);
+
+// Floating arithmetic, formatting and typed recovery execute before the entry.
+// These checks also run with: carven check examples/execution/main.cv
+const test "prepared measurements recover missing samples" {
+    check(average == 2.5);
+    check(measurement == "Mean: 2.50");
+    check(missing_measurement == "No mean for 0 samples");
+}
+
 fn fibonacci(value: i32) -> i32 {
     return match value {
         ..2 => value,

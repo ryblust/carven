@@ -256,11 +256,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                         .const_qualified = false
                     };
                 }
-                const auto result = target().intern_type(
-                    {.value =
-                         TargetDecltypeType {cpp_type_query(std::get<CppQueryType>(value.form))},
-                     .const_qualified = false}
-                );
+                const auto result = lower_cpp_query(std::get<CppQueryType>(value.form));
                 return {
                     .value =
                         TargetIntrinsicType {

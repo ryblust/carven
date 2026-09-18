@@ -82,7 +82,11 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
     }
     auto parameters = std::vector<TargetParameter>();
     for (const auto& parameter : signature.parameters) {
-        parameters.push_back({.name = std::nullopt, .type = context.lower_parameter(parameter)});
+        parameters.push_back(
+            {.name = std::nullopt,
+             .type = context.lower_parameter(parameter),
+             .default_value = std::nullopt}
+        );
     }
     members.push_back(
         TargetMemberFunctionDecl {
@@ -137,7 +141,9 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
             parameter_identifier(context, names, body, body.inputs().parameters[index]);
         inputs.parameters.push_back(name);
         parameters.push_back(
-            {.name = name, .type = context.lower_parameter(signature.parameters[index])}
+            {.name = name,
+             .type = context.lower_parameter(signature.parameters[index]),
+             .default_value = std::nullopt}
         );
     }
     auto lowered = lower_body(context, implementation->body, std::move(inputs));

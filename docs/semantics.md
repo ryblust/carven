@@ -213,6 +213,14 @@ supplies context to the right operand. For equality, a direct contextual
 that operand is not itself a direct contextual case. This selection precedes
 the numeric-literal rule. Logical operators instead require `bool` operands.
 
+Integer range bounds use the same numeric sibling-selection rule when there is
+no expected `range<T>` type. An expected `range<T>` supplies `T` to the bounds.
+Thus `0..text.len()` has type `range<usize>`: the literal is checked directly as
+`usize`, without converting an `i32` value. Two unsuffixed bounds without an
+expected type still default to `i32`. Suffixed literals and existing bindings
+keep their types; incompatible bounds and literals outside the selected type's
+range are rejected. This applies to stored ranges, calls, returns, and loops.
+
 These sibling-selection rules inspect the direct operand form: they do not
 search inside grouping, unary operations, or composite expressions to discover
 a literal or case. Thus grouping can receive context without itself acting as
@@ -1740,9 +1748,10 @@ implementation-only placement and do not enclose generated Carven bodies.
 
 `print`, `println`, `eprint`, and `eprintln` are builtin
 callables; they need no import and follow ordinary name lookup and shadowing.
-They accept one or more Read builtin scalars or text values (`str` or `String`)
-and return `void`. Arguments are evaluated once, from left to right. Values are
-separated by one space; `println` and `eprintln` append one newline.
+They accept one or more Read values and return `void`. `void`, entry arguments,
+and character-iteration views are not printable. Arguments are evaluated once,
+from left to right. Values are separated by one space; `println` and `eprintln`
+append one newline.
 `println()` and `eprintln()` also accept no argument to write a newline. Output
 goes to stdout or stderr respectively. No typed failure or `?` is required.
 As with interpolation, scalar Read values are saved and String Read values alias
@@ -1763,6 +1772,49 @@ C++ format representation; a Carven `char` prints its UTF-8 text. Formatting is
 explicit through existing interpolation, for example `println(f"{value:04}")`.
 Text arguments are not interpreted as format strings: `println("{value}", 3)`
 prints `{value} 3` followed by a newline.
+
+Direct printing displays logical data structure independently of interpolation's
+formatting protocol. Structures show their source type name and fields in
+declaration order. Enums show `Type::Case` and parenthesized payload values.
+Arrays and slices show bracketed elements; integer ranges show their bounds
+and `..` or `..=`.
+
+Nonempty structures, sequences, and enum payloads use multiline layout. Each
+field or element starts on a new line, indented four spaces per level, and ends
+with a comma. Closing delimiters occupy their own line at the enclosing level.
+Empty structures and sequences remain `Type {}` and `[]`; cases without payloads,
+scalars, and ranges remain on one line without a trailing comma. Layout is
+independent of line width and content length.
+
+```text
+Order {
+    price: Money {
+        cents: 1250,
+    },
+    names: [
+        "a",
+        "b",
+    ],
+}
+```
+
+Nested text is double-quoted, escaping quotes, backslashes, newline, carriage
+return, tab, and NUL. Nested characters use single quotes and escape a single
+quote. Top-level text retains the verbatim behavior above. Pointers display an address or `nullptr`
+without dereferencing. External C++ types and callable values display `<opaque>`.
+
+Structural display never invokes a custom formatter, stream insertion operator,
+or getter, including for nested fields. `println(value)` selects structural
+display; `println(f"{value}")` first performs explicit formatting. Read access and
+backing requirements apply to the complete printed value; display adds no owning
+copy or transfer.
+
+Structural output expands at most eight levels (the root has depth zero), shows
+at most 64 elements per array or slice, and retains at most 16,384 UTF-8 bytes
+before a truncation marker, including layout whitespace. Omitted content is
+marked `...`; a sequence omission occupies an element line ending in a comma.
+These bounds also apply to structural values in assertion explanations, but not to verbatim
+top-level text. Display is diagnostic text, not a serialization format.
 
 Buffering and flushing follow the selected C++ standard-library facilities,
 with no extra flush per call. Native formatting or output failure terminates
@@ -1885,6 +1937,22 @@ source: the original UTF-8 byte slice of the condition expression span,
 including parentheses, whitespace, line breaks, and comments. `fail` reports
 without a condition. The runtime reporter controls the presentation of these
 records.
+
+Direct `check` and `require` conditions whose outer operation is a Carven binary
+comparison additionally report its two operand source spellings and structural
+values on failure. An outer `&&` or `||` reports the two Boolean subexpressions;
+the skipped operand is marked `<not evaluated>`. Parentheses preserve this
+behavior. Nested operations are evaluated normally; explanations do not recursively
+trace their internals or search for a first differing field. Indirect builtin
+calls and other condition forms retain their condition/message reporting.
+
+Explanation collection uses the original evaluation and comparison, preserving
+sequencing, snapshots, short circuiting, propagation, and cleanup. It does not
+reevaluate operands or invoke formatters. Failed values are rendered before the
+optional message expression runs, so mutations from that message cannot rewrite
+the explanation. Successful checks do not render operand values. Runtime reporters
+receive a borrowed `explanation` string valid for the synchronous
+report callback. Constant-test diagnostics include the same explanation.
 
 ### Diagnostics
 

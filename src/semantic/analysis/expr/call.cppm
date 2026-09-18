@@ -20,7 +20,7 @@ auto interpret_call(
     const ASTCallExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     auto callee_id = source.callee;
     while (const auto* group =
                std::get_if<ASTGroupExpr>(&site.syntax().expression(callee_id).value)) {
@@ -30,9 +30,9 @@ auto interpret_call(
     if (const auto* contextual = std::get_if<ASTContextualCaseExpr>(&callee.value)) {
         auto type = expected_expression_enum(site, expected, contextual->name_span);
         if (!type.has_value()) {
-            return std::unexpected(type.error());
+            co_return std::unexpected(type.error());
         }
-        return interpret_enum_case(
+        co_return (co_await interpret_enum_case(
             site,
             *type,
             site.spelling(contextual->name_span),
@@ -40,7 +40,7 @@ auto interpret_call(
             source.arguments,
             span,
             true
-        );
+        ));
     }
     if (const auto* member = std::get_if<ASTMemberExpr>(&callee.value)) {
         if (member->op == ASTMemberOperator::Scope) {
@@ -61,7 +61,7 @@ auto interpret_call(
                     selected = TextIntrinsic::FromU32Unchecked;
                 }
                 if (!selected) {
-                    return std::unexpected(site.fail(
+                    co_return std::unexpected(site.fail(
                         member->name_span,
                         DiagnosticCode::TypeMethodCall,
                         "text type has no such factory"
@@ -70,24 +70,30 @@ auto interpret_call(
                 const auto intrinsic = *selected;
                 if (source.arguments.size()
                     != text_intrinsic_contract(intrinsic).parameters.size()) {
-                    return std::unexpected(site.fail(
+                    co_return std::unexpected(site.fail(
                         span,
                         DiagnosticCode::TypeMethodCallArity,
                         "text factory argument count does not match"
                     ));
                 }
-                return construct_text_call(site, intrinsic, std::nullopt, source.arguments, span);
+                co_return (co_await construct_text_call(
+                    site,
+                    intrinsic,
+                    std::nullopt,
+                    source.arguments,
+                    span
+                ));
             }
-            auto type = site.resolve_enum_qualifier(member->operand_id);
+            auto type = (co_await site.resolve_enum_qualifier(member->operand_id));
             if (!type.has_value()) {
-                return std::unexpected(type.error());
+                co_return std::unexpected(type.error());
             }
             if (!type->has_value()) {
-                return site.invalid_enum_qualifier(
+                co_return site.invalid_enum_qualifier(
                     site.syntax().expression(member->operand_id).span
                 );
             }
-            return interpret_enum_case(
+            co_return (co_await interpret_enum_case(
                 site,
                 **type,
                 site.spelling(member->name_span),
@@ -95,11 +101,11 @@ auto interpret_call(
                 source.arguments,
                 span,
                 true
-            );
+            ));
         }
-        auto operand = site.read(member->operand_id, std::nullopt);
+        auto operand = (co_await site.read(member->operand_id, std::nullopt));
         if (!operand.has_value()) {
-            return std::unexpected(operand.error());
+            co_return std::unexpected(operand.error());
         }
         const auto slice = decide_slice_method(
             site.draft(),
@@ -108,18 +114,24 @@ auto interpret_call(
             source.arguments.size()
         );
         if (!slice) {
-            return std::unexpected(
+            co_return std::unexpected(
                 site.fail(span, slice.error().code, std::string(slice.error().message))
             );
         }
         if (slice->has_value()) {
-            return construct_slice_call(site, **slice, std::move(*operand), source.arguments, span);
+            co_return (co_await construct_slice_call(
+                site,
+                **slice,
+                std::move(*operand),
+                source.arguments,
+                span
+            ));
         }
         if (site.spelling(member->name_span) == "append_format"
             && site.type(*operand)
                 == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
             if (source.arguments.size() != 1uz) {
-                return std::unexpected(site.fail(
+                co_return std::unexpected(site.fail(
                     span,
                     DiagnosticCode::TypeMethodCallArity,
                     "String.append_format requires one interpolation argument"
@@ -133,18 +145,18 @@ auto interpret_call(
             const auto* interpolation =
                 std::get_if<ASTInterpolationExpr>(&site.syntax().expression(argument).value);
             if (interpolation == nullptr) {
-                return std::unexpected(site.fail(
+                co_return std::unexpected(site.fail(
                     site.syntax().expression(argument).span,
                     DiagnosticCode::TypeMethodCall,
                     "String.append_format requires a direct interpolation"
                 ));
             }
-            return construct_interpolation(
+            co_return (co_await construct_interpolation(
                 site,
                 *interpolation,
                 span,
                 std::optional(std::move(*operand))
-            );
+            ));
         }
         const auto decision = decide_text_method(
             site.draft(),
@@ -153,7 +165,7 @@ auto interpret_call(
             source.arguments.size()
         );
         if (!decision.has_value()) {
-            return std::unexpected(site.fail(
+            co_return std::unexpected(site.fail(
                 decision.error().code == DiagnosticCode::TypeMethodCallArity ? span
                                                                              : member->name_span,
                 decision.error().code,
@@ -162,17 +174,17 @@ auto interpret_call(
         }
         if (decision->has_value()) {
             if (**decision == TextIntrinsic::Len || **decision == TextIntrinsic::IsEmpty) {
-                return interpret_text(site, **decision, std::move(*operand), span);
+                co_return interpret_text(site, **decision, std::move(*operand), span);
             }
-            return construct_text_call(
+            co_return (co_await construct_text_call(
                 site,
                 **decision,
                 std::move(*operand),
                 source.arguments,
                 span
-            );
+            ));
         }
-        return site.member_call(source, *member, std::move(*operand), span);
+        co_return (co_await site.member_call(source, *member, std::move(*operand), span));
     }
-    return site.call(source, span);
+    co_return (co_await site.call(source, span));
 }

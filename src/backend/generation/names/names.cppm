@@ -64,7 +64,10 @@ public:
     static auto fixed(std::string_view spelling) noexcept -> TargetIdentifier;
     static auto generated_namespace() noexcept -> TargetName;
     static auto domain_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;
-    static auto artifact_storage_namespace(std::size_t ordinal) noexcept -> TargetIdentifier;
+    static auto artifact_storage_namespace(
+        std::size_t ordinal,
+        const std::flat_set<std::string>& reserved
+    ) noexcept -> TargetIdentifier;
     static auto constant_storage_identifier(std::size_t ordinal) noexcept -> TargetIdentifier;
     static auto derived_type(const TargetIdentifier& source_name, std::string_view role) noexcept
         -> TargetIdentifier;
@@ -93,13 +96,15 @@ private:
     auto claim(std::string_view preferred) noexcept -> TargetIdentifier;
     auto claim(std::string_view preferred, TargetScopeID scope) noexcept -> TargetIdentifier;
 
+    std::map<std::string, std::size_t> next_suffix;
+    std::map<TargetScopeID, std::map<std::string, std::size_t>> scoped_next_suffix;
     std::flat_map<std::uint32_t, TargetIdentifier> local_names;
-    std::flat_set<std::string> claimed_names;
-    std::flat_set<std::string> reserved_names;
+    std::set<std::string> claimed_names;
+    std::set<std::string> reserved_names;
     const std::flat_set<std::string>* enclosing_names = nullptr;
     std::flat_map<TargetScopeID, TargetScopeID> scope_aliases;
-    std::flat_map<TargetScopeID, std::flat_set<std::string>> scoped_reserved_names;
-    std::flat_map<TargetScopeID, std::flat_set<std::string>> local_claimed_names;
+    std::map<TargetScopeID, std::set<std::string>> scoped_reserved_names;
+    std::map<TargetScopeID, std::set<std::string>> local_claimed_names;
 };
 
 auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept

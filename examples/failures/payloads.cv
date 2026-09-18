@@ -12,12 +12,12 @@ fn owned_failure(text: str) throw TextError {
 }
 
 fn taken_failure() throw TextError {
-    let error = TextError { message: String::from_str("taken detail") };
+    let error = TextError { message: "taken detail" };
     throw &&error;
 }
 
 fn borrowed_failure(text: String) throw ViewError {
-    throw ViewError { message: text.as_str() };
+    throw ViewError { message: text };
 }
 
 fn forward_failure(text: String) throw ViewError {
@@ -51,7 +51,7 @@ fn run_payloads() {
     };
     println("Taken detail:", taken);
 
-    var source = String::from_str("borrowed detail");
+    var source: String = "borrowed detail";
     let saved = try {
         forward_failure(source)?;
         String::new()

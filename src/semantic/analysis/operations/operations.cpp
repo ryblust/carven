@@ -282,6 +282,21 @@ auto binary_operator_requires_equality(ASTBinaryOperator op) noexcept -> bool {
     return op == ASTBinaryOperator::Equal || op == ASTBinaryOperator::NotEqual;
 }
 
+auto numeric_operand_plan(const ASTView& ast, ASTExprID left, ASTExprID right) noexcept
+    -> BinaryOperandPlan {
+    const auto left_numeric =
+        contextual_operand_kind(ast, left) == ContextualOperandKind::NumericLiteral;
+    const auto right_numeric =
+        contextual_operand_kind(ast, right) == ContextualOperandKind::NumericLiteral;
+    if (left_numeric && !right_numeric) {
+        return BinaryOperandPlan::LeftExpectedFromRight;
+    }
+    if (right_numeric) {
+        return BinaryOperandPlan::RightExpectedFromLeft;
+    }
+    return BinaryOperandPlan::Independent;
+}
+
 auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) noexcept
     -> BinaryOperandPlan {
     const auto equality = binary_operator_requires_equality(expression.op);
@@ -305,15 +320,7 @@ auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) no
     if (equality && right_case && !left_case) {
         return BinaryOperandPlan::RightExpectedFromLeft;
     }
-    const auto left_numeric = left_kind == ContextualOperandKind::NumericLiteral;
-    const auto right_numeric = right_kind == ContextualOperandKind::NumericLiteral;
-    if (left_numeric && !right_numeric) {
-        return BinaryOperandPlan::LeftExpectedFromRight;
-    }
-    if (right_numeric) {
-        return BinaryOperandPlan::RightExpectedFromLeft;
-    }
-    return BinaryOperandPlan::Independent;
+    return numeric_operand_plan(ast, expression.left, expression.right);
 }
 
 auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<BuiltinType> {

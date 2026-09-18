@@ -44,7 +44,8 @@ auto IntegerFormatQuery::enter_expression(
     const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
     if (member != nullptr) {
         const auto* name = std::get_if<TargetIdentifier>(&member->name);
-        if (name != nullptr && name->spelling() == "integer") {
+        if (name != nullptr
+            && (name->spelling() == "integer" || name->spelling() == "integer_dynamic_width")) {
             policies.push_back(call->template_arguments);
             CHECK(call->arguments.size() == 2uz);
         }
@@ -96,13 +97,15 @@ TEST_CASE(
     const auto query = inspect(R"(
         import "probe.hpp";
         fn native(value: i32) -> String => f"{value:08x}/{::probe::value()}";
-        fn dynamic(value: i32, width: i32) -> String => f"{value:0{width}d}";
+        fn dynamic(value: i32, width: i32) -> String => f"{value:>{width}d}";
+        fn wide_unsigned(value: i32, width: u32) -> String => f"{value:{width}x}";
+        fn wide_signed(value: i32, width: i64) -> String => f"{value:{width}x}";
         fn locale(value: i32) -> String => f"{value:L}";
         fn large(value: i32) -> String => f"{value:2147483648}";
         fn text(value: i32, text: str) -> String => f"{value:08x}/{text:>8}";
     )");
     CHECK(query.policies.empty());
-    CHECK(query.generic_calls == 5uz);
+    CHECK(query.generic_calls == 7uz);
 }
 
 TEST_CASE("Generation: known dynamic width selects integer writes") {
@@ -141,4 +144,32 @@ TEST_CASE("Generation: nested owning formatting retains its expression construct
     CHECK(query.generic_calls == 0uz);
     CHECK(query.policies.size() == 1uz);
     CHECK(query.lambdas > 0uz);
+}
+
+TEST_CASE("Generation: dynamic integer widths retain policies across delivery forms") {
+    const auto query = inspect(R"(
+        fn direct(value: i32, width: i32, text: str) -> String => f"{42:04}/{value:0{width}x}/{text}/{value:d}";
+        fn nested(value: i32, width: u16) -> usize => f"{value:{width}B}".len();
+        fn append(&out: String, value: i32, width: i16) {
+            out.append_format(f"{value:0{width}X}/{value:{width}o}");
+        }
+        fn discarded(value: i32, width: i8) { f"{value:{width}}"; }
+    )");
+    CHECK(query.generic_calls == 0uz);
+    REQUIRE(query.policies.size() == 6uz);
+    const auto bases = std::array {16u, 10u, 2u, 16u, 8u, 10u};
+    for (const auto& [index, policy] : std::views::enumerate(query.policies)) {
+        CHECK(
+            policy
+            == std::vector<TargetTemplateArgument> {
+                TargetIntegerLiteral {
+                    .negative = false,
+                    .magnitude = bases[index],
+                    .suffix = TargetIntegerSuffix::None
+                },
+                index == 2uz || index == 3uz,
+                index == 0uz || index == 3uz
+            }
+        );
+    }
 }

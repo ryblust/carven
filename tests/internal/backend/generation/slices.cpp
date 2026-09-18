@@ -9,6 +9,7 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target.name;
+import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target;
@@ -79,4 +80,45 @@ TEST_CASE("Generation: formatting a known subslice length preserves its checked 
         CHECK(traverse_target_unit(unit.sections(), query));
     }
     CHECK(query.slices == 1uz);
+}
+
+TEST_CASE("Generation: known slice results retain checks without result storage or queries") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "fn length(values: [i32]) -> usize => values.slice(0, 2).len(); "
+            "fn empty(values: [i32]) -> bool => values.slice(2, 2).is_empty();"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("slice_effectful_results")}
+    );
+
+    struct Query final {
+        std::size_t checks;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            const auto* member = std::get_if<TargetMemberExpr>(&expression.value);
+            if (member == nullptr) {
+                return true;
+            }
+            const auto* name = std::get_if<TargetIdentifier>(&member->name);
+            if (name != nullptr) {
+                CHECK(name->spelling() != "size");
+                CHECK(name->spelling() != "empty");
+                checks += name->spelling() == "slice";
+            }
+            return true;
+        }
+    };
+
+    auto query = Query {.checks = 0uz};
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.checks == 2uz);
 }

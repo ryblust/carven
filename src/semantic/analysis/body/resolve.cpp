@@ -13,6 +13,8 @@ class BodyResolver final {
 public:
     BodyResolver(
         const TypeResolution& types,
+        const CanonicalTypeStore& canonical_types,
+        const std::vector<bool>& test_stops,
         const FailureSolution& failures,
         const FailureSetStore& failure_sets,
         CompilationProvenanceReader provenance,
@@ -23,7 +25,8 @@ public:
     auto operator()(ConstructionTypeRef type) const noexcept -> TypeID;
     auto operator()(BodyType& type) const noexcept -> void;
     auto operator()(BodyFailures& term) const noexcept -> void;
-    auto operator()(SemanticExpression& value) const noexcept -> void;
+    auto operator()(SemanticExpression& value) noexcept -> void;
+    auto leave(SemanticExpression& value) noexcept -> void;
     auto operator()(SemanticRegion& value) const noexcept -> void;
     auto operator()(SemTry& value) const noexcept -> void;
     auto operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding;
@@ -31,6 +34,9 @@ public:
 
 private:
     const TypeResolution& types;
+    const CanonicalTypeStore& canonical_types;
+    const std::vector<bool>& test_stops;
+    std::vector<bool> call_stops;
     const FailureSolution& failures;
     const FailureSetStore& failure_sets;
     CompilationProvenanceReader provenance;
@@ -39,12 +45,16 @@ private:
 
 BodyResolver::BodyResolver(
     const TypeResolution& types,
+    const CanonicalTypeStore& canonical_types,
+    const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
     CompilationProvenanceReader provenance,
     AnalysisDiagnostics diagnostics
 ) noexcept
     : types(types),
+      canonical_types(canonical_types),
+      test_stops(test_stops),
       failures(failures),
       failure_sets(failure_sets),
       provenance(provenance),
@@ -72,7 +82,8 @@ auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
     term = BodyFailures(failures.failure_set(term.term()));
 }
 
-auto BodyResolver::operator()(SemanticExpression& value) const noexcept -> void {
+auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
+    call_stops.push_back(false);
     (*this)(value.type);
     (*this)(value.failures);
     while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
@@ -87,9 +98,28 @@ auto BodyResolver::operator()(SemanticExpression& value) const noexcept -> void 
     }
     if (auto* call = std::get_if<SemCall>(&value.value)) {
         (*this)(call->callee_failures);
+        const auto& type =
+            canonical_types.type(types.resolve(call->callee->type.construction())).value;
+        if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
+            call_stops.back() = test_stops[function->callable.index()];
+        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
+            call_stops.back() = test_stops[closure->callable.index()];
+        } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
+            call_stops.back() = true;
+        }
     }
     if (auto* attempt = std::get_if<SemTry>(&value.value)) {
         (*this)(*attempt);
+    }
+}
+
+auto BodyResolver::leave(SemanticExpression& value) noexcept -> void {
+    const auto stops = static_cast<bool>(call_stops.back());
+    call_stops.pop_back();
+    value.exits_test |= stops;
+    // Calls retain conservative subtree effects; direct reports retain source selection.
+    if (!call_stops.empty()) {
+        call_stops.back() = call_stops.back() || stops;
     }
 }
 
@@ -183,12 +213,22 @@ auto BodyResolver::operator()(ElaboratedPattern&& value) const noexcept -> Patte
 auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
+    const CanonicalTypeStore& canonical_types,
+    const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
     CompilationProvenanceReader provenance,
     AnalysisDiagnostics diagnostics
 ) noexcept -> SemIRBody {
-    const auto resolve = BodyResolver(types, failures, failure_sets, provenance, diagnostics);
+    const auto resolve = BodyResolver(
+        types,
+        canonical_types,
+        test_stops,
+        failures,
+        failure_sets,
+        provenance,
+        diagnostics
+    );
     auto bindings = std::move(body.bindings)
                         .transform<LocalBinding>([&](LocalBindingID,
                                                      ElaboratedLocalBinding&& binding) noexcept {

@@ -125,86 +125,8 @@ auto TargetDependencyCollector::include(std::string_view header) noexcept -> voi
 }
 
 auto TargetDependencyCollector::visit_symbol(TargetSymbol symbol) noexcept -> void {
-    switch (symbol) {
-        case TargetSymbol::StdInt8:
-        case TargetSymbol::StdInt16:
-        case TargetSymbol::StdInt32:
-        case TargetSymbol::StdInt64:
-        case TargetSymbol::StdUInt8:
-        case TargetSymbol::StdUInt16:
-        case TargetSymbol::StdUInt32:
-        case TargetSymbol::StdUInt64:                 include("cstdint"); break;
-        case TargetSymbol::StdPtrdiff:
-        case TargetSymbol::StdSize:                   include("cstddef"); break;
-        case TargetSymbol::StdExitFailure:            include("cstdlib"); break;
-        case TargetSymbol::RuntimeTestStopped:
-        case TargetSymbol::RuntimeCurrentTest:        include("carven/runtime/testing.hpp"); return;
-        case TargetSymbol::RuntimeUnwrapNativeResult:
-        case TargetSymbol::RuntimeOutcome:            include("carven/runtime/outcome.hpp"); break;
-        case TargetSymbol::RuntimePrint:
-        case TargetSymbol::RuntimePrintln:
-        case TargetSymbol::RuntimeEprint:
-        case TargetSymbol::RuntimeEprintln:           include("carven/runtime/print.hpp"); return;
-        case TargetSymbol::RuntimeFormat:
-        case TargetSymbol::RuntimeFormatValidUTF8:
-        case TargetSymbol::RuntimeAppendFormat:
-        case TargetSymbol::RuntimeAppendFormatValidUTF8:
-            include("carven/runtime/format.hpp");
-            return;
-        case TargetSymbol::RuntimeAsSlice:
-        case TargetSymbol::RuntimeRange:        include("carven/runtime/range.hpp"); return;
-        case TargetSymbol::RuntimeSlice:        include("carven/runtime/slice.hpp"); return;
-        case TargetSymbol::RuntimeWriter:       include("carven/runtime/writer.hpp"); return;
-        case TargetSymbol::RuntimeUTF8Text:     include("carven/runtime/text.hpp"); return;
-        case TargetSymbol::RuntimeString:       include("carven/runtime/string.hpp"); return;
-        case TargetSymbol::RuntimeStrCharsView:
-        case TargetSymbol::RuntimeTextBytes:
-        case TargetSymbol::RuntimeTextChars:
-        case TargetSymbol::RuntimeCheckedUnicodeScalar: include("carven/runtime/text.hpp"); break;
-        case TargetSymbol::RuntimeEntryArgsType:
-        case TargetSymbol::RuntimeEntryArgs:            include("carven/runtime/entry.hpp"); break;
-        case TargetSymbol::RuntimeDeferredResult:    include("carven/runtime/deferred.hpp"); break;
-        case TargetSymbol::RuntimeReadArg:
-        case TargetSymbol::RuntimeTransfer:          include("carven/runtime/passing.hpp"); break;
-        case TargetSymbol::RuntimeFunctionRef:       include("carven/runtime/callable.hpp"); break;
-        case TargetSymbol::RuntimeIntegerNegate:
-        case TargetSymbol::RuntimeIntegerAdd:
-        case TargetSymbol::RuntimeIntegerSubtract:
-        case TargetSymbol::RuntimeIntegerMultiply:
-        case TargetSymbol::RuntimeIntegerDivide:
-        case TargetSymbol::RuntimeIntegerRemainder:
-        case TargetSymbol::RuntimeIntegerLeftShift:
-        case TargetSymbol::RuntimeIntegerRightShift: include("carven/runtime/numeric.hpp"); break;
-        case TargetSymbol::RuntimeAdoptArray:
-        case TargetSymbol::RuntimeCheckedArrayIndex: include("carven/runtime/array.hpp"); break;
-        case TargetSymbol::StdRemoveCVRef:
-        case TargetSymbol::StdAddConst:
-        case TargetSymbol::StdTypeIdentity:          include("type_traits"); break;
-        case TargetSymbol::StdReferenceWrapper:      include("functional"); break;
-        case TargetSymbol::StdBitCast:               include("bit"); break;
-        case TargetSymbol::StdAddressof:             include("memory"); break;
-        case TargetSymbol::StdGetIf:
-        case TargetSymbol::StdVariant:               include("variant"); break;
-        case TargetSymbol::StdDeclval:
-        case TargetSymbol::StdForward:
-        case TargetSymbol::StdMove:
-        case TargetSymbol::StdAsConst:               include("utility"); break;
-        case TargetSymbol::StdInitializerList:       include("initializer_list"); break;
-        case TargetSymbol::StdNullopt:
-        case TargetSymbol::StdOptional:              include("optional"); break;
-        case TargetSymbol::StdStringView:            include("string_view"); break;
-        case TargetSymbol::TestingContext:
-        case TargetSymbol::TestingReporter:          include("carven/runtime/testing.hpp"); break;
-        case TargetSymbol::Auto:
-        case TargetSymbol::DecltypeAuto:
-        case TargetSymbol::Void:
-        case TargetSymbol::Bool:
-        case TargetSymbol::Char:
-        case TargetSymbol::Int:
-        case TargetSymbol::CChar:
-        case TargetSymbol::Float:
-        case TargetSymbol::Double:
-        case TargetSymbol::StdNullptr:               break;
+    if (const auto header = target_symbol_info(symbol).header; !header.empty()) {
+        include(header);
     }
 }
 

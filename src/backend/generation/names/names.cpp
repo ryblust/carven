@@ -3,9 +3,12 @@ module carven:backend.generation.names.impl;
 import :backend.generation.names;
 import std;
 
-auto TargetNameAllocator::artifact_storage_namespace(std::size_t ordinal) noexcept
-    -> TargetIdentifier {
-    return fixed(std::format("constant_data_{}", ordinal));
+auto TargetNameAllocator::artifact_storage_namespace(
+    std::size_t ordinal,
+    const std::flat_set<std::string>& reserved
+) noexcept -> TargetIdentifier {
+    auto occupied = reserved;
+    return claim_value(std::format("constant_data_{}", ordinal), occupied);
 }
 
 auto TargetNameAllocator::constant_storage_identifier(std::size_t ordinal) noexcept
@@ -211,7 +214,7 @@ auto TargetNameAllocator::local_symbol(
     }
     const auto preferred = std::string(source(spelling, enclosing_class).spelling());
     auto candidate = preferred;
-    auto suffix = 2uz;
+    auto& suffix = next_suffix.try_emplace(std::string(preferred), 2uz).first->second;
     auto& scope_names = local_claimed_names[scope];
     const auto& reserved = scoped_reserved_names[scope];
     const auto conflicts_with_initializer = [&](std::string_view value) noexcept {
@@ -243,7 +246,7 @@ auto TargetNameAllocator::fresh(TargetTemporaryNameKind kind, TargetScopeID scop
 
 auto TargetNameAllocator::claim(std::string_view preferred) noexcept -> TargetIdentifier {
     auto candidate = std::string(preferred);
-    auto suffix = 2uz;
+    auto& suffix = next_suffix.try_emplace(std::string(preferred), 2uz).first->second;
     while (is_reserved(candidate) || !claimed_names.insert(candidate).second) {
         candidate = std::format("{}_{}", preferred, suffix++);
     }
@@ -253,7 +256,7 @@ auto TargetNameAllocator::claim(std::string_view preferred) noexcept -> TargetId
 auto TargetNameAllocator::claim(std::string_view preferred, TargetScopeID scope) noexcept
     -> TargetIdentifier {
     auto candidate = std::string(preferred);
-    auto suffix = 2uz;
+    auto& suffix = scoped_next_suffix[scope].try_emplace(std::string(preferred), 2uz).first->second;
     auto& claimed = local_claimed_names[scope];
     const auto& reserved = scoped_reserved_names[scope];
     while (reserved.contains(candidate) || !claimed.insert(candidate).second) {

@@ -264,41 +264,41 @@ auto SemanticExecutor::local_place(const SemanticExpression& expression) noexcep
 }
 
 auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-    -> ExecutionResult<ExecutionPlace> {
+    -> ExecutionTask<ExecutionPlace> {
     if (auto checked = step(expression.origin); !checked) {
-        return std::unexpected(checked.error());
+        co_return std::unexpected(checked.error());
     }
     if (const auto* name = std::get_if<SemBinding>(&expression.value)) {
         if (const auto* alias =
                 std::get_if<ExecutionPlace>(&frame.slots.at(name->binding.index()))) {
-            return *alias;
+            co_return *alias;
         }
-        return ExecutionPlace {.slot = name->binding.index(), .path = {}};
+        co_return ExecutionPlace {.slot = name->binding.index(), .path = {}};
     }
     if (const auto* field = std::get_if<SemField>(&expression.value)) {
-        auto selected = place(frame, *field->source);
+        auto selected = (co_await place(frame, *field->source));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
         selected->path.push_back(field->field.field_index);
-        return selected;
+        co_return selected;
     }
     if (const auto* index = std::get_if<SemIndex>(&expression.value)) {
-        auto selected = place(frame, *index->source);
+        auto selected = (co_await place(frame, *index->source));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
-        auto subscript = value(frame, *index->index);
+        auto subscript = (co_await value(frame, *index->index));
         if (!subscript) {
-            return std::unexpected(subscript.error());
+            co_return std::unexpected(subscript.error());
         }
         auto receiver = located(frame, *selected, expression.origin);
         if (!receiver) {
-            return std::unexpected(receiver.error());
+            co_return std::unexpected(receiver.error());
         }
         const auto* aggregate = std::get_if<ExecutionAggregateValue>(*receiver);
         if (aggregate == nullptr) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 expression.origin,
                 DiagnosticCode::ConstEvaluation,
                 "indexing requires sequence storage"
@@ -306,12 +306,12 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
         }
         auto position = offset(*subscript, aggregate->elements.size(), index->index->origin);
         if (!position) {
-            return std::unexpected(position.error());
+            co_return std::unexpected(position.error());
         }
         selected->path.push_back(*position);
-        return selected;
+        co_return selected;
     }
-    return std::unexpected(
+    co_return std::unexpected(
         fail(expression.origin, DiagnosticCode::ConstEvaluation, "mutation requires local storage")
     );
 }
@@ -363,22 +363,22 @@ auto SemanticExecutor::offset(
 auto SemanticExecutor::read_operand(
     ExecutionFrame& frame,
     const SemanticExpression& expression
-) noexcept -> ExecutionResult<ExecutionOperand> {
+) noexcept -> ExecutionTask<ExecutionOperand> {
     // The admitted non-owning types are scalar or trivially copied records.
     // Storage-bearing values use the same Read rule as ordinary lowering.
     const auto* concrete = std::get_if<TypeID>(&expression.type.construction());
     if (concrete != nullptr && read_borrows_storage(*concrete) && local_place(expression)) {
-        auto selected = place(frame, expression);
+        auto selected = (co_await place(frame, expression));
         if (!selected) {
-            return std::unexpected(selected.error());
+            co_return std::unexpected(selected.error());
         }
-        return std::move(*selected);
+        co_return std::move(*selected);
     }
-    auto result = value(frame, expression);
+    auto result = (co_await value(frame, expression));
     if (!result) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
-    return std::move(*result);
+    co_return std::move(*result);
 }
 
 auto SemanticExecutor::materialize(
@@ -400,9 +400,9 @@ auto SemanticExecutor::invoke(
     FunctionID function,
     std::vector<ExecutionValue> arguments,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     if (calls.size() >= maximum_constant_depth) {
-        return std::unexpected(
+        co_return std::unexpected(
             fail(origin, DiagnosticCode::ConstLimit, "execution exceeded 128 nested calls")
         );
     }
@@ -413,22 +413,22 @@ auto SemanticExecutor::invoke(
          .function = function,
          .depth = calls.size()}
     );
-    const auto run = [&]() noexcept -> ExecutionResult<ExecutionValue> {
+    const auto run = co_await [&]() noexcept -> ExecutionTask<ExecutionValue> {
         if (auto checked = step(origin); !checked) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
-        auto target = context.prepare_call(function, origin);
+        auto target = (co_await context.prepare_call(function, origin));
         if (!target) {
             if (auto* diagnostic = std::get_if<ExecutionDiagnostic>(&target.error())) {
-                return std::unexpected(
+                co_return std::unexpected(
                     fail(diagnostic->origin, diagnostic->code, std::move(diagnostic->message))
                 );
             }
-            return std::unexpected(ExecutionFailure {});
+            co_return std::unexpected(ExecutionFailure {});
         }
         const auto& body = target->body;
         if (arguments.size() != body.parameters().size()) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 origin,
                 DiagnosticCode::ConstEvaluation,
                 "function call has the wrong number of arguments"
@@ -442,7 +442,7 @@ auto SemanticExecutor::invoke(
         for (auto index = 0uz; index < arguments.size(); ++index) {
             const auto actual = ConstructionTypeRef(execution_value_type(values, arguments[index]));
             if (actual != target->parameter_types[index]) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     origin,
                     DiagnosticCode::TypeMismatch,
                     "function call argument has an incompatible type"
@@ -451,15 +451,15 @@ auto SemanticExecutor::invoke(
             auto argument = std::move(arguments[index]);
             auto stored = own_storage(std::move(argument), origin);
             if (!stored) {
-                return std::unexpected(stored.error());
+                co_return std::unexpected(stored.error());
             }
             frame.slots[body.parameters()[index].index()] = std::move(*stored);
         }
-        auto result = region(frame, body.region());
+        auto result = (co_await region(frame, body.region()));
         if (!result) {
-            return std::unexpected(result.error());
+            co_return std::unexpected(result.error());
         }
-        return std::move(result->value);
+        co_return std::move(result->value);
     }();
     if (run) {
         context.trace(
@@ -470,13 +470,13 @@ auto SemanticExecutor::invoke(
         );
     }
     calls.pop_back();
-    return run;
+    co_return run;
 }
 
 auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
-    -> ExecutionResult<ExecutionValue> {
+    -> ExecutionTask<ExecutionValue> {
     auto frame = ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}};
-    return value(frame, source);
+    co_return (co_await value(frame, source));
 }
 
 auto SemanticExecutor::read_borrows_storage(TypeID type) noexcept -> bool {
@@ -489,19 +489,19 @@ auto SemanticExecutor::read_borrows_storage(TypeID type) noexcept -> bool {
 }
 
 auto SemanticExecutor::evaluate_test(const StructuredBodyDraft& body) noexcept
-    -> ExecutionResult<void> {
+    -> ExecutionTask<void> {
     testing = true;
     auto frame = ExecutionFrame {
         .body = ExecutionBody(body),
         .slots = std::vector<ExecutionSlot>(body.bindings.size()),
         .caught = {}
     };
-    const auto result = region(frame, body.region);
+    const auto result = (co_await region(frame, body.region));
     if (!result) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     if (test_failed) {
-        return std::unexpected(ExecutionFailure {});
+        co_return std::unexpected(ExecutionFailure {});
     }
-    return {};
+    co_return {};
 }

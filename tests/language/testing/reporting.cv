@@ -141,3 +141,56 @@ test "Testing: callable reports retain temporary messages" {
         String::from_str("callable temporary message with enough text for owned storage")
     );
 }
+
+struct DisplayedRecord {
+    value: i32,
+    text: str
+}
+
+fn comparison_next(&calls: i32) -> i32 {
+    calls += 1;
+    return calls;
+}
+
+fn comparison_message(&record: DisplayedRecord) -> str {
+    record.value = 99;
+    return "message mutated record";
+}
+
+test "Testing: comparison explanations preserve values and single evaluation" {
+    var calls = 0;
+    check(comparison_next(&calls) == comparison_next(&calls));
+    check(calls == 2);
+    var actual = DisplayedRecord { 12, "left" };
+    let expected = DisplayedRecord { 15, "right" };
+    check(actual == expected, comparison_message(&actual));
+    check(actual.value == 99);
+    check(1 > 2);
+}
+
+test "Testing: explanation preserves short circuit and require exit" {
+    var calls = 0;
+    check(false && comparison_next(&calls) == 1);
+    check(calls == 0);
+    check(false || comparison_next(&calls) == 2);
+    check(calls == 1);
+    require(calls == 4);
+    cv_test_reporting_mark(23);
+}
+
+fn observed_boolean(&calls: i32, result: bool) -> bool {
+    calls += 1;
+    return result;
+}
+
+test "Testing: dynamic short circuit explanations observe only executed operands" {
+    var calls = 0;
+    check(observed_boolean(&calls, false) && observed_boolean(&calls, true));
+    check(calls == 1);
+    check(observed_boolean(&calls, true) && observed_boolean(&calls, false));
+    check(calls == 3);
+    check(observed_boolean(&calls, false) || observed_boolean(&calls, false));
+    check(calls == 5);
+    check(observed_boolean(&calls, true) || observed_boolean(&calls, false));
+    check(calls == 6);
+}

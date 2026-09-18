@@ -27,11 +27,11 @@ public:
         ImportUsage& usage,
         ConstructionRequests& requests
     ) noexcept;
-    auto run() noexcept -> AnalysisResult<void>;
+    auto run() noexcept -> AnalysisTask<void>;
     auto ensure_available(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
-        -> AnalysisResult<void>;
+        -> AnalysisTask<void>;
     auto prepare_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<void>;
+        -> AnalysisTask<void>;
 
 private:
     struct Unvisited final {};
@@ -53,8 +53,8 @@ private:
         Span origin
     ) noexcept -> AnalysisFailure;
     auto resolve(CatalogSymbolID id, ProgramModuleID requester, Span origin) noexcept
-        -> AnalysisResult<void>;
-    auto resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
+        -> AnalysisTask<void>;
+    auto resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisTask<void>;
     auto select_symbol(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
         -> AnalysisResult<const CatalogSymbol*>;
 
@@ -64,82 +64,83 @@ private:
         ASTView syntax;
 
         auto resolve_name(std::string_view name, Span span) noexcept
-            -> AnalysisResult<std::optional<ConstantID>>;
+            -> AnalysisTask<std::optional<ConstantID>>;
         auto resolve_function(std::string_view name, Span span) noexcept
-            -> AnalysisResult<std::optional<FunctionID>>;
+            -> AnalysisTask<std::optional<FunctionID>>;
         auto construction_requests() noexcept -> ConstructionRequests&;
         auto resolve_enum_qualifier(ASTExprID expression) noexcept
-            -> AnalysisResult<std::optional<TypeID>>;
+            -> AnalysisTask<std::optional<TypeID>>;
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
-            -> AnalysisResult<ResolvedEnumCase>;
-        auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef>;
+            -> AnalysisTask<ResolvedEnumCase>;
+        auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
         auto resolve_construction_type(const ASTConstructionType& type) noexcept
-            -> AnalysisResult<ConstructionTypeRef>;
+            -> AnalysisTask<ConstructionTypeRef>;
         auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
         auto is_numeric_enum(TypeID type) const noexcept -> bool;
     };
 
     auto resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTypeID type) noexcept
-        -> AnalysisResult<ConstructionTypeRef>;
+        -> AnalysisTask<ConstructionTypeRef>;
     auto resolve_value_type(
         ProgramModuleID module_id,
         ASTView syntax,
         ASTTypeID type,
         std::string_view role
-    ) noexcept -> AnalysisResult<ConstructionTypeRef>;
+    ) noexcept -> AnalysisTask<ConstructionTypeRef>;
     auto resolve_failures(
         ProgramModuleID module_id,
         ASTView syntax,
         const ASTThrowClause& clause
-    ) noexcept -> AnalysisResult<std::vector<TypeID>>;
+    ) noexcept -> AnalysisTask<std::vector<TypeID>>;
     auto resolve_function(
         const CatalogSymbol& symbol,
         const CatalogFunctionForm& form,
         ASTView syntax,
         const ASTFunctionDecl& function,
         Span item_span
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
     auto resolve_struct(
         const CatalogSymbol& symbol,
         const CatalogStructForm& form,
         ASTView syntax,
         const ASTStructDecl& structure,
         Span item_span
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
     auto resolve_enum(
         const CatalogSymbol& symbol,
         const CatalogEnumForm& form,
         ASTView syntax,
         const ASTEnumDecl& enumeration,
         Span item_span
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
     auto resolve_enum_case(const CatalogSymbol& symbol, const CatalogEnumCaseForm& form) noexcept
-        -> AnalysisResult<void>;
+        -> AnalysisTask<void>;
     auto resolve_module_constant(
         const CatalogSymbol& symbol,
         const CatalogConstantForm& form,
         ASTView syntax,
         const ASTConstantDecl& declaration,
         Span item_span
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
     auto resolve_constant_name(
         ProgramModuleID module_id,
         std::string_view name,
         Span origin
-    ) noexcept -> AnalysisResult<std::optional<ConstantID>>;
+    ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
     auto resolve_enum_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
         ASTExprID expression
-    ) noexcept -> AnalysisResult<std::optional<TypeID>>;
+    ) noexcept -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(
         ProgramModuleID module_id,
         TypeID type,
         std::string_view name,
         Span origin
-    ) noexcept -> AnalysisResult<ResolvedEnumCase>;
-    auto supports_equality(ConstructionTypeRef type, std::flat_set<TypeID>& visiting) noexcept
-        -> bool;
+    ) noexcept -> AnalysisTask<ResolvedEnumCase>;
+    auto equality_capabilities(std::span<const ConstructionTypeRef> roots) noexcept
+        -> std::vector<bool>;
+    auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
     auto finish_capabilities() noexcept -> void;
     auto publish_modules() noexcept -> void;
@@ -151,7 +152,7 @@ private:
         Span span,
         std::flat_set<TypeID>& visiting,
         std::vector<CatalogSymbolID>& prepared
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
 
     ProgramDraft& draft;
     AnalysisCatalogView catalog;

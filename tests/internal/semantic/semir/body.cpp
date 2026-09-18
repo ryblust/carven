@@ -324,7 +324,8 @@ TEST_CASE("SemIR body: test operations carry an internal exit through ordinary f
         .kind = TestReportKind::Fail,
         .condition = std::nullopt,
         .message = std::nullopt,
-        .condition_source = std::nullopt
+        .condition_source = std::nullopt,
+        .operand_sources = std::nullopt
     };
     auto statements = std::vector<SemanticStatement>();
     statements.push_back(

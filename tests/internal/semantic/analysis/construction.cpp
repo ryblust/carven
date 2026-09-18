@@ -94,7 +94,8 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 const auto reserved = draft.reserve_body(BodyKind::Function);
                 static_cast<void>(draft.body_draft(reserved.id()));
             }));
-            auto first_body = requests.ensure_function_body(seed.function, module, Span::at(0u));
+            auto first_body =
+                requests.ensure_function_body(seed.function, module, Span::at(0u)).run();
             REQUIRE(first_body.has_value());
             const auto* saved = std::addressof(draft.body_draft(*first_body));
             CHECK(draft.function_for_callable(seed.callable) == seed.function);
@@ -106,18 +107,20 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 if (function == nullptr) {
                     continue;
                 }
-                const auto body = requests.ensure_function_body(
-                    function->function,
-                    symbol.module_id,
-                    symbol.declaration_span
-                );
+                const auto body = requests
+                                      .ensure_function_body(
+                                          function->function,
+                                          symbol.module_id,
+                                          symbol.declaration_span
+                                      )
+                                      .run();
                 REQUIRE(body.has_value());
                 completed_bodies.insert(*body);
                 CHECK(std::addressof(draft.body_draft(*first_body)) == saved);
             }
             CHECK_EQ(completed_bodies.size(), 35uz);
             const auto repeated =
-                requests.ensure_function_body(seed.function, module, Span::at(0u));
+                requests.ensure_function_body(seed.function, module, Span::at(0u)).run();
             REQUIRE(repeated.has_value());
             CHECK(*repeated == *first_body);
             REQUIRE(requests.run().has_value());
@@ -145,12 +148,14 @@ TEST_CASE("Construction: pending results require completion before contract acce
                             module,
                             Span::at(0u)
                         )
+                        .run()
                         .has_value());
             REQUIRE(draft.pending_function_contract_copy(function.callable).has_value());
             CHECK(expect_termination("pending-function-contract-read", [&] {
                 static_cast<void>(draft.construction_callable_contract_copy(function.callable));
             }));
             REQUIRE(construction.ensure_function_signature(function.function, module, Span::at(0u))
+                        .run()
                         .has_value());
             CHECK_FALSE(draft.pending_function_contract_copy(function.callable).has_value());
             CHECK(expect_termination("duplicate-function-result-completion", [&] {
@@ -163,4 +168,37 @@ TEST_CASE("Construction: pending results require completion before contract acce
             CHECK(std::move(draft).finish().has_value());
         }
     );
+}
+
+TEST_CASE("Program construction: long inferred dependencies complete or diagnose the leaf") {
+    for (const auto failed : {false, true}) {
+        for (const auto reverse : {false, true}) {
+            auto declarations = std::vector<std::string>();
+            for (auto index = 0uz; index < 256uz; ++index) {
+                declarations.push_back(
+                    std::format("fn step_{}() => step_{}();\n", index, index + 1uz)
+                );
+            }
+            declarations.push_back(
+                failed ? "fn step_256() => unknown_leaf;\n" : "fn step_256() => 7;\n"
+            );
+            if (reverse) {
+                std::ranges::reverse(declarations);
+            }
+            auto source = std::string();
+            for (const auto& declaration : declarations) {
+                source += declaration;
+            }
+            with_catalog(
+                std::move(source),
+                [&](ProgramDraft& draft,
+                    AnalysisCatalogView catalog,
+                    ImportUsage& usage,
+                    DiagnosticSink&) noexcept {
+                    auto requests = ProgramConstruction(draft, catalog, usage);
+                    CHECK(requests.run().has_value() == !failed);
+                }
+            );
+        }
+    }
 }

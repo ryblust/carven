@@ -45,3 +45,33 @@ test "External owners in structure fields retain Carven template dependencies" {
     let result = entries();
     check(result.values[0].value == 11);
 }
+
+const static_values: [i32] = [7, 11];
+
+fn constant_data_1() -> i32 => static_values[0];
+fn constant_data_1_2() -> i32 => static_values[1];
+
+test "Static slice storage remains distinct from user declarations" {
+    check(constant_data_1() == 7);
+    check(constant_data_1_2() == 11);
+}
+
+test "Shared native query results retain arithmetic and exact references" {
+    var values = vector<i32> { 1 };
+    let x0 = values[0];
+    let x1 = x0 + x0;
+    let x2 = x1 + x1;
+    let x3 = x2 + x2;
+    let x4 = x3 + x3;
+    let x5 = x4 + x4;
+    let x6 = x5 + x5;
+    let x7 = x6 + x6;
+    let x8 = x7 + x7;
+    let x9 = x8 + x8;
+    let x10 = x9 + x9;
+    let x11 = x10 + x10;
+    let x12 = x11 + x11;
+    check(x12 == 4096);
+    values[0] = 9;
+    check(values[0] == 9);
+}

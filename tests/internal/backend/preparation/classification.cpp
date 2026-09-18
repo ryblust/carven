@@ -30,8 +30,18 @@ TEST_CASE("Integer formatting: parsed fields retain literal bytes and exact type
     CHECK(
         parsed->fields
         == std::vector<WriterFormatField> {
-            IntegerFormatField {.base = 16, .uppercase = true, .zero_pad = true, .width = 8u},
-            IntegerFormatField {.base = 10, .uppercase = false, .zero_pad = true, .width = 20u},
+            IntegerFormatField {
+                .base = 16,
+                .uppercase = true,
+                .zero_pad = true,
+                .static_width = 8u
+            },
+            IntegerFormatField {
+                .base = 10,
+                .uppercase = false,
+                .zero_pad = true,
+                .static_width = 20u
+            },
         }
     );
     CHECK(parsed->minimum_size == 35u);
@@ -207,5 +217,76 @@ TEST_CASE(
                         types
         )
                         .has_value());
+    }
+}
+
+TEST_CASE("Writer formatting: dynamic widths consume one additional operand per integer field") {
+    const auto types = std::array<std::optional<BuiltinType>, 5> {
+        BuiltinType::I32,
+        BuiltinType::U16,
+        BuiltinType::Str,
+        BuiltinType::I8,
+        BuiltinType::I16
+    };
+    const auto prepared = classify_writer_format(
+        FormatSpec {
+            .parts =
+                {format_text("prefix:"),
+                 format_field(0uz, {format_text("0"), format_field(1uz), format_text("X")}),
+                 format_field(2uz),
+                 format_field(3uz, {format_field(4uz), format_text("b")})}
+        },
+        types
+    );
+    REQUIRE(prepared.has_value());
+    CHECK(prepared->minimum_size == 7u);
+    CHECK(prepared->maximum_size == 7u);
+    const auto* first = std::get_if<IntegerFormatField>(&prepared->fields[0]);
+    REQUIRE(first != nullptr);
+    CHECK(first->base == 16);
+    CHECK(first->uppercase);
+    CHECK(first->zero_pad);
+    CHECK_FALSE(first->static_width.has_value());
+    CHECK(writer_field_operand_count(prepared->fields[0]) == 2uz);
+    CHECK(writer_field_operand_count(prepared->fields[1]) == 1uz);
+    const auto* last = std::get_if<IntegerFormatField>(&prepared->fields[2]);
+    REQUIRE(last != nullptr);
+    CHECK(last->base == 2);
+    CHECK_FALSE(last->zero_pad);
+    CHECK_FALSE(last->static_width.has_value());
+    CHECK(writer_field_operand_count(prepared->fields[2]) == 2uz);
+}
+
+TEST_CASE("Writer formatting: unsupported dynamic width shapes retain native formatting") {
+    const auto integer =
+        std::array<std::optional<BuiltinType>, 2> {BuiltinType::I32, BuiltinType::I32};
+    for (const auto prefix : {">", "+", "#", "00", "1", "."}) {
+        CAPTURE(prefix);
+        CHECK_FALSE(classify_writer_format(
+            FormatSpec {.parts = {format_field(0uz, {format_text(prefix), format_field(1uz)})}},
+            integer
+        ));
+    }
+    for (const auto suffix : {"0", "1", "L", ".2f", "xx"}) {
+        CAPTURE(suffix);
+        CHECK_FALSE(classify_writer_format(
+            FormatSpec {.parts = {format_field(0uz, {format_field(1uz), format_text(suffix)})}},
+            integer
+        ));
+    }
+    for (const auto type :
+         {BuiltinType::Bool,
+          BuiltinType::Char,
+          BuiltinType::F64,
+          BuiltinType::Str,
+          BuiltinType::U32,
+          BuiltinType::I64,
+          BuiltinType::U64}) {
+        const auto types = std::array<std::optional<BuiltinType>, 2> {BuiltinType::I32, type};
+        CAPTURE(static_cast<int>(type));
+        CHECK_FALSE(classify_writer_format(
+            FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
+            types
+        ));
     }
 }

@@ -1,6 +1,6 @@
 module carven:backend.realization.realizer.impl;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.lowering.body;
 import :backend.lowering.constant;
@@ -24,16 +24,16 @@ import std;
 
 BodyRealizer::BodyRealizer(
     ModuleLowering& source_context,
-    const BodyConstruction& construction,
+    const BodyPreparation& preparation,
     BodyLoweringInputs target_inputs
 ) noexcept
     : context(source_context),
-      construction(construction),
-      metadata(context.semantic().bodies().body(construction.body())),
+      preparation(preparation),
+      metadata(preparation.body()),
       inputs(std::move(target_inputs)),
-      names(context.make_callable_name_allocator()),
-      parameter_bindings(metadata.inputs().parameters.begin(), metadata.inputs().parameters.end()),
-      capture_bindings(metadata.inputs().captures.begin(), metadata.inputs().captures.end()) {
+      names(context.make_callable_name_allocator()) {
+    const auto& parameter_bindings = metadata.inputs().parameters;
+    const auto& capture_bindings = metadata.inputs().captures;
     if (inputs.parameters.size() != parameter_bindings.size()
         || inputs.captures.size() != capture_bindings.size()) {
         invariant_violation("target inputs do not match semantic body inputs");
@@ -61,7 +61,7 @@ BodyRealizer::BodyRealizer(
 }
 
 auto BodyRealizer::finish() noexcept -> LoweredBody {
-    auto statements = region(construction.root(), LoweringDiscardResult {});
+    auto statements = region(metadata.region(), LoweringDiscardResult {});
 
     for (const auto exit : statements.exits().targets) {
         if (exit.identity != 0
@@ -81,15 +81,16 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     };
 }
 
-auto BodyRealizer::region(ConstructionRegionID id, const LoweringResultDestination& result) noexcept
-    -> LoweringStmtBuilder {
-    const auto& source = construction.region(id);
+auto BodyRealizer::region(
+    const SemanticRegion& source,
+    const LoweringResultDestination& result
+) noexcept -> LoweringStmtBuilder {
     auto statements = LoweringStmtBuilder();
     for (const auto& item : source.statements) {
         if (!statements.continues()) {
             break;
         }
-        static_cast<void>(statements.accept(statement(item, id)));
+        static_cast<void>(statements.accept(statement(item)));
     }
     if (statements.continues()) {
         if (source.result.has_value()) {
@@ -103,4 +104,21 @@ auto BodyRealizer::region(ConstructionRegionID id, const LoweringResultDestinati
 
 auto BodyRealizer::exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget {
     return {kind, next_exit++};
+}
+
+auto BodyRealizer::fallible(const SemanticExpression& source) const noexcept
+    -> std::optional<FallibleCall> {
+    const auto* call = std::get_if<SemCall>(&source.value);
+    if (call != nullptr
+        && (!context.semantic()
+                 .failure_sets()
+                 .failure_set(call->callee_failures.resolved())
+                 .members.empty()
+            || context.semantic().may_stop_test(call->callee->type.resolved()))) {
+        return FallibleCall {
+            .failures = call->callee_failures.resolved(),
+            .destination = current_failure
+        };
+    }
+    return std::nullopt;
 }

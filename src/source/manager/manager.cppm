@@ -20,6 +20,7 @@ public:
     auto view(SourceID source_id) const noexcept -> SourceView;
     auto slice(SourceSpan span) const noexcept -> std::string_view;
     auto location(SourceSpan span) const noexcept -> SourceLocation;
+    auto line_span(SourceID source_id, std::uint32_t line) const noexcept -> Span;
 
 private:
     class SourceRecord final {
@@ -28,6 +29,7 @@ private:
         auto display_origin() const noexcept -> std::string_view;
         auto source_text() const noexcept -> std::string_view;
         auto location(Span span) const noexcept -> SourceLocation;
+        auto line_span(std::uint32_t line) const noexcept -> Span;
 
     private:
         std::string origin;

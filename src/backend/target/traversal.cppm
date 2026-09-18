@@ -599,6 +599,9 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
     }
     const auto children = declaration.visit(
         Overloaded {
+            [&](const TargetTypeAlias& value) noexcept {
+                return visit_target_type(visitor, value.type);
+            },
             [&](const TargetFunctionDecl& value) noexcept {
                 if (!traverse_target_parameters(value.parameters, visitor)
                     || !visit_target_type(visitor, value.result)) {

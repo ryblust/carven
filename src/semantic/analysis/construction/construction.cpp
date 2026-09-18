@@ -19,23 +19,27 @@ ProgramConstruction::ProgramConstruction(
       bodies(draft, catalog, usage, *this) {}
 
 auto ProgramConstruction::run() noexcept -> AnalysisResult<void> {
-    auto result = declarations.run();
+    return construct().run();
+}
+
+auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
+    auto result = (co_await declarations.run());
     if (!result) {
-        return result;
+        co_return result;
     }
     static_cast<void>(analyze_nominal_containment(draft));
     static_cast<void>(diagnose_cpp_api_surface(draft, catalog));
     if (const auto failure = draft.diagnostics().failure()) {
-        return std::unexpected(*failure);
+        co_return std::unexpected(*failure);
     }
-    return bodies.run();
+    co_return (co_await bodies.run());
 }
 
 auto ProgramConstruction::ensure_declaration(
     CatalogSymbolID id,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     return declarations.ensure_available(id, requester, span);
 }
 
@@ -43,7 +47,7 @@ auto ProgramConstruction::ensure_function_signature(
     FunctionID id,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     return bodies.ensure_function_signature(id, requester, span);
 }
 
@@ -51,7 +55,7 @@ auto ProgramConstruction::ensure_function_body(
     FunctionID id,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<BodyID> {
+) noexcept -> AnalysisTask<BodyID> {
     return bodies.ensure_function_body(id, requester, span);
 }
 
@@ -59,6 +63,6 @@ auto ProgramConstruction::ensure_type(
     ConstructionTypeRef type,
     ProgramModuleID requester,
     Span span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     return declarations.prepare_type(type, requester, span);
 }

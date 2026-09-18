@@ -105,56 +105,57 @@ auto BodyElaborator::warn(Span span, DiagnosticCode code, std::string message) n
     );
 }
 
-auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisResult<std::uint64_t> {
+auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisTask<std::uint64_t> {
     auto scope = BodyExprSite(*this);
-    return evaluate_array_extent(draft(), source_module_id, ast, scope, id);
+    co_return (co_await evaluate_array_extent(draft(), source_module_id, ast, scope, id));
 }
 
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
-    -> AnalysisResult<std::optional<ConstantID>> {
+    -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
         const auto* constant = std::get_if<ConstantID>(&local->storage);
-        return constant == nullptr ? std::nullopt : std::optional(*constant);
+        co_return constant == nullptr ? std::nullopt : std::optional(*constant);
     }
-    auto selected = find_global(name, span);
+    auto selected = (co_await find_global(name, span));
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
-    return (*selected)->form.visit(
+    co_return (co_await (*selected)->form.visit(
         Overloaded {
             [&](const CatalogConstantForm& form) noexcept
-                -> AnalysisResult<std::optional<ConstantID>> {
+                -> AnalysisTask<std::optional<ConstantID>> {
                 const auto declaration = draft().module_constant_declaration_copy(form.constant);
-                return declaration.value;
+                co_return declaration.value;
             },
             [&](const CatalogEnumCaseForm& form) noexcept
-                -> AnalysisResult<std::optional<ConstantID>> {
+                -> AnalysisTask<std::optional<ConstantID>> {
                 const auto declaration =
                     draft().construction_enum_case_declaration_copy(form.enum_case);
-                return declaration.constant;
+                co_return declaration.constant;
             },
             [&](const CatalogFunctionForm& form) noexcept
-                -> AnalysisResult<std::optional<ConstantID>> {
+                -> AnalysisTask<std::optional<ConstantID>> {
                 auto completed =
-                    batch->ensure_function_signature(form.function, source_module_id, span);
+                    (co_await batch
+                         ->ensure_function_signature(form.function, source_module_id, span));
                 if (!completed.has_value()) {
-                    return std::unexpected(completed.error());
+                    co_return std::unexpected(completed.error());
                 }
-                return std::nullopt;
+                co_return std::nullopt;
             },
-            [&]<typename Form>(const Form&) noexcept -> AnalysisResult<std::optional<ConstantID>> {
+            [&]<typename Form>(const Form&) noexcept -> AnalysisTask<std::optional<ConstantID>> {
                 static_assert(
                     std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
                     "unhandled non-constant catalog symbol"
                 );
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     span,
                     DiagnosticCode::TypeValueRequired,
                     std::format("'{}' does not name a constant value", name)
                 ));
             },
         }
-    );
+    ));
 }
 
 auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
@@ -162,49 +163,50 @@ auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
 }
 
 auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
-    -> AnalysisResult<std::optional<FunctionID>> {
+    -> AnalysisTask<std::optional<FunctionID>> {
     if (use_local(name) != nullptr || catalog().lookup(source_module_id, name).empty()) {
-        return std::optional<FunctionID>();
+        co_return std::optional<FunctionID>();
     }
-    auto selected = find_global(name, span);
+    auto selected = (co_await find_global(name, span));
     if (!selected) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
     if (function == nullptr) {
-        return std::optional<FunctionID>();
+        co_return std::optional<FunctionID>();
     }
 
-    auto completed = batch->ensure_function_signature(function->function, source_module_id, span);
+    auto completed =
+        (co_await batch->ensure_function_signature(function->function, source_module_id, span));
     if (!completed) {
-        return std::unexpected(completed.error());
+        co_return std::unexpected(completed.error());
     }
-    return std::optional(function->function);
+    co_return std::optional(function->function);
 }
 
 auto BodyElaborator::resolve_enum_qualifier(ASTExprID expression) noexcept
-    -> AnalysisResult<std::optional<TypeID>> {
+    -> AnalysisTask<std::optional<TypeID>> {
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
         current_id = group->expression;
     }
     const auto* name = std::get_if<ASTNameExpr>(&ast.expression(current_id).value);
     if (name == nullptr) {
-        return std::optional<TypeID>();
+        co_return std::optional<TypeID>();
     }
     const auto text = spelling(name->name_span);
     if (find_local(text) != nullptr) {
-        return std::optional<TypeID>();
+        co_return std::optional<TypeID>();
     }
-    auto selected = find_global(text, name->name_span);
+    auto selected = (co_await find_global(text, name->name_span));
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
     if (enumeration == nullptr) {
-        return std::optional<TypeID>();
+        co_return std::optional<TypeID>();
     }
-    return std::optional(
+    co_return std::optional(
         draft().intern_type(
             CanonicalType {
                 .value = EnumTypeValue {.enumeration = enumeration->enumeration},
@@ -217,11 +219,11 @@ auto BodyElaborator::resolve_constant_enum_case(
     TypeID type,
     std::string_view name,
     Span span
-) noexcept -> AnalysisResult<ResolvedEnumCase> {
+) noexcept -> AnalysisTask<ResolvedEnumCase> {
     const auto canonical = draft().type_copy(type);
     const auto* nominal = std::get_if<EnumTypeValue>(&canonical.value);
     if (nominal == nullptr) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeEnumContext,
             "enum case qualifier does not name an enum type"
@@ -233,22 +235,22 @@ auto BodyElaborator::resolve_constant_enum_case(
         if (draft().spelling_copy(declaration.name) != name) {
             continue;
         }
-        return ResolvedEnumCase {
+        co_return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration.owner,
             .payload_types = declaration.payload_types,
             .constant = declaration.constant,
         };
     }
-    return std::unexpected(fail(
+    co_return std::unexpected(fail(
         span,
         DiagnosticCode::TypeMemberUnresolved,
         std::format("enum has no case named '{}'", name)
     ));
 }
 
-auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    auto result = resolve_source_type(
+auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    auto result = (co_await resolve_source_type(
         draft(),
         catalog(),
         import_usage(),
@@ -256,19 +258,20 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisResult<Con
         ast,
         type,
         [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
-    );
+    ));
     if (result) {
-        auto prepared = batch->requests.ensure_type(*result, source_module_id, ast.type(type).span);
+        auto prepared =
+            (co_await batch->requests.ensure_type(*result, source_module_id, ast.type(type).span));
         if (!prepared) {
-            return std::unexpected(prepared.error());
+            co_return std::unexpected(prepared.error());
         }
     }
-    return result;
+    co_return result;
 }
 
 auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) noexcept
-    -> AnalysisResult<ConstructionTypeRef> {
-    auto result = resolve_source_construction_type(
+    -> AnalysisTask<ConstructionTypeRef> {
+    auto result = (co_await resolve_source_construction_type(
         draft(),
         catalog(),
         import_usage(),
@@ -276,14 +279,15 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         ast,
         type,
         [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
-    );
+    ));
     if (result) {
-        auto prepared = batch->requests.ensure_type(*result, source_module_id, type.span);
+        auto prepared =
+            (co_await batch->requests.ensure_type(*result, source_module_id, type.span));
         if (!prepared) {
-            return std::unexpected(prepared.error());
+            co_return std::unexpected(prepared.error());
         }
     }
-    return result;
+    co_return result;
 }
 
 auto BodyElaborator::compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept

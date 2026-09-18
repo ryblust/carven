@@ -35,7 +35,7 @@ auto realize_writer_format(
 ) noexcept -> TargetExpr {
     const auto& format = preparation.format;
     const auto offset = value.receiver ? 1uz : 0uz;
-    if (operands.size() != format.fields.size() + offset
+    if (operands.size() != preparation.operand_indices.size() + offset
         || format.text.size() != format.fields.size() + 1uz) {
         invariant_violation("writer format received the wrong operand pack");
     }
@@ -64,7 +64,7 @@ auto realize_writer_format(
     }
     auto arguments = std::vector<TargetExpr>();
     auto text_sizes = std::vector<TargetExpr>();
-    for (auto index = 0uz; index < format.fields.size(); ++index) {
+    for (auto index = 0uz; index < preparation.operand_indices.size(); ++index) {
         const auto argument = TargetIdentifier::from_spelling(std::format("arg{}", index));
         const auto original = preparation.operand_indices[index];
         parameters.push_back(
@@ -75,7 +75,12 @@ auto realize_writer_format(
              )}
         );
         arguments.push_back(name_expression(argument));
-        const auto* type = std::get_if<BuiltinType>(&format.fields[index]);
+    }
+    auto operand = 0uz;
+    for (const auto& field : format.fields) {
+        const auto argument = TargetIdentifier::from_spelling(std::format("arg{}", operand));
+        operand += writer_field_operand_count(field);
+        const auto* type = std::get_if<BuiltinType>(&field);
         if (type != nullptr && (*type == BuiltinType::Str || *type == BuiltinType::String)) {
             text_sizes.push_back(call_member(name_expression(argument), "size", {}));
         }
@@ -123,8 +128,11 @@ auto realize_writer_statements(
     std::vector<TargetExpr> operands,
     std::vector<TargetExpr> text_sizes
 ) noexcept -> std::vector<TargetStmt> {
-    if (operands.size() != format.fields.size()
-        || format.text.size() != format.fields.size() + 1uz) {
+    auto operand_count = 0uz;
+    for (const auto& field : format.fields) {
+        operand_count += writer_field_operand_count(field);
+    }
+    if (operands.size() != operand_count || format.text.size() != format.fields.size() + 1uz) {
         invariant_violation("writer format received the wrong field pack");
     }
     const auto text_fields =
@@ -192,20 +200,25 @@ auto realize_writer_statements(
             )));
         }
     };
+    auto operand = 0uz;
     for (auto index = 0uz; index < format.fields.size(); ++index) {
-        auto argument = std::move(operands[index]);
+        auto argument = std::move(operands[operand++]);
         const auto* builtin = std::get_if<BuiltinType>(&format.fields[index]);
         append_text(format.text[index]);
         if (const auto* field = std::get_if<IntegerFormatField>(&format.fields[index])) {
+            auto width = field->static_width ? size_expression(*field->static_width)
+                                             : std::move(operands[operand++]);
             statements.push_back(statement_expression(template_call_expression(
                 member_expression(
                     name_expression(writer),
-                    TargetIdentifier::from_spelling("integer")
+                    TargetIdentifier::from_spelling(
+                        field->static_width ? "integer" : "integer_dynamic_width"
+                    )
                 ),
                 {integer_literal(static_cast<std::uint64_t>(field->base)),
                  field->uppercase,
                  field->zero_pad},
-                target_expressions(std::move(argument), size_expression(field->width))
+                target_expressions(std::move(argument), std::move(width))
             )));
         } else if (const auto* field = std::get_if<FloatingFormatField>(&format.fields[index])) {
             const auto method = field->mode == FloatingFormatMode::Shortest ? "floating"

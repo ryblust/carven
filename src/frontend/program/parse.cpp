@@ -215,8 +215,9 @@ auto validate_inputs(
         return diagnostics;
     }
 
-    for (auto index = 0uz; index < inputs.size(); ++index) {
-        const auto& input = inputs[index];
+    auto source_ids = std::set<SourceID>();
+    auto module_paths = std::set<std::string_view>();
+    for (const auto& input : inputs) {
         if (!sources.contains(input.source_id)) {
             diagnostics.push_back(compilation_input_error(
                 std::format(
@@ -225,24 +226,18 @@ auto validate_inputs(
                 )
             ));
         }
-        for (auto earlier = 0uz; earlier < index; ++earlier) {
-            if (inputs[earlier].source_id == input.source_id) {
-                diagnostics.push_back(compilation_input_error(
-                    std::format(
-                        "source snapshot {} is supplied more than once",
-                        input.source_id.index()
-                    )
-                ));
-                break;
-            }
+        if (!source_ids.insert(input.source_id).second) {
+            diagnostics.push_back(compilation_input_error(
+                std::format(
+                    "source snapshot {} is supplied more than once",
+                    input.source_id.index()
+                )
+            ));
         }
-        for (auto earlier = 0uz; earlier < index; ++earlier) {
-            if (inputs[earlier].module_path == input.module_path) {
-                diagnostics.push_back(compilation_input_error(
-                    std::format("duplicate module path '{}'", input.module_path.value())
-                ));
-                break;
-            }
+        if (!module_paths.insert(input.module_path.value()).second) {
+            diagnostics.push_back(compilation_input_error(
+                std::format("duplicate module path '{}'", input.module_path.value())
+            ));
         }
     }
     return diagnostics;

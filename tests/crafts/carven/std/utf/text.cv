@@ -27,7 +27,7 @@ test "UTF8: byte slices construct borrowed and owning text" {
     try {
         let copy = to_string(original)?;
         original[0] = 0x62;
-        check(copy.as_str() == "a");
+        check(copy == "a");
     } catch {
         UTF8Error(_) => check(false),
     }

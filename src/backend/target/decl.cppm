@@ -9,7 +9,7 @@ import std;
 struct TargetParameter final {
     std::optional<TargetIdentifier> name;
     TargetTypeID type;
-    std::optional<TargetExpr> default_value = std::nullopt;
+    std::optional<TargetExpr> default_value;
 };
 
 auto target_parameters(TargetParameter parameter) noexcept -> std::vector<TargetParameter>;
@@ -30,8 +30,8 @@ struct TargetFunctionDecl final {
     std::vector<TargetParameter> parameters;
     TargetTypeID result;
     TargetFreeFunctionForm form;
-    bool constexpr_specifier = false;
-    bool static_specifier = false;
+    bool constexpr_specifier;
+    bool static_specifier;
     bool inline_specifier;
 };
 
@@ -176,6 +176,7 @@ struct TargetClassForwardDecl final {
 };
 
 using TargetDecl = std::variant<
+    TargetTypeAlias,
     TargetFunctionDecl,
     TargetVariableDecl,
     TargetOutOfClassMemberDefinition,

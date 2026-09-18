@@ -189,16 +189,18 @@ auto BodyElaborator::cpp_expression(
     return BuiltExpression {
         .storage = std::move(value),
 
-        .pending_failures = {}
+        .pending_failures = {},
+        .takeable = true,
+        .completes = true,
     };
 }
 
 auto BodyElaborator::build_cpp_argument(ASTExprID source) noexcept
-    -> AnalysisResult<BuiltCppArgument> {
+    -> AnalysisTask<BuiltCppArgument> {
     const auto selected = call_argument_operand(ast, source);
-    auto built = expression(selected.expression);
+    auto built = (co_await expression(selected.expression));
     if (!built) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
     const auto span = ast.expression(selected.expression).span;
     auto value = [&]() noexcept -> AnalysisResult<SemanticExpression> {
@@ -212,9 +214,9 @@ auto BodyElaborator::build_cpp_argument(ASTExprID source) noexcept
         return consume_value(*built, span, selected.access);
     }();
     if (!value) {
-        return std::unexpected(value.error());
+        co_return std::unexpected(value.error());
     }
-    return BuiltCppArgument {
+    co_return BuiltCppArgument {
         .argument = {.access = selected.access, .expression = std::move(*value)},
         .completes = built->completes,
     };
@@ -224,20 +226,20 @@ auto BodyElaborator::cpp_construct(
     const ASTConstructionExpr& source,
     ConstructionTypeRef target,
     Span span
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     auto operands = std::vector<SemCallArgument>();
     auto completes = true;
     if (const auto* values = std::get_if<ASTPositionalInitializerList>(&source.initializer.value)) {
         for (const auto value : values->values) {
-            auto built = build_cpp_argument(value);
+            auto built = (co_await build_cpp_argument(value));
             if (!built) {
-                return std::unexpected(built.error());
+                co_return std::unexpected(built.error());
             }
             completes &= built->completes;
             operands.push_back(std::move(built->argument));
         }
     } else if (std::holds_alternative<ASTFieldInitializerList>(source.initializer.value)) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeConstructNotStruct,
             "named initializers require a Carven structure"
@@ -247,14 +249,14 @@ auto BodyElaborator::cpp_construct(
     if (result) {
         result->completes = completes;
     }
-    return result;
+    co_return result;
 }
 
 auto BodyElaborator::cpp_call(
     SelectedExpression selected,
     const ASTCallExpr& source,
     Span span
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     using Operand = SemCppOperand;
     auto completes = true;
     const auto receiver = [&](BuiltExpression& built,
@@ -286,7 +288,7 @@ auto BodyElaborator::cpp_call(
                 return std::move(*name);
             }
             auto& member = std::get<CppMemberSelection>(selection->target);
-            auto value = receiver(member.receiver, selection->span);
+            auto value = (receiver(member.receiver, selection->span));
             if (!value.has_value()) {
                 return std::unexpected(value.error());
             }
@@ -307,13 +309,13 @@ auto BodyElaborator::cpp_call(
         };
     }();
     if (!callee.has_value()) {
-        return std::unexpected(callee.error());
+        co_return std::unexpected(callee.error());
     }
     auto arguments = std::vector<SemCallArgument>();
     for (const auto& argument : source.arguments) {
-        auto built = build_cpp_argument(argument.expression);
+        auto built = (co_await build_cpp_argument(argument.expression));
         if (!built) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
         completes &= built->completes;
         arguments.push_back(std::move(built->argument));
@@ -325,7 +327,7 @@ auto BodyElaborator::cpp_call(
         concrete &= std::holds_alternative<TypeID>(operand.type.construction());
     });
     if (!concrete) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeMismatch,
             "C++ type queries require concrete argument types"
@@ -338,10 +340,11 @@ auto BodyElaborator::cpp_call(
     auto value =
         active_builder()
             .make_expression(type, active_builder().lifetime(), origin(span), std::move(call));
-    return BuiltExpression {
+    co_return BuiltExpression {
         .storage = std::move(value),
 
         .pending_failures = {},
+        .takeable = true,
         .completes = completes
     };
 }

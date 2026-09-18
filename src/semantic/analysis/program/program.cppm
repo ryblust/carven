@@ -83,6 +83,7 @@ public:
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID override;
+    auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;
     auto enum_case_types(EnumID enumeration) const noexcept
@@ -204,6 +205,11 @@ private:
         const TypeResolution& types,
         const FailureSolution& failures
     ) noexcept -> void;
+    auto solve_test_stops(
+        const CanonicalTypeStore& types,
+        const TypeResolution& resolved_types,
+        const DeclarationStore& declarations
+    ) const noexcept -> std::vector<bool>;
     auto verify_body(const SemIRBody& body, const DeclarationStore& declarations) const noexcept
         -> void;
     auto require_state(State expected, std::string_view operation) const noexcept -> void;

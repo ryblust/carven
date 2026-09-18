@@ -8,7 +8,6 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.table;
-import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.module_path;
 import :source.provenance.ids;
@@ -73,16 +72,6 @@ auto SemIRProgram::call_signature(TypeID type) const noexcept -> CallableSignatu
             }
         }
     );
-}
-
-auto SemIRProgram::may_stop_test(const SemanticExpression& expression) const noexcept -> bool {
-    auto exits = expression.exits_test;
-    visit_semantic_nodes(expression, [&](const SemanticExpression& node) noexcept {
-        if (const auto* call = std::get_if<SemCall>(&node.value)) {
-            exits |= may_stop_test(call->callee->type.resolved());
-        }
-    });
-    return exits;
 }
 
 auto BodyStore::owner() const noexcept -> ProgramIdentity {

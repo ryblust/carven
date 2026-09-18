@@ -53,6 +53,7 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
             .parameters = {},
             .result = result,
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }},

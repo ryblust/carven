@@ -21,15 +21,16 @@ public:
     ~ProgramConstruction() = default;
     auto run() noexcept -> AnalysisResult<void>;
     auto ensure_declaration(CatalogSymbolID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<void> override;
+        -> AnalysisTask<void> override;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<void> override;
+        -> AnalysisTask<void> override;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<BodyID> override;
+        -> AnalysisTask<BodyID> override;
     auto ensure_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<void> override;
+        -> AnalysisTask<void> override;
 
 private:
+    auto construct() noexcept -> AnalysisTask<void>;
     ProgramDraft& draft;
     AnalysisCatalogView catalog;
     DeclResolver declarations;

@@ -68,10 +68,14 @@ TEST_CASE("Syntax program: closed compilation rejects duplicate source snapshots
             .source_id = *source,
             .module_path = path("app.second"),
         },
+        SourceModuleInput {
+            .source_id = *source,
+            .module_path = path("app.third"),
+        },
     };
     const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
     REQUIRE_FALSE(parsed.has_value());
-    REQUIRE_EQ(parsed.error().size(), 1u);
+    REQUIRE_EQ(parsed.error().size(), 2u);
     CHECK_EQ(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
 }
 

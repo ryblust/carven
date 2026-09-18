@@ -6,6 +6,7 @@ import :semantic.evaluation.output;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.value;
 import :semantic.semir.structured;
+import :support.task;
 import std;
 
 struct ExecutionDiagnostic final {
@@ -37,6 +38,9 @@ using ExecutionFailure = std::variant<ExecutionStopped, ExecutionSourceFailure>;
 template<typename Value>
 using ExecutionResult = std::expected<Value, ExecutionFailure>;
 
+template<typename Value>
+using ExecutionTask = ContinuationTask<ExecutionResult<Value>>;
+
 // Borrows the existing operation tree in either construction or published form.
 class ExecutionBody final {
 public:
@@ -48,13 +52,13 @@ public:
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
 
     template<typename Visitor>
-    auto visit_pattern(PatternID id, Visitor visitor) const noexcept {
+    auto visit_pattern(PatternID id, Visitor&& visitor) const noexcept {
         return body.visit([&](const auto* value) noexcept {
             if constexpr (std::
                               same_as<std::remove_cvref_t<decltype(*value)>, StructuredBodyDraft>) {
-                return visitor(value->patterns.get(id));
+                return std::forward<Visitor>(visitor)(value->patterns.get(id));
             } else {
-                return visitor(value->pattern(id));
+                return std::forward<Visitor>(visitor)(value->pattern(id));
             }
         });
     }
@@ -88,7 +92,7 @@ public:
     virtual auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> = 0;
     virtual auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> std::expected<ExecutionCallBody, ExecutionCallFailure> = 0;
+        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> = 0;
     virtual auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void = 0;
 };
 
@@ -96,15 +100,15 @@ auto execute_constant_root(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
-    ExecutionLimits limits = {}
-) noexcept -> ExecutionResult<ExecutionValue>;
+    ExecutionLimits limits = constant_execution_limits()
+) noexcept -> ExecutionTask<ExecutionValue>;
 
 auto execute_constant_test(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const StructuredBodyDraft& body,
-    ExecutionLimits limits = {}
-) noexcept -> ExecutionResult<void>;
+    ExecutionLimits limits = constant_execution_limits()
+) noexcept -> ExecutionTask<void>;
 
 auto execute_function(
     ExecutionValueAccess& values,
@@ -112,5 +116,5 @@ auto execute_function(
     FunctionID function,
     std::vector<ExecutionValue> arguments,
     ProgramOriginID origin,
-    ExecutionLimits limits = {}
-) noexcept -> ExecutionResult<ExecutionValue>;
+    ExecutionLimits limits = constant_execution_limits()
+) noexcept -> ExecutionTask<ExecutionValue>;

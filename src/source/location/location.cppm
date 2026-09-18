@@ -1,5 +1,6 @@
 module carven:source.location;
 
+import :source.text;
 import std;
 
 struct SourceLocation final {
@@ -20,6 +21,8 @@ class LineIndex final {
 public:
     explicit LineIndex(std::string_view text) noexcept;
     auto location(std::uint32_t offset) const noexcept -> SourceLocation;
+    // One-based line range, including its line terminator when present.
+    auto line_span(std::uint32_t line) const noexcept -> Span;
 
 private:
     std::uint32_t text_size;

@@ -1,6 +1,6 @@
 module carven:backend.realization.call.impl;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
@@ -21,13 +21,13 @@ import std;
 
 auto BodyRealizer::ExpressionBuilder::complete_call(
     Recipe& recipe,
-    const ConstructionFallible& transport,
+    const FallibleCall& transport,
     bool project_success,
-    ConstructionUse use,
+    PreparedUse use,
     bool direct,
     bool propagate_outcome
-) noexcept -> void {
-    const auto callee_type = source(recipe.operands.front()).type;
+) noexcept -> ContinuationTask<std::monostate> {
+    const auto callee_type = source(*recipe.operands.front()).operation.type.resolved();
     const auto outcome = owner.names.fresh(TargetTemporaryNameKind::Outcome);
     const auto storage = LoweringDeferredStorage {
         .name = outcome,
@@ -43,12 +43,12 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 .maybe_unused = false,
                 .name = outcome,
                 .type = storage.value_type,
-                .initializer = raw(recipe)
+                .initializer = (co_await raw(recipe))
             }
         ));
     } else {
         owner.declare_deferred(storage, false, declarations);
-        owner.initialize_deferred(storage, raw(recipe), statements);
+        owner.initialize_deferred(storage, (co_await raw(recipe)), statements);
     }
     auto access = name_expression(outcome);
     if (!direct) {
@@ -68,7 +68,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 {}
             )
         );
-        return;
+        co_return {};
     }
     if (owner.context.semantic().may_stop_test(callee_type)) {
         auto stopped_access = name_expression(outcome);
@@ -102,11 +102,12 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 .name = name,
                 .type = owner.context.pointer_type(owner.context.intrinsic_type(
                     TargetSymbol::Auto,
-                    use == ConstructionUse::ReadBorrow
-                        || use == ConstructionUse::ConstPlace
-                        || use == ConstructionUse::AddressValue
-                        || use == ConstructionUse::OperandValue
-                        || (use == ConstructionUse::Consume && scalar(source(recipe).type))
+                    use == PreparedUse::ReadBorrow
+                        || use == PreparedUse::ConstPlace
+                        || use == PreparedUse::AddressValue
+                        || use == PreparedUse::OperandValue
+                        || (use == PreparedUse::Consume
+                            && scalar(source(recipe).operation.type.resolved()))
                 )),
                 .initializer = std::move(success)
             }
@@ -130,4 +131,5 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     statements.emit(generated_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
+    co_return {};
 }

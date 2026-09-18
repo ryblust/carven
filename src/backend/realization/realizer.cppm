@@ -1,6 +1,6 @@
 module carven:backend.realization.realizer;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.lowering.body;
 import :backend.lowering.constant;
@@ -17,7 +17,7 @@ class BodyRealizer final {
 public:
     BodyRealizer(
         ModuleLowering& context,
-        const BodyConstruction& construction,
+        const BodyPreparation& preparation,
         BodyLoweringInputs inputs
     ) noexcept;
     auto finish() noexcept -> LoweredBody;
@@ -37,19 +37,18 @@ private:
         LoweringExitTarget target;
     };
 
-
     enum class ResultDemand { Value, DirectReturn, Discard, PropagateOutcome };
     auto expression(
-        ConstructionExpressionID source,
+        const SemanticExpression& source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,
         ResultDemand demand = ResultDemand::Value
     ) noexcept -> Lowered<LoweringResult>;
-    auto condition(ConstructionExpressionID source) noexcept -> Lowered<LoweringPredicate>;
+    auto condition(const SemanticExpression& source) noexcept -> Lowered<LoweringPredicate>;
     auto operand(
-        ConstructionOperand source,
+        PreparedOperand source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact
     ) noexcept -> Lowered<TargetExpr>;
-    auto discard(ConstructionExpressionID source) noexcept -> Lowered<LoweringCompleted>;
+    auto discard(const SemanticExpression& source) noexcept -> Lowered<LoweringCompleted>;
     auto read_value(Lowered<LoweringResult> value, LoweringStmtBuilder& destination) noexcept
         -> std::optional<TargetExpr>;
     auto deliver_result(
@@ -63,79 +62,66 @@ private:
         LoweringStmtBuilder& destination,
         std::optional<TargetTypeID> factory_result = std::nullopt
     ) noexcept -> void;
-    auto initialize_binding(
-        const ConstructionInitialize& source,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    auto initialize_binding(const SemInitialize& source, LoweringStmtBuilder& destination) noexcept
+        -> void;
     auto pattern_bound(
-        std::span<const ConstructionPatternBounds> pattern_bounds,
+        std::span<const SemPatternBounds> pattern_bounds,
         PatternID pattern,
         bool upper,
         LoweringStmtBuilder& destination
     ) noexcept -> std::optional<TargetExpr>;
-    auto assign(const ConstructionAssign& source, LoweringStmtBuilder& destination) noexcept
-        -> void;
-    auto statement(const ConstructionStatement& source, ConstructionRegionID owner) noexcept
-        -> Lowered<LoweringCompleted>;
-    auto region(ConstructionRegionID source, const LoweringResultDestination& result) noexcept
+    auto assign(const SemAssign& source, LoweringStmtBuilder& destination) noexcept -> void;
+    auto statement(const SemanticStatement& source) noexcept -> Lowered<LoweringCompleted>;
+    auto region(const SemanticRegion& source, const LoweringResultDestination& result) noexcept
         -> LoweringStmtBuilder;
     auto result_expression(
-        ConstructionExpressionID source,
+        const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto structured_delivery(
-        ConstructionExpressionID source,
+        const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto structured_expression(
-        ConstructionExpressionID source,
+        const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto guarded_region(
-        ConstructionRegionID source,
-        const std::optional<ConstructionExpressionID>& guard,
+        const SemanticRegion& source,
+        const std::optional<SemanticExpression>& guard,
         const LoweringResultDestination& result,
         RegionExit& done
     ) noexcept -> LoweringStmtBuilder;
     auto lower_arm(
         const PatternState& pattern,
         std::span<const LocalBindingID> bindings,
-        ConstructionRegionID source,
-        const std::optional<ConstructionExpressionID>& guard,
+        const SemanticRegion& source,
+        const std::optional<SemanticExpression>& guard,
         const LoweringResultDestination& result,
         RegionExit& done
     ) noexcept -> LoweringStmtBuilder;
     auto lower_if(
-        const ConstructionConditional& value,
+        const SemIf& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto lower_match(
-        const ConstructionMatch& value,
+        const SemMatch& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto lower_try(
-        ConstructionExpressionID identity,
-        const ConstructionTry& value,
+        const SemTry& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
-    auto lower_loop(
-        ConstructionRegionID identity,
-        const ConstructionLoop& value,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
-    auto lower_range(
-        ConstructionRegionID identity,
-        const ConstructionRangeLoop& value,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    auto lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept -> void;
+    auto lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept -> void;
     auto lower_report(
-        const ConstructionTestReport& value,
+        const SemTestReport& value,
         ProgramOriginID origin,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
@@ -147,7 +133,7 @@ private:
     ) noexcept -> void;
     auto emit_failure(
         TargetExpr value,
-        const ConstructionFailureExit& exit,
+        const std::optional<FailureDestination>& exit,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
 
@@ -164,12 +150,12 @@ private:
     auto dispatch_failure(
         const FailureSource& source,
         FailureSetID failures,
-        const ConstructionFailureExit& exit
+        const std::optional<FailureDestination>& exit
     ) noexcept -> LoweringStmtBuilder;
     auto transfer_failure(
         const TargetIdentifier& storage,
         FailureSetID failures,
-        const ConstructionFailureExit& exit,
+        const std::optional<FailureDestination>& exit,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
     auto binding_expression(LocalBindingID id) noexcept -> TargetExpr;
@@ -191,18 +177,37 @@ private:
         LoweringStmtBuilder& destination
     ) noexcept -> void;
 
+    struct TestObservation final {
+        const SemanticExpression* expression;
+        TargetIdentifier writer;
+        std::array<ProgramSpellingID, 2> sources;
+    };
+
+    std::optional<TestObservation> test_observation;
     ExpressionBuilder* active_frame = nullptr;
     ModuleLowering& context;
-    const BodyConstruction& construction;
+    const BodyPreparation& preparation;
     const SemIRBody& metadata;
     BodyLoweringInputs inputs;
     TargetNameAllocator names;
-    std::vector<LocalBindingID> parameter_bindings;
-    std::vector<LocalBindingID> capture_bindings;
     std::flat_map<LocalBindingID, TargetIdentifier> binding_names;
     std::flat_set<std::string> mutable_owners;
     std::flat_map<LocalBindingID, LoweringDeferredStorage> delayed_bindings;
-    std::map<ConstructionExpressionID, FailureDestination> handlers;
+    std::optional<FailureDestination> current_failure;
+
+    struct CaughtFailure final {
+        TargetIdentifier storage;
+        FailureSetID failures;
+    };
+
+    std::optional<CaughtFailure> caught;
+
+    struct FallibleCall final {
+        FailureSetID failures;
+        std::optional<FailureDestination> destination;
+    };
+
+    auto fallible(const SemanticExpression& source) const noexcept -> std::optional<FallibleCall>;
 
     struct LoopContinuation final {
         std::optional<TargetIdentifier> step;
@@ -210,7 +215,7 @@ private:
         LoweringExitTarget break_target;
     };
 
-    std::map<ConstructionRegionID, LoopContinuation> loops;
+    std::optional<LoopContinuation> current_loop;
     std::size_t next_exit = 1;
 
     auto exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget;

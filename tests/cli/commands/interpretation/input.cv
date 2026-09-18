@@ -23,7 +23,7 @@ for value in values {
     total += value;
 }
 
-var message = String::from_str("result");
+var message: String = "result";
 message.append_format(f" {prepared}");
 
 println(message, total, fib(6));

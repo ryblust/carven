@@ -5,14 +5,15 @@ import :semantic.analysis.ownership.context;
 import std;
 
 auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state) noexcept
-    -> OwnershipFlow {
+    -> ContinuationTask<OwnershipFlow> {
     auto remaining = std::optional(OwnershipNormal {std::move(state), {}, {}});
     auto result = OwnershipFlow {};
     for (const auto& branch : value.branches) {
         if (!remaining.has_value()) {
             break;
         }
-        auto condition = complete_expression(branch.condition, std::move(remaining->state));
+        auto condition =
+            (co_await complete_expression(branch.condition, std::move(remaining->state)));
         remaining = std::move(condition.normal);
         append_ownership_exits(result, condition);
         if (!remaining.has_value()) {
@@ -20,7 +21,7 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
         }
         const auto known = constant_truth(branch.condition);
         if (known != false) {
-            auto selected = region(branch.body, remaining->state);
+            auto selected = (co_await region(branch.body, remaining->state));
             join_normal_ownership(result.normal, selected.normal);
 
             append_ownership_exits(result, selected);
@@ -31,7 +32,7 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
     }
     if (remaining.has_value()) {
         if (value.otherwise.has_value()) {
-            auto selected = region(**value.otherwise, std::move(remaining->state));
+            auto selected = (co_await region(**value.otherwise, std::move(remaining->state)));
             join_normal_ownership(result.normal, selected.normal);
 
             append_ownership_exits(result, selected);
@@ -39,7 +40,7 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
             join_normal_ownership(result.normal, remaining);
         }
     }
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::bind_pattern(
@@ -84,21 +85,22 @@ auto OwnershipBodyAnalyzer::pattern_condition(
     PatternID id,
     std::span<const SemPatternBounds> bounds,
     OwnershipState state
-) noexcept -> OwnershipCondition {
+) noexcept -> ContinuationTask<OwnershipCondition> {
     auto result = OwnershipCondition {
         .yes = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
         .no = {},
         .exits = {}
     };
     const auto& pattern = body.pattern(id).value;
-    const auto sequence = [&](PatternID child) noexcept {
+    const auto sequence = [&](PatternID child) noexcept -> ContinuationTask<std::monostate> {
         if (!result.yes) {
-            return;
+            co_return {};
         }
-        auto next = pattern_condition(child, bounds, std::move(result.yes->state));
+        auto next = (co_await pattern_condition(child, bounds, std::move(result.yes->state)));
         result.yes = std::move(next.yes);
         join_normal_ownership(result.no, next.no);
         result.exits.append_range(std::views::as_rvalue(next.exits));
+        co_return {};
     };
     if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
         result.no = std::move(result.yes);
@@ -107,7 +109,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
             if (!result.no) {
                 break;
             }
-            auto next = pattern_condition(child, bounds, std::move(result.no->state));
+            auto next = (co_await pattern_condition(child, bounds, std::move(result.no->state)));
             join_normal_ownership(result.yes, next.yes);
             result.no = std::move(next.no);
             result.exits.append_range(std::views::as_rvalue(next.exits));
@@ -118,7 +120,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
             result.no = result.yes;
         }
         for (const auto child : enumeration->payload) {
-            sequence(child);
+            (co_await sequence(child));
         }
     } else {
         const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
@@ -127,7 +129,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
                 if (!*bound || !result.yes) {
                     continue;
                 }
-                auto next = complete_expression(**bound, std::move(result.yes->state));
+                auto next = (co_await complete_expression(**bound, std::move(result.yes->state)));
                 result.yes = std::move(next.normal);
                 result.exits.append_range(std::views::as_rvalue(next.exits));
             }
@@ -137,13 +139,13 @@ auto OwnershipBodyAnalyzer::pattern_condition(
     if (irrefutable(id)) {
         result.no.reset();
     }
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) noexcept
-    -> OwnershipFlow {
-    auto subject = value.subject_is_place ? place(*value.subject, std::move(state))
-                                          : expression(*value.subject, std::move(state));
+    -> ContinuationTask<OwnershipFlow> {
+    auto subject = value.subject_is_place ? (co_await place(*value.subject, std::move(state)))
+                                          : (co_await expression(*value.subject, std::move(state)));
     auto result = OwnershipFlow {};
     append_ownership_exits(result, subject);
     const auto subject_value = subject.normal ? subject.normal->value : OwnershipRelationships {};
@@ -161,8 +163,11 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         if (subject_place) {
             accesses.push_back({*subject_place, true});
         }
-        auto checked =
-            pattern_condition(arm.pattern, arm.pattern_bounds, std::move(selected.state));
+        auto checked = (co_await pattern_condition(
+            arm.pattern,
+            arm.pattern_bounds,
+            std::move(selected.state)
+        ));
         accesses.resize(previous_access);
         auto accepted = std::move(checked.yes);
         remaining = std::move(checked.no);
@@ -172,7 +177,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             if (subject_place.has_value()) {
                 accesses.push_back({*subject_place, true});
             }
-            auto guard = complete_expression(*arm.guard, std::move(accepted->state));
+            auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
             accesses.resize(previous);
             accepted = std::move(guard.normal);
             append_ownership_exits(result, guard);
@@ -184,7 +189,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             }
         }
         if (accepted.has_value()) {
-            auto branch = region(arm.body, std::move(accepted->state));
+            auto branch = (co_await region(arm.body, std::move(accepted->state)));
             join_normal_ownership(result.normal, branch.normal);
 
             append_ownership_exits(result, branch);
@@ -196,12 +201,12 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         }
     }
     restore_storage_readers(previous_readers);
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) noexcept
-    -> OwnershipFlow {
-    auto protected_flow = region(*value.body, std::move(state));
+    -> ContinuationTask<OwnershipFlow> {
+    auto protected_flow = (co_await region(*value.body, std::move(state)));
     auto result = OwnershipFlow {
         .normal = std::move(protected_flow.normal),
 
@@ -252,8 +257,11 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                     remaining.reset();
                     break;
                 }
-                auto checked =
-                    pattern_condition(*pattern, arm.pattern_bounds, std::move(remaining->state));
+                auto checked = (co_await pattern_condition(
+                    *pattern,
+                    arm.pattern_bounds,
+                    std::move(remaining->state)
+                ));
                 join_normal_ownership(accepted, checked.yes);
                 remaining = std::move(checked.no);
                 result.exits.append_range(std::views::as_rvalue(checked.exits));
@@ -262,7 +270,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 remaining.reset();
             }
             if (accepted && arm.guard.has_value()) {
-                auto guard = complete_expression(*arm.guard, std::move(accepted->state));
+                auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
                 accepted = std::move(guard.normal);
                 append_ownership_exits(result, guard);
                 if (constant_truth(*arm.guard) != true) {
@@ -273,7 +281,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 }
             }
             if (accepted.has_value()) {
-                auto handled = region(arm.body, std::move(accepted->state));
+                auto handled = (co_await region(arm.body, std::move(accepted->state)));
                 join_normal_ownership(result.normal, handled.normal);
 
                 append_ownership_exits(result, handled);
@@ -297,27 +305,27 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             result.exits.push_back(std::move(exit));
         }
     }
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noexcept
-    -> OwnershipFlow {
-    auto result = region(*value.initializer, std::move(state), false);
+    -> ContinuationTask<OwnershipFlow> {
+    auto result = (co_await region(*value.initializer, std::move(state), false));
     if (!result.normal.has_value()) {
-        return result;
+        co_return result;
     }
     const auto entry = result.normal->state;
     auto header = entry;
-    const auto iterate = [&](OwnershipState input) noexcept -> OwnershipFlow {
+    const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         auto pass =
             OwnershipFlow {.normal = OwnershipNormal {std::move(input), {}, {}}, .exits = {}};
         if (value.condition.has_value()) {
-            pass = complete_expression(*value.condition, std::move(pass.normal->state));
+            pass = (co_await complete_expression(*value.condition, std::move(pass.normal->state)));
         }
         auto iteration = OwnershipFlow {};
         append_ownership_exits(iteration, pass);
         if (!pass.normal.has_value()) {
-            return iteration;
+            co_return iteration;
         }
         const auto known =
             value.condition.has_value() ? constant_truth(*value.condition) : std::optional(true);
@@ -325,9 +333,9 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
             iteration.exits.push_back({OwnershipBreak {}, pass.normal->state});
         }
         if (known == false) {
-            return iteration;
+            co_return iteration;
         }
-        auto child = region(*value.body, std::move(pass.normal->state));
+        auto child = (co_await region(*value.body, std::move(pass.normal->state)));
         auto steps = std::move(child.normal);
         for (auto& exit : child.exits) {
             if (std::holds_alternative<OwnershipContinue>(exit.payload)) {
@@ -337,17 +345,17 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
             }
         }
         if (steps.has_value()) {
-            auto step = region(*value.steps, std::move(steps->state), false);
+            auto step = (co_await region(*value.steps, std::move(steps->state), false));
             iteration.normal = std::move(step.normal);
             append_ownership_exits(iteration, step);
         }
-        return iteration;
+        co_return iteration;
     };
     const auto previous = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
     for (;;) {
-        pass = iterate(header);
+        pass = (co_await iterate(header));
         auto next = entry;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
@@ -359,7 +367,7 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     }
     diagnosing = previous;
     if (diagnosing) {
-        pass = iterate(std::move(header));
+        pass = (co_await iterate(std::move(header)));
     }
     result.normal.reset();
     for (auto& exit : pass.exits) {
@@ -373,20 +381,20 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         }
     }
     leave(result, value.initializer->lifetime);
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState state) noexcept
-    -> OwnershipFlow {
+    -> ContinuationTask<OwnershipFlow> {
     const auto& iterable = value.source;
     const auto range_value = std::holds_alternative<RangeTypeValue>(
         program.types().type(iterable.type.resolved()).value
     );
     const auto source = range_value ? std::nullopt : location(iterable);
-    auto result =
-        source ? place(iterable, std::move(state)) : expression(iterable, std::move(state));
+    auto result = source ? (co_await place(iterable, std::move(state)))
+                         : (co_await expression(iterable, std::move(state)));
     if (!result.normal.has_value()) {
-        return result;
+        co_return result;
     }
     const auto previous = accesses.size();
     const auto previous_readers = storage_readers.size();
@@ -424,7 +432,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     auto header = entry;
     const auto initial_elements =
         project_relationships(result.normal->value, OwnershipProjectionPath {std::nullopt});
-    const auto iterate = [&](OwnershipState input) noexcept -> OwnershipFlow {
+    const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         if (value.binding.has_value() && value.access != AccessMode::Write && !borrowed) {
             const auto relationships = elements.has_value()
                 ? project_relationships(
@@ -439,13 +447,13 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                 body.binding(*value.binding).origin
             );
         }
-        return region(*value.body, std::move(input));
+        co_return (co_await region(*value.body, std::move(input)));
     };
     const auto previous_diagnosing = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
     for (;;) {
-        pass = iterate(header);
+        pass = (co_await iterate(header));
         auto next = entry;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
@@ -462,7 +470,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     }
     diagnosing = previous_diagnosing;
     if (diagnosing) {
-        pass = iterate(header);
+        pass = (co_await iterate(header));
     }
     result.normal = OwnershipNormal {std::move(header), {}, {}};
     for (auto& exit : pass.exits) {
@@ -482,5 +490,5 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     accesses.resize(previous);
     restore_storage_readers(previous_readers);
     leave(result, value.lifetime);
-    return result;
+    co_return result;
 }

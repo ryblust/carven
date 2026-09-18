@@ -25,6 +25,72 @@ fn fixed_success() -> FixedOwner throw Failure => FixedOwner { 41 };
 
 fn fixed_plain() -> FixedOwner => FixedOwner { 42 };
 
+private fn known_extent_observer(extent: usize, marker: i32) -> usize {
+    mark(marker);
+    return extent;
+}
+
+test "Lifetimes: known scalar queries retain temporary owners through later operands" {
+    reset();
+    let length = known_extent_observer(
+        [
+            FixedOwner { 71 }
+        ].as_slice().len(),
+        event(2)
+    );
+    check(length == 1usize);
+    check(matches("71 2 2 -71 "));
+    reset();
+    let selected = known_extent_observer(
+        (
+            if event(3) > 0 {
+                [
+                    FixedOwner { 72 }
+                ]
+            } else {
+                [
+                    FixedOwner { 73 }
+                ]
+            }
+        ).as_slice().len(),
+        event(4)
+    );
+    check(selected == 1usize);
+    check(matches("3 72 4 4 -72 "));
+    reset();
+    let combined = known_extent_observer(
+        (
+            (
+                [
+                    FixedOwner { 74 }
+                ].as_slice().len()
+                    == 1usize
+            )
+                && false
+        )
+            as usize,
+        event(5)
+    );
+    check(combined == 0usize);
+    check(matches("74 5 5 -74 "));
+    reset();
+    [
+        FixedOwner { 75 }
+    ].as_slice().len();
+    event(6);
+    check(matches("75 -75 6 "));
+    reset();
+    check(
+        [
+            FixedOwner { 76 }
+        ].as_slice().len()
+            == 1usize
+            && event(7) > 0
+    );
+    check(matches("76 7 -76 "));
+
+}
+
 struct FixedBox {
     value: FixedOwner,
 }
@@ -109,6 +175,17 @@ test "Lifetimes: condition evaluation ends before branch execution" {
     reset();
     if (Owner { 3 }.probe() as bool) || true { mark(9); }
     check(matches("3 13 -3 9 "));
+}
+
+test "Lifetimes: loop conditions release owners before each iteration" {
+    reset();
+    var remaining = 2;
+    while (Owner { 4 }.probe() as bool) && remaining > 0 {
+        mark(9);
+        remaining -= 1;
+        continue;
+    }
+    check(matches("4 14 -4 9 4 14 -4 9 4 14 -4 "));
 }
 
 test "Lifetimes: return and failure leave their owning lexical region" {
@@ -827,9 +904,9 @@ test "Lifetimes: named return operands copy native and aggregate values" {
     ::lifetime_probe::reset_native_take();
     let record = ReturnedOwner {
         native: ::lifetime_probe::NativeTakeOwner {},
-        text: String::from_str("owned"),
+        text: "owned",
     };
     let returned = copy_taken_record(&&record);
     check(::lifetime_probe::native_take_copy_count() == 1);
-    check(returned.text.as_str() == "owned");
+    check(returned.text == "owned");
 }

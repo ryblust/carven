@@ -25,6 +25,20 @@ fn next_value(&value: i32) -> i32 {
     return value;
 }
 
+private fn known_effect_arguments(before: i32, flag: bool, after: i32) -> i32 {
+    return before * 100 + (flag as i32) * 10 + after;
+}
+
+test "Evaluation: known argument results preserve earlier snapshots and later reads" {
+    var trace = 3;
+    let result = known_effect_arguments(trace, record(&trace, 4) > 0 && false, trace);
+    check(result == 334);
+    check(trace == 34);
+    let truth = record(&trace, 5) > 0 || true;
+    check(truth);
+    check(trace == 345);
+}
+
 fn eight_values(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
     return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 + g * 1000000 + h * 10000000;
 }

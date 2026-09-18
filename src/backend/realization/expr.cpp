@@ -1,6 +1,6 @@
 module carven:backend.realization.expr.impl;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
@@ -8,6 +8,7 @@ import :backend.realization.expr;
 import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.realization.realizer;
+import :backend.realization.report;
 import :backend.target.builder;
 import :backend.target.expr;
 import :backend.target.stmt;
@@ -28,10 +29,10 @@ import std;
 
 BodyRealizer::ExpressionBuilder::ExpressionBuilder(
     BodyRealizer& owner,
-    ConstructionExpressionID source
+    const SemanticExpression& source
 ) noexcept
     : owner(owner),
-      cleanup(owner.construction.expression(source).lifetime),
+      cleanup(owner.preparation.operation(source).operation.lifetime),
       previous_frame(std::exchange(owner.active_frame, this)) {
     static_cast<void>(owner.metadata.lifetime_regions().region(cleanup));
 }
@@ -40,15 +41,16 @@ BodyRealizer::ExpressionBuilder::~ExpressionBuilder() noexcept {
     owner.active_frame = previous_frame;
 }
 
-auto BodyRealizer::ExpressionBuilder::owns(ConstructionExpressionID source) const noexcept -> bool {
-    return owner.construction.expression(source).lifetime == cleanup;
+auto BodyRealizer::ExpressionBuilder::owns(const SemanticExpression& source) const noexcept
+    -> bool {
+    return owner.preparation.operation(source).operation.lifetime == cleanup;
 }
 
 auto BodyRealizer::ExpressionBuilder::evaluate(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     ConstantLiteralContext literal,
     ResultDemand demand,
-    ConstructionUse use
+    PreparedUse use
 ) noexcept -> Lowered<LoweringResult> {
     auto outer = std::move(statements);
     statements = LoweringStmtBuilder();
@@ -58,7 +60,7 @@ auto BodyRealizer::ExpressionBuilder::evaluate(
 }
 
 auto BodyRealizer::ExpressionBuilder::deliver_structured(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination,
     bool shared
@@ -71,20 +73,21 @@ auto BodyRealizer::ExpressionBuilder::deliver_structured(
 }
 
 auto BodyRealizer::ExpressionBuilder::finish(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     ConstantLiteralContext literal,
     ResultDemand demand,
-    ConstructionUse final_use,
+    PreparedUse final_use,
     bool shared
 ) noexcept -> Lowered<LoweringResult> {
-    auto recipe = build(
-        source,
-        nullptr,
-        demand != ResultDemand::Discard,
-        final_use,
-        !shared,
-        demand == ResultDemand::PropagateOutcome
-    );
+    auto& recipe = *(build(
+                         source,
+                         nullptr,
+                         demand != ResultDemand::Discard,
+                         final_use,
+                         !shared,
+                         demand == ResultDemand::PropagateOutcome
+    )
+                         .run());
     if (!statements.continues()) {
         return take_statements(shared).complete<LoweringResult>(std::nullopt);
     }
@@ -92,7 +95,7 @@ auto BodyRealizer::ExpressionBuilder::finish(
         return take_statements(shared).complete<LoweringResult>(LoweringCompleted {});
     }
     if (demand == ResultDemand::Discard) {
-        discard_pending(recipe);
+        discard_pending(recipe).run();
         return take_statements(shared).complete<LoweringResult>(LoweringCompleted {});
     }
     if (demand == ResultDemand::PropagateOutcome) {
@@ -101,45 +104,62 @@ auto BodyRealizer::ExpressionBuilder::finish(
         );
     }
     if (demand == ResultDemand::DirectReturn) {
-        const auto* operation =
-            std::get_if<ConstructionOperation>(&owner.construction.expression(source).value);
-        const auto* preparation = operation != nullptr
-            ? std::get_if<PreparedFormat>(operation->preparation.get())
-            : nullptr;
+        const auto* preparation =
+            std::get_if<PreparedFormat>(owner.preparation.operation(source).preparation.get());
         const auto* writer =
             preparation != nullptr ? std::get_if<PreparedWriterFormat>(preparation) : nullptr;
         if (writer != nullptr) {
             const auto& format =
-                std::get<SemFormat>(owner.construction.expression(source).operation.value);
+                std::get<SemFormat>(owner.preparation.operation(source).operation.value);
             complete_writer(
                 recipe,
                 format,
                 *writer,
                 owner.names.fresh(TargetTemporaryNameKind::Owner)
-            );
+            )
+                .run();
         }
     }
     // A residual expression may be consumed after an intervening C++ statement.
     // Its borrowed backing belongs to this source frame, not that statement.
-    preserve_borrows(recipe);
-    auto result = emit(recipe, final_use, literal);
+    preserve_borrows(recipe).run();
+    auto result = emit(recipe, final_use, literal).run();
     return take_statements(shared).complete<LoweringResult>(
         LoweringDirectExpression {std::move(result)}
     );
 }
 
 auto BodyRealizer::ExpressionBuilder::initialize(
-    const ConstructionInitialize& initialization,
+    const SemInitialize& initialization,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    auto recipe = build(initialization.initializer, nullptr, true, ConstructionUse::Consume, true);
+    auto& recipe =
+        *(build(initialization.initializer, nullptr, true, PreparedUse::Consume, true).run());
     if (!statements.continues()) {
         destination.scope(take_statements());
         return;
     }
-    auto value = emit(recipe, ConstructionUse::Consume, ConstantLiteralContext::TargetTyped);
-    if (statements.empty()) {
+    auto value = emit(recipe, PreparedUse::Consume, ConstantLiteralContext::TargetTyped).run();
+    if (statements.empty() && declarations.empty()) {
         owner.declare_binding(initialization.binding, std::move(value), destination);
+        return;
+    }
+    const auto& source = initialization.initializer;
+    if (!source.exits_test
+        && owner.context.semantic()
+               .failure_sets()
+               .failure_set(source.failures.resolved())
+               .members.empty()) {
+        const auto yield = owner.exit_target(LoweringExitKind::Value);
+        owner.emit_return(std::move(value), statements, LoweringYieldResult {.target = yield});
+        owner.declare_binding(
+            initialization.binding,
+            take_statements().result_region(
+                owner.context.lower_type(owner.metadata.binding(initialization.binding).type),
+                yield
+            ),
+            destination
+        );
         return;
     }
     // Final storage belongs to the binding's lexical region. Pending source
@@ -155,20 +175,20 @@ auto BodyRealizer::ExpressionBuilder::initialize(
 }
 
 auto BodyRealizer::ExpressionBuilder::assign(
-    const ConstructionAssign& assignment,
+    const SemAssign& assignment,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    auto target = build(assignment.target, nullptr, true, ConstructionUse::WritePlace);
+    auto& target = *(build(assignment.target, nullptr, true, PreparedUse::WritePlace).run());
     if (!statements.continues()) {
         destination.scope(take_statements());
         return;
     }
     if (!std::holds_alternative<SemBinding>(source(target).operation.value)
         && (source(target).requires_execution
-            || owner.construction.expression(assignment.value).requires_execution)) {
+            || owner.preparation.operation(assignment.value).requires_execution)) {
         // Even an otherwise pure dereference selects a place before the RHS
         // may rebind its pointer slot. Do not use the value-read anchor gate.
-        preserve_borrows(target);
+        preserve_borrows(target).run();
         const auto name = owner.names.fresh(TargetTemporaryNameKind::Owner);
         statements.emit(generated_statement(
             TargetVariableStmt {
@@ -176,25 +196,26 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 .maybe_unused = false,
                 .name = name,
                 .type = owner.context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = emit(target, ConstructionUse::WritePlace)
+                .initializer = emit(target, PreparedUse::WritePlace).run()
             }
         ));
         complete(target, Saved {.name = name, .kind = SavedKind::Place});
     }
-    const auto target_type = source(target).type;
-    const auto external = std::holds_alternative<CppTypeValue>(
-                              owner.context.semantic().types().type(target_type).value
-                          )
+    const auto target_type = source(target).operation.type.resolved();
+    const auto external =
+        std::holds_alternative<CppTypeValue>(
+            owner.context.semantic().types().type(target_type).value
+        )
         || std::holds_alternative<CppTypeValue>(
-                              owner.context.semantic()
-                                  .types()
-                                  .type(owner.construction.expression(assignment.value).type)
-                                  .value
+            owner.context.semantic()
+                .types()
+                .type(owner.preparation.operation(assignment.value).operation.type.resolved())
+                .value
         );
     auto previous = std::optional<TargetIdentifier>();
     if (assignment.compound
         && !external
-        && owner.construction.expression(assignment.value).requires_execution) {
+        && owner.preparation.operation(assignment.value).requires_execution) {
         const auto name = owner.names.fresh(TargetTemporaryNameKind::Operand);
         statements.emit(generated_statement(
             TargetVariableStmt {
@@ -202,19 +223,19 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 .maybe_unused = false,
                 .name = name,
                 .type = owner.context.lower_type(target_type),
-                .initializer = raw(target)
+                .initializer = raw(target).run()
             }
         ));
         previous = name;
     }
-    auto right = build(assignment.value, nullptr, true, ConstructionUse::Consume, true);
+    auto& right = *(build(assignment.value, nullptr, true, PreparedUse::Consume, true).run());
     if (statements.continues()) {
-        auto value = emit(right, ConstructionUse::Consume, ConstantLiteralContext::Exact);
+        auto value = emit(right, PreparedUse::Consume, ConstantLiteralContext::Exact).run();
         auto operation = TargetAssignmentOperator::Assign;
         if (assignment.compound && !external) {
             value = realize_binary(
                 owner.context,
-                previous ? name_expression(*previous) : raw(target),
+                previous ? name_expression(*previous) : raw(target).run(),
                 *assignment.compound,
                 std::move(value),
                 target_type
@@ -252,7 +273,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
         }
         statements.emit(generated_statement(
             TargetAssignmentStmt {
-                .target = emit(target, ConstructionUse::WritePlace),
+                .target = emit(target, PreparedUse::WritePlace).run(),
                 .op = operation,
                 .value = std::move(value)
             }
@@ -266,8 +287,8 @@ auto BodyRealizer::ExpressionBuilder::saved(const Recipe& recipe) const noexcept
 }
 
 auto BodyRealizer::ExpressionBuilder::source(const Recipe& recipe) const noexcept
-    -> const ConstructionExpression& {
-    return owner.construction.expression(recipe.expression_id);
+    -> const PreparedOperation& {
+    return owner.preparation.operation(*recipe.expression);
 }
 
 auto BodyRealizer::ExpressionBuilder::scalar(TypeID id) const noexcept -> bool {
@@ -277,9 +298,8 @@ auto BodyRealizer::ExpressionBuilder::scalar(TypeID id) const noexcept -> bool {
         || std::holds_alternative<PointerTypeValue>(type);
 }
 
-auto BodyRealizer::ExpressionBuilder::names_storage(
-    const ConstructionExpression& value
-) const noexcept -> bool {
+auto BodyRealizer::ExpressionBuilder::names_storage(const PreparedOperation& value) const noexcept
+    -> bool {
     return value.operation.selects_storage();
 }
 
@@ -289,58 +309,97 @@ auto BodyRealizer::ExpressionBuilder::pending(const Recipe& recipe) const noexce
 }
 
 auto BodyRealizer::ExpressionBuilder::build(
-    ConstructionExpressionID id,
+    const SemanticExpression& expression,
     PendingOperation* pending,
     bool result_needed,
-    ConstructionUse result_use,
+    PreparedUse result_use,
     bool full_expression_root,
     bool propagate_outcome
-) noexcept -> Recipe {
-    const auto& value = owner.construction.expression(id);
-    auto recipe =
-        Recipe {.expression_id = id, .inputs = {}, .operands = {}, .completion = std::monostate {}};
-    if (value.constant && !value.requires_execution && scalar(value.type)) {
-        return recipe;
+) noexcept -> ContinuationTask<Recipe*> {
+    const auto& value = owner.preparation.operation(expression);
+    if (!result_needed && value.requires_execution && borrowed_owner(value, result_use)) {
+        // Structured producers must still deliver borrowed owners so their
+        // cleanup remains in this frame when only effects are needed.
+        result_needed = true;
+    }
+    auto& recipe = recipes.emplace_back(
+        Recipe {
+            .expression = std::addressof(expression),
+            .inputs = {},
+            .operands = {},
+            .completion = std::monostate {}
+        }
+    );
+    const auto observed =
+        owner.test_observation && owner.test_observation->expression == std::addressof(expression);
+    if (!observed
+        && value.operation.constant
+        && !value.requires_execution
+        && scalar(value.operation.type.resolved())) {
+        co_return std::addressof(recipe);
+    }
+    if (!observed
+        && result_needed
+        && value.operation.constant
+        && !value.executes_operation
+        && !names_storage(value)
+        && scalar(value.operation.type.resolved())) {
+        // A normal-completion fact replaces only the value. Complete the
+        // original effects through the discard path in the same cleanup frame.
+        (co_await flush_pending(pending));
+        auto& effects = *((co_await build(expression, nullptr, false, PreparedUse::OperandValue)));
+        if (statements.continues()) {
+            (co_await discard_pending(effects));
+            complete(recipe, constant_expression(owner.context, *value.operation.constant));
+        } else {
+            complete(recipe, LoweringCompleted {});
+        }
+        co_return std::addressof(recipe);
     }
     if (std::holds_alternative<SemBinding>(value.operation.value)) {
-        return recipe;
+        co_return std::addressof(recipe);
     }
-    if (const auto* report = std::get_if<ConstructionTestReport>(&value.value)) {
-        flush_pending(pending);
-        owner.lower_report(*report, value.origin, statements);
+    if (const auto* report = std::get_if<SemTestReport>(&value.operation.value)) {
+        (co_await flush_pending(pending));
+        owner.lower_report(*report, value.operation.origin, statements);
         complete(recipe, LoweringCompleted {});
-        return recipe;
+        co_return std::addressof(recipe);
     }
-    if (std::holds_alternative<ConstructionConditional>(value.value)
-        || std::holds_alternative<ConstructionMatch>(value.value)
-        || std::holds_alternative<ConstructionTry>(value.value)) {
-        flush_pending(pending);
+    if (std::holds_alternative<SemIf>(value.operation.value)
+        || std::holds_alternative<SemMatch>(value.operation.value)
+        || std::holds_alternative<SemTry>(value.operation.value)) {
+        (co_await flush_pending(pending));
         if (!result_needed) {
-            owner.structured_expression(id, LoweringDiscardResult {}, statements);
+            owner.structured_expression(expression, LoweringDiscardResult {}, statements);
             complete(recipe, LoweringCompleted {});
-            return recipe;
+            co_return std::addressof(recipe);
         }
-        if (!value.exits_test
+        if (!value.operation.exits_test
             && owner.context.semantic()
                    .failure_sets()
-                   .failure_set(value.failures)
+                   .failure_set(value.operation.failures.resolved())
                    .members.empty()) {
             const auto yield = owner.exit_target(LoweringExitKind::Value);
             auto result = LoweringStmtBuilder();
-            owner.structured_expression(id, LoweringYieldResult {.target = yield}, result);
+            owner.structured_expression(expression, LoweringYieldResult {.target = yield}, result);
             complete(
                 recipe,
-                std::move(result).result_region(owner.context.lower_type(value.type), yield)
+                std::move(result)
+                    .result_region(owner.context.lower_type(value.operation.type.resolved()), yield)
             );
-            return recipe;
+            co_return std::addressof(recipe);
         }
         const auto storage = LoweringDeferredStorage {
             .name = owner.names.fresh(TargetTemporaryNameKind::Owner),
-            .value_type = owner.context.lower_type(value.type)
+            .value_type = owner.context.lower_type(value.operation.type.resolved())
         };
         auto previous_declarations = std::move(declarations);
         declarations = LoweringStmtBuilder();
-        owner.structured_expression(id, LoweringInitializeResult {.storage = storage}, statements);
+        owner.structured_expression(
+            expression,
+            LoweringInitializeResult {.storage = storage},
+            statements
+        );
         if (statements.continues()) {
             // Keep final storage before its nested producers, but do not
             // allocate it when every branch exits without delivery.
@@ -351,57 +410,84 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         previous_declarations.append(std::move(declarations));
         declarations = std::move(previous_declarations);
-        return recipe;
+        co_return std::addressof(recipe);
     }
-    if (const auto* logic = std::get_if<ConstructionShortCircuit>(&value.value)) {
-        if (!result_needed && !owner.construction.expression(logic->selected).requires_execution) {
-            return build(logic->condition, pending, false, ConstructionUse::OperandValue);
+    if (const auto* logic = std::get_if<SemShortCircuit>(&value.operation.value)) {
+        if (!result_needed && !owner.preparation.operation(*logic->right).requires_execution) {
+            co_return (co_await build(*logic->left, pending, false, PreparedUse::OperandValue));
         }
-        const auto constant = owner.construction.expression(logic->condition).constant;
+        const auto observe = [&](bool left, std::optional<TargetExpr> right) noexcept {
+            return realize_observed_short_circuit(
+                owner.context,
+                owner.test_observation->writer,
+                owner.test_observation->sources,
+                left,
+                std::move(right)
+            );
+        };
+        const auto constant = owner.preparation.operation(*logic->left).operation.constant;
         const auto* known = constant
             ? std::get_if<BooleanConstant>(
                   &owner.context.semantic().constants().constant(*constant).value
               )
             : nullptr;
-        auto condition =
-            build(logic->condition, pending, known == nullptr, ConstructionUse::OperandValue);
+        auto& condition =
+            *((co_await build(*logic->left, pending, known == nullptr, PreparedUse::OperandValue)));
         if (!statements.continues()) {
-            return recipe;
+            co_return std::addressof(recipe);
         }
-        flush_pending(pending);
+        (co_await flush_pending(pending));
         if (known != nullptr) {
-            discard_pending(condition);
+            (co_await discard_pending(condition));
             if (known->value == (logic->operation == ShortCircuitOperator::And)) {
-                return build(
-                    logic->selected,
-                    nullptr,
-                    result_needed,
-                    ConstructionUse::OperandValue
-                );
+                auto& selected = *((
+                    co_await build(*logic->right, nullptr, result_needed, PreparedUse::OperandValue)
+                ));
+                if (observed && statements.continues()) {
+                    (co_await preserve_borrows(selected));
+                    complete(
+                        recipe,
+                        observe(known->value, (co_await emit(selected, PreparedUse::OperandValue)))
+                    );
+                    co_return std::addressof(recipe);
+                }
+                co_return std::addressof(selected);
             }
             if (result_needed) {
-                complete(recipe, bool_expression(known->value));
+                complete(
+                    recipe,
+                    observed && !known->value ? observe(false, std::nullopt)
+                                              : bool_expression(known->value)
+                );
             } else {
                 complete(recipe, LoweringCompleted {});
             }
-            return recipe;
+            co_return std::addressof(recipe);
         }
-        preserve_borrows(condition);
-        auto test = emit(condition, ConstructionUse::OperandValue);
+        (co_await preserve_borrows(condition));
+        auto test = (co_await emit(condition, PreparedUse::OperandValue));
         auto previous = std::move(statements);
         statements = LoweringStmtBuilder();
-        auto selected =
-            build(logic->selected, nullptr, result_needed, ConstructionUse::OperandValue);
+        auto& selected =
+            *((co_await build(*logic->right, nullptr, result_needed, PreparedUse::OperandValue)));
         auto selected_value = std::optional<TargetExpr>();
         if (statements.continues()) {
-            preserve_borrows(selected);
+            (co_await preserve_borrows(selected));
             if (result_needed) {
-                selected_value = emit(selected, ConstructionUse::OperandValue);
+                selected_value = (co_await emit(selected, PreparedUse::OperandValue));
+                if (observed) {
+                    selected_value = observe(
+                        logic->operation == ShortCircuitOperator::And,
+                        std::move(selected_value)
+                    );
+                }
             } else {
-                discard_pending(selected);
+                (co_await discard_pending(selected));
             }
         }
-        if (selected_value && statements.empty()) {
+        if (selected_value
+            && statements.empty()
+            && !(observed && logic->operation == ShortCircuitOperator::And)) {
             statements = std::move(previous);
             complete(
                 recipe,
@@ -412,7 +498,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                     std::move(*selected_value)
                 )
             );
-            return recipe;
+            co_return std::addressof(recipe);
         }
         auto name = std::optional<TargetIdentifier>();
         if (result_needed) {
@@ -422,7 +508,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                     .binding = TargetVariableBinding::MutableValue,
                     .maybe_unused = false,
                     .name = *name,
-                    .type = owner.context.lower_type(value.type),
+                    .type = owner.context.lower_type(value.operation.type.resolved()),
                     .initializer = bool_expression(logic->operation == ShortCircuitOperator::Or)
                 }
             ));
@@ -443,43 +529,48 @@ auto BodyRealizer::ExpressionBuilder::build(
         auto branches = std::vector<TargetIfBranch>();
         branches.push_back({.condition = std::move(test), .body = std::move(statements).finish()});
         statements = std::move(previous);
+        auto skipped = std::optional<std::vector<TargetStmt>>();
+        if (observed && logic->operation == ShortCircuitOperator::And) {
+            skipped.emplace();
+            skipped->push_back(statement_expression(observe(false, std::nullopt)));
+        }
         statements.emit(generated_statement(
-            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            TargetIfStmt {.branches = std::move(branches), .else_body = std::move(skipped)}
         ));
         if (name) {
             complete(recipe, Saved {.name = *name, .kind = SavedKind::Value});
         } else {
             complete(recipe, LoweringCompleted {});
         }
-        return recipe;
+        co_return std::addressof(recipe);
     }
-    const auto operands = construction_operands(value);
+    const auto& operands = value.operands;
     recipe.inputs.assign(operands.begin(), operands.end());
     for (auto& input : recipe.inputs) {
-        if (input.use == ConstructionUse::ProjectionPlace) {
-            input.use = result_use == ConstructionUse::WritePlace
-                    || result_use == ConstructionUse::NativeTake
-                ? ConstructionUse::WritePlace
-                : ConstructionUse::ConstPlace;
+        if (input.use == PreparedUse::ProjectionPlace) {
+            input.use =
+                result_use == PreparedUse::WritePlace || result_use == PreparedUse::NativeTake
+                ? PreparedUse::WritePlace
+                : PreparedUse::ConstPlace;
         }
     }
     if (std::ranges::none_of(recipe.inputs, [](const auto& input) static noexcept {
-            return input.demand == ConstructionDemand::Value;
+            return input.demand == PreparedDemand::Value;
         })) {
         // Complete source effects before constructing a result with no native inputs.
         if (!recipe.inputs.empty()) {
-            flush_pending(pending);
+            (co_await flush_pending(pending));
         }
         for (const auto& input : recipe.inputs) {
-            auto child = build(input.expression, nullptr, false, input.use);
+            auto& child = *((co_await build(*input.expression, nullptr, false, input.use)));
             if (!statements.continues()) {
-                return recipe;
+                co_return std::addressof(recipe);
             }
-            preserve_borrows(child);
-            discard_pending(child);
+            (co_await preserve_borrows(child));
+            (co_await discard_pending(child));
         }
         recipe.inputs = {};
-        return recipe;
+        co_return std::addressof(recipe);
     }
     const auto& inputs = recipe.inputs;
     recipe.operands.reserve(inputs.size());
@@ -491,34 +582,37 @@ auto BodyRealizer::ExpressionBuilder::build(
         .direct_scalars = previous_frame == nullptr
             && owner.metadata.lifetime_regions().region(cleanup).kind
                 == LifetimeRegionKind::FullExpression,
+        .postfix_cursor = 0uz,
         .effects = {},
-        .reads = {}
+        .reads = {},
+        .effect_cursor = 0uz,
+        .read_cursor = 0uz,
     };
     for (auto index = 0uz; index < inputs.size(); ++index) {
-        const auto keep = inputs[index].demand == ConstructionDemand::Value;
-        auto child = build(
-            inputs[index].expression,
-            std::addressof(current),
+        const auto keep = inputs[index].demand == PreparedDemand::Value;
+        auto& child = *((co_await build(
+            *inputs[index].expression,
+            recipe.operands.empty() ? pending : std::addressof(current),
             keep && (result_needed || value.executes_operation),
             inputs[index].use
-        );
+        )));
         if (!statements.continues()) {
-            return recipe;
+            co_return std::addressof(recipe);
         }
         if (!keep) {
             // Removing an unused value keeps its effects at the original
             // position, including snapshots required before those effects.
             if (has_effect(child)) {
-                flush_pending(std::addressof(current));
+                (co_await flush_pending(std::addressof(current)));
             }
-            preserve_borrows(child);
-            discard_pending(child);
+            (co_await preserve_borrows(child));
+            (co_await discard_pending(child));
         }
         // Each predecessor enters one source-ordered queue and leaves it
         // once. A later read commits effects; a later effect also commits
         // reads. Selected short-circuit paths keep their own execution.
         if (needs_order && (has_effect(child) || has_storage_read(child))) {
-            commit_predecessors(current, has_effect(child));
+            (co_await commit_predecessors(current, has_effect(child)));
         }
         if (index >= current.postfix_end) {
             if (has_effect(child)) {
@@ -527,35 +621,31 @@ auto BodyRealizer::ExpressionBuilder::build(
                 current.reads.push_back(index);
             }
         }
-        recipe.operands.push_back(std::move(child));
+        recipe.operands.push_back(std::addressof(child));
     }
     const auto* format = std::get_if<SemFormat>(&value.operation.value);
-    const auto* prepared_operation = std::get_if<ConstructionOperation>(&value.value);
-    const auto* prepared = prepared_operation != nullptr
-        ? std::get_if<PreparedFormat>(prepared_operation->preparation.get())
-        : nullptr;
+    const auto* prepared = std::get_if<PreparedFormat>(value.preparation.get());
     const auto* writer_format =
         prepared != nullptr ? std::get_if<PreparedWriterFormat>(prepared) : nullptr;
     if (format != nullptr && format->receiver && writer_format != nullptr) {
-        flush_pending(pending);
-        complete_writer(recipe, *format, *writer_format, std::nullopt);
-        return recipe;
+        (co_await flush_pending(pending));
+        (co_await complete_writer(recipe, *format, *writer_format, std::nullopt));
+        co_return std::addressof(recipe);
     }
     const auto needs_stable_source = std::holds_alternative<SemArrayAdopt>(value.operation.value)
         || (std::holds_alternative<SemBorrowCallable>(value.operation.value)
-            && inputs.front().use == ConstructionUse::ConstPlace);
+            && inputs.front().use == PreparedUse::ConstPlace);
     if (needs_stable_source && (result_needed || value.executes_operation)) {
-        flush_pending(pending);
-        anchor(recipe.operands.front(), inputs.front().use, true);
+        (co_await flush_pending(pending));
+        (co_await anchor(*recipe.operands.front(), inputs.front().use, true));
     }
-    if (const auto* operation = std::get_if<ConstructionOperation>(&value.value);
-        operation != nullptr && operation->failure) {
-        flush_pending(pending);
-        preserve_borrows(recipe);
-        complete_call(
+    if (const auto transport = owner.fallible(value.operation)) {
+        (co_await flush_pending(pending));
+        (co_await preserve_borrows(recipe));
+        (co_await complete_call(
             recipe,
-            *operation->failure,
-            result_needed && !owner.context.is_void(value.type),
+            *transport,
+            result_needed && !owner.context.is_void(value.operation.type.resolved()),
             result_use,
             full_expression_root
                 && previous_frame == nullptr
@@ -564,9 +654,9 @@ auto BodyRealizer::ExpressionBuilder::build(
                 && declarations.empty()
                 && !statements.owns_storage(),
             propagate_outcome
-        );
+        ));
     }
-    return recipe;
+    co_return std::addressof(recipe);
 }
 
 auto BodyRealizer::ExpressionBuilder::complete_writer(
@@ -574,32 +664,37 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
     const SemFormat& format,
     const PreparedWriterFormat& preparation,
     std::optional<TargetIdentifier> output
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     const auto offset = format.receiver ? 1uz : 0uz;
     // Existing conflict barriers have already captured reads before later effects.
     // Complete remaining nontrivial inputs before any reservation or write.
     for (auto index = 0uz; index < recipe.inputs.size(); ++index) {
-        if (recipe.inputs[index].demand != ConstructionDemand::Value) {
+        if (recipe.inputs[index].demand != PreparedDemand::Value) {
             continue;
         }
-        auto& child = recipe.operands[index];
+        auto& child = *recipe.operands[index];
         if (!std::holds_alternative<SemBinding>(source(child).operation.value)) {
-            preserve_borrows(child);
-            anchor(child, recipe.inputs[index].use, false, true);
+            (co_await preserve_borrows(child));
+            (co_await anchor(child, recipe.inputs[index].use, false, true));
         }
     }
     auto operands = std::vector<TargetExpr>();
     auto sizes = std::vector<TargetExpr>();
     for (auto index = 0uz; index < preparation.operand_indices.size(); ++index) {
-        auto& child = recipe.operands[preparation.operand_indices[index] + offset];
-        const auto* type = std::get_if<BuiltinType>(&preparation.format.fields[index]);
+        auto& child = *recipe.operands[preparation.operand_indices[index] + offset];
+        operands.push_back((co_await raw(child)));
+    }
+    auto operand = 0uz;
+    for (const auto& field : preparation.format.fields) {
+        auto& child = *recipe.operands[preparation.operand_indices[operand] + offset];
+        operand += writer_field_operand_count(field);
+        const auto* type = std::get_if<BuiltinType>(&field);
         if (type != nullptr && (*type == BuiltinType::Str || *type == BuiltinType::String)) {
-            sizes.push_back(call_member(raw(child), "size", {}));
+            sizes.push_back(call_member((co_await raw(child)), "size", {}));
         }
-        operands.push_back(raw(child));
     }
     if (output) {
-        const auto type = owner.context.lower_type(source(recipe).type);
+        const auto type = owner.context.lower_type(source(recipe).operation.type.resolved());
         statements.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
@@ -616,7 +711,7 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
         preparation.format,
         owner.names.fresh(TargetTemporaryNameKind::Operand),
         output ? name_expression(*output)
-               : emit(recipe.operands.front(), ConstructionUse::WritePlace),
+               : (co_await emit(*recipe.operands.front(), PreparedUse::WritePlace)),
         std::move(operands),
         std::move(sizes)
     );
@@ -628,25 +723,26 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
     } else {
         complete(recipe, LoweringCompleted {});
     }
+    co_return {};
 }
 
 auto BodyRealizer::expression(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     ConstantLiteralContext literal,
     ResultDemand demand
 ) noexcept -> Lowered<LoweringResult> {
     if (active_frame != nullptr && active_frame->owns(source)) {
-        return active_frame->evaluate(source, literal, demand, ConstructionUse::Consume);
+        return active_frame->evaluate(source, literal, demand, PreparedUse::Consume);
     }
     return ExpressionBuilder(*this, source).finish(source, literal, demand);
 }
 
-auto BodyRealizer::operand(ConstructionOperand source, ConstantLiteralContext literal) noexcept
+auto BodyRealizer::operand(PreparedOperand source, ConstantLiteralContext literal) noexcept
     -> Lowered<TargetExpr> {
-    auto result = active_frame != nullptr && active_frame->owns(source.expression)
-        ? active_frame->evaluate(source.expression, literal, ResultDemand::Value, source.use)
-        : ExpressionBuilder(*this, source.expression)
-              .finish(source.expression, literal, ResultDemand::Value, source.use);
+    auto result = active_frame != nullptr && active_frame->owns(*source.expression)
+        ? active_frame->evaluate(*source.expression, literal, ResultDemand::Value, source.use)
+        : ExpressionBuilder(*this, *source.expression)
+              .finish(*source.expression, literal, ResultDemand::Value, source.use);
     auto statements = LoweringStmtBuilder();
     auto value = statements.accept(std::move(result));
     return std::move(statements)
@@ -655,9 +751,10 @@ auto BodyRealizer::operand(ConstructionOperand source, ConstantLiteralContext li
         );
 }
 
-auto BodyRealizer::discard(ConstructionExpressionID source) noexcept -> Lowered<LoweringCompleted> {
+auto BodyRealizer::discard(const SemanticExpression& source) noexcept
+    -> Lowered<LoweringCompleted> {
     auto statements = LoweringStmtBuilder();
-    if (construction.expression(source).requires_execution) {
+    if (preparation.operation(source).requires_execution) {
         static_cast<void>(statements.accept(
             expression(source, ConstantLiteralContext::Exact, ResultDemand::Discard)
         ));
@@ -666,13 +763,13 @@ auto BodyRealizer::discard(ConstructionExpressionID source) noexcept -> Lowered<
     return std::move(statements).complete<LoweringCompleted>(normal);
 }
 
-auto BodyRealizer::condition(ConstructionExpressionID source) noexcept
+auto BodyRealizer::condition(const SemanticExpression& source) noexcept
     -> Lowered<LoweringPredicate> {
-    const auto& source_value = construction.expression(source);
+    const auto& source_value = preparation.operation(source);
     const auto shared = active_frame != nullptr && active_frame->owns(source);
-    if (source_value.constant) {
+    if (source_value.operation.constant) {
         if (const auto* known = std::get_if<BooleanConstant>(
-                &context.semantic().constants().constant(*source_value.constant).value
+                &context.semantic().constants().constant(*source_value.operation.constant).value
             )) {
             auto statements = LoweringStmtBuilder();
             const auto completion = statements.accept(discard(source));
@@ -690,7 +787,9 @@ auto BodyRealizer::condition(ConstructionExpressionID source) noexcept
     }
     auto statements = LoweringStmtBuilder();
     auto value = statements.accept(operand(
-        {.expression = source, .use = ConstructionUse::OperandValue},
+        {.expression = std::addressof(source),
+         .use = PreparedUse::OperandValue,
+         .demand = PreparedDemand::Value},
         ConstantLiteralContext::Exact
     ));
     if (!value) {
@@ -710,7 +809,7 @@ auto BodyRealizer::condition(ConstructionExpressionID source) noexcept
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
             .name = name,
-            .type = context.lower_type(construction.expression(source).type),
+            .type = context.lower_type(preparation.operation(source).operation.type.resolved()),
             .initializer = bool_expression(false)
         }
     ));
@@ -728,13 +827,19 @@ auto BodyRealizer::condition(ConstructionExpressionID source) noexcept
 }
 
 auto BodyRealizer::initialize_binding(
-    const ConstructionInitialize& source,
+    const SemInitialize& source,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
-    const auto& initializer = construction.expression(source.initializer);
-    if (std::holds_alternative<ConstructionConditional>(initializer.value)
-        || std::holds_alternative<ConstructionMatch>(initializer.value)
-        || std::holds_alternative<ConstructionTry>(initializer.value)) {
+    const auto& initializer = preparation.operation(source.initializer);
+    const auto escapes = source.initializer.exits_test
+        || !context.semantic()
+                .failure_sets()
+                .failure_set(source.initializer.failures.resolved())
+                .members.empty();
+    if (escapes
+        && (std::holds_alternative<SemIf>(initializer.operation.value)
+            || std::holds_alternative<SemMatch>(initializer.operation.value)
+            || std::holds_alternative<SemTry>(initializer.operation.value))) {
         const auto storage = LoweringDeferredStorage {
             .name = binding_names.at(source.binding),
             .value_type = context.lower_type(metadata.binding(source.binding).type)
@@ -753,15 +858,13 @@ auto BodyRealizer::initialize_binding(
     ExpressionBuilder(*this, source.initializer).initialize(source, destination);
 }
 
-auto BodyRealizer::assign(
-    const ConstructionAssign& source,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
+auto BodyRealizer::assign(const SemAssign& source, LoweringStmtBuilder& destination) noexcept
+    -> void {
     ExpressionBuilder(*this, source.value).assign(source, destination);
 }
 
 auto BodyRealizer::structured_delivery(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {

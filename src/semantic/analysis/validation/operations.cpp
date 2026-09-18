@@ -248,6 +248,21 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                             != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}})) {
                     invariant_violation("invalid test report contract");
                 }
+                if (value.operand_sources) {
+                    if (!value.condition_source
+                        || !value.condition
+                        || !(
+                            std::holds_alternative<SemBinary>((*value.condition)->value)
+                            || std::holds_alternative<SemShortCircuit>((*value.condition)->value)
+                        )) {
+                        invariant_violation("invalid test explanation shape");
+                    }
+                    for (const auto spelling : *value.operand_sources) {
+                        if (!program.provenance().contains(spelling)) {
+                            invariant_violation("invalid test explanation spelling");
+                        }
+                    }
+                }
             },
             [&](const SemPrint& value) noexcept {
                 const auto newline =
@@ -262,14 +277,10 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         &require_type(operand.expression.type.resolved()).value
                     );
                     if (operand.access != AccessMode::Read
-                        || type == nullptr
-                        || !(
-                            builtin_is_numeric(type->kind)
-                            || type->kind == BuiltinType::Bool
-                            || type->kind == BuiltinType::Char
-                            || type->kind == BuiltinType::Str
-                            || type->kind == BuiltinType::String
-                        )) {
+                        || (type != nullptr
+                            && (type->kind == BuiltinType::Void
+                                || type->kind == BuiltinType::EntryArgs
+                                || type->kind == BuiltinType::StrCharsView))) {
                         invariant_violation("invalid printing operand");
                     }
                 }

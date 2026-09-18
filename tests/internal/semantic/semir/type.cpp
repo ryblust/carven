@@ -4,6 +4,8 @@ module;
 
 module carven:test.internal.semantic.semir.type;
 
+import :semantic.semir.contents;
+import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.table;
@@ -179,5 +181,124 @@ TEST_CASE("Canonical types: builtin queries are complete and stable across publi
     CHECK(store.contains(compound));
     for (auto index = 0uz; index < builtin_types.size(); ++index) {
         CHECK(store.builtin_type(builtin_types[index]) == identities[index]);
+    }
+}
+
+TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed point") {
+    const auto program = analyze_test_program("struct A { seed: i32 } struct B {}\n");
+
+    struct FailureReader final {
+        ProgramIdentity identity;
+        FailureTermID term;
+        FailureSetID set;
+
+        auto owner() const noexcept -> ProgramIdentity { return identity; }
+
+        auto contains(FailureTermID id) const noexcept -> bool { return id == term; }
+
+        auto failure_set(FailureTermID id) const noexcept -> FailureSetID {
+            REQUIRE(id == term);
+            return set;
+        }
+    };
+
+    for (const auto seeded : {false, true}) {
+        for (const auto reverse : {false, true}) {
+            CAPTURE(seeded);
+            CAPTURE(reverse);
+            auto types = CanonicalTypeStoreBuilder(program.identity());
+            auto declarations =
+                DeclarationBuilder(program.identity(), program.provenance().identity());
+            const auto module = declarations.reserve_module();
+            const auto first = declarations.reserve_struct();
+            const auto second = declarations.reserve_struct();
+            const auto& source = program.declarations().structure(first);
+            auto nominal = std::vector<TypeID>();
+            for (const auto id : {first, second}) {
+                nominal.push_back(types.intern({.value = StructTypeValue {.structure = id}}));
+            }
+            auto slices = std::vector<TypeID>();
+            for (const auto type : nominal) {
+                slices.push_back(types.intern({.value = SliceTypeValue {.element = type}}));
+            }
+            auto failure_terms = MutableProgramTable<int, FailureTermID>(program.identity());
+            auto failure_sets = FailureSetStoreBuilder(program.identity());
+            const auto reader = FailureReader {
+                .identity = program.identity(),
+                .term = failure_terms.add(0),
+                .set = failure_sets.intern({}),
+            };
+            auto signatures = CallableSignatureStoreBuilder(program.identity());
+            auto construction = ConstructionTypeStore(program.identity());
+            const auto view_term = construction.append(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters = {},
+                     .result = types.builtin_type(BuiltinType::I32),
+                     .failures = reader.term,
+                 }}
+            );
+            const auto resolution = std::move(construction).canonicalize(reader, types, signatures);
+            const auto view = resolution.resolve(view_term);
+            const auto pointer = types.intern(
+                {.value = PointerTypeValue {
+                     .target = nominal.front(),
+                     .access = PointerAccess::Read,
+                 }}
+            );
+            const auto owner = types.intern(
+                {.value = ArrayTypeValue {
+                     .element = view,
+                     .extent = 1u,
+                 }}
+            );
+            for (auto index = 0uz; index < nominal.size(); ++index) {
+                auto fields = std::vector<ConstructionStructField> {
+                    {.name = source.name, .type = slices[1uz - index], .origin = source.origin},
+                };
+                if (index == 0uz && seeded) {
+                    fields.push_back(
+                        {.name = source.fields.front().name, .type = owner, .origin = source.origin}
+                    );
+                }
+                if (reverse) {
+                    std::ranges::reverse(fields);
+                }
+                const auto id = index == 0uz ? first : second;
+                declarations.define(
+                    id,
+                    ConstructionStructDeclaration {
+                        .module_id = module,
+                        .name = program.declarations().structure(id).name,
+                        .origin = source.origin,
+                        .visibility = source.visibility,
+                        .fields = std::move(fields),
+                        .capabilities = {.equality = false},
+                    }
+                );
+            }
+            declarations.define(module, program.declarations().module_decl(module));
+            static_cast<void>(declarations.finish_heads());
+            for (const auto type : nominal) {
+                CHECK_EQ(
+                    query_type_contents(types, declarations.construction_view(), type)
+                        .callable_view,
+                    seeded
+                );
+            }
+            declarations.finish_callable_signatures();
+            const auto closed_declarations = std::move(declarations).seal(resolution);
+            const auto closed_types = std::move(types).seal();
+            const auto contents = compute_type_contents(closed_types, closed_declarations);
+            for (const auto type : {nominal[0], nominal[1], slices[0], slices[1]}) {
+                CHECK_EQ(contents[type.index()].callable_view, seeded);
+                CHECK_FALSE(contents[type.index()].closure_owner);
+            }
+            CHECK_EQ(contents[nominal[0].index()].storage_owner, seeded);
+            CHECK_FALSE(contents[nominal[1].index()].storage_owner);
+            CHECK_FALSE(contents[slices[0].index()].storage_owner);
+            CHECK_FALSE(contents[slices[1].index()].storage_owner);
+            CHECK_FALSE(contents[pointer.index()].callable_view);
+            CHECK_FALSE(contents[pointer.index()].storage_owner);
+        }
     }
 }

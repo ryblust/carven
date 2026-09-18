@@ -72,6 +72,7 @@ auto function(TargetTypeID result, std::vector<TargetStmt> body) noexcept -> Tar
             .parameters = {},
             .result = result,
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }},

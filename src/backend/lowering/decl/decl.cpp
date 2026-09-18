@@ -136,10 +136,11 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
     const auto& signature = exported_signature(context, function);
     auto parameters = std::vector<TargetParameter>();
     for (const auto& parameter : signature.parameters) {
-        parameters.push_back({
-            .name = std::nullopt,
-            .type = context.lower_parameter(parameter),
-        });
+        parameters.push_back(
+            {.name = std::nullopt,
+             .type = context.lower_parameter(parameter),
+             .default_value = std::nullopt}
+        );
     }
     return expansion_item(
         context.semantic(),
@@ -151,6 +152,7 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
             .parameters = std::move(parameters),
             .result = context.lower_type(signature.result),
             .form = TargetFreeFunctionDeclaration {},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }}
@@ -168,10 +170,11 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
     auto arguments = std::vector<TargetExpr>();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
         const auto name = names.fresh(TargetTemporaryNameKind::CppBoundaryParameter);
-        parameters.push_back({
-            .name = name,
-            .type = context.lower_parameter(signature.parameters[index]),
-        });
+        parameters.push_back(
+            {.name = name,
+             .type = context.lower_parameter(signature.parameters[index]),
+             .default_value = std::nullopt}
+        );
         auto argument = name_expression(name);
         if (is_char_type(context.semantic(), semantic_signature.parameters[index].type)) {
             argument = call_expression(
@@ -215,6 +218,7 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
             .parameters = std::move(parameters),
             .result = context.lower_type(signature.result),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
         }}

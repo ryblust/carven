@@ -1,6 +1,6 @@
 module carven:backend.realization.stmt.impl;
 
-import :backend.construction;
+import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
@@ -78,14 +78,14 @@ auto BodyRealizer::emit_return(
 
 auto BodyRealizer::emit_failure(
     TargetExpr value,
-    const ConstructionFailureExit& exit,
+    const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
     }
-    if (const auto* handler = std::get_if<ConstructionHandlerExit>(&exit)) {
-        const auto& failure_destination = handlers.at(handler->handler);
+    if (exit) {
+        const auto& failure_destination = *exit;
         destination.emit(statement_expression(call_member(
             name_expression(failure_destination.storage),
             "emplace",
@@ -125,7 +125,7 @@ auto BodyRealizer::emit_failure(
 auto BodyRealizer::transfer_failure(
     const TargetIdentifier& storage,
     FailureSetID failures,
-    const ConstructionFailureExit& exit,
+    const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
@@ -137,7 +137,7 @@ auto BodyRealizer::transfer_failure(
 auto BodyRealizer::dispatch_failure(
     const FailureSource& source,
     FailureSetID failures,
-    const ConstructionFailureExit& exit
+    const std::optional<FailureDestination>& exit
 ) noexcept -> LoweringStmtBuilder {
     auto transfers = LoweringStmtBuilder();
     for (const auto type : context.plan().failure_abi().members(failures)) {
@@ -200,16 +200,16 @@ auto BodyRealizer::dispatch_failure(
 }
 
 auto BodyRealizer::result_expression(
-    ConstructionExpressionID source,
+    const SemanticExpression& source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
     if (!destination.continues()) {
         return;
     }
-    if (std::holds_alternative<ConstructionConditional>(construction.expression(source).value)
-        || std::holds_alternative<ConstructionMatch>(construction.expression(source).value)
-        || std::holds_alternative<ConstructionTry>(construction.expression(source).value)) {
+    if (std::holds_alternative<SemIf>(preparation.operation(source).operation.value)
+        || std::holds_alternative<SemMatch>(preparation.operation(source).operation.value)
+        || std::holds_alternative<SemTry>(preparation.operation(source).operation.value)) {
         structured_delivery(source, result, destination);
         return;
     }
@@ -217,22 +217,22 @@ auto BodyRealizer::result_expression(
         static_cast<void>(destination.accept(discard(source)));
         return;
     }
-    const auto& expression_source = construction.expression(source);
-    const auto* operation = std::get_if<ConstructionOperation>(&expression_source.value);
+    const auto& expression_source = preparation.operation(source);
+    const auto transport = fallible(expression_source.operation);
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
     if (std::holds_alternative<LoweringReturnResult>(result)
         && callable != nullptr
-        && operation != nullptr
-        && operation->failure
-        && std::holds_alternative<ConstructionFunctionExit>(operation->failure->destination)
+        && transport
+        && !transport->destination
         && std::holds_alternative<SemCall>(expression_source.operation.value)
-        && context.call_result(construction.expression(operation->operands.front().expression).type)
+        && context.call_result(preparation.operation(*expression_source.operands.front().expression)
+                                   .operation.type.resolved())
             == context.callable_result(callable->callable_id)) {
         auto value = destination.accept(
             expression(source, ConstantLiteralContext::Exact, ResultDemand::PropagateOutcome)
         );
         if (value) {
-            if (!context.plan().failure_abi().members(operation->failure->failures).empty()) {
+            if (!context.plan().failure_abi().members(transport->failures).empty()) {
                 destination.record_exits(
                     LoweringExitSummary {.targets = {{LoweringExitKind::Failure, 0}}}
                 );
@@ -275,23 +275,26 @@ auto BodyRealizer::result_expression(
     }
 }
 
-auto BodyRealizer::statement(
-    const ConstructionStatement& source,
-    ConstructionRegionID owner
-) noexcept -> Lowered<LoweringCompleted> {
+auto BodyRealizer::statement(const SemanticStatement& source) noexcept
+    -> Lowered<LoweringCompleted> {
     auto destination = LoweringStmtBuilder();
     source.value.visit(
         Overloaded {
-            [&](const ConstructionReturn& value) noexcept {
+            [&](const SemReturn& value) noexcept {
                 if (value.value) {
                     result_expression(*value.value, LoweringReturnResult {}, destination);
                 } else {
                     emit_return(std::nullopt, destination);
                 }
             },
-            [&](const ConstructionLoopTransfer& value) noexcept {
-                const auto& loop = loops.at(value.loop);
-                if (!value.continue_loop) {
+            [&]<typename Transfer>(const Transfer&) noexcept
+                requires (std::same_as<Transfer, SemBreak> || std::same_as<Transfer, SemContinue>)
+            {
+                if (!current_loop) {
+                    invariant_violation("loop transfer has no target");
+                }
+                const auto& loop = *current_loop;
+                if constexpr (std::same_as<Transfer, SemBreak>) {
                     destination.terminate(
                         generated_statement(TargetBreakStmt {}),
                         loop.break_target
@@ -310,37 +313,28 @@ auto BodyRealizer::statement(
                     destination.terminate(generated_statement(TargetContinueStmt {}), loop.target);
                 }
             },
-            [&](const ConstructionRethrow& value) noexcept {
-                transfer_failure(
-                    handlers.at(value.source.handler).storage,
-                    value.source.failures,
-                    value.destination,
-                    destination
-                );
+            [&](const SemRethrow&) noexcept {
+                transfer_failure(caught->storage, caught->failures, current_failure, destination);
             },
-            [&](const ConstructionThrow& value) noexcept {
+            [&](const SemThrow& value) noexcept {
                 auto failure = read_value(expression(value.value), destination);
                 if (failure) {
-                    emit_failure(std::move(*failure), value.destination, destination);
+                    emit_failure(std::move(*failure), current_failure, destination);
                 }
             },
-            [&](const ConstructionDiscard& value) noexcept {
+            [&](const SemExpressionStatement& value) noexcept {
                 auto evaluation = LoweringStmtBuilder();
                 result_expression(value.expression, LoweringDiscardResult {}, evaluation);
                 destination.scope(std::move(evaluation));
             },
-            [&](const ConstructionInitialize& value) noexcept {
-                initialize_binding(value, destination);
+            [&](const SemInitialize& value) noexcept { initialize_binding(value, destination); },
+            [&](const SemAssign& value) noexcept { assign(value, destination); },
+            [&](const OwnedSemanticRegion& value) noexcept {
+                destination.scope(region(*value, LoweringDiscardResult {}));
             },
-            [&](const ConstructionAssign& value) noexcept { assign(value, destination); },
-            [&](const ConstructionScope& value) noexcept {
-                destination.scope(region(value.region, LoweringDiscardResult {}));
-            },
-            [&](const ConstructionLoop& value) noexcept { lower_loop(owner, value, destination); },
-            [&](const ConstructionRangeLoop& value) noexcept {
-                lower_range(owner, value, destination);
-            },
-        }
+            [&](const SemLoop& value) noexcept { lower_loop(value, destination); },
+            [&](const SemRangeLoop& value) noexcept { lower_range(value, destination); },
+            }
     );
     destination.attribute(
         TargetSourceExpansionAttribution {
@@ -350,126 +344,4 @@ auto BodyRealizer::statement(
     const auto normal =
         destination.continues() ? std::optional(LoweringCompleted {}) : std::nullopt;
     return std::move(destination).complete<LoweringCompleted>(normal);
-}
-
-auto BodyRealizer::lower_report(
-    const ConstructionTestReport& value,
-    ProgramOriginID origin,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
-    auto should_report = bool_expression(true);
-    if (value.condition) {
-        auto condition = destination.accept(
-            operand({.expression = *value.condition, .use = ConstructionUse::OperandValue})
-        );
-        if (!condition) {
-            return;
-        }
-        const auto observed = names.fresh(TargetTemporaryNameKind::Logic);
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .name = observed,
-                .type = context.intrinsic_type(TargetSymbol::Bool),
-                .initializer = std::move(*condition)
-            }
-        ));
-        should_report =
-            prefix_expression(TargetPrefixOperator::LogicalNot, name_expression(observed));
-    }
-    auto report = LoweringStmtBuilder();
-    const auto source = target_source_origin(context.semantic().provenance(), origin);
-    auto arguments = std::vector<TargetExpr>();
-    arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
-    arguments.push_back(integer_expression(source.line));
-    const auto* operation = value.kind == TestReportKind::Check ? "check"
-        : value.kind == TestReportKind::Require                 ? "require"
-                                                                : "fail";
-    arguments.push_back(string_expression(operation, TargetStringLiteralKind::String));
-    arguments.push_back(
-        value.condition_source.has_value()
-            ? string_expression(
-                  std::string(context.semantic().provenance().spelling(*value.condition_source)),
-                  TargetStringLiteralKind::String
-              )
-            : intrinsic_expression(TargetSymbol::StdNullopt)
-    );
-    if (value.message) {
-        auto message = destination.accept(
-            operand({.expression = *value.message, .use = ConstructionUse::ReadBorrow})
-        );
-        if (!message) {
-            return;
-        }
-        // Reporting is conditional; evaluating its source operands is eager.
-        // Commit the residual message before entering the failure-only branch.
-        const auto observed = names.fresh(TargetTemporaryNameKind::Operand);
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .name = observed,
-                .type = context.lower_type(construction.expression(*value.message).type),
-                .initializer = std::move(*message)
-            }
-        ));
-        arguments.push_back(name_expression(observed));
-    } else {
-        arguments.push_back(intrinsic_expression(TargetSymbol::StdNullopt));
-    }
-    if (!destination.continues()) {
-        return;
-    }
-    report.emit(statement_expression(call_member(
-        call_expression(intrinsic_expression(TargetSymbol::RuntimeCurrentTest), {}),
-        "report_failure",
-        std::move(arguments)
-    )));
-    if (value.kind != TestReportKind::Check) {
-        emit_test_exit(report);
-    }
-    if (!value.condition) {
-        destination.append(std::move(report));
-        return;
-    }
-    destination.record_exits(report.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = std::move(should_report), .body = std::move(report).finish()});
-    destination.emit(source_statement(
-        context.semantic(),
-        origin,
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-    ));
-}
-
-auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void {
-    auto result = std::optional<TargetExpr>();
-    if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
-        if (!context.semantic().may_stop_test(callable->callable_id)) {
-            invariant_violation("test exit absent from callable transport");
-        }
-        result = call_expression(
-            static_member_expression(
-                context.callable_result(callable->callable_id),
-                TargetIdentifier::from_spelling("failure")
-            ),
-            target_expressions(
-                TargetExpr {
-                    .value = TargetConstructionExpr {
-                        .type = context.intrinsic_type(TargetSymbol::RuntimeTestStopped),
-                        .initializer = {}
-                    }
-                }
-            )
-        );
-    }
-    destination.terminate(
-        generated_statement(TargetReturnStmt {.expression = std::move(result)}),
-        LoweringExitTarget {
-            std::holds_alternative<TestBodyExit>(inputs.exit) ? LoweringExitKind::Test
-                                                              : LoweringExitKind::FunctionReturn,
-            0
-        }
-    );
 }

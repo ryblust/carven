@@ -65,6 +65,8 @@ auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator;
 auto semantic_operator(ASTBinaryOperator op) noexcept -> std::optional<BinaryOperator>;
 auto binary_operator_requires_equality(ASTBinaryOperator op) noexcept -> bool;
+auto numeric_operand_plan(const ASTView& ast, ASTExprID left, ASTExprID right) noexcept
+    -> BinaryOperandPlan;
 auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) noexcept
     -> BinaryOperandPlan;
 

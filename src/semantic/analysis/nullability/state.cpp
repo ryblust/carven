@@ -82,7 +82,7 @@ NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
 }
 
 auto NullabilityBodyAnalyzer::run() noexcept -> void {
-    static_cast<void>(region(body.region(), {.facts = {}, .exposed = input_aliases}));
+    static_cast<void>(region(body.region(), {.facts = {}, .exposed = input_aliases}).run());
 }
 
 auto NullabilityBodyAnalyzer::location(

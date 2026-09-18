@@ -71,6 +71,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         furthest_speculative_failure.reset();
         const auto diagnostic_count = diagnostics.size();
         const auto checkpoint = builder.checkpoint();
+        const auto item_start = cursor;
         const auto kind = current().kind;
         const auto is_declaration = kind == TokenKind::Private
             || kind == TokenKind::Export
@@ -105,7 +106,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         furthest_speculative_failure.reset();
         builder.rewind(checkpoint);
         failed = false;
-        synchronize_top_level_item();
+        synchronize_top_level_item(item_start);
     }
 
     if (failed || !diagnostics.empty()) {
@@ -157,9 +158,9 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
     return std::move(builder).finish(std::move(ast_module));
 }
 
-auto Parser::synchronize_top_level_item() noexcept -> void {
+auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void {
     auto brace_depth = 0uz;
-    for (auto index = 0uz; index < cursor && index < tokens.size(); ++index) {
+    for (auto index = item_start; index < cursor && index < tokens.size(); ++index) {
         if (tokens[index].kind == TokenKind::LeftBrace) {
             ++brace_depth;
         }

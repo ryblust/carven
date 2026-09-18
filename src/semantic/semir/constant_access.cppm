@@ -24,8 +24,15 @@ struct EnumCaseTypes final {
     std::vector<TypeID> payload_types;
 };
 
+struct ExecutionDisplayNames final {
+    std::string name;
+    std::vector<std::string> fields;
+    std::vector<std::pair<EnumCaseID, std::string>> cases;
+};
+
 class ExecutionValueAccess : public ConstantValueReader {
 public:
+    virtual auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames = 0;
     virtual auto read_borrows_storage(TypeID type) const noexcept -> bool = 0;
     virtual auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> = 0;
@@ -45,6 +52,7 @@ class SemIRProgram;
 class PublishedConstantValues final : public ExecutionValueAccess {
 public:
     explicit PublishedConstantValues(const SemIRProgram& program) noexcept;
+    auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
     auto struct_field_types(StructID structure) const noexcept

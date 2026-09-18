@@ -28,7 +28,7 @@ auto BodyRealizer::initialize_deferred(
     std::optional<TargetTypeID> factory_result
 ) noexcept -> void {
     // Return the complete initializer to preserve copy-initialization semantics.
-    // Explicit construction expressions remain explicit inside this factory.
+    // Explicit preparation expressions remain explicit inside this factory.
     const auto yield = exit_target(LoweringExitKind::Value);
     auto value = LoweringStmtBuilder();
     emit_return(std::move(initializer), value, LoweringYieldResult {.target = yield});

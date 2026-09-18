@@ -33,20 +33,20 @@ auto BodyElaborator::conditional_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     if (!source.else_branch.has_value()) {
-        return std::unexpected(
+        co_return std::unexpected(
             fail(span, DiagnosticCode::TypeIfMissingElse, "value-form if requires an else branch")
         );
     }
-    return build_if(source, span, expected, true, allow_pointer_narrowing);
+    co_return (co_await build_if(source, span, expected, true, allow_pointer_narrowing));
 }
 
 auto BodyElaborator::lambda_expression(
     const ASTLambdaExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     auto expected_view = std::optional<ConstructionCallableViewTypeValue>();
     if (expected.has_value()) {
         if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
@@ -58,7 +58,7 @@ auto BodyElaborator::lambda_expression(
         }
     }
     if (expected_view.has_value() && expected_view->parameters.size() != source.parameters.size()) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeCallArity,
             "lambda parameter count differs from its expected callable view"
@@ -72,15 +72,15 @@ auto BodyElaborator::lambda_expression(
         const auto access = semantic_access_mode(parameter.access);
         auto type = std::optional<ConstructionTypeRef>();
         if (parameter.type.has_value()) {
-            auto resolved = resolve_type(*parameter.type);
+            auto resolved = (co_await resolve_type(*parameter.type));
             if (!resolved.has_value()) {
-                return std::unexpected(resolved.error());
+                co_return std::unexpected(resolved.error());
             }
             type = *resolved;
         } else if (expected_view.has_value()) {
             type = expected_view->parameters[index].type;
         } else {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 parameter.span,
                 DiagnosticCode::LambdaSignatureInference,
                 "lambda parameter type requires an annotation or expected callable view"
@@ -89,7 +89,7 @@ auto BodyElaborator::lambda_expression(
         if (expected_view.has_value()
             && (access != expected_view->parameters[index].access
                 || !compatible(*type, expected_view->parameters[index].type))) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 parameter.span,
                 DiagnosticCode::LambdaSignatureInference,
                 "lambda parameter differs from its expected callable view"
@@ -105,9 +105,9 @@ auto BodyElaborator::lambda_expression(
 
     auto lambda_result = std::optional<ConstructionTypeRef>();
     if (source.result_type.has_value()) {
-        auto resolved = resolve_type(*source.result_type);
+        auto resolved = (co_await resolve_type(*source.result_type));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         lambda_result = *resolved;
     } else if (expected_view.has_value()) {
@@ -116,7 +116,7 @@ auto BodyElaborator::lambda_expression(
     if (expected_view.has_value()
         && lambda_result.has_value()
         && !compatible(*lambda_result, expected_view->result)) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::LambdaSignatureInference,
             "lambda result differs from its expected callable view"
@@ -128,7 +128,7 @@ auto BodyElaborator::lambda_expression(
     auto signature_failures = actual_failures;
     auto failure_policy = FailureContractPolicy::Inferred;
     if (source.throw_clause.has_value()) {
-        auto members = resolve_failure_types(
+        auto members = (co_await resolve_failure_types(
             draft(),
             catalog(),
             import_usage(),
@@ -136,9 +136,9 @@ auto BodyElaborator::lambda_expression(
             ast,
             *source.throw_clause,
             [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
-        );
+        ));
         if (!members.has_value()) {
-            return std::unexpected(members.error());
+            co_return std::unexpected(members.error());
         }
         const auto allowed = draft().add_concrete_failure_term(std::move(*members));
         draft().require_failure_subset(
@@ -164,7 +164,7 @@ auto BodyElaborator::lambda_expression(
     for (const auto& capture : source.captures) {
         const auto name = spelling(capture.name_span);
         if (!capture_names.insert(name).second) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::LambdaCaptureDuplicate,
                 std::format("lambda captures '{}' more than once", name)
@@ -172,14 +172,14 @@ auto BodyElaborator::lambda_expression(
         }
         const auto* local = use_local(name);
         if (local == nullptr || std::holds_alternative<ConstantID>(local->storage)) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::LambdaCaptureInvalid,
                 std::format("'{}' is not a runtime local that can be captured", name)
             ));
         }
         if (type_contains_callable_view(draft(), local->type)) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::TypeCallableViewEscape,
                 "callable views cannot be captured by a lambda"
@@ -200,6 +200,7 @@ auto BodyElaborator::lambda_expression(
 
             .pending_failures = {},
             .takeable = false,
+            .completes = true,
         }};
         const auto mode =
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
@@ -207,13 +208,13 @@ auto BodyElaborator::lambda_expression(
         if (mode == CaptureMode::Write) {
             auto place = consume_place(built, capture.span);
             if (!place.has_value()) {
-                return std::unexpected(place.error());
+                co_return std::unexpected(place.error());
             }
             operand = SemCapture {CaptureMode::Write, std::move(place->expression)};
         } else {
             auto value = consume_value(built, capture.span, AccessMode::Read);
             if (!value.has_value()) {
-                return std::unexpected(value.error());
+                co_return std::unexpected(value.error());
             }
             operand = SemCapture {CaptureMode::Value, std::move(*value)};
         }
@@ -268,18 +269,18 @@ auto BodyElaborator::lambda_expression(
     for (const auto& capture : captures) {
         auto added = child.add_capture(capture.syntax.name_span, capture.type, capture.mode);
         if (!added.has_value()) {
-            return std::unexpected(added.error());
+            co_return std::unexpected(added.error());
         }
     }
     for (auto index = 0uz; index < source.parameters.size(); ++index) {
         auto added = child.add_parameter(source.parameters[index], parameters[index]);
         if (!added.has_value()) {
-            return std::unexpected(added.error());
+            co_return std::unexpected(added.error());
         }
     }
-    auto child_body = child.run(source.body);
+    auto child_body = (co_await child.run(source.body));
     if (!child_body.has_value()) {
-        return std::unexpected(child_body.error());
+        co_return std::unexpected(child_body.error());
     }
     for (const auto& name : inherited_constants) {
         if (!child.local_was_used(name)) {
@@ -292,7 +293,7 @@ auto BodyElaborator::lambda_expression(
     }
     const auto resolved_result = child.inferred_result_type();
     if (expected_view.has_value() && !compatible(resolved_result, expected_view->result)) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::LambdaSignatureInference,
             "inferred lambda result differs from its expected callable view"
@@ -335,10 +336,12 @@ auto BodyElaborator::lambda_expression(
         lambda_origin,
         SemClosure {.callable = callable, .captures = std::move(operands)}
     );
-    return BuiltExpression {
+    co_return BuiltExpression {
         .storage = std::move(value),
 
         .pending_failures = {},
+        .takeable = true,
+        .completes = true,
     };
 }
 
@@ -346,24 +349,24 @@ auto BodyElaborator::select_expression(
     ASTExprID id,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<SelectedExpression> {
+) noexcept -> AnalysisTask<SelectedExpression> {
     const auto was_reachable = reachable;
     [[maybe_unused]] const auto path =
         BodyReferencePathGuard(reference_path_reachable, was_reachable);
     auto site = BodyExprSite(*this, allow_pointer_narrowing);
-    return require_body_expression(interpret_expression(site, id, expected));
+    co_return require_body_expression((co_await interpret_expression(site, id, expected)));
 }
 
 auto BodyElaborator::expression(
     ASTExprID id,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<BuiltExpression> {
+) noexcept -> AnalysisTask<BuiltExpression> {
     const auto was_reachable = reachable;
     const auto& source = ast.expression(id);
-    auto selected = select_expression(id, expected, allow_pointer_narrowing);
+    auto selected = (co_await select_expression(id, expected, allow_pointer_narrowing));
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     auto result = materialize_selection(std::move(*selected), expected);
     if (result.has_value()
@@ -377,5 +380,5 @@ auto BodyElaborator::expression(
     if (result.has_value()) {
         reachable = was_reachable && result->completes;
     }
-    return result;
+    co_return result;
 }

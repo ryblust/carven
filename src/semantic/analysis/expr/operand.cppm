@@ -19,22 +19,22 @@ auto read_value_argument(
     Site& site,
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     const auto span = site.syntax().expression(expression).span;
     const auto selected = call_argument_operand(site.syntax(), expression);
     if (selected.access != AccessMode::Read) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::AccessCallMismatch,
             "argument access marker differs from the parameter"
         ));
     }
-    auto operand = site.read(selected.expression, expected);
+    auto operand = (co_await site.read(selected.expression, expected));
     if (!operand) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Void))) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeValueRequired,
             "expression does not produce a value"
@@ -42,8 +42,8 @@ auto read_value_argument(
     }
     if (expected) {
         if (auto checked = site.convert_argument(*operand, *expected, span); !checked) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
     }
-    return operand;
+    co_return operand;
 }

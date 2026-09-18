@@ -30,7 +30,7 @@ test "Slices: arrays expose explicit read views and half-open subranges" {
 fn first_text(values: [str]) -> str => values[0];
 
 test "Slices: extracting elements preserves their text backing" {
-    let owner = String::from_str("hello");
+    let owner: String = "hello";
     let values = [owner.as_str(), "world"];
     let view = values.as_slice();
     check(first_text(view) == "hello");
@@ -41,7 +41,7 @@ test "Slices: extracting elements preserves their text backing" {
 }
 
 test "Slices: byte projections have a native slice type" {
-    let text = String::from_str("a\u{0}😀");
+    let text: String = "a\u{0}😀";
     let bytes: [u8] = text.bytes;
     check(bytes.len() == 6);
     check(bytes[1] == 0);
@@ -74,7 +74,7 @@ test "Slices: callable elements and expression temporaries" {
 }
 
 test "Slices: inner borrowed elements survive subrange rebasing" {
-    let owner = String::from_str("text");
+    let owner: String = "text";
     let texts = ["", owner.as_str()];
     let suffix = texts.as_slice().slice(1, 2);
     check(first_text(suffix) == "text");
@@ -185,7 +185,7 @@ test "Slices: Read selection preserves backing through parameters, projections a
     check(
         ::slice_observation::same_backing(rows[1], borrow_slice_loop(rows.as_slice().slice(1, 2)))
     );
-    let texts = [String::from_str("borrowed")];
+    let texts: [String; 1] = ["borrowed"];
     check(borrow_text_loop(texts) == "borrowed");
     let copied = rows.as_slice()[0];
     check(!::slice_observation::same_backing(rows[0], copied.as_slice()));
@@ -229,7 +229,7 @@ private fn field_text(value: TextArray) -> str => array_text(value.values);
 private fn array_slice(values: [[i32]; 1]) -> [i32] => values[0];
 
 test "Slices: temporary aggregates preserve contained borrows after the call" {
-    let owner = String::from_str("hello");
+    let owner: String = "hello";
     let from_array = array_text([owner.as_str()]);
     let from_field = field_text(
         TextArray {
@@ -265,7 +265,7 @@ test "Slices: callable views borrow named closure elements" {
 }
 
 test "Slices: consumed temporary holders release their contained borrows" {
-    var owner = String::from_str("hello");
+    var owner: String = "hello";
     check(array_text([owner.as_str()]) == "hello");
     owner.clear();
     check(owner.is_empty());
@@ -330,7 +330,7 @@ test "Slices: known lengths preserve receiver and bound evaluation" {
             (slice_extent_mark(&trace, 2) && false) as usize,
             ((slice_extent_mark(&trace, 3) && false) as usize) + 2
         ).len()}";
-    check(rendered == String::from_str("2"));
+    check(rendered == "2");
     check(trace == 123);
     trace = 0;
     slice_extent_array(&trace).as_slice().slice(0, 2).len();

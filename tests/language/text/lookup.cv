@@ -9,5 +9,5 @@ fn make(String: i32) -> String {
 
 test "String: builtin type and factory lookup precede nominal declarations" {
     let text: String = make(42);
-    check(text.as_str() == "builtin");
+    check(text == "builtin");
 }

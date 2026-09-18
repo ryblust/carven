@@ -67,9 +67,16 @@ private:
             return;
         }
         claimed = 1;
-        visit_ast_topology(nodes[id.index()], [&](auto field) noexcept { claim(field); });
+        const auto first_child = pending.size();
+        visit_ast_topology(nodes[id.index()], [&](auto field) noexcept {
+            if constexpr (!std::same_as<decltype(field), Span>) {
+                pending.emplace_back(field);
+            }
+        });
+        std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
     }
 
+    auto drain() noexcept -> void;
     auto all_claimed(std::span<const std::uint8_t> claims, std::string_view kind) noexcept -> bool;
     auto claim(Span) noexcept -> void;
     auto claim(ASTExprID id) noexcept -> void;
@@ -81,6 +88,16 @@ private:
     auto claim(ASTItemID id) noexcept -> void;
     auto claim(ASTModuleImportID id) noexcept -> void;
 
+    using Node = std::variant<
+        ASTExprID,
+        ASTTypeID,
+        ASTStmtID,
+        ASTPatternID,
+        ASTBlockID,
+        ASTBranchBlockID,
+        ASTItemID,
+        ASTModuleImportID>;
+    std::vector<Node> pending;
     ASTView syntax;
     std::string_view module_path;
     std::vector<std::uint8_t> claimed_expressions;
@@ -112,9 +129,11 @@ SyntaxTreeOwnershipVerifier::SyntaxTreeOwnershipVerifier(
 auto SyntaxTreeOwnershipVerifier::verify() noexcept -> std::expected<void, SyntaxProgramError> {
     for (const auto import_id : syntax.ast_module().module_imports) {
         claim(import_id);
+        drain();
     }
     for (const auto item_id : syntax.ast_module().items) {
         claim(item_id);
+        drain();
     }
     if (failure.has_value()) {
         return std::unexpected(std::move(*failure));
@@ -130,6 +149,14 @@ auto SyntaxTreeOwnershipVerifier::verify() noexcept -> std::expected<void, Synta
         return std::unexpected(std::move(*failure));
     }
     return {};
+}
+
+auto SyntaxTreeOwnershipVerifier::drain() noexcept -> void {
+    while (!pending.empty() && !failure) {
+        const auto next = pending.back();
+        pending.pop_back();
+        next.visit([&](auto id) noexcept { claim(id); });
+    }
 }
 
 auto SyntaxTreeOwnershipVerifier::fail(SyntaxProgramErrorKind kind, std::string message) noexcept

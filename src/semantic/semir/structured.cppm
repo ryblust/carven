@@ -131,6 +131,7 @@ struct SemTestReport final {
     std::optional<OwnedSemanticExpression> condition;
     std::optional<OwnedSemanticExpression> message;
     std::optional<ProgramSpellingID> condition_source;
+    std::optional<std::array<ProgramSpellingID, 2>> operand_sources;
 };
 
 struct SemPrint final {
@@ -234,6 +235,7 @@ struct SemanticExpression final {
     // Known value on normal completion; execution and const admission are separate.
     std::optional<ConstantID> constant;
     BodyFailures failures;
+    // Body completion includes callee effects before publication.
     bool exits_test;
     SemanticValueCategory category;
     std::variant<

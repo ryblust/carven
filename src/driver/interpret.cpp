@@ -74,7 +74,7 @@ auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
     }
     auto paths = std::vector<std::string_view>();
     auto trace = false;
-    auto limits = ExecutionLimits {};
+    auto limits = constant_execution_limits();
     auto seen_steps = false;
     for (auto index = 0uz; index < args.size(); ++index) {
         const auto arg = std::string_view(args[index]);

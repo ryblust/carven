@@ -1,4 +1,14 @@
 local case_specs = {
+    ["commands/structural_display"] = {
+        inputs = {"input.cv", "failure.cv"},
+        steps = {
+            {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
+            {args = {"input.cv"}, stdout = "stdout.txt"},
+            {args = {"check", "failure.cv"}, exit_code = 1,
+                stderr_contains = {'actual: Money {\n    cents: 12,\n}', 'expected: Money {\n    cents: 15,\n}',
+                    'true: <not evaluated>', '1: 1', '2: 2'}},
+        },
+    },
     ["commands/check"] = {
         inputs = {"input.cv", "invalid_test.cv", "crafts/demo/dependency.cv"},
         fixtures = {

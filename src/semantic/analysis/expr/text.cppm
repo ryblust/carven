@@ -17,7 +17,7 @@ auto construct_text_value(
     std::optional<ConstantID> known,
     Span span
 ) noexcept -> ExpressionResult<typename Site::Value> {
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto operand = site.consume_read(state, std::move(value), span);
     if (!operand) {
         return std::unexpected(operand.error());
@@ -40,16 +40,16 @@ auto construct_text_call(
     std::optional<typename Site::Value> receiver,
     std::span<const ASTCallArgument> arguments,
     Span span
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     if constexpr (Site::mode == ExpressionMode::RequiredRoot) {
         if (intrinsic != TextIntrinsic::New
             && intrinsic != TextIntrinsic::FromStr
             && intrinsic != TextIntrinsic::AsStr) {
-            return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(ExpressionNotAdmitted {});
         }
     }
     const auto contract = text_intrinsic_contract(intrinsic);
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto operands = std::vector<SemCallArgument>();
     if (receiver) {
         const auto access = contract.parameters.front().access;
@@ -62,7 +62,7 @@ auto construct_text_call(
             return site.consume_read(state, std::move(*receiver), span);
         }();
         if (!value) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         operands.push_back({.access = access, .expression = std::move(*value)});
     }
@@ -73,9 +73,9 @@ auto construct_text_call(
         }
         const auto argument_type = resolve_text_intrinsic_type(site.draft(), parameter.type);
         const auto execution = site.enter_operand_execution(state.completes);
-        auto built = site.read_argument(argument.expression, argument_type);
+        auto built = (co_await site.read_argument(argument.expression, argument_type));
         if (!built) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
         auto value = site.consume_read(
             state,
@@ -83,11 +83,11 @@ auto construct_text_call(
             site.syntax().expression(argument.expression).span
         );
         if (!value) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         operands.push_back({.access = parameter.access, .expression = std::move(*value)});
     }
-    return site.finish_constructed(
+    co_return site.finish_constructed(
         resolve_text_intrinsic_type(site.draft(), contract.result),
         SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
         std::move(state),

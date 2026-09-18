@@ -114,12 +114,13 @@ source-layout and style rules apply to handwritten code.
   constness through deduction; spell a pointer type explicitly when narrowing
   mutable access to the pointee.
 - Use designated initializers in declaration order for non-empty project
-  records, empty braces for fieldless values, and braces for container literals.
-- Declare transparent record fields without default member initializers and
-  explicitly initialize every field at construction sites, including booleans.
-  Use a default member initializer only when a shared default is required by
-  the type's contract. Classes may initialize their private execution state in
-  members.
+  records. Explicitly initialize every field at each construction site, including
+  booleans, empty containers, and empty optionals. Use empty braces for fieldless
+  values and braces for container literals.
+- Declare transparent record fields without default member initializers.
+  An exception requires a consumed C++ protocol that cannot be satisfied through
+  explicit construction; document that requirement at the declaration.
+  Classes may initialize their private execution state in members.
 - When an integer literal's type is intentional, use a lowercase literal suffix
   such as `u`, `ll`, `ull`, or `uz` instead of constructing a fixed-width alias
   solely to type the literal.

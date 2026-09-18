@@ -26,7 +26,7 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> std::expected<ExecutionCallBody, ExecutionCallFailure> override;
+        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> override;
     auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
 
     auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
@@ -60,13 +60,13 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 }
 
 auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> std::expected<ExecutionCallBody, ExecutionCallFailure> {
+    -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> {
     calls.push_back(function);
-    const auto body =
-        construction.ensure_function_body(function, module, draft.source_origin(origin).span);
+    const auto body = co_await construction
+                          .ensure_function_body(function, module, draft.source_origin(origin).span);
     REQUIRE(body.has_value());
     REQUIRE(draft.body_draft(*body).inputs.parameters.empty());
-    return ExecutionCallBody {
+    co_return ExecutionCallBody {
         .body = ExecutionBody(draft.body_draft(*body)),
         .parameter_types = {}
     };
@@ -98,7 +98,8 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     const auto module = view.modules().front().module_id;
     const auto origin = draft.append_source_origin(draft.module_source(module), Span::at(0u));
     auto context = ExecutionContext(draft, construction, module);
-    const auto evaluate = [&](std::string_view name, ExecutionLimits limits = {}) noexcept {
+    const auto evaluate = [&](std::string_view name,
+                              ExecutionLimits limits = constant_execution_limits()) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);
         REQUIRE(found != view.symbols().end());
         const auto function = std::get<CatalogFunctionForm>(found->form);
@@ -124,7 +125,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
         context.output.clear();
         context.calls.clear();
         context.diagnostics.clear();
-        return execute_constant_root(draft, context, expression, limits);
+        return execute_constant_root(draft, context, expression, limits).run();
     };
     action(draft, context, evaluate);
 }
@@ -231,12 +232,21 @@ TEST_CASE("Constant execution: aggregate work counts constructed and copied slot
             std::string(scenario.source),
             [&](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) {
                 if (scenario.work != 0uz) {
-                    CHECK_FALSE(
-                        evaluate("run", {.aggregate_work = scenario.work - 1uz}).has_value()
-                    );
+                    CHECK_FALSE(evaluate(
+                                    "run",
+                                    {.steps = maximum_constant_steps,
+                                     .text_work = 8uz * maximum_constant_text_bytes,
+                                     .aggregate_work = scenario.work - 1uz}
+                    )
+                                    .has_value());
                     check_limit(context, "aggregate");
                 }
-                const auto result = evaluate("run", {.aggregate_work = scenario.work});
+                const auto result = evaluate(
+                    "run",
+                    {.steps = maximum_constant_steps,
+                     .text_work = 8uz * maximum_constant_text_bytes,
+                     .aggregate_work = scenario.work}
+                );
                 REQUIRE(result.has_value());
                 require_integer(draft, *result, scenario.result);
                 CHECK(context.diagnostics.empty());
@@ -255,12 +265,29 @@ TEST_CASE("Constant execution: calls share work within a root and new roots star
     )",
         [](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) static {
             for (auto root = 0uz; root < 2uz; ++root) {
-                REQUIRE(evaluate("leaf", {.aggregate_work = 2uz}).has_value());
+                REQUIRE(evaluate(
+                            "leaf",
+                            {.steps = maximum_constant_steps,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = 2uz}
+                )
+                            .has_value());
                 CHECK(context.diagnostics.empty());
             }
-            CHECK_FALSE(evaluate("run", {.aggregate_work = 3uz}).has_value());
+            CHECK_FALSE(evaluate(
+                            "run",
+                            {.steps = maximum_constant_steps,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = 3uz}
+            )
+                            .has_value());
             check_limit(context, "aggregate");
-            const auto result = evaluate("run", {.aggregate_work = 4uz});
+            const auto result = evaluate(
+                "run",
+                {.steps = maximum_constant_steps,
+                 .text_work = 8uz * maximum_constant_text_bytes,
+                 .aggregate_work = 4uz}
+            );
             REQUIRE(result.has_value());
             require_integer(draft, *result, 2);
         }
@@ -276,20 +303,62 @@ TEST_CASE("Constant execution: step limits include nested calls and recursive eq
         const fn equal() -> bool => data == data;
     )",
         [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static {
-            CHECK_FALSE(evaluate("leaf", {.steps = 0uz}).has_value());
+            CHECK_FALSE(evaluate(
+                            "leaf",
+                            {.steps = 0uz,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = maximum_constant_aggregate_work}
+            )
+                            .has_value());
             check_limit(context, "steps");
-            CHECK_FALSE(evaluate("leaf", {.steps = 4uz}).has_value());
+            CHECK_FALSE(evaluate(
+                            "leaf",
+                            {.steps = 4uz,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = maximum_constant_aggregate_work}
+            )
+                            .has_value());
             check_limit(context, "steps");
             // Call, invocation, body region, return, and literal each use one step.
             for (auto root = 0uz; root < 2uz; ++root) {
-                CHECK(evaluate("leaf", {.steps = 5uz}).has_value());
+                CHECK(evaluate(
+                          "leaf",
+                          {.steps = 5uz,
+                           .text_work = 8uz * maximum_constant_text_bytes,
+                           .aggregate_work = maximum_constant_aggregate_work}
+                )
+                          .has_value());
             }
-            CHECK_FALSE(evaluate("run", {.steps = 14uz}).has_value());
+            CHECK_FALSE(evaluate(
+                            "run",
+                            {.steps = 14uz,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = maximum_constant_aggregate_work}
+            )
+                            .has_value());
             check_limit(context, "steps");
-            CHECK(evaluate("run", {.steps = 15uz}).has_value());
-            CHECK_FALSE(evaluate("equal", {.steps = 13uz}).has_value());
+            CHECK(evaluate(
+                      "run",
+                      {.steps = 15uz,
+                       .text_work = 8uz * maximum_constant_text_bytes,
+                       .aggregate_work = maximum_constant_aggregate_work}
+            )
+                      .has_value());
+            CHECK_FALSE(evaluate(
+                            "equal",
+                            {.steps = 13uz,
+                             .text_work = 8uz * maximum_constant_text_bytes,
+                             .aggregate_work = maximum_constant_aggregate_work}
+            )
+                            .has_value());
             check_limit(context, "comparison");
-            CHECK(evaluate("equal", {.steps = 14uz}).has_value());
+            CHECK(evaluate(
+                      "equal",
+                      {.steps = 14uz,
+                       .text_work = 8uz * maximum_constant_text_bytes,
+                       .aggregate_work = maximum_constant_aggregate_work}
+            )
+                      .has_value());
         }
     );
 }
@@ -321,9 +390,20 @@ TEST_CASE("Constant execution: text work counts produced bytes across copies app
         with_execution(
             std::format("const fn run() -> String {{ {} }}", scenario.body),
             [&](ProgramDraft&, ExecutionContext& context, const auto& evaluate) {
-                CHECK_FALSE(evaluate("run", {.text_work = scenario.work - 1uz}).has_value());
+                CHECK_FALSE(evaluate(
+                                "run",
+                                {.steps = maximum_constant_steps,
+                                 .text_work = scenario.work - 1uz,
+                                 .aggregate_work = maximum_constant_aggregate_work}
+                )
+                                .has_value());
                 check_limit(context, "text");
-                const auto result = evaluate("run", {.text_work = scenario.work});
+                const auto result = evaluate(
+                    "run",
+                    {.steps = maximum_constant_steps,
+                     .text_work = scenario.work,
+                     .aggregate_work = maximum_constant_aggregate_work}
+                );
                 REQUIRE(result.has_value());
                 CHECK(std::get<ExecutionOwnedText>(*result).bytes == scenario.result);
                 CHECK(context.diagnostics.empty());
@@ -336,10 +416,22 @@ TEST_CASE("Constant execution: print output consumes the text-work budget") {
     with_execution(
         R"(const fn run() { println("ab", 3); })",
         [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
-            CHECK_FALSE(evaluate("run", {.text_work = 4uz}).has_value());
+            CHECK_FALSE(evaluate(
+                            "run",
+                            {.steps = maximum_constant_steps,
+                             .text_work = 4uz,
+                             .aggregate_work = maximum_constant_aggregate_work}
+            )
+                            .has_value());
             check_limit(context, "text");
             CHECK(context.output == "ab 3");
-            CHECK(evaluate("run", {.text_work = 5uz}).has_value());
+            CHECK(evaluate(
+                      "run",
+                      {.steps = maximum_constant_steps,
+                       .text_work = 5uz,
+                       .aggregate_work = maximum_constant_aggregate_work}
+            )
+                      .has_value());
             CHECK(context.output == "ab 3\n");
         }
     );

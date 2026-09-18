@@ -101,15 +101,15 @@ auto BodyElaborator::local_was_used(std::string_view name) const noexcept -> boo
 }
 
 auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
-    -> AnalysisResult<const CatalogSymbol*> {
+    -> AnalysisTask<const CatalogSymbol*> {
     const auto candidates = catalog().lookup(source_module_id, name);
     if (candidates.empty()) {
-        return std::unexpected(
+        co_return std::unexpected(
             fail(span, DiagnosticCode::NameUnresolved, std::format("unresolved name '{}'", name))
         );
     }
     if (candidates.size() != 1uz) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             span,
             DiagnosticCode::NameAmbiguous,
             std::format("name '{}' is provided by more than one import", name)
@@ -123,12 +123,13 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
         invariant_violation("catalog lookup returned an invalid symbol");
     }
 
-    auto completed = batch->requests.ensure_declaration(result->symbol_id, source_module_id, span);
+    auto completed =
+        (co_await batch->requests.ensure_declaration(result->symbol_id, source_module_id, span));
     if (!completed) {
-        return std::unexpected(completed.error());
+        co_return std::unexpected(completed.error());
     }
 
-    return result;
+    co_return result;
 }
 
 auto BodyElaborator::add_parameter(
@@ -153,6 +154,7 @@ auto BodyElaborator::add_parameter(
         BodyLocalStorage {
             .storage = storage,
             .type = contract.type,
+            .used = false,
             .takeable = contract.access == AccessMode::Take,
             .role = BodyLocalRole::Parameter,
             .unused_candidate = std::nullopt,
@@ -179,6 +181,7 @@ auto BodyElaborator::add_capture(
         BodyLocalStorage {
             .storage = storage,
             .type = type,
+            .used = false,
             .takeable = false,
             .role = BodyLocalRole::Capture,
             .unused_candidate = std::nullopt,

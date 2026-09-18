@@ -29,10 +29,10 @@ import :support.visit;
 import std;
 
 auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) noexcept
-    -> AnalysisResult<BuiltExpression> {
-    auto operand = expression(source.operand_id);
+    -> AnalysisTask<BuiltExpression> {
+    auto operand = (co_await expression(source.operand_id));
     if (!operand.has_value()) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     auto pending_failures = take_pending_failures(*operand);
     const auto access = [&]() noexcept {
@@ -46,18 +46,18 @@ auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) n
     if (access == AccessMode::Write) {
         auto place = consume_place(*operand, span);
         if (!place.has_value()) {
-            return std::unexpected(place.error());
+            co_return std::unexpected(place.error());
         }
         operand->storage = std::move(*place);
         operand->pending_failures = std::move(pending_failures);
-        return std::move(*operand);
+        co_return std::move(*operand);
     }
     auto value =
         consume_value(*operand, access == AccessMode::Take ? source.marker_span : span, access);
     if (!value.has_value()) {
-        return std::unexpected(value.error());
+        co_return std::unexpected(value.error());
     }
     operand->storage = std::move(*value);
     operand->pending_failures = std::move(pending_failures);
-    return std::move(*operand);
+    co_return std::move(*operand);
 }

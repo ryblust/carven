@@ -10,6 +10,11 @@ fn advance_loop_step(&value: i32, fail: bool) throw LoopStepFailure {
     value += 1;
 }
 
+fn loop_condition(&checks: i32, remaining: i32) -> bool {
+    checks += 1;
+    return remaining > 0;
+}
+
 test "Loops: loops support clauses iteration and control transfer" {
     var total: i32 = 0;
     for var index: i32 = 0; index < 4; ++index {
@@ -42,6 +47,15 @@ test "Loops: loops support clauses iteration and control transfer" {
     while countdown > 0 {
         --countdown;
     }
+
+    var remaining = 3;
+    var condition_checks = 0;
+    while loop_condition(&condition_checks, remaining) {
+        remaining -= 1;
+        continue;
+    }
+    check(condition_checks == 4);
+    check(remaining == 0);
 
     var assigned: i32 = 7;
     for assigned = 0; assigned < 2; assigned = assigned + 1 {

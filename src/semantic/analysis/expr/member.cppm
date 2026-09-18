@@ -44,26 +44,26 @@ auto interpret_enum_case(
     std::span<const ASTCallArgument> arguments,
     Span span,
     bool called
-) noexcept -> ExpressionResult<typename Site::Value> {
-    auto selected = site.resolve_enum_case(type, name, name_span);
+) noexcept -> ExpressionTask<typename Site::Value> {
+    auto selected = (co_await site.resolve_enum_case(type, name, name_span));
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     if (!called) {
         if (selected->payload_types.empty()) {
-            return site.constant(*selected->constant, span);
+            co_return site.constant(*selected->constant, span);
         }
-        return site.enum_constructor(type, *selected, span);
+        co_return site.enum_constructor(type, *selected, span);
     }
     if (selected->payload_types.empty()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeEnumCaseArity,
             "nullary enum case is a value and cannot be called"
         ));
     }
     if (arguments.size() != selected->payload_types.size()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeEnumCaseArity,
             "enum case payload arity does not match"
@@ -72,14 +72,14 @@ auto interpret_enum_case(
     auto payload = std::vector<typename Site::Value>();
     auto constants = std::vector<ConstantID>();
     for (const auto& [argument, type] : std::views::zip(arguments, selected->payload_types)) {
-        auto value = site.read(argument.expression, type);
+        auto value = (co_await site.read(argument.expression, type));
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         auto converted =
             site.convert_argument(*value, type, site.syntax().expression(argument.expression).span);
         if (!converted.has_value()) {
-            return std::unexpected(converted.error());
+            co_return std::unexpected(converted.error());
         }
         if (const auto known = site.known(*value)) {
             constants.push_back(*known);
@@ -94,7 +94,7 @@ auto interpret_enum_case(
                  PayloadEnumConstant {.enum_case = selected->id, .payload = std::move(constants)}}
         );
     }
-    return construct_enum_value(site, type, selected->id, std::move(payload), known, span);
+    co_return construct_enum_value(site, type, selected->id, std::move(payload), known, span);
 }
 
 template<typename Site>
@@ -135,23 +135,23 @@ auto text_qualifier(Site& site, ASTExprID expression) noexcept -> std::string_vi
 
 template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
-    -> ExpressionResult<typename Site::Selection> {
+    -> ExpressionTask<typename Site::Selection> {
     if (source.op == ASTMemberOperator::Scope) {
         if (!text_qualifier(site, source.operand_id).empty()) {
-            return std::unexpected(site.fail(
+            co_return std::unexpected(site.fail(
                 source.name_span,
                 DiagnosticCode::TypeMethodCall,
                 "text factories must be called directly"
             ));
         }
-        auto type = site.resolve_enum_qualifier(source.operand_id);
+        auto type = (co_await site.resolve_enum_qualifier(source.operand_id));
         if (!type.has_value()) {
-            return std::unexpected(type.error());
+            co_return std::unexpected(type.error());
         }
         if (!type->has_value()) {
-            return site.invalid_enum_qualifier(site.syntax().expression(source.operand_id).span);
+            co_return site.invalid_enum_qualifier(site.syntax().expression(source.operand_id).span);
         }
-        return interpret_enum_case(
+        co_return (co_await interpret_enum_case(
             site,
             **type,
             site.spelling(source.name_span),
@@ -159,11 +159,11 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
             {},
             span,
             false
-        );
+        ));
     }
-    auto operand = site.read(source.operand_id, std::nullopt);
+    auto operand = (co_await site.read(source.operand_id, std::nullopt));
     if (!operand.has_value()) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     const auto operand_type = site.type(*operand);
     const auto* concrete = std::get_if<TypeID>(&operand_type);
@@ -174,13 +174,13 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
                 == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}})) {
         auto decision = decide_text_property(site.spelling(source.name_span));
         if (!decision.has_value()) {
-            return std::unexpected(site.fail(
+            co_return std::unexpected(site.fail(
                 source.name_span,
                 decision.error().code,
                 std::string(decision.error().message)
             ));
         }
-        return interpret_text(site, *decision, std::move(*operand), span);
+        co_return interpret_text(site, *decision, std::move(*operand), span);
     }
-    return construct_member_expression(site, source, std::move(*operand), span);
+    co_return construct_member_expression(site, source, std::move(*operand), span);
 }

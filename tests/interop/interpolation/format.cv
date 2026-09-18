@@ -26,9 +26,9 @@ test "Interpolation interop: builtin formatting retains String aliases backing a
             as i32}|{replace_format_text(&text)}";
     check(::interpolation_probe::observed() == 1);
     check(::interpolation_probe::alive() == 0);
-    check(formatted.as_str() == "0042|after我\0value|7|1");
+    check(formatted == "0042|after我\0value|7|1");
     text.clear();
-    check(formatted.as_str() == "0042|after我\0value|7|1");
+    check(formatted == "0042|after我\0value|7|1");
 }
 
 test "Interpolation interop: precomputed bytes retain native temporary backing" {
@@ -104,7 +104,7 @@ test "Interpolation interop: native formatters retain access to original argumen
 
 test "Interpolation interop: C++ formatter receives its specification and reads once" {
     let calls = ::interpolation_probe::calls();
-    check(f"{::interpolation_probe::make(42):q04x}".as_str() == "002a");
+    check(f"{::interpolation_probe::make(42):q04x}" == "002a");
     check(::interpolation_probe::calls() == calls + 1);
     check(::interpolation_probe::alive() == 0);
     f"{::interpolation_probe::make(7)}";
@@ -125,7 +125,7 @@ test "Interpolation interop: propagation cleans pending values before the handle
         },
     };
     check(effects == 1);
-    check(result.as_str() == "error 1");
+    check(result == "error 1");
     check(::interpolation_probe::alive() == 0);
 }
 

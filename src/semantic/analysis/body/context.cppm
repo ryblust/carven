@@ -37,9 +37,9 @@ enum class BodyLocalRole {
 struct BodyLocalStorage final {
     std::variant<BoundStorage, ConstantID> storage;
     ConstructionTypeRef type;
-    bool used = false;
-    bool takeable = true;
-    BodyLocalRole role = BodyLocalRole::Local;
+    bool used;
+    bool takeable;
+    BodyLocalRole role;
     std::optional<Span> unused_candidate;
 };
 
@@ -54,8 +54,8 @@ using BodyPendingFailureTerms = std::vector<FailureTermID>;
 struct BuiltExpression final {
     BodyExpressionStorage storage;
     BodyPendingFailureTerms pending_failures;
-    bool takeable = true;
-    bool completes = true;
+    bool takeable;
+    bool completes;
 
     auto is_function_reference() const noexcept -> bool;
     auto expression() const noexcept -> const SemanticExpression&;
@@ -79,6 +79,7 @@ struct BuiltinSelection final {
     BuiltinFunction function;
     Span span;
     std::optional<ProgramSpellingID> condition_source;
+    std::optional<std::array<ProgramSpellingID, 2>> operand_sources;
 };
 
 using SelectedExpression = std::variant<BuiltExpression, CppSelection, BuiltinSelection>;
@@ -115,8 +116,8 @@ struct BodyFailureContext final {
 };
 
 struct BodyLoopContext final {
-    bool has_break = false;
-    bool has_continue = false;
+    bool has_break;
+    bool has_continue;
 };
 
 struct BodyCatchContext final {
@@ -242,7 +243,7 @@ public:
         -> AnalysisResult<void>;
     auto inferred_result_type() const noexcept -> ConstructionTypeRef;
     auto local_was_used(std::string_view name) const noexcept -> bool;
-    auto run(const ASTCallableBody& source_body) noexcept -> AnalysisResult<StructuredBodyDraft>;
+    auto run(const ASTCallableBody& source_body) noexcept -> AnalysisTask<StructuredBodyDraft>;
 
 private:
     auto draft() const noexcept -> ProgramDraft&;
@@ -253,19 +254,19 @@ private:
     auto spelling(Span span) const noexcept -> std::string;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
     auto warn(Span span, DiagnosticCode code, std::string message) noexcept -> void;
-    auto resolve_type(ASTTypeID type) noexcept -> AnalysisResult<ConstructionTypeRef>;
+    auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
-        -> AnalysisResult<ConstructionTypeRef>;
-    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisResult<std::uint64_t>;
+        -> AnalysisTask<ConstructionTypeRef>;
+    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
     auto resolve_constant_name(std::string_view name, Span span) noexcept
-        -> AnalysisResult<std::optional<ConstantID>>;
+        -> AnalysisTask<std::optional<ConstantID>>;
     auto resolve_function(std::string_view name, Span span) noexcept
-        -> AnalysisResult<std::optional<FunctionID>>;
+        -> AnalysisTask<std::optional<FunctionID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_enum_qualifier(ASTExprID expression) noexcept
-        -> AnalysisResult<std::optional<TypeID>>;
+        -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
-        -> AnalysisResult<ResolvedEnumCase>;
+        -> AnalysisTask<ResolvedEnumCase>;
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
     auto require_adaptation(
         ConstructionTypeRef source,
@@ -304,21 +305,21 @@ private:
         std::optional<ConstructionTypeRef>& result_type,
         BodyPendingFailureTerms& pending,
         bool allow_pointer_narrowing
-    ) noexcept -> AnalysisResult<SemanticRegion>;
+    ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_arm(
         const ASTMatchArmBody& source,
         bool value_form,
         std::optional<ConstructionTypeRef>& type,
         BodyPendingFailureTerms& pending,
         bool allow_pointer_narrowing
-    ) noexcept -> AnalysisResult<SemanticRegion>;
+    ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_if(
         const ASTIfForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto push_frame(Span span) noexcept -> void;
     auto pop_frame(bool diagnose = true) noexcept -> void;
     auto diagnose_unused(const BodyLocalFrame& frame) noexcept -> void;
@@ -327,11 +328,11 @@ private:
     auto find_local(std::string_view name) const noexcept -> const BodyLocalStorage*;
     auto use_local(std::string_view name) noexcept -> BodyLocalStorage*;
     auto find_global(std::string_view name, Span span) noexcept
-        -> AnalysisResult<const CatalogSymbol*>;
+        -> AnalysisTask<const CatalogSymbol*>;
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
     auto dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
+        -> AnalysisTask<BuiltExpression>;
     auto consume_place(BuiltExpression& expression, Span span) noexcept
         -> AnalysisResult<PlaceExpression>;
     auto coerce_to(BuiltExpression& expression, ConstructionTypeRef target, Span span) noexcept
@@ -353,12 +354,12 @@ private:
         ASTExprID id,
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto select_expression(
         ASTExprID id,
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<SelectedExpression>;
+    ) noexcept -> AnalysisTask<SelectedExpression>;
     auto materialize_selection(
         SelectedExpression selected,
         std::optional<ConstructionTypeRef> expected = std::nullopt
@@ -386,9 +387,9 @@ private:
         bool completes;
     };
 
-    auto build_cpp_argument(ASTExprID source) noexcept -> AnalysisResult<BuiltCppArgument>;
+    auto build_cpp_argument(ASTExprID source) noexcept -> AnalysisTask<BuiltCppArgument>;
     auto cpp_call(SelectedExpression callee, const ASTCallExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
+        -> AnalysisTask<BuiltExpression>;
     auto select_cpp_name(const ASTCppNameExpr& name, Span span) noexcept
         -> AnalysisResult<SelectedExpression>;
     auto validate_builtin(
@@ -407,54 +408,54 @@ private:
         std::span<const Span> argument_spans = {}
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto select_name(const ASTNameExpr& name, Span span) noexcept
-        -> AnalysisResult<SelectedExpression>;
+        -> AnalysisTask<SelectedExpression>;
     auto cpp_construct(
         const ASTConstructionExpr& source,
         ConstructionTypeRef target,
         Span span
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto access_expression(const ASTAccessExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
+        -> AnalysisTask<BuiltExpression>;
     auto call_expression(
         const ASTCallExpr& source,
         Span span,
         std::optional<SelectedExpression> prepared_callee = std::nullopt
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto enum_case_reference(
         TypeID enumeration_type,
         std::string_view case_name,
         Span span,
         Span case_span
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto propagation_expression(const ASTPropagationExpr& source, Span span) noexcept
-        -> AnalysisResult<BuiltExpression>;
+        -> AnalysisTask<BuiltExpression>;
     auto conditional_expression(
         const ASTIfForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<BuiltExpression>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto match_expression(
         const ASTMatchForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<BuiltExpression>;
-    auto match_statement(const ASTMatchForm& source, Span span) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
+    auto match_statement(const ASTMatchForm& source, Span span) noexcept -> AnalysisTask<void>;
     auto try_expression(
         const ASTTryForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<BuiltExpression>;
-    auto try_statement(const ASTTryForm& source, Span span) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
+    auto try_statement(const ASTTryForm& source, Span span) noexcept -> AnalysisTask<void>;
     auto build_try(
         const ASTTryForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+    ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
     auto build_pattern(
         ASTPatternID source,
         ConstructionTypeRef type,
@@ -462,52 +463,52 @@ private:
         bool allow_new_bindings,
         std::flat_set<std::string, std::less<>>& used_bindings,
         std::vector<SemPatternBounds>& pattern_bounds
-    ) noexcept -> AnalysisResult<BuiltPattern>;
+    ) noexcept -> AnalysisTask<BuiltPattern>;
     auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
-        -> AnalysisResult<ConstructionTypeRef>;
+        -> AnalysisTask<ConstructionTypeRef>;
     auto build_match(
         const ASTMatchForm& source,
         Span span,
         std::optional<ConstructionTypeRef> expected,
         bool value_form,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+    ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
     auto lambda_expression(
         const ASTLambdaExpr& source,
         Span span,
         std::optional<ConstructionTypeRef> expected
-    ) noexcept -> AnalysisResult<BuiltExpression>;
-    auto statement(ASTStmtID id) noexcept -> AnalysisResult<void>;
-    auto variable_statement(const ASTVariableDecl& source) noexcept -> AnalysisResult<void>;
-    auto assignment_statement(const ASTAssignment& source) noexcept -> AnalysisResult<void>;
-    auto update_statement(const ASTUpdate& source) noexcept -> AnalysisResult<void>;
-    auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisResult<void>;
-    auto while_statement(const ASTWhileStmt& source, Span span) noexcept -> AnalysisResult<void>;
-    auto for_statement(const ASTForStmt& source, Span span) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<BuiltExpression>;
+    auto statement(ASTStmtID id) noexcept -> AnalysisTask<void>;
+    auto variable_statement(const ASTVariableDecl& source) noexcept -> AnalysisTask<void>;
+    auto assignment_statement(const ASTAssignment& source) noexcept -> AnalysisTask<void>;
+    auto update_statement(const ASTUpdate& source) noexcept -> AnalysisTask<void>;
+    auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisTask<void>;
+    auto while_statement(const ASTWhileStmt& source, Span span) noexcept -> AnalysisTask<void>;
+    auto for_statement(const ASTForStmt& source, Span span) noexcept -> AnalysisTask<void>;
     auto c_style_for_statement(
         const ASTForStmt& source,
         const ASTCStyleForHeader& header,
         Span span
-    ) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
     auto range_for_statement(
         const ASTForStmt& source,
         const ASTRangeForHeader& header,
         Span span
-    ) noexcept -> AnalysisResult<void>;
-    auto if_statement(const ASTIfForm& source, Span span) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
+    auto if_statement(const ASTIfForm& source, Span span) noexcept -> AnalysisTask<void>;
     auto return_statement(
         std::optional<ASTExprID> operand,
         Span span,
         Span keyword_span,
         bool implicit
-    ) noexcept -> AnalysisResult<void>;
-    auto block(ASTBlockID id) noexcept -> AnalysisResult<void>;
+    ) noexcept -> AnalysisTask<void>;
+    auto block(ASTBlockID id) noexcept -> AnalysisTask<void>;
     auto branch_block(
         ASTBranchBlockID id,
         bool consume_result,
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
-    ) noexcept -> AnalysisResult<std::optional<BuiltExpression>>;
+    ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
     auto callable_contract(ConstructionTypeRef type, Span span) noexcept
         -> AnalysisResult<ConstructionCallableContract>;
     auto build_call_argument(
@@ -515,7 +516,7 @@ private:
         AccessMode access,
         std::optional<ConstructionTypeRef> expected,
         std::optional<DiagnosticCode> mismatch_code = std::nullopt
-    ) noexcept -> AnalysisResult<BuiltCallArgument>;
+    ) noexcept -> AnalysisTask<BuiltCallArgument>;
 
     BodyBatchElaborator* batch;
     ProgramModuleID source_module_id;
@@ -547,11 +548,11 @@ public:
         ImportUsage& usage,
         ConstructionRequests& requests
     ) noexcept;
-    auto run() noexcept -> AnalysisResult<void>;
+    auto run() noexcept -> AnalysisTask<void>;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<void>;
+        -> AnalysisTask<void>;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisResult<BodyID>;
+        -> AnalysisTask<BodyID>;
 
     ProgramDraft* draft;
     AnalysisCatalogView catalog_data;
@@ -570,8 +571,8 @@ private:
     };
 
     using State = std::variant<Unvisited, Analyzing, Complete, Failed>;
-    auto complete_function(FunctionID id) noexcept -> AnalysisResult<void>;
-    auto elaborate_function(FunctionID id) noexcept -> AnalysisResult<void>;
+    auto complete_function(FunctionID id) noexcept -> AnalysisTask<void>;
+    auto elaborate_function(FunctionID id) noexcept -> AnalysisTask<void>;
     std::vector<const CatalogSymbol*> functions;
     std::vector<State> states;
     std::vector<std::optional<BodyID>> body_ids;

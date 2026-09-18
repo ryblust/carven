@@ -172,7 +172,7 @@ auto TargetRenderer::render_expression(
         Overloaded {
             [&](const TargetNameExpr& name) noexcept { return this->render_name(name.name); },
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
-                return text(target_symbol_spelling(intrinsic.symbol));
+                return text(target_symbol_info(intrinsic.symbol).spelling);
             },
             [&](const TargetLiteralExpr& literal) noexcept {
                 return text(literal_spelling(literal.value));

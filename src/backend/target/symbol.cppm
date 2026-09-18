@@ -34,6 +34,10 @@ enum class TargetSymbol {
     RuntimeRange,
     RuntimeAsSlice,
     RuntimeAdoptArray,
+    RuntimeObserveComparison,
+    RuntimeObserveShortCircuit,
+    RuntimeDisplayWriter,
+    RuntimeStructuralDisplay,
     RuntimePrint,
     RuntimePrintln,
     RuntimeEprint,
@@ -82,7 +86,11 @@ enum class TargetSymbol {
     TestingReporter,
 };
 
-auto target_symbol_spelling(TargetSymbol symbol) noexcept -> std::string_view;
+struct TargetSymbolInfo final {
+    std::string_view spelling;
+    std::string_view header;
+    // The call-result contract does not permit omitting execution.
+    bool allows_implicit_discard;
+};
 
-// This call-result contract does not imply that execution can be omitted.
-auto target_symbol_allows_implicit_discard(TargetSymbol symbol) noexcept -> bool;
+auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo;

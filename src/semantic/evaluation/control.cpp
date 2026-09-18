@@ -1,28 +1,29 @@
 module carven:semantic.evaluation.control.impl;
 
+import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import std;
 
 auto SemanticExecutor::region(ExecutionFrame& frame, const SemanticRegion& source) noexcept
-    -> ExecutionResult<ExecutionCompletion> {
+    -> ExecutionTask<ExecutionCompletion> {
     if (auto checked = step(source.origin); !checked) {
-        return std::unexpected(checked.error());
+        co_return std::unexpected(checked.error());
     }
     for (const auto& child : source.statements) {
-        auto result = statement(frame, child);
+        auto result = (co_await statement(frame, child));
         if (!result || result->flow != ExecutionFlow::Normal) {
-            return result;
+            co_return result;
         }
     }
-    return source.result
-        ? expression(frame, *source.result)
+    co_return source.result
+        ? (co_await expression(frame, *source.result))
         : ExecutionResult<ExecutionCompletion>(
               ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
           );
 }
 
 auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement& source) noexcept
-    -> ExecutionResult<ExecutionCompletion> {
+    -> ExecutionTask<ExecutionCompletion> {
     context.trace(
         {.kind = ExecutionTraceKind::Statement,
          .origin = source.origin,
@@ -30,31 +31,31 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
          .depth = calls.size()}
     );
     if (auto checked = step(source.origin); !checked) {
-        return std::unexpected(checked.error());
+        co_return std::unexpected(checked.error());
     }
-    return source.value.visit(
-        [&](const auto& operation) noexcept -> ExecutionResult<ExecutionCompletion> {
+    co_return (co_await source.value.visit(
+        [&](const auto& operation) noexcept -> ExecutionTask<ExecutionCompletion> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemReturn>) {
-                auto result = operation.value ? value(frame, *operation.value)
+                auto result = operation.value ? (co_await value(frame, *operation.value))
                                               : ExecutionResult<ExecutionValue>(ExecutionVoid {});
                 if (!result) {
-                    return std::unexpected(result.error());
+                    co_return std::unexpected(result.error());
                 }
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Return,
                     .value = std::move(*result)
                 };
             } else if constexpr (std::same_as<Operation, SemThrow>) {
-                auto payload = value(frame, operation.value);
+                auto payload = (co_await value(frame, operation.value));
                 if (!payload) {
-                    return std::unexpected(payload.error());
+                    co_return std::unexpected(payload.error());
                 }
                 auto owned = own_storage(std::move(*payload), source.origin);
                 if (!owned) {
-                    return std::unexpected(owned.error());
+                    co_return std::unexpected(owned.error());
                 }
-                return std::unexpected(
+                co_return std::unexpected(
                     ExecutionFailure {ExecutionSourceFailure {
                         .type = operation.failure_type,
                         .payload = std::make_shared<const ExecutionValue>(std::move(*owned)),
@@ -64,70 +65,70 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 );
             } else if constexpr (std::same_as<Operation, SemRethrow>) {
                 if (frame.caught.empty()) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         source.origin,
                         DiagnosticCode::ConstEvaluation,
                         "rethrow has no active caught failure"
                     ));
                 }
-                return std::unexpected(ExecutionFailure {frame.caught.back()});
+                co_return std::unexpected(ExecutionFailure {frame.caught.back()});
             } else if constexpr (std::same_as<Operation, SemBreak>) {
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Break,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemContinue>) {
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Continue,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemExpressionStatement>) {
-                auto result = expression(frame, operation.expression);
+                auto result = (co_await expression(frame, operation.expression));
                 if (result && result->flow == ExecutionFlow::Normal) {
                     result->value = ExecutionVoid {};
                 }
-                return result;
+                co_return result;
             } else if constexpr (std::same_as<Operation, SemInitialize>) {
-                auto result = value(frame, operation.initializer);
+                auto result = (co_await value(frame, operation.initializer));
                 if (!result) {
-                    return std::unexpected(result.error());
+                    co_return std::unexpected(result.error());
                 }
                 auto stored = own_storage(std::move(*result), source.origin);
                 if (!stored) {
-                    return std::unexpected(stored.error());
+                    co_return std::unexpected(stored.error());
                 }
                 frame.slots[operation.binding.index()] = std::move(*stored);
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemAssign>) {
-                auto target = place(frame, operation.target);
+                auto target = (co_await place(frame, operation.target));
                 if (!target) {
-                    return std::unexpected(target.error());
+                    co_return std::unexpected(target.error());
                 }
                 // Compound assignment snapshots its left operand before the right executes.
                 auto prior = std::optional<ConstantFact>();
                 if (operation.compound) {
                     auto selected = located(frame, *target, source.origin);
                     if (!selected) {
-                        return std::unexpected(selected.error());
+                        co_return std::unexpected(selected.error());
                     }
                     auto snapshot = read_fact(**selected, source.origin);
                     if (!snapshot) {
-                        return std::unexpected(snapshot.error());
+                        co_return std::unexpected(snapshot.error());
                     }
                     prior = std::move(*snapshot);
                 }
-                auto right = value(frame, operation.value);
+                auto right = (co_await value(frame, operation.value));
                 if (!right) {
-                    return std::unexpected(right.error());
+                    co_return std::unexpected(right.error());
                 }
                 if (operation.compound) {
                     auto rhs = read_fact(*right, source.origin);
                     auto result_type = type(operation.target.type.construction(), source.origin);
                     if (!rhs || !result_type) {
-                        return std::unexpected(!rhs ? rhs.error() : result_type.error());
+                        co_return std::unexpected(!rhs ? rhs.error() : result_type.error());
                     }
                     right = finish(
                         evaluate_binary_constant_value(
@@ -141,82 +142,85 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                         source.origin
                     );
                     if (!right) {
-                        return std::unexpected(right.error());
+                        co_return std::unexpected(right.error());
                     }
                 }
                 right = own_storage(std::move(*right), source.origin);
                 if (!right) {
-                    return std::unexpected(right.error());
+                    co_return std::unexpected(right.error());
                 }
                 if (target->path.empty()) {
                     frame.slots[target->slot] = std::move(*right);
                 } else {
                     auto selected = located(frame, *target, source.origin);
                     if (!selected) {
-                        return std::unexpected(selected.error());
+                        co_return std::unexpected(selected.error());
                     }
                     **selected = std::move(*right);
                 }
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemLoop>) {
-                return loop(frame, operation, source.origin);
+                co_return (co_await loop(frame, operation, source.origin));
             } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
-                return range_loop(frame, operation, source.origin);
+                co_return (co_await range_loop(frame, operation, source.origin));
             } else if constexpr (std::same_as<Operation, OwnedSemanticRegion>) {
-                return region(frame, *operation);
+                co_return (co_await region(frame, *operation));
             } else {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     source.origin,
                     DiagnosticCode::ConstEvaluation,
                     "statement is not supported in execution"
                 ));
             }
         }
-    );
+    ));
 }
 
 auto SemanticExecutor::loop(
     ExecutionFrame& frame,
     const SemLoop& source,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionCompletion> {
-    auto initialized = region(frame, *source.initializer);
+) noexcept -> ExecutionTask<ExecutionCompletion> {
+    auto initialized = (co_await region(frame, *source.initializer));
     if (!initialized || initialized->flow != ExecutionFlow::Normal) {
-        return initialized;
+        co_return initialized;
     }
     while (true) {
         if (auto checked = step(origin); !checked) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
         if (source.condition) {
-            auto condition = value(frame, *source.condition);
+            auto condition = (co_await value(frame, *source.condition));
             if (!condition) {
-                return std::unexpected(condition.error());
+                co_return std::unexpected(condition.error());
             }
             auto truth = boolean(*condition, source.condition->origin);
             if (!truth) {
-                return std::unexpected(truth.error());
+                co_return std::unexpected(truth.error());
             }
             if (!*truth) {
-                return ExecutionCompletion {
+                co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             }
         }
-        auto body = region(frame, *source.body);
+        auto body = co_await region(frame, *source.body);
         if (!body || body->flow == ExecutionFlow::Return) {
-            return body;
+            co_return body;
         }
         if (body->flow == ExecutionFlow::Break) {
-            return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+            co_return ExecutionCompletion {
+                .flow = ExecutionFlow::Normal,
+                .value = ExecutionVoid {}
+            };
         }
-        auto steps = region(frame, *source.steps);
+        auto steps = (co_await region(frame, *source.steps));
         if (!steps || steps->flow == ExecutionFlow::Return) {
-            return steps;
+            co_return steps;
         }
     }
 }
@@ -225,20 +229,20 @@ auto SemanticExecutor::range_loop(
     ExecutionFrame& frame,
     const SemRangeLoop& source,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionCompletion> {
+) noexcept -> ExecutionTask<ExecutionCompletion> {
     const auto sequence_type = type(source.source.type.construction(), origin);
     if (!sequence_type) {
-        return std::unexpected(sequence_type.error());
+        co_return std::unexpected(sequence_type.error());
     }
     const auto canonical = values.type_copy(*sequence_type);
     if (const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value)) {
-        auto evaluated = value(frame, source.source);
+        auto evaluated = (co_await value(frame, source.source));
         if (!evaluated) {
-            return std::unexpected(evaluated.error());
+            co_return std::unexpected(evaluated.error());
         }
         auto fact = read_fact(*evaluated, origin);
         if (!fact) {
-            return std::unexpected(fact.error());
+            co_return std::unexpected(fact.error());
         }
         const auto range = std::get<RangeConstant>(fact->value);
         auto current = range.begin;
@@ -249,15 +253,15 @@ auto SemanticExecutor::range_loop(
         };
         while (less(current, range.end) || (range.inclusive && current == range.end)) {
             if (auto checked = step(origin); !checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             if (source.binding) {
                 frame.slots[source.binding->index()] =
                     ConstantAtom {.type = range_type->element, .value = current};
             }
-            auto body = region(frame, *source.body);
+            auto body = co_await region(frame, *source.body);
             if (!body || body->flow == ExecutionFlow::Return) {
-                return body;
+                co_return body;
             }
             if (body->flow == ExecutionFlow::Break || current == range.end) {
                 break;
@@ -266,35 +270,35 @@ auto SemanticExecutor::range_loop(
                 ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
                 : IntegerConstant::from_parts(current.magnitude() + 1u, false);
         }
-        return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+        co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }
     const auto slots = frame.slots.size();
-    const auto execute = [&]() noexcept -> ExecutionResult<ExecutionCompletion> {
+    const auto execute = [&]() noexcept -> ExecutionTask<ExecutionCompletion> {
         auto owner = ExecutionPlace {.slot = slots, .path = {}};
         if (local_place(source.source)) {
-            auto selected = place(frame, source.source);
+            auto selected = (co_await place(frame, source.source));
             if (!selected) {
-                return std::unexpected(selected.error());
+                co_return std::unexpected(selected.error());
             }
             owner = std::move(*selected);
         } else {
-            auto evaluated = value(frame, source.source);
+            auto evaluated = (co_await value(frame, source.source));
             if (!evaluated) {
-                return std::unexpected(evaluated.error());
+                co_return std::unexpected(evaluated.error());
             }
             auto stored = own_storage(std::move(*evaluated), origin);
             if (!stored) {
-                return std::unexpected(stored.error());
+                co_return std::unexpected(stored.error());
             }
             frame.slots.emplace_back(std::move(*stored));
         }
         auto storage = located(frame, owner, origin);
         if (!storage) {
-            return std::unexpected(storage.error());
+            co_return std::unexpected(storage.error());
         }
         const auto view = execution_compound_view(values, **storage);
         if (!view) {
-            return std::unexpected(
+            co_return std::unexpected(
                 fail(origin, DiagnosticCode::ConstEvaluation, "iteration requires array storage")
             );
         }
@@ -303,13 +307,13 @@ auto SemanticExecutor::range_loop(
         if (source.binding) {
             const auto element_type = type(frame.body->binding_type(*source.binding), origin);
             if (!element_type) {
-                return std::unexpected(element_type.error());
+                co_return std::unexpected(element_type.error());
             }
             borrow_element |= read_borrows_storage(*element_type);
         }
         for (auto index = 0uz; index < extent; ++index) {
             if (auto checked = step(origin); !checked) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             if (source.binding) {
                 auto element = owner;
@@ -319,64 +323,74 @@ auto SemanticExecutor::range_loop(
                 } else {
                     auto selected = located(frame, element, origin);
                     if (!selected) {
-                        return std::unexpected(selected.error());
+                        co_return std::unexpected(selected.error());
                     }
                     auto copied = copy_value(**selected, origin);
                     if (!copied) {
-                        return std::unexpected(copied.error());
+                        co_return std::unexpected(copied.error());
                     }
                     frame.slots[source.binding->index()] = std::move(*copied);
                 }
             }
-            auto body = region(frame, *source.body);
+            auto body = co_await region(frame, *source.body);
             if (!body || body->flow == ExecutionFlow::Return) {
-                return body;
+                co_return body;
             }
             if (body->flow == ExecutionFlow::Break) {
                 break;
             }
         }
-        return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
+        co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     };
-    auto result = execute();
+    auto result = (co_await execute());
     if (source.binding) {
         frame.slots[source.binding->index()] = ExecutionUninitialized {};
     }
     frame.slots.resize(slots);
-    return result;
+    co_return result;
 }
 
 auto SemanticExecutor::test_report(
     ExecutionFrame& frame,
     const SemTestReport& operation,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     if (!testing) {
-        return std::unexpected(
+        co_return std::unexpected(
             fail(origin, DiagnosticCode::ConstTest, "test operation requires an active const test")
         );
     }
     auto passed = false;
+    auto explanation = std::string();
     if (operation.condition) {
-        auto condition = value(frame, **operation.condition);
+        const auto previous = test_observation;
+        if (operation.operand_sources) {
+            test_observation = TestObservation {
+                .condition = std::addressof(**operation.condition),
+                .sources = *operation.operand_sources,
+                .explanation = &explanation
+            };
+        }
+        auto condition = (co_await value(frame, **operation.condition));
+        test_observation = previous;
         if (!condition) {
-            return std::unexpected(condition.error());
+            co_return std::unexpected(condition.error());
         }
         auto truth = boolean(*condition, origin);
         if (!truth) {
-            return std::unexpected(truth.error());
+            co_return std::unexpected(truth.error());
         }
         passed = *truth;
     }
     auto message = std::string();
     if (operation.message) {
-        auto argument = value(frame, **operation.message);
+        auto argument = (co_await value(frame, **operation.message));
         if (!argument) {
-            return std::unexpected(argument.error());
+            co_return std::unexpected(argument.error());
         }
         auto bytes = text(*argument, origin);
         if (!bytes) {
-            return std::unexpected(bytes.error());
+            co_return std::unexpected(bytes.error());
         }
         if (!passed) {
             message = *bytes;
@@ -391,16 +405,45 @@ auto SemanticExecutor::test_report(
                   values.spelling(*operation.condition_source)
               )
             : std::string("test failed");
+        if (!explanation.empty()) {
+            detail += "\n" + explanation;
+        }
         if (!message.empty()) {
             detail += ": " + message;
         }
         if (auto checked = account_text(detail.size(), origin); !checked) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
         const auto failure = fail(origin, DiagnosticCode::ConstTest, std::move(detail));
         if (operation.kind != TestReportKind::Check) {
-            return std::unexpected(failure);
+            co_return std::unexpected(failure);
         }
     }
-    return ExecutionVoid {};
+    co_return ExecutionVoid {};
+}
+
+auto SemanticExecutor::observe_test(
+    const SemanticExpression& source,
+    const ExecutionValue& left,
+    const ExecutionValue* right,
+    bool passed
+) noexcept -> void {
+    if (passed || !test_observation || test_observation->condition != &source) {
+        return;
+    }
+    auto& output = *test_observation->explanation;
+    output += "  " + std::string(values.spelling(test_observation->sources[0])) + ": "
+        + display_execution_value(values, left, true).value_or("<opaque>") + "\n";
+    output += "  " + std::string(values.spelling(test_observation->sources[1])) + ": "
+        + (right ? display_execution_value(values, *right, true).value_or("<opaque>")
+                 : "<not evaluated>")
+        + "\n";
+    if (output.size() > 16384uz) {
+        auto end = 16384uz;
+        while (end != 0 && (static_cast<unsigned char>(output[end]) & 0xc0u) == 0x80u) {
+            --end;
+        }
+        output.resize(end);
+        output += "...";
+    }
 }

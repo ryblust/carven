@@ -85,9 +85,9 @@ auto interpret_unary(
     const ASTPrefixExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     if (source.op == ASTPrefixOperator::Dereference) {
-        return site.dereference(source, span);
+        co_return (co_await site.dereference(source, span));
     }
     auto literal_id = source.operand_id;
     while (const auto* group =
@@ -100,24 +100,24 @@ auto interpret_unary(
         && number != nullptr
         && (std::holds_alternative<IntegerLiteralValue>(number->value)
             || std::holds_alternative<FloatingLiteralValue>(number->value))) {
-        return interpret_literal(site, *number, span, expected, LiteralSign::Negative);
+        co_return interpret_literal(site, *number, span, expected, LiteralSign::Negative);
     }
-    auto operand = site.read(
+    auto operand = (co_await site.read(
         source.operand_id,
         source.op == ASTPrefixOperator::LogicalNot
             ? std::optional<ConstructionTypeRef>(site.draft().builtin_type(BuiltinType::Bool))
             : expected
-    );
+    ));
     if (!operand.has_value()) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
     const auto operation = semantic_operator(source.op);
     if (site.external(site.type(*operand))) {
-        return site.external_unary(operation, std::move(*operand), span);
+        co_return site.external_unary(operation, std::move(*operand), span);
     }
     const auto decision = decide_unary_operator(site.draft(), operation, site.type(*operand));
     if (!decision.has_value()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
             std::string(decision.error().message)
@@ -142,16 +142,16 @@ auto interpret_unary(
             source.operator_span
         );
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         known = *value;
     }
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto value = site.consume_read(state, std::move(*operand), source.operator_span);
     if (!value) {
-        return std::unexpected(value.error());
+        co_return std::unexpected(value.error());
     }
-    return site.finish_constructed(
+    co_return site.finish_constructed(
         type,
         SemUnary {.operation = operation, .operand = OwnedSemanticExpression(std::move(*value))},
         std::move(state),
@@ -184,17 +184,17 @@ auto interpret_binary(
     const ASTBinaryExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     if (source.op == ASTBinaryOperator::LogicalAnd || source.op == ASTBinaryOperator::LogicalOr) {
         const auto boolean = ConstructionTypeRef {site.draft().builtin_type(BuiltinType::Bool)};
-        auto left = site.read(source.left, boolean);
+        auto left = (co_await site.read(source.left, boolean));
         if (!left.has_value()) {
-            return std::unexpected(left.error());
+            co_return std::unexpected(left.error());
         }
         auto checked =
             require_expression_boolean(site, *left, site.syntax().expression(source.left).span);
         if (!checked.has_value()) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
         const auto and_operation = source.op == ASTBinaryOperator::LogicalAnd;
         const auto truth = [&](const auto& value) noexcept -> std::optional<bool> {
@@ -209,14 +209,14 @@ auto interpret_binary(
         const auto left_truth = truth(*left);
         [[maybe_unused]] const auto execution =
             site.enter_operand_execution(!left_truth.has_value() || *left_truth == and_operation);
-        auto right = site.read(source.right, boolean);
+        auto right = (co_await site.read(source.right, boolean));
         if (!right.has_value()) {
-            return std::unexpected(right.error());
+            co_return std::unexpected(right.error());
         }
         checked =
             require_expression_boolean(site, *right, site.syntax().expression(source.right).span);
         if (!checked.has_value()) {
-            return std::unexpected(checked.error());
+            co_return std::unexpected(checked.error());
         }
         const auto right_truth = truth(*right);
         auto result = std::optional<bool>();
@@ -231,7 +231,7 @@ auto interpret_binary(
                 {.type = std::get<TypeID>(boolean), .value = BooleanConstant {.value = *result}}
             );
         }
-        return site.finish_short_circuit(
+        co_return site.finish_short_circuit(
             and_operation,
             std::move(*left),
             std::move(*right),
@@ -242,31 +242,31 @@ auto interpret_binary(
     auto left = std::optional<typename Site::Value>();
     auto right = std::optional<typename Site::Value>();
     if (binary_operand_plan(site.syntax(), source) == BinaryOperandPlan::LeftExpectedFromRight) {
-        auto value = site.read(source.right, std::nullopt);
+        auto value = (co_await site.read(source.right, std::nullopt));
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         right.emplace(std::move(*value));
-        value = site.read(
+        value = (co_await site.read(
             source.left,
             site.external(site.type(*right)) ? std::nullopt : std::optional(site.type(*right))
-        );
+        ));
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         left.emplace(std::move(*value));
     } else {
-        auto value = site.read(source.left, expected);
+        auto value = (co_await site.read(source.left, expected));
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         left.emplace(std::move(*value));
-        value = site.read(
+        value = (co_await site.read(
             source.right,
             site.external(site.type(*left)) ? std::nullopt : std::optional(site.type(*left))
-        );
+        ));
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         right.emplace(std::move(*value));
     }
@@ -274,14 +274,14 @@ auto interpret_binary(
     const auto left_pointer = pointer_shape(site.draft(), site.type(*left));
     const auto right_pointer = pointer_shape(site.draft(), site.type(*right));
     if ((left_pointer || right_pointer) && (!left_pointer || !right_pointer)) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             source.operator_span,
             DiagnosticCode::TypeBinary,
             "ptr operations require two typed pointer operands"
         ));
     }
     if (site.external(site.type(*left)) || site.external(site.type(*right))) {
-        return site.external_binary(operation, std::move(*left), std::move(*right), span);
+        co_return site.external_binary(operation, std::move(*left), std::move(*right), span);
     }
     const auto pointer_equality =
         (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
@@ -297,7 +297,7 @@ auto interpret_binary(
         !binary_operator_requires_equality(source.op) || site.supports_equality(site.type(*left))
     );
     if (!decision.has_value()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
             std::string(decision.error().message)
@@ -323,20 +323,20 @@ auto interpret_binary(
             source.operator_span
         );
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         known = *value;
     }
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto first = site.consume_read(state, std::move(*left), source.operator_span);
     if (!first) {
-        return std::unexpected(first.error());
+        co_return std::unexpected(first.error());
     }
     auto second = site.consume_read(state, std::move(*right), source.operator_span);
     if (!second) {
-        return std::unexpected(second.error());
+        co_return std::unexpected(second.error());
     }
-    return site.finish_constructed(
+    co_return site.finish_constructed(
         type,
         SemBinary {
             .left = OwnedSemanticExpression(std::move(*first)),
@@ -351,7 +351,7 @@ auto interpret_binary(
 
 template<typename Site>
 auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
-    -> ExpressionResult<typename Site::Value> {
+    -> ExpressionTask<typename Site::Value> {
     auto literal_id = source.operand_id;
     while (const auto* group =
                std::get_if<ASTGroupExpr>(&site.syntax().expression(literal_id).value)) {
@@ -359,26 +359,26 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     }
     if (const auto* literal = std::get_if<ASTLiteral>(&site.syntax().expression(literal_id).value);
         literal != nullptr && std::holds_alternative<NullPointerLiteralValue>(literal->value)) {
-        auto target = site.resolve_type(source.target_type);
+        auto target = (co_await site.resolve_type(source.target_type));
         if (!target) {
-            return std::unexpected(target.error());
+            co_return std::unexpected(target.error());
         }
-        return site.read(source.operand_id, *target);
+        co_return (co_await site.read(source.operand_id, *target));
     }
-    auto operand = site.read(source.operand_id, std::nullopt);
+    auto operand = (co_await site.read(source.operand_id, std::nullopt));
     if (!operand.has_value()) {
-        return std::unexpected(operand.error());
+        co_return std::unexpected(operand.error());
     }
-    auto target = site.resolve_type(source.target_type);
+    auto target = (co_await site.resolve_type(source.target_type));
     if (!target.has_value()) {
-        return std::unexpected(target.error());
+        co_return std::unexpected(target.error());
     }
     if (site.external(site.type(*operand)) || site.external(*target)) {
-        return site.external_cast(*target, std::move(*operand), span);
+        co_return site.external_cast(*target, std::move(*operand), span);
     }
     if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Str))
         && *target == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
-        return construct_text_value(
+        co_return construct_text_value(
             site,
             TextIntrinsic::FromStr,
             site.draft().builtin_type(BuiltinType::String),
@@ -394,7 +394,7 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
         site.numeric_enum(site.type(*operand))
     );
     if (!decision.has_value()) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
             std::string(decision.error().message)
@@ -402,7 +402,7 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     }
     if (*decision == CastKind::Identity) {
         const auto known = site.known(*operand);
-        return construct_cast(
+        co_return construct_cast(
             site,
             *decision,
             *target,
@@ -421,11 +421,11 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
             source.operator_span
         );
         if (!value.has_value()) {
-            return std::unexpected(value.error());
+            co_return std::unexpected(value.error());
         }
         known = *value;
     }
-    return construct_cast(
+    co_return construct_cast(
         site,
         *decision,
         *target,
@@ -441,7 +441,7 @@ auto interpret_range(
     const ASTRangeExpr& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
     auto element = std::optional<ConstructionTypeRef>();
     if (expected) {
         if (const auto* concrete = std::get_if<TypeID>(&*expected)) {
@@ -451,14 +451,25 @@ auto interpret_range(
             }
         }
     }
-    auto begin = site.read(source.begin, element);
+    auto end = std::optional<typename Site::Value>();
+    if (!element
+        && numeric_operand_plan(site.syntax(), source.begin, source.end)
+            == BinaryOperandPlan::LeftExpectedFromRight) {
+        auto value = (co_await site.read(source.end, std::nullopt));
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        end.emplace(std::move(*value));
+        element = site.type(*end);
+    }
+    auto begin = (co_await site.read(source.begin, element));
     if (!begin) {
-        return std::unexpected(begin.error());
+        co_return std::unexpected(begin.error());
     }
     const auto begin_type = site.type(*begin);
     const auto* concrete = std::get_if<TypeID>(&begin_type);
     if (concrete == nullptr) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeRangeInteger,
             "range requires concrete integer bounds"
@@ -467,18 +478,21 @@ auto interpret_range(
     const auto type = site.draft().type_copy(*concrete);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
     if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-        return std::unexpected(
+        co_return std::unexpected(
             site.fail(span, DiagnosticCode::TypeRangeInteger, "range bounds must be integers")
         );
     }
     const auto range_type =
         site.draft().intern_type({.value = RangeTypeValue {.element = *concrete}});
-    auto end = site.read(source.end, site.type(*begin));
     if (!end) {
-        return std::unexpected(end.error());
+        auto value = (co_await site.read(source.end, site.type(*begin)));
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        end.emplace(std::move(*value));
     }
     if (!type_shapes_compatible(site.draft(), site.type(*begin), site.type(*end))) {
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeRangeBounds,
             "range bounds must have one compatible type"
@@ -497,16 +511,16 @@ auto interpret_range(
              }}
         );
     }
-    auto state = typename Site::OperandState();
+    auto state = Site::operand_state();
     auto first = site.consume_read(state, std::move(*begin), span);
     if (!first) {
-        return std::unexpected(first.error());
+        co_return std::unexpected(first.error());
     }
     auto last = site.consume_read(state, std::move(*end), span);
     if (!last) {
-        return std::unexpected(last.error());
+        co_return std::unexpected(last.error());
     }
-    return site.finish_constructed(
+    co_return site.finish_constructed(
         range_type,
         SemRange {
             .begin = OwnedSemanticExpression(std::move(*first)),

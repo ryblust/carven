@@ -2,6 +2,7 @@ module carven:semantic.analysis.diagnostics;
 
 import :diagnostics.diagnostic;
 import :diagnostics.sink;
+import :support.task;
 import std;
 
 class AnalysisFailure final {
@@ -32,3 +33,6 @@ private:
 
 template<typename Value>
 using AnalysisResult = std::expected<Value, AnalysisFailure>;
+
+template<typename Value>
+using AnalysisTask = ContinuationTask<AnalysisResult<Value>>;

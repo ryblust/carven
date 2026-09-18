@@ -8,15 +8,14 @@ enum InvalidPort {
 fn parse_port(text: str) -> i32 throw MissingSetting + InvalidPort {
     if text.is_empty() { throw MissingSetting {}; }
     var value: i32 = 0;
-    var position: usize = 0;
-    for byte in text.bytes {
+    for position in 0..text.len() {
+        let byte = text.bytes[position];
         let digit = match byte {
             48..=57 => (byte as i32) - 48,
             _ => throw InvalidPort::BadDigit(position),
         };
         if value > (65535 - digit) / 10 { throw InvalidPort::OutOfRange; }
         value = value * 10 + digit;
-        ++position;
     }
     return match value {
         0 => throw InvalidPort::OutOfRange,

@@ -22,7 +22,7 @@ auto maximum_integer_size(BuiltinType type, int base) noexcept -> std::uint32_t 
 }
 
 template<typename Text, typename Hole>
-auto visit_static_format(
+auto visit_format(
     const FormatSpec& format,
     std::size_t operand_count,
     Text text,
@@ -43,20 +43,24 @@ auto visit_static_format(
                 return false;
             }
             ++next_operand;
-            auto specification = std::string();
-            for (const auto& fragment : field.specification) {
-                const auto* literal = std::get_if<FormatText>(&fragment.value);
-                if (literal == nullptr) {
-                    return false;
-                }
-                specification += literal->bytes;
-            }
-            if (!hole(field.operand_index, specification)) {
+            if (!hole(field, next_operand)) {
                 return false;
             }
         }
     }
     return next_operand == operand_count;
+}
+
+auto static_specification(const FormatHole& field) noexcept -> std::optional<std::string> {
+    auto specification = std::string();
+    for (const auto& fragment : field.specification) {
+        const auto* literal = std::get_if<FormatText>(&fragment.value);
+        if (literal == nullptr) {
+            return std::nullopt;
+        }
+        specification += literal->bytes;
+    }
+    return specification;
 }
 
 } // namespace
@@ -65,22 +69,27 @@ auto format_preserves_utf8(
     const FormatSpec& format,
     std::span<const std::optional<BuiltinType>> operands
 ) noexcept -> bool {
-    return visit_static_format(
+    return visit_format(
         format,
         operands.size(),
         [](char) static noexcept {},
-        [&](std::size_t index, std::string_view specification) noexcept {
+        [&](const FormatHole& field, std::size_t&) noexcept {
+            const auto index = field.operand_index;
+            const auto specification = static_specification(field);
+            if (!specification) {
+                return false;
+            }
             if (!operands[index]) {
                 return false;
             }
             const auto type = *operands[index];
             if (builtin_is_integer(type)) {
-                return parse_integer_format_specification(specification).has_value();
+                return parse_integer_format_specification(*specification).has_value();
             }
             if (type == BuiltinType::F32 || type == BuiltinType::F64) {
-                return parse_floating_format_specification(specification).has_value();
+                return parse_floating_format_specification(*specification).has_value();
             }
-            return specification.empty()
+            return specification->empty()
                 && (type == BuiltinType::Bool
                     || type == BuiltinType::Char
                     || type == BuiltinType::Str
@@ -106,14 +115,62 @@ auto classify_writer_format(
         result.minimum_size += minimum;
         result.maximum_size += maximum;
     };
-    const auto valid = visit_static_format(
+    const auto valid = visit_format(
         format,
         operands.size(),
         [&](char byte) noexcept {
             result.text.back().push_back(byte);
             add_size(1u, 1u);
         },
-        [&](std::size_t index, std::string_view specification) noexcept {
+        [&](const FormatHole& field, std::size_t& next_operand) noexcept {
+            const auto index = field.operand_index;
+            auto specification = std::string();
+            auto dynamic_width = false;
+            for (const auto& fragment : field.specification) {
+                if (const auto* text = std::get_if<FormatText>(&fragment.value)) {
+                    specification += text->bytes;
+                    continue;
+                }
+                const auto& width = std::get<FormatHole>(fragment.value);
+                if (dynamic_width
+                    || (specification != "" && specification != "0")
+                    || width.has_specification
+                    || !width.specification.empty()
+                    || width.operand_index != next_operand
+                    || next_operand >= operands.size()
+                    || !operands[next_operand]
+                    || !builtin_is_integer(*operands[next_operand])) {
+                    return false;
+                }
+                const auto width_type = *operands[next_operand];
+                const auto bits = *builtin_integer_width(width_type);
+                if (bits > 32u || (bits == 32u && !builtin_is_signed_integer(width_type))) {
+                    return false;
+                }
+                ++next_operand;
+                dynamic_width = true;
+                // A sentinel width lets the existing parser validate the surrounding policy.
+                specification.push_back('1');
+            }
+            if (dynamic_width) {
+                const auto parsed = parse_integer_format_specification(specification);
+                if (!operands[index]
+                    || !builtin_is_integer(*operands[index])
+                    || !parsed
+                    || parsed->width != "1") {
+                    return false;
+                }
+                result.fields.emplace_back(
+                    IntegerFormatField {
+                        .base = parsed->base,
+                        .uppercase = parsed->uppercase,
+                        .zero_pad = parsed->zero_pad,
+                        .static_width = std::nullopt,
+                    }
+                );
+                result.text.emplace_back();
+                return true;
+            }
             if (!operands[index]) {
                 return false;
             }
@@ -191,7 +248,7 @@ auto classify_writer_format(
                     .base = parsed->base,
                     .uppercase = parsed->uppercase,
                     .zero_pad = parsed->zero_pad,
-                    .width = width,
+                    .static_width = width,
                 }
             );
             result.text.emplace_back();

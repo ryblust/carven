@@ -42,6 +42,7 @@ public:
 
 private:
     auto record_provider_interface(ModuleID active, ModuleID provider) noexcept -> void;
+    auto name_query_type(TargetTypeID type) noexcept -> void;
 
     const PlannedCompilation& planned_compilation;
     TargetArtifactID artifact_id;
@@ -95,7 +96,7 @@ public:
     auto call_result(TypeID type) noexcept -> TargetTypeID;
     auto lower_type(TypeID id) noexcept -> TargetTypeID;
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
-    auto cpp_type_query(const CppQueryType& query) noexcept -> TargetExpr;
+    auto lower_cpp_query(const CppQueryType& query) noexcept -> TargetTypeID;
     auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
     auto lower_signature_result(CallableSignatureID signature, bool stops_test) noexcept
         -> TargetTypeID;
@@ -108,6 +109,7 @@ private:
     using TypeState = std::variant<Resolving, TargetTypeID>;
 
     auto function_type(CallableSignatureID signature, bool stops_test) noexcept -> TargetType;
+    auto cpp_type_query(const CppQueryType& query) noexcept -> TargetExpr;
 
     ArtifactLowering& artifact_lowering;
     ModuleID module_id;

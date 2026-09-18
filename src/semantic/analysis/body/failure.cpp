@@ -32,7 +32,7 @@ auto BodyElaborator::build_try(
     std::optional<ConstructionTypeRef> expected,
     bool value_form,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<std::optional<BuiltExpression>> {
+) noexcept -> AnalysisTask<std::optional<BuiltExpression>> {
     struct CatchCoverageAlternative final {
         std::optional<TypeID> failure_type;
         std::optional<PatternID> pattern;
@@ -49,19 +49,19 @@ auto BodyElaborator::build_try(
     const auto protected_failures = draft().add_empty_failure_term();
     auto pending = BodyPendingFailureTerms();
     auto result_type = expected;
-    push_frame(ast.branch_block(source.body).span);
+    push_frame(((ast.branch_block(source.body))).span);
     reachable = true;
     failure_contexts.push_back({protected_failures, true});
-    auto protected_body = build_branch(
+    auto protected_body = (co_await build_branch(
         source.body,
         value_form,
         result_type,
         pending,
         expected.has_value() && allow_pointer_narrowing
-    );
+    ));
     failure_contexts.pop_back();
     if (!protected_body.has_value()) {
-        return std::unexpected(protected_body.error());
+        co_return std::unexpected(protected_body.error());
     }
     auto normal = reachable;
     pop_frame();
@@ -92,28 +92,28 @@ auto BodyElaborator::build_try(
             auto coverage_source_pattern = std::optional<ASTPatternID>();
             auto coverage_type = std::optional<TypeID>();
             if (const auto* typed = std::get_if<ASTCatchTypedPattern>(&alternative.value)) {
-                auto failure_type = resolve_type(typed->type);
+                auto failure_type = (co_await resolve_type(typed->type));
                 if (!failure_type.has_value()) {
-                    return std::unexpected(failure_type.error());
+                    co_return std::unexpected(failure_type.error());
                 }
                 const auto* concrete = std::get_if<TypeID>(&*failure_type);
                 if (concrete == nullptr || !is_failure_payload_type(draft(), *concrete)) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         alternative.span,
                         DiagnosticCode::EffectThrowType,
                         "catch alternatives require a concrete nominal failure type"
                     ));
                 }
-                auto pattern = build_pattern(
+                auto pattern = (co_await build_pattern(
                     typed->inner,
                     *failure_type,
                     bindings,
                     !expected_names.has_value(),
                     alternative_names,
                     pattern_bounds
-                );
+                ));
                 if (!pattern.has_value()) {
-                    return std::unexpected(pattern.error());
+                    co_return std::unexpected(pattern.error());
                 }
                 coverage_pattern = pattern->pattern;
                 coverage_source_pattern = typed->inner;
@@ -131,7 +131,7 @@ auto BodyElaborator::build_try(
             if (!expected_names.has_value()) {
                 expected_names = alternative_names;
             } else if (*expected_names != alternative_names) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     alternative.span,
                     DiagnosticCode::MatchBindingMismatch,
                     "catch alternatives must bind the same names"
@@ -229,7 +229,7 @@ auto BodyElaborator::build_try(
                 coverage_arms
             );
             if (!coverage.has_value()) {
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     arm.pattern.span,
                     DiagnosticCode::TypeMatchPattern,
                     std::format("invalid catch pattern coverage: {}", coverage.error())
@@ -264,7 +264,7 @@ auto BodyElaborator::build_try(
                         }
                     }
                 }
-                return std::unexpected(fail(
+                co_return std::unexpected(fail(
                     diagnostic_span,
                     DiagnosticCode::MatchDuplicateAlternative,
                     "catch or-pattern contains a repeated or subsumed alternative"
@@ -343,9 +343,9 @@ auto BodyElaborator::build_try(
         auto guard_may_reject = false;
         if (arm.guard.has_value()) {
             const auto id = arm.guard->expression;
-            auto guard = expression(id, draft().builtin_type(BuiltinType::Bool));
+            auto guard = (co_await expression(id, draft().builtin_type(BuiltinType::Bool)));
             if (!guard.has_value()) {
-                return std::unexpected(guard.error());
+                co_return std::unexpected(guard.error());
             }
             if (value_form) {
                 collect_pending(arm_pending, *guard);
@@ -353,25 +353,25 @@ auto BodyElaborator::build_try(
             const auto known = known_boolean_constant(draft(), guard->constant());
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
-                return std::unexpected(checked.error());
+                co_return std::unexpected(checked.error());
             }
             guard_tree = std::move(*checked);
             body_reachable = guard->completes && (!known.has_value() || *known);
             guard_may_reject = guard->completes && known != true;
         }
-        auto body = [&]() noexcept -> AnalysisResult<SemanticRegion> {
+        auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
-            return build_arm(
+            co_return (co_await build_arm(
                 arm.body,
                 value_form,
                 result_type,
                 arm_pending,
                 expected.has_value() && allow_pointer_narrowing
-            );
+            ));
         }();
         if (!body.has_value()) {
-            return std::unexpected(body.error());
+            co_return std::unexpected(body.error());
         }
         for (const auto term : arm_pending) {
             const auto gated = draft().add_empty_failure_term();
@@ -419,9 +419,9 @@ auto BodyElaborator::build_try(
     );
     if (!value_form) {
         append_expression(result, span);
-        return std::optional<BuiltExpression>();
+        co_return std::optional<BuiltExpression>();
     }
-    return std::optional(normal ? std::move(result) : mark_noncompleting(std::move(result)));
+    co_return std::optional(normal ? std::move(result) : mark_noncompleting(std::move(result)));
 }
 
 auto BodyElaborator::try_expression(
@@ -429,22 +429,22 @@ auto BodyElaborator::try_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected,
     bool allow_pointer_narrowing
-) noexcept -> AnalysisResult<BuiltExpression> {
-    auto built = build_try(source, span, expected, true, allow_pointer_narrowing);
+) noexcept -> AnalysisTask<BuiltExpression> {
+    auto built = (co_await build_try(source, span, expected, true, allow_pointer_narrowing));
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
     if (!built->has_value()) {
         invariant_violation("value try did not produce a value");
     }
-    return std::move(**built);
+    co_return std::move(**built);
 }
 
 auto BodyElaborator::try_statement(const ASTTryForm& source, Span span) noexcept
-    -> AnalysisResult<void> {
-    auto built = build_try(source, span, std::nullopt, false);
+    -> AnalysisTask<void> {
+    auto built = (co_await build_try(source, span, std::nullopt, false));
     if (!built.has_value()) {
-        return std::unexpected(built.error());
+        co_return std::unexpected(built.error());
     }
-    return {};
+    co_return {};
 }

@@ -5,6 +5,7 @@ import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.preparation;
+import :backend.realization.display;
 import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.target.expr;
@@ -481,6 +482,15 @@ auto realize_operation(
                     }
                     operands = std::move(selected);
                 }
+                for (auto index = 0uz; index < operands.size(); ++index) {
+                    const auto type = value.operands[index].expression.type.resolved();
+                    if (!std::holds_alternative<BuiltinTypeValue>(
+                            context.semantic().types().type(type).value
+                        )) {
+                        operands[index] =
+                            realize_display(context, type, std::move(operands[index]));
+                    }
+                }
                 const auto symbol = value.kind == PrintKind::Print ? TargetSymbol::RuntimePrint
                     : value.kind == PrintKind::Println             ? TargetSymbol::RuntimePrintln
                     : value.kind == PrintKind::Eprint              ? TargetSymbol::RuntimeEprint
@@ -622,7 +632,8 @@ auto discarded_operation(
         && !std::holds_alternative<SemCpp>(source.value)
         && !std::holds_alternative<SemCppCall>(source.value)) {
         const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
-        implicit = intrinsic == nullptr || target_symbol_allows_implicit_discard(intrinsic->symbol);
+        implicit =
+            intrinsic == nullptr || target_symbol_info(intrinsic->symbol).allows_implicit_discard;
     }
     if (implicit) {
         return generated_statement(TargetExprStmt {.expression = std::move(expression)});

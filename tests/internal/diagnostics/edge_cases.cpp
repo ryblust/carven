@@ -215,3 +215,22 @@ TEST_CASE("Diagnostic report: malformed spans clamp deterministically") {
 )REPORT"
     );
 }
+
+TEST_CASE("Diagnostic report: CRLF boundaries retain byte locations without visible terminators") {
+    const auto source = SourceView {
+        .source_id = SourceID::from_index(0),
+        .text = "a\r\nb\r\n",
+        .origin = "crlf.cv",
+    };
+    const auto diagnostic = make_diagnostic(
+        "range",
+        {
+            .span = {.source_id = source.source_id, .span = Span::from_bounds(1, 5)},
+            .message = "end",
+        }
+    );
+    CHECK_EQ(
+        render_diagnostic(diagnostic, source),
+        "error [CV-LEXICAL]: range\n --> crlf.cv:1:2\n  |\n1 | a\n  |  ^\n2 | b\n  | ^ end\n"
+    );
+}

@@ -1,3 +1,29 @@
+struct PrintedMoney {
+    cents: i64
+}
+
+struct PrintedOrder {
+    price: PrintedMoney,
+    names: [str; 2]
+}
+
+struct PrintedEmpty {}
+
+enum PrintedState {
+    Pending,
+    Done(i32, str)
+}
+
+enum PrintedCode: i32 {
+    Ok = 1,
+    Bad = 2
+}
+
+fn replace_order(&value: PrintedOrder) -> i32 {
+    value.price.cents = 99;
+    return 1;
+}
+
 fn output_number(output: fn(i32) -> void, value: i32) {
     output(value);
 }
@@ -58,4 +84,18 @@ fn main() {
     text = "before";
     println(42, text, replace_text(&text));
     println(18446744073709551615u64, -9223372036854775808i64);
+    var order = PrintedOrder {
+        PrintedMoney { 1250 },
+        ["a", "b\n"]
+    };
+    println(order);
+    println(PrintedState::Done(42, "ok"), PrintedState::Pending, PrintedCode::Bad);
+    println(PrintedEmpty {}, [1, 2, 3]);
+    let values = [4, 5];
+    println(values.as_slice());
+    println(order, replace_order(&order));
+    let structural: fn(PrintedOrder) -> void = println;
+    structural(order);
+    println(1..=3);
+
 }

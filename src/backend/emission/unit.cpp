@@ -28,6 +28,7 @@ auto TargetRenderer::item_category(const TargetItem& item) const noexcept
                             return TargetItemCategory::ForwardOrFunctionDeclaration;
                         } else if constexpr (std::same_as<Value, TargetStructDecl>
                                              || std::same_as<Value, TargetVariableDecl>
+                                             || std::same_as<Value, TargetTypeAlias>
                                              || std::same_as<Value, TargetEnumDecl>
                                              || std::same_as<Value, TargetClassDecl>) {
                             return TargetItemCategory::OtherDeclaration;

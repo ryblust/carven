@@ -33,7 +33,7 @@ auto DeclResolver::resolve_struct(
     ASTView syntax,
     const ASTStructDecl& structure,
     Span item_span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     auto fields = std::vector<ConstructionStructField>();
     auto names = std::flat_map<std::string, Span, std::less<>>();
     fields.reserve(structure.fields.size());
@@ -53,11 +53,12 @@ auto DeclResolver::resolve_struct(
                 locate(declaration_source_id(draft, symbol.module_id), prior->second),
                 "first declaration"
             );
-            return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+            co_return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
-        auto type = resolve_value_type(symbol.module_id, syntax, field.type, "structure field");
+        auto type =
+            (co_await resolve_value_type(symbol.module_id, syntax, field.type, "structure field"));
         if (!type.has_value()) {
-            return std::unexpected(type.error());
+            co_return std::unexpected(type.error());
         }
         fields.push_back({
             .name = draft.intern_spelling(name),
@@ -76,7 +77,7 @@ auto DeclResolver::resolve_struct(
         .fields = std::move(fields),
         .capabilities = {.equality = false},
     };
-    return {};
+    co_return {};
 }
 
 auto DeclResolver::resolve_enum(
@@ -85,9 +86,9 @@ auto DeclResolver::resolve_enum(
     ASTView syntax,
     const ASTEnumDecl& enumeration,
     Span item_span
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     if (enumeration.cases.empty()) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             enumeration.name_span,
@@ -103,7 +104,7 @@ auto DeclResolver::resolve_enum(
             return !value.payload_types.empty();
         });
     if (payload_representation && enumeration.underlying_type.has_value()) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             syntax.type(*enumeration.underlying_type).span,
@@ -130,7 +131,7 @@ auto DeclResolver::resolve_enum(
                 locate(declaration_source_id(draft, symbol.module_id), prior->second),
                 "first declaration"
             );
-            return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+            co_return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
         const auto case_id = form.cases[index];
         const auto& case_symbol =
@@ -145,9 +146,14 @@ auto DeclResolver::resolve_enum(
         auto payload = std::vector<ConstructionTypeRef>();
         payload.reserve(source_case.payload_types.size());
         for (const auto source_type : source_case.payload_types) {
-            auto type = resolve_value_type(symbol.module_id, syntax, source_type, "enum payload");
+            auto type = (co_await resolve_value_type(
+                symbol.module_id,
+                syntax,
+                source_type,
+                "enum payload"
+            ));
             if (!type.has_value()) {
-                return std::unexpected(type.error());
+                co_return std::unexpected(type.error());
             }
             payload.push_back(*type);
         }
@@ -164,9 +170,10 @@ auto DeclResolver::resolve_enum(
     if (!payload_representation) {
         auto underlying = ConstructionTypeRef {draft.builtin_type(BuiltinType::I32)};
         if (enumeration.underlying_type.has_value()) {
-            auto resolved = resolve_type(symbol.module_id, syntax, *enumeration.underlying_type);
+            auto resolved =
+                (co_await resolve_type(symbol.module_id, syntax, *enumeration.underlying_type));
             if (!resolved.has_value()) {
-                return std::unexpected(resolved.error());
+                co_return std::unexpected(resolved.error());
             }
             underlying = *resolved;
         }
@@ -178,7 +185,7 @@ auto DeclResolver::resolve_enum(
         const auto* builtin =
             canonical.has_value() ? std::get_if<BuiltinTypeValue>(&canonical->value) : nullptr;
         if (builtin == nullptr || !builtin_is_integer(builtin->kind)) {
-            return std::unexpected(declaration_failure(
+            co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 enumeration.underlying_type.has_value()
@@ -201,17 +208,18 @@ auto DeclResolver::resolve_enum(
         .cases = form.cases,
         .capabilities = {.equality = false},
     };
-    return {};
+    co_return {};
 }
 
 auto DeclResolver::resolve_enum_case(
     const CatalogSymbol& symbol,
     const CatalogEnumCaseForm& form
-) noexcept -> AnalysisResult<void> {
+) noexcept -> AnalysisTask<void> {
     const auto owner_symbol_id = catalog.enum_symbol(form.owner);
-    auto owner_result = resolve(owner_symbol_id, symbol.module_id, symbol.declaration_span);
+    auto owner_result =
+        (co_await resolve(owner_symbol_id, symbol.module_id, symbol.declaration_span));
     if (!owner_result.has_value()) {
-        return std::unexpected(owner_result.error());
+        co_return std::unexpected(owner_result.error());
     }
     if (form.owner.index() >= enumerations.size()
         || !enumerations[form.owner.index()].has_value()
@@ -237,7 +245,7 @@ auto DeclResolver::resolve_enum_case(
     const auto* numeric = std::get_if<NumericEnumRepresentation>(&owner.representation);
     if (numeric == nullptr) {
         if (source_case.initializer.has_value()) {
-            return std::unexpected(declaration_failure(
+            co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 syntax.expression(*source_case.initializer).span,
@@ -256,30 +264,30 @@ auto DeclResolver::resolve_enum_case(
                 }
             );
         }
-        return {};
+        co_return {};
     }
 
     auto value = IntegerConstant::zero();
     if (source_case.initializer.has_value()) {
         auto scope = ConstantScope {*this, symbol.module_id, syntax};
-        auto result = evaluate_constant_expression(
+        auto result = (co_await evaluate_constant_expression(
             draft,
             symbol.module_id,
             syntax,
             scope,
             *source_case.initializer,
             numeric->underlying_type
-        );
+        ));
         if (!result) {
             if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-                return std::unexpected(*diagnostic);
+                co_return std::unexpected(*diagnostic);
             }
         }
         const auto fact = result ? std::optional(draft.constant(*result)) : std::nullopt;
         const auto* selected =
             fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
         if (selected == nullptr) {
-            return std::unexpected(declaration_failure(
+            co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
                 syntax.expression(*source_case.initializer).span,
@@ -292,9 +300,10 @@ auto DeclResolver::resolve_enum_case(
         const auto& owner_form = std::get<CatalogEnumForm>(owner_symbol.form);
         const auto previous_id = owner_form.cases[form.index - 1u];
         const auto previous_symbol = catalog.enum_case_symbol(previous_id);
-        auto previous_result = resolve(previous_symbol, symbol.module_id, source_case.name_span);
+        auto previous_result =
+            (co_await resolve(previous_symbol, symbol.module_id, source_case.name_span));
         if (!previous_result.has_value()) {
-            return std::unexpected(previous_result.error());
+            co_return std::unexpected(previous_result.error());
         }
         const auto previous_constant = enum_cases[previous_id.index()]->constant;
         if (!previous_constant.has_value()) {
@@ -309,7 +318,7 @@ auto DeclResolver::resolve_enum_case(
             const auto signed_value = previous->value.as_signed();
             if (!signed_value.has_value()
                 || *signed_value == std::numeric_limits<std::int64_t>::max()) {
-                return std::unexpected(declaration_failure(
+                co_return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     source_case.name_span,
@@ -320,7 +329,7 @@ auto DeclResolver::resolve_enum_case(
             value = IntegerConstant::from_signed(*signed_value + 1);
         } else {
             if (previous->value.magnitude() == std::numeric_limits<std::uint64_t>::max()) {
-                return std::unexpected(declaration_failure(
+                co_return std::unexpected(declaration_failure(
                     draft,
                     symbol.module_id,
                     source_case.name_span,
@@ -334,7 +343,7 @@ auto DeclResolver::resolve_enum_case(
     const auto canonical = draft.type_copy(numeric->underlying_type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
     if (builtin == nullptr || !integer_constant_fits(value, builtin->kind)) {
-        return std::unexpected(declaration_failure(
+        co_return std::unexpected(declaration_failure(
             draft,
             symbol.module_id,
             source_case.initializer.has_value() ? syntax.expression(*source_case.initializer).span
@@ -349,7 +358,7 @@ auto DeclResolver::resolve_enum_case(
             .value = NumericEnumConstant {.enum_case = form.enum_case, .value = value},
         }
     );
-    return {};
+    co_return {};
 }
 
 auto DeclResolver::validate_enum_codes(const CatalogSymbol& symbol) noexcept

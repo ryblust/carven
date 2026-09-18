@@ -112,11 +112,11 @@ auto resolve_named(
     ASTView syntax,
     const ArrayExtentResolver& resolve_extent,
     Span origin
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
     if (!named.global_root && named.components.size() == 1uz && root == "range") {
         if (named.arguments.size() != 1uz) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 draft,
                 module_id,
                 origin,
@@ -124,7 +124,7 @@ auto resolve_named(
                 "range requires one integer element type"
             ));
         }
-        auto element = resolve_source_type(
+        auto element = (co_await resolve_source_type(
             draft,
             catalog,
             import_usage,
@@ -132,21 +132,21 @@ auto resolve_named(
             syntax,
             named.arguments.front(),
             resolve_extent
-        );
+        ));
         if (!element) {
-            return std::unexpected(element.error());
+            co_return std::unexpected(element.error());
         }
         const auto* concrete = std::get_if<TypeID>(&*element);
         if (concrete != nullptr) {
             const auto type = draft.type_copy(*concrete);
             const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
             if (builtin != nullptr && builtin_is_integer(builtin->kind)) {
-                return ConstructionTypeRef {
+                co_return ConstructionTypeRef {
                     draft.intern_type({.value = RangeTypeValue {.element = *concrete}})
                 };
             }
         }
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             draft,
             module_id,
             origin,
@@ -169,12 +169,12 @@ auto resolve_named(
             components
         );
         if (!name.has_value()) {
-            return std::unexpected(name.error());
+            co_return std::unexpected(name.error());
         }
         if (name->has_value()) {
             auto arguments = std::vector<TypeID>();
             for (const auto argument : named.arguments) {
-                auto resolved = resolve_source_type(
+                auto resolved = (co_await resolve_source_type(
                     draft,
                     catalog,
                     import_usage,
@@ -182,13 +182,13 @@ auto resolve_named(
                     syntax,
                     argument,
                     resolve_extent
-                );
+                ));
                 if (!resolved.has_value()) {
-                    return std::unexpected(resolved.error());
+                    co_return std::unexpected(resolved.error());
                 }
                 const auto* concrete = std::get_if<TypeID>(&*resolved);
                 if (concrete == nullptr) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         draft,
                         module_id,
                         origin,
@@ -198,7 +198,7 @@ auto resolve_named(
                 }
                 arguments.push_back(*concrete);
             }
-            return ConstructionTypeRef {draft.intern_type(
+            co_return ConstructionTypeRef {draft.intern_type(
                 {.value = CppTypeValue {
                      .form =
                          CppNamedType {.name = std::move(**name), .arguments = std::move(arguments)}
@@ -208,7 +208,7 @@ auto resolve_named(
     }
 
     if (!named.arguments.empty()) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             draft,
             module_id,
             origin,
@@ -217,7 +217,7 @@ auto resolve_named(
         ));
     }
     if (named.components.size() != 1uz) {
-        return std::unexpected(fail(
+        co_return std::unexpected(fail(
             draft,
             module_id,
             origin,
@@ -228,28 +228,28 @@ auto resolve_named(
     const auto component = named.components.front().name_span;
     const auto name = draft.source_slice_copy(module_id, component);
     if (const auto builtin = builtin_kind(name)) {
-        return ConstructionTypeRef {draft.builtin_type(*builtin)};
+        co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
     const auto selected =
         select_global_symbol(draft, catalog, import_usage, module_id, name, component);
     if (!selected.has_value()) {
-        return std::unexpected(selected.error());
+        co_return std::unexpected(selected.error());
     }
     if (const auto* structure = std::get_if<CatalogStructForm>(&(*selected)->form)) {
-        return ConstructionTypeRef {draft.intern_type(
+        co_return ConstructionTypeRef {draft.intern_type(
             CanonicalType {
                 .value = StructTypeValue {.structure = structure->structure},
             }
         )};
     }
     if (const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form)) {
-        return ConstructionTypeRef {draft.intern_type(
+        co_return ConstructionTypeRef {draft.intern_type(
             CanonicalType {
                 .value = EnumTypeValue {.enumeration = enumeration->enumeration},
             }
         )};
     }
-    return std::unexpected(fail(
+    co_return std::unexpected(fail(
         draft,
         module_id,
         origin,
@@ -266,11 +266,11 @@ auto resolve_function_type(
     ASTView syntax,
     const ASTFunctionType& function,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
     auto parameters = std::vector<ConstructionCallableParameter>();
     parameters.reserve(function.parameters.size());
     for (const auto& parameter : function.parameters) {
-        auto type = resolve_source_type(
+        auto type = (co_await resolve_source_type(
             draft,
             catalog,
             import_usage,
@@ -278,9 +278,9 @@ auto resolve_function_type(
             syntax,
             parameter.type,
             resolve_extent
-        );
+        ));
         if (!type.has_value()) {
-            return std::unexpected(type.error());
+            co_return std::unexpected(type.error());
         }
         auto value_type = require_source_value_type(
             draft,
@@ -290,14 +290,14 @@ auto resolve_function_type(
             "function parameter"
         );
         if (!value_type.has_value()) {
-            return std::unexpected(value_type.error());
+            co_return std::unexpected(value_type.error());
         }
         parameters.push_back({
             .access = semantic_access_mode(parameter.access),
             .type = *value_type,
         });
     }
-    auto result = resolve_source_type(
+    auto result = (co_await resolve_source_type(
         draft,
         catalog,
         import_usage,
@@ -305,13 +305,13 @@ auto resolve_function_type(
         syntax,
         function.result_type,
         resolve_extent
-    );
+    ));
     if (!result.has_value()) {
-        return std::unexpected(result.error());
+        co_return std::unexpected(result.error());
     }
     auto failures = std::vector<TypeID>();
     if (function.throw_clause.has_value()) {
-        auto resolved = resolve_failure_types(
+        auto resolved = (co_await resolve_failure_types(
             draft,
             catalog,
             import_usage,
@@ -319,14 +319,14 @@ auto resolve_function_type(
             syntax,
             *function.throw_clause,
             resolve_extent
-        );
+        ));
         if (!resolved.has_value()) {
-            return std::unexpected(resolved.error());
+            co_return std::unexpected(resolved.error());
         }
         failures = std::move(*resolved);
     }
     const auto failure_term = draft.add_concrete_failure_term(std::move(failures));
-    return ConstructionTypeRef {draft.append_construction_type(
+    co_return ConstructionTypeRef {draft.append_construction_type(
         ConstructionType {
             .value = ConstructionCallableViewTypeValue {
                 .parameters = std::move(parameters),
@@ -345,11 +345,11 @@ auto resolve_type_value(
     ASTView syntax,
     const ASTType& source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return source_type.value.visit(
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    co_return (co_await source_type.value.visit(
         Overloaded {
-            [&](const ASTNamedType& named) noexcept {
-                return resolve_named(
+            [&](const ASTNamedType& named) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                co_return (co_await resolve_named(
                     draft,
                     catalog,
                     import_usage,
@@ -358,10 +358,10 @@ auto resolve_type_value(
                     syntax,
                     resolve_extent,
                     source_type.span
-                );
+                ));
             },
-            [&](const ASTPointerType& pointer) noexcept -> AnalysisResult<ConstructionTypeRef> {
-                auto target = resolve_source_type(
+            [&](const ASTPointerType& pointer) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                auto target = (co_await resolve_source_type(
                     draft,
                     catalog,
                     import_usage,
@@ -369,12 +369,12 @@ auto resolve_type_value(
                     syntax,
                     pointer.target,
                     resolve_extent
-                );
+                ));
                 if (!target) {
-                    return std::unexpected(target.error());
+                    co_return std::unexpected(target.error());
                 }
                 if (pointer.access.mode == ASTAccessMode::Take) {
-                    return std::unexpected(fail(
+                    co_return std::unexpected(fail(
                         draft,
                         module_id,
                         source_type.span,
@@ -385,15 +385,15 @@ auto resolve_type_value(
                 const auto access = pointer.access.mode == ASTAccessMode::Write
                     ? PointerAccess::Write
                     : PointerAccess::Read;
-                return ConstructionTypeRef {draft.intern_type(
+                co_return ConstructionTypeRef {draft.intern_type(
                     {.value = PointerTypeValue {
                          .target = draft.canonicalize_declared_type(*target),
                          .access = access
                      }}
                 )};
             },
-            [&](const ASTSliceType& view) noexcept -> AnalysisResult<ConstructionTypeRef> {
-                auto element = resolve_source_type(
+            [&](const ASTSliceType& view) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                auto element = (co_await resolve_source_type(
                     draft,
                     catalog,
                     import_usage,
@@ -401,9 +401,9 @@ auto resolve_type_value(
                     syntax,
                     view.element_type,
                     resolve_extent
-                );
+                ));
                 if (!element) {
-                    return std::unexpected(element.error());
+                    co_return std::unexpected(element.error());
                 }
                 auto checked = require_source_value_type(
                     draft,
@@ -413,19 +413,19 @@ auto resolve_type_value(
                     "slice element"
                 );
                 if (!checked) {
-                    return std::unexpected(checked.error());
+                    co_return std::unexpected(checked.error());
                 }
                 if (const auto* concrete = std::get_if<TypeID>(&*checked)) {
-                    return ConstructionTypeRef {
+                    co_return ConstructionTypeRef {
                         draft.intern_type({.value = SliceTypeValue {.element = *concrete}})
                     };
                 }
-                return ConstructionTypeRef {draft.append_construction_type(
+                co_return ConstructionTypeRef {draft.append_construction_type(
                     {.value = ConstructionSliceTypeValue {.element = *checked}}
                 )};
             },
-            [&](const ASTArrayType& array) noexcept -> AnalysisResult<ConstructionTypeRef> {
-                auto element = resolve_source_type(
+            [&](const ASTArrayType& array) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                auto element = (co_await resolve_source_type(
                     draft,
                     catalog,
                     import_usage,
@@ -433,9 +433,9 @@ auto resolve_type_value(
                     syntax,
                     array.element_type,
                     resolve_extent
-                );
+                ));
                 if (!element.has_value()) {
-                    return std::unexpected(element.error());
+                    co_return std::unexpected(element.error());
                 }
                 auto value_element = require_source_value_type(
                     draft,
@@ -445,20 +445,20 @@ auto resolve_type_value(
                     "array element"
                 );
                 if (!value_element.has_value()) {
-                    return std::unexpected(value_element.error());
+                    co_return std::unexpected(value_element.error());
                 }
-                auto extent = resolve_extent(array.extent);
+                auto extent = co_await resolve_extent(array.extent);
                 if (!extent.has_value()) {
-                    return std::unexpected(extent.error());
+                    co_return std::unexpected(extent.error());
                 }
                 if (const auto* concrete = std::get_if<TypeID>(&*value_element)) {
-                    return ConstructionTypeRef {draft.intern_type(
+                    co_return ConstructionTypeRef {draft.intern_type(
                         CanonicalType {
                             .value = ArrayTypeValue {.element = *concrete, .extent = *extent},
                         }
                     )};
                 }
-                return ConstructionTypeRef {draft.append_construction_type(
+                co_return ConstructionTypeRef {draft.append_construction_type(
                     ConstructionType {
                         .value = ConstructionArrayTypeValue {
                             .element = *value_element,
@@ -467,8 +467,8 @@ auto resolve_type_value(
                     }
                 )};
             },
-            [&](const ASTFunctionType& function) noexcept {
-                return resolve_function_type(
+            [&](const ASTFunctionType& function) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                co_return (co_await resolve_function_type(
                     draft,
                     catalog,
                     import_usage,
@@ -476,10 +476,10 @@ auto resolve_type_value(
                     syntax,
                     function,
                     resolve_extent
-                );
+                ));
             },
         }
-    );
+    ));
 }
 
 } // namespace
@@ -501,8 +501,8 @@ auto resolve_source_type(
     ASTView syntax,
     ASTTypeID source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return resolve_type_value(
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    co_return (co_await resolve_type_value(
         draft,
         catalog,
         import_usage,
@@ -510,7 +510,7 @@ auto resolve_source_type(
         syntax,
         syntax.type(source_type),
         resolve_extent
-    );
+    ));
 }
 
 auto resolve_source_construction_type(
@@ -521,11 +521,11 @@ auto resolve_source_construction_type(
     ASTView syntax,
     const ASTConstructionType& source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return source_type.value.visit(
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    co_return (co_await source_type.value.visit(
         Overloaded {
-            [&](const ASTNamedType& named) noexcept {
-                return resolve_named(
+            [&](const ASTNamedType& named) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                co_return (co_await resolve_named(
                     draft,
                     catalog,
                     import_usage,
@@ -534,10 +534,10 @@ auto resolve_source_construction_type(
                     syntax,
                     resolve_extent,
                     source_type.span
-                );
+                ));
             },
-            [&](const ASTFunctionType& function) noexcept {
-                return resolve_function_type(
+            [&](const ASTFunctionType& function) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                co_return (co_await resolve_function_type(
                     draft,
                     catalog,
                     import_usage,
@@ -545,10 +545,10 @@ auto resolve_source_construction_type(
                     syntax,
                     function,
                     resolve_extent
-                );
+                ));
             },
         }
-    );
+    ));
 }
 
 auto resolve_source_constraint_type(
@@ -559,16 +559,16 @@ auto resolve_source_constraint_type(
     ASTView syntax,
     const ASTConstraintOperand& source_type,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<ConstructionTypeRef> {
-    return source_type.value.visit(
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    co_return (co_await source_type.value.visit(
         Overloaded {
-            [&](const ASTQualifiedName& qualified) noexcept {
+            [&](const ASTQualifiedName& qualified) noexcept -> AnalysisTask<ConstructionTypeRef> {
                 auto components = qualified.components
                     | std::views::transform([](Span span) static noexcept {
                                       return ASTTypeNameComponent {.name_span = span};
                                   })
                     | std::ranges::to<std::vector>();
-                return resolve_named(
+                co_return (co_await resolve_named(
                     draft,
                     catalog,
                     import_usage,
@@ -581,10 +581,10 @@ auto resolve_source_constraint_type(
                     syntax,
                     resolve_extent,
                     source_type.span
-                );
+                ));
             },
-            [&](const ASTArrayType& array) noexcept {
-                return resolve_type_value(
+            [&](const ASTArrayType& array) noexcept -> AnalysisTask<ConstructionTypeRef> {
+                co_return (co_await resolve_type_value(
                     draft,
                     catalog,
                     import_usage,
@@ -595,10 +595,10 @@ auto resolve_source_constraint_type(
                         .value = array,
                     },
                     resolve_extent
-                );
+                ));
             },
         }
-    );
+    ));
 }
 
 auto require_source_value_type(
@@ -635,12 +635,12 @@ auto resolve_failure_types(
     ASTView syntax,
     const ASTThrowClause& clause,
     const ArrayExtentResolver& resolve_extent
-) noexcept -> AnalysisResult<std::vector<TypeID>> {
+) noexcept -> AnalysisTask<std::vector<TypeID>> {
     auto failures = std::vector<TypeID>();
     auto first_seen = std::flat_map<TypeID, Span>();
     failures.reserve(clause.failures.size());
     for (const auto source_failure : clause.failures) {
-        auto built = resolve_source_type(
+        auto built = (co_await resolve_source_type(
             draft,
             catalog,
             import_usage,
@@ -648,9 +648,9 @@ auto resolve_failure_types(
             syntax,
             source_failure,
             resolve_extent
-        );
+        ));
         if (!built.has_value()) {
-            return std::unexpected(built.error());
+            co_return std::unexpected(built.error());
         }
         const auto* concrete = std::get_if<TypeID>(&*built);
         const auto nominal = concrete == nullptr
@@ -677,7 +677,7 @@ auto resolve_failure_types(
                   }
               );
         if (!nominal) {
-            return std::unexpected(fail(
+            co_return std::unexpected(fail(
                 draft,
                 module_id,
                 syntax.type(source_failure).span,
@@ -698,11 +698,11 @@ auto resolve_failure_types(
                 locate(source_id(draft, module_id), prior->second),
                 "first occurrence"
             );
-            return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+            co_return std::unexpected(draft.diagnostics().error(diagnostic.build()));
         }
         first_seen.emplace(*concrete, syntax.type(source_failure).span);
         failures.push_back(*concrete);
     }
     std::ranges::sort(failures, {}, &TypeID::index);
-    return failures;
+    co_return failures;
 }

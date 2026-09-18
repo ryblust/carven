@@ -9,6 +9,7 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target.name;
+import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
@@ -38,9 +39,9 @@ TEST_CASE("Generation: precomputed formatting retains effects and owning constru
 
     struct Query final {
         const TargetUnit& unit;
-        std::size_t formats = 0uz;
-        std::size_t constructions = 0uz;
-        std::size_t effects = 0uz;
+        std::size_t formats;
+        std::size_t constructions;
+        std::size_t effects;
 
         auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&expression.value)) {
@@ -68,7 +69,7 @@ TEST_CASE("Generation: precomputed formatting retains effects and owning constru
     auto effects = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
+        auto query = Query {.unit = unit, .formats = 0uz, .constructions = 0uz, .effects = 0uz};
         CHECK(traverse_target_unit(unit.sections(), query));
         formats += query.formats;
         constructions += query.constructions;
@@ -91,8 +92,8 @@ TEST_CASE("Generation: mixed formatting passes only residual values after requir
     );
 
     struct Query final {
-        std::size_t formats = 0uz;
-        std::size_t effects = 0uz;
+        std::size_t formats;
+        std::size_t effects;
 
         auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             const auto* call = std::get_if<TargetCallExpr>(&expression.value);
@@ -112,7 +113,7 @@ TEST_CASE("Generation: mixed formatting passes only residual values after requir
         }
     };
 
-    auto query = Query();
+    auto query = Query {.formats = 0uz, .effects = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -208,7 +209,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
     );
 
     struct Query final {
-        std::size_t calls = 0;
+        std::size_t calls;
 
         auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetStaticCastExpr>(expression.value));
@@ -227,7 +228,7 @@ TEST_CASE("Generation: proven scalar results require no computation or discard s
         }
     };
 
-    auto query = Query();
+    auto query = Query {.calls = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -250,8 +251,8 @@ TEST_CASE("Generation: native branches and calls need no enclosing artificial bl
     );
 
     struct Query final {
-        std::size_t branches = 0;
-        std::size_t calls = 0;
+        std::size_t branches;
+        std::size_t calls;
 
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetBlockStmt>(statement.value));
@@ -267,7 +268,7 @@ TEST_CASE("Generation: native branches and calls need no enclosing artificial bl
         }
     };
 
-    auto query = Query {};
+    auto query = Query {.branches = 0uz, .calls = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -293,9 +294,9 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
     );
 
     struct Query final {
-        std::size_t payloads = 0;
-        std::size_t success_checks = 0;
-        std::size_t saved_successes = 0;
+        std::size_t payloads;
+        std::size_t success_checks;
+        std::size_t saved_successes;
 
         static auto is_success(const TargetExpr& expression) noexcept -> bool {
             const auto* call = std::get_if<TargetCallExpr>(&expression.value);
@@ -328,7 +329,7 @@ TEST_CASE("Generation: discarded failing calls check success without projecting 
         }
     };
 
-    auto query = Query {};
+    auto query = Query {.payloads = 0uz, .success_checks = 0uz, .saved_successes = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -360,8 +361,8 @@ TEST_CASE("Generation: independent root calls initialize Outcomes without deferr
 
         struct Query final {
             const TargetUnit& unit;
-            std::size_t direct = 0;
-            std::size_t deferred = 0;
+            std::size_t direct;
+            std::size_t deferred;
 
             auto enter_statement(const TargetStmt& statement) noexcept -> bool {
                 const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
@@ -392,7 +393,7 @@ TEST_CASE("Generation: independent root calls initialize Outcomes without deferr
         auto deferred = 0uz;
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            auto query = Query {unit};
+            auto query = Query {.unit = unit, .direct = 0uz, .deferred = 0uz};
             CHECK(traverse_target_unit(unit.sections(), query));
             direct += query.direct;
             deferred += query.deferred;
@@ -431,7 +432,7 @@ TEST_CASE("Generation: scalar predecessors in a full expression need no deferred
 
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {unit};
+        auto query = Query {.unit = unit};
         CHECK(traverse_target_unit(unit.sections(), query));
     }
 }
@@ -476,9 +477,9 @@ TEST_CASE("Generation: independent value branches compose without duplicating su
             );
 
             struct Query final {
-                std::size_t nodes = 0uz;
-                std::size_t branches = 0uz;
-                std::size_t calls = 0uz;
+                std::size_t nodes;
+                std::size_t branches;
+                std::size_t calls;
 
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
@@ -498,7 +499,7 @@ TEST_CASE("Generation: independent value branches compose without duplicating su
                 }
             };
 
-            auto query = Query {};
+            auto query = Query {.nodes = 0uz, .branches = 0uz, .calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 CHECK(traverse_target_unit(unit.sections(), query));
@@ -525,7 +526,7 @@ TEST_CASE("Generation: void calls remain return expressions") {
     );
 
     struct Query final {
-        std::size_t returned_calls = 0;
+        std::size_t returned_calls;
 
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
@@ -543,7 +544,7 @@ TEST_CASE("Generation: void calls remain return expressions") {
         }
     };
 
-    auto query = Query {};
+    auto query = Query {.returned_calls = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -565,8 +566,8 @@ TEST_CASE("Generation: builtin pointer observations need no temporary storage") 
     );
 
     struct Query final {
-        std::size_t comparisons = 0uz;
-        std::size_t dereferences = 0uz;
+        std::size_t comparisons;
+        std::size_t dereferences;
 
         auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
@@ -586,7 +587,7 @@ TEST_CASE("Generation: builtin pointer observations need no temporary storage") 
         }
     };
 
-    auto query = Query {};
+    auto query = Query {.comparisons = 0uz, .dereferences = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         CHECK(traverse_target_unit(unit.sections(), query));
@@ -607,8 +608,8 @@ TEST_CASE("Generation: explicit writable source pointers retain their access con
 
     struct Query final {
         const TargetUnit& unit;
-        std::size_t writable = 0uz;
-        std::size_t readonly = 0uz;
+        std::size_t writable;
+        std::size_t readonly;
 
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
@@ -631,7 +632,7 @@ TEST_CASE("Generation: explicit writable source pointers retain their access con
     auto readonly = 0uz;
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {unit};
+        auto query = Query {.unit = unit, .writable = 0uz, .readonly = 0uz};
         CHECK(traverse_target_unit(unit.sections(), query));
         writable += query.writable;
         readonly += query.readonly;
@@ -668,7 +669,7 @@ TEST_CASE("Generation: independent nested pattern alternatives keep target size 
         );
 
         struct Query final {
-            std::size_t nodes = 0uz;
+            std::size_t nodes;
 
             auto enter_expression(const TargetExpr&, TargetExpressionRole) noexcept -> bool {
                 ++nodes;
@@ -681,7 +682,7 @@ TEST_CASE("Generation: independent nested pattern alternatives keep target size 
             }
         };
 
-        auto query = Query {};
+        auto query = Query {.nodes = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
             CHECK(traverse_target_unit(unit.sections(), query));
@@ -876,9 +877,9 @@ TEST_CASE("Generation: discarded operations use their native result contract") {
 
     struct Query final {
         std::flat_map<std::string, std::size_t> calls;
-        std::size_t checked_divisions = 0uz;
-        std::size_t explicit_discards = 0uz;
-        std::size_t branches = 0uz;
+        std::size_t checked_divisions;
+        std::size_t explicit_discards;
+        std::size_t branches;
 
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             branches += std::holds_alternative<TargetIfStmt>(statement.value);
@@ -900,7 +901,8 @@ TEST_CASE("Generation: discarded operations use their native result contract") {
         }
     };
 
-    auto query = Query();
+    auto query =
+        Query {.calls = {}, .checked_divisions = 0uz, .explicit_discards = 0uz, .branches = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
@@ -931,7 +933,7 @@ TEST_CASE("Generation: boolean expressions use native short circuit without resu
     );
 
     struct Query final {
-        std::size_t logical = 0uz;
+        std::size_t logical;
 
         auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
             CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
@@ -948,10 +950,123 @@ TEST_CASE("Generation: boolean expressions use native short circuit without resu
         }
     };
 
-    auto query = Query();
+    auto query = Query {.logical = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
     }
     CHECK(query.logical == 4uz);
+}
+
+TEST_CASE("Generation: loop conditions use native expressions after required sequencing") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn direct(&remaining: i32) { while remaining > 0 { remaining -= 1; } }
+            struct Failure {}
+            fn predicate() -> bool throw Failure { return false; }
+            fn ordered() throw Failure { while predicate()? {} }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("loop_conditions")}
+    );
+
+    struct Query final {
+        std::size_t direct;
+        std::size_t sequenced;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* loop = std::get_if<TargetWhileStmt>(&statement.value)) {
+                const auto* literal = std::get_if<TargetLiteralExpr>(&loop->condition.value);
+                if (literal != nullptr) {
+                    ++sequenced;
+                    CHECK_FALSE(loop->body.empty());
+                } else {
+                    ++direct;
+                }
+            }
+            return true;
+        }
+    };
+
+    auto query = Query {.direct = 0uz, .sequenced = 0uz};
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.direct == 1uz);
+    CHECK(query.sequenced == 1uz);
+}
+
+TEST_CASE("Generation: shared native query types have bounded expanded target syntax") {
+    constexpr auto depth = 12uz;
+    auto source =
+        std::string("import <probe.hpp> using probe::{seed};\nfn grow() { let x0 = seed();\n");
+    for (auto index = 1uz; index <= depth; ++index) {
+        source += std::format("let x{} = x{} + x{};\n", index, index - 1, index - 1);
+    }
+    source += std::format("return x{}; }}\n", depth);
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(std::move(source)),
+        {
+            .test_mode = TestGenerationMode::None,
+            .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
+        }
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t expanded_types;
+
+        auto visit_type(TargetTypeID id) noexcept -> bool {
+            ++expanded_types;
+            return visit_target_type_children(unit.type(id).value, *this);
+        }
+    };
+
+    auto expanded_types = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit, .expanded_types = 0uz};
+        CHECK(traverse_target_unit(unit.sections(), query));
+        expanded_types += query.expanded_types;
+    }
+    CHECK_LT(expanded_types, 128uz * (depth + 1uz));
+}
+
+TEST_CASE("Generation: a long expression retains each runtime operand once") {
+    constexpr auto count = 4096uz;
+    auto source =
+        std::string("fn operand(n: i32) -> i32 { return n; } fn chain(n: i32) -> i32 { return ");
+    for (auto index = 0uz; index < count; ++index) {
+        if (index != 0uz) {
+            source += '+';
+        }
+        source += "operand(n)";
+    }
+    source += "; }";
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(std::move(source)),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("long_expression")}
+    );
+
+    struct Query final {
+        std::size_t calls;
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    calls += name->name.components().back().spelling() == "operand";
+                }
+            }
+            return true;
+        }
+    };
+
+    auto query = Query {.calls = 0uz};
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.calls == count);
 }

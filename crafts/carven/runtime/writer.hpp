@@ -6,6 +6,7 @@
 #include <array>
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <initializer_list>
 #include <limits>
@@ -17,8 +18,8 @@
 namespace carven::runtime {
 
 // Synchronous writes into a borrowed String. Text must be valid UTF-8 and inputs
-// must not overlap destination storage. Bounds describe the additional bytes
-// written by this operation. Errors terminate without rollback.
+// must not overlap destination storage. Bounds describe the prepared fragments;
+// dynamic-width fields grow storage separately. Errors terminate without rollback.
 class Writer final {
 public:
     Writer(String& destination, std::size_t minimum_size, std::size_t maximum_size) noexcept
@@ -90,6 +91,14 @@ public:
             storage.append(padding, '0');
         }
         storage.append(buffer.data(), digits);
+    }
+
+    template<int Base, bool Uppercase, bool ZeroPad, Integer Type>
+    auto integer_dynamic_width(Type value, std::int32_t width) noexcept -> void {
+        if (width < 0) {
+            std::terminate();
+        }
+        integer<Base, Uppercase, ZeroPad>(value, static_cast<std::size_t>(width));
     }
 
     template<typename Float>

@@ -2,6 +2,7 @@ module carven:semantic.analysis.nullability.context;
 
 import :semantic.analysis.nullability;
 import :semantic.semir.structured;
+import :support.task;
 import std;
 
 // These paths stop at indirect and native storage. Unknown facts are absent.
@@ -88,22 +89,26 @@ private:
     auto scan_writes_impl(NullState& state, const Source& source) noexcept -> void;
     auto add_range_aliases(const SemRangeLoop& source) noexcept -> void;
     auto scan_write(NullState& state, const SemanticExpression& expression) const noexcept -> void;
-    auto expression(const SemanticExpression& source, NullState state) noexcept -> NullFlow;
-    auto condition(const SemanticExpression& source, NullState state) noexcept -> NullCondition;
-    auto region(const SemanticRegion& source, NullState state) noexcept -> NullFlow;
-    auto statement(const SemanticStatement& source, NullState state) noexcept -> NullFlow;
-    auto conditional(const SemIf& source, NullState state) noexcept -> NullFlow;
-    auto match(const SemMatch& source, NullState state) noexcept -> NullFlow;
-    auto attempt(const SemTry& source, NullState state) noexcept -> NullFlow;
-    auto loop(const SemLoop& source, NullState state) noexcept -> NullFlow;
-    auto range(const SemRangeLoop& source, NullState state) noexcept -> NullFlow;
+    auto expression(const SemanticExpression& source, NullState state) noexcept
+        -> ContinuationTask<NullFlow>;
+    auto condition(const SemanticExpression& source, NullState state) noexcept
+        -> ContinuationTask<NullCondition>;
+    auto region(const SemanticRegion& source, NullState state) noexcept
+        -> ContinuationTask<NullFlow>;
+    auto statement(const SemanticStatement& source, NullState state) noexcept
+        -> ContinuationTask<NullFlow>;
+    auto conditional(const SemIf& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
+    auto match(const SemMatch& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
+    auto attempt(const SemTry& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
+    auto loop(const SemLoop& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
+    auto range(const SemRangeLoop& source, NullState state) noexcept -> ContinuationTask<NullFlow>;
     auto bind_pattern(NullState& state, PatternID pattern, const NullValue& value) const noexcept
         -> void;
     auto pattern_condition(
         PatternID pattern,
         std::span<const SemPatternBounds> bounds,
         NullState state
-    ) noexcept -> NullCondition;
+    ) noexcept -> ContinuationTask<NullCondition>;
     auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto failures(NullFlow& flow, FailureSetID failures) const noexcept -> void;
     auto require_nonnull(ProgramOriginID origin, const NullValue& value) noexcept -> void;

@@ -92,7 +92,7 @@ test "UTF8: scalar boundaries have the specified encoding and decoding" {
             check(char_to_u32(character) == item.scalar);
             let encoded = encode_utf8(character);
             check(encoded.width == item.width);
-            for index in 0usize..item.width {
+            for index in 0..item.width {
                 check(encoded.bytes[index] == item.bytes[index]);
             }
             let bytes = item.bytes.as_slice().slice(0, item.width);

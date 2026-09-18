@@ -19,7 +19,8 @@ process launching, executable lookup, and temporary run-directory creation.
 The direct-run driver invokes the native compiler without a build-system dependency;
 external builds and tests continue to use their build-system integration.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
-renders diagnostics using the source manager.
+renders diagnostics using the source manager's line index for byte locations and
+line ranges.
 Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Check completes after successful analysis without invoking a
 backend or interpreter. Dump commands consume lexical or syntax results directly.
@@ -51,6 +52,17 @@ preserving effects, storage observations, and lifetimes. C++ supplies native typ
 properties, template instantiation, optimization, and machine code. Runtime
 support uses standard-library numerical conversion.
 
+Semantic facts retain the identity and scope of the operation or storage they
+describe. Ownership, nullability, normal-completion constants, and slice extents
+have distinct propagation rules, described in their owning sections below.
+Optional consumers follow the [analysis boundary](principles.md#optimization-analysis-boundary).
+
+Backend preparation derives implementation plans from published facts without
+modifying semantic stores. Realization preserves execution, storage, and cleanup
+obligations while delivering the selected result; emission serializes target
+syntax. Semantic analysis owns source facts, preparation owns implementation
+selection, and runtime performs the remaining work.
+
 ## Subsystem ownership
 
 Directories group semantic responsibilities. Construction requests constant
@@ -63,7 +75,7 @@ execution when its results determine declaration types or array extents.
 | `semantic/evaluation/` | Typed execution values, constant operations, bounded structured execution, and freezing |
 | `semantic/semir/` | Semantic operations, structured format data, canonical values, identity, and publication contracts |
 | `semantic/format/` | Source format syntax, serialization, and bounded builtin formatting of observed values |
-| `backend/preparation/` | Optional precomputation, runtime specialization, and encoding/size proofs |
+| `backend/preparation/` | Borrowed body facts, operand demands, operation plans, and encoding/size proofs |
 | `backend/` | Representation selection and C++ realization from published semantic facts |
 | `crafts/carven/runtime/` | Shared native support for language operations under their semantic contracts |
 | `crafts/carven/std/` | Standard-library APIs, algorithms, containers, and their native implementation support |
@@ -148,8 +160,10 @@ parameter access checks report mismatches in their own contexts.
 
 Index construction checks the index expression when its receiver is not admitted;
 a diagnosed receiver failure stops construction. Index type and bounds rules
-require both operands to succeed. Binary contextual typing may require constructing
-the right operand first.
+require both operands to succeed. Binary expressions and integer ranges share
+numeric operand context selection. It may require constructing the right operand
+first when the left is a direct unsuffixed literal. Typed operations retain
+source operand order for execution.
 
 ### Craft implementation boundary
 
@@ -183,6 +197,20 @@ actively elaborated body diagnoses an unfinished-body dependency. Execution
 recursion uses completed bodies under the evaluator's call-depth limit. Each body
 is elaborated once; later requests reuse its completed or failed result.
 
+Completion requests, contextual expression construction, and required execution
+suspend through `ContinuationTask`. A synchronous analysis entry drives a lazy,
+depth-first continuation loop; dependency requests await their result without
+replaying source operations. Active-dependency diagnostics and declaration order
+remain part of the construction contract. Ownership and nullability analyses use
+the same mechanism for dependent expression traversal. Syntax ownership checking
+and the shared SemIR walker use explicit worklists; the latter preserves source
+order and expression leave events.
+
+Nominal equality capability is the conjunction of its reachable field and payload
+capabilities. A temporary dependency graph propagates unsupported leaves to their
+consumers. Construction queries use the currently completed reachable declarations;
+head completion solves all nominal roots together.
+
 `ProgramDraft` owns pending function heads. A complete callable contract includes
 its result. Declaration-head completion closes the nominal tables; solving requires
 complete callable contracts and bodies. The catalog and import-use state end before
@@ -192,7 +220,7 @@ captures and solved failure sets.
 `analysis.program` owns `ProgramDraft` and declaration/body reservations.
 Its consuming `finish()` checks reservation completeness, solves failures and
 types, and finalizes callable signatures, declarations, and bodies in that order.
-It then computes test-stop effects per callable before publishing the program.
+Test-stop effects are solved before body completion and publication.
 Body completion resolves type and failure facts in the owned operation tree and
 finalizes binding and pattern tables. Identity array adoptions are removed while
 preserving the source storage and the consumer's access.
@@ -214,10 +242,10 @@ semantic contracts, ownership, then local pointer nullability. All checks read
 Source diagnostics use a separate channel. Body contracts establish the parameter
 and binding relations used by global checks. Successful checks deliver the program.
 
-Backend body preparation checks the execution and control relationships it
-introduces at completion. It borrows frozen operations and checks membership in
-the published lifetime and pattern tables. Semantic publication owns type and
-ownership analysis; the backend owns realization invariants and Target verification.
+Backend preparation derives operand uses and execution summaries from published
+operations. Realization preserves their lifetime and control contracts and checks
+that all emitted exits have receivers. Target verification checks the completed
+C++ representation.
 
 Pointer nullability analyzes structured operations locally and merges slot facts
 across normal and abrupt exits. Indirect places check address availability and target
@@ -276,7 +304,8 @@ only when that pattern is attempted. Integer coverage partitions the type domain
 at interval boundaries and composes with enum payload and or-pattern coverage.
 
 `semantic.semir.children` visits direct child expressions and regions in stored
-order, including inactive branches. `semantic.semir.traversal` supplies recursion.
+order, including inactive branches. `semantic.semir.traversal` walks them with an
+explicit worklist.
 Body construction uses direct children for ordinary effect propagation and
 handles conditional execution and operation-local effects explicitly. Backend
 adapters assign storage uses to these inputs. New operation kinds require a child
@@ -343,8 +372,12 @@ and accounts for destination growth.
 
 Builtin names use ordinary lookup. Direct calls publish `SemPrint` or
 `SemTestReport` expressions; a builtin used as a value materializes a stateless
-callable with its expected signature. Test-stop analysis follows direct calls
-by callable identity and conservatively admits test stop through callable views.
+callable with its expected signature. Test-stop analysis scans each callable
+body once and propagates stop effects through reverse call dependencies.
+Callable views conservatively admit test stop. Body completion folds these call
+effects into each expression before publication. Direct reports retain source
+execution selection; calls retain conservative subtree effects, including
+inactive source. Backend consumers read the completed expression facts.
 
 Bindings carry their role and access. Scope and full-expression boundaries
 record lifetimes. Function return, failure propagation, loop transfer, and test
@@ -561,12 +594,14 @@ earlier arms.
 Queries distinguish body-local objects from caller inputs. Availability belongs
 to an owner; holder relationships belong to storage positions within that owner.
 Query inputs describe aliases, accesses, availability, relationships, and
-execution state.
-Known field and element writes replace the relationships at that position;
-unknown element writes merge possible relationships. Type contents recursively
-identify Carven storage owners (arrays and Strings), closure owners, and callable
-views. Native template arguments propagate callable-view restrictions. Native
-Read passing is selected from C++ copy and destruction traits.
+execution state. Known field and element writes replace the relationships at
+that position; unknown element writes merge possible relationships. Type
+contents identify Carven storage owners (arrays and Strings), closure owners,
+and callable views. These facts propagate to a fixed point over type
+dependencies. Slices and native template arguments propagate only callable-view
+restrictions; pointers do not propagate target contents. Relationship
+construction skips types without closure owners or callable views. Native Read
+passing is selected from C++ copy and destruction traits.
 
 Constant execution queries the same type contents over completed declaration
 fields during construction. This supplies storage observation rules for its
@@ -675,6 +710,20 @@ captures. C++ determines the validity and results of delegated native operations
 Native retention, returned aliases, and indirect storage obey the provider/caller
 contract. Native results, including representation conversions, establish no
 inferred storage loans. Native Write view slots retain their possible old storage loans.
+
+## Structural display and test explanations
+
+`SemPrint` reads logical values described by canonical types and completed
+declarations. `ExecutionValueAccess::display_names` provides owned type, field,
+and case spellings to the shared evaluator;
+execution renders compound views without recovering source syntax. Depth, sequence,
+and output limits match the runtime display contract.
+
+Direct test calls retain the original condition and, for binary and short-circuit
+conditions, the two AST operand spellings in `SemTestReport`. The operation tree
+remains authoritative for execution. Publication verifies this metadata's shape
+and spelling ownership. The executor observes values from the original condition
+execution; constant tests report failures with their structural explanations.
 
 ## Compile-time output and tests
 

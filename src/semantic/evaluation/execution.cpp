@@ -72,9 +72,9 @@ auto execute_constant_root(
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
     ExecutionLimits limits
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    return finish_execution(context, executor.evaluate_root(expression));
+    co_return finish_execution(context, (co_await executor.evaluate_root(expression)));
 }
 
 auto execute_constant_test(
@@ -82,9 +82,9 @@ auto execute_constant_test(
     SemanticExecutionContext& context,
     const StructuredBodyDraft& body,
     ExecutionLimits limits
-) noexcept -> ExecutionResult<void> {
+) noexcept -> ExecutionTask<void> {
     auto executor = SemanticExecutor(values, context, limits);
-    return finish_execution(context, executor.evaluate_test(body));
+    co_return finish_execution(context, (co_await executor.evaluate_test(body)));
 }
 
 auto execute_function(
@@ -94,7 +94,10 @@ auto execute_function(
     std::vector<ExecutionValue> arguments,
     ProgramOriginID origin,
     ExecutionLimits limits
-) noexcept -> ExecutionResult<ExecutionValue> {
+) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    return finish_execution(context, executor.invoke(function, std::move(arguments), origin));
+    co_return finish_execution(
+        context,
+        (co_await executor.invoke(function, std::move(arguments), origin))
+    );
 }

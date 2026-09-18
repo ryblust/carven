@@ -329,3 +329,31 @@ TEST_CASE("Semantic calls: recursive view replacement updates caller loans") {
         CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
     }
 }
+
+TEST_CASE("Nominal capabilities: shared type dependencies retain equality and ownership facts") {
+    for (const auto supported : {true, false}) {
+        CAPTURE(supported);
+        auto source =
+            std::string(supported ? "struct N0 { value: i32 }\n" : "struct N0 { value: [i32] }\n");
+        for (auto index = 1uz; index < 28uz; ++index) {
+            source += std::format(
+                "struct N{} {{ left: N{}, right: N{} }}\n",
+                index,
+                index - 1,
+                index - 1
+            );
+        }
+        source += "fn accept(value: N27) {}\n";
+        const auto program = analyze_test_program(source);
+        for (const auto [id, declaration] : program.declarations().structures()) {
+            static_cast<void>(id);
+            CHECK_EQ(declaration.capabilities.equality, supported);
+        }
+        source += "fn equal(left: N27, right: N27) -> bool { return left == right; }\n";
+        const auto diagnostics = analyze_test_errors(std::move(source));
+        CHECK_EQ(
+            contains_diagnostic_code(diagnostics, DiagnosticCode::TypeEqualityUnsupported),
+            !supported
+        );
+    }
+}

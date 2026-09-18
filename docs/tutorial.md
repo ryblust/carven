@@ -468,3 +468,38 @@ The first test runs during Carven compilation and produces no runtime test
 function. A failed check makes compilation fail. The ordinary test runs through
 the generated test runner, checking the C++ implementation. Calling a `const fn`
 at runtime still executes it at runtime.
+
+## Structural printing and assertion explanations
+
+Print values directly to inspect their logical fields:
+
+```carven
+struct Money { cents: i64 }
+let price = Money { 1250 };
+println(price);
+println(["a", "b"]);
+println(f"{price.cents:04}"); // 1250
+```
+
+The output uses one field or element per line, four-space indentation, and a
+comma after every item:
+
+```text
+Money {
+    cents: 1250,
+}
+[
+    "a",
+    "b",
+]
+1250
+```
+
+Direct printing does not invoke custom formatters. Use interpolation for explicit
+formatting. Structures, enum cases and payloads, arrays, and slices display their
+logical contents; large or deeply nested displays are truncated.
+
+A failed `check(actual == expected)` or `require(actual == expected)` includes
+the two operand values without recomputing the comparison. A failed outer Boolean
+combination shows its operands and marks a short-circuited operand as
+`<not evaluated>`. The optional message still evaluates once, even on success.

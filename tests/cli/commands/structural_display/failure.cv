@@ -1,0 +1,11 @@
+struct Money {
+    cents: i64
+}
+
+const test "explanations" {
+    let actual = Money { 12 };
+    let expected = Money { 15 };
+    check(actual == expected);
+    check(false && true);
+    check(1 > 2);
+}

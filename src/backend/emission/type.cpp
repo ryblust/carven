@@ -52,7 +52,7 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcep
                 return qualified_sequence(parts, false);
             },
             [&](const TargetIntrinsicType& intrinsic) noexcept -> SyntaxLayouts {
-                auto result = text(target_symbol_spelling(intrinsic.symbol));
+                auto result = text(target_symbol_info(intrinsic.symbol).spelling);
                 if (!intrinsic.type_argument_ids.empty()) {
                     auto argument_layout_ids = std::vector<LayoutNodeID> {};
                     argument_layout_ids.reserve(intrinsic.type_argument_ids.size());
@@ -82,7 +82,7 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcep
                     concat({result, delimited_list(parameters, "(", ")"), text(" noexcept")});
                 const auto arguments = std::array {signature};
                 const auto function_ref = concat(
-                    {text(target_symbol_spelling(TargetSymbol::RuntimeFunctionRef)),
+                    {text(target_symbol_info(TargetSymbol::RuntimeFunctionRef).spelling),
                      delimited_list(arguments, "<", ">")}
                 );
                 return {.inline_qualified = function_ref, .wrapping = function_ref};

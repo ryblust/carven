@@ -4,12 +4,18 @@ function main()
     local compiler, samples, warmups = benchmark.settings()
     local cases = {}
     for _, count in ipairs({64, 128, 256}) do
-        local independent, chain, reversed = {}, {}, {}
+        local independent, chain, reversed, stops = {}, {}, {}, {}
         for index = 0, count - 1 do
             table.insert(independent, string.format("fn f%d(x: i32) -> i32 { return x; }", index))
             table.insert(chain, string.format("fn f%d(x: i32) -> i32 { return %s; }", index,
                 index + 1 < count and string.format("f%d(x)", index + 1) or "x"))
         end
+        for index = 0, count - 1 do
+            table.insert(stops, string.format("fn stop%d() -> void { %s; }", index,
+                index + 1 < count and string.format("stop%d()", index + 1) or "fail()"))
+        end
+        table.insert(cases, {name = "test_stop_chain_" .. count,
+            source = table.concat(stops, "\n") .. "\nfn main() { stop0(); }\n"})
         for index = #chain, 1, -1 do
             table.insert(reversed, chain[index])
         end
@@ -17,6 +23,25 @@ function main()
             table.insert(cases, {name = form[1] .. "_" .. count,
                 source = table.concat(form[2], "\n") .. "\nfn main() { let _ = f0(1); }\n"})
         end
+    end
+    for _, depth in ipairs({8, 16, 24}) do
+        local declarations = {"struct N0 { value: i32 }"}
+        for index = 1, depth do
+            table.insert(declarations, string.format("struct N%d { left: N%d, right: N%d }",
+                index, index - 1, index - 1))
+        end
+        table.insert(declarations, string.format("fn inspect(value: N%d) {}", depth))
+        table.insert(cases, {name = "shared_nominal_" .. depth,
+            source = table.concat(declarations, "\n")})
+    end
+    for _, depth in ipairs({4, 8, 12}) do
+        local statements = {"let x0 = values[0];"}
+        for index = 1, depth do
+            table.insert(statements, string.format("let x%d = x%d + x%d;", index, index - 1, index - 1))
+        end
+        table.insert(cases, {name = "shared_native_query_" .. depth,
+            source = "import <vector> using std::vector;\nfn probe(values: vector<i32>) { "
+                .. table.concat(statements, " ") .. string.format(" return x%d; }\n", depth)})
     end
     for _, count in ipairs({128, 256, 512, 1024}) do
         for _, distinct in ipairs({false, true}) do
@@ -72,7 +97,7 @@ function main()
             local filename = case.name .. ".cv"
             io.writefile(path.join(root, filename), case.source)
             local results = benchmark.measure(samples, warmups, function ()
-                local status = os.execv(compiler, {"--stdout", "--linkage-domain=analysis-pulse", filename}, {
+                local status = os.execv(compiler, {"compile", "--stdout", "--linkage-domain=analysis-pulse", filename}, {
                     curdir = root, stdout = os.nuldev(), stderr = errors, timeout = 60000,
                 })
                 if status ~= 0 then

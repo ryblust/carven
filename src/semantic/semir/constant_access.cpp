@@ -59,3 +59,22 @@ auto PublishedConstantValues::enum_case_types(EnumID enumeration) const noexcept
     }
     return result;
 }
+
+auto PublishedConstantValues::display_names(TypeID type) const noexcept -> ExecutionDisplayNames {
+    auto result = ExecutionDisplayNames {.name = {}, .fields = {}, .cases = {}};
+    const auto canonical = type_copy(type);
+    if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
+        const auto& declaration = program.declarations().structure(structure->structure);
+        result.name = spelling(declaration.name);
+        for (const auto& field : declaration.fields) {
+            result.fields.emplace_back(spelling(field.name));
+        }
+    } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+        const auto& declaration = program.declarations().enumeration(enumeration->enumeration);
+        result.name = spelling(declaration.name);
+        for (const auto id : declaration.cases) {
+            result.cases.emplace_back(id, spelling(program.declarations().enum_case(id).name));
+        }
+    }
+    return result;
+}

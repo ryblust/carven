@@ -75,7 +75,6 @@ public:
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop_test(TypeID type) const noexcept -> bool;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
-    auto may_stop_test(const SemanticExpression& expression) const noexcept -> bool;
 
 private:
     SemIRProgram(

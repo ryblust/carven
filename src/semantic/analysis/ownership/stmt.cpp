@@ -6,7 +6,7 @@ import std;
 auto OwnershipBodyAnalyzer::complete_expression(
     const SemanticExpression& source,
     OwnershipState state
-) noexcept -> OwnershipFlow {
+) noexcept -> ContinuationTask<OwnershipFlow> {
     const auto previous = full_expression;
     const auto owns = full_expression != source.lifetime
         && body.lifetime_regions().region(source.lifetime).kind
@@ -14,7 +14,7 @@ auto OwnershipBodyAnalyzer::complete_expression(
     if (owns) {
         full_expression = source.lifetime;
     }
-    auto result = expression(source, std::move(state));
+    auto result = (co_await expression(source, std::move(state)));
     if (result.normal) {
         result.normal->value = {};
     }
@@ -22,25 +22,25 @@ auto OwnershipBodyAnalyzer::complete_expression(
         leave(result, source.lifetime);
         full_expression = previous;
     }
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::region(
     const SemanticRegion& source,
     OwnershipState state,
     bool release
-) noexcept -> OwnershipFlow {
+) noexcept -> ContinuationTask<OwnershipFlow> {
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
             break;
         }
-        auto next = statement(item, std::move(result.normal->state));
+        auto next = (co_await statement(item, std::move(result.normal->state)));
         result.normal = std::move(next.normal);
         append_ownership_exits(result, next);
     }
     if (result.normal.has_value() && source.result.has_value()) {
-        auto next = expression(*source.result, std::move(result.normal->state));
+        auto next = (co_await expression(*source.result, std::move(result.normal->state)));
         result.normal = std::move(next.normal);
 
         append_ownership_exits(result, next);
@@ -48,13 +48,13 @@ auto OwnershipBodyAnalyzer::region(
     if (release) {
         leave(result, source.lifetime);
     }
-    return result;
+    co_return result;
 }
 
 auto OwnershipBodyAnalyzer::statement(
     const SemanticStatement& source,
     OwnershipState state
-) noexcept -> OwnershipFlow {
+) noexcept -> ContinuationTask<OwnershipFlow> {
     const auto previous_full_expression = full_expression;
     const auto owns =
         body.lifetime_regions().region(source.lifetime).kind == LifetimeRegionKind::FullExpression
@@ -63,13 +63,16 @@ auto OwnershipBodyAnalyzer::statement(
         full_expression = source.lifetime;
     }
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
-    const auto evaluate = [&](const SemanticExpression& expression_source) noexcept {
+    const auto evaluate = [&](
+                              const SemanticExpression& expression_source
+                          ) noexcept -> ContinuationTask<std::monostate> {
         if (result.normal.has_value()) {
-            auto next = expression(expression_source, std::move(result.normal->state));
+            auto next = (co_await expression(expression_source, std::move(result.normal->state)));
             result.normal = std::move(next.normal);
 
             append_ownership_exits(result, next);
         }
+        co_return {};
     };
     const auto transfer = [&](auto payload) noexcept {
         if (result.normal) {
@@ -81,30 +84,42 @@ auto OwnershipBodyAnalyzer::statement(
             result.normal.reset();
         }
     };
-    source.value.visit(
+    (co_await source.value.visit(
         Overloaded {
-            [&](const SemReturn& value) noexcept {
+            [&](const SemReturn& value) noexcept -> ContinuationTask<std::monostate> {
                 if (value.value.has_value()) {
-                    evaluate(*value.value);
+                    (co_await evaluate(*value.value));
                 }
                 transfer(OwnershipReturn {});
+                co_return {};
             },
-            [&](const SemBreak&) noexcept { transfer(OwnershipBreak {}); },
-            [&](const SemContinue&) noexcept { transfer(OwnershipContinue {}); },
-            [&](const SemRethrow&) noexcept {
+            [&](const SemBreak&) noexcept -> ContinuationTask<std::monostate> {
+                transfer(OwnershipBreak {});
+                co_return {};
+            },
+            [&](const SemContinue&) noexcept -> ContinuationTask<std::monostate> {
+                transfer(OwnershipContinue {});
+                co_return {};
+            },
+            [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
                 if (!caught) {
                     invariant_violation("rethrow has no active failure payload");
                 }
                 result.exits.push_back({*caught, std::move(result.normal->state)});
                 result.normal.reset();
+                co_return {};
             },
-            [&](const SemThrow& value) noexcept {
-                evaluate(value.value);
+            [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.value));
                 transfer(OwnershipFailure {value.failure_type, {}});
+                co_return {};
             },
-            [&](const SemExpressionStatement& value) noexcept { evaluate(value.expression); },
-            [&](const SemInitialize& value) noexcept {
-                evaluate(value.initializer);
+            [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.expression));
+                co_return {};
+            },
+            [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
                 if (result.normal.has_value()) {
                     store(
                         result.normal->state,
@@ -113,12 +128,13 @@ auto OwnershipBodyAnalyzer::statement(
                         source.origin
                     );
                 }
+                co_return {};
             },
-            [&](const SemAssign& value) noexcept {
+            [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
                 const auto selected = location(value.target);
                 if (!selected) {
-                    result = place(value.target, std::move(result.normal->state));
-                    evaluate(value.value);
+                    result = (co_await place(value.target, std::move(result.normal->state)));
+                    (co_await evaluate(value.value));
                     if (result.normal
                         && (!result.normal->value.callable_loans.empty()
                             || !result.normal->value.captures.empty())) {
@@ -128,40 +144,44 @@ auto OwnershipBodyAnalyzer::statement(
                             source.origin
                         );
                     }
-                    return;
+                    co_return {};
                 }
                 const auto& target = *selected;
                 const auto whole = target.path.empty();
-                result = place(
+                result = (co_await place(
                     value.target,
                     std::move(result.normal->state),
                     !whole || value.compound.has_value()
-                );
+                ));
                 if (!result.normal.has_value()) {
-                    return;
+                    co_return {};
                 }
                 write_access(target, value.target.origin);
                 const auto previous = accesses.size();
                 if (!whole || value.compound.has_value()) {
                     accesses.push_back({target, false});
                 }
-                evaluate(value.value);
+                (co_await evaluate(value.value));
                 accesses.resize(previous);
                 if (result.normal.has_value()) {
                     store(result.normal->state, target, result.normal->value, source.origin);
                 }
+                co_return {};
             },
-            [&](const SemLoop& value) noexcept {
-                result = loop(value, std::move(result.normal->state));
+            [&](const SemLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                result = (co_await loop(value, std::move(result.normal->state)));
+                co_return {};
             },
-            [&](const SemRangeLoop& value) noexcept {
-                result = range(value, std::move(result.normal->state));
+            [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                result = (co_await range(value, std::move(result.normal->state)));
+                co_return {};
             },
-            [&](const OwnedSemanticRegion& value) noexcept {
-                result = region(*value, std::move(result.normal->state));
+            [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
+                result = (co_await region(*value, std::move(result.normal->state)));
+                co_return {};
             },
         }
-    );
+    ));
     if (result.normal) {
         result.normal->value = {};
     }
@@ -169,5 +189,5 @@ auto OwnershipBodyAnalyzer::statement(
         leave(result, source.lifetime);
         full_expression = previous_full_expression;
     }
-    return result;
+    co_return result;
 }

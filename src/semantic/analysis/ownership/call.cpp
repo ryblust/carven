@@ -6,7 +6,10 @@ import std;
 
 auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletion> {
     auto state = OwnershipState {
-        .objects = std::vector<OwnershipObjectState>(input.objects.size() + facts.locals.size())
+        .objects = std::vector<OwnershipObjectState>(
+            input.objects.size() + facts.locals.size(),
+            OwnershipObjectState {.available = false, .taken = std::nullopt, .relationships = {}}
+        )
     };
     for (auto index = 0uz; index < input.objects.size(); ++index) {
         state.objects[index] = input.objects[index].state;
@@ -34,7 +37,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> std::vector<OwnershipCallCompletio
     };
     initialize(body.inputs().parameters, input.parameters);
     initialize(body.inputs().captures, input.captures);
-    auto flow = region(body.region(), std::move(state));
+    auto flow = region(body.region(), std::move(state)).run();
     auto result = std::vector<OwnershipCallCompletion>();
     const auto complete = [&](bool test_stopped,
                               std::optional<TypeID> failure,

@@ -44,11 +44,14 @@ TEST_CASE("Format preparation: append shares normalization with a separate Write
                 if (count == 0uz) {
                     REQUIRE(format->operands.size() == 3uz);
                     CHECK(serialize_format(format->specification) == "{0}/{1:0{2}}");
-                    const auto* delegated = std::get_if<PreparedDelegatedFormat>(&preparation);
-                    REQUIRE(delegated != nullptr);
-                    CHECK(delegated->format_string == "7/{0:0{1}}");
-                    CHECK(delegated->operand_indices == std::vector<std::size_t> {1uz, 2uz});
-                    CHECK(delegated->encoding == FormatResultEncoding::Unproven);
+                    const auto* writer = std::get_if<PreparedWriterFormat>(&preparation);
+                    REQUIRE(writer != nullptr);
+                    CHECK(writer->format.text == std::vector<std::string> {"7/", ""});
+                    CHECK(writer->operand_indices == std::vector<std::size_t> {1uz, 2uz});
+                    const auto* integer =
+                        std::get_if<IntegerFormatField>(&writer->format.fields.front());
+                    REQUIRE(integer != nullptr);
+                    CHECK_FALSE(integer->static_width.has_value());
                 } else if (count == 1uz) {
                     const auto* text = std::get_if<PreparedFormatText>(&preparation);
                     REQUIRE(text != nullptr);

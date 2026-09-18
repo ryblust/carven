@@ -8,16 +8,16 @@ struct View {
 fn same(text: String) -> bool => ::native_text::aliases_retained(text);
 
 test "String C++ boundary: dynamic views and aggregates can be read and retained" {
-    let text = String::from_str("a我😀\0");
+    let text: String = "a我😀\0";
     check(::native_text::read(text.as_str()) == 9usize);
-    check(::native_text::read_aggregate(View { text: text.as_str() }) == 9usize);
+    check(::native_text::read_aggregate(View { text: text }) == 9usize);
     ::native_text::remember(text.as_str());
     check(same(text));
     check(::native_text::retained_size() == 9usize);
     ::native_text::forget();
     let external: str = ::native_text::external_view();
     let copy = String::from_str(external);
-    check(copy.as_str() == "native");
+    check(copy == "native");
     var view: str = "old";
     ::native_text::replace(&view);
     check(view == "native");
@@ -32,14 +32,14 @@ test "String: global C++ lookup is independent of the builtin" {
 }
 
 private fn native_copy() -> ::std::string {
-    let original = String::from_str("independent");
+    let original: String = "independent";
     return original.as_str() as ::std::string;
 }
 
 test "String C++ boundary: native owning conversion has independent storage" {
     let result = native_copy();
     check(::native_text::read(result) == 11usize);
-    var original = String::from_str("before");
+    var original: String = "before";
     let copy = original.as_str() as ::std::string;
     original.clear();
     check(::native_text::read(copy) == 6usize);

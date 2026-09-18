@@ -18,28 +18,15 @@ public:
     auto finish() && noexcept -> DeclarationReferenceFacts;
 
 private:
-    struct RecursionGuard final {
-        std::flat_set<TypeID> types;
-        std::flat_set<CallableSignatureID> signatures;
-    };
-
     auto require_nominal(
         NominalDeclarationRef nominal,
         TargetTypeCompleteness completeness
     ) noexcept -> void;
-    auto collect_failure_set(
-        FailureSetID failure_set,
-        TargetTypeCompleteness completeness,
-        RecursionGuard& guard
-    ) noexcept -> void;
-    auto collect_signature(CallableSignatureID signature_id, RecursionGuard& guard) noexcept
+    auto collect_failure_set(FailureSetID failure_set, TargetTypeCompleteness completeness) noexcept
         -> void;
-    auto collect_callable(CallableID callable, RecursionGuard& guard) noexcept -> void;
-    auto collect_type(
-        TypeID type_id,
-        TargetTypeCompleteness completeness,
-        RecursionGuard& guard
-    ) noexcept -> void;
+    auto collect_signature(CallableSignatureID signature_id) noexcept -> void;
+    auto collect_callable(CallableID callable) noexcept -> void;
+    auto collect_type(TypeID type_id, TargetTypeCompleteness completeness) noexcept -> void;
 
 public:
     auto collect_declaration(DeclarationRef declaration) noexcept -> void;
@@ -47,10 +34,13 @@ public:
 private:
     const SemIRProgram& semantic;
     DeclarationReferenceFacts result;
+    std::set<std::pair<TypeID, TargetTypeCompleteness>> visited_types;
+    std::set<CallableSignatureID> visited_signatures;
 };
 
 DeclarationReferenceCollector::DeclarationReferenceCollector(const SemIRProgram& semantic) noexcept
-    : semantic(semantic) {}
+    : semantic(semantic),
+      result {.requirements = {}, .closures = {}} {}
 
 auto DeclarationReferenceCollector::finish() && noexcept -> DeclarationReferenceFacts {
     return std::move(result);
@@ -71,19 +61,16 @@ auto DeclarationReferenceCollector::require_nominal(
 
 auto DeclarationReferenceCollector::collect_failure_set(
     FailureSetID failure_set,
-    TargetTypeCompleteness completeness,
-    RecursionGuard& guard
+    TargetTypeCompleteness completeness
 ) noexcept -> void {
     for (const auto member : semantic.failure_sets().failure_set(failure_set).members) {
-        collect_type(member, completeness, guard);
+        collect_type(member, completeness);
     }
 }
 
-auto DeclarationReferenceCollector::collect_signature(
-    CallableSignatureID signature_id,
-    RecursionGuard& guard
-) noexcept -> void {
-    if (!guard.signatures.insert(signature_id).second) {
+auto DeclarationReferenceCollector::collect_signature(CallableSignatureID signature_id) noexcept
+    -> void {
+    if (!visited_signatures.insert(signature_id).second) {
         return;
     }
     const auto& signature = semantic.callable_signatures().signature(signature_id);
@@ -91,46 +78,40 @@ auto DeclarationReferenceCollector::collect_signature(
         collect_type(
             parameter.type,
             parameter.access == AccessMode::Read ? TargetTypeCompleteness::CompleteDefinition
-                                                 : TargetTypeCompleteness::Declaration,
-            guard
+                                                 : TargetTypeCompleteness::Declaration
         );
     }
     const auto result_completeness = TargetTypeCompleteness::Declaration;
-    collect_type(signature.result, result_completeness, guard);
-    collect_failure_set(signature.failures, result_completeness, guard);
-    guard.signatures.erase(signature_id);
+    collect_type(signature.result, result_completeness);
+    collect_failure_set(signature.failures, result_completeness);
 }
 
-auto DeclarationReferenceCollector::collect_callable(
-    CallableID callable,
-    RecursionGuard& guard
-) noexcept -> void {
-    collect_signature(semantic.declarations().callable(callable).signature, guard);
+auto DeclarationReferenceCollector::collect_callable(CallableID callable) noexcept -> void {
+    collect_signature(semantic.declarations().callable(callable).signature);
 }
 
 auto DeclarationReferenceCollector::collect_type(
     TypeID type_id,
-    TargetTypeCompleteness completeness,
-    RecursionGuard& guard
+    TargetTypeCompleteness completeness
 ) noexcept -> void {
-    if (!guard.types.insert(type_id).second) {
+    if (!visited_types.emplace(type_id, completeness).second) {
         return;
     }
     semantic.types().type(type_id).value.visit(
         Overloaded {
 
             [&](const SliceTypeValue& value) noexcept {
-                collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
+                collect_type(value.element, TargetTypeCompleteness::Declaration);
             },
             [&](const RangeTypeValue& value) noexcept {
-                collect_type(value.element, TargetTypeCompleteness::Declaration, guard);
+                collect_type(value.element, TargetTypeCompleteness::Declaration);
             },
             [&](const PointerTypeValue& value) noexcept {
-                collect_type(value.target, TargetTypeCompleteness::Declaration, guard);
+                collect_type(value.target, TargetTypeCompleteness::Declaration);
             },
             [&](const CppTypeValue& value) noexcept {
                 for (const auto argument : cpp_type_references(value)) {
-                    collect_type(argument, TargetTypeCompleteness::CompleteDefinition, guard);
+                    collect_type(argument, TargetTypeCompleteness::CompleteDefinition);
                 }
             },
             [](const BuiltinTypeValue&) static noexcept {},
@@ -141,43 +122,38 @@ auto DeclarationReferenceCollector::collect_type(
                 require_nominal(NominalDeclarationRef {value.enumeration}, completeness);
             },
             [&](const ArrayTypeValue& value) noexcept {
-                collect_type(value.element, completeness, guard);
+                collect_type(value.element, completeness);
             },
-            [&](const FunctionTypeValue& value) noexcept {
-                collect_callable(value.callable, guard);
-            },
+            [&](const FunctionTypeValue& value) noexcept { collect_callable(value.callable); },
             [&](const ClosureTypeValue& value) noexcept {
                 result.closures.insert(value.callable);
-                collect_callable(value.callable, guard);
+                collect_callable(value.callable);
                 const auto body_id = semantic.declarations().body_for_callable(value.callable);
                 const auto& body = semantic.bodies().body(*body_id);
                 for (const auto capture : body.inputs().captures) {
                     collect_type(
                         body.binding(capture).type,
-                        TargetTypeCompleteness::CompleteDefinition,
-                        guard
+                        TargetTypeCompleteness::CompleteDefinition
                     );
                 }
             },
             [&](const CallableViewTypeValue& value) noexcept {
-                collect_signature(value.signature, guard);
+                collect_signature(value.signature);
             },
         }
     );
-    guard.types.erase(type_id);
 }
 
 auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declaration) noexcept
     -> void {
-    auto guard = RecursionGuard();
     declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept {
-                collect_callable(semantic.declarations().function(id).callable, guard);
+                collect_callable(semantic.declarations().function(id).callable);
             },
             [&](StructID id) noexcept {
                 for (const auto& field : semantic.declarations().structure(id).fields) {
-                    collect_type(field.type, TargetTypeCompleteness::CompleteDefinition, guard);
+                    collect_type(field.type, TargetTypeCompleteness::CompleteDefinition);
                 }
             },
             [&](EnumID id) noexcept {
@@ -186,14 +162,13 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                         std::get_if<NumericEnumRepresentation>(&enumeration.representation)) {
                     collect_type(
                         numeric->underlying_type,
-                        TargetTypeCompleteness::CompleteDefinition,
-                        guard
+                        TargetTypeCompleteness::CompleteDefinition
                     );
                 }
                 for (const auto case_id : enumeration.cases) {
                     for (const auto type :
                          semantic.declarations().enum_case(case_id).payload_types) {
-                        collect_type(type, TargetTypeCompleteness::CompleteDefinition, guard);
+                        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
                     }
                 }
             },
@@ -204,8 +179,7 @@ auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declarati
                 const auto* slice = std::get_if<SliceTypeValue>(&semantic.types().type(type).value);
                 collect_type(
                     slice ? slice->element : type,
-                    TargetTypeCompleteness::CompleteDefinition,
-                    guard
+                    TargetTypeCompleteness::CompleteDefinition
                 );
             },
         }
