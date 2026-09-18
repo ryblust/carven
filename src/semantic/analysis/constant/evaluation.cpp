@@ -69,8 +69,8 @@ auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID 
     }
     if (modules.empty()) {
         for (auto index = 0uz; index < draft.module_count(); ++index) {
-            const auto module = draft.provenance_module_at(index);
-            modules.emplace(draft.module_source(module), module);
+            const auto module_id = draft.provenance_module_at(index);
+            modules.emplace(draft.module_source(module_id), module_id);
         }
     }
     const auto location = draft.source_origin(origin);

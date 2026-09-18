@@ -3,6 +3,7 @@ module carven:backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.symbol;
+import :support.tree_value;
 import :support.unique_indirect;
 import std;
 
@@ -56,6 +57,10 @@ enum class TargetPrecedence {
     Prefix,
     Postfix,
     Primary,
+};
+
+struct TargetLocalExpr final {
+    TargetLocalID local;
 };
 
 struct TargetNameExpr final {
@@ -177,7 +182,7 @@ struct TargetStaticCastExpr final {
 };
 
 struct TargetLambdaParameter final {
-    TargetIdentifier name;
+    TargetLocalID local;
     TargetTypeID type;
 };
 
@@ -187,8 +192,11 @@ struct TargetLambdaExpr final {
     std::vector<TargetStmt> body;
 };
 
-using TargetExprValue = std::variant<
+struct TargetExpressionCleanup;
+using TargetExprValue = TreeValue<
+    TargetExpressionCleanup,
     TargetNameExpr,
+    TargetLocalExpr,
     TargetIntrinsicNameExpr,
     TargetLiteralExpr,
     TargetPrefixExpr,
@@ -203,6 +211,10 @@ using TargetExprValue = std::variant<
     TargetStaticMemberExpr,
     TargetStaticCastExpr,
     TargetLambdaExpr>;
+
+struct TargetExpressionCleanup final {
+    static auto clear(TargetExprValue& value) noexcept -> void;
+};
 
 struct TargetExpr final {
     TargetExprValue value;

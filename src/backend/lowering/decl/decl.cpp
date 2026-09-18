@@ -137,7 +137,7 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
     auto parameters = std::vector<TargetParameter>();
     for (const auto& parameter : signature.parameters) {
         parameters.push_back(
-            {.name = std::nullopt,
+            {.local = std::nullopt,
              .type = context.lower_parameter(parameter),
              .default_value = std::nullopt}
         );
@@ -169,9 +169,10 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
     auto parameters = std::vector<TargetParameter>();
     auto arguments = std::vector<TargetExpr>();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
-        const auto name = names.fresh(TargetTemporaryNameKind::CppBoundaryParameter);
+        const auto name =
+            context.target().add_local(names.fresh(TargetTemporaryNameKind::CppBoundaryParameter));
         parameters.push_back(
-            {.name = name,
+            {.local = name,
              .type = context.lower_parameter(signature.parameters[index]),
              .default_value = std::nullopt}
         );
@@ -342,6 +343,7 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
             destination.push_back(std::move(found->second));
         }
     }
+    append_items(result.private_declarations, context.take_display_helpers());
     for (auto&& [function, definition] : function_definitions) {
         auto& target = declarations.function(function).visibility == DeclarationVisibility::Module
             ? result.private_items
@@ -363,13 +365,18 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
         invariant_violation("entry wrapper lowering received a non-entry function");
     }
     const auto with_arguments = *function.entry_point == EntryPointKind::WithArguments;
+    auto process_arguments = std::optional<std::array<TargetLocalID, 2>>();
     auto arguments = std::vector<TargetExpr>();
     if (with_arguments) {
+        process_arguments = std::array {
+            context.target().add_local(TargetNameAllocator::process_argument_count()),
+            context.target().add_local(TargetNameAllocator::process_argument_vector())
+        };
         arguments.push_back(call_expression(
             intrinsic_expression(TargetSymbol::RuntimeEntryArgs),
             target_expressions(
-                name_expression(TargetNameAllocator::process_argument_count()),
-                name_expression(TargetNameAllocator::process_argument_vector())
+                name_expression((*process_arguments)[0]),
+                name_expression((*process_arguments)[1])
             )
         ));
     }
@@ -386,12 +393,13 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
         body.push_back(generated_statement(TargetExprStmt {.expression = std::move(call)}));
     } else {
         auto names = context.make_callable_name_allocator();
-        const auto outcome = names.fresh(TargetTemporaryNameKind::Outcome);
+        const auto outcome =
+            context.target().add_local(names.fresh(TargetTemporaryNameKind::Outcome));
         body.push_back(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = outcome,
+                .local = outcome,
                 .type = context.intrinsic_type(TargetSymbol::Auto),
                 .initializer = std::move(call),
             }
@@ -411,5 +419,5 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
         };
     }
     body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(status)}));
-    return lower_process_entry(context, with_arguments, std::move(body));
+    return lower_process_entry(context, process_arguments, std::move(body));
 }

@@ -34,18 +34,18 @@ auto closure_capture_identifier(std::size_t index) noexcept -> TargetIdentifier 
     return TargetIdentifier::from_spelling(std::format("carven_capture_{}", index));
 }
 
-auto parameter_identifier(
-    const ModuleLowering& context,
+auto parameter_local(
+    ModuleLowering& context,
     TargetNameAllocator& names,
     const SemIRBody& body,
     LocalBindingID binding
-) noexcept -> TargetIdentifier {
+) noexcept -> TargetLocalID {
     const auto& row = body.binding(binding);
-    return names.local_symbol(
+    return context.target().add_local(names.local_symbol(
         context.semantic().provenance().spelling(row.name),
         binding.index(),
         callable_scope
-    );
+    ));
 }
 
 } // namespace
@@ -83,7 +83,7 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
     auto parameters = std::vector<TargetParameter>();
     for (const auto& parameter : signature.parameters) {
         parameters.push_back(
-            {.name = std::nullopt,
+            {.local = std::nullopt,
              .type = context.lower_parameter(parameter),
              .default_value = std::nullopt}
         );
@@ -137,11 +137,10 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     }
     auto parameters = std::vector<TargetParameter>();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
-        const auto name =
-            parameter_identifier(context, names, body, body.inputs().parameters[index]);
+        const auto name = parameter_local(context, names, body, body.inputs().parameters[index]);
         inputs.parameters.push_back(name);
         parameters.push_back(
-            {.name = name,
+            {.local = name,
              .type = context.lower_parameter(signature.parameters[index]),
              .default_value = std::nullopt}
         );
@@ -152,7 +151,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     }
     for (auto index = 0uz; index < parameters.size(); ++index) {
         if (!lowered.referenced_parameters[index]) {
-            parameters[index].name.reset();
+            parameters[index].local.reset();
         }
     }
     return source_item(

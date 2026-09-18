@@ -37,9 +37,9 @@ auto TargetRenderer::render_member_function_name(const TargetMemberFunctionName&
 }
 
 auto TargetRenderer::render_parameter(const TargetParameter& value) noexcept -> LayoutNodeID {
-    auto result = !value.name.has_value()
+    auto result = !value.local.has_value()
         ? render_type(value.type)
-        : concat({render_type(value.type), text(" "), render_identifier(*value.name)});
+        : concat({render_type(value.type), text(" "), render_identifier(*value.local)});
     if (value.default_value.has_value()) {
         result = concat({result, text(" = "), render_expression(*value.default_value)});
     }
@@ -387,7 +387,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
     );
 }
 
-auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeID {
+auto TargetRenderer::render_item_node(const TargetItem& item) noexcept -> LayoutNodeID {
     const auto rendered = item.value.visit(
         Overloaded {
             [&](const TargetDecl& value) noexcept { return render_declaration(value); },
@@ -445,4 +445,8 @@ auto TargetRenderer::render_item(const TargetItem& item) noexcept -> LayoutNodeI
         }
     );
     return with_attribution(rendered, item.attribution);
+}
+
+auto TargetRenderer::render_item(const TargetItem& value) noexcept -> LayoutNodeID {
+    return item_layouts.at(std::addressof(value));
 }

@@ -28,6 +28,6 @@ auto first_program_module(const SemIRProgram& semantic) noexcept -> ModuleID;
 
 auto lower_process_entry(
     ModuleLowering& context,
-    bool accepts_arguments,
+    std::optional<std::array<TargetLocalID, 2>> arguments,
     std::vector<TargetStmt> body
 ) noexcept -> TargetItem;

@@ -15,34 +15,11 @@ import std;
 
 namespace {
 
-class DisplayEmitter final {
-public:
-    explicit DisplayEmitter(ModuleLowering& context) noexcept;
-    auto finish(TypeID type) noexcept -> TargetExpr;
-
-private:
-    auto emitter(TypeID type, std::size_t depth) noexcept -> TargetExpr;
-    auto statements(
-        TypeID type,
-        TargetIdentifier writer,
-        const std::function<TargetExpr()>& value,
-        std::size_t depth
-    ) noexcept -> std::vector<TargetStmt>;
-    auto lambda(TypeID type, std::size_t depth) noexcept -> TargetLambdaExpr;
-    ModuleLowering& context;
-    TargetNameAllocator names;
-    std::map<std::pair<TypeID, std::size_t>, TargetIdentifier> helpers;
-    std::vector<TargetStmt> definitions;
-};
-
-DisplayEmitter::DisplayEmitter(ModuleLowering& context) noexcept
-    : context(context),
-      names(context.make_callable_name_allocator()) {}
-
 // Projections are rebuilt from stable names; reading a field has no execution effects.
-auto DisplayEmitter::statements(
+auto display_statements(
+    ModuleLowering& context,
     TypeID type,
-    TargetIdentifier writer,
+    TargetLocalID writer,
     const std::function<TargetExpr()>& value,
     std::size_t depth
 ) noexcept -> std::vector<TargetStmt> {
@@ -74,14 +51,15 @@ auto DisplayEmitter::statements(
             body.push_back(generated_statement(
                 TargetExprStmt {
                     .expression = call_expression(
-                        emitter(child_type, depth + 1),
+                        context.display_emitter(child_type, depth + 1),
                         target_expressions(name_expression(writer), projection())
                     )
                 }
             ));
         } else {
             body.append_range(
-                statements(child_type, writer, projection, depth + 1) | std::views::as_rvalue
+                display_statements(context, child_type, writer, projection, depth + 1)
+                | std::views::as_rvalue
             );
         }
     };
@@ -174,7 +152,7 @@ auto DisplayEmitter::statements(
             "sequence",
             target_expressions(
                 value(),
-                emitter(array->element, depth + 1),
+                context.display_emitter(array->element, depth + 1),
                 integer_expression(depth)
             )
         );
@@ -183,7 +161,7 @@ auto DisplayEmitter::statements(
             "sequence",
             target_expressions(
                 value(),
-                emitter(slice->element, depth + 1),
+                context.display_emitter(slice->element, depth + 1),
                 integer_expression(depth)
             )
         );
@@ -222,55 +200,68 @@ auto DisplayEmitter::statements(
     return body;
 }
 
-auto DisplayEmitter::lambda(TypeID type, std::size_t depth) noexcept -> TargetLambdaExpr {
-    const auto writer = names.fresh(TargetTemporaryNameKind::TestValue);
-    const auto value = names.fresh(TargetTemporaryNameKind::Operand);
-    return {
-        .parameters =
-            {{.name = writer,
-              .type = context.reference_type(
-                  context.intrinsic_type(TargetSymbol::RuntimeDisplayWriter),
-                  false
-              )},
-             {.name = value, .type = context.reference_type(context.lower_type(type), true)}},
-        .result = context.intrinsic_type(TargetSymbol::Void),
-        .body = statements(type, writer, [&]() noexcept { return name_expression(value); }, depth)
-    };
-}
-
-auto DisplayEmitter::emitter(TypeID type, std::size_t depth) noexcept -> TargetExpr {
-    const auto key = std::pair {type, depth};
-    if (const auto found = helpers.find(key); found != helpers.end()) {
-        return name_expression(found->second);
-    }
-    const auto name = names.fresh(TargetTemporaryNameKind::Operand);
-    auto initializer = lambda(type, depth);
-    helpers.emplace(key, name);
-    definitions.push_back(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::ConstValue,
-            .maybe_unused = false,
-            .name = name,
-            .type = context.intrinsic_type(TargetSymbol::Auto),
-            .initializer = TargetExpr {.value = std::move(initializer)}
-        }
-    ));
-    return name_expression(name);
-}
-
-auto DisplayEmitter::finish(TypeID type) noexcept -> TargetExpr {
-    auto result = lambda(type, 0uz);
-    definitions.append_range(result.body | std::views::as_rvalue);
-    result.body = std::move(definitions);
-    return TargetExpr {.value = std::move(result)};
-}
-
 } // namespace
+
+auto ModuleLowering::display_emitter(TypeID type, std::size_t depth) noexcept -> TargetExpr {
+    const auto key = std::pair {type, depth};
+    auto found = display_types.find(key);
+    if (found == display_types.end()) {
+        const auto name = name_allocator().fresh(TargetTemporaryNameKind::Display);
+        const auto prefix =
+            names().module_names(active_module()).qualified_namespace_name.components();
+        auto components = std::vector<TargetIdentifier>(prefix.begin(), prefix.end());
+        components.push_back(name);
+        const auto helper_type = named_type(TargetName::globally_qualified(std::move(components)));
+        auto locals = make_callable_name_allocator();
+        const auto scope = TargetScopeID {.ordinal = 0};
+        const auto writer = target().add_local(locals.local_symbol("writer", 0, scope));
+        const auto value = target().add_local(locals.local_symbol("value", 1, scope));
+        auto body = display_statements(
+            *this,
+            type,
+            writer,
+            [&]() noexcept { return name_expression(value); },
+            depth
+        );
+        auto members = std::vector<TargetRecordMember>();
+        members.push_back(
+            TargetMemberFunctionDecl {
+                .name = TargetOperatorName::Call,
+                .parameters = target_parameters(
+                    {.local = writer,
+                     .type = reference_type(intrinsic_type(TargetSymbol::RuntimeDisplayWriter)),
+                     .default_value = std::nullopt},
+                    {.local = value,
+                     .type = reference_type(lower_type(type), true),
+                     .default_value = std::nullopt}
+                ),
+                .result = intrinsic_type(TargetSymbol::Void),
+                .form = TargetMemberFunctionDefinition {.body = std::move(body)},
+                .maybe_unused = false,
+                .static_specifier = false,
+                .constexpr_specifier = false,
+                .friend_specifier = false,
+                .result_reference = false,
+                .const_qualified = true,
+            }
+        );
+        display_helpers.push_back(compiler_item(
+            TargetDecl {TargetStructDecl {.name = name, .members = std::move(members)}},
+            TargetCompilerReason::ArtifactScaffolding
+        ));
+        found = display_types.emplace(key, helper_type).first;
+    }
+    return {.value = TargetConstructionExpr {.type = found->second, .initializer = {}}};
+}
+
+auto ModuleLowering::take_display_helpers() noexcept -> std::vector<TargetItem> {
+    return std::exchange(display_helpers, {});
+}
 
 auto realize_display(ModuleLowering& context, TypeID type, TargetExpr value) noexcept
     -> TargetExpr {
     return call_expression(
         intrinsic_expression(TargetSymbol::RuntimeStructuralDisplay),
-        target_expressions(std::move(value), DisplayEmitter(context).finish(type))
+        target_expressions(std::move(value), context.display_emitter(type))
     );
 }

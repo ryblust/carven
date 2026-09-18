@@ -1,16 +1,17 @@
 module carven:backend.realization.realizer;
 
-import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.lowering.body;
 import :backend.lowering.constant;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.composition;
 import :backend.realization.pattern;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :semantic.semir.ids;
 import :semantic.semir.structured;
+import :support.task;
 import std;
 
 class BodyRealizer final {
@@ -27,7 +28,7 @@ private:
     static constexpr auto callable_scope = TargetScopeID {.ordinal = 0};
 
     struct FailureDestination final {
-        TargetIdentifier storage;
+        TargetLocalID storage;
         TargetIdentifier label;
         LoweringExitTarget target;
     };
@@ -42,13 +43,15 @@ private:
         const SemanticExpression& source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,
         ResultDemand demand = ResultDemand::Value
-    ) noexcept -> Lowered<LoweringResult>;
-    auto condition(const SemanticExpression& source) noexcept -> Lowered<LoweringPredicate>;
+    ) noexcept -> ContinuationTask<Lowered<LoweringResult>>;
+    auto condition(const SemanticExpression& source) noexcept
+        -> ContinuationTask<Lowered<LoweringPredicate>>;
     auto operand(
         PreparedOperand source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact
-    ) noexcept -> Lowered<TargetExpr>;
-    auto discard(const SemanticExpression& source) noexcept -> Lowered<LoweringCompleted>;
+    ) noexcept -> ContinuationTask<Lowered<TargetExpr>>;
+    auto discard(const SemanticExpression& source) noexcept
+        -> ContinuationTask<Lowered<LoweringCompleted>>;
     auto read_value(Lowered<LoweringResult> value, LoweringStmtBuilder& destination) noexcept
         -> std::optional<TargetExpr>;
     auto deliver_result(
@@ -63,68 +66,73 @@ private:
         std::optional<TargetTypeID> factory_result = std::nullopt
     ) noexcept -> void;
     auto initialize_binding(const SemInitialize& source, LoweringStmtBuilder& destination) noexcept
-        -> void;
+        -> ContinuationTask<std::monostate>;
     auto pattern_bound(
         std::span<const SemPatternBounds> pattern_bounds,
         PatternID pattern,
         bool upper,
         LoweringStmtBuilder& destination
-    ) noexcept -> std::optional<TargetExpr>;
-    auto assign(const SemAssign& source, LoweringStmtBuilder& destination) noexcept -> void;
-    auto statement(const SemanticStatement& source) noexcept -> Lowered<LoweringCompleted>;
+    ) noexcept -> ContinuationTask<std::optional<TargetExpr>>;
+    auto assign(const SemAssign& source, LoweringStmtBuilder& destination) noexcept
+        -> ContinuationTask<std::monostate>;
+    auto statement(const SemanticStatement& source) noexcept
+        -> ContinuationTask<Lowered<LoweringCompleted>>;
     auto region(const SemanticRegion& source, const LoweringResultDestination& result) noexcept
-        -> LoweringStmtBuilder;
+        -> ContinuationTask<LoweringStmtBuilder>;
     auto result_expression(
         const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto structured_delivery(
         const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto structured_expression(
         const SemanticExpression& source,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto guarded_region(
         const SemanticRegion& source,
         const std::optional<SemanticExpression>& guard,
         const LoweringResultDestination& result,
         RegionExit& done
-    ) noexcept -> LoweringStmtBuilder;
+    ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto lower_arm(
-        const PatternState& pattern,
+        const PatternBindings& pattern,
+        LoweringPredicate predicate,
         std::span<const LocalBindingID> bindings,
         const SemanticRegion& source,
         const std::optional<SemanticExpression>& guard,
         const LoweringResultDestination& result,
         RegionExit& done
-    ) noexcept -> LoweringStmtBuilder;
+    ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto lower_if(
         const SemIf& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto lower_match(
         const SemMatch& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto lower_try(
         const SemTry& value,
         const LoweringResultDestination& result,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
-    auto lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept -> void;
-    auto lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
+    auto lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
+        -> ContinuationTask<std::monostate>;
+    auto lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
+        -> ContinuationTask<std::monostate>;
     auto lower_report(
         const SemTestReport& value,
         ProgramOriginID origin,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void;
     auto emit_return(
         std::optional<TargetExpr> value,
@@ -138,12 +146,12 @@ private:
     ) noexcept -> void;
 
     struct OutcomeFailureSource final {
-        TargetIdentifier storage;
+        TargetLocalID storage;
         bool deferred;
     };
 
     struct VariantFailureSource final {
-        TargetIdentifier storage;
+        TargetLocalID storage;
     };
 
     using FailureSource = std::variant<OutcomeFailureSource, VariantFailureSource>;
@@ -153,11 +161,12 @@ private:
         const std::optional<FailureDestination>& exit
     ) noexcept -> LoweringStmtBuilder;
     auto transfer_failure(
-        const TargetIdentifier& storage,
+        TargetLocalID storage,
         FailureSetID failures,
         const std::optional<FailureDestination>& exit,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
+    auto fresh_local(TargetTemporaryNameKind kind) noexcept -> TargetLocalID;
     auto binding_expression(LocalBindingID id) noexcept -> TargetExpr;
     auto declare_binding(
         LocalBindingID id,
@@ -179,7 +188,7 @@ private:
 
     struct TestObservation final {
         const SemanticExpression* expression;
-        TargetIdentifier writer;
+        TargetLocalID writer;
         std::array<ProgramSpellingID, 2> sources;
     };
 
@@ -190,13 +199,14 @@ private:
     const SemIRBody& metadata;
     BodyLoweringInputs inputs;
     TargetNameAllocator names;
-    std::flat_map<LocalBindingID, TargetIdentifier> binding_names;
-    std::flat_set<std::string> mutable_owners;
+    std::flat_map<LocalBindingID, TargetLocalID> binding_locals;
+    std::flat_map<LocalBindingID, TargetIdentifier> capture_names;
+    std::flat_set<TargetLocalID> mutable_owners;
     std::flat_map<LocalBindingID, LoweringDeferredStorage> delayed_bindings;
     std::optional<FailureDestination> current_failure;
 
     struct CaughtFailure final {
-        TargetIdentifier storage;
+        TargetLocalID storage;
         FailureSetID failures;
     };
 

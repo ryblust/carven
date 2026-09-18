@@ -357,8 +357,9 @@ auto TargetUnitBuilder::finish(
         placement.place(sections.epilogue);
     }
     auto target_types = std::move(types);
-    const auto validation =
-        validate_target_unit(TargetVerificationInput(identity, target_types, sections));
+    const auto validation = validate_target_unit(
+        TargetVerificationInput(identity, target_types, sections, locals.size())
+    );
     if (!validation.has_value()) {
         invariant_violation(validation.error().message);
     }
@@ -381,9 +382,26 @@ auto TargetUnitBuilder::finish(
     return TargetUnit(
         identity,
         std::move(target_types),
+        std::move(locals),
         TargetUnitContents {
             .directive_groups = std::move(directive_groups),
             .sections = std::move(sections),
         }
     );
+}
+
+auto TargetUnitBuilder::local_name(TargetLocalID id) const noexcept -> const TargetIdentifier& {
+    if (id.owner() != unit_identity || id.index() >= locals.size()) {
+        invariant_violation("target local lookup used a foreign or invalid identity");
+    }
+    return locals[id.index()];
+}
+
+auto TargetUnitBuilder::add_local(TargetIdentifier name) noexcept -> TargetLocalID {
+    if (locals.size() == std::numeric_limits<std::uint32_t>::max()) {
+        resource_limit_exceeded("target unit local table exhausted its 32-bit identity space");
+    }
+    const auto id = TargetLocalID(unit_identity, static_cast<std::uint32_t>(locals.size()));
+    locals.push_back(std::move(name));
+    return id;
 }

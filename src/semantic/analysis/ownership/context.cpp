@@ -40,10 +40,12 @@ auto OwnershipStorageLoan::operator==(const OwnershipStorageLoan& other) const n
 }
 
 auto OwnershipObjectState::operator==(const OwnershipObjectState& other) const noexcept -> bool {
-    return available == other.available && relationships == other.relationships;
+    return available == other.available
+        && relationships == other.relationships
+        && modified == other.modified;
 }
 
 auto OwnershipExternalObject::operator==(const OwnershipExternalObject& other) const noexcept
     -> bool {
-    return type == other.type && state == other.state;
+    return type == other.type && state == other.state && site == other.site && many == other.many;
 }

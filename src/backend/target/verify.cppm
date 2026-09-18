@@ -13,6 +13,7 @@ class TargetUnitBuilder;
 enum class TargetSealViolationKind {
     InvalidTypeReference,
     InvalidControl,
+    InvalidLocalReference,
 };
 
 struct TargetSealViolation final {
@@ -24,18 +25,21 @@ class TargetVerificationInput final {
 public:
     auto identity() const noexcept -> TargetUnitIdentity;
     auto types() const noexcept -> std::span<const TargetType>;
+    auto local_count() const noexcept -> std::size_t;
     auto sections() const noexcept -> const TargetUnitSections&;
 
 private:
     TargetVerificationInput(
         TargetUnitIdentity identity,
         std::span<const TargetType> types,
-        const TargetUnitSections& sections
+        const TargetUnitSections& sections,
+        std::size_t local_count = 0
     ) noexcept;
 
     TargetUnitIdentity unit_identity;
     std::span<const TargetType> type_rows;
     const TargetUnitSections* unit_sections;
+    std::size_t local_rows;
 
     friend class TargetTestingFixture;
     friend class TargetUnitBuilder;

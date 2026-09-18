@@ -48,9 +48,6 @@ auto interpret_call(
                 !qualifier.empty()) {
                 const auto name = site.spelling(member->name_span);
                 auto selected = std::optional<TextIntrinsic>();
-                if (qualifier == "String" && name == "new") {
-                    selected = TextIntrinsic::New;
-                }
                 if (qualifier == "String" && name == "from_str") {
                     selected = TextIntrinsic::FromStr;
                 }

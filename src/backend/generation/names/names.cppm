@@ -5,6 +5,7 @@ import :backend.target.name;
 import std;
 
 enum class TargetTemporaryNameKind {
+    Display,
     Discard,
     Operand,
     MatchDone,

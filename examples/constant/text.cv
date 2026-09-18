@@ -5,7 +5,7 @@ const decorated = frame(f"{title}: {catalog}");
 const title_bytes = f"{title}".len();
 
 const fn make_catalog(count: i32) -> String {
-    var result = String::new();
+    var result = String {};
     for index in 0..count {
         if index != 0 { result.push(','); }
         result.append_format(f"{index:02}");

@@ -107,12 +107,7 @@ TEST_CASE("SemIR publication: source format result types and Read operands are r
                               facts.origin,
                               SemConstant {.constant = boolean_constant}
                           )
-                        : body.make_expression(
-                              owning,
-                              lifetime,
-                              facts.origin,
-                              SemTextIntrinsic {.intrinsic = TextIntrinsic::New, .operands = {}}
-                          ),
+                        : body.make_expression(owning, lifetime, facts.origin, SemDefault {}),
                 });
             }
             auto statements = std::vector<SemanticStatement>();

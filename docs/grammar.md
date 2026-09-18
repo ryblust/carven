@@ -270,7 +270,8 @@ top-level-item = module-item
                | CPP_SOURCE_FRAGMENT
                | statement;
 
-(* A top-level const is always a module constant declaration. *)
+(* A top-level const binding is a module constant declaration;
+   const test introduces a test and const { introduces a constant block. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";
@@ -298,8 +299,9 @@ declaration-name = IDENTIFIER
 Imports form one contiguous prefix. A later `import-declaration` cannot occur
 after a `top-level-item`.
 
-Top-level bindings use `module-constant-declaration`. Top-level `let`, `var`,
-and namespace blocks are unsupported.
+Top-level `const` bindings use `module-constant-declaration`. Top-level `let` and
+`var` bindings are statements in the implicit entry body. Constant blocks execute
+during semantic analysis. Namespace blocks are unsupported.
 
 ### 3.1 Imports
 
@@ -507,6 +509,7 @@ expression. An empty ordinary block is valid.
 
 ```ebnf
 statement = variable-declaration
+          | constant-block
           | return-statement
           | throw-statement
           | rethrow-statement
@@ -526,12 +529,16 @@ update-statement = update-form, ";";
 expression-statement = expression, ";";
 
 control-flow-statement = if-form | match-form | try-form;
+
+constant-block = "const", ordinary-block;
 ```
 
 A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning
 of a statement is terminated by its own structure.
 
 The grammar has no standalone `{ ... }` block statement.
+Constant blocks may appear at module scope or within statement blocks and do not
+take a trailing semicolon.
 
 ### 5.3 Assignment and Update Forms
 

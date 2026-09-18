@@ -7,8 +7,8 @@ import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
-import :support.visit;
 import :support.task;
+import :support.visit;
 import std;
 
 // A missing component denotes an unknown array element. Paths describe storage,
@@ -63,6 +63,7 @@ struct OwnershipObjectState final {
     bool available;
     std::optional<ProgramOriginID> taken;
     OwnershipRelationships relationships;
+    bool modified;
 
     auto operator==(const OwnershipObjectState& other) const noexcept -> bool;
 };
@@ -127,20 +128,29 @@ struct OwnershipCallArgument final {
     std::optional<OwnershipPlace> alias;
     OwnershipRelationships value;
     std::vector<OwnershipPlace> storage;
+    std::optional<OwnershipPlace> capture_holder;
     auto operator==(const OwnershipCallArgument&) const noexcept -> bool = default;
+};
+
+struct OwnershipAllocationSite final {
+    BodyID body;
+    std::size_t slot;
+    bool input;
+    auto operator<=>(const OwnershipAllocationSite&) const noexcept = default;
 };
 
 struct OwnershipExternalObject final {
     TypeID type;
     ProgramOriginID origin;
     OwnershipObjectState state;
+    OwnershipAllocationSite site;
+    bool many;
 
     auto operator==(const OwnershipExternalObject& other) const noexcept -> bool;
 };
 
-// Call queries retain only objects reachable from their inputs, with object
-// numbers normalized at the boundary. Locals and execution history never enter
-// a query key or an answer.
+// Call inputs normalize reachable objects and clear modification history.
+// Completions retain externally visible writes and backing relationships.
 struct OwnershipCallInput final {
     BodyID body_id;
     std::vector<OwnershipCallArgument> parameters;
@@ -186,11 +196,8 @@ struct OwnershipBodyFacts final {
     std::flat_map<const SemCatchArm*, std::flat_map<TypeID, OwnershipCatchAcceptance>> catches;
 };
 
-auto prepare_ownership_body_facts(
-    const SemIRBody& body,
-    const SemIRProgram& program,
-    std::span<const TypeContents> types
-) noexcept -> OwnershipBodyFacts;
+auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& program) noexcept
+    -> OwnershipBodyFacts;
 
 auto select_element_storage(
     const CanonicalTypeStore& types,
@@ -227,6 +234,12 @@ auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) n
 
 class OwnershipBatchAnalyzer;
 
+struct OwnershipEscape final {
+    std::string message;
+    ProgramOriginID origin;
+    ProgramOriginID related;
+};
+
 class OwnershipBodyAnalyzer final {
 public:
     OwnershipBodyAnalyzer(
@@ -234,7 +247,7 @@ public:
         const OwnershipCallInput& input,
         bool diagnosing
     ) noexcept;
-    auto run() noexcept -> std::vector<OwnershipCallCompletion>;
+    auto run() noexcept -> std::expected<std::vector<OwnershipCallCompletion>, OwnershipEscape>;
     auto check_contracts() noexcept -> void;
 
 private:
@@ -252,6 +265,10 @@ private:
         const OwnershipRelationships& relationships,
         const SemanticExpression& source
     ) const noexcept -> void;
+    auto tracked_borrows(
+        const OwnershipRelationships& value,
+        const OwnershipState& state
+    ) const noexcept -> bool;
     auto use(
         const OwnershipRelationships& relationships,
         const OwnershipState& state,
@@ -262,7 +279,8 @@ private:
         OwnershipState& state,
         const OwnershipPlace& target,
         const OwnershipRelationships& relationships,
-        ProgramOriginID origin
+        ProgramOriginID origin,
+        bool definite = true
     ) noexcept -> void;
     auto check_storage_write(
         const OwnershipState& state,
@@ -275,7 +293,8 @@ private:
         const OwnershipRelationships& relationships,
         const OwnershipState& state
     ) const noexcept -> std::vector<OwnershipCapture>;
-    auto location(const SemanticExpression& source) const noexcept -> std::optional<OwnershipPlace>;
+    auto binding_places(LocalBindingID binding, const OwnershipState& state) const noexcept
+        -> std::vector<OwnershipPlace>;
     auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;
     auto is_writable(LocalBindingID binding) const noexcept -> bool;
     auto write_access(const OwnershipPlace& target, ProgramOriginID origin) noexcept -> void;
@@ -339,8 +358,9 @@ private:
     const OwnershipBodyFacts& facts;
     bool diagnosing;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
-    // Read bindings can select several possible backing objects after a join.
-    std::flat_map<LocalBindingID, std::vector<OwnershipPlace>> read_storage;
+    std::flat_map<LocalBindingID, OwnershipPlace> capture_holders;
+    // Bindings can select several possible objects after a join.
+    std::flat_map<LocalBindingID, std::vector<OwnershipPlace>> selected_storage;
     std::vector<OwnershipAccess> accesses;
     std::optional<OwnershipFailure> caught;
     std::vector<OwnershipStorageLoan> storage_readers;
@@ -349,11 +369,7 @@ private:
 
 class OwnershipBatchAnalyzer final {
 public:
-    OwnershipBatchAnalyzer(
-        const SemIRProgram& program,
-        AnalysisDiagnostics diagnostics,
-        std::span<const TypeContents> types
-    ) noexcept;
+    OwnershipBatchAnalyzer(const SemIRProgram& program, AnalysisDiagnostics diagnostics) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
     auto body(BodyID id) const noexcept -> const SemIRBody&;
     auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
@@ -374,7 +390,6 @@ private:
     auto enqueue(std::size_t query) noexcept -> void;
     AnalysisDiagnostics diagnostics;
     const BodyStore& bodies;
-    std::span<const TypeContents> type_contents;
     std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
     std::vector<std::unique_ptr<OwnershipCallQuery>> queries;
     std::flat_map<BodyID, std::vector<std::size_t>> body_queries;

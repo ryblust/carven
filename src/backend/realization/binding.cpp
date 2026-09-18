@@ -17,13 +17,14 @@ import :support.visit;
 import std;
 
 auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
-    auto result = name_expression(binding_names.at(id));
+    auto result = capture_names.contains(id) ? name_expression(capture_names.at(id))
+                                             : name_expression(binding_locals.at(id));
     if (const auto* capture = std::get_if<CaptureBindingStorage>(&metadata.binding(id).storage);
         capture != nullptr && capture->mode == CaptureMode::Write) {
         return call_member(std::move(result), "get", {});
     }
     if (const auto found = delayed_bindings.find(id); found != delayed_bindings.end()) {
-        return dereference_expression(name_expression(found->second.name));
+        return dereference_expression(name_expression(found->second.local));
     }
     return result;
 }
@@ -42,7 +43,7 @@ auto BodyRealizer::declare_binding(
         TargetVariableStmt {
             .binding = TargetVariableBinding::ConstValue,
             .maybe_unused = true,
-            .name = binding_names.at(id),
+            .local = binding_locals.at(id),
             .type = type,
             .initializer = std::move(initializer),
         }
@@ -66,7 +67,7 @@ auto BodyRealizer::declare_deferred(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = maybe_unused,
-            .name = storage.name,
+            .local = storage.local,
             .type = type,
             .initializer = TargetExpr {
                 .value =

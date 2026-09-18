@@ -19,12 +19,17 @@ public:
         return TargetTypeID(owner, index);
     }
 
+    static auto local_id(TargetUnitIdentity owner, std::uint32_t index) noexcept -> TargetLocalID {
+        return TargetLocalID(owner, index);
+    }
+
     static auto validate_unit(
         TargetUnitIdentity owner,
         std::span<const TargetType> types,
-        const TargetUnitSections& sections
+        const TargetUnitSections& sections,
+        std::size_t local_count = 0
     ) noexcept -> std::expected<void, TargetSealViolation> {
-        return validate_target_unit(TargetVerificationInput(owner, types, sections));
+        return validate_target_unit(TargetVerificationInput(owner, types, sections, local_count));
     }
 
     static auto plan_identity() noexcept -> TargetPlanIdentity {

@@ -5,6 +5,7 @@ import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
 import :backend.target.raw;
+import :support.tree_value;
 import std;
 
 struct TargetItem;
@@ -20,7 +21,13 @@ struct TargetUsing final {
     bool opens_namespace;
 };
 
-using TargetItemValue = std::variant<TargetDecl, TargetNamespace, TargetUsing, TargetRawFragment>;
+struct TargetItemCleanup;
+using TargetItemValue =
+    TreeValue<TargetItemCleanup, TargetDecl, TargetNamespace, TargetUsing, TargetRawFragment>;
+
+struct TargetItemCleanup final {
+    static auto clear(TargetItemValue& value) noexcept -> void;
+};
 
 struct TargetItem final {
     TargetItemValue value;

@@ -2,15 +2,16 @@ module carven:semantic.analysis.operations.structure.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.operations;
+import :support.invariant;
 import std;
 
 auto select_structure_initializers(
     const ProgramDraft& draft,
-    ProgramModuleID module,
-    const ASTConstructionExpr& source,
+    ProgramModuleID module_id,
+    const ASTConstructionInitializer& source,
     std::span<const ConstructionStructField> fields
 ) noexcept -> AnalysisResult<std::vector<StructureInitializer>> {
-    const auto syntax = draft.syntax_tree(module).view();
+    const auto syntax = draft.syntax_tree(module_id).view();
     const auto fail = [&](Span span, DiagnosticCode code, std::string message) noexcept {
         return std::unexpected(
             draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
@@ -19,9 +20,8 @@ auto select_structure_initializers(
         );
     };
     auto result = std::vector<StructureInitializer>();
-    if (const auto* positional =
-            std::get_if<ASTPositionalInitializerList>(&source.initializer.value)) {
-        if (positional->values.size() > fields.size()) {
+    if (const auto* positional = std::get_if<ASTPositionalInitializerList>(&source.value)) {
+        if (positional->values.size() != fields.size()) {
             return fail(
                 positional->span,
                 DiagnosticCode::TypeConstructArity,
@@ -34,17 +34,12 @@ auto select_structure_initializers(
                  .expression = positional->values[index]}
             );
         }
-        for (auto index = positional->values.size(); index < fields.size(); ++index) {
-            result.push_back(
-                {.declaration_index = static_cast<std::uint32_t>(index), .expression = std::nullopt}
-            );
-        }
         return result;
     }
-    if (const auto* named = std::get_if<ASTFieldInitializerList>(&source.initializer.value)) {
+    if (const auto* named = std::get_if<ASTFieldInitializerList>(&source.value)) {
         auto initialized = std::vector<bool>(fields.size());
         for (const auto& field : named->fields) {
-            const auto name = draft.source_slice_copy(module, field.name_span);
+            const auto name = draft.source_slice_copy(module_id, field.name_span);
             const auto found = std::ranges::find_if(fields, [&](const auto& candidate) noexcept {
                 return draft.spelling_copy(candidate.name) == name;
             });
@@ -70,20 +65,19 @@ auto select_structure_initializers(
         }
         for (auto index = 0uz; index < fields.size(); ++index) {
             if (!initialized[index]) {
-                result.push_back(
-                    {.declaration_index = static_cast<std::uint32_t>(index),
-                     .expression = std::nullopt}
+                return fail(
+                    named->span,
+                    DiagnosticCode::TypeConstructArity,
+                    std::format(
+                        "missing initializer for field '{}'",
+                        draft.spelling_copy(fields[index].name)
+                    )
                 );
             }
         }
         return result;
     }
-    for (auto index = 0uz; index < fields.size(); ++index) {
-        result.push_back(
-            {.declaration_index = static_cast<std::uint32_t>(index), .expression = std::nullopt}
-        );
-    }
-    return result;
+    invariant_violation("structure initializer selection requires a nonempty construction");
 }
 
 auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type) noexcept

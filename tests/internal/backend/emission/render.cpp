@@ -137,6 +137,18 @@ TEST_CASE("Emission: binary grouping preserves associativity and makes compariso
 
     const auto cases = std::array {
         Case {
+            .outer = TargetBinaryOperator::LogicalOr,
+            .inner = TargetBinaryOperator::LogicalAnd,
+            .nested_left = true,
+            .expected = "(a && b) || c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::LogicalOr,
+            .inner = TargetBinaryOperator::LogicalAnd,
+            .nested_left = false,
+            .expected = "a || (b && c);"
+        },
+        Case {
             .outer = TargetBinaryOperator::Equal,
             .inner = TargetBinaryOperator::Equal,
             .nested_left = true,
@@ -253,7 +265,7 @@ TEST_CASE("Emission: value regions retain explicit result types and selective un
                 return TargetVariableStmt {
                     .binding = TargetVariableBinding::ConstValue,
                     .maybe_unused = maybe_unused,
-                    .name = TargetIdentifier::from_spelling("value"),
+                    .local = builder.add_local(TargetIdentifier::from_spelling("value")),
                     .type = type,
                     .initializer = TargetExpr {
                         .value = TargetCallExpr {
@@ -291,7 +303,7 @@ TEST_CASE("Emission: range-for preserves native binding and loop scope") {
             return TargetRangeForStmt {
                 .binding = binding,
                 .maybe_unused = false,
-                .name = TargetIdentifier::from_spelling("element"),
+                .local = builder.add_local(TargetIdentifier::from_spelling("element")),
                 .type = type,
                 .range =
                     TargetExpr {
@@ -347,7 +359,7 @@ TEST_CASE(
             return TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
-                .name = TargetIdentifier::from_spelling("result"),
+                .local = builder.add_local(TargetIdentifier::from_spelling("result")),
                 .type = type,
                 .initializer = member()
             };
@@ -357,4 +369,52 @@ TEST_CASE(
         CHECK(artifact.content.contains("#include <type_traits>") == normalize);
         CHECK_FALSE(artifact.content.contains("#include <utility>"));
     }
+}
+
+TEST_CASE("Emission: deep owned expressions render and release without native recursion") {
+    constexpr auto depth = 12000uz;
+    auto expression = TargetExpr {.value = TargetLiteralExpr {.value = true}};
+    for (auto index = 0uz; index < depth; ++index) {
+        expression = TargetExpr {
+            .value = TargetPrefixExpr {
+                .op = TargetPrefixOperator::LogicalNot,
+                .operand = UniqueIndirect(std::move(expression)),
+            }
+        };
+    }
+    const auto artifact = emitted_statement(TargetExprStmt {.expression = std::move(expression)});
+    CHECK_EQ(std::ranges::count(artifact.content, '!'), depth);
+    CHECK(artifact.content.contains("true"));
+}
+
+TEST_CASE("Emission: deep type dependencies render without native recursion") {
+    constexpr auto depth = 12000uz;
+    const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
+        auto type = builder.intern_type({
+            .value = TargetIntrinsicType {.symbol = TargetSymbol::Void, .type_argument_ids = {}},
+            .const_qualified = false,
+        });
+        for (auto index = 0uz; index < depth; ++index) {
+            type = builder.intern_type({
+                .value = TargetPointerType {.pointee = type},
+                .const_qualified = false,
+            });
+        }
+        return TargetExprStmt {
+            .expression = TargetExpr {
+                .value = TargetStaticCastExpr {
+                    .type = type,
+                    .operand = UniqueIndirect(
+                        TargetExpr {
+                            .value = TargetIntrinsicNameExpr {
+                                .symbol = TargetSymbol::StdNullptr,
+                            }
+                        }
+                    ),
+                }
+            }
+        };
+    });
+    CHECK_EQ(std::ranges::count(artifact.content, '*'), depth);
+    CHECK(artifact.content.contains("nullptr"));
 }

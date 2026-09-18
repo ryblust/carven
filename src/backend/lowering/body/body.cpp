@@ -1,8 +1,8 @@
 module carven:backend.lowering.body.impl;
 
-import :backend.preparation.body;
 import :backend.lowering.body;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.realizer;
 import :semantic.semir.ids;
 import std;

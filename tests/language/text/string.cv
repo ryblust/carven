@@ -45,7 +45,7 @@ fn read_with_write_alias(text: String, &alias: String) -> usize {
 }
 
 test "String: builtin factories UTF-8 and independent value ownership" {
-    var empty = (String::new)();
+    var empty = String {};
     check(empty.is_empty());
     empty.push('A');
     empty.push('é');

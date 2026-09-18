@@ -13,21 +13,13 @@ import :support.invariant;
 import std;
 
 template<typename Site>
-auto construct_default_expression(
-    Site& site,
-    ConstructionTypeRef type,
-    Span span,
-    std::string_view field = {}
-) noexcept -> ExpressionResult<typename Site::Value> {
+auto construct_default_expression(Site& site, ConstructionTypeRef type, Span span) noexcept
+    -> ExpressionResult<typename Site::Value> {
     if (default_initialization(site.draft(), type) == DefaultInitialization::Unavailable) {
         return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeDefaultInitialization,
-            field.empty() ? "type has no default value; provide an explicit initializer"
-                          : std::format(
-                                "field '{}' has no default value; provide an explicit initializer",
-                                field
-                            )
+            "type has no default value; provide an explicit initializer"
         ));
     }
     const auto admitted = site.aggregate_admitted(type, span);
@@ -156,8 +148,12 @@ auto construct_structure_expression(
     }
     const auto declaration =
         site.draft().construction_struct_declaration_copy(structure->structure);
-    const auto initializers =
-        select_structure_initializers(site.draft(), site.module_id(), source, declaration.fields);
+    const auto initializers = select_structure_initializers(
+        site.draft(),
+        site.module_id(),
+        source.initializer,
+        declaration.fields
+    );
     if (!initializers) {
         co_return std::unexpected(initializers.error());
     }
@@ -169,17 +165,8 @@ auto construct_structure_expression(
     for (const auto& initializer : *initializers) {
         const auto execution = site.enter_operand_execution(state.completes);
         const auto& field = declaration.fields[initializer.declaration_index];
-        const auto field_span = initializer.expression
-            ? site.syntax().expression(*initializer.expression).span
-            : source.type.span;
-        auto value = initializer.expression
-            ? (co_await site.read_argument(*initializer.expression, field.type))
-            : construct_default_expression(
-                  site,
-                  field.type,
-                  field_span,
-                  site.draft().spelling_copy(field.name)
-              );
+        const auto field_span = site.syntax().expression(initializer.expression).span;
+        auto value = (co_await site.read_argument(initializer.expression, field.type));
         if (!value) {
             co_return std::unexpected(value.error());
         }

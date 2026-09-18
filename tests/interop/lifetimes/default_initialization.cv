@@ -20,14 +20,22 @@ struct Immovable {
 }
 
 fn construct() {
-    let value = Mixed { number: mark(7) };
+    let value = Mixed {
+        number: mark(7),
+        first: Item {},
+        second: Item {}
+    };
     check(value.number == 7);
     check(observed() == 711);
     check(owners() == 2);
 }
 
 fn construct_fixed() {
-    let value = Immovable { number: mark(7) };
+    let value = Immovable {
+        number: mark(7),
+        first: Fixed {},
+        second: Fixed {}
+    };
     check(value.number == 7);
     check(observed() == 722);
     check(owners() == 2);
@@ -42,7 +50,8 @@ struct OrderedEffects {
 fn construct_ordered_effects() {
     let value = OrderedEffects {
         first: Fixed {},
-        number: 0
+        number: 0,
+        second: Fixed {}
     };
     check(value.number == 0);
     check(observed() == 22);

@@ -11,6 +11,7 @@ import :semantic.semir.body;
 import :semantic.semir.ids;
 import :semantic.semir.structured;
 import :support.invariant;
+import :support.task;
 import :support.visit;
 import std;
 
@@ -18,13 +19,19 @@ auto BodyRealizer::structured_expression(
     const SemanticExpression& source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
-) noexcept -> void {
-    preparation.operation(source).operation.value.visit(
+) noexcept -> ContinuationTask<std::monostate> {
+    return preparation.operation(source).value.visit(
         Overloaded {
-            [&](const SemIf& value) noexcept { lower_if(value, result, destination); },
-            [&](const SemMatch& value) noexcept { lower_match(value, result, destination); },
-            [&](const SemTry& value) noexcept { lower_try(value, result, destination); },
-            [](const auto&) static noexcept {
+            [&](const SemIf& value) noexcept -> ContinuationTask<std::monostate> {
+                return lower_if(value, result, destination);
+            },
+            [&](const SemMatch& value) noexcept -> ContinuationTask<std::monostate> {
+                return lower_match(value, result, destination);
+            },
+            [&](const SemTry& value) noexcept -> ContinuationTask<std::monostate> {
+                return lower_try(value, result, destination);
+            },
+            [](const auto&) static noexcept -> ContinuationTask<std::monostate> {
                 invariant_violation("expected a structured semantic expression");
             },
         }
@@ -36,22 +43,22 @@ auto BodyRealizer::guarded_region(
     const std::optional<SemanticExpression>& guard,
     const LoweringResultDestination& result,
     RegionExit& done
-) noexcept -> LoweringStmtBuilder {
+) noexcept -> ContinuationTask<LoweringStmtBuilder> {
     auto guarded = LoweringStmtBuilder();
     auto test = std::optional<LoweringPredicate>(LoweringKnownBool {true});
     if (guard.has_value()) {
-        test = guarded.accept(condition(*guard));
+        test = guarded.accept((co_await condition(*guard)));
         if (!test) {
-            return guarded;
+            co_return guarded;
         }
         if (known_predicate(test) == false) {
-            return guarded;
+            co_return guarded;
         }
     }
     if (!guarded.continues()) {
-        return guarded;
+        co_return guarded;
     }
-    auto selected = region(source, result);
+    auto selected = (co_await region(source, result));
     if (!returns_result(result) && selected.continues()) {
         selected.terminate(
             generated_statement(
@@ -73,41 +80,42 @@ auto BodyRealizer::guarded_region(
     } else {
         guarded.append(std::move(selected));
     }
-    return guarded;
+    co_return guarded;
 }
 
 auto BodyRealizer::lower_if(
     const SemIf& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
-) noexcept -> void {
-    const auto lower_branch = [&](this const auto& self,
-                                  std::size_t index) noexcept -> LoweringStmtBuilder {
+) noexcept -> ContinuationTask<std::monostate> {
+    const auto lower_branch =
+        [&](this const auto& self,
+            std::size_t index) noexcept -> ContinuationTask<LoweringStmtBuilder> {
         if (index == value.branches.size()) {
             if (value.otherwise.has_value()) {
-                return region(**value.otherwise, result);
+                co_return (co_await region(**value.otherwise, result));
             }
             auto completed = LoweringStmtBuilder();
             deliver_result(LoweringCompleted {}, result, completed);
-            return completed;
+            co_return completed;
         }
         const auto& branch = value.branches[index];
         auto statements = LoweringStmtBuilder();
-        auto test = statements.accept(condition(branch.condition));
+        auto test = statements.accept((co_await condition(branch.condition)));
         if (!statements.continues()) {
-            return statements;
+            co_return statements;
         }
         if (const auto known = known_predicate(test)) {
             if (*known) {
-                statements.scope(region(branch.body, result));
+                statements.scope((co_await region(branch.body, result)));
             } else {
-                statements.append(self(index + 1uz));
+                statements.append((co_await self(index + 1uz)));
             }
-            return statements;
+            co_return statements;
         }
         auto branches = std::vector<TargetIfBranch>();
-        auto selected = region(branch.body, result);
-        auto alternative = self(index + 1uz);
+        auto selected = (co_await region(branch.body, result));
+        auto alternative = (co_await self(index + 1uz));
         const auto continues = selected.continues() || alternative.continues();
         statements.record_exits(selected.exits());
         statements.record_exits(alternative.exits());
@@ -126,19 +134,21 @@ auto BodyRealizer::lower_if(
             ),
             continues
         );
-        return statements;
+        co_return statements;
     };
-    destination.append(lower_branch(0uz));
+    destination.append((co_await lower_branch(0uz)));
+    co_return {};
 }
 
 auto BodyRealizer::lower_arm(
-    const PatternState& pattern,
+    const PatternBindings& pattern,
+    LoweringPredicate predicate,
     std::span<const LocalBindingID> bindings,
     const SemanticRegion& source,
     const std::optional<SemanticExpression>& guard,
     const LoweringResultDestination& result,
     RegionExit& done
-) noexcept -> LoweringStmtBuilder {
+) noexcept -> ContinuationTask<LoweringStmtBuilder> {
     auto statements = LoweringStmtBuilder();
     auto chosen = LoweringStmtBuilder();
     for (const auto binding : bindings) {
@@ -146,44 +156,50 @@ auto BodyRealizer::lower_arm(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = true,
-                .name = binding_names.at(binding),
+                .local = binding_locals.at(binding),
                 .type = context.lower_type(metadata.binding(binding).type),
                 .initializer =
                     dereference_expression(name_expression(pattern.addresses.at(binding)))
             }
         ));
     }
-    chosen.append(guarded_region(source, guard, result, done));
-    pattern_branch(name_expression(pattern.matched), std::move(chosen), statements);
-    return statements;
+    chosen.append((co_await guarded_region(source, guard, result, done)));
+    if (const auto* known = std::get_if<LoweringKnownBool>(&predicate)) {
+        if (known->value) {
+            statements.append(std::move(chosen));
+        }
+    } else {
+        pattern_branch(predicate_expression(std::move(predicate)), std::move(chosen), statements);
+    }
+    co_return statements;
 }
 
 auto BodyRealizer::lower_match(
     const SemMatch& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     auto done = RegionExit {
         .label = names.fresh(TargetTemporaryNameKind::MatchDone),
         .target = exit_target(LoweringExitKind::Value)
     };
     auto scope = LoweringStmtBuilder();
-    const auto subject = names.fresh(TargetTemporaryNameKind::Owner);
-    auto subject_value = scope.accept(operand({
+    const auto subject = fresh_local(TargetTemporaryNameKind::Owner);
+    auto subject_value = scope.accept((co_await operand({
         .expression = std::addressof(*value.subject),
         .use = value.subject_is_place ? PreparedUse::ConstPlace : PreparedUse::Consume,
         .demand = PreparedDemand::Value,
-    }));
+    })));
     if (!scope.continues()) {
         destination.append(std::move(scope));
-        return;
+        co_return {};
     }
     scope.emit(generated_statement(
         TargetVariableStmt {
             .binding = value.subject_is_place ? TargetVariableBinding::RvalueReference
                                               : TargetVariableBinding::ConstValue,
             .maybe_unused = true,
-            .name = subject,
+            .local = subject,
             .type = context.intrinsic_type(TargetSymbol::Auto),
             .initializer = std::move(*subject_value)
         }
@@ -205,13 +221,26 @@ auto BodyRealizer::lower_match(
             }
         );
         const auto pattern = matcher.prepare(pattern_bindings(arm.bindings), statements);
-        matcher.match(
-            arm.pattern,
-            {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
-            pattern,
-            statements
+        auto predicate = statements.accept(
+            co_await matcher.match(
+                arm.pattern,
+                {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
+                pattern
+            )
         );
-        statements.append(lower_arm(pattern, arm.bindings, arm.body, arm.guard, result, done));
+        if (predicate) {
+            statements.append(
+                co_await lower_arm(
+                    pattern,
+                    std::move(*predicate),
+                    arm.bindings,
+                    arm.body,
+                    arm.guard,
+                    result,
+                    done
+                )
+            );
+        }
         scope.scope(std::move(statements));
     }
     if (scope.continues()) {
@@ -226,18 +255,19 @@ auto BodyRealizer::lower_match(
     if (destination.exits().contains(done.target)) {
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
+    co_return {};
 }
 
 auto BodyRealizer::lower_try(
     const SemTry& value,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     if (context.plan().failure_abi().members(value.protected_failures.resolved()).empty()) {
-        destination.append(region(*value.body, result));
-        return;
+        destination.append((co_await region(*value.body, result)));
+        co_return {};
     }
-    const auto storage = names.fresh(TargetTemporaryNameKind::Try);
+    const auto storage = fresh_local(TargetTemporaryNameKind::Try);
     const auto handler = names.fresh(TargetTemporaryNameKind::Try);
     auto done = RegionExit {
         .label = names.fresh(TargetTemporaryNameKind::CatchDone),
@@ -248,7 +278,7 @@ auto BodyRealizer::lower_try(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
-            .name = storage,
+            .local = storage,
             .type = context.optional_type(context.variant_type(failures)),
             .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
         }
@@ -259,7 +289,7 @@ auto BodyRealizer::lower_try(
         .target = exit_target(LoweringExitKind::Failure)
     };
     const auto outer = std::exchange(current_failure, receiver);
-    auto protected_body = region(*value.body, result);
+    auto protected_body = (co_await region(*value.body, result));
     current_failure = outer;
     if (!returns_result(result) && protected_body.continues()) {
         protected_body.terminate(
@@ -276,7 +306,7 @@ auto BodyRealizer::lower_try(
         if (destination.exits().contains(done.target)) {
             destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
         }
-        return;
+        co_return {};
     }
     destination.resume(handler, TargetJumpRole::FailureTransfer, handler_target);
     for (const auto& arm : value.arms) {
@@ -300,62 +330,71 @@ auto BodyRealizer::lower_try(
             }
         );
         const auto state = matcher.prepare(pattern_bindings(arm.bindings), statements);
-        const auto add = [&](TypeID type, std::optional<PatternID> pattern_id) noexcept {
-            auto candidate = LoweringStmtBuilder();
-            const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
-            candidate.emit(generated_statement(
-                TargetVariableStmt {
-                    .binding = TargetVariableBinding::ConstValue,
-                    .maybe_unused = false,
-                    .name = projection,
-                    .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
-                    .initializer = template_call_expression(
-                        intrinsic_expression(TargetSymbol::StdGetIf),
-                        {context.lower_type(type)},
-                        target_expressions(
-                            address_expression(dereference_expression(name_expression(storage)))
-                        )
-                    )
-                }
-            ));
-            auto selected = LoweringStmtBuilder();
-            if (pattern_id) {
-                matcher.match(
-                    *pattern_id,
-                    {.root = projection, .dereference_root = true, .payload_index = std::nullopt},
-                    state,
-                    selected
-                );
-            } else {
-                selected.emit(generated_statement(
-                    TargetAssignmentStmt {
-                        .target = name_expression(state.matched),
-                        .op = TargetAssignmentOperator::Assign,
-                        .value = bool_expression(true)
-                    }
-                ));
-            }
-            pattern_branch(name_expression(projection), std::move(selected), candidate);
-            pattern_branch(
-                prefix_expression(TargetPrefixOperator::LogicalNot, name_expression(state.matched)),
-                std::move(candidate),
-                statements
-            );
-        };
+        auto predicate = std::optional<LoweringPredicate>(LoweringKnownBool {false});
         for (const auto& alternative : arm.alternatives) {
             if (!alternative.reachable) {
                 continue;
             }
-            if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                add(pattern->type.resolved(), pattern->inner);
-            } else {
-                for (const auto type :
-                     context.plan().failure_abi().members(arm.accepted_failures.resolved())) {
-                    add(type, std::nullopt);
-                }
+            if (!predicate || known_predicate(predicate) == true) {
+                break;
             }
+            auto candidate = LoweringStmtBuilder();
+            auto selected = std::optional<LoweringPredicate>(LoweringKnownBool {true});
+            if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
+                candidate.emit(generated_statement(
+                    TargetVariableStmt {
+                        .binding = TargetVariableBinding::ConstValue,
+                        .maybe_unused = false,
+                        .local = projection,
+                        .type =
+                            context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
+                        .initializer = template_call_expression(
+                            intrinsic_expression(TargetSymbol::StdGetIf),
+                            {context.lower_type(pattern->type.resolved())},
+                            target_expressions(
+                                address_expression(dereference_expression(name_expression(storage)))
+                            )
+                        )
+                    }
+                ));
+                selected = matcher.combine(
+                    ShortCircuitOperator::And,
+                    LoweringDynamicBool {binary_expression(
+                        name_expression(projection),
+                        TargetBinaryOperator::NotEqual,
+                        intrinsic_expression(TargetSymbol::StdNullptr)
+                    )},
+                    co_await matcher.match(
+                        pattern->inner,
+                        {.root = projection,
+                         .dereference_root = true,
+                         .payload_index = std::nullopt},
+                        state
+                    ),
+                    candidate
+                );
+            }
+            predicate = matcher.combine(
+                ShortCircuitOperator::Or,
+                std::move(*predicate),
+                std::move(candidate).complete<LoweringPredicate>(std::move(selected)),
+                statements
+            );
         }
-        statements.append(lower_arm(state, arm.bindings, arm.body, arm.guard, result, done));
+        if (predicate) {
+            statements.append(
+                co_await lower_arm(
+                    state,
+                    std::move(*predicate),
+                    arm.bindings,
+                    arm.body,
+                    arm.guard,
+                    result,
+                    done
+                )
+            );
+        }
         caught = previous_caught;
         destination.scope(std::move(statements));
     }
@@ -363,6 +402,7 @@ auto BodyRealizer::lower_try(
     if (destination.exits().contains(done.target)) {
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
+    co_return {};
 }
 
 auto BodyRealizer::pattern_bindings(std::span<const LocalBindingID> bindings) const noexcept
@@ -393,7 +433,7 @@ auto BodyRealizer::pattern_bound(
     PatternID pattern,
     bool upper,
     LoweringStmtBuilder& destination
-) noexcept -> std::optional<TargetExpr> {
+) noexcept -> ContinuationTask<std::optional<TargetExpr>> {
     const auto found = std::ranges::find(pattern_bounds, pattern, &SemPatternBounds::pattern);
     if (found == pattern_bounds.end()) {
         invariant_violation("dynamic range pattern has no expressions");
@@ -402,23 +442,23 @@ auto BodyRealizer::pattern_bound(
     if (!bound) {
         invariant_violation("dynamic range bound has no expression");
     }
-    auto value = destination.accept(operand(
+    auto value = destination.accept((co_await operand(
         {.expression = std::addressof(*bound),
          .use = PreparedUse::OperandValue,
          .demand = PreparedDemand::Value}
-    ));
+    )));
     if (!destination.continues()) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
-    const auto name = names.fresh(TargetTemporaryNameKind::Operand);
+    const auto name = fresh_local(TargetTemporaryNameKind::Operand);
     destination.emit(generated_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::ConstValue,
             .maybe_unused = false,
-            .name = name,
-            .type = context.lower_type(preparation.operation(*bound).operation.type.resolved()),
+            .local = name,
+            .type = context.lower_type(preparation.operation(*bound).type.resolved()),
             .initializer = std::move(*value)
         }
     ));
-    return name_expression(name);
+    co_return name_expression(name);
 }

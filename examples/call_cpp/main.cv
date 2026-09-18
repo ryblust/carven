@@ -19,9 +19,7 @@ fn report(text: str) {
     }
 }
 
-fn main() {
-    report("8080");
-    report("http");
-    report("99999999999999999999");
-    report("80suffix");
-}
+report("8080");
+report("http");
+report("99999999999999999999");
+report("80suffix");

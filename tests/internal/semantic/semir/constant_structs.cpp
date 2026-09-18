@@ -22,10 +22,10 @@ namespace {
 auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
     const auto provenance = draft.provenance_module_at(0uz);
     const auto origin = draft.append_source_origin(draft.module_source(provenance), Span::at(0u));
-    const auto module = draft.reserve_module_declaration();
+    const auto module_id = draft.reserve_module_declaration();
     const auto structure = draft.reserve_struct_declaration();
     draft.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance,
             .origin = origin,
@@ -37,7 +37,7 @@ auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
     draft.define_declaration(
         structure,
         ConstructionStructDeclaration {
-            .module_id = module,
+            .module_id = module_id,
             .name = draft.intern_spelling("Entry"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,

@@ -102,7 +102,7 @@ TEST_CASE(
         analyze_test_program(R"(
             const frozen = label();
             const fn label() -> String {
-                var result = String::new();
+                var result = String {};
                 result.push('我');
                 result.append("\0😀");
                 return result;

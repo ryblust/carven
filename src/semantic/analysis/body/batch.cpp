@@ -41,17 +41,21 @@ auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisTask<void> {
 }
 
 auto BodyBatchElaborator::defer_constant_block(
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     const ASTConstantBlock& source,
     BodyLocalNames locals
 ) noexcept -> void {
-    constant_blocks.push_back({.module = module, .syntax = source, .locals = std::move(locals)});
+    constant_blocks.push_back({
+        .module_id = module_id,
+        .syntax = source,
+        .locals = std::move(locals),
+    });
 }
 
 auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noexcept
     -> AnalysisTask<void> {
-    const auto module = source.module;
-    const auto* declaration = catalog_data.find_module(module);
+    const auto module_id = source.module_id;
+    const auto* declaration = catalog_data.find_module(module_id);
     if (declaration == nullptr) {
         invariant_violation("constant block belongs to an unknown module");
     }
@@ -59,9 +63,9 @@ auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noex
     const auto id = reservation.id();
     auto elaborator = BodyElaborator(
         *this,
-        module,
+        module_id,
         declaration->declaration,
-        draft->syntax_tree(module).view(),
+        draft->syntax_tree(module_id).view(),
         std::move(reservation),
         draft->builtin_type(BuiltinType::Void),
         draft->add_empty_failure_term(),

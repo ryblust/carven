@@ -1,9 +1,9 @@
 module carven:backend.realization.stmt.impl;
 
-import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.origin;
@@ -18,6 +18,7 @@ import :semantic.semir.type;
 import :source.provenance.ids;
 import :source.provenance;
 import :support.invariant;
+import :support.task;
 import :support.visit;
 import std;
 
@@ -123,7 +124,7 @@ auto BodyRealizer::emit_failure(
 }
 
 auto BodyRealizer::transfer_failure(
-    const TargetIdentifier& storage,
+    TargetLocalID storage,
     FailureSetID failures,
     const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
@@ -141,12 +142,12 @@ auto BodyRealizer::dispatch_failure(
 ) noexcept -> LoweringStmtBuilder {
     auto transfers = LoweringStmtBuilder();
     for (const auto type : context.plan().failure_abi().members(failures)) {
-        const auto projection = names.fresh(TargetTemporaryNameKind::FailureProjection);
+        const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
         transfers.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = projection,
+                .local = projection,
                 .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
                 .initializer = source.visit(
                     Overloaded {
@@ -203,34 +204,36 @@ auto BodyRealizer::result_expression(
     const SemanticExpression& source,
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     if (!destination.continues()) {
-        return;
+        co_return {};
     }
-    if (std::holds_alternative<SemIf>(preparation.operation(source).operation.value)
-        || std::holds_alternative<SemMatch>(preparation.operation(source).operation.value)
-        || std::holds_alternative<SemTry>(preparation.operation(source).operation.value)) {
-        structured_delivery(source, result, destination);
-        return;
+    if (std::holds_alternative<SemIf>(preparation.operation(source).value)
+        || std::holds_alternative<SemMatch>(preparation.operation(source).value)
+        || std::holds_alternative<SemTry>(preparation.operation(source).value)) {
+        (co_await structured_delivery(source, result, destination));
+        co_return {};
     }
     if (std::holds_alternative<LoweringDiscardResult>(result)) {
-        static_cast<void>(destination.accept(discard(source)));
-        return;
+        static_cast<void>(destination.accept((co_await discard(source))));
+        co_return {};
     }
     const auto& expression_source = preparation.operation(source);
-    const auto transport = fallible(expression_source.operation);
+    const auto* call = std::get_if<SemCall>(&expression_source.value);
+    const auto transport = fallible(expression_source);
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
     if (std::holds_alternative<LoweringReturnResult>(result)
         && callable != nullptr
         && transport
         && !transport->destination
-        && std::holds_alternative<SemCall>(expression_source.operation.value)
-        && context.call_result(preparation.operation(*expression_source.operands.front().expression)
-                                   .operation.type.resolved())
+        && call != nullptr
+        && context.call_result(call->callee->type.resolved())
             == context.callable_result(callable->callable_id)) {
-        auto value = destination.accept(
-            expression(source, ConstantLiteralContext::Exact, ResultDemand::PropagateOutcome)
-        );
+        auto value = destination.accept((co_await expression(
+            source,
+            ConstantLiteralContext::Exact,
+            ResultDemand::PropagateOutcome
+        )));
         if (value) {
             if (!context.plan().failure_abi().members(transport->failures).empty()) {
                 destination.record_exits(
@@ -244,7 +247,7 @@ auto BodyRealizer::result_expression(
                 LoweringExitTarget {LoweringExitKind::FunctionReturn, 0}
             );
         }
-        return;
+        co_return {};
     }
     const auto native_result = callable != nullptr
         && context.plan()
@@ -269,25 +272,31 @@ auto BodyRealizer::result_expression(
         && !context.semantic().may_stop_test(callable->callable_id)) {
         demand = ResultDemand::DirectReturn;
     }
-    auto value = destination.accept(expression(source, literal, demand));
+    auto value = destination.accept((co_await expression(source, literal, demand)));
     if (value) {
         deliver_result(std::move(*value), result, destination);
     }
+    co_return {};
 }
 
 auto BodyRealizer::statement(const SemanticStatement& source) noexcept
-    -> Lowered<LoweringCompleted> {
+    -> ContinuationTask<Lowered<LoweringCompleted>> {
     auto destination = LoweringStmtBuilder();
-    source.value.visit(
+    co_await source.value.visit(
         Overloaded {
-            [&](const SemReturn& value) noexcept {
+            [&](const SemReturn& value) noexcept -> ContinuationTask<std::monostate> {
                 if (value.value) {
-                    result_expression(*value.value, LoweringReturnResult {}, destination);
+                    (co_await result_expression(
+                        *value.value,
+                        LoweringReturnResult {},
+                        destination
+                    ));
                 } else {
                     emit_return(std::nullopt, destination);
                 }
+                co_return {};
             },
-            [&]<typename Transfer>(const Transfer&) noexcept
+            [&]<typename Transfer>(const Transfer&) noexcept -> ContinuationTask<std::monostate>
                 requires (std::same_as<Transfer, SemBreak> || std::same_as<Transfer, SemContinue>)
             {
                 if (!current_loop) {
@@ -312,28 +321,49 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 } else {
                     destination.terminate(generated_statement(TargetContinueStmt {}), loop.target);
                 }
+                co_return {};
             },
-            [&](const SemRethrow&) noexcept {
+            [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
                 transfer_failure(caught->storage, caught->failures, current_failure, destination);
+                co_return {};
             },
-            [&](const SemThrow& value) noexcept {
-                auto failure = read_value(expression(value.value), destination);
+            [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
+                auto failure = read_value((co_await expression(value.value)), destination);
                 if (failure) {
                     emit_failure(std::move(*failure), current_failure, destination);
                 }
+                co_return {};
             },
-            [&](const SemExpressionStatement& value) noexcept {
+            [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
                 auto evaluation = LoweringStmtBuilder();
-                result_expression(value.expression, LoweringDiscardResult {}, evaluation);
+                (co_await result_expression(
+                    value.expression,
+                    LoweringDiscardResult {},
+                    evaluation
+                ));
                 destination.scope(std::move(evaluation));
+                co_return {};
             },
-            [&](const SemInitialize& value) noexcept { initialize_binding(value, destination); },
-            [&](const SemAssign& value) noexcept { assign(value, destination); },
-            [&](const OwnedSemanticRegion& value) noexcept {
-                destination.scope(region(*value, LoweringDiscardResult {}));
+            [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await initialize_binding(value, destination));
+                co_return {};
             },
-            [&](const SemLoop& value) noexcept { lower_loop(value, destination); },
-            [&](const SemRangeLoop& value) noexcept { lower_range(value, destination); },
+            [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await assign(value, destination));
+                co_return {};
+            },
+            [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
+                destination.scope((co_await region(*value, LoweringDiscardResult {})));
+                co_return {};
+            },
+            [&](const SemLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await lower_loop(value, destination));
+                co_return {};
+            },
+            [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await lower_range(value, destination));
+                co_return {};
+            },
             }
     );
     destination.attribute(
@@ -343,5 +373,5 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
     );
     const auto normal =
         destination.continues() ? std::optional(LoweringCompleted {}) : std::nullopt;
-    return std::move(destination).complete<LoweringCompleted>(normal);
+    co_return std::move(destination).complete<LoweringCompleted>(normal);
 }

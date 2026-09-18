@@ -36,3 +36,18 @@ test "Short circuit: only selected operands execute in source order" {
         }
     }
 }
+
+private fn select_argument(value: bool) -> bool => false || (true && value);
+private fn selected_format(value: bool) -> String => f"{false || value}";
+
+test "Short circuit: selected operands retain their values and evaluation order" {
+    check(select_argument(true));
+    check(!select_argument(false));
+    check(selected_format(true) == "true");
+    check(selected_format(false) == "false");
+    var value = true;
+    let selected = false || value;
+    value = false;
+    check(selected);
+    check(!(true && value));
+}

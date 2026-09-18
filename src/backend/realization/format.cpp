@@ -39,19 +39,19 @@ auto realize_writer_format(
         || format.text.size() != format.fields.size() + 1uz) {
         invariant_violation("writer format received the wrong operand pack");
     }
-    const auto output = TargetIdentifier::from_spelling("output");
-    const auto writer = TargetIdentifier::from_spelling("writer");
+    const auto output = context.target().add_local(TargetIdentifier::from_spelling("output"));
+    const auto writer = context.target().add_local(TargetIdentifier::from_spelling("writer"));
     const auto string_type = context.intrinsic_type(TargetSymbol::RuntimeString);
     auto parameters = std::vector<TargetLambdaParameter>();
     auto statements = std::vector<TargetStmt>();
     if (value.receiver) {
-        parameters.push_back({.name = output, .type = context.reference_type(string_type)});
+        parameters.push_back({.local = output, .type = context.reference_type(string_type)});
     } else {
         statements.push_back(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
-                .name = output,
+                .local = output,
                 .type = string_type,
                 .initializer = TargetExpr {
                     .value = TargetConstructionExpr {
@@ -65,10 +65,12 @@ auto realize_writer_format(
     auto arguments = std::vector<TargetExpr>();
     auto text_sizes = std::vector<TargetExpr>();
     for (auto index = 0uz; index < preparation.operand_indices.size(); ++index) {
-        const auto argument = TargetIdentifier::from_spelling(std::format("arg{}", index));
+        const auto argument = context.target().add_local(
+            TargetIdentifier::from_spelling(std::format("arg{}", index))
+        );
         const auto original = preparation.operand_indices[index];
         parameters.push_back(
-            {.name = argument,
+            {.local = argument,
              .type = context.lower_parameter(
                  {.access = AccessMode::Read,
                   .type = value.operands[original].expression.type.resolved()}
@@ -78,7 +80,7 @@ auto realize_writer_format(
     }
     auto operand = 0uz;
     for (const auto& field : format.fields) {
-        const auto argument = TargetIdentifier::from_spelling(std::format("arg{}", operand));
+        const auto argument = parameters[operand + offset].local;
         operand += writer_field_operand_count(field);
         const auto* type = std::get_if<BuiltinType>(&field);
         if (type != nullptr && (*type == BuiltinType::Str || *type == BuiltinType::String)) {
@@ -123,7 +125,7 @@ auto realize_writer_format(
 auto realize_writer_statements(
     ModuleLowering& context,
     const WriterFormat& format,
-    TargetIdentifier writer,
+    TargetLocalID writer,
     TargetExpr output,
     std::vector<TargetExpr> operands,
     std::vector<TargetExpr> text_sizes
@@ -172,7 +174,7 @@ auto realize_writer_statements(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
-            .name = writer,
+            .local = writer,
             .type = writer_type,
             .initializer = TargetExpr {
                 .value = TargetConstructionExpr {

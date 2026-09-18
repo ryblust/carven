@@ -542,13 +542,6 @@ auto realize_operation(
             },
             [&](const SemTextIntrinsic& value) noexcept -> TargetExpr {
                 switch (value.intrinsic) {
-                    case TextIntrinsic::New:
-                        return TargetExpr {
-                            .value = TargetConstructionExpr {
-                                .type = context.lower_type(source.type.resolved()),
-                                .initializer = {}
-                            }
-                        };
                     case TextIntrinsic::FromStr:
                         return call_expression(
                             static_member_expression(

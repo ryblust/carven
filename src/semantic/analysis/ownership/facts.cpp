@@ -4,11 +4,8 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
 import std;
 
-auto prepare_ownership_body_facts(
-    const SemIRBody& body,
-    const SemIRProgram& program,
-    std::span<const TypeContents> types
-) noexcept -> OwnershipBodyFacts {
+auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& program) noexcept
+    -> OwnershipBodyFacts {
     auto facts = OwnershipBodyFacts {};
     const auto add = [&](TypeID type, ProgramOriginID origin, LifetimeRegionID lifetime) noexcept {
         const auto index = facts.locals.size();
@@ -24,7 +21,7 @@ auto prepare_ownership_body_facts(
     }
     auto prepared_patterns = std::flat_set<PatternID>();
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
-        const auto contents = types[expression.type.resolved().index()];
+        const auto contents = program.type_contents(expression.type.resolved());
         if (!expression.selects_storage()
             && (contents.closure_owner || contents.callable_view || contents.storage_owner)) {
             facts.temporaries.emplace(

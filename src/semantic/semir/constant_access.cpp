@@ -33,11 +33,7 @@ auto PublishedConstantValues::builtin_type(BuiltinType type) const noexcept -> T
 }
 
 auto PublishedConstantValues::read_borrows_storage(TypeID type) const noexcept -> bool {
-    static_cast<void>(program.types().type(type));
-    if (!contents) {
-        contents = compute_type_contents(program.types(), program.declarations());
-    }
-    return (*contents)[type.index()].read_borrows_storage();
+    return program.type_contents(type).read_borrows_storage();
 }
 
 auto PublishedConstantValues::struct_field_types(StructID structure) const noexcept

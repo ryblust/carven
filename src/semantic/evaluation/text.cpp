@@ -51,7 +51,6 @@ auto SemanticExecutor::text_intrinsic(
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
     switch (operation.intrinsic) {
-        case TextIntrinsic::New:    co_return ExecutionOwnedText {.bytes = {}};
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:   {
@@ -165,7 +164,6 @@ auto SemanticExecutor::text_intrinsic(
                 .type = result_type,
                 .value = BooleanConstant {.value = bytes->empty()},
             };
-        case TextIntrinsic::New:
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:

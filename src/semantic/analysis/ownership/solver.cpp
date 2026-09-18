@@ -6,15 +6,13 @@ import std;
 
 OwnershipBatchAnalyzer::OwnershipBatchAnalyzer(
     const SemIRProgram& program,
-    AnalysisDiagnostics diagnostics,
-    std::span<const TypeContents> types
+    AnalysisDiagnostics diagnostics
 ) noexcept
     : program(program),
       diagnostics(diagnostics),
-      bodies(program.bodies()),
-      type_contents(types) {
+      bodies(program.bodies()) {
     for (const auto [id, body] : bodies.entries()) {
-        body_facts.emplace(id, prepare_ownership_body_facts(body, program, type_contents));
+        body_facts.emplace(id, prepare_ownership_body_facts(body, program));
     }
 }
 
@@ -23,10 +21,7 @@ auto OwnershipBatchAnalyzer::facts_for_body(BodyID id) const noexcept -> const O
 }
 
 auto OwnershipBatchAnalyzer::contents(TypeID type) const noexcept -> TypeContents {
-    if (type.owner() != program.identity() || type.index() >= type_contents.size()) {
-        invariant_violation("ownership type facts used an invalid type");
-    }
-    return type_contents[type.index()];
+    return program.type_contents(type);
 }
 
 auto OwnershipBatchAnalyzer::body(BodyID id) const noexcept -> const SemIRBody& {
@@ -71,6 +66,8 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     }
     for (auto& capture : input.captures) {
         normalize_relationships(capture.value);
+        std::ranges::sort(capture.storage);
+        capture.storage.erase(std::ranges::unique(capture.storage).begin(), capture.storage.end());
     }
     for (auto& object : input.objects) {
         normalize_relationships(object.state.relationships);
@@ -127,7 +124,10 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                          capture.origin,
                          {.available = true,
                           .taken = std::nullopt,
-                          .relationships = std::move(captured)}}
+                          .relationships = std::move(captured),
+                          .modified = false},
+                         {.body = source.id(), .slot = object, .input = true},
+                         false}
                     );
                     relationships.captures.push_back(
                         {OwnershipProjectionPath {index},
@@ -151,7 +151,19 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
 
         if (const auto* slice = std::get_if<SliceTypeValue>(&value);
             slice != nullptr && contents(type).callable_view) {
-            relationships = nest_relationships(self(slice->element, origin), {std::nullopt});
+            auto elements = nest_relationships(self(slice->element, origin), {std::nullopt});
+            const auto backing = result.objects.size();
+            result.objects.push_back(
+                {type,
+                 origin,
+                 {.available = true,
+                  .taken = std::nullopt,
+                  .relationships = std::move(elements),
+                  .modified = false},
+                 {.body = source.id(), .slot = backing, .input = true},
+                 false}
+            );
+            relationships.storage_loans.push_back({{}, {backing, {}}, origin});
         }
         if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
             for (const auto& [index, field] : std::views::enumerate(
@@ -200,10 +212,15 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 result.objects.push_back(
                     {binding.type,
                      binding.origin,
-                     {.available = true, .taken = std::nullopt, .relationships = relationships}}
+                     {.available = true,
+                      .taken = std::nullopt,
+                      .relationships = relationships,
+                      .modified = false},
+                     {.body = source.id(), .slot = result.objects.size(), .input = true},
+                     false}
                 );
             }
-            destination.push_back({std::move(alias), std::move(relationships), {}});
+            destination.push_back({std::move(alias), std::move(relationships), {}, std::nullopt});
         }
     };
     inputs(source.inputs().parameters, result.parameters);
@@ -231,8 +248,39 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
         active_query = index;
         auto answer = OwnershipBodyAnalyzer(*this, query.input, false).run();
         active_query.reset();
-        if (answer != query.answer) {
-            query.answer = std::move(answer);
+        if (!answer.has_value()) {
+            // Replay this invalid completion with diagnostics enabled so the
+            // transfer that first violated a lifetime keeps its precise witness.
+            static_cast<void>(OwnershipBodyAnalyzer(*this, query.input, true).run());
+            if (!failure.has_value()) {
+                const auto& escape = answer.error();
+                diagnose(
+                    DiagnosticCode::AccessBorrowConflict,
+                    escape.message,
+                    escape.origin,
+                    escape.related
+                );
+            }
+            return std::unexpected(*failure);
+        }
+        auto joined = query.answer;
+        for (const auto& completion : *answer) {
+            const auto found = std::ranges::find_if(joined, [&](const auto& previous) noexcept {
+                return previous.test_stopped == completion.test_stopped
+                    && previous.failure == completion.failure;
+            });
+            if (found == joined.end()) {
+                joined.push_back(completion);
+            } else {
+                join_ownership_state(found->state, completion.state);
+                merge_relationships(found->value, completion.value);
+            }
+        }
+        std::ranges::sort(joined, {}, [](const auto& completion) static noexcept {
+            return std::pair(completion.test_stopped, completion.failure);
+        });
+        if (joined != query.answer) {
+            query.answer = std::move(joined);
             for (const auto consumer : query.consumers) {
                 enqueue(consumer);
             }
@@ -241,20 +289,26 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
     queries_sealed = true;
     for (const auto& query : queries) {
         const auto answer = OwnershipBodyAnalyzer(*this, query->input, true).run();
+        if (!answer.has_value()) {
+            const auto& escape = answer.error();
+            diagnose(
+                DiagnosticCode::AccessBorrowConflict,
+                escape.message,
+                escape.origin,
+                escape.related
+            );
+        }
         if (failure.has_value()) {
             return std::unexpected(*failure);
         }
-        if (answer != query->answer) {
+        if (*answer != query->answer) {
             invariant_violation("ownership diagnosis changed a solved call answer");
         }
     }
     return {};
 }
 
-auto analyze_body_batch(
-    const SemIRProgram& program,
-    AnalysisDiagnostics diagnostics,
-    std::span<const TypeContents> types
-) noexcept -> AnalysisResult<void> {
-    return OwnershipBatchAnalyzer(program, diagnostics, types).run();
+auto analyze_body_batch(const SemIRProgram& program, AnalysisDiagnostics diagnostics) noexcept
+    -> AnalysisResult<void> {
+    return OwnershipBatchAnalyzer(program, diagnostics).run();
 }

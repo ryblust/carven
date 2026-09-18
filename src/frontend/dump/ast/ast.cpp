@@ -34,7 +34,9 @@ auto ASTDumper::source_label(Span span) const noexcept -> std::string {
 
 auto ASTDumper::append_line(std::string_view prefix, bool is_last, std::string_view label) noexcept
     -> void {
-    append_dump_line(output, prefix, is_last, label);
+    auto line = std::string();
+    append_dump_line(line, prefix, is_last, label);
+    events.emplace_back(std::move(line));
 }
 
 auto ASTDumper::child_prefix(std::string_view prefix, bool is_last) noexcept -> std::string {
@@ -117,6 +119,7 @@ auto ASTDumper::render() noexcept -> std::string {
             render_top_level_item(item, prefix, is_last);
         }
     );
+    drain();
     return std::move(output);
 }
 
@@ -125,4 +128,40 @@ auto render_ast_dump(const SourceManager& sources, const SyntaxTree& syntax_tree
     const auto ast = syntax_tree.view();
     const auto source_view = sources.view(ast.source_id());
     return ASTDumper(ast, source_view.text, source_view.origin).render();
+}
+
+auto ASTDumper::drain() noexcept -> void {
+    auto pending = std::vector<Event>();
+    while (!events.empty() || !pending.empty()) {
+        for (auto& event : events | std::views::reverse) {
+            pending.push_back(std::move(event));
+        }
+        events.clear();
+        auto event = std::move(pending.back());
+        pending.pop_back();
+        if (const auto* line = std::get_if<std::string>(&event)) {
+            output += *line;
+            continue;
+        }
+        const auto& node = std::get<Node>(event);
+        node.value.visit(
+            Overloaded {
+                [&](ASTExprID id) noexcept {
+                    render_expression_node(id, node.prefix, node.is_last, node.field);
+                },
+                [&](ASTStmtID id) noexcept {
+                    render_statement_node(id, node.prefix, node.is_last);
+                },
+                [&](ASTTypeID id) noexcept {
+                    render_type_node(id, node.prefix, node.is_last, node.field);
+                },
+                [&](ASTPatternID id) noexcept {
+                    render_pattern_node(id, node.prefix, node.is_last);
+                },
+                [&](const std::vector<ASTInterpolationPart>* parts) noexcept {
+                    render_parts_node(*parts, node.prefix);
+                },
+            }
+        );
+    }
 }

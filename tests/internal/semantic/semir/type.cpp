@@ -209,7 +209,7 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
             auto types = CanonicalTypeStoreBuilder(program.identity());
             auto declarations =
                 DeclarationBuilder(program.identity(), program.provenance().identity());
-            const auto module = declarations.reserve_module();
+            const auto module_id = declarations.reserve_module();
             const auto first = declarations.reserve_struct();
             const auto second = declarations.reserve_struct();
             const auto& source = program.declarations().structure(first);
@@ -267,7 +267,7 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                 declarations.define(
                     id,
                     ConstructionStructDeclaration {
-                        .module_id = module,
+                        .module_id = module_id,
                         .name = program.declarations().structure(id).name,
                         .origin = source.origin,
                         .visibility = source.visibility,
@@ -276,7 +276,7 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                     }
                 );
             }
-            declarations.define(module, program.declarations().module_decl(module));
+            declarations.define(module_id, program.declarations().module_decl(module_id));
             static_cast<void>(declarations.finish_heads());
             for (const auto type : nominal) {
                 CHECK_EQ(

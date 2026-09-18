@@ -1,6 +1,6 @@
 import "interpolation/provider.hpp";
 
 fn probe() {
-    var result = String::new();
+    var result = String {};
     result.append_format(f"{::interpolation_probe::unformatted()}");
 }

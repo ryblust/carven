@@ -28,22 +28,22 @@ TEST_CASE("Compiler diagnostics: interpolation consumes Read operands and protec
          .primary_text = "value"},
         {.name = "pending view mutation",
          .source =
-             R"(fn change(&s: String) -> i32 { s.clear(); return 1; } fn bad() { var s = String::new(); let r = f"{s.as_str()}{change(&s)}"; })",
+             R"(fn change(&s: String) -> i32 { s.clear(); return 1; } fn bad() { var s = String {}; let r = f"{s.as_str()}{change(&s)}"; })",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "dynamic width protects text",
          .source =
-             R"(fn change(&s: String) -> i32 { s.clear(); return 1; } fn bad() { var s = String::new(); let r = f"{s.as_str():>{change(&s)}}"; })",
+             R"(fn change(&s: String) -> i32 { s.clear(); return 1; } fn bad() { var s = String {}; let r = f"{s.as_str():>{change(&s)}}"; })",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "pending owner Take",
          .source =
-             R"(fn consume(&&s: String) -> usize => s.len(); fn bad() { var s = String::new(); let r = f"{s}{consume(&&s)}"; })",
+             R"(fn consume(&&s: String) -> usize => s.len(); fn bad() { var s = String {}; let r = f"{s}{consume(&&s)}"; })",
          .code = "CV-ACCESS-OPERATION-CONFLICT",
          .primary_text = "&&s"},
         {.name = "named holder remains after formatting",
          .source =
-             R"(fn bad() { var s = String::new(); let v = s.as_str(); let r = f"{v}"; s.clear(); })",
+             R"(fn bad() { var s = String {}; let v = s.as_str(); let r = f"{v}"; s.clear(); })",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "temporary result view cannot be saved",

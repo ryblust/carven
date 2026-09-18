@@ -9,6 +9,20 @@ import std;
 
 namespace {
 
+// Read scalar parameters own immutable copies. Owners and Take parameters can
+// still be exposed as native T&&; captures can change with their enclosing closure.
+auto stable_binding(const SemIRProgram& semantic, const LocalBinding& binding) noexcept -> bool {
+    const auto* parameter = std::get_if<ParameterBindingStorage>(&binding.storage);
+    if (parameter == nullptr || parameter->access != AccessMode::Read) {
+        return false;
+    }
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic.types().type(binding.type).value);
+    return builtin != nullptr
+        && (builtin_is_numeric(builtin->kind)
+            || builtin->kind == BuiltinType::Bool
+            || builtin->kind == BuiltinType::Char);
+}
+
 template<typename Operation>
 struct PreparationVisitor final {
     const Operation& operation;
@@ -25,44 +39,22 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
         if (std::holds_alternative<SemPropagate>(source.value)) {
             return;
         }
-        auto inputs = operands(source);
-        auto preparation = prepare_operation(semantic, source);
-        if (const auto* prepared = std::get_if<PreparedFormat>(preparation.get())) {
-            const auto& format = std::get<SemFormat>(source.value);
-            const auto offset = format.receiver ? 1uz : 0uz;
-            for (auto index = offset; index < inputs.size(); ++index) {
-                inputs[index].demand = PreparedDemand::Effects;
-            }
-            for (const auto index : prepared_format_operands(*prepared)) {
-                inputs.at(index + offset).demand = PreparedDemand::Value;
-            }
-        } else if (const auto* prepared = std::get_if<PreparedPrint>(preparation.get())) {
-            for (auto index = 0uz; index < inputs.size(); ++index) {
-                if (prepared->operand_text[index]) {
-                    inputs[index].demand = PreparedDemand::Effects;
-                }
-            }
-        }
         const auto rule = evaluation_rule(semantic, source);
         auto execution = rule.action == EvaluationAction::Required;
-        auto reads = execution || std::holds_alternative<SemBinding>(source.value);
+        const auto* binding = std::get_if<SemBinding>(&source.value);
+        auto reads = execution
+            || (binding != nullptr
+                && !stable_binding(semantic, metadata.binding(binding->binding)));
         for (const auto* input : rule.operands) {
             if (input != nullptr) {
-                const auto& child = operation(*input);
+                const auto& child = summary(*input);
                 execution |= child.requires_execution;
                 reads |= child.reads_storage;
             }
         }
-        operations.emplace(
+        effects.emplace(
             std::addressof(source),
-            PreparedOperation {
-                .operation = source,
-                .executes_operation = rule.action == EvaluationAction::Required,
-                .requires_execution = execution,
-                .reads_storage = reads,
-                .operands = std::move(inputs),
-                .preparation = std::move(preparation)
-            }
+            ExpressionEffects {.requires_execution = execution, .reads_storage = reads}
         );
     };
 
@@ -74,17 +66,50 @@ auto BodyPreparation::body() const noexcept -> const SemIRBody& {
     return metadata;
 }
 
-auto BodyPreparation::operation(const SemanticExpression& source) const noexcept
-    -> const PreparedOperation& {
+auto BodyPreparation::operation(const SemanticExpression& source) noexcept
+    -> const SemanticExpression& {
     auto* selected = std::addressof(source);
     while (const auto* propagation = std::get_if<SemPropagate>(&selected->value)) {
         selected = std::addressof(*propagation->operand);
     }
-    const auto found = operations.find(selected);
-    if (found == operations.end()) {
-        invariant_violation("prepared operation does not belong to this body");
+    return *selected;
+}
+
+auto BodyPreparation::summary(const SemanticExpression& source) const noexcept
+    -> const ExpressionEffects& {
+    return effects.at(std::addressof(operation(source)));
+}
+
+auto BodyPreparation::prepare(const SemanticExpression& input) const noexcept -> PreparedOperation {
+    const auto& source = operation(input);
+    auto inputs = operands(source);
+    auto preparation = prepare_operation(semantic, source);
+    if (const auto* prepared = std::get_if<PreparedFormat>(preparation.get())) {
+        const auto& format = std::get<SemFormat>(source.value);
+        const auto offset = format.receiver ? 1uz : 0uz;
+        for (auto index = offset; index < inputs.size(); ++index) {
+            inputs[index].demand = PreparedDemand::Effects;
+        }
+        for (const auto index : prepared_format_operands(*prepared)) {
+            inputs.at(index + offset).demand = PreparedDemand::Value;
+        }
+    } else if (const auto* prepared = std::get_if<PreparedPrint>(preparation.get())) {
+        for (auto index = 0uz; index < inputs.size(); ++index) {
+            if (prepared->operand_text[index]) {
+                inputs[index].demand = PreparedDemand::Effects;
+            }
+        }
     }
-    return found->second;
+    const auto& effect = summary(source);
+    return PreparedOperation {
+        .operation = source,
+        .executes_operation =
+            evaluation_rule(semantic, source).action == EvaluationAction::Required,
+        .requires_execution = effect.requires_execution,
+        .reads_storage = effect.reads_storage,
+        .operands = std::move(inputs),
+        .preparation = std::move(preparation)
+    };
 }
 
 auto BodyPreparation::operand(const SemanticExpression& source, PreparedUse use) const noexcept

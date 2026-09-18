@@ -64,12 +64,11 @@ private:
         if constexpr (std::invocable<Visitor&, Node<SemanticRegion>&>) {
             std::invoke(visitor, region);
         }
-        if (region.result) {
-            pending.emplace_back(std::addressof(*region.result));
-        }
-        for (auto& statement : region.statements | std::views::reverse) {
-            pending.emplace_back(std::addressof(statement));
-        }
+        const auto first_child = pending.size();
+        visit_semantic_children(region, [&](auto& child) noexcept {
+            pending.emplace_back(std::addressof(child));
+        });
+        std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
     }
 
     auto enter(Node<SemanticStatement>& statement) noexcept -> void {
@@ -80,38 +79,7 @@ private:
         const auto child = [&](auto& value) noexcept {
             pending.emplace_back(std::addressof(value));
         };
-        statement.value.visit(
-            Overloaded {
-                [&](Node<SemReturn>& value) noexcept {
-                    if (value.value.has_value()) {
-                        child(*value.value);
-                    }
-                },
-                [](Node<SemBreak>&) static noexcept {},
-                [](Node<SemContinue>&) static noexcept {},
-                [](Node<SemRethrow>&) static noexcept {},
-                [&](Node<SemThrow>& value) noexcept { child(value.value); },
-                [&](Node<SemExpressionStatement>& value) noexcept { child(value.expression); },
-                [&](Node<SemInitialize>& value) noexcept { child(value.initializer); },
-                [&](Node<SemAssign>& value) noexcept {
-                    child(value.target);
-                    child(value.value);
-                },
-                [&](Node<SemLoop>& value) noexcept {
-                    child(*value.initializer);
-                    if (value.condition.has_value()) {
-                        child(*value.condition);
-                    }
-                    child(*value.body);
-                    child(*value.steps);
-                },
-                [&](Node<SemRangeLoop>& value) noexcept {
-                    child(value.source);
-                    child(*value.body);
-                },
-                [&](Node<OwnedSemanticRegion>& value) noexcept { child(*value); },
-            }
-        );
+        visit_semantic_children(statement.value, child);
         std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
     }
 

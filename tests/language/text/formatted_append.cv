@@ -32,7 +32,7 @@ const fn append_labels(count: i32) -> String {
 }
 
 const fn append_padded(value: i32, width: i32) -> String {
-    var result = String::new();
+    var result = String {};
     result.append_format(f"<{value:0{width}x}>我\0{'😀'}");
     return result;
 }
@@ -66,7 +66,7 @@ test "Formatted append: destination queries and independent projections remain a
     text.append_format(f"/{text.len()}");
     check(text == "abc/3");
     var pair = AppendPair {
-        first: String::new(),
+        first: String {},
         second: "value"
     };
     pair.first.append_format(f"{pair.second}");
@@ -113,7 +113,7 @@ test "Formatted append: scalar snapshots and String reads preserve hole evaluati
 
 test "Formatted append: known contents retain effects and runtime specifications" {
     var trace = 0;
-    var result = String::new();
+    var result = String {};
     result.append_format(
         f"{record_append_flag(&trace, 1) && false}/{record_append_flag(&trace, 2) || true}"
     );
@@ -178,7 +178,7 @@ test "Formatted append: const functions and runtime execution produce the same t
     check(append_padded(-7, 0).as_str() == zero_width);
     var dynamic = 40;
     dynamic += 2;
-    var result = String::new();
+    var result = String {};
     for index in 0..128 {
         result.append_format(f"[{dynamic:04}:{index}]我");
     }

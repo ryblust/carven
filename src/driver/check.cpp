@@ -56,6 +56,10 @@ auto run_check_command(std::span<const char* const> args) noexcept -> int {
     );
     if (program) {
         timings.set_outcome("passed");
+        if (!show_timings) {
+            std::cout.flush();
+            std::println(std::cerr, "carven: check passed");
+        }
     }
     return program ? 0 : 1;
 }

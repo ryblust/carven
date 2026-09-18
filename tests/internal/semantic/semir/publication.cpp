@@ -23,6 +23,7 @@ import :source.manager;
 import :source.module_path;
 import :source.text;
 import :test.internal.harness.death;
+import :test.internal.semantic.analysis.fixture;
 import :test.internal.semantic.format.fixture;
 import :test.internal.semantic.semir.fixture;
 import std;
@@ -290,5 +291,25 @@ TEST_CASE("SemIR publication invariant: every constant matches its canonical typ
     builder.finish_declaration_heads();
     CHECK(expect_termination("semir-publication-constant-type", [&] noexcept {
         static_cast<void>(std::move(builder).finish());
+    }));
+}
+
+TEST_CASE("SemIR publication: type contents belong to the completed program") {
+    const auto program =
+        analyze_test_program("struct Record { text: String } fn consume(value: Record) {}");
+    CHECK_FALSE(
+        program.type_contents(program.types().builtin_type(BuiltinType::I32)).read_borrows_storage()
+    );
+    CHECK(program.type_contents(program.types().builtin_type(BuiltinType::String))
+              .read_borrows_storage());
+    for (const auto [id, type] : program.types().entries()) {
+        if (std::holds_alternative<StructTypeValue>(type.value)) {
+            CHECK(program.type_contents(id).storage_owner);
+            CHECK(program.type_contents(id).read_borrows_storage());
+        }
+    }
+    const auto foreign = analyze_test_program("fn unrelated() {}");
+    CHECK(expect_termination("published-type-contents-foreign-identity", [&] noexcept {
+        static_cast<void>(program.type_contents(foreign.types().builtin_type(BuiltinType::I32)));
     }));
 }

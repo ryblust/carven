@@ -35,18 +35,18 @@ namespace {
 
 constexpr auto callable_scope = TargetScopeID {.ordinal = 0};
 
-auto parameter_identifier(
-    const ModuleLowering& context,
+auto parameter_local(
+    ModuleLowering& context,
     TargetNameAllocator& names,
     const SemIRBody& body,
     LocalBindingID binding
-) noexcept -> TargetIdentifier {
+) noexcept -> TargetLocalID {
     const auto& row = body.binding(binding);
-    return names.local_symbol(
+    return context.target().add_local(names.local_symbol(
         context.semantic().provenance().spelling(row.name),
         binding.index(),
         callable_scope
-    );
+    ));
 }
 
 auto lower_cpp_import(
@@ -67,25 +67,26 @@ auto lower_cpp_import(
     }
     auto names = context.make_callable_name_allocator();
     auto parameters = std::vector<TargetParameter>();
-    auto argument_names = std::vector<TargetIdentifier>();
+    auto argument_names = std::vector<TargetLocalID>();
     for (auto index = 0uz; index < semantic_signature.parameters.size(); ++index) {
         auto name = declaration_only
-            ? std::optional<TargetIdentifier>()
-            : std::optional<TargetIdentifier> {
+            ? std::optional<TargetLocalID>()
+            : std::optional<TargetLocalID> {context.target().add_local(
                   names.fresh(TargetTemporaryNameKind::CppBoundaryParameter)
-              };
+              )};
         if (name.has_value()) {
             argument_names.push_back(*name);
         }
         parameters.push_back(
-            {.name = std::move(name),
+            {.local = name,
              .type = context.lower_parameter(semantic_signature.parameters[index]),
              .default_value = std::nullopt}
         );
     }
     auto body = std::vector<TargetStmt>();
     if (!declaration_only) {
-        const auto provider = names.fresh(TargetTemporaryNameKind::CppProviderPointer);
+        const auto provider =
+            context.target().add_local(names.fresh(TargetTemporaryNameKind::CppProviderPointer));
         auto provider_name = std::vector<TargetIdentifier>();
         provider_name.push_back(
             TargetIdentifier::from_spelling(context.semantic().provenance().spelling(function.name))
@@ -94,7 +95,7 @@ auto lower_cpp_import(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = provider,
+                .local = provider,
                 .type = context.intrinsic_type(TargetSymbol::Auto),
                 .initializer = call_expression(
                     intrinsic_expression(TargetSymbol::StdAddressof),
@@ -170,15 +171,15 @@ auto lower_carven_function(
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
         auto name = declaration_only
-            ? std::optional<TargetIdentifier>()
-            : std::optional<TargetIdentifier> {
-                  parameter_identifier(context, names, body, body.inputs().parameters[index])
+            ? std::optional<TargetLocalID>()
+            : std::optional<TargetLocalID> {
+                  parameter_local(context, names, body, body.inputs().parameters[index])
               };
         if (name.has_value()) {
             inputs.parameters.push_back(*name);
         }
         parameters.push_back(
-            {.name = std::move(name),
+            {.local = name,
              .type = context.lower_parameter(signature.parameters[index]),
              .default_value = std::nullopt}
         );
@@ -191,7 +192,7 @@ auto lower_carven_function(
         }
         for (auto index = 0uz; index < parameters.size(); ++index) {
             if (!lowered.referenced_parameters[index]) {
-                parameters[index].name.reset();
+                parameters[index].local.reset();
             }
         }
         statements = std::move(lowered.statements);

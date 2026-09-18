@@ -90,8 +90,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
     source.value.visit(
         Overloaded {
             [&](const SemDefault&) noexcept {
-                const auto types = PublishedConstantValues(program);
-                if (default_initialization(types, source.type.resolved())
+                if (default_initialization(program, source.type.resolved())
                     == DefaultInitialization::Unavailable) {
                     invariant_violation("default initialization requires a defaultable type");
                 }

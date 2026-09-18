@@ -1,9 +1,9 @@
 # Owned text
 
-Read the `greeting` function in `main.cv`, then `main`.
+Read the `greeting` function in `main.cv`, then the top-level statements.
 `greeting` returns an owning `String` from `f"Hello, {name}!"`.
 
-`main` first constructs the message and saves an independent copy. The annotation
+The program first constructs the message and saves an independent copy. The annotation
 `let view: str = message` borrows a view inside a scope for output. That view ends before `clear`
 modifies the owner. `append` adds the replacement text; the saved copy retains
 the greeting. The final interpolation uses `04x` to format a hexadecimal ID.

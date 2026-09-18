@@ -296,10 +296,10 @@ TEST_CASE("Target generation: declared entry failures retain the ABI and argumen
             REQUIRE_EQ(arguments->arguments.size(), 2);
             for (auto index = 0uz; index < entry->parameters.size(); ++index) {
                 const auto* forwarded =
-                    std::get_if<TargetNameExpr>(&arguments->arguments[index].value);
+                    std::get_if<TargetLocalExpr>(&arguments->arguments[index].value);
                 REQUIRE(forwarded != nullptr);
-                REQUIRE(entry->parameters[index].name.has_value());
-                CHECK_EQ(forwarded->name, TargetName(*entry->parameters[index].name));
+                REQUIRE(entry->parameters[index].local.has_value());
+                CHECK_EQ(forwarded->local, *entry->parameters[index].local);
             }
         }
     }

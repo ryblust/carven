@@ -76,7 +76,6 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                 return std::nullopt;
             } else if constexpr (std::same_as<Value, SemTextIntrinsic>) {
                 switch (value.intrinsic) {
-                    case TextIntrinsic::New:
                     case TextIntrinsic::FromStr:
                     case TextIntrinsic::AsStr:
                     case TextIntrinsic::Len:

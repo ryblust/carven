@@ -148,6 +148,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
             []<typename Value>(const Value&) static noexcept {
                 static_assert(
                     std::same_as<Value, TargetNameExpr>
+                        || std::same_as<Value, TargetLocalExpr>
                         || std::same_as<Value, TargetIntrinsicNameExpr>
                         || std::same_as<Value, TargetLiteralExpr>
                         || std::same_as<Value, TargetArrayExpr>
@@ -163,14 +164,11 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
 
 } // namespace
 
-auto TargetRenderer::render_expression(
-    const TargetExpr& expression,
-    TargetPrecedence parent
-) noexcept -> LayoutNodeID {
-    const auto own_precedence = expression_precedence(expression);
-    auto rendered = expression.value.visit(
+auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexcept -> LayoutNodeID {
+    return expression.value.visit(
         Overloaded {
             [&](const TargetNameExpr& name) noexcept { return this->render_name(name.name); },
+            [&](const TargetLocalExpr& local) noexcept { return render_identifier(local.local); },
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
                 return text(target_symbol_info(intrinsic.symbol).spelling);
             },
@@ -188,13 +186,16 @@ auto TargetRenderer::render_expression(
                 );
             },
             [&](const TargetBinaryExpr& binary) noexcept {
+                const auto own_precedence = precedence(binary.op);
                 const auto comparison = own_precedence == TargetPrecedence::Equality
                     || own_precedence == TargetPrecedence::Relational;
-                // Comparisons display both nested comparisons explicitly. Other
-                // binary operators retain C++ left associativity.
-                const auto left_precedence = comparison ? TargetPrecedence::Shift : own_precedence;
-                const auto right_precedence = comparison
-                    ? TargetPrecedence::Shift
+                // Nested comparisons and mixed logical operators display their grouping.
+                const auto grouped = comparison                    ? TargetPrecedence::Shift
+                    : binary.op == TargetBinaryOperator::LogicalOr ? TargetPrecedence::BitwiseOr
+                                                                   : own_precedence;
+                const auto left_precedence = grouped;
+                const auto right_precedence = grouped != own_precedence
+                    ? grouped
                     : static_cast<TargetPrecedence>(static_cast<std::uint8_t>(own_precedence) + 1);
                 const auto left = render_expression(*binary.left, left_precedence);
                 const auto right = concat(
@@ -203,7 +204,7 @@ auto TargetRenderer::render_expression(
                      render_expression(*binary.right, right_precedence)}
                 );
                 return choice(
-                    {concat({left, text(" "), right}),
+                    {builder.flatten(concat({left, text(" "), right})),
                      concat({left, builder.indent(indent_width, concat({builder.line(), right}))})}
                 );
             },
@@ -225,7 +226,7 @@ auto TargetRenderer::render_expression(
                                           TargetTypeID>) {
                             return render_type(value);
                         } else {
-                            return render_expression(
+                            return render_expression_node(
                                 TargetExpr {.value = TargetLiteralExpr {.value = value}}
                             );
                         }
@@ -350,7 +351,7 @@ auto TargetRenderer::render_expression(
                 auto parameters = std::vector<LayoutNodeID>();
                 for (const auto& parameter : region.parameters) {
                     parameters.push_back(concat(
-                        {render_type(parameter.type), text(" "), render_identifier(parameter.name)}
+                        {render_type(parameter.type), text(" "), render_identifier(parameter.local)}
                     ));
                 }
                 return concat({
@@ -366,8 +367,13 @@ auto TargetRenderer::render_expression(
 
         }
     );
-    if (own_precedence < parent) {
-        rendered = concat({text("("), rendered, text(")")});
-    }
-    return rendered;
+}
+
+auto TargetRenderer::render_expression(
+    const TargetExpr& expression,
+    TargetPrecedence parent
+) noexcept -> LayoutNodeID {
+    const auto layout = expression_layouts.at(std::addressof(expression));
+    return expression_precedence(expression) < parent ? concat({text("("), layout, text(")")})
+                                                      : layout;
 }

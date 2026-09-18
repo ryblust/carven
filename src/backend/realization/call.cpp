@@ -1,9 +1,9 @@
 module carven:backend.realization.call.impl;
 
-import :backend.preparation.body;
 import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.expr;
 import :backend.realization.operation;
 import :backend.realization.realizer;
@@ -20,20 +20,21 @@ import :support.visit;
 import std;
 
 auto BodyRealizer::ExpressionBuilder::complete_call(
-    Recipe& recipe,
+    Fragment& fragment,
     const FallibleCall& transport,
     bool project_success,
     PreparedUse use,
     bool direct,
     bool propagate_outcome
-) noexcept -> ContinuationTask<std::monostate> {
-    const auto callee_type = source(*recipe.operands.front()).operation.type.resolved();
-    const auto outcome = owner.names.fresh(TargetTemporaryNameKind::Outcome);
+) noexcept -> void {
+    const auto callee_type =
+        std::get<SemCall>(source(fragment).operation.value).callee->type.resolved();
+    const auto outcome = owner.fresh_local(TargetTemporaryNameKind::Outcome);
     const auto storage = LoweringDeferredStorage {
-        .name = outcome,
+        .local = outcome,
         .value_type = owner.context.call_result(callee_type)
     };
-    // All operand recipes have been prepared before choosing storage. A
+    // All operand fragments have been completed before choosing storage. A
     // direct root has no retained auxiliary owners or shared execution;
     // its ordinary Outcome local therefore preserves reverse destruction.
     if (direct) {
@@ -41,14 +42,14 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
-                .name = outcome,
+                .local = outcome,
                 .type = storage.value_type,
-                .initializer = (co_await raw(recipe))
+                .initializer = raw(fragment)
             }
         ));
     } else {
         owner.declare_deferred(storage, false, declarations);
-        owner.initialize_deferred(storage, (co_await raw(recipe)), statements);
+        owner.initialize_deferred(storage, raw(fragment), statements);
     }
     auto access = name_expression(outcome);
     if (!direct) {
@@ -58,7 +59,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         // Keep the original carrier and operand cleanup owners. Runtime uses
         // the same payload transfer policy as projection followed by return.
         complete(
-            recipe,
+            fragment,
             call_member(
                 call_expression(
                     intrinsic_expression(TargetSymbol::StdMove),
@@ -68,7 +69,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 {}
             )
         );
-        co_return {};
+        return;
     }
     if (owner.context.semantic().may_stop_test(callee_type)) {
         auto stopped_access = name_expression(outcome);
@@ -94,12 +95,12 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     }
     auto success = call_member(std::move(access), "success_if", {});
     if (project_success) {
-        const auto name = owner.names.fresh(TargetTemporaryNameKind::SuccessProjection);
+        const auto name = owner.fresh_local(TargetTemporaryNameKind::SuccessProjection);
         statements.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = name,
+                .local = name,
                 .type = owner.context.pointer_type(owner.context.intrinsic_type(
                     TargetSymbol::Auto,
                     use == PreparedUse::ReadBorrow
@@ -107,15 +108,15 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                         || use == PreparedUse::AddressValue
                         || use == PreparedUse::OperandValue
                         || (use == PreparedUse::Consume
-                            && scalar(source(recipe).operation.type.resolved()))
+                            && scalar(source(fragment).operation.type.resolved()))
                 )),
                 .initializer = std::move(success)
             }
         ));
         success = name_expression(name);
-        complete(recipe, Saved {.name = name, .kind = SavedKind::Success});
+        complete(fragment, Saved {.local = name, .kind = SavedKind::Success});
     } else {
-        complete(recipe, LoweringCompleted {});
+        complete(fragment, LoweringCompleted {});
     }
     auto failure = owner.dispatch_failure(
         OutcomeFailureSource {.storage = outcome, .deferred = !direct},
@@ -131,5 +132,4 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     statements.emit(generated_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
-    co_return {};
 }

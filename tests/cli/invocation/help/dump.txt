@@ -1,13 +1,15 @@
 Inspect source syntax.
 
 Usage:
-  carven dump <kind> <source-file>
+  carven dump [kind] [options] <source-file>
 
 Kinds:
   tokens    Print the token stream
   ast       Print the syntax tree
 
 Options:
+      --timings Show total and stage timings on stderr
   -h, --help    Show this help
 
 Reads one source file without semantic analysis.
+Without a kind, prints both tokens and the syntax tree.

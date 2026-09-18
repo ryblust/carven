@@ -206,3 +206,7 @@ auto transfer_expression(TargetExpr value) noexcept -> TargetExpr {
         target_expressions(std::move(value))
     );
 }
+
+auto name_expression(TargetLocalID local) noexcept -> TargetExpr {
+    return {.value = TargetLocalExpr {.local = local}};
+}

@@ -50,6 +50,28 @@ private:
     bool stable_interface;
     LayoutBuilder builder;
 
+    // Completed layouts are local construction results, indexed by immutable
+    // target identity. Expression precedence is applied by the consumer.
+    std::unordered_map<const TargetExpr*, LayoutNodeID> expression_layouts;
+    std::unordered_map<const TargetStmt*, LayoutNodeID> statement_layouts;
+    std::unordered_map<const TargetItem*, LayoutNodeID> item_layouts;
+    std::vector<std::optional<std::array<SyntaxLayouts, 2>>> type_layouts;
+
+    struct LayoutConstruction final {
+        TargetRenderer& renderer;
+        auto visit_type(TargetTypeID type) noexcept -> bool;
+        auto leave_expression(const TargetExpr& expression) noexcept -> bool;
+        auto leave_statement(const TargetStmt& statement) noexcept -> bool;
+        auto leave_item(const TargetItem& item) noexcept -> bool;
+    };
+
+    auto build_layouts() noexcept -> void;
+    auto build_type_layouts(TargetTypeID type) noexcept -> void;
+    auto render_expression_node(const TargetExpr& expression) noexcept -> LayoutNodeID;
+    auto render_statement_node(const TargetStmt& statement) noexcept -> LayoutNodeID;
+    auto render_item_node(const TargetItem& item) noexcept -> LayoutNodeID;
+    auto render_type_node(TargetTypeID type, bool constant) noexcept -> SyntaxLayouts;
+
     auto text(std::string_view value) noexcept -> LayoutNodeID;
     auto raw(std::string_view bytes) noexcept -> LayoutNodeID;
     auto concat(std::initializer_list<LayoutNodeID> children) noexcept -> LayoutNodeID;
@@ -75,6 +97,7 @@ private:
     auto generated_transition() noexcept -> LayoutNodeID;
     auto render_raw_fragment(const TargetRawFragment& value) noexcept -> LayoutNodeID;
     auto render_identifier(const TargetIdentifier& value) noexcept -> LayoutNodeID;
+    auto render_identifier(TargetLocalID value) noexcept -> LayoutNodeID;
     auto qualified_sequence(
         std::span<const SyntaxLayouts> components,
         bool globally_qualified

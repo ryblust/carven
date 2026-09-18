@@ -97,7 +97,7 @@ test "Writer delivery: direct returns observe String after effects and keep scal
     check(result == "after我/3/4/after我");
     source.clear();
     check(result == "after我/3/4/after我");
-    var output = String::new();
+    var output = String {};
     var counter = 0;
     let nested = f"{advance_integer(&counter)}/{if true {
             output.append_format(f"{counter}/{advance_integer(&counter)}");

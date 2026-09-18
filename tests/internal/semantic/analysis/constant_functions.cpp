@@ -155,7 +155,7 @@ TEST_CASE(
     const auto program = analyze_test_program(R"(
         const frozen: str = decorate(make());
         const fn make() -> String {
-            var result = String::new();
+            var result = String {};
             result.push('我');
             result.append("\0😀");
             return result;
@@ -278,7 +278,7 @@ TEST_CASE("Constant text: direct interpolation composes as owning text before fi
         const count = wrap(f"{title}").len();
         const copy = String::from_str(f"{title}");
         const view = f"{title}".as_str();
-        const empty = String::new();
+        const empty = String {};
         const fn wrap(value: String) -> String => f"[{value}]";
     )");
     require_text(program, module_constant(program, "title"), "build-0042");
@@ -293,7 +293,7 @@ TEST_CASE("Constant text: direct interpolation composes as owning text before fi
 TEST_CASE("Constant text: incremental growth and length queries build persistent text") {
     const auto program = analyze_test_program(R"(
         const fn build() -> String {
-            var text = String::new();
+            var text = String {};
             while text.len() < 8000usize {
                 text.push('a');
                 text.append("bc");
@@ -317,7 +317,7 @@ TEST_CASE("Const functions: temporary execution history does not enlarge retaine
             std::format(
                 R"(
             const fn compute() -> i32 {{
-                var text = String::new();
+                var text = String {{}};
                 var value = 0;
                 for index in 0..{} {{
                     value = index * 7;

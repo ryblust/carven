@@ -84,9 +84,11 @@ auto require_violation(
     TargetUnitIdentity identity,
     std::span<const TargetType> types,
     const TargetUnitSections& unit_sections,
-    TargetSealViolationKind kind
+    TargetSealViolationKind kind,
+    std::size_t local_count = 0
 ) noexcept -> void {
-    const auto result = TargetTestingFixture::validate_unit(identity, types, unit_sections);
+    const auto result =
+        TargetTestingFixture::validate_unit(identity, types, unit_sections, local_count);
     REQUIRE_FALSE(result.has_value());
     CHECK_EQ(result.error().kind, kind);
 }
@@ -220,7 +222,7 @@ TEST_CASE("Target jump verifier: entering past initialization is rejected") {
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = identifier("value"),
+                .local = TargetTestingFixture::local_id(owner, 0),
                 .type = type,
                 .initializer = literal(),
             },
@@ -255,7 +257,8 @@ TEST_CASE("Target jump verifier: entering past initialization is rejected") {
         owner,
         types,
         sections(one_item(function(type, std::move(body)))),
-        TargetSealViolationKind::InvalidControl
+        TargetSealViolationKind::InvalidControl,
+        1
     );
 }
 
@@ -337,4 +340,79 @@ TEST_CASE("Target builder: type queries retain call structure across table growt
     CHECK_EQ(builder.intern_type(query(true)), grouped);
     const auto unit = std::move(builder).finish(sections());
     CHECK_EQ(unit.type_count(), 130uz);
+}
+
+TEST_CASE("Target locals: references require a unique visible declaration in their unit") {
+    enum class Reference { Visible, Foreign, OutOfRange, Duplicate, Escaped, Undeclared };
+
+    struct Scenario final {
+        std::string_view name;
+        Reference reference;
+    };
+
+    const auto scenarios = std::array {
+        Scenario {.name = "visible local", .reference = Reference::Visible},
+        Scenario {.name = "foreign unit", .reference = Reference::Foreign},
+        Scenario {.name = "out of range", .reference = Reference::OutOfRange},
+        Scenario {.name = "duplicate declaration", .reference = Reference::Duplicate},
+        Scenario {.name = "escaped scope", .reference = Reference::Escaped},
+        Scenario {.name = "undeclared local", .reference = Reference::Undeclared},
+    };
+    for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.name);
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        const auto types = std::array {bool_type()};
+        const auto id = TargetTestingFixture::local_id(owner, 0);
+        auto selected = id;
+        if (scenario.reference == Reference::Foreign) {
+            selected = TargetTestingFixture::local_id(TargetTestingFixture::unit_identity(), 0);
+        } else if (scenario.reference == Reference::OutOfRange) {
+            selected = TargetTestingFixture::local_id(owner, 1);
+        }
+        auto body = std::vector<TargetStmt>();
+        const auto declaration = [&]() noexcept -> TargetStmt {
+            return {
+                .value =
+                    TargetVariableStmt {
+                        .binding = TargetVariableBinding::ConstValue,
+                        .maybe_unused = false,
+                        .local = id,
+                        .type = type,
+                        .initializer = literal()
+                    },
+                .attribution = attribution()
+            };
+        };
+        if (scenario.reference == Reference::Escaped) {
+            body.push_back(
+                {.value = TargetBlockStmt {.statements = one_statement(declaration())},
+                 .attribution = attribution()}
+            );
+        } else if (scenario.reference != Reference::Undeclared) {
+            body.push_back(declaration());
+        }
+        if (scenario.reference == Reference::Duplicate) {
+            body.push_back(declaration());
+        }
+        body.push_back(
+            {.value =
+                 TargetReturnStmt {
+                     .expression = TargetExpr {.value = TargetLocalExpr {.local = selected}}
+                 },
+             .attribution = attribution()}
+        );
+        const auto result = TargetTestingFixture::validate_unit(
+            owner,
+            types,
+            sections(one_item(function(type, std::move(body)))),
+            1uz
+        );
+        if (scenario.reference == Reference::Visible) {
+            CHECK(result.has_value());
+        } else {
+            REQUIRE_FALSE(result.has_value());
+            CHECK(result.error().kind == TargetSealViolationKind::InvalidLocalReference);
+        }
+    }
 }

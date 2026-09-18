@@ -1,15 +1,15 @@
 fn greeting(name: str) -> String => f"Hello, {name}!";
 
-fn main() {
-    var message = greeting("世界");
-    let saved = message;
-    if true {
-        let view: str = message;
-        println(view);
-    }
-    message.clear();
-    message.append("Goodbye!");
-    println(message);
-    println(saved);
-    println(f"Bytes: {saved.len()}, ID: {42:04x}");
+var message = greeting("世界");
+let saved = message;
+
+if true {
+    let view: str = message;
+    println(view);
 }
+
+message.clear();
+message.append("Goodbye!");
+println(message);
+println(saved);
+println(f"Bytes: {saved.len()}, ID: {42:04x}");

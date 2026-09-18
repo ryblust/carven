@@ -11,40 +11,49 @@ the current implementation.
 SemIRProgram + TargetPlanningRequest
   → PlannedCompilation
   → lower_artifact
-      → BodyPreparation → body realization → target syntax
+      → BodyPreparation → fragment realization → target syntax
   → TargetUnit
   → emit
   → GeneratedArtifactSet
 ```
 
 `PlannedCompilation` owns a sealed semantic program and its matching immutable
-`TargetPlan`. Planning selects names, interfaces, failure representation, and
+`TargetPlan`. Semantic type contents remain owned by `SemIRProgram`.
+Planning selects names, interfaces, failure representation, and
 artifact schedules. Each artifact is lowered into a fresh `ArtifactLowering`
 and target-unit identity. Repeated lowering produces independent units. Type and
 signature-result caches belong to that artifact lowering and track incomplete
 resolution separately from completed target identities.
 
 `lower_body` prepares a published semantic body and finishes `BodyRealizer` while
-that preparation remains alive. `BodyLoweringInputs` supplies parameter and capture
-names and the exit contract; `LoweredBody` returns target statements and
-referenced-parameter facts.
+that preparation remains alive. `BodyLoweringInputs` supplies parameter identities,
+capture member names, and the exit contract; `LoweredBody` returns target statements
+and referenced-parameter facts.
 
-`BodyPreparation` borrows semantic expression occurrences and owns operand uses,
-value/effects demands, execution summaries, and optional operation plans. SemIR
-owns types, lifetimes, origins, constants, effects, patterns, and structured control
-flow. Preparation maps propagation markers to their operand operation and stores
-no separate plan for those markers. Operation lookup rejects foreign operations.
-The published semantic program outlives preparation and realization.
+`BodyPreparation` borrows semantic expression occurrences, stores subtree execution
+and storage-observation summaries, and prepares operand demands and operation plans
+on request. Each fragment owns its operation preparation. SemIR owns types,
+lifetimes, origins, constants, effects, patterns, and structured control flow.
+Propagation markers select their operand operation. Summary queries require an
+occurrence from the prepared body. The published program outlives realization.
+
+Builtin numeric, Boolean, and character Read parameters own immutable copies, so
+later operand execution needs no snapshot of them. Owners and Take parameters can
+expose native `T&&`; captures can change when a callback replaces the enclosing
+closure. These bindings, Write parameters, aggregates, and native values retain
+storage-observation obligations across later execution.
 
 `BodyRealizer` traverses those structured regions directly. A failure receiver is
 active only in its protected region; a loop target is active only in its body.
 Catch guards and bodies send failures to the enclosing receiver. The active catch
 retains the payload and accepted failure set needed by a rethrow.
 
-Within `realization/`, `expr` owns the private expression builder. Its `sequencing`,
-`storage`, and `call` slices preserve execution order, retain borrowed results,
-and complete fallible calls. Semantic publication owns source legality and
-lifetime contracts; native compilation checks delegated C++ operations.
+Within `realization/`, `expr` owns cleanup-frame entry and result delivery;
+`fragment` builds and composes completed operands, and `writer` handles repeated
+format operands. The `sequencing`, `storage`, and `call` slices preserve execution
+order, retain borrowed results, and complete fallible calls. Semantic publication
+owns source legality and lifetime contracts; native compilation checks delegated
+C++ operations.
 
 `TargetUnitBuilder::finish` verifies the target tree, derives dependencies, and
 materializes directives. Rendering serializes that finished tree. Filesystem
@@ -99,11 +108,11 @@ item to schedule, so they produce no C++ body or runtime call.
 
 `SemDefault` realizes as typed C++ value initialization (`T {}`), with pointers
 using a typed null cast. Semantic analysis has already established Carven default
-availability and completed all structure fields. Explicit operands precede
-implicit defaults in field declaration order. Aggregate operand scheduling
-preserves this order, snapshots and cleanup. Empty structures and default arrays
-stay compact in generated syntax. Scalar, pointer, slice and range defaults need no execution
-when discarded.
+availability. Empty structure construction defaults fields in declaration order;
+nonempty construction supplies every field explicitly. Aggregate operand
+scheduling preserves source operand order, snapshots and cleanup. Empty structures
+and default arrays stay compact in generated syntax. Scalar, pointer, slice and
+range defaults need no execution when discarded.
 Native default constructors remain observable even when the result is discarded,
 and C++ checks their availability and access. Required constant defaults arrive
 at lowering as completed values through the usual freezing path.
@@ -114,7 +123,7 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 
 Read parameters, Read argument temporaries, and Read range bindings preserve
 Carven array, String, and closure storage, including storage in Carven aggregate
-fields, through const references. The plan uses the resolved type-contents query
+fields, through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other builtin Read parameters use native const
 values. Remaining types use `runtime::ReadArg<T>`, which selects a const value for trivially
 copy-constructed and destroyed types and a const reference otherwise. This also
@@ -226,21 +235,24 @@ subsequent print arguments execute. Allocation counts and incidental buffers
 inside scalar output conversion are not source guarantees; source String
 construction and operand completion retain their boundaries.
 
-Structural print operands use a borrowing wrapper with a generated typed display
-lambda. `realization.display` reads published nominal fields and enum cases and
-constructs direct field accesses and writer statements. Within each display
-invocation, compound emitters are shared by semantic type and display depth.
-Local lambdas are defined in dependency order and borrow earlier helpers for the
-duration of that invocation. Generated size follows the reachable type-depth
-pairs and their fields. Field layout is emitted as literal text;
+Structural print operands use a borrowing wrapper with a generated stateless,
+const-callable display helper. `realization.display` reads published nominal
+fields and enum cases and constructs direct field accesses and writer statements.
+`ModuleLowering` shares helpers by semantic type and display depth across all use
+sites in the module. Helpers are emitted in dependency order after complete
+private type declarations, before consuming functions. Fully qualified helper
+types avoid local name lookup; no function pointer or captured helper state is
+needed. Generated size follows the reachable type-depth pairs and their fields,
+plus constant-size use sites. Field layout is emitted as literal text;
 sequence emitters receive the known depth for indentation and visit runtime
 elements within display limits. `DisplayWriter` handles scalar conversion, nested text
-escaping, and bounded output. External and
+escaping, and bounded output. Its completed text uses the ordinary runtime
+printing entry. External and
 callable leaves remain opaque; no user formatter participates. The wrapper is
 consumed synchronously after ordinary Read argument sequencing.
 
 Direct comparison explanations intercept the condition's existing expression
-recipe after operand sequencing. The observer in `testing.hpp` compares once and renders
+fragment after operand sequencing. The observer in `testing.hpp` compares once and renders
 its operands only on failure. Observation prevents replacing that comparison with
 a known Boolean while retaining operand preparation and snapshots. Short-circuit
 explanations use ordinary expression construction: selected branches observe the
@@ -260,8 +272,10 @@ on a test stop. Arbitrary C++ callbacks do not participate in Carven propagation
 
 Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
 otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection
-belongs to consumer compilation and does not change source semantics or the user's
-selected C++ standard.
+belongs to consumer compilation and preserves the user's selected C++ standard.
+Values, structural display text, separators, and newlines share this output policy.
+The C++20 fallback writes UTF-8 bytes; Windows console Unicode rendering depends
+on the console configuration. `std::print` supplies native Unicode terminal handling.
 
 ## Evaluation and values
 
@@ -287,9 +301,16 @@ defining header, and call-result discard policy. Emission, dependency
 collection, and realization consume that record. Discard policy does not grant
 permission to omit execution.
 
-Function-body completion derives parameter names and local unused attributes
-from the retained target tree while preserving initialization and lifetime.
-Source unused diagnostics belong to semantic analysis.
+Target locals and parameters use unit-owned `TargetLocalID` identities. Their
+spellings live in the target unit and are only resolved for emission and name
+allocation. `TargetLocalExpr` refers to those identities; symbolic, member, and
+capture-field names remain distinct. Sealing rejects foreign, undeclared,
+out-of-scope, and multiply declared local identities.
+
+Function-body completion derives parameter retention, local unused attributes,
+and owner mutability from identity-based uses in the retained target tree,
+preserving initialization and lifetime. Source unused diagnostics belong to
+semantic analysis.
 
 Scope construction owns auxiliary storage and preserves semantic lifetimes.
 Initialization stays at its execution point, including conditional paths. Native
@@ -342,40 +363,44 @@ before argument evaluation;
 callable views retain a target description. Neither choice copies capture contents.
 Source and full-expression scopes preserve lifetimes.
 
-`BodyRealizer::ExpressionBuilder` composes private recipes from prepared operations.
-A recipe retains an unevaluated operation and borrowed child recipes, or a completed
-target expression or stable result. The expression builder owns recipes in stable,
-flat storage. `ContinuationTask` drives their mutually dependent construction and
-completion without a host call frame for each ordinary operand. Structured region
-lowering retains its lexical entry points. Operation
-emission consumes their prepared operands through `realize_operation`.
+`BodyRealizer::ExpressionBuilder` constructs complete child fragments. Each owns
+its declarations, ordered statement prefix, and either a residual target value,
+saved storage, an explicit binding or constant identity, or completed evaluation. Ordinary
+residual target trees are consumed once. Repeated consumers explicitly save their
+input. Source subtree summaries describe prospective obligations; residual flags
+describe only execution and observation still present after prefix extraction.
 
-Before delivering a residual expression, its frame retains temporary backing
-needed by borrowed operands. Reports, match subjects, and range sources use the
-same operand delivery path. Nested consumption within one source lifetime shares
-the frame; retained storage follows that lifetime's cleanup scope.
+Children are constructed from right to left to determine later statement
+boundaries and backing-retention demands. Their declarations and initializations
+are adopted from left to right, preserving source execution and reverse cleanup
+order. Statement chunks splice in constant time and become vectors at completed
+target statement boundaries.
 
-Recipes derive their operand uses from body preparation. Completion
-produces a saved result, a residual target expression, or completed evaluation
-without a residual value. Prepared summaries borrow stable semantic nodes and
-end with body lowering.
+One `ContinuationTask` chain covers recursive expression, region, loop, report,
+and pattern construction. The body entry drives the chain; completed fragments
+use synchronous storage and operand operations. `realize_operation` consumes
+prepared operands. Cleanup-frame links share retained declarations across
+operations with the same source lifetime.
 
 Composition uses execution and storage-read facts with C++ sequencing guarantees.
-An actual sequencing or control boundary completes preceding recipes in source
-order. Storage access preserves scalar Read snapshots and Read aliases to owned
-storage. Write operands retain aliases; callees are selected before arguments. Structured regions deliver through explicit
+Storage access preserves scalar Read snapshots and Read aliases to owned storage.
+Write operands retain the selected place before later operand evaluation; a later
+closure rebind cannot change an already selected assignment target or receiver.
+Callees are selected before arguments. Structured regions deliver through explicit
 result destinations. Completion without a normal successor stops operand
 composition. Known short-circuit conditions select execution paths while retaining
 the condition's required execution.
 
-Sequencing completes preceding effects and storage reads in source order.
-Independent scalar results can use ordinary local initialization; borrowed places
-retain aliases. Storage selection must preserve the source cleanup frame.
+Builtin integer, Boolean, and character unary/binary chains use a target
+expression-depth budget. Realization selects a typed scalar storage boundary
+before constructing children, then propagates retention demand while preserving
+arithmetic order, checks, and traps. Native and floating expressions retain their
+ordinary construction and evaluation paths.
 
 Expression frames use the existing `LifetimeRegionID`. Conditional execution
 that shares a full-expression lifetime uses the same frame; an expression-position
 lexical region retains its own frame. Frames separate storage declarations from
-initialization, reserving temporary storage in construction order at the enclosing
+initialization, reserving temporary storage in source order at the enclosing
 expression boundary and initializing only on the selected path.
 Reverse destruction order includes those objects and any retained Outcome owners.
 Known or discarded results retain required execution.
@@ -432,8 +457,8 @@ their owning boundaries.
 Structure operands retain source order while C++ initializes fields in declaration
 order. Realization identifies the suffix whose effects and storage reads retain
 their required order in C++. Pure values impose no ordering constraint.
-Conflict barriers complete the preceding operands; the suffix, including implicit
-defaults, constructs directly in the final initializer.
+Conflict barriers complete the preceding operands; the suffix constructs directly
+in the final initializer, including any explicit empty constructions.
 Nested expressions that emit statements still complete pending predecessors before
 those statements.
 
@@ -466,9 +491,13 @@ without steps and range loops use native `continue`.
 
 Match locates its subject once and keeps it alive and stable through selection.
 `PatternRealizer` traverses the published SemIR patterns in source order without
-expanding combinations of alternatives. Partial matches record binding addresses;
-the successful arm constructs its bindings and evaluates its guard once. Catch
-arms use the same realization.
+expanding combinations of alternatives. Matching produces a known Boolean or a
+residual predicate with an ordered statement prefix. Literal and range patterns
+use direct comparisons; wildcard and type constraints are known successes.
+Compound patterns use native short-circuit expressions when their operands need
+no statement prefix, and conditional statements otherwise. Partial matches record
+binding addresses; the successful arm constructs its bindings and evaluates its
+guard once. Catch arms use the same predicate composition.
 
 `FailureABI` gives each failure set a deterministic member order. Failing
 results use `Outcome`; other results are direct. Widening accepts identity or a
@@ -556,18 +585,30 @@ Target verification does not recheck Carven evaluation order, object lifetime
 semantics, or C++ overload and constructor feasibility. Realization preserves
 those input contracts through operand use, frame ownership, result destinations
 and failure dispatch, with local invariants and generated-program tests.
-Recursive ownership establishes syntax occurrence ownership. Dependency
-collection traverses the finished tree and referenced types, producing the
-required standard and runtime headers. Unreferenced interned types add no headers.
+Owned syntax nodes define occurrence identity. `TreeValue` uses an explicit work
+stack to clear descendants, including partially moved trees, statement bodies,
+and namespace items. Child cleanup also bounds the stack depth of variant
+replacement. Traversal preserves scope order through enter/leave events.
+Dependency collection visits the finished tree and referenced types to derive
+the required standard and runtime headers.
 
-The renderer serializes the verified nodes, directives, source mapping, and
-whitespace. Layout alternatives inspect borrowed pending commands up to the next
-line boundary; they do not copy the remaining document. Binary rendering
+The renderer builds completed layout tables in postorder for expressions,
+statements, items and the type dependency DAG, including decltype expressions.
+Consumers apply precedence to completed expression layouts. These tables live
+for emission. The renderer serializes nodes, directives, source mapping, and
+whitespace. Layout alternatives inspect pending commands up to the next line
+boundary; command links and explicit choice frames share the remaining work. Binary rendering
 preserves the expression tree using C++ precedence and associativity. Nested
 comparisons on either side receive explicit parentheses to make their grouping
 visible. Semantic inference and target syntax construction finish before
 rendering. Artifact collection checks logical paths, uniqueness, and prefix
 safety.
+
+Continuation indentation is bounded by half the configured line width, keeping
+whitespace proportional to syntax size. Child-before-parent width summaries
+avoid repeated measurements of single-line preferred layouts. Width addition
+checks overflow; line breaks, raw bytes, source directives, and indentation
+changes retain their layout operations.
 
 ## External names and operations
 

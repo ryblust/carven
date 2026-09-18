@@ -6,10 +6,11 @@ import :backend.realization.composition;
 import :backend.target.expr;
 import :semantic.semir.ids;
 import :semantic.semir.structured;
+import :support.task;
 import std;
 
 struct PatternSubject final {
-    TargetIdentifier root;
+    TargetLocalID root;
     bool dereference_root;
     std::optional<std::uint32_t> payload_index;
 };
@@ -19,15 +20,14 @@ struct PatternBindingType final {
     TypeID type;
 };
 
-struct PatternState final {
-    TargetIdentifier matched;
-    std::map<LocalBindingID, TargetIdentifier> addresses;
+struct PatternBindings final {
+    std::map<LocalBindingID, TargetLocalID> addresses;
 };
 
 // The caller keeps the subject storage alive through matching and selected
 // binding preparation. Failed partial matches only write address slots.
-using PatternBoundRealizer =
-    std::function<std::optional<TargetExpr>(PatternID, bool, LoweringStmtBuilder&)>;
+using PatternBoundRealizer = std::function<
+    ContinuationTask<std::optional<TargetExpr>>(PatternID, bool, LoweringStmtBuilder&)>;
 
 class PatternRealizer final {
 public:
@@ -40,13 +40,18 @@ public:
     auto prepare(
         std::span<const PatternBindingType> bindings,
         LoweringStmtBuilder& destination
-    ) noexcept -> PatternState;
+    ) noexcept -> PatternBindings;
     auto match(
         PatternID pattern_id,
         const PatternSubject& subject,
-        const PatternState& state,
+        const PatternBindings& bindings
+    ) noexcept -> ContinuationTask<Lowered<LoweringPredicate>>;
+    auto combine(
+        ShortCircuitOperator operation,
+        LoweringPredicate left,
+        Lowered<LoweringPredicate> right,
         LoweringStmtBuilder& destination
-    ) noexcept -> void;
+    ) noexcept -> std::optional<LoweringPredicate>;
 
 private:
     auto subject_expression(const PatternSubject& subject) noexcept -> TargetExpr;

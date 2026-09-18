@@ -25,12 +25,13 @@ Parser::Parser(SourceView source_view, const TokenBuffer& token_buffer) noexcept
       tokens(token_buffer.tokens()),
       builder(source_view) {}
 
-Parser::DepthGuard::DepthGuard(std::uint32_t* depth) noexcept
-    : depth(depth) {}
+Parser::DepthGuard::DepthGuard(std::uint32_t* depth, std::uint32_t previous) noexcept
+    : depth(depth),
+      previous(previous) {}
 
 Parser::DepthGuard::~DepthGuard() noexcept {
     if (depth != nullptr) {
-        --*depth;
+        *depth = previous;
     }
 }
 
@@ -38,9 +39,12 @@ Parser::DepthGuard::operator bool() const noexcept {
     return depth != nullptr;
 }
 
+auto Parser::set_depth(std::uint32_t& depth, std::uint32_t value) noexcept -> DepthGuard {
+    return DepthGuard(&depth, std::exchange(depth, value));
+}
+
 auto Parser::enter_depth(std::uint32_t& depth) noexcept -> DepthGuard {
-    ++depth;
-    return DepthGuard(&depth);
+    return set_depth(depth, depth + 1);
 }
 
 auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {

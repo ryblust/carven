@@ -108,11 +108,13 @@ fn total() -> i32 {
 ```
 
 Structure construction initializes every field. Positional construction is
-also available: `Point { 20, 22 }`. Omitted fields use their type's default:
-`Point {}` has two zero coordinates, and `Point { x: 20 }` has `y == 0`.
+also available: `Point { 20, 22 }`. Empty construction explicitly requests type
+defaults: `Point {}` has two zero coordinates. Nonempty construction must provide
+every field; `Point { x: 20 }` and `Point { 20 }` are errors.
 Numbers default to zero, booleans to false, and text to empty text. Arrays and
-nested structures recursively default their contents. Fields without a default,
-such as enums, require an explicit value. Array indices start at zero.
+nested structures recursively default their contents. A structure containing a
+field without a default, such as an enum, requires complete explicit construction.
+Array indices start at zero.
 
 ## Enums and matches
 

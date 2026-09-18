@@ -1,10 +1,10 @@
 module carven:backend.realization.realizer.impl;
 
-import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.lowering.body;
 import :backend.lowering.constant;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.composition;
 import :backend.realization.decl;
 import :backend.realization.pattern;
@@ -20,6 +20,7 @@ import :semantic.semir.structured;
 import :semantic.semir.table;
 import :source.provenance;
 import :support.invariant;
+import :support.task;
 import std;
 
 BodyRealizer::BodyRealizer(
@@ -39,29 +40,34 @@ BodyRealizer::BodyRealizer(
         invariant_violation("target inputs do not match semantic body inputs");
     }
     for (auto index = 0uz; index < parameter_bindings.size(); ++index) {
-        binding_names.emplace(parameter_bindings[index], inputs.parameters[index]);
-        names.reserve(inputs.parameters[index].spelling());
-        names.reserve(inputs.parameters[index].spelling(), callable_scope);
+        binding_locals.emplace(parameter_bindings[index], inputs.parameters[index]);
+        names.reserve(context.target().local_name(inputs.parameters[index]).spelling());
+        names.reserve(
+            context.target().local_name(inputs.parameters[index]).spelling(),
+            callable_scope
+        );
     }
     for (auto index = 0uz; index < capture_bindings.size(); ++index) {
-        binding_names.emplace(capture_bindings[index], inputs.captures[index]);
+        capture_names.emplace(capture_bindings[index], inputs.captures[index]);
         names.reserve(inputs.captures[index].spelling());
         names.reserve(inputs.captures[index].spelling(), callable_scope);
     }
     for (const auto binding : metadata.bindings()) {
-        if (!binding_names.contains(binding.id)) {
+        if (!binding_locals.contains(binding.id) && !capture_names.contains(binding.id)) {
             const auto preferred =
                 names.source(context.semantic().provenance().spelling(binding.value.name));
-            binding_names.emplace(
+            binding_locals.emplace(
                 binding.id,
-                names.local_symbol(preferred.spelling(), binding.id.index(), callable_scope)
+                context.target().add_local(
+                    names.local_symbol(preferred.spelling(), binding.id.index(), callable_scope)
+                )
             );
         }
     }
 }
 
 auto BodyRealizer::finish() noexcept -> LoweredBody {
-    auto statements = region(metadata.region(), LoweringDiscardResult {});
+    auto statements = region(metadata.region(), LoweringDiscardResult {}).run();
 
     for (const auto exit : statements.exits().targets) {
         if (exit.identity != 0
@@ -74,7 +80,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     }
     auto completed = std::move(statements).finish();
     auto referenced_parameters =
-        finish_body_declarations(completed, inputs.parameters, inputs.captures, mutable_owners);
+        finish_body_declarations(completed, inputs.parameters, mutable_owners);
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),
@@ -84,22 +90,22 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
 auto BodyRealizer::region(
     const SemanticRegion& source,
     const LoweringResultDestination& result
-) noexcept -> LoweringStmtBuilder {
+) noexcept -> ContinuationTask<LoweringStmtBuilder> {
     auto statements = LoweringStmtBuilder();
     for (const auto& item : source.statements) {
         if (!statements.continues()) {
             break;
         }
-        static_cast<void>(statements.accept(statement(item)));
+        static_cast<void>(statements.accept((co_await statement(item))));
     }
     if (statements.continues()) {
         if (source.result.has_value()) {
-            result_expression(*source.result, result, statements);
+            (co_await result_expression(*source.result, result, statements));
         } else {
             deliver_result(LoweringCompleted {}, result, statements);
         }
     }
-    return statements;
+    co_return statements;
 }
 
 auto BodyRealizer::exit_target(LoweringExitKind kind) noexcept -> LoweringExitTarget {
@@ -121,4 +127,8 @@ auto BodyRealizer::fallible(const SemanticExpression& source) const noexcept
         };
     }
     return std::nullopt;
+}
+
+auto BodyRealizer::fresh_local(TargetTemporaryNameKind kind) noexcept -> TargetLocalID {
+    return context.target().add_local(names.fresh(kind));
 }

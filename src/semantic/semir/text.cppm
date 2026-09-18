@@ -9,7 +9,6 @@ enum class TextIntrinsic {
     IsEmpty,
     Bytes,
     Chars,
-    New,
     FromStr,
     FromUTF8Unchecked,
     FromU32Unchecked,
@@ -65,7 +64,6 @@ constexpr auto text_intrinsic_contract(TextIntrinsic intrinsic) noexcept -> Text
         case TextIntrinsic::Bytes:
             return {.parameters = text, .result = TextIntrinsicShape::ByteSlice};
         case TextIntrinsic::Chars: return {.parameters = text, .result = BuiltinType::StrCharsView};
-        case TextIntrinsic::New:   return {.parameters = {}, .result = BuiltinType::String};
         case TextIntrinsic::FromStr: return {.parameters = str, .result = BuiltinType::String};
         case TextIntrinsic::FromUTF8Unchecked:
             return {.parameters = bytes, .result = BuiltinType::Str};

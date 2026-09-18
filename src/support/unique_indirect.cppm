@@ -46,6 +46,10 @@ public:
         return pointer.get();
     }
 
+    constexpr auto get() noexcept -> T* { return pointer.get(); }
+
+    constexpr auto get() const noexcept -> const T* { return pointer.get(); }
+
 private:
     constexpr auto require_live() const noexcept -> void {
         if (pointer == nullptr) {

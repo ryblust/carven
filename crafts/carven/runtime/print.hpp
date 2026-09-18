@@ -41,15 +41,15 @@ template<typename T, typename Emit>
 auto print_value(std::FILE* stream, const StructuralDisplay<T, Emit>& value) noexcept -> void {
     auto writer = DisplayWriter();
     value.emit(writer, value.value);
-    print_bytes(stream, writer.result());
+    detail::print_value(stream, writer.result());
 }
 
 template<bool Newline, typename First, typename... Rest>
 auto print_values(std::FILE* stream, const First& first, const Rest&... rest) noexcept -> void {
     detail::print_value(stream, first);
-    ((print_bytes(stream, " "), detail::print_value(stream, rest)), ...);
+    ((detail::print_value(stream, std::string_view(" ")), detail::print_value(stream, rest)), ...);
     if constexpr (Newline) {
-        print_bytes(stream, "\n");
+        detail::print_value(stream, std::string_view("\n"));
     }
 }
 

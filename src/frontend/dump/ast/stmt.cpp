@@ -123,6 +123,16 @@ auto ASTDumper::render_statement(
     std::string_view prefix,
     bool is_last
 ) noexcept -> void {
+    events.emplace_back(
+        Node {.value = statement_id, .prefix = std::string(prefix), .is_last = is_last, .field = {}}
+    );
+}
+
+auto ASTDumper::render_statement_node(
+    ASTStmtID statement_id,
+    std::string_view prefix,
+    bool is_last
+) noexcept -> void {
     const auto& statement = ast.statement(statement_id);
     statement.value.visit(
         Overloaded {

@@ -1,0 +1,22 @@
+==> Tokens <==
+Tokens "input.cv"
+├─ Fn [0, 2) "fn"
+├─ Identifier [3, 7) "main"
+├─ LeftParen [7, 8) "("
+├─ RightParen [8, 9) ")"
+├─ LeftBrace [10, 11) "{"
+└─ RightBrace [11, 12) "}"
+
+==> AST <==
+SourceModule [0, 13) "input.cv"
+├─ imports (0)
+├─ cpp_source_fragments (0)
+└─ items (1)
+   └─ FunctionDeclaration [0, 12)
+      ├─ visibility Bare
+      ├─ name [3, 7) "main"
+      ├─ parameters (0)
+      ├─ result <absent>
+      ├─ throw <absent>
+      └─ body OrdinaryBlock [10, 12)
+         └─ statements (0)

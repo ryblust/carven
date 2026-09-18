@@ -45,9 +45,10 @@ Their identical values illustrate different storage and lifetime contracts.
 
 ## Record tables
 
-`entries` constructs a fixed array of `Entry` records and assigns their fields in
-a loop. `catalog: [Entry]` retains the result in static storage; selecting a field
-during compilation produces `11`. `catalog_view` returns a view of those records.
+`entries` constructs a fixed array of `Entry` records with names and explicit zero
+codes, then assigns the codes in a loop. `catalog: [Entry]` retains the result in
+static storage; selecting a field during compilation produces `11`.
+`catalog_view` returns a view of those records.
 The runtime call to `entries(offset)` produces a local array.
 
 Freezing preserves nominal identity and field types. Supported records contain

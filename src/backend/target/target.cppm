@@ -20,6 +20,7 @@ public:
     auto operator=(const TargetUnit&) -> TargetUnit& = delete;
     auto operator=(TargetUnit&&) -> TargetUnit& = delete;
     auto identity() const noexcept -> TargetUnitIdentity;
+    auto local_name(TargetLocalID id) const noexcept -> const TargetIdentifier&;
     auto type(TargetTypeID id) const noexcept -> const TargetType&;
     auto type_count() const noexcept -> std::size_t;
     auto directive_groups() const noexcept -> std::span<const TargetDirectiveGroup>;
@@ -32,10 +33,12 @@ private:
     TargetUnit(
         TargetUnitIdentity identity,
         std::vector<TargetType> types,
+        std::vector<TargetIdentifier> locals,
         TargetUnitContents contents
     ) noexcept;
 
     TargetUnitIdentity unit_identity;
     std::vector<TargetType> target_types;
+    std::vector<TargetIdentifier> locals;
     TargetUnitContents contents;
 };

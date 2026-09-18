@@ -40,7 +40,7 @@ const fn constant_binary_snapshot() -> bool {
             text.append("b");
             String::from_str("a")
         } else {
-            String::new()
+            String {}
         };
 }
 
@@ -74,7 +74,7 @@ const fn constant_string_identity(text: String) -> String => text as String;
 
 const fn constant_view_scope() -> String {
     var text: String = "a";
-    var copy = String::new();
+    var copy = String {};
     if true {
         let view = text.as_str();
         copy = String::from_str(view);

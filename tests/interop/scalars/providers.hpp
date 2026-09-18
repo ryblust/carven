@@ -113,3 +113,25 @@ template<typename Type>
 inline auto native_overload_i8(Type) noexcept -> bool {
     return false;
 }
+
+inline auto native_mutate_taken_scalar(std::int32_t&& value) noexcept -> std::int32_t {
+    value = 9;
+    return 2;
+}
+
+inline auto native_read_category(const std::int32_t&, std::int32_t) noexcept -> bool {
+    return true;
+}
+
+inline auto native_read_category(std::int32_t&&, std::int32_t) noexcept -> bool {
+    return false;
+}
+
+struct NativeCaptureReceiver final {
+    std::int32_t value;
+
+    explicit NativeCaptureReceiver(std::int32_t initial) noexcept
+        : value(initial) {}
+
+    auto call(std::int32_t) const noexcept -> std::int32_t { return value; }
+};

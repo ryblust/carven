@@ -21,9 +21,9 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
          .primary_text = "s.clear()"},
         {.name = "view blocks whole replacement",
          .source =
-             "fn invalid() { var s = String::from_str(\"abc\"); let v = s.as_str(); s = String::new(); }",
+             "fn invalid() { var s = String::from_str(\"abc\"); let v = s.as_str(); s = String {}; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s = String::new()"},
+         .primary_text = "s = String {}"},
         {.name = "view blocks Take",
          .source =
              "fn invalid() { var s = String::from_str(\"abc\"); let v = s.as_str(); let taken = &&s; }",
@@ -64,7 +64,7 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
          .primary_text = "s.clear()"},
         {.name = "unknown array index overlaps",
          .source =
-             "fn mutate(&values: [String; 2], index: usize) { values[index].clear(); } fn invalid() { var values = [String::new(), String::new()]; let v = values[0].as_str(); mutate(&values, 1); }",
+             "fn mutate(&values: [String; 2], index: usize) { values[index].clear(); } fn invalid() { var values = [String {}, String {}]; let v = values[0].as_str(); mutate(&values, 1); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "values[index].clear()"},
         {.name = "callee mutation checks caller holder",
@@ -74,29 +74,29 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
          .primary_text = "s.clear()"},
         {.name = "self reference aggregate",
          .source =
-             "struct Mixed { text: String, view: str } fn invalid() { var mixed = Mixed { text: String::new(), view: \"\" }; mixed.view = mixed.text.as_str(); }",
+             "struct Mixed { text: String, view: str } fn invalid() { var mixed = Mixed { text: String {}, view: \"\" }; mixed.view = mixed.text.as_str(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "mixed.view = mixed.text.as_str()"},
         {.name = "immutable receiver",
-         .source = "fn invalid() { let s = String::new(); s.clear(); }",
+         .source = "fn invalid() { let s = String {}; s.clear(); }",
          .code = "CV-ACCESS-IMMUTABLE",
          .primary_text = "s.clear()"},
         {.name = "temporary receiver cannot write",
-         .source = "fn invalid() { String::new().clear(); }",
+         .source = "fn invalid() { String {}.clear(); }",
          .code = "CV-ACCESS-NOT-ASSIGNABLE",
-         .primary_text = "String::new().clear()"},
+         .primary_text = "String {}.clear()"},
         {.name = "method arity",
          .source = "fn invalid() { var s = String::from_str(\"abc\"); s.append(); }",
          .code = "CV-TYPE-METHOD-CALL-ARITY",
          .primary_text = "s.append()"},
         {.name = "factory arity",
-         .source = "fn invalid() { let s = String::new(\"x\"); }",
+         .source = "fn invalid() { let s = String::from_str(); }",
          .code = "CV-TYPE-METHOD-CALL-ARITY",
-         .primary_text = "String::new(\"x\")"},
+         .primary_text = "String::from_str()"},
         {.name = "factory direct call only",
-         .source = "fn invalid() { let factory = String::new; }",
+         .source = "fn invalid() { let factory = String::from_str; }",
          .code = "CV-TYPE-METHOD-CALL",
-         .primary_text = "new"},
+         .primary_text = "from_str"},
         {.name = "properties are not methods",
          .source = "fn invalid() { var s = String::from_str(\"abc\"); s.bytes(); }",
          .code = "CV-TYPE-METHOD-CALL",
@@ -120,7 +120,7 @@ TEST_CASE("Compiler diagnostics: String access and operation contracts") {
 TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "local return",
-         .source = "fn bad() -> str { let s = String::new(); return s; }",
+         .source = "fn bad() -> str { let s = String {}; return s; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s"},
         {.name = "Take return",
@@ -129,46 +129,46 @@ TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries"
          .primary_text = "s"},
         {.name = "local throw",
          .source =
-             "struct E { text: str } fn bad() throw E { let s = String::new(); throw E { text: s }; }",
+             "struct E { text: str } fn bad() throw E { let s = String {}; throw E { text: s }; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s"},
         {.name = "local protected throw",
          .source =
-             "struct E { text: str } fn bad() { try { let s = String::new(); throw E { text: s }; } catch { E(e) => { let _ = e.text.len(); }, } }",
+             "struct E { text: str } fn bad() { try { let s = String {}; throw E { text: s }; } catch { E(e) => { let _ = e.text.len(); }, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s"},
         {.name = "caught original holder",
          .source =
-             "struct E { text: str } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) => s.clear(), } }",
+             "struct E { text: str } fn bad() { var s = String {}; try { throw E { text: s }; } catch { E(_) => s.clear(), } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "guard original holder",
          .source =
-             "struct E { text: str } fn modify(&s: String) -> bool { s.clear(); return false; } fn bad() { var s = String::new(); try { throw E { text: s }; } catch { E(_) if modify(&s) => {}, E(_) => {}, } }",
+             "struct E { text: str } fn modify(&s: String) -> bool { s.clear(); return false; } fn bad() { var s = String {}; try { throw E { text: s }; } catch { E(_) if modify(&s) => {}, E(_) => {}, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "handler local return",
          .source =
-             "struct E {} fn bad() -> str { return try { throw E {}; \"\" } catch { E(_) => { let s = String::new(); s }, }; }",
+             "struct E {} fn bad() -> str { return try { throw E {}; \"\" } catch { E(_) => { let s = String {}; s }, }; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "{ let s = String::new(); s }"},
+         .primary_text = "{ let s = String {}; s }"},
         {.name = "Write output local",
-         .source = "fn bad(&v: str) { let s = String::new(); v = s; }",
+         .source = "fn bad(&v: str) { let s = String {}; v = s; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "v = s"},
         {.name = "comparison pending view",
          .source =
-             "fn mutate(&s: String) -> str { s.clear(); return \"\"; } fn bad() { var s = String::new(); let b = s.as_str() == mutate(&s); }",
+             "fn mutate(&s: String) -> str { s.clear(); return \"\"; } fn bad() { var s = String {}; let b = s.as_str() == mutate(&s); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "receiver pending Take",
          .source =
-             "fn consume(&&s: String) -> str => \"\"; fn bad() { var s = String::new(); s.append(consume(&&s)); }",
+             "fn consume(&&s: String) -> str => \"\"; fn bad() { var s = String {}; s.append(consume(&&s)); }",
          .code = "CV-ACCESS-OPERATION-CONFLICT",
          .primary_text = "&&s"},
         {.name = "closure capture",
          .source =
-             "fn bad() { var s = String::new(); let v = s.as_str(); let c = [v]() { return v.len(); }; s.clear(); }",
+             "fn bad() { var s = String {}; let v = s.as_str(); let c = [v]() { return v.len(); }; s.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "str values require explicit owning conversion",
@@ -176,9 +176,9 @@ TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries"
          .code = "CV-TYPE-MISMATCH",
          .primary_text = "value"},
         {.name = "direct throw String",
-         .source = "fn bad() { throw String::new(); }",
+         .source = "fn bad() { throw String {}; }",
          .code = "CV-EFFECT-THROW-TYPE",
-         .primary_text = "throw String::new();"},
+         .primary_text = "throw String {};"},
         {.name = "String as str",
          .source = "fn bad(s: String) { let v = s as str; }",
          .code = "CV-TYPE-CAST",
@@ -193,12 +193,12 @@ TEST_CASE("Compiler diagnostics: String escapes failures and foreign boundaries"
          .primary_text = "capacity"},
         {.name = "foreign preserves old slot",
          .source =
-             "#[cpp] ---\ninline void replace(auto& v) noexcept { v = {}; }\n---\nfn bad() { var s = String::new(); var v = s.as_str(); ::replace(&v); s.clear(); }",
+             "#[cpp] ---\ninline void replace(auto& v) noexcept { v = {}; }\n---\nfn bad() { var s = String {}; var v = s.as_str(); ::replace(&v); s.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "native pending view",
          .source =
-             "#[cpp] ---\ninline void use(auto, auto) noexcept {}\n---\nfn bad() { var s = String::new(); ::use(s.as_str(), &&s); }",
+             "#[cpp] ---\ninline void use(auto, auto) noexcept {}\n---\nfn bad() { var s = String {}; ::use(s.as_str(), &&s); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s"},
     });
@@ -210,12 +210,12 @@ TEST_CASE("Compiler diagnostics: callable adaptation retains captured text loans
         {.name = "temporary closure passed as a callable view",
          .source = "fn make(v: str) => [v]() -> usize { return v.len(); }; "
                    "fn invoke(cb: fn() -> usize, &s: String) { s.clear(); let _ = cb(); } "
-                   "fn invalid() { var s = String::new(); invoke(make(s.as_str()), &s); }",
+                   "fn invalid() { var s = String {}; invoke(make(s.as_str()), &s); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "view into a closure-owned String prevents closure Take",
          .source = "fn make(s: String) => [s]() -> str { return s; }; "
-                   "fn invalid() { let closure = make(String::new()); let v = closure(); "
+                   "fn invalid() { let closure = make(String {}); let v = closure(); "
                    "let moved = &&closure; }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "&&"},
@@ -226,32 +226,30 @@ TEST_CASE("Compiler diagnostics: callable adaptation retains captured text loans
 TEST_CASE("Compiler diagnostics: String relationships survive joins and projected copies") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "branch join retains either backing",
-         .source =
-             "fn invalid(choose: bool) { var first = String::new(); var second = String::new(); "
-             "let view: str = if choose { first } else { second }; first.clear(); }",
+         .source = "fn invalid(choose: bool) { var first = String {}; var second = String {}; "
+                   "let view: str = if choose { first } else { second }; first.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "first.clear()"},
         {.name = "loop join retains holder from an earlier iteration",
-         .source = "fn invalid(again: bool) { var owner = String::new(); var view: str = \"\"; "
+         .source = "fn invalid(again: bool) { var owner = String {}; var view: str = \"\"; "
                    "while again { owner.clear(); view = owner; } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "owner.clear()"},
         {.name = "copying an owning field does not rebase another field's view",
          .source =
-             "struct Mixed { owner: String, view: str } fn invalid() { var owner = String::new(); "
+             "struct Mixed { owner: String, view: str } fn invalid() { var owner = String {}; "
              "let mixed = Mixed { owner: owner, view: owner.as_str() }; let copy = mixed; owner.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "owner.clear()"},
         {.name = "replacing one holder field leaves its sibling",
-         .source =
-             "struct Views { first: str, second: str } fn invalid() { var owner = String::new(); "
-             "var views = Views { first: owner.as_str(), second: owner.as_str() }; "
-             "views.first = \"\"; owner.clear(); }",
+         .source = "struct Views { first: str, second: str } fn invalid() { var owner = String {}; "
+                   "var views = Views { first: owner.as_str(), second: owner.as_str() }; "
+                   "views.first = \"\"; owner.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "owner.clear()"},
         {.name = "failure from temporary Read backing cannot survive the call statement",
          .source = "struct E { view: str } fn fail(s: String) throw E { throw E { view: s }; } "
-                   "fn invalid() { try { fail(String::new())?; } catch { E(_) => {}, } }",
+                   "fn invalid() { try { fail(String {})?; } catch { E(_) => {}, } }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s"},
     });

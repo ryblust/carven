@@ -174,6 +174,10 @@ struct TargetTypeIDTag final {};
 
 using TargetTypeID = TargetUnitID<TargetTypeIDTag>;
 
+struct TargetLocalIDTag final {};
+
+using TargetLocalID = TargetUnitID<TargetLocalIDTag>;
+
 template<typename Value, typename ID>
 class TargetPlanTable final {
 public:

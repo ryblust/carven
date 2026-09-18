@@ -2,7 +2,7 @@
 
 Read `main.cv` in source order: the `Stock` record,
 `restock` with a Write parameter, and `dispatch` with a Take parameter. Then
-follow the `stock` binding through `main`:
+follow the `stock` binding through the top-level statements:
 
 - `restock(&stock, ...)` changes the existing stock from 4 to 7.
 - `let snapshot = stock` creates a separate record value.

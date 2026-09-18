@@ -357,3 +357,132 @@ TEST_CASE("Nominal capabilities: shared type dependencies retain equality and ow
         );
     }
 }
+
+TEST_CASE("Semantic ownership: recursive returned views require live backing") {
+    const auto diagnostics = analyze_test_errors(
+        "fn recurse(flag: bool, input: [i32]) -> [i32] { "
+        "let local = [1]; "
+        "if flag { return recurse(false, local); } "
+        "return input; }"
+    );
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+    static_cast<void>(analyze_test_program(
+        "fn recurse(flag: bool, input: [i32]) -> [i32] { "
+        "if flag { return recurse(false, input); } return input; }"
+    ));
+}
+
+TEST_CASE("Semantic ownership: recursive backing and callable graphs have finite query domains") {
+    static_cast<void>(analyze_test_program(
+        "struct Node { children: [Node] }\n"
+        "fn descend(nodes: [Node], depth: i32) -> void {\n"
+        " if depth > 0 { let local = [Node { nodes }]; descend(local, depth - 1); }\n"
+        "}\n"
+    ));
+    static_cast<void>(analyze_test_program(
+        "fn descend(callbacks: [fn() -> void], index: usize, depth: i32) -> void {\n"
+        "    var count = 0;\n"
+        "    let current = [&count]() { count += 1; };\n"
+        "    let next: [fn() -> void; 2] = [callbacks[index], current];\n"
+        "    if depth > 0 {\n"
+        "        descend(next, index, depth - 1);\n"
+        "    } else {\n"
+        "        callbacks[index]();\n"
+        "    }\n"
+        "}\n"
+    ));
+}
+
+TEST_CASE("Semantic ownership: known recursive projections preserve returned backing") {
+    static_cast<void>(analyze_test_program(
+        "struct Node { children: [Node] }\n"
+        "fn second(nodes: [Node]) -> [Node] => nodes[0].children[0].children;\n"
+        "fn valid(external: [Node]) -> [Node] {\n"
+        " let middle = [Node { external }];\n"
+        " let root = [Node { middle }];\n"
+        " return second(root);\n"
+        "}\n"
+    ));
+    static_cast<void>(analyze_test_program(
+        "struct Node { left: [Node], right: [Node], end: [Node] }\n"
+        "fn balanced(nodes: [Node], depth: i32) -> [Node] {\n"
+        "    if depth > 0 {\n"
+        "        return balanced(nodes[0].left, depth - 1)[0].right;\n"
+        "    }\n"
+        "    return nodes[0].end;\n"
+        "}\n"
+        "fn valid(external: [Node], depth: i32) -> [Node] {\n"
+        "    let none = external.slice(0, 0);\n"
+        "    let y = [Node { none, external, none }];\n"
+        "    let w = [Node { none, y, none }];\n"
+        "    let z = [Node { none, none, w }];\n"
+        "    let x = [Node { z, none, y }];\n"
+        "    let root = [Node { x, none, external }];\n"
+        "    return balanced(root, depth);\n"
+        "}\n"
+    ));
+}
+
+TEST_CASE("Semantic ownership: unique callback slots retain definite loan release") {
+    static_cast<void>(analyze_test_program(
+        "fn empty() -> i32 => 0;\n"
+        "fn noop() -> void {}\n"
+        "fn clear_second(callbacks: [fn() -> void; 2]) { callbacks[1](); }\n"
+        "fn descend(callbacks: [fn() -> void; 2], depth: i32) -> void {\n"
+        "    let owner = String::from_str(\"hello\");\n"
+        "    var view: str = owner.as_str();\n"
+        "    let clear = [&view]() { view = \"\"; };\n"
+        "    let next: [fn() -> void; 2] = [callbacks[1], clear];\n"
+        "    if depth > 0 { descend(next, depth - 1); }\n"
+        "    clear_second(next);\n"
+        "    let moved = &&owner;\n"
+        "}\n"
+        "fn start(depth: i32) { descend([noop, noop], depth); }\n"
+    ));
+}
+
+TEST_CASE("Semantic ownership: definite aliases preserve ordered loan replacement") {
+    static_cast<void>(analyze_test_program(
+        "fn empty() -> i32 => 0;\n"
+        "fn set(&a: fn() -> i32, &b: fn() -> i32, source: fn() -> i32) { a = source; b = empty; }\n"
+        "fn probe() { let n = 1; let closure = [n]() => n; var target: fn() -> i32 = empty; set(&target, &target, closure); let moved = &&closure; }\n"
+    ));
+    const auto diagnostics = analyze_test_errors(
+        "fn empty() -> i32 => 0;\n"
+        "fn set(&a: fn() -> i32, &b: fn() -> i32, source: fn() -> i32) { b = empty; a = source; }\n"
+        "fn probe() { let n = 1; let closure = [n]() => n; var target: fn() -> i32 = empty; set(&target, &target, closure); let moved = &&closure; }\n"
+    );
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+}
+
+TEST_CASE("Semantic ownership: later capture reads follow closure rebinding") {
+    static_cast<void>(analyze_test_program(
+        "fn maker(&text: String) {\n"
+        "    return [&text](effect: fn() -> void) { effect(); text.clear(); };\n"
+        "}\n"
+        "fn probe() {\n"
+        "    var first = String::from_str(\"first\");\n"
+        "    var second = String::from_str(\"second\");\n"
+        "    var closure = maker(&first);\n"
+        "    let view = first.as_str();\n"
+        "    let change = [&closure, &second]() { closure = maker(&second); };\n"
+        "    closure(change);\n"
+        "    let length = view.len();\n"
+        "}\n"
+    ));
+    const auto diagnostics = analyze_test_errors(
+        "fn maker(&text: String) {\n"
+        "    return [&text](effect: fn() -> void) { effect(); text.clear(); };\n"
+        "}\n"
+        "fn probe() {\n"
+        "    var first = String::from_str(\"first\");\n"
+        "    var second = String::from_str(\"second\");\n"
+        "    var closure = maker(&first);\n"
+        "    let view = second.as_str();\n"
+        "    let change = [&closure, &second]() { closure = maker(&second); };\n"
+        "    closure(change);\n"
+        "    let length = view.len();\n"
+        "}\n"
+    );
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+}

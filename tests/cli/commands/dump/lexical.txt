@@ -1,0 +1,9 @@
+==> Tokens <==
+Tokens "lexical_error.cv"
+├─ Fn [0, 2) "fn"
+├─ Identifier [3, 8) "valid"
+├─ LeftParen [8, 9) "("
+├─ RightParen [9, 10) ")"
+├─ LeftBrace [11, 12) "{"
+├─ RightBrace [12, 13) "}"
+└─ Invalid [14, 15) "@"

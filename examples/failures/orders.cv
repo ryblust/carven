@@ -8,62 +8,57 @@ struct OutOfStock {
     available: i32,
 }
 
-fn line_total(quantity: i32, available: i32) -> i32 throw QuantityError + OutOfStock {
-    return match quantity {
-        ..=0 => throw QuantityError::NonPositive(quantity),
-        101.. => throw QuantityError::TooLarge(quantity),
-        _ if quantity > available => throw OutOfStock {
-            requested: quantity,
-            available: available,
-        },
-        _ => quantity * 250,
-    };
-}
+fn line_total(
+    quantity: i32,
+    available: i32
+) -> i32 throw QuantityError + OutOfStock => match quantity {
+    ..=0 => throw QuantityError::NonPositive(quantity),
+    101.. => throw QuantityError::TooLarge(quantity),
+    _ if quantity > available => throw OutOfStock {
+        requested: quantity,
+        available: available,
+    },
+    _ => quantity * 250,
+};
 
 enum DeliveryError {
     UnknownZone(i32),
     Unavailable(i32),
 }
 
-fn delivery_fee(zone: i32) -> i32 throw DeliveryError {
-    return match zone {
-        1 => 300,
-        2..=4 => throw DeliveryError::Unavailable(zone),
-        _ => throw DeliveryError::UnknownZone(zone),
-    };
-}
+fn delivery_fee(zone: i32) -> i32 throw DeliveryError => match zone {
+    1 => 300,
+    2..=4 => throw DeliveryError::Unavailable(zone),
+    _ => throw DeliveryError::UnknownZone(zone),
+};
 
 struct CarrierLookupError {
     zone: i32,
 }
 
-fn alternate_available(zone: i32) -> bool throw CarrierLookupError {
-    return match zone {
-        4 => throw CarrierLookupError { zone: zone },
-        _ => zone == 2,
-    };
-}
+fn alternate_available(zone: i32) -> bool throw CarrierLookupError => match zone {
+    4 => throw CarrierLookupError { zone: zone },
+    _ => zone == 2,
+};
 
 // Private composition infers the union of both providers' failure sets.
-private fn primary_quote(quantity: i32, available: i32, zone: i32) -> i32 {
-    return (line_total(quantity, available) + delivery_fee(zone))?;
-}
+private fn primary_quote(quantity: i32, available: i32, zone: i32) -> i32 => (
+    line_total(quantity, available) + delivery_fee(zone)
+)?;
 
 // This shared module interface states every failure its callers must handle.
 fn quote(
     quantity: i32,
     available: i32,
     zone: i32
-) -> i32 throw QuantityError + OutOfStock + DeliveryError + CarrierLookupError {
-    return try {
-        primary_quote(quantity, available, zone)?
-    } catch {
-        // A failed lookup in this guard goes outward to the caller.
-        DeliveryError(.Unavailable(failed_zone)) if alternate_available(failed_zone)? => line_total(
-                quantity,
-                available
-            )?
-            + 700,
-        QuantityError(_) | OutOfStock(_) | DeliveryError(_) => rethrow,
-    };
-}
+) -> i32 throw QuantityError + OutOfStock + DeliveryError + CarrierLookupError => try {
+    primary_quote(quantity, available, zone)?
+} catch {
+    // A failed lookup in this guard goes outward to the caller.
+    DeliveryError(.Unavailable(failed_zone)) if alternate_available(failed_zone)? => line_total(
+            quantity,
+            available
+        )?
+        + 700,
+    QuantityError(_) | OutOfStock(_) | DeliveryError(_) => rethrow,
+};

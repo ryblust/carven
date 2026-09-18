@@ -38,9 +38,9 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
     const auto provenance_module = draft.provenance_module_at(0uz);
     const auto origin =
         draft.append_source_origin(draft.module_source(provenance_module), Span::at(0u));
-    const auto module = draft.reserve_module_declaration();
+    const auto module_id = draft.reserve_module_declaration();
     draft.define_declaration(
-        module,
+        module_id,
         ModuleDeclaration {
             .provenance_module = provenance_module,
             .origin = origin,

@@ -503,15 +503,15 @@ auto DeclResolver::select_symbol(
 
 auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
-    co_return (co_await resolver.resolve_constant_name(module, name, span));
+    co_return (co_await resolver.resolve_constant_name(module_id, name, span));
 }
 
 auto DeclResolver::ConstantScope::resolve_function(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<FunctionID>> {
-    if (resolver.catalog.lookup(module, name).empty()) {
+    if (resolver.catalog.lookup(module_id, name).empty()) {
         co_return std::optional<FunctionID>();
     }
-    auto selected = resolver.select_symbol(module, name, span);
+    auto selected = resolver.select_symbol(module_id, name, span);
     if (!selected) {
         co_return std::unexpected(selected.error());
     }
@@ -519,13 +519,13 @@ auto DeclResolver::ConstantScope::resolve_function(std::string_view name, Span s
     if (function == nullptr) {
         co_return std::optional<FunctionID>();
     }
-    auto result = (co_await resolver.ensure_available((*selected)->symbol_id, module, span));
+    auto result = (co_await resolver.ensure_available((*selected)->symbol_id, module_id, span));
     if (!result) {
         co_return std::unexpected(result.error());
     }
 
     result =
-        (co_await resolver.requests.ensure_function_signature(function->function, module, span));
+        (co_await resolver.requests.ensure_function_signature(function->function, module_id, span));
     if (!result) {
         co_return std::unexpected(result.error());
     }
@@ -539,7 +539,7 @@ auto DeclResolver::ConstantScope::construction_requests() noexcept -> Constructi
 
 auto DeclResolver::ConstantScope::resolve_enum_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
-    co_return (co_await resolver.resolve_enum_qualifier(module, syntax, expression));
+    co_return (co_await resolver.resolve_enum_qualifier(module_id, syntax, expression));
 }
 
 auto DeclResolver::ConstantScope::resolve_enum_case(
@@ -547,26 +547,26 @@ auto DeclResolver::ConstantScope::resolve_enum_case(
     std::string_view name,
     Span span
 ) noexcept -> AnalysisTask<ResolvedEnumCase> {
-    co_return (co_await resolver.resolve_constant_enum_case(module, type, name, span));
+    co_return (co_await resolver.resolve_constant_enum_case(module_id, type, name, span));
 }
 
 auto DeclResolver::ConstantScope::resolve_construction_type(
     const ASTConstructionType& type
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(resolver.draft, module, syntax, *this, expression);
+        return evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
     };
     auto result = (co_await resolve_source_construction_type(
         resolver.draft,
         resolver.catalog,
         resolver.import_usage,
-        module,
+        module_id,
         syntax,
         type,
         extent
     ));
     if (result) {
-        auto prepared = (co_await resolver.requests.ensure_type(*result, module, type.span));
+        auto prepared = (co_await resolver.requests.ensure_type(*result, module_id, type.span));
         if (!prepared) {
             co_return std::unexpected(prepared.error());
         }
@@ -576,7 +576,7 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
 
 auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
-    co_return (co_await resolver.resolve_type(module, syntax, type));
+    co_return (co_await resolver.resolve_type(module_id, syntax, type));
 }
 
 auto DeclResolver::ConstantScope::supports_equality(ConstructionTypeRef type) noexcept -> bool {

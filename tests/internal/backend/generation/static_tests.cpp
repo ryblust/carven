@@ -24,10 +24,10 @@ TEST_CASE("Generation: only runtime tests enter module schedules") {
         );
         auto tests = 0uz;
         for (const auto artifact : compilation.target().artifacts()) {
-            if (const auto* module =
+            if (const auto* module_artifact =
                     std::get_if<TargetModuleImplementationArtifact>(&artifact.value)) {
-                tests += module->schedule.emitted_tests.size();
-                for (const auto id : module->schedule.emitted_tests) {
+                tests += module_artifact->schedule.emitted_tests.size();
+                for (const auto id : module_artifact->schedule.emitted_tests) {
                     CHECK(!compilation.semantic().tests().test(id).is_const);
                 }
             }

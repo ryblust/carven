@@ -20,14 +20,18 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
                           std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
             const auto* parameter = std::get_if<ParameterBindingStorage>(&body.binding(id).storage);
-            if (parameter != nullptr
-                && parameter->access == AccessMode::Read
-                && analysis.contents(body.binding(id).type).read_borrows_storage()) {
+            if (value.capture_holder) {
+                capture_holders.emplace(id, *value.capture_holder);
+            } else if (parameter != nullptr
+                       && parameter->access == AccessMode::Read
+                       && analysis.contents(body.binding(id).type).read_borrows_storage()) {
                 auto storage = value.storage;
                 if (storage.empty() && value.alias) {
                     storage.push_back(*value.alias);
                 }
-                read_storage.emplace(id, std::move(storage));
+                selected_storage.emplace(id, std::move(storage));
+            } else if (!value.storage.empty()) {
+                selected_storage.emplace(id, value.storage);
             } else if (value.alias.has_value()) {
                 aliases.emplace(id, *value.alias);
             }
@@ -120,8 +124,12 @@ auto OwnershipBodyAnalyzer::retain(
 ) const noexcept -> void {
     const auto found = facts.temporaries.find(std::addressof(source));
     if (found != facts.temporaries.end()) {
-        state.objects[input.objects.size() + found->second] =
-            {.available = true, .taken = std::nullopt, .relationships = relationships};
+        state.objects[input.objects.size() + found->second] = {
+            .available = true,
+            .taken = std::nullopt,
+            .relationships = relationships,
+            .modified = false
+        };
     }
 }
 
@@ -136,9 +144,10 @@ auto OwnershipBodyAnalyzer::references(
         OwnershipRelationships value;
         std::size_t capture;
         std::size_t loan;
+        std::size_t storage;
     };
 
-    auto pending = std::vector<PendingRelationships> {{relationships, 0uz, 0uz}};
+    auto pending = std::vector<PendingRelationships> {{relationships, 0uz, 0uz, 0uz}};
     while (!pending.empty()) {
         auto& current = pending.back();
         auto target = std::optional<OwnershipPlace>();
@@ -150,6 +159,8 @@ auto OwnershipBodyAnalyzer::references(
             target = capture.target;
         } else if (current.loan < current.value.callable_loans.size()) {
             target = current.value.callable_loans[current.loan++].backing;
+        } else if (current.storage < current.value.storage_loans.size()) {
+            target = current.value.storage_loans[current.storage++].backing;
         } else {
             pending.pop_back();
             continue;
@@ -158,11 +169,36 @@ auto OwnershipBodyAnalyzer::references(
             pending.push_back(
                 {project_relationships(state.objects[target->object].relationships, target->path),
                  0uz,
+                 0uz,
                  0uz}
             );
         }
     }
     return result;
+}
+
+auto OwnershipBodyAnalyzer::tracked_borrows(
+    const OwnershipRelationships& value,
+    const OwnershipState& state
+) const noexcept -> bool {
+    auto pending = std::vector<OwnershipRelationships> {value};
+    auto visited = std::flat_set<OwnershipPlace>();
+    while (!pending.empty()) {
+        const auto current = std::move(pending.back());
+        pending.pop_back();
+        if (!current.callable_loans.empty() || !current.captures.empty()) {
+            return true;
+        }
+        for (const auto& loan : current.storage_loans) {
+            if (visited.insert(loan.backing).second) {
+                pending.push_back(project_relationships(
+                    state.objects[loan.backing.object].relationships,
+                    loan.backing.path
+                ));
+            }
+        }
+    }
+    return false;
 }
 
 auto OwnershipBodyAnalyzer::use(
@@ -214,7 +250,8 @@ auto OwnershipBodyAnalyzer::store(
     OwnershipState& state,
     const OwnershipPlace& target,
     const OwnershipRelationships& relationships,
-    ProgramOriginID origin
+    ProgramOriginID origin,
+    bool definite
 ) noexcept -> void {
     use(relationships, state, origin);
     check_storage_write(state, target, origin);
@@ -249,11 +286,19 @@ auto OwnershipBodyAnalyzer::store(
         }
     }
     auto& destination = state.objects[target.object];
-    if (target.path.empty()) {
-        destination = {.available = true, .taken = std::nullopt, .relationships = relationships};
+    destination.modified = true;
+    const auto singleton =
+        definite && (target.object >= input.objects.size() || !input.objects[target.object].many);
+    if (singleton && target.path.empty()) {
+        destination = {
+            .available = true,
+            .taken = std::nullopt,
+            .relationships = relationships,
+            .modified = true
+        };
         return;
     }
-    if (std::ranges::all_of(target.path, [](const auto& part) static noexcept {
+    if (singleton && std::ranges::all_of(target.path, [](const auto& part) static noexcept {
             return part.has_value();
         })) {
         const auto replaced = [&](const auto& row) noexcept {
@@ -273,44 +318,28 @@ auto OwnershipBodyAnalyzer::binding_place(LocalBindingID binding) const noexcept
                                   : found->second;
 }
 
-auto OwnershipBodyAnalyzer::location(const SemanticExpression& source) const noexcept
-    -> std::optional<OwnershipPlace> {
-    auto* current = std::addressof(source);
-    auto projection = OwnershipProjectionPath();
-    for (;;) {
-        if (const auto* foreign = std::get_if<SemCpp>(&current->value);
-            foreign != nullptr && current->category == SemanticValueCategory::Place) {
-            current = std::addressof(foreign->operands.front().expression);
-        } else if (const auto* binding = std::get_if<SemBinding>(&current->value)) {
-            auto result = std::optional<OwnershipPlace>();
-            if (const auto found = read_storage.find(binding->binding);
-                found != read_storage.end()) {
-                if (found->second.size() == 1uz) {
-                    result = found->second.front();
-                }
-            } else {
-                result = binding_place(binding->binding);
+auto OwnershipBodyAnalyzer::binding_places(
+    LocalBindingID binding,
+    const OwnershipState& state
+) const noexcept -> std::vector<OwnershipPlace> {
+    if (const auto found = capture_holders.find(binding); found != capture_holders.end()) {
+        const auto& holder = found->second;
+        const auto value =
+            project_relationships(state.objects[holder.object].relationships, holder.path);
+        auto result = std::vector<OwnershipPlace>();
+        for (const auto& capture : value.captures) {
+            if (capture.holder.empty()) {
+                result.push_back(capture.target);
             }
-            if (result) {
-                result->path.append_range(projection | std::views::reverse);
-            }
-            return result;
-        } else if (const auto* field = std::get_if<SemField>(&current->value)) {
-            projection.push_back(field->field.field_index);
-            current = std::addressof(*field->source);
-        } else if (const auto* index = std::get_if<SemIndex>(&current->value)) {
-            if (std::holds_alternative<SliceTypeValue>(
-                    program.types().type(index->source->type.resolved()).value
-                )) {
-                // Slice elements live in borrowed backing, outside the slice object.
-                return std::nullopt;
-            }
-            projection.push_back(constant_index(*index->index));
-            current = std::addressof(*index->source);
-        } else {
-            return std::nullopt;
         }
+        std::ranges::sort(result);
+        result.erase(std::ranges::unique(result).begin(), result.end());
+        return result;
     }
+    if (const auto found = selected_storage.find(binding); found != selected_storage.end()) {
+        return found->second;
+    }
+    return {binding_place(binding)};
 }
 
 auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> bool {

@@ -27,9 +27,44 @@ struct LoweringExitSummary final {
     auto consume(LoweringExitTarget target) noexcept -> bool;
 };
 
+// Statement fragments concatenate before any physical C++ region is finished.
+// Chunks preserve O(1) composition without a heap allocation per statement.
+class LoweringStatements final {
+public:
+    LoweringStatements() = default;
+    LoweringStatements(const LoweringStatements&) = delete;
+
+    LoweringStatements(LoweringStatements&& source) noexcept;
+
+    auto operator=(const LoweringStatements&) -> LoweringStatements& = delete;
+
+    auto operator=(LoweringStatements&& source) noexcept -> LoweringStatements&;
+
+    auto empty() const noexcept -> bool;
+
+    auto push_back(TargetStmt statement) noexcept -> void;
+
+    auto append(LoweringStatements source) noexcept -> void;
+
+    template<typename Visitor>
+    auto visit(const Visitor& visitor) noexcept -> void {
+        for (auto& chunk : chunks) {
+            for (auto& statement : chunk) {
+                visitor(statement);
+            }
+        }
+    }
+
+    auto finish() && noexcept -> std::vector<TargetStmt>;
+
+private:
+    std::list<std::vector<TargetStmt>> chunks;
+    std::size_t count = 0;
+};
+
 template<typename T>
 struct Lowered final {
-    std::vector<TargetStmt> statements;
+    LoweringStatements statements;
     std::optional<T> normal;
     LoweringExitSummary exits;
     bool has_declarations;
@@ -76,7 +111,7 @@ struct LoweringYieldResult final {
 };
 
 struct LoweringDeferredStorage final {
-    TargetIdentifier name;
+    TargetLocalID local;
     TargetTypeID value_type;
 };
 

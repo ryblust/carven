@@ -28,34 +28,34 @@ auto name(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
 }
 
-auto reference(std::string_view spelling) noexcept -> TargetExpr {
-    return {.value = TargetNameExpr {.name = TargetName(name(spelling))}};
+auto reference(TargetLocalID id) noexcept -> TargetExpr {
+    return {.value = TargetLocalExpr {.local = id}};
 }
 
 auto literal() noexcept -> TargetExpr {
     return {.value = TargetLiteralExpr {.value = true}};
 }
 
-auto local(std::string_view spelling, TargetTypeID type) noexcept -> TargetStmt {
+auto local(TargetLocalID id, TargetTypeID type) noexcept -> TargetStmt {
     return target_lowering_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = true,
-            .name = name(spelling),
+            .local = id,
             .type = type,
             .initializer = literal(),
         }
     );
 }
 
-auto read(std::string_view spelling) noexcept -> TargetStmt {
-    return target_lowering_statement(TargetDiscardStmt {.expression = reference(spelling)});
+auto read(TargetLocalID id) noexcept -> TargetStmt {
+    return target_lowering_statement(TargetDiscardStmt {.expression = reference(id)});
 }
 
-auto assignment(std::string_view spelling) noexcept -> TargetStmt {
+auto assignment(TargetLocalID id) noexcept -> TargetStmt {
     return target_lowering_statement(
         TargetAssignmentStmt {
-            .target = reference(spelling),
+            .target = reference(id),
             .op = TargetAssignmentOperator::Assign,
             .value = literal()
         }
@@ -89,38 +89,47 @@ auto boolean_type(TargetUnitBuilder& builder) noexcept -> TargetTypeID {
 TEST_CASE("Declarations: reads clear attributes while writes retain names") {
     auto builder = TargetUnitBuilder();
     const auto type = boolean_type(builder);
+    const auto absent = builder.add_local(name("absent"));
+    const auto parameter = builder.add_local(name("parameter"));
+    const auto unused = builder.add_local(name("unused"));
+    const auto updated = builder.add_local(name("updated"));
+    const auto written = builder.add_local(name("written"));
+    const auto returned = builder.add_local(name("returned"));
     auto body = std::vector<TargetStmt>();
-    body.push_back(local("returned", type));
-    body.push_back(local("written", type));
-    body.push_back(local("updated", type));
-    body.push_back(local("unused", type));
-    body.push_back(assignment("written"));
-    body.push_back(assignment("parameter"));
+    body.push_back(local(returned, type));
+    body.push_back(local(written, type));
+    body.push_back(local(updated, type));
+    body.push_back(local(unused, type));
+    body.push_back(assignment(written));
+    body.push_back(assignment(parameter));
     body.push_back(target_lowering_statement(
-        TargetUpdateStmt {.op = TargetUpdateOperator::Increment, .target = reference("updated")}
+        TargetUpdateStmt {.op = TargetUpdateOperator::Increment, .target = reference(updated)}
     ));
-    body.push_back(
-        target_lowering_statement(TargetReturnStmt {.expression = reference("returned")})
-    );
-    const auto parameters = std::array {name("parameter"), name("absent")};
-    CHECK(finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false});
+    body.push_back(target_lowering_statement(TargetReturnStmt {.expression = reference(returned)}));
+    const auto parameters = std::array {parameter, absent};
+    CHECK(finish_body_declarations(body, parameters, {}) == std::vector<bool> {true, false});
     CHECK(flags(body) == std::vector<bool> {false, true, true, true});
 }
 
 TEST_CASE("Declarations: sibling declarations and lambda parameters have lexical identities") {
     auto builder = TargetUnitBuilder();
     const auto type = boolean_type(builder);
+    const auto outer = builder.add_local(name("outer"));
+    const auto shadowed = builder.add_local(name("shadowed"));
+    const auto parameter = builder.add_local(name("shadowed"));
+    const auto left_local = builder.add_local(name("same"));
+    const auto right_local = builder.add_local(name("same"));
     auto body = std::vector<TargetStmt>();
-    body.push_back(local("outer", type));
-    body.push_back(local("shadowed", type));
+    body.push_back(local(outer, type));
+    body.push_back(local(shadowed, type));
     auto lambda_body = std::vector<TargetStmt>();
-    lambda_body.push_back(read("outer"));
-    lambda_body.push_back(read("shadowed"));
+    lambda_body.push_back(read(outer));
+    lambda_body.push_back(read(parameter));
     body.push_back(target_lowering_statement(
         TargetExprStmt {
             .expression = {
                 .value = TargetLambdaExpr {
-                    .parameters = {{.name = name("shadowed"), .type = type}},
+                    .parameters = {{.local = parameter, .type = type}},
                     .result = type,
                     .body = std::move(lambda_body)
                 }
@@ -128,29 +137,34 @@ TEST_CASE("Declarations: sibling declarations and lambda parameters have lexical
         }
     ));
     auto left = std::vector<TargetStmt>();
-    left.push_back(local("same", type));
-    left.push_back(read("same"));
+    left.push_back(local(left_local, type));
+    left.push_back(read(left_local));
     auto right = std::vector<TargetStmt>();
-    right.push_back(local("same", type));
+    right.push_back(local(right_local, type));
     auto branches = std::vector<TargetIfBranch>();
     branches.push_back({.condition = literal(), .body = std::move(left)});
     body.push_back(target_lowering_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, true, false, true});
 }
 
 TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
     auto builder = TargetUnitBuilder();
     const auto type = boolean_type(builder);
+    const auto step = builder.add_local(name("step"));
+    const auto body_step = builder.add_local(name("step"));
+    const auto index = builder.add_local(name("index"));
+    const auto range = builder.add_local(name("range"));
+    const auto element = builder.add_local(name("range"));
     auto body = std::vector<TargetStmt>();
-    body.push_back(local("step", type));
+    body.push_back(local(step, type));
     auto loop_body = std::vector<TargetStmt>();
-    loop_body.push_back(local("step", type));
-    loop_body.push_back(read("index"));
+    loop_body.push_back(local(body_step, type));
+    loop_body.push_back(read(index));
     auto steps = std::vector<TargetForStep>();
-    steps.push_back({.value = TargetDiscardStmt {.expression = reference("step")}});
+    steps.push_back({.value = TargetDiscardStmt {.expression = reference(step)}});
     body.push_back(target_lowering_statement(
         TargetForStmt {
             .initializer =
@@ -159,7 +173,7 @@ TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
                         TargetVariableStmt {
                             .binding = TargetVariableBinding::MutableValue,
                             .maybe_unused = true,
-                            .name = name("index"),
+                            .local = index,
                             .type = type,
                             .initializer = literal()
                         }
@@ -169,20 +183,20 @@ TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
             .body = std::move(loop_body)
         }
     ));
-    body.push_back(local("range", type));
+    body.push_back(local(range, type));
     auto iteration = std::vector<TargetStmt>();
-    iteration.push_back(read("range"));
+    iteration.push_back(read(element));
     body.push_back(target_lowering_statement(
         TargetRangeForStmt {
             .binding = TargetVariableBinding::ConstReference,
             .maybe_unused = true,
-            .name = name("range"),
+            .local = element,
             .type = type,
-            .range = reference("range"),
+            .range = reference(range),
             .body = std::move(iteration)
         }
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, false, true, false, false});
 }
 
@@ -203,6 +217,7 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
     );
 
     struct Query final {
+        const TargetUnit* unit = nullptr;
         std::size_t definitions = 0;
         std::size_t locals = 0;
 
@@ -216,10 +231,10 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
             const auto spelling = function->name.components().back().spelling();
             if (spelling == "forward" || spelling == "only_write") {
                 REQUIRE(function->parameters.size() == 1uz);
-                CHECK(function->parameters.front().name.has_value());
+                CHECK(function->parameters.front().local.has_value());
             } else if (spelling == "inactive" || spelling == "consume") {
                 REQUIRE(function->parameters.size() == 1uz);
-                CHECK_FALSE(function->parameters.front().name.has_value());
+                CHECK_FALSE(function->parameters.front().local.has_value());
             }
             return true;
         }
@@ -227,7 +242,10 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
         auto enter_statement(const TargetStmt& statement) noexcept -> bool {
             if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
                 ++locals;
-                CHECK(variable->maybe_unused == (variable->name.spelling() != "local"));
+                CHECK(
+                    variable->maybe_unused
+                    == (unit->local_name(variable->local).spelling() != "local")
+                );
             }
             return true;
         }
@@ -236,6 +254,7 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
     auto query = Query();
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
+        query.unit = &unit;
         CHECK(traverse_target_unit(unit.sections(), query));
     }
     CHECK(query.definitions == 7uz);

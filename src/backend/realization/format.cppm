@@ -22,7 +22,7 @@ auto realize_format(
 auto realize_writer_statements(
     ModuleLowering& context,
     const WriterFormat& format,
-    TargetIdentifier writer,
+    TargetLocalID writer,
     TargetExpr output,
     std::vector<TargetExpr> operands,
     std::vector<TargetExpr> text_sizes

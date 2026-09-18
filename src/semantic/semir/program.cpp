@@ -6,6 +6,7 @@ import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.program;
+import :semantic.semir.publication;
 import :semantic.semir.structured;
 import :semantic.semir.table;
 import :semantic.semir.type;
@@ -37,7 +38,15 @@ SemIRProgram::SemIRProgram(
       declaration_store(std::move(declarations)),
       body_store(std::move(bodies)),
       test_store(std::move(tests)),
-      test_stops(std::move(test_stops)) {}
+      test_stops(std::move(test_stops)) {
+    validate_semantic_storage(*this);
+    contents = compute_type_contents(type_store, declaration_store);
+}
+
+auto SemIRProgram::type_contents(TypeID type) const noexcept -> const TypeContents& {
+    static_cast<void>(type_store.type(type));
+    return contents.at(type.index());
+}
 
 auto SemIRProgram::may_stop_test(CallableID callable_id) const noexcept -> bool {
     static_cast<void>(declaration_store.callable(callable_id));

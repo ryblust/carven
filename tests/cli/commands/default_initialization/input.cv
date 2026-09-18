@@ -10,8 +10,25 @@ struct Values {
 
 const {
     println(Foo {});
-    println(Values { enabled: true });
+    println(
+        Values {
+            items: [
+                Foo {},
+                Foo {}
+            ],
+            enabled: true
+        }
+    );
 }
 
 println(Foo {});
-println(Values { enabled: true });
+
+println(
+    Values {
+        items: [
+            Foo {},
+            Foo {}
+        ],
+        enabled: true
+    }
+);

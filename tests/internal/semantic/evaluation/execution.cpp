@@ -21,7 +21,7 @@ public:
     ExecutionContext(
         ProgramDraft& draft,
         ProgramConstruction& construction,
-        ProgramModuleID module
+        ProgramModuleID module_id
     ) noexcept;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
@@ -38,17 +38,17 @@ public:
 private:
     ProgramDraft& draft;
     ProgramConstruction& construction;
-    ProgramModuleID module;
+    ProgramModuleID module_id;
 };
 
 ExecutionContext::ExecutionContext(
     ProgramDraft& draft,
     ProgramConstruction& construction,
-    ProgramModuleID module
+    ProgramModuleID module_id
 ) noexcept
     : draft(draft),
       construction(construction),
-      module(module) {}
+      module_id(module_id) {}
 
 auto ExecutionContext::write(ExecutionOutputStream, std::string_view bytes) noexcept -> void {
     output += bytes;
@@ -62,8 +62,11 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> {
     calls.push_back(function);
-    const auto body = co_await construction
-                          .ensure_function_body(function, module, draft.source_origin(origin).span);
+    const auto body = co_await construction.ensure_function_body(
+        function,
+        module_id,
+        draft.source_origin(origin).span
+    );
     REQUIRE(body.has_value());
     REQUIRE(draft.body_draft(*body).inputs.parameters.empty());
     co_return ExecutionCallBody {
@@ -95,9 +98,9 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     auto usage = ImportUsage(view.imports().size());
     auto construction = ProgramConstruction(draft, view, usage);
     REQUIRE(construction.run().has_value());
-    const auto module = view.modules().front().module_id;
-    const auto origin = draft.append_source_origin(draft.module_source(module), Span::at(0u));
-    auto context = ExecutionContext(draft, construction, module);
+    const auto module_id = view.modules().front().module_id;
+    const auto origin = draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
+    auto context = ExecutionContext(draft, construction, module_id);
     const auto evaluate = [&](std::string_view name,
                               ExecutionLimits limits = constant_execution_limits()) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);

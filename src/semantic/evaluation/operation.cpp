@@ -878,7 +878,6 @@ auto evaluate_text_intrinsic_constant_value(
             );
         }
         case TextIntrinsic::IsEmpty: return constant_boolean(values, result, bytes.empty());
-        case TextIntrinsic::New:
         case TextIntrinsic::FromStr:
         case TextIntrinsic::FromUTF8Unchecked:
         case TextIntrinsic::FromU32Unchecked:

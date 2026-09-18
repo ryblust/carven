@@ -10,8 +10,7 @@ auto verify_semantic_body(const SemIRBody& body, const SemIRProgram& program) no
 
 auto validate_global_semantic_contracts(
     const SemIRProgram& program,
-    AnalysisDiagnostics diagnostics,
-    std::span<const TypeContents> types
+    AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<void>;
 
 auto validate_declaration_surfaces(

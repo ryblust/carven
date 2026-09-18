@@ -12,28 +12,29 @@ import :semantic.semir.operation;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :support.task;
 import std;
 
 auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
-    -> void {
-    auto initializer = region(*value.initializer, LoweringDiscardResult {});
+    -> ContinuationTask<std::monostate> {
+    auto initializer = (co_await region(*value.initializer, LoweringDiscardResult {}));
     if (!initializer.continues()) {
         destination.scope(std::move(initializer));
-        return;
+        co_return {};
     }
     auto condition_statements = LoweringStmtBuilder();
     auto condition = value.condition.has_value()
-        ? condition_statements.accept(this->condition(*value.condition))
+        ? condition_statements.accept((co_await this->condition(*value.condition)))
         : std::optional<LoweringPredicate>(LoweringKnownBool {true});
     if (!condition_statements.continues()) {
         initializer.append(std::move(condition_statements));
         destination.scope(std::move(initializer));
-        return;
+        co_return {};
     }
     if (known_predicate(condition) == false) {
         initializer.append(std::move(condition_statements));
         destination.scope(std::move(initializer));
-        return;
+        co_return {};
     }
     const auto step = value.steps->statements.empty()
         ? std::nullopt
@@ -44,12 +45,13 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         .break_target = exit_target(LoweringExitKind::Break)
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
-    auto body_statements = region(*value.body, LoweringDiscardResult {});
+    auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}));
     current_loop = outer_loop;
     const auto continued = body_statements.exits().contains(continuation.target);
     const auto breaks = body_statements.exits().contains(continuation.break_target);
     const auto run_steps = body_statements.continues() || continued;
-    auto steps = run_steps ? region(*value.steps, LoweringDiscardResult {}) : LoweringStmtBuilder();
+    auto steps = run_steps ? (co_await region(*value.steps, LoweringDiscardResult {}))
+                           : LoweringStmtBuilder();
     const auto conditional = known_predicate(condition) != true;
     auto loop_condition = bool_expression(true);
     const auto direct_condition = condition_statements.empty();
@@ -93,28 +95,26 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         breaks || conditional
     );
     destination.scope(std::move(initializer));
+    co_return {};
 }
 
 auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
-    -> void {
+    -> ContinuationTask<std::monostate> {
     auto scope = LoweringStmtBuilder();
-    const auto index = names.fresh(TargetTemporaryNameKind::Operand);
+    const auto index = fresh_local(TargetTemporaryNameKind::Operand);
     const auto range_value = std::holds_alternative<RangeTypeValue>(
-        context.semantic()
-            .types()
-            .type(preparation.operation(value.source).operation.type.resolved())
-            .value
+        context.semantic().types().type(preparation.operation(value.source).type.resolved()).value
     );
-    auto iterable = scope.accept(operand(
+    auto iterable = scope.accept((co_await operand(
         {.expression = std::addressof(value.source),
          .use = range_value                      ? PreparedUse::OperandValue
              : value.access == AccessMode::Write ? PreparedUse::WritePlace
                                                  : PreparedUse::ReadBorrow,
          .demand = PreparedDemand::Value}
-    ));
+    )));
     if (!scope.continues()) {
         destination.scope(std::move(scope));
-        return;
+        co_return {};
     }
     const auto continuation = LoopContinuation {
         .step = std::nullopt,
@@ -122,7 +122,7 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
         .break_target = exit_target(LoweringExitKind::Break)
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
-    auto iteration = region(*value.body, LoweringDiscardResult {});
+    auto iteration = (co_await region(*value.body, LoweringDiscardResult {}));
     current_loop = outer_loop;
     static_cast<void>(iteration.consume_exit(continuation.target));
     static_cast<void>(iteration.consume_exit(continuation.break_target));
@@ -134,7 +134,7 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                     : !value.binding.has_value() ? TargetVariableBinding::ConstReference
                                                  : TargetVariableBinding::MutableValue,
                 .maybe_unused = true,
-                .name = value.binding.has_value() ? binding_names.at(*value.binding) : index,
+                .local = value.binding.has_value() ? binding_locals.at(*value.binding) : index,
                 .type = value.binding.has_value()
                     ? (value.access == AccessMode::Write
                            ? context.intrinsic_type(TargetSymbol::Auto)
@@ -146,10 +146,11 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
                              ))
                     : context.intrinsic_type(TargetSymbol::Auto),
                 .range = range_value ? TargetExpr {.value = TargetConstructionExpr {
-                    .type = context.lower_type(preparation.operation(value.source).operation.type.resolved()),
+                    .type = context.lower_type(preparation.operation(value.source).type.resolved()),
                     .initializer = target_expressions(std::move(*iterable))}} : std::move(*iterable),
                 .body = std::move(iteration).finish()
             }
         ));
     destination.scope(std::move(scope));
+    co_return {};
 }

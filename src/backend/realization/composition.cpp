@@ -11,6 +11,49 @@ import :support.invariant;
 import :support.unique_indirect;
 import std;
 
+LoweringStatements::LoweringStatements(LoweringStatements&& source) noexcept
+    : chunks(std::move(source.chunks)),
+      count(std::exchange(source.count, 0)) {}
+
+auto LoweringStatements::operator=(LoweringStatements&& source) noexcept -> LoweringStatements& {
+    chunks = std::move(source.chunks);
+    count = std::exchange(source.count, 0);
+    return *this;
+}
+
+auto LoweringStatements::empty() const noexcept -> bool {
+    return count == 0;
+}
+
+auto LoweringStatements::push_back(TargetStmt statement) noexcept -> void {
+    if (chunks.empty()) {
+        chunks.emplace_back();
+    }
+    chunks.back().push_back(std::move(statement));
+    ++count;
+}
+
+auto LoweringStatements::append(LoweringStatements source) noexcept -> void {
+    count += source.count;
+    chunks.splice(chunks.end(), source.chunks);
+    source.count = 0;
+}
+
+auto LoweringStatements::finish() && noexcept -> std::vector<TargetStmt> {
+    auto result = std::vector<TargetStmt>();
+    result.reserve(count);
+    for (auto& chunk : chunks) {
+        result.insert(
+            result.end(),
+            std::make_move_iterator(chunk.begin()),
+            std::make_move_iterator(chunk.end())
+        );
+    }
+    chunks.clear();
+    count = 0;
+    return result;
+}
+
 auto remaining_expression(LoweringResult result) noexcept -> std::optional<TargetExpr> {
     if (auto* expression = std::get_if<LoweringDirectExpression>(&result)) {
         return std::move(expression->expression);
@@ -57,22 +100,18 @@ auto LoweringStmtBuilder::append(LoweringStmtBuilder source) noexcept -> void {
     if (!continues()) {
         return;
     }
-    lowered.statements.insert(
-        lowered.statements.end(),
-        std::make_move_iterator(source.lowered.statements.begin()),
-        std::make_move_iterator(source.lowered.statements.end())
-    );
+    lowered.statements.append(std::move(source.lowered.statements));
     lowered.normal = source.lowered.normal;
     lowered.exits.merge(source.lowered.exits);
     lowered.has_declarations |= source.lowered.has_declarations;
 }
 
 auto LoweringStmtBuilder::attribute(const TargetAttribution& attribution) noexcept -> void {
-    for (auto& statement : lowered.statements) {
+    lowered.statements.visit([&](TargetStmt& statement) noexcept {
         if (std::holds_alternative<TargetGeneratedExpansionAttribution>(statement.attribution)) {
             statement.attribution = attribution;
         }
-    }
+    });
 }
 
 auto LoweringStmtBuilder::scope(LoweringStmtBuilder source, TargetAttribution attribution) noexcept
@@ -129,7 +168,7 @@ auto LoweringStmtBuilder::result_factory(TargetTypeID type, LoweringExitTarget y
         .value = TargetLambdaExpr {
             .parameters = {},
             .result = type,
-            .body = std::move(lowered.statements)
+            .body = std::move(lowered.statements).finish()
         }
     };
 }
@@ -198,5 +237,5 @@ auto LoweringStmtBuilder::consume_exit(LoweringExitTarget target) noexcept -> bo
 }
 
 auto LoweringStmtBuilder::finish() && noexcept -> std::vector<TargetStmt> {
-    return std::move(lowered.statements);
+    return std::move(lowered.statements).finish();
 }

@@ -26,7 +26,7 @@ test "String C++ boundary: dynamic views and aggregates can be read and retained
 
 test "String: global C++ lookup is independent of the builtin" {
     let native: ::String = ::String { 42 };
-    let local: String = String::new();
+    let local: String = String {};
     check(native.value == 42);
     check(local.is_empty());
 }

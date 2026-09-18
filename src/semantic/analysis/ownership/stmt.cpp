@@ -131,40 +131,39 @@ auto OwnershipBodyAnalyzer::statement(
                 co_return {};
             },
             [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
-                const auto selected = location(value.target);
-                if (!selected) {
-                    result = (co_await place(value.target, std::move(result.normal->state)));
-                    (co_await evaluate(value.value));
-                    if (result.normal
-                        && (!result.normal->value.callable_loans.empty()
-                            || !result.normal->value.captures.empty())) {
+                result = (co_await place(value.target, std::move(result.normal->state), false));
+                if (!result.normal) {
+                    co_return {};
+                }
+                const auto targets = result.normal->storage;
+                const auto previous = accesses.size();
+                for (const auto& target : targets) {
+                    write_access(target, value.target.origin);
+                    if (!target.path.empty() || value.compound) {
+                        require_available(result.normal->state, target, value.target.origin);
+                        accesses.push_back({target, false});
+                    }
+                }
+                (co_await evaluate(value.value));
+                accesses.resize(previous);
+                if (result.normal) {
+                    if (targets.empty()
+                        && tracked_borrows(result.normal->value, result.normal->state)) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,
                             "tracked borrows cannot be stored through a ptr",
                             source.origin
                         );
                     }
-                    co_return {};
-                }
-                const auto& target = *selected;
-                const auto whole = target.path.empty();
-                result = (co_await place(
-                    value.target,
-                    std::move(result.normal->state),
-                    !whole || value.compound.has_value()
-                ));
-                if (!result.normal.has_value()) {
-                    co_return {};
-                }
-                write_access(target, value.target.origin);
-                const auto previous = accesses.size();
-                if (!whole || value.compound.has_value()) {
-                    accesses.push_back({target, false});
-                }
-                (co_await evaluate(value.value));
-                accesses.resize(previous);
-                if (result.normal.has_value()) {
-                    store(result.normal->state, target, result.normal->value, source.origin);
+                    for (const auto& target : targets) {
+                        store(
+                            result.normal->state,
+                            target,
+                            result.normal->value,
+                            source.origin,
+                            targets.size() == 1uz
+                        );
+                    }
                 }
                 co_return {};
             },

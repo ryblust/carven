@@ -32,6 +32,31 @@ private:
     std::string_view source_origin;
     std::string output;
 
+    struct Node final {
+        std::variant<
+            ASTExprID,
+            ASTStmtID,
+            ASTTypeID,
+            ASTPatternID,
+            const std::vector<ASTInterpolationPart>*>
+            value;
+        std::string prefix;
+        bool is_last;
+        std::string field;
+    };
+
+    using Event = std::variant<std::string, Node>;
+    std::vector<Event> events;
+    auto drain() noexcept -> void;
+    auto render_parts(
+        const std::vector<ASTInterpolationPart>& parts,
+        std::string_view prefix
+    ) noexcept -> void;
+    auto render_parts_node(
+        const std::vector<ASTInterpolationPart>& parts,
+        std::string_view prefix
+    ) noexcept -> void;
+
     auto source_label(Span span) const noexcept -> std::string;
     auto append_line(std::string_view prefix, bool is_last, std::string_view label) noexcept
         -> void;
@@ -64,11 +89,23 @@ private:
         bool is_last,
         std::string_view field = {}
     ) noexcept -> void;
+    auto render_type_node(
+        ASTTypeID type,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
     auto render_expression(
         ASTExprID expression,
         std::string_view prefix,
         bool is_last,
         std::string_view field = {}
+    ) noexcept -> void;
+    auto render_expression_node(
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
     ) noexcept -> void;
     auto render_expression(
         const ASTInterpolationExpr& value,
@@ -219,6 +256,8 @@ private:
     ) noexcept -> void;
     auto render_statement(ASTStmtID statement, std::string_view prefix, bool is_last) noexcept
         -> void;
+    auto render_statement_node(ASTStmtID statement, std::string_view prefix, bool is_last) noexcept
+        -> void;
     auto render_literal(
         const ASTLiteral& literal,
         std::string_view prefix,
@@ -321,6 +360,8 @@ private:
     auto render_top_level_item(ASTItemID item, std::string_view prefix, bool is_last) noexcept
         -> void;
     auto render_pattern(ASTPatternID pattern, std::string_view prefix, bool is_last) noexcept
+        -> void;
+    auto render_pattern_node(ASTPatternID pattern, std::string_view prefix, bool is_last) noexcept
         -> void;
     auto render_for_header(
         const ASTForHeader& header,

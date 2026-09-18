@@ -93,7 +93,7 @@ auto ConstantStorage::take() noexcept -> std::vector<TargetItem> {
         TargetCompilerReason::ArtifactScaffolding,
         false
     );
-    auto module = namespace_item(
+    auto module_namespace = namespace_item(
         compilation.target()
             .names()
             .module_names(implementation->schedule.module_id)
@@ -104,7 +104,7 @@ auto ConstantStorage::take() noexcept -> std::vector<TargetItem> {
     );
     auto domain = namespace_item(
         compilation.target().names().domain_namespace(),
-        target_items(std::move(module)),
+        target_items(std::move(module_namespace)),
         TargetCompilerReason::ArtifactScaffolding,
         false
     );

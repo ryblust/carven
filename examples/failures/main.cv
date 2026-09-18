@@ -4,15 +4,13 @@ import .recovery using run_recovery;
 import .callbacks using run_callbacks;
 import .payloads using run_payloads;
 
-fn main() {
-    println("Basic failures");
-    run_intro();
-    println("Failure composition");
-    run_composition();
-    println("Recovery");
-    run_recovery();
-    println("Callbacks");
-    run_callbacks();
-    println("Failure payloads");
-    run_payloads();
-}
+println("Basic failures");
+run_intro();
+println("Failure composition");
+run_composition();
+println("Recovery");
+run_recovery();
+println("Callbacks");
+run_callbacks();
+println("Failure payloads");
+run_payloads();

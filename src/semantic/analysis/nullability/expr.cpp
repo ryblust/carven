@@ -1,7 +1,6 @@
 module carven:semantic.analysis.nullability.expr.impl;
 
 import :semantic.analysis.nullability.context;
-import :semantic.semir.constant_access;
 import :semantic.semir.initialization;
 import :support.visit;
 import std;
@@ -124,8 +123,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
     (co_await source.value.visit(
         Overloaded {
             [&](const SemDefault&) noexcept -> ContinuationTask<std::monostate> {
-                const auto types = PublishedConstantValues(program);
-                if (default_initialization(types, source.type.resolved())
+                if (default_initialization(program, source.type.resolved())
                     == DefaultInitialization::Native) {
                     invalidate_exposed(flow.normal->state);
                 }

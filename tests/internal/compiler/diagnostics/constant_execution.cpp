@@ -243,7 +243,7 @@ TEST_CASE("Compiler: constant blocks share control flow aggregates text and fail
         const {
             var values = [1, 2, 3];
             values[1] = read(true)?;
-            var text = String::new();
+            var text = String {};
             for value in values { text.append_format(f"{value},"); }
             try { read(false)?; } catch { Error(error) => { println(error.code); } }
             println(text);

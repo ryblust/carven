@@ -100,6 +100,7 @@ auto TargetRenderer::render_sections(const TargetUnitSections& sections) noexcep
 }
 
 auto TargetRenderer::render_unit() && noexcept -> LayoutDocument {
+    build_layouts();
     auto rendered = std::vector<LayoutNodeID>();
     rendered.reserve(unit.directive_groups().size() + 1uz);
     for (const auto& group : unit.directive_groups()) {

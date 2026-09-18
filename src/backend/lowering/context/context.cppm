@@ -100,6 +100,8 @@ public:
     auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
     auto lower_signature_result(CallableSignatureID signature, bool stops_test) noexcept
         -> TargetTypeID;
+    auto display_emitter(TypeID type, std::size_t depth = 0) noexcept -> TargetExpr;
+    auto take_display_helpers() noexcept -> std::vector<TargetItem>;
     auto is_void(TypeID id) const noexcept -> bool;
     auto is_integer(TypeID id) const noexcept -> bool;
 
@@ -117,12 +119,15 @@ private:
     std::flat_set<CallableID> required_callables;
     std::deque<CallableID> pending_callables;
     std::map<TypeID, TypeState> type_cache;
+    std::map<std::pair<TypeID, std::size_t>, TargetTypeID> display_types;
+    std::vector<TargetItem> display_helpers;
     std::map<std::pair<CallableSignatureID, bool>, TypeState> signature_result_cache;
 };
 
 auto target_child(TargetExpr expression) noexcept -> UniqueIndirect<TargetExpr>;
 auto name_expression(TargetName name) noexcept -> TargetExpr;
 auto name_expression(TargetIdentifier name) noexcept -> TargetExpr;
+auto name_expression(TargetLocalID local) noexcept -> TargetExpr;
 auto intrinsic_expression(TargetSymbol symbol) noexcept -> TargetExpr;
 auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexcept -> TargetExpr;
 auto target_expressions(TargetExpr value) noexcept -> std::vector<TargetExpr>;

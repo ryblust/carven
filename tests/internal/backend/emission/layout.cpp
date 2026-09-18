@@ -178,3 +178,22 @@ TEST_CASE("Layout: independent lines keep local choices across a wide continuati
     const auto root = builder.concat(std::move(rows));
     CHECK_EQ(finish(std::move(builder), root, 1uz), expected);
 }
+
+TEST_CASE("Layout: deep nesting keeps indentation bounded by the line width") {
+    auto builder = LayoutBuilder();
+    auto root = builder.text("value");
+    constexpr auto depth = 2000uz;
+    for (auto index = 0uz; index < depth; ++index) {
+        root = builder.concat(
+            {builder.text("("),
+             builder.indent(4, builder.concat({builder.line(), root})),
+             builder.line(),
+             builder.text(")")}
+        );
+    }
+    const auto rendered = finish(std::move(builder), root, 100);
+    CHECK_LT(rendered.size(), depth * 110uz);
+    for (const auto line : rendered | std::views::split('\n')) {
+        CHECK_LE(std::ranges::distance(line), 55);
+    }
+}

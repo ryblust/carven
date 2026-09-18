@@ -60,7 +60,7 @@ private:
 
     struct ConstantScope final {
         DeclResolver& resolver;
-        ProgramModuleID module;
+        ProgramModuleID module_id;
         ASTView syntax;
 
         auto resolve_name(std::string_view name, Span span) noexcept

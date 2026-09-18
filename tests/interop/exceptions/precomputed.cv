@@ -25,12 +25,12 @@ export(cpp) fn print_native_failure(invalid_utf8: bool) {
 }
 
 export(cpp) fn append_precomputed() {
-    var result = String::new();
+    var result = String {};
     result.append_format(f"{42:4096}");
 }
 
 export(cpp) fn append_dynamic(value: i32) {
-    var result = String::new();
+    var result = String {};
     result.append_format(f"{value:4096}");
 }
 

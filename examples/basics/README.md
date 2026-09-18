@@ -13,7 +13,8 @@ cents.
 handle both discount cases and bind the percentage payload. Both functions read
 an item without transferring ownership and return ordinary integer results.
 
-`main` prepares a fixed array and prints each line before the receipt totals.
+The top-level statements prepare a fixed array and print each line before the
+receipt totals.
 `let` keeps the items binding immutable; `var` permits the two accumulators to
 change. The array length is inferred from its literal, and the loop visits every
 item. The two lines exercise both discount cases.
@@ -47,9 +48,9 @@ Total in cents: 824
 ## Try a change
 
 - Add a third item. The array length and loop adapt to the new entry.
-- Change the pencil discount to `Discount::None`. Savings become zero and the
+- Change the pencil discount to `.None`. Savings become zero and the
   receipt total becomes 860 cents.
-- Change it to `Discount::Percent(25)`. Savings become 90 cents and the total
+- Change it to `.Percent(25)`. Savings become 90 cents and the total
   becomes 770 cents.
 - Remove a `match` arm to see the compiler report incomplete enum coverage.
 

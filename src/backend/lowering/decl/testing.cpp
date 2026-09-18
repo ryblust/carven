@@ -29,13 +29,13 @@ import std;
 
 namespace {
 
-auto test_context_member_call(std::string_view member, std::vector<TargetExpr> arguments) noexcept
-    -> TargetExpr {
+auto test_context_member_call(
+    TargetLocalID local,
+    std::string_view member,
+    std::vector<TargetExpr> arguments
+) noexcept -> TargetExpr {
     return call_expression(
-        member_expression(
-            name_expression(TargetNameAllocator::test_context()),
-            TargetIdentifier::from_spelling(member)
-        ),
+        member_expression(name_expression(local), TargetIdentifier::from_spelling(member)),
         std::move(arguments)
     );
 }
@@ -77,6 +77,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
 
 auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> tests) noexcept
     -> TargetItem {
+    const auto local = context.target().add_local(TargetNameAllocator::test_context());
     auto body = std::vector<TargetStmt>();
     const auto provenance_module =
         context.semantic().declarations().module_decl(context.active_module()).provenance_module;
@@ -87,6 +88,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         body.push_back(generated_statement(
             TargetExprStmt {
                 .expression = test_context_member_call(
+                    local,
                     "begin_case",
                     target_expressions(
                         string_expression(module_name, TargetStringLiteralKind::String),
@@ -106,7 +108,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         ));
         body.push_back(generated_statement(
             TargetExprStmt {
-                .expression = test_context_member_call("end_case", {}),
+                .expression = test_context_member_call(local, "end_case", {}),
             }
         ));
     }
@@ -114,7 +116,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().module_runner(context.active_module())},
             .parameters = target_parameters(
-                {.name = TargetNameAllocator::test_context(),
+                {.local = local,
                  .type =
                      context.reference_type(context.intrinsic_type(TargetSymbol::TestingContext)),
                  .default_value = std::nullopt}
@@ -138,21 +140,19 @@ auto first_program_module(const SemIRProgram& semantic) noexcept -> ModuleID {
 
 auto lower_process_entry(
     ModuleLowering& context,
-    bool accepts_arguments,
+    std::optional<std::array<TargetLocalID, 2>> arguments,
     std::vector<TargetStmt> body
 ) noexcept -> TargetItem {
     auto parameters = std::vector<TargetParameter>();
-    if (accepts_arguments) {
+    if (arguments) {
         const auto character = context.intrinsic_type(TargetSymbol::CChar, true);
         const auto character_pointer = context.pointer_type(character, true);
         const auto argument_vector = context.pointer_type(character_pointer);
         parameters = target_parameters(
-            {.name = TargetNameAllocator::process_argument_count(),
+            {.local = (*arguments)[0],
              .type = context.intrinsic_type(TargetSymbol::Int),
              .default_value = std::nullopt},
-            {.name = TargetNameAllocator::process_argument_vector(),
-             .type = argument_vector,
-             .default_value = std::nullopt}
+            {.local = (*arguments)[1], .type = argument_vector, .default_value = std::nullopt}
         );
     }
     return compiler_item(
@@ -182,7 +182,7 @@ auto lower_test_runner_header(
             TargetDecl {TargetFunctionDecl {
                 .name = TargetName {artifact.plan().names().module_runner(module_id)},
                 .parameters = target_parameters(
-                    {.name = TargetNameAllocator::test_context(),
+                    {.local = std::nullopt,
                      .type = context.reference_type(testing_context),
                      .default_value = std::nullopt}
                 ),
@@ -201,13 +201,14 @@ auto lower_test_runner_header(
             false
         ));
     }
-    const auto reporter = TargetIdentifier::from_spelling("reporter");
+    const auto reporter = context.target().add_local(TargetIdentifier::from_spelling("reporter"));
+    const auto local = context.target().add_local(TargetNameAllocator::test_context());
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
-            .name = TargetNameAllocator::test_context(),
+            .local = local,
             .type = testing_context,
             .initializer = TargetExpr {
                 .value = TargetConstructionExpr {
@@ -224,14 +225,14 @@ auto lower_test_runner_header(
             TargetExprStmt {
                 .expression = call_expression(
                     name_expression(std::move(name)),
-                    target_expressions(name_expression(TargetNameAllocator::test_context()))
+                    target_expressions(name_expression(local))
                 ),
             }
         ));
     }
     body.push_back(generated_statement(
         TargetReturnStmt {
-            .expression = test_context_member_call("result", {}),
+            .expression = test_context_member_call(local, "result", {}),
         }
     ));
     auto testing_items = std::vector<TargetItem>();
@@ -239,7 +240,7 @@ auto lower_test_runner_header(
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {TargetIdentifier::from_spelling("run_generated_tests")},
             .parameters = target_parameters({
-                .name = reporter,
+                .local = reporter,
                 .type = context.intrinsic_type(TargetSymbol::TestingReporter),
                 .default_value = intrinsic_expression(TargetSymbol::StdNullptr),
             }),
@@ -285,7 +286,7 @@ auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections
     ));
     return {
         .preamble = {},
-        .body = target_items(lower_process_entry(context, false, std::move(body))),
+        .body = target_items(lower_process_entry(context, std::nullopt, std::move(body))),
         .epilogue = {},
     };
 }

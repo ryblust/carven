@@ -1,9 +1,9 @@
 module carven:backend.realization.report.impl;
 
-import :backend.preparation.body;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
+import :backend.preparation.body;
 import :backend.realization.display;
 import :backend.realization.operation;
 import :backend.realization.realizer;
@@ -21,6 +21,7 @@ import :semantic.semir.type;
 import :source.provenance.ids;
 import :source.provenance;
 import :support.invariant;
+import :support.task;
 import :support.visit;
 import std;
 
@@ -28,15 +29,15 @@ auto BodyRealizer::lower_report(
     const SemTestReport& value,
     ProgramOriginID origin,
     LoweringStmtBuilder& destination
-) noexcept -> void {
+) noexcept -> ContinuationTask<std::monostate> {
     auto should_report = bool_expression(true);
-    const auto explanation = names.fresh(TargetTemporaryNameKind::TestValue);
+    const auto explanation = fresh_local(TargetTemporaryNameKind::TestValue);
     if (value.operand_sources) {
         destination.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
-                .name = explanation,
+                .local = explanation,
                 .type = context.intrinsic_type(TargetSymbol::RuntimeDisplayWriter),
                 .initializer = TargetExpr {
                     .value = TargetConstructionExpr {
@@ -56,21 +57,21 @@ auto BodyRealizer::lower_report(
                 .sources = *value.operand_sources
             };
         }
-        auto condition = destination.accept(operand(
+        auto condition = destination.accept((co_await operand(
             {.expression = std::addressof(**value.condition),
              .use = PreparedUse::OperandValue,
              .demand = PreparedDemand::Value}
-        ));
+        )));
         test_observation = previous;
         if (!condition) {
-            return;
+            co_return {};
         }
-        const auto observed = names.fresh(TargetTemporaryNameKind::Logic);
+        const auto observed = fresh_local(TargetTemporaryNameKind::Logic);
         destination.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = observed,
+                .local = observed,
                 .type = context.intrinsic_type(TargetSymbol::Bool),
                 .initializer = std::move(*condition)
             }
@@ -96,25 +97,23 @@ auto BodyRealizer::lower_report(
             : intrinsic_expression(TargetSymbol::StdNullopt)
     );
     if (value.message) {
-        auto message = destination.accept(operand(
+        auto message = destination.accept((co_await operand(
             {.expression = std::addressof(**value.message),
              .use = PreparedUse::ReadBorrow,
              .demand = PreparedDemand::Value}
-        ));
+        )));
         if (!message) {
-            return;
+            co_return {};
         }
         // Reporting is conditional; evaluating its source operands is eager.
         // Commit the residual message before entering the failure-only branch.
-        const auto observed = names.fresh(TargetTemporaryNameKind::Operand);
+        const auto observed = fresh_local(TargetTemporaryNameKind::Operand);
         destination.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
-                .name = observed,
-                .type = context.lower_type(
-                    preparation.operation(**value.message).operation.type.resolved()
-                ),
+                .local = observed,
+                .type = context.lower_type(preparation.operation(**value.message).type.resolved()),
                 .initializer = std::move(*message)
             }
         ));
@@ -123,7 +122,7 @@ auto BodyRealizer::lower_report(
         arguments.push_back(intrinsic_expression(TargetSymbol::StdNullopt));
     }
     if (!destination.continues()) {
-        return;
+        co_return {};
     }
     if (value.operand_sources) {
         arguments.push_back(call_member(name_expression(explanation), "result", {}));
@@ -140,7 +139,7 @@ auto BodyRealizer::lower_report(
     }
     if (!value.condition) {
         destination.append(std::move(report));
-        return;
+        co_return {};
     }
     destination.record_exits(report.exits());
     auto branches = std::vector<TargetIfBranch>();
@@ -150,6 +149,7 @@ auto BodyRealizer::lower_report(
         origin,
         TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
     ));
+    co_return {};
 }
 
 auto BodyRealizer::emit_test_exit(LoweringStmtBuilder& destination) noexcept -> void {
@@ -187,12 +187,12 @@ auto realize_observed_comparison(
     ModuleLowering& context,
     const SemBinary& operation,
     std::vector<TargetExpr> operands,
-    TargetIdentifier writer,
+    TargetLocalID writer,
     std::array<ProgramSpellingID, 2> sources
 ) noexcept -> TargetExpr {
     auto names = context.make_callable_name_allocator();
-    const auto left = names.fresh(TargetTemporaryNameKind::Operand);
-    const auto right = names.fresh(TargetTemporaryNameKind::Operand);
+    const auto left = context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
+    const auto right = context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetReturnStmt {
@@ -208,12 +208,12 @@ auto realize_observed_comparison(
     auto compare = TargetExpr {
         .value = TargetLambdaExpr {
             .parameters =
-                {{.name = left,
+                {{.local = left,
                   .type = context.reference_type(
                       context.lower_type(operation.left->type.resolved()),
                       true
                   )},
-                 {.name = right,
+                 {.local = right,
                   .type = context.reference_type(
                       context.lower_type(operation.right->type.resolved()),
                       true
@@ -223,7 +223,7 @@ auto realize_observed_comparison(
         }
     };
     auto arguments = std::vector<TargetExpr>();
-    arguments.push_back(name_expression(std::move(writer)));
+    arguments.push_back(name_expression(writer));
     arguments.push_back(
         realize_display(context, operation.left->type.resolved(), std::move(operands[0]))
     );
@@ -245,13 +245,13 @@ auto realize_observed_comparison(
 
 auto realize_observed_short_circuit(
     const ModuleLowering& context,
-    TargetIdentifier writer,
+    TargetLocalID writer,
     std::array<ProgramSpellingID, 2> sources,
     bool left,
     std::optional<TargetExpr> right
 ) noexcept -> TargetExpr {
     auto arguments = target_expressions(
-        name_expression(std::move(writer)),
+        name_expression(writer),
         bool_expression(left),
         right ? std::move(*right) : intrinsic_expression(TargetSymbol::StdNullopt)
     );

@@ -18,12 +18,11 @@ auto verify_semantic_body(const SemIRBody& body, const SemIRProgram& program) no
 
 auto validate_global_semantic_contracts(
     const SemIRProgram& program,
-    AnalysisDiagnostics diagnostics,
-    std::span<const TypeContents> types
+    AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<void> {
     auto failure = std::optional<AnalysisFailure>();
     const auto reject = [&](TypeID type, ProgramOriginID origin) noexcept {
-        if (!types[type.index()].callable_view) {
+        if (!program.type_contents(type).callable_view) {
             return;
         }
         failure =

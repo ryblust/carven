@@ -43,10 +43,10 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
             TargetMemberFunctionDecl {
                 .name = TargetOperatorName::Equality,
                 .parameters = target_parameters(
-                    {.name = std::nullopt,
+                    {.local = std::nullopt,
                      .type = context.reference_type(type, true),
                      .default_value = std::nullopt},
-                    {.name = std::nullopt,
+                    {.local = std::nullopt,
                      .type = context.reference_type(type, true),
                      .default_value = std::nullopt}
                 ),
@@ -128,7 +128,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         const auto& source = context.semantic().declarations().enum_case(sum_case.id);
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
             parameters.push_back(
-                {.name = TargetNameAllocator::enum_payload_field(index),
+                {.local = std::nullopt,
                  .type = context.lower_type(source.payload_types[index]),
                  .default_value = std::nullopt}
             );
@@ -153,10 +153,10 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             TargetMemberFunctionDecl {
                 .name = TargetOperatorName::Equality,
                 .parameters = target_parameters(
-                    {.name = std::nullopt,
+                    {.local = std::nullopt,
                      .type = context.reference_type(enum_type, true),
                      .default_value = std::nullopt},
-                    {.name = std::nullopt,
+                    {.local = std::nullopt,
                      .type = context.reference_type(enum_type, true),
                      .default_value = std::nullopt}
                 ),
@@ -192,10 +192,10 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 TargetMemberFunctionDecl {
                     .name = TargetOperatorName::Equality,
                     .parameters = target_parameters(
-                        {.name = std::nullopt,
+                        {.local = std::nullopt,
                          .type = context.reference_type(record_type, true),
                          .default_value = std::nullopt},
-                        {.name = std::nullopt,
+                        {.local = std::nullopt,
                          .type = context.reference_type(record_type, true),
                          .default_value = std::nullopt}
                     ),
@@ -241,16 +241,17 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             .const_specifier = false,
         }
     );
+    const auto input_storage = context.target().add_local(representation.storage_member);
     auto initializers = std::vector<TargetMemberInitializer>();
     initializers.push_back({
         .name = representation.storage_member,
-        .value = transfer_expression(name_expression(representation.storage_member)),
+        .value = transfer_expression(name_expression(input_storage)),
     });
     private_members.push_back(
         TargetConstructorDecl {
             .name = enum_name,
             .parameters = target_parameters(
-                {.name = representation.storage_member,
+                {.local = input_storage,
                  .type = context.reference_type(storage_type, false, true),
                  .default_value = std::nullopt}
             ),
@@ -332,9 +333,10 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         auto arguments = std::vector<TargetExpr>();
         const auto& source = context.semantic().declarations().enum_case(sum_case.id);
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
-            const auto name = TargetNameAllocator::enum_payload_field(index);
+            const auto name =
+                context.target().add_local(TargetNameAllocator::enum_payload_field(index));
             parameters.push_back(
-                {.name = name,
+                {.local = name,
                  .type = context.lower_type(source.payload_types[index]),
                  .default_value = std::nullopt}
             );

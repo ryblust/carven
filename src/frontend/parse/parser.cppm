@@ -86,12 +86,14 @@ private:
         explicit operator bool() const noexcept;
 
     private:
-        explicit DepthGuard(std::uint32_t* depth) noexcept;
+        explicit DepthGuard(std::uint32_t* depth, std::uint32_t previous = 0) noexcept;
         std::uint32_t* depth;
+        std::uint32_t previous;
 
         friend class Parser;
     };
 
+    static auto set_depth(std::uint32_t& depth, std::uint32_t value) noexcept -> DepthGuard;
     static auto enter_depth(std::uint32_t& depth) noexcept -> DepthGuard;
     auto enter_syntax_nesting() noexcept -> DepthGuard;
     auto preflight_delimiter_nesting() noexcept -> bool;

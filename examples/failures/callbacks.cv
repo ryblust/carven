@@ -7,19 +7,15 @@ struct LimitExceeded {
     limit: i32,
 }
 
-fn positive(amount: i32) -> i32 throw InvalidAmount {
-    return match amount {
-        ..=0 => throw InvalidAmount { amount: amount },
-        _ => amount,
-    };
-}
+fn positive(amount: i32) -> i32 throw InvalidAmount => match amount {
+    ..=0 => throw InvalidAmount { amount: amount },
+    _ => amount,
+};
 
 fn process(
     amount: i32,
     policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded
-) -> i32 throw InvalidAmount + LimitExceeded {
-    return policy(amount)?;
-}
+) -> i32 throw InvalidAmount + LimitExceeded => policy(amount)?;
 
 fn report(label: str, amount: i32, policy: fn(i32) -> i32 throw InvalidAmount + LimitExceeded) {
     println(label);

@@ -16,6 +16,7 @@ import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :semantic.visibility;
 import :source.batch;
@@ -40,24 +41,24 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
 
     const auto scenarios = std::array {
         Scenario {
-            .name = "empty construction",
-            .intrinsic = TextIntrinsic::New,
-            .result = BuiltinType::String,
-            .operand = std::nullopt,
+            .name = "borrowed view",
+            .intrinsic = TextIntrinsic::AsStr,
+            .result = BuiltinType::Str,
+            .operand = AccessMode::Read,
             .valid = true,
         },
         Scenario {
-            .name = "extra operand",
-            .intrinsic = TextIntrinsic::New,
-            .result = BuiltinType::String,
-            .operand = AccessMode::Read,
+            .name = "missing operand",
+            .intrinsic = TextIntrinsic::AsStr,
+            .result = BuiltinType::Str,
+            .operand = std::nullopt,
             .valid = false,
         },
         Scenario {
             .name = "wrong result",
-            .intrinsic = TextIntrinsic::New,
-            .result = BuiltinType::Str,
-            .operand = std::nullopt,
+            .intrinsic = TextIntrinsic::AsStr,
+            .result = BuiltinType::String,
+            .operand = AccessMode::Read,
             .valid = false,
         },
         Scenario {
@@ -122,12 +123,8 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
             if (scenario.operand) {
                 operands.push_back({
                     .access = *scenario.operand,
-                    .expression = body.make_expression(
-                        owning,
-                        lifetime,
-                        facts.origin,
-                        SemTextIntrinsic {.intrinsic = TextIntrinsic::New, .operands = {}}
-                    ),
+                    .expression =
+                        body.make_expression(owning, lifetime, facts.origin, SemDefault {}),
                 });
             }
             auto statements = std::vector<SemanticStatement>();

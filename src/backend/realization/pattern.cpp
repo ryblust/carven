@@ -17,6 +17,7 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :support.invariant;
+import :support.task;
 import :support.visit;
 import std;
 
@@ -37,28 +38,19 @@ auto PatternRealizer::subject_expression(const PatternSubject& subject) noexcept
 auto PatternRealizer::prepare(
     std::span<const PatternBindingType> bindings,
     LoweringStmtBuilder& destination
-) noexcept -> PatternState {
-    auto state =
-        PatternState {.matched = names.fresh(TargetTemporaryNameKind::Logic), .addresses = {}};
-    destination.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
-            .name = state.matched,
-            .type = context.intrinsic_type(TargetSymbol::Bool),
-            .initializer = bool_expression(false)
-        }
-    ));
+) noexcept -> PatternBindings {
+    auto result = PatternBindings {.addresses = {}};
     for (const auto& binding : bindings) {
-        const auto address = names.fresh(TargetTemporaryNameKind::Operand);
-        if (!state.addresses.emplace(binding.binding, address).second) {
+        const auto address =
+            context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
+        if (!result.addresses.emplace(binding.binding, address).second) {
             invariant_violation("pattern arm lists the same binding more than once");
         }
         destination.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
-                .name = address,
+                .local = address,
                 .type = context.pointer_type(context.target().intern_type(
                     {.value =
                          TargetIntrinsicType {
@@ -71,7 +63,7 @@ auto PatternRealizer::prepare(
             }
         ));
     }
-    return state;
+    return result;
 }
 
 auto PatternRealizer::branch(
@@ -87,84 +79,143 @@ auto PatternRealizer::branch(
     ));
 }
 
+auto PatternRealizer::combine(
+    ShortCircuitOperator operation,
+    LoweringPredicate left,
+    Lowered<LoweringPredicate> right,
+    LoweringStmtBuilder& destination
+) noexcept -> std::optional<LoweringPredicate> {
+    const auto conjunction = operation == ShortCircuitOperator::And;
+    if (const auto* known = std::get_if<LoweringKnownBool>(&left)) {
+        if (known->value != conjunction) {
+            return left;
+        }
+        return destination.accept(std::move(right));
+    }
+    if (right.statements.empty() && right.normal) {
+        if (const auto* known = std::get_if<LoweringKnownBool>(&*right.normal);
+            known != nullptr && known->value == conjunction) {
+            return left;
+        }
+        return LoweringDynamicBool {binary_expression(
+            predicate_expression(std::move(left)),
+            conjunction ? TargetBinaryOperator::LogicalAnd : TargetBinaryOperator::LogicalOr,
+            predicate_expression(std::move(*right.normal))
+        )};
+    }
+    const auto local = context.target().add_local(names.fresh(TargetTemporaryNameKind::Logic));
+    destination.emit(generated_statement(
+        TargetVariableStmt {
+            .binding = TargetVariableBinding::MutableValue,
+            .maybe_unused = false,
+            .local = local,
+            .type = context.intrinsic_type(TargetSymbol::Bool),
+            .initializer = predicate_expression(std::move(left))
+        }
+    ));
+    auto selected = LoweringStmtBuilder();
+    auto predicate = selected.accept(std::move(right));
+    if (predicate) {
+        selected.emit(generated_statement(
+            TargetAssignmentStmt {
+                .target = name_expression(local),
+                .op = TargetAssignmentOperator::Assign,
+                .value = predicate_expression(std::move(*predicate))
+            }
+        ));
+    }
+    auto condition = name_expression(local);
+    if (!conjunction) {
+        condition = prefix_expression(TargetPrefixOperator::LogicalNot, std::move(condition));
+    }
+    branch(std::move(condition), std::move(selected), destination);
+    return LoweringDynamicBool {name_expression(local)};
+}
+
 auto PatternRealizer::match(
     PatternID pattern_id,
     const PatternSubject& subject,
-    const PatternState& state,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
+    const PatternBindings& bindings
+) noexcept -> ContinuationTask<Lowered<LoweringPredicate>> {
     const auto& pattern = body.pattern(pattern_id);
-    const auto set = [&](TargetExpr value) noexcept {
-        destination.emit(generated_statement(
-            TargetAssignmentStmt {
-                .target = name_expression(state.matched),
-                .op = TargetAssignmentOperator::Assign,
-                .value = std::move(value)
-            }
-        ));
-    };
-    pattern.value.visit(
+    auto destination = LoweringStmtBuilder();
+    auto predicate = co_await pattern.value.visit(
         Overloaded {
-            [&](const WildcardPattern&) noexcept { set(bool_expression(true)); },
-            [&](const RangePattern& value) noexcept {
-                const auto read = [&](const std::optional<RangePatternBound>& part,
-                                      bool upper) noexcept -> std::optional<TargetExpr> {
+            [](const WildcardPattern&) static noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
+                co_return LoweringKnownBool {true};
+            },
+            [&](const RangePattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
+                const auto read =
+                    [&](const std::optional<RangePatternBound>& part,
+                        bool upper) noexcept -> ContinuationTask<std::optional<TargetExpr>> {
                     if (!part) {
-                        return std::nullopt;
+                        co_return std::nullopt;
                     }
                     if (part->constant) {
-                        return constant_expression(context, *part->constant);
+                        co_return constant_expression(context, *part->constant);
                     }
                     if (!bound) {
                         invariant_violation("dynamic range pattern has no bound realizer");
                     }
-                    return bound(pattern_id, upper, destination);
+                    co_return (co_await bound(pattern_id, upper, destination));
                 };
-                auto first = read(value.begin, false);
+                auto first = (co_await read(value.begin, false));
                 if (!destination.continues()) {
-                    return;
+                    co_return std::nullopt;
                 }
-                auto last = read(value.end, true);
+                auto last = (co_await read(value.end, true));
                 if (!destination.continues()) {
-                    return;
+                    co_return std::nullopt;
                 }
-                auto test = first ? binary_expression(
-                                        subject_expression(subject),
-                                        TargetBinaryOperator::GreaterEqual,
-                                        std::move(*first)
-                                    )
-                                  : bool_expression(true);
-                if (last) {
+                auto test = std::optional<TargetExpr>();
+                if (first) {
                     test = binary_expression(
-                        std::move(test),
-                        TargetBinaryOperator::LogicalAnd,
-                        binary_expression(
-                            subject_expression(subject),
-                            value.inclusive ? TargetBinaryOperator::LessEqual
-                                            : TargetBinaryOperator::Less,
-                            std::move(*last)
-                        )
+                        subject_expression(subject),
+                        TargetBinaryOperator::GreaterEqual,
+                        std::move(*first)
                     );
                 }
-                set(std::move(test));
+                if (last) {
+                    auto upper = binary_expression(
+                        subject_expression(subject),
+                        value.inclusive ? TargetBinaryOperator::LessEqual
+                                        : TargetBinaryOperator::Less,
+                        std::move(*last)
+                    );
+                    test = test ? binary_expression(
+                                      std::move(*test),
+                                      TargetBinaryOperator::LogicalAnd,
+                                      std::move(upper)
+                                  )
+                                : std::move(upper);
+                }
+                if (!test) {
+                    co_return LoweringKnownBool {true};
+                }
+                co_return LoweringDynamicBool {std::move(*test)};
             },
-            [&](const LiteralPattern& value) noexcept {
-                set(binary_expression(
+            [&](const LiteralPattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
+                co_return LoweringDynamicBool {binary_expression(
                     subject_expression(subject),
                     TargetBinaryOperator::Equal,
                     constant_expression(context, value.constant)
-                ));
+                )};
             },
-            [&](const TypeConstraintPattern& value) noexcept {
+            [&](const TypeConstraintPattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
                 if (value.type != pattern.type) {
                     invariant_violation("concrete type-constraint pattern changed its type");
                 }
-                set(bool_expression(true));
+                co_return LoweringKnownBool {true};
             },
-            [&](const BindingPattern& value) noexcept {
+            [&](const BindingPattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
                 destination.emit(generated_statement(
                     TargetAssignmentStmt {
-                        .target = name_expression(state.addresses.at(value.binding)),
+                        .target = name_expression(bindings.addresses.at(value.binding)),
                         .op = TargetAssignmentOperator::Assign,
                         .value = call_expression(
                             intrinsic_expression(TargetSymbol::StdAddressof),
@@ -172,24 +223,27 @@ auto PatternRealizer::match(
                         )
                     }
                 ));
-                set(bool_expression(true));
+                co_return LoweringKnownBool {true};
             },
-            [&](const OrPattern& value) noexcept {
-                set(bool_expression(false));
-                for (const auto alternative_id : value.alternatives) {
-                    auto candidate = LoweringStmtBuilder();
-                    match(alternative_id, subject, state, candidate);
-                    branch(
-                        prefix_expression(
-                            TargetPrefixOperator::LogicalNot,
-                            name_expression(state.matched)
-                        ),
+            [&](const OrPattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
+                auto result = std::optional<LoweringPredicate>(LoweringKnownBool {false});
+                for (const auto alternative : value.alternatives) {
+                    if (!result || known_predicate(result) == true) {
+                        break;
+                    }
+                    auto candidate = co_await match(alternative, subject, bindings);
+                    result = combine(
+                        ShortCircuitOperator::Or,
+                        std::move(*result),
                         std::move(candidate),
                         destination
                     );
                 }
+                co_return result;
             },
-            [&](const EnumCasePattern& value) noexcept {
+            [&](const EnumCasePattern& value) noexcept
+                -> ContinuationTask<std::optional<LoweringPredicate>> {
                 const auto& declaration =
                     context.semantic().declarations().enum_case(value.enum_case);
                 if (declaration.payload_types.size() != value.payload.size()) {
@@ -201,20 +255,21 @@ auto PatternRealizer::match(
                             .enumeration(declaration.owner)
                             .representation
                     )) {
-                    set(binary_expression(
+                    co_return LoweringDynamicBool {binary_expression(
                         subject_expression(subject),
                         TargetBinaryOperator::Equal,
                         enum_case_expression(context, value.enum_case, {})
-                    ));
-                    return;
+                    )};
                 }
-                const auto projection = names.fresh(TargetTemporaryNameKind::SuccessProjection);
+                const auto projection = context.target().add_local(
+                    names.fresh(TargetTemporaryNameKind::SuccessProjection)
+                );
                 const auto ordinal = enum_case_index(context.semantic(), value.enum_case);
                 destination.emit(generated_statement(
                     TargetVariableStmt {
                         .binding = TargetVariableBinding::ConstValue,
                         .maybe_unused = false,
-                        .name = projection,
+                        .local = projection,
                         .type =
                             context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
                         .initializer = call_member(
@@ -226,26 +281,35 @@ auto PatternRealizer::match(
                         )
                     }
                 ));
-                set(binary_expression(
-                    name_expression(projection),
-                    TargetBinaryOperator::NotEqual,
-                    intrinsic_expression(TargetSymbol::StdNullptr)
-                ));
+                auto result =
+                    std::optional<LoweringPredicate>(LoweringDynamicBool {binary_expression(
+                        name_expression(projection),
+                        TargetBinaryOperator::NotEqual,
+                        intrinsic_expression(TargetSymbol::StdNullptr)
+                    )});
                 for (auto index = 0uz; index < value.payload.size(); ++index) {
-                    auto child = LoweringStmtBuilder();
-                    match(
+                    if (!result || known_predicate(result) == false) {
+                        break;
+                    }
+                    auto child = co_await match(
                         value.payload[index],
                         {.root = projection,
                          .dereference_root = true,
                          .payload_index = static_cast<std::uint32_t>(index)},
-                        state,
-                        child
+                        bindings
                     );
-                    branch(name_expression(state.matched), std::move(child), destination);
+                    result = combine(
+                        ShortCircuitOperator::And,
+                        std::move(*result),
+                        std::move(child),
+                        destination
+                    );
                 }
+                co_return result;
             }
         }
     );
+    co_return std::move(destination).complete<LoweringPredicate>(std::move(predicate));
 }
 
 PatternRealizer::PatternRealizer(

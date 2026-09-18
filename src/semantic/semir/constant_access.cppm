@@ -1,7 +1,6 @@
 module carven:semantic.semir.constant_access;
 
 import :semantic.semir.constant;
-import :semantic.semir.contents;
 import :semantic.semir.identity;
 import :semantic.semir.type;
 import std;
@@ -67,5 +66,4 @@ public:
 
 private:
     const SemIRProgram& program;
-    mutable std::optional<std::vector<TypeContents>> contents;
 };

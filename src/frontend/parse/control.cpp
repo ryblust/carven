@@ -55,6 +55,7 @@ auto string_literal_value(const TokenLiteralValue& value) noexcept -> StringLite
 
 auto Parser::parse_expression_before_block() noexcept -> std::optional<ASTExprID> {
     const auto depth = enter_depth(block_boundary_depth);
+    const auto boundary = set_depth(expression_nesting, 0);
     const auto expression = parse_expression();
     return expression;
 }

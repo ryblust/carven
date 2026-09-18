@@ -1,5 +1,3 @@
 import .rates using shipping_cents;
 
-fn main() {
-    println("Shipping in cents:", shipping_cents(4));
-}
+println("Shipping in cents:", shipping_cents(4));

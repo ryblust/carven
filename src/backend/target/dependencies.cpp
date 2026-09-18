@@ -29,6 +29,7 @@ private:
     std::span<const TargetType> types;
     const TargetUnitSections& sections;
     std::vector<bool> visited_types;
+    std::vector<TargetTypeID> pending_types;
     std::flat_set<std::string> headers;
 };
 
@@ -46,7 +47,30 @@ auto TargetDependencyCollector::collect() noexcept -> std::vector<TargetDirectiv
     if (!traverse_target_unit(sections, *this)) {
         invariant_violation("target dependency traversal failed");
     }
-    return headers | std::views::transform([](const std::string& header) noexcept {
+    while (!pending_types.empty()) {
+        const auto id = pending_types.back();
+        pending_types.pop_back();
+        const auto& value = types[id.index()].value;
+        value.visit(
+            Overloaded {
+                [](const TargetDecltypeType&) static noexcept {},
+                [](const TargetNamedType&) static noexcept {},
+                [&](const TargetIntrinsicType& intrinsic) noexcept {
+                    visit_symbol(intrinsic.symbol);
+                },
+                [&](const TargetArrayType&) noexcept { include("array"); },
+                [&](const TargetFunctionType&) noexcept {
+                    visit_symbol(TargetSymbol::RuntimeFunctionRef);
+                },
+                [](const TargetPointerType&) static noexcept {},
+                [](const TargetReferenceType&) static noexcept {},
+            }
+        );
+        if (!visit_target_type_children(value, *this)) {
+            invariant_violation("target type dependency traversal failed");
+        }
+    }
+    return headers | std::views::transform([](const std::string& header) static noexcept {
                return TargetDirective {.bytes = std::format("#include <{}>", header)};
            })
         | std::ranges::to<std::vector>();
@@ -60,21 +84,8 @@ auto TargetDependencyCollector::visit_type(TargetTypeID id) noexcept -> bool {
         return true;
     }
     visited_types[id.index()] = true;
-    const auto& value = types[id.index()].value;
-    value.visit(
-        Overloaded {
-            [](const TargetDecltypeType&) static noexcept {},
-            [](const TargetNamedType&) static noexcept {},
-            [&](const TargetIntrinsicType& intrinsic) noexcept { visit_symbol(intrinsic.symbol); },
-            [&](const TargetArrayType&) noexcept { include("array"); },
-            [&](const TargetFunctionType&) noexcept {
-                visit_symbol(TargetSymbol::RuntimeFunctionRef);
-            },
-            [](const TargetPointerType&) static noexcept {},
-            [](const TargetReferenceType&) static noexcept {},
-        }
-    );
-    return visit_target_type_children(value, *this);
+    pending_types.push_back(id);
+    return true;
 }
 
 auto TargetDependencyCollector::enter_expression(
@@ -84,6 +95,7 @@ auto TargetDependencyCollector::enter_expression(
     expression.value.visit(
         Overloaded {
             [](const TargetNameExpr&) static noexcept {},
+            [](const TargetLocalExpr&) static noexcept {},
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
                 visit_symbol(intrinsic.symbol);
             },

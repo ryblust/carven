@@ -44,7 +44,7 @@ TEST_CASE("Const fn admission: supported definitions do not require a call site"
             return match value { 0 | 1 => 2, selected => selected, };
         })",
         R"(const fn text(input: str) -> String {
-            let empty = String::new();
+            let empty = String {};
             var result = String::from_str(input);
             if result.as_str().is_empty() { result.push('!'); }
             result.append("?");

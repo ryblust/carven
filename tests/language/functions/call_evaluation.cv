@@ -116,3 +116,35 @@ test "Evaluation: read-only owner projections retain backing across later effect
     check(container.text == "field");
     check(values[0] == "element");
 }
+
+fn captured_before_callback(value: i32) {
+    return [value](effect: fn() -> i32) -> i32 => pair(value, effect());
+}
+
+test "Evaluation: replacing a closure preserves its earlier captured operand" {
+    var closure = captured_before_callback(1);
+    let change = [&closure]() -> i32 {
+        closure = captured_before_callback(9);
+        return 2;
+    };
+    check(closure(change) == 12);
+}
+
+private fn captured_assignment(&target: i32) {
+    return [&target](effect: fn() -> i32) {
+        target = effect();
+    };
+}
+
+test "Evaluation: assignment selects a capture place before evaluating its value" {
+    var first = 1;
+    var second = 9;
+    var closure = captured_assignment(&first);
+    let change = [&closure, &second]() -> i32 {
+        closure = captured_assignment(&second);
+        return 2;
+    };
+    closure(change);
+    check(first == 2);
+    check(second == 9);
+}

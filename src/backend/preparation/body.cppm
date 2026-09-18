@@ -35,9 +35,15 @@ struct PreparedOperation final {
     const SemanticExpression& operation;
     bool executes_operation;
     bool requires_execution;
+    // A pending observation may change across later execution. Stable reads need no protection.
     bool reads_storage;
     std::vector<PreparedOperand> operands;
     std::unique_ptr<OperationPreparation> preparation;
+};
+
+struct ExpressionEffects final {
+    bool requires_execution;
+    bool reads_storage;
 };
 
 class BodyPreparation final {
@@ -45,7 +51,9 @@ public:
     BodyPreparation(const SemIRProgram& semantic, BodyID body) noexcept;
     auto body() const noexcept -> const SemIRBody&;
     // Propagation markers select their operand; all other operations retain identity.
-    auto operation(const SemanticExpression& source) const noexcept -> const PreparedOperation&;
+    static auto operation(const SemanticExpression& source) noexcept -> const SemanticExpression&;
+    auto prepare(const SemanticExpression& source) const noexcept -> PreparedOperation;
+    auto summary(const SemanticExpression& source) const noexcept -> const ExpressionEffects&;
 
 private:
     auto operands(const SemanticExpression& source) const noexcept -> std::vector<PreparedOperand>;
@@ -54,5 +62,5 @@ private:
     auto argument(const SemCallArgument& source) const noexcept -> PreparedOperand;
     const SemIRProgram& semantic;
     const SemIRBody& metadata;
-    std::unordered_map<const SemanticExpression*, PreparedOperation> operations;
+    std::unordered_map<const SemanticExpression*, ExpressionEffects> effects;
 };

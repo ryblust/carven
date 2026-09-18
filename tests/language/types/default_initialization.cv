@@ -52,8 +52,8 @@ const test "Defaults: scalar and owning defaults execute in constant contexts" {
     check(owned.is_empty());
     check(zero == 0);
     check(empty.is_empty());
-    let values = Defaults { number: 7 };
-    check(values.number == 7);
+    let values = Defaults {};
+    check(values.number == 0);
     check(values.text.is_empty());
     check(values.view.is_empty());
     check(values.character == '\0');
@@ -79,13 +79,12 @@ test "Defaults: nested aggregates retain independent initialized storage" {
     check(value.labels[1].is_empty());
     value.values[1] = 9;
     check(value.values == [0, 9, 0]);
-    let named = Defaults {
-        flag: true,
-        number: 8
+    let named = Selected {
+        count: 0,
+        choice:.Other
     };
-    let positional = Defaults { 8, true };
+    let positional = Selected { .Other, 0 };
     check(named == positional);
-    let chosen = Selected { choice: Choice::Other };
-    check(chosen.choice == .Other);
-    check(chosen.count == 0);
+    check(named.choice == .Other);
+    check(named.count == 0);
 }

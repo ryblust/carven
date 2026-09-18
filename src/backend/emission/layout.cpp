@@ -105,6 +105,49 @@ auto LayoutBuilder::finish(LayoutNodeID root) && noexcept -> LayoutDocument {
 
 namespace {
 
+// Keep continuation indentation within the output width even for deep syntax.
+auto nested_indent(std::size_t current, std::size_t added, std::size_t line_width) noexcept
+    -> std::size_t {
+    const auto limit = line_width / 2;
+    return current >= limit ? limit : current + std::min(added, limit - current);
+}
+
+// Children precede parents in the flat layout document. Only summaries whose
+// preferred form contains no line or indentation state change are reusable.
+auto preferred_widths(std::span<const LayoutNode> nodes) noexcept
+    -> std::vector<std::optional<std::size_t>> {
+    auto widths = std::vector<std::optional<std::size_t>>();
+    widths.reserve(nodes.size());
+    for (const auto& node : nodes) {
+        widths.push_back(node.value.visit(
+            Overloaded {
+                [](const LayoutText& text) static noexcept -> std::optional<std::size_t> {
+                    return text.value.size();
+                },
+                [&](const LayoutConcat& concat) noexcept -> std::optional<std::size_t> {
+                    auto total = 0uz;
+                    for (const auto child : concat.children) {
+                        const auto width = widths[child.value];
+                        if (!width || *width > std::numeric_limits<std::size_t>::max() - total) {
+                            return std::nullopt;
+                        }
+                        total += *width;
+                    }
+                    return total;
+                },
+                [&](const LayoutChoice& choice) noexcept {
+                    return widths[choice.alternatives.front().value];
+                },
+                [&](const LayoutFlatten& flatten) noexcept { return widths[flatten.child.value]; },
+                [](const auto&) static noexcept -> std::optional<std::size_t> {
+                    return std::nullopt;
+                },
+            }
+        ));
+    }
+    return widths;
+}
+
 struct LayoutCommand final {
     std::size_t indent;
     bool force_preferred_choices;
@@ -127,39 +170,91 @@ auto push_children(
     }
 }
 
-struct LayoutContinuation final {
-    std::span<const LayoutCommand> commands;
-    const LayoutContinuation* parent;
-};
-
 auto fits(
     std::span<const LayoutNode> nodes,
+    std::span<const std::optional<std::size_t>> widths,
     std::size_t line_width,
     std::size_t column,
     bool line_start,
     LayoutCommand first,
-    LayoutContinuation remaining
+    std::span<const LayoutCommand> remaining
 ) noexcept -> bool {
-    auto commands = std::vector<LayoutCommand> {first};
-    while (true) {
-        while (commands.empty() && remaining.commands.empty() && remaining.parent != nullptr) {
-            remaining = *remaining.parent;
+    constexpr auto end = std::numeric_limits<std::size_t>::max();
+
+    struct Link final {
+        LayoutCommand command;
+        std::size_t next;
+    };
+
+    struct Branch final {
+        std::span<const LayoutNodeID> alternatives;
+        std::size_t next_alternative;
+        std::size_t suffix;
+        std::size_t storage_mark;
+        std::size_t column;
+        bool line_start;
+        std::size_t indent;
+        std::span<const LayoutCommand> remaining;
+    };
+
+    auto links = std::vector<Link>();
+    auto branches = std::vector<Branch>();
+    auto cursor = end;
+    const auto push = [&](LayoutCommand command) noexcept {
+        links.push_back({command, cursor});
+        cursor = links.size() - 1;
+    };
+    push(first);
+    const auto retry = [&]() noexcept {
+        while (!branches.empty()) {
+            auto& branch = branches.back();
+            if (branch.next_alternative == branch.alternatives.size()) {
+                branches.pop_back();
+                continue;
+            }
+            links.resize(branch.storage_mark);
+            cursor = branch.suffix;
+            column = branch.column;
+            line_start = branch.line_start;
+            remaining = branch.remaining;
+            push({branch.indent, false, branch.alternatives[branch.next_alternative++]});
+            return true;
         }
-        if (commands.empty() && remaining.commands.empty()) {
+        return false;
+    };
+    while (true) {
+        if (cursor == end && remaining.empty()) {
             return true;
         }
         const auto command = [&]() noexcept {
-            if (!commands.empty()) {
-                const auto next = commands.back();
-                commands.pop_back();
-                return next;
+            if (cursor != end) {
+                const auto link = links[cursor];
+                cursor = link.next;
+                return link.command;
             }
-            const auto next = remaining.commands.back();
-            remaining.commands = remaining.commands.first(remaining.commands.size() - 1);
-            return next;
+            auto command = remaining.back();
+            remaining = remaining.first(remaining.size() - 1);
+            return command;
         }();
-        const auto& current = nodes[command.node_id.value];
-        const auto result = current.value.visit(
+        if (const auto width = widths[command.node_id.value];
+            command.force_preferred_choices && width.has_value()) {
+            if (*width == 0) {
+                continue;
+            }
+            if (line_start) {
+                column = command.indent;
+                line_start = false;
+            }
+            if (column > line_width || *width > line_width - column) {
+                if (!retry()) {
+                    return false;
+                }
+            } else {
+                column += *width;
+            }
+            continue;
+        }
+        const auto result = nodes[command.node_id.value].value.visit(
             Overloaded {
                 [&](const LayoutText& value) noexcept -> std::optional<bool> {
                     if (line_start) {
@@ -173,91 +268,70 @@ auto fits(
                     return std::nullopt;
                 },
                 [&](const LayoutRaw& value) noexcept -> std::optional<bool> {
-                    const auto line_break = value.bytes.find_first_of("\r\n");
-                    const auto width =
-                        line_break == std::string::npos ? value.bytes.size() : line_break;
+                    const auto newline = value.bytes.find_first_of("\r\n");
+                    const auto width = newline == std::string::npos ? value.bytes.size() : newline;
                     if (column > line_width || width > line_width - column) {
                         return false;
                     }
-                    if (line_break != std::string::npos) {
+                    if (newline != std::string::npos) {
                         return true;
                     }
                     column += width;
                     line_start = false;
                     return std::nullopt;
                 },
-                [](const LayoutLine&) static noexcept -> std::optional<bool> { return true; },
-                [](const LayoutSourceLocation&) static noexcept -> std::optional<bool> {
-                    return true;
+                [](const LayoutLine&) noexcept -> std::optional<bool> { return true; },
+                [](const LayoutSourceLocation&) noexcept -> std::optional<bool> { return true; },
+                [](const LayoutGeneratedLocation&) noexcept -> std::optional<bool> { return true; },
+                [&](const LayoutConcat& value) noexcept -> std::optional<bool> {
+                    for (const auto child : value.children | std::views::reverse) {
+                        push({command.indent, command.force_preferred_choices, child});
+                    }
+                    return std::nullopt;
                 },
-                [](const LayoutGeneratedLocation&) static noexcept -> std::optional<bool> {
-                    return true;
-                },
-                [&](const LayoutConcat& concatenation) noexcept -> std::optional<bool> {
-                    push_children(
-                        commands,
-                        concatenation,
-                        command.indent,
-                        command.force_preferred_choices
+                [&](const LayoutIndent& value) noexcept -> std::optional<bool> {
+                    push(
+                        {nested_indent(command.indent, value.width, line_width),
+                         command.force_preferred_choices,
+                         value.child}
                     );
                     return std::nullopt;
                 },
-                [&](const LayoutIndent& indent) noexcept -> std::optional<bool> {
-                    commands.push_back({
-                        .indent = command.indent + indent.width,
-                        .force_preferred_choices = command.force_preferred_choices,
-                        .node_id = indent.child,
-                    });
-                    return std::nullopt;
-                },
-                [&](const LayoutChoice& choice) noexcept -> std::optional<bool> {
+                [&](const LayoutChoice& value) noexcept -> std::optional<bool> {
                     if (command.force_preferred_choices) {
-                        commands.push_back({
-                            .indent = command.indent,
-                            .force_preferred_choices = true,
-                            .node_id = choice.alternatives.front(),
-                        });
-                        return std::nullopt;
+                        push({command.indent, true, value.alternatives.front()});
+                    } else {
+                        branches.push_back(
+                            {value.alternatives,
+                             1,
+                             cursor,
+                             links.size(),
+                             column,
+                             line_start,
+                             command.indent,
+                             remaining}
+                        );
+                        push({command.indent, false, value.alternatives.front()});
                     }
-                    for (const auto alternative : choice.alternatives) {
-                        const auto candidate = LayoutCommand {
-                            .indent = command.indent,
-                            .force_preferred_choices = false,
-                            .node_id = alternative,
-                        };
-                        if (fits(
-                                nodes,
-                                line_width,
-                                column,
-                                line_start,
-                                candidate,
-                                {.commands = commands, .parent = &remaining}
-                            )) {
-                            return true;
-                        }
-                    }
-                    return false;
-                },
-                [&](const LayoutFlatten& flatten) noexcept -> std::optional<bool> {
-                    commands.push_back({
-                        .indent = command.indent,
-                        .force_preferred_choices = true,
-                        .node_id = flatten.child,
-                    });
                     return std::nullopt;
                 },
-                [&](const LayoutResetIndent& reset) noexcept -> std::optional<bool> {
-                    commands.push_back({
-                        .indent = 0,
-                        .force_preferred_choices = command.force_preferred_choices,
-                        .node_id = reset.child,
-                    });
+                [&](const LayoutFlatten& value) noexcept -> std::optional<bool> {
+                    push({command.indent, true, value.child});
+                    return std::nullopt;
+                },
+                [&](const LayoutResetIndent& value) noexcept -> std::optional<bool> {
+                    push({0, command.force_preferred_choices, value.child});
                     return std::nullopt;
                 },
             }
         );
         if (result.has_value()) {
-            return *result;
+            if (*result) {
+                return true;
+            }
+            if (!retry()) {
+                return false;
+            }
         }
     }
 }
@@ -265,6 +339,7 @@ auto fits(
 } // namespace
 
 auto render_layout(const LayoutDocument& document, std::size_t line_width) noexcept -> std::string {
+    const auto widths = preferred_widths(document.nodes);
     auto output = std::string {};
     auto column = 0uz;
     auto line_start = true;
@@ -380,7 +455,7 @@ auto render_layout(const LayoutDocument& document, std::size_t line_width) noexc
                 },
                 [&](const LayoutIndent& indent) noexcept {
                     commands.push_back({
-                        .indent = command.indent + indent.width,
+                        .indent = nested_indent(command.indent, indent.width, line_width),
                         .force_preferred_choices = command.force_preferred_choices,
                         .node_id = indent.child,
                     });
@@ -404,11 +479,12 @@ auto render_layout(const LayoutDocument& document, std::size_t line_width) noexc
                         };
                         if (fits(
                                 document.nodes,
+                                widths,
                                 line_width,
                                 column,
                                 line_start,
                                 candidate,
-                                {.commands = commands, .parent = nullptr}
+                                commands
                             )) {
                             selected = alternative;
                             break;

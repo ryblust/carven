@@ -213,6 +213,22 @@ auto ASTDumper::render_type(
     bool is_last,
     std::string_view field
 ) noexcept -> void {
+    events.emplace_back(
+        Node {
+            .value = type_id,
+            .prefix = std::string(prefix),
+            .is_last = is_last,
+            .field = std::string(field)
+        }
+    );
+}
+
+auto ASTDumper::render_type_node(
+    ASTTypeID type_id,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
     const auto& type = ast.type(type_id);
     type.value.visit(
         Overloaded {

@@ -4,7 +4,7 @@ import :semantic.semir.initialization;
 import :support.invariant;
 import std;
 
-auto default_initialization(const ExecutionValueAccess& types, TypeID type) noexcept
+auto default_initialization(const SemIRProgram& program, TypeID type) noexcept
     -> DefaultInitialization {
     return query_default_initialization(
         type,
@@ -13,14 +13,14 @@ auto default_initialization(const ExecutionValueAccess& types, TypeID type) noex
             if (concrete == nullptr) {
                 invariant_violation("published default initialization has an unresolved type");
             }
-            return types.type_copy(*concrete);
+            return program.types().type(*concrete);
         },
         [&](StructID structure) noexcept {
-            const auto fields = types.struct_field_types(structure);
-            if (!fields) {
-                invariant_violation("default initialization requires completed field types");
+            auto fields = std::vector<ConstructionTypeRef>();
+            for (const auto& field : program.declarations().structure(structure).fields) {
+                fields.emplace_back(field.type);
             }
-            return std::vector<ConstructionTypeRef>(fields->begin(), fields->end());
+            return fields;
         }
     );
 }

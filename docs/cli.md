@@ -11,8 +11,7 @@ carven [--timings] <source-file>... [-- <arguments>...]
 carven compile [options...] <source-file>...
 carven check [--timings] <source-file>...
 carven interpret [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
-carven dump tokens <source-file>
-carven dump ast <source-file>
+carven dump [tokens|ast] [--timings] <source-file>
 ```
 
 `carven --help`, `carven compile --help`, `carven check --help`,
@@ -57,12 +56,13 @@ POSIX, termination by signal yields `128 + signal`.
 ## Timing reports
 
 `--timings` enables a human-readable report on standard error for `check`,
-`compile`, `interpret`, and direct native execution:
+`compile`, `interpret`, `dump`, and direct native execution:
 
 ```shell
 carven check --timings main.cv
 carven compile --timings main.cv -o emit
 carven interpret --timings main.cv
+carven dump --timings main.cv
 carven --timings main.cv -- argument
 ```
 
@@ -95,7 +95,9 @@ checked by the C++ compiler.
 
 `check` requires at least one source file. It accepts `--timings` and standalone
 `--help` and `-h`. Invocation, input, and analysis errors return status 1;
-success returns 0, including when warnings are reported.
+success returns 0, including when warnings are reported. Successful checks print
+`carven: check passed` on stderr. With `--timings`, the timing report adds the
+duration to this success message instead of printing it twice.
 
 ## Interpretation
 
@@ -265,14 +267,22 @@ The developer commands inspect one source file without performing semantic
 analysis or producing artifacts:
 
 ```shell
+carven dump path/to/file.cv
 carven dump tokens path/to/file.cv
 carven dump ast path/to/file.cv
 ```
 
+Without a kind, `dump` prints tokens followed by the syntax tree, separated by
+`Tokens` and `AST` headings. It loads and lexes the source once. `--timings`
+reports source loading, lexing, and parsing (when attempted) on stderr, including
+on failure. Invalid options do not produce a timing report.
+
 `dump tokens` prints the token stream after lexing. Lexical diagnostics are
 reported on standard error and make the command fail. `dump ast` lexes and
-parses the source, then prints the syntax tree when both stages succeed. Dump
-formatting is intended for inspection and may change between compiler versions.
+parses the source, then prints the syntax tree when both stages succeed. In the
+combined dump, lexical errors stop parsing, and parsing errors leave the already
+printed tokens intact without printing an AST. Dump formatting is intended for
+inspection and may change between compiler versions.
 
 ## Compile-time program output
 

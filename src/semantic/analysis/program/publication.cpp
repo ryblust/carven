@@ -4,8 +4,6 @@ import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
 import :semantic.analysis.validation;
-import :semantic.semir.contents;
-import :semantic.semir.publication;
 import std;
 
 auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
@@ -21,16 +19,14 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
         return std::unexpected(*failure);
     }
     const auto& program = *result;
-    validate_semantic_storage(program);
     for (const auto entry : program.bodies().entries()) {
         verify_semantic_body(entry.value, program);
     }
-    const auto types = compute_type_contents(program.types(), program.declarations());
-    auto checked = validate_global_semantic_contracts(program, diagnostics, types);
+    auto checked = validate_global_semantic_contracts(program, diagnostics);
     if (!checked) {
         return std::unexpected(checked.error());
     }
-    checked = analyze_body_batch(program, diagnostics, types);
+    checked = analyze_body_batch(program, diagnostics);
     if (!checked) {
         return std::unexpected(checked.error());
     }

@@ -2,6 +2,7 @@ module carven:semantic.semir.program;
 
 import :semantic.semir.body;
 import :semantic.semir.constant;
+import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
@@ -66,6 +67,7 @@ public:
     auto identity() const noexcept -> ProgramIdentity;
     auto provenance() const noexcept -> CompilationProvenanceView;
     auto types() const noexcept -> const CanonicalTypeStore&;
+    auto type_contents(TypeID type) const noexcept -> const TypeContents&;
     auto constants() const noexcept -> const ConstantStore&;
     auto failure_sets() const noexcept -> const FailureSetStore&;
     auto callable_signatures() const noexcept -> const CallableSignatureStore&;
@@ -100,6 +102,7 @@ private:
     BodyStore body_store;
     TestStore test_store;
     std::vector<bool> test_stops;
+    std::vector<TypeContents> contents;
 
     friend class ProgramDraft;
 };

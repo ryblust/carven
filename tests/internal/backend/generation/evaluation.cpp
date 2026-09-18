@@ -703,7 +703,7 @@ TEST_CASE("Generation: builtin Read snapshots use unqualified value factory resu
         analyze_test_program(R"(
             fn advance(&value: i32) -> i32 { value += 1; return value; }
             fn format(&value: i32) -> String {
-                var output = String::new();
+                var output = String {};
                 return f"{if true {
                     output.append_format(f"{value}/{advance(&value)}");
                     value
@@ -815,7 +815,7 @@ TEST_CASE("Generation: local storage follows retained access rather than source 
             .expected = TargetVariableBinding::ConstValue
         },
         Case {
-            .name = "removed write",
+            .name = "unreachable write does not require mutable storage",
             .source =
                 "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
             .expected = TargetVariableBinding::ConstValue
@@ -830,12 +830,14 @@ TEST_CASE("Generation: local storage follows retained access rather than source 
         );
 
         struct Query final {
+            const TargetUnit& unit;
             TargetVariableBinding expected;
             std::size_t owners;
 
             auto enter_statement(const TargetStmt& statement) noexcept -> bool {
                 const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-                if (variable != nullptr && variable->name.spelling() == "storage") {
+                if (variable != nullptr
+                    && unit.local_name(variable->local).spelling() == "storage") {
                     ++owners;
                     CHECK(variable->binding == expected);
                 }
@@ -843,12 +845,14 @@ TEST_CASE("Generation: local storage follows retained access rather than source 
             }
         };
 
-        auto query = Query {.expected = scenario.expected, .owners = 0uz};
+        auto owners = 0uz;
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
+            auto query = Query {.unit = unit, .expected = scenario.expected, .owners = 0uz};
             REQUIRE(traverse_target_unit(unit.sections(), query));
+            owners += query.owners;
         }
-        CHECK(query.owners == 1uz);
+        CHECK(owners == 1uz);
     }
 }
 
@@ -1069,4 +1073,79 @@ TEST_CASE("Generation: a long expression retains each runtime operand once") {
         CHECK(traverse_target_unit(unit.sections(), query));
     }
     CHECK(query.calls == count);
+}
+
+TEST_CASE("Generation: stable scalar parameters need no snapshot before later effects") {
+    const auto parameter_access = std::array {false, true};
+    for (const auto writable : parameter_access) {
+        CAPTURE(writable);
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(
+                std::string(
+                    "fn effect() -> i32 { println(2); return 2; } "
+                    "fn consume(first: i32, second: i32) -> i32 => first + second; "
+                    "fn probe("
+                )
+                + (writable ? "&" : "") + "first: i32) -> i32 => consume(first, effect());"
+            ),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("stable_scalar")}
+        );
+
+        struct Query final {
+            std::size_t locals;
+
+            auto visit_variable(const TargetVariableStmt&) noexcept -> bool {
+                ++locals;
+                return true;
+            }
+        };
+
+        auto query = Query {.locals = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            REQUIRE(traverse_target_unit(unit.sections(), query));
+        }
+        CHECK(query.locals == (writable ? 1uz : 0uz));
+    }
+}
+
+TEST_CASE("Generation: simple patterns use predicates without mutable match state") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn classify(value: i32) -> i32 => match value {
+                0 | 1 => 3,
+                2..=4 => 5,
+                _ => 6,
+            };
+            struct Failure {}
+            fn failing() -> i32 throw Failure { throw Failure {}; }
+            fn recover() -> i32 => try { failing()? } catch { _ => 7, };
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t mutable_booleans;
+
+        auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+            if (const auto* type =
+                    std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
+                type != nullptr
+                && type->symbol == TargetSymbol::Bool
+                && variable.binding == TargetVariableBinding::MutableValue) {
+                ++mutable_booleans;
+            }
+            return true;
+        }
+    };
+
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit, .mutable_booleans = 0uz};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+        CHECK(query.mutable_booleans == 0uz);
+    }
 }

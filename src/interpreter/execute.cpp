@@ -234,10 +234,11 @@ auto Interpreter::trace(const ExecutionTraceEvent& event) noexcept -> void {
 }
 
 auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic> {
-    for (const auto module : program.declarations().modules()) {
-        if (!module.value.cpp_headers.empty() || !module.value.cpp_source_fragments.empty()) {
+    for (const auto module_declaration : program.declarations().modules()) {
+        if (!module_declaration.value.cpp_headers.empty()
+            || !module_declaration.value.cpp_source_fragments.empty()) {
             reject(
-                module.value.origin,
+                module_declaration.value.origin,
                 "native headers and source fragments are not supported by the interpreter"
             );
         }

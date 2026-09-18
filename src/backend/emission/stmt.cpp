@@ -33,7 +33,7 @@ auto update_spelling(TargetUpdateOperator op) noexcept -> std::string_view {
 
 } // namespace
 
-auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> LayoutNodeID {
+auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept -> LayoutNodeID {
     const auto rendered = statement.value.visit(
         Overloaded {
             [&](const TargetExprStmt& value) noexcept {
@@ -66,7 +66,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                      render_type(value.type, constant),
                      text(suffix),
                      text(" "),
-                     render_identifier(value.name)}
+                     render_identifier(value.local)}
                 );
                 const auto right = concat({text("= "), render_expression(value.initializer)});
                 const auto declaration = concat(
@@ -159,7 +159,7 @@ auto TargetRenderer::render_statement(const TargetStmt& statement) noexcept -> L
                      text(value.maybe_unused ? "[[maybe_unused]] " : ""),
                      render_type(value.type, constant),
                      text(reference ? "& " : " "),
-                     text(value.name.spelling()),
+                     render_identifier(value.local),
                      text(" : "),
                      render_expression(value.range),
                      text(") "),
@@ -242,7 +242,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                      render_type(value.type, constant),
                      text(suffix),
                      text(" "),
-                     render_identifier(value.name),
+                     render_identifier(value.local),
                      text(" = "),
                      render_expression(value.initializer)}
                 );
@@ -294,4 +294,8 @@ auto TargetRenderer::render_for_step(const TargetForStep& step) noexcept -> Layo
             },
         }
     );
+}
+
+auto TargetRenderer::render_statement(const TargetStmt& value) noexcept -> LayoutNodeID {
+    return statement_layouts.at(std::addressof(value));
 }

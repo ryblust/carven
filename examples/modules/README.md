@@ -5,8 +5,8 @@ Read `rates.cv` first. Its private `base_cents` constant precedes
 that module; the bare function is available within the module domain.
 
 Then read `main.cv`. Its `.rates` import selects `shipping_cents` from the
-adjacent logical module. `main` calls the calculation and prints the result
-with builtin `println`.
+adjacent logical module. A top-level statement calls the calculation and prints
+the result with builtin `println`.
 
 The build supplies both source files to Carven. Imports resolve within that
 explicit batch; they do not discover source files on disk.

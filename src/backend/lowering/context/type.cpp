@@ -114,7 +114,7 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
         std::get_if<BuiltinTypeValue>(&semantic().types().type(parameter.type).value);
     switch (parameter.access) {
         case AccessMode::Read:
-            if (plan().read_borrows_storage(parameter.type)) {
+            if (semantic().type_contents(parameter.type).read_borrows_storage()) {
                 return reference_type(base, true);
             }
             if (builtin != nullptr) {

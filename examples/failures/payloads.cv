@@ -7,7 +7,7 @@ struct ViewError {
 }
 
 fn owned_failure(text: str) throw TextError {
-    let error = TextError { message: String::from_str(text) };
+    let error = TextError { message: text as String };
     throw error;
 }
 
@@ -37,7 +37,7 @@ fn run_payloads() {
             TextError(error) if error.message.is_empty() => {},
             TextError(_) => rethrow,
         }
-        String::new()
+        String {}
     } catch {
         TextError(error) => error.message,
     };
@@ -45,7 +45,7 @@ fn run_payloads() {
 
     let taken = try {
         taken_failure()?;
-        String::new()
+        String {}
     } catch {
         TextError(error) => error.message,
     };
@@ -54,9 +54,9 @@ fn run_payloads() {
     var source: String = "borrowed detail";
     let saved = try {
         forward_failure(source)?;
-        String::new()
+        String {}
     } catch {
-        ViewError(error) => String::from_str(error.message),
+        ViewError(error) => error.message as String,
     };
     source.clear();
     println("Saved detail:", saved);

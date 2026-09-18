@@ -9,6 +9,7 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.target.expr;
+import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.traversal;
 import :backend.target;
@@ -20,13 +21,18 @@ namespace {
 struct DisplayQuery final {
     std::size_t nodes;
     std::size_t branches;
+    std::size_t pair_fields;
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
     auto enter_statement(const TargetStmt& statement) noexcept -> bool;
 };
 
 auto DisplayQuery::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
     -> bool {
-    static_cast<void>(expression);
+    if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
+        if (const auto* name = std::get_if<TargetIdentifier>(&member->name)) {
+            pair_fields += name->spelling() == "first" || name->spelling() == "second";
+        }
+    }
     ++nodes;
     return true;
 }
@@ -42,7 +48,7 @@ auto inspect(std::string source) noexcept -> DisplayQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("display")}
     );
-    auto query = DisplayQuery {.nodes = 0uz, .branches = 0uz};
+    auto query = DisplayQuery {.nodes = 0uz, .branches = 0uz, .pair_fields = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
@@ -77,4 +83,17 @@ TEST_CASE("Generation: known short circuit test operands need no selection branc
     const auto selected = inspect("fn verify(value: bool) { check(true && value); }");
     CHECK(skipped.branches == direct.branches);
     CHECK(selected.branches == direct.branches);
+}
+
+TEST_CASE("Generation: repeated structural displays share module definitions") {
+    const auto prefix = std::string("struct Pair { first: i32, second: i32 } ");
+    const auto single = inspect(prefix + "fn show(value: Pair) { println(value); }");
+    const auto repeated = inspect(
+        prefix
+        + "fn first(value: Pair) { println(value); } "
+          "fn second(value: Pair) { println(value); } "
+          "fn third(value: Pair) { println(value); }"
+    );
+    CHECK(single.pair_fields == 2uz);
+    CHECK(repeated.pair_fields == single.pair_fields);
 }

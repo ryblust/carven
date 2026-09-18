@@ -3,13 +3,11 @@ import .arrays using run_arrays;
 import .slices using run_slices;
 import .records using run_records;
 
-fn main() {
-    println("Text");
-    run_text();
-    println("Array values");
-    run_arrays();
-    println("Static slices");
-    run_slices();
-    println("Record tables");
-    run_records();
-}
+println("Text");
+run_text();
+println("Array values");
+run_arrays();
+println("Static slices");
+run_slices();
+println("Record tables");
+run_records();

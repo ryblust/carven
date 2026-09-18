@@ -155,7 +155,7 @@ TEST_CASE("Generation: array loops use established types and direct stable stora
             }
             if (const auto* range = std::get_if<TargetRangeForStmt>(&statement.value)) {
                 ++ranges;
-                CHECK(std::holds_alternative<TargetNameExpr>(range->range.value));
+                CHECK(std::holds_alternative<TargetLocalExpr>(range->range.value));
                 CHECK(range->binding == TargetVariableBinding::MutableReference);
             }
             return true;

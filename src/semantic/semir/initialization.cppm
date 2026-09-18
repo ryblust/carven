@@ -1,6 +1,6 @@
 module carven:semantic.semir.initialization;
 
-import :semantic.semir.constant_access;
+import :semantic.semir.program;
 import :semantic.semir.type;
 import std;
 
@@ -63,5 +63,5 @@ auto query_default_initialization(
 }
 
 // Referenced nominal declarations must have completed canonical field types.
-auto default_initialization(const ExecutionValueAccess& types, TypeID type) noexcept
+auto default_initialization(const SemIRProgram& program, TypeID type) noexcept
     -> DefaultInitialization;

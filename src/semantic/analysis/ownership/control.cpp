@@ -151,8 +151,9 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
     const auto subject_value = subject.normal ? subject.normal->value : OwnershipRelationships {};
     const auto previous_readers = storage_readers.size();
     protect_storage(subject_value);
+    const auto subject_places =
+        subject.normal ? subject.normal->storage : std::vector<OwnershipPlace>();
     auto remaining = std::move(subject.normal);
-    const auto subject_place = location(*value.subject);
     for (const auto& arm : value.arms) {
         if (!arm.reachable || !remaining.has_value()) {
             continue;
@@ -160,8 +161,8 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         auto selected = *remaining;
         bind_pattern(selected.state, arm.pattern, subject_value);
         const auto previous_access = accesses.size();
-        if (subject_place) {
-            accesses.push_back({*subject_place, true});
+        for (const auto& place : subject_places) {
+            accesses.push_back({place, true});
         }
         auto checked = (co_await pattern_condition(
             arm.pattern,
@@ -174,8 +175,8 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         result.exits.append_range(std::views::as_rvalue(checked.exits));
         if (accepted && arm.guard.has_value()) {
             const auto previous = accesses.size();
-            if (subject_place.has_value()) {
-                accesses.push_back({*subject_place, true});
+            for (const auto& place : subject_places) {
+                accesses.push_back({place, true});
             }
             auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
             accesses.resize(previous);
@@ -390,30 +391,35 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto range_value = std::holds_alternative<RangeTypeValue>(
         program.types().type(iterable.type.resolved()).value
     );
-    const auto source = range_value ? std::nullopt : location(iterable);
-    auto result = source ? (co_await place(iterable, std::move(state)))
-                         : (co_await expression(iterable, std::move(state)));
+    auto result = iterable.category == SemanticValueCategory::Place
+        ? (co_await place(iterable, std::move(state)))
+        : (co_await expression(iterable, std::move(state)));
     if (!result.normal.has_value()) {
         co_return result;
     }
     const auto previous = accesses.size();
     const auto previous_readers = storage_readers.size();
     protect_storage(result.normal->value);
-    auto elements = std::optional<OwnershipPlace>();
+    auto elements = std::vector<OwnershipPlace>();
     if (!range_value) {
         for (const auto& selected : result.normal->storage) {
             accesses.push_back({selected, false});
         }
     }
-    if (source.has_value()) {
-        elements = *source;
-        elements->path.push_back(std::nullopt);
+    const auto slice_value = std::holds_alternative<SliceTypeValue>(
+        program.types().type(iterable.type.resolved()).value
+    );
+    if (!range_value && !slice_value) {
+        elements = result.normal->storage;
+        for (auto& element : elements) {
+            element.path.push_back(std::nullopt);
+        }
     }
     const auto borrowed = value.binding.has_value()
         && value.access == AccessMode::Read
         && analysis.contents(body.binding(*value.binding).type).read_borrows_storage();
     if (borrowed) {
-        read_storage.emplace(
+        selected_storage.emplace(
             *value.binding,
             select_element_storage(
                 program.types(),
@@ -425,21 +431,38 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
         );
     } else if (value.binding.has_value()
                && value.access == AccessMode::Write
-               && elements.has_value()) {
-        aliases.emplace(*value.binding, *elements);
+               && !elements.empty()) {
+        selected_storage.emplace(*value.binding, elements);
     }
     const auto entry = result.normal->state;
     auto header = entry;
-    const auto initial_elements =
-        project_relationships(result.normal->value, OwnershipProjectionPath {std::nullopt});
+    auto initial_elements = OwnershipRelationships {};
+    if (slice_value) {
+        for (const auto& selected : select_element_storage(
+                 program.types(),
+                 iterable.type.resolved(),
+                 result.normal->storage,
+                 result.normal->value,
+                 std::nullopt
+             )) {
+            merge_relationships(
+                initial_elements,
+                project_relationships(entry.objects[selected.object].relationships, selected.path)
+            );
+        }
+    } else {
+        initial_elements =
+            project_relationships(result.normal->value, OwnershipProjectionPath {std::nullopt});
+    }
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         if (value.binding.has_value() && value.access != AccessMode::Write && !borrowed) {
-            const auto relationships = elements.has_value()
-                ? project_relationships(
-                      input.objects[elements->object].relationships,
-                      elements->path
-                  )
-                : initial_elements;
+            auto relationships = elements.empty() ? initial_elements : OwnershipRelationships {};
+            for (const auto& element : elements) {
+                merge_relationships(
+                    relationships,
+                    project_relationships(input.objects[element.object].relationships, element.path)
+                );
+            }
             store(
                 input,
                 binding_place(*value.binding),
@@ -485,7 +508,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     }
     if (value.binding.has_value()) {
         aliases.erase(*value.binding);
-        read_storage.erase(*value.binding);
+        selected_storage.erase(*value.binding);
     }
     accesses.resize(previous);
     restore_storage_readers(previous_readers);

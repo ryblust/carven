@@ -1,0 +1,5 @@
+==> Tokens <==
+Tokens "syntax_error.cv"
+├─ Fn [0, 2) "fn"
+├─ Identifier [3, 10) "invalid"
+└─ LeftParen [10, 11) "("

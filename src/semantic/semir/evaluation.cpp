@@ -133,7 +133,6 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             },
             [&](const SemTextIntrinsic& value) noexcept {
                 return text_intrinsic_writes(value.intrinsic)
-                        || value.intrinsic == TextIntrinsic::New
                         || value.intrinsic == TextIntrinsic::FromStr
                     ? required
                     : operands(value.operands.front().expression);

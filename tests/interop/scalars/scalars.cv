@@ -93,3 +93,41 @@ export(cpp) fn invoke_identity(value: i32) -> i32 {
     let identity: fn(i32) -> i32 = [](input) => input;
     return identity(value);
 }
+
+fn observe_scalar_order(first: i32, second: i32) -> i32 => first * 10 + second;
+
+fn observe_native_take_owner(first: i32) -> i32 {
+    let value = first;
+    return observe_scalar_order(value + 1, ::native_mutate_taken_scalar(&&value) as i32);
+}
+
+fn observe_native_take_parameter(&&value: i32) -> i32 {
+    return observe_scalar_order(value + 1, ::native_mutate_taken_scalar(&&value) as i32);
+}
+
+fn stable_native_read_category(value: i32) -> bool {
+    var later = 1;
+    return ::native_read_category(value, ::native_mutate_taken_scalar(&&later)) as bool;
+}
+
+test "C++ scalar boundary preserves reads before native Take and const reference access" {
+    check(observe_native_take_owner(1) == 22);
+    let value = 1;
+    check(observe_native_take_parameter(&&value) == 22);
+    check(stable_native_read_category(1));
+}
+
+private fn captured_receiver(&target: ::NativeCaptureReceiver) {
+    return [&target](effect: fn() -> i32) -> i32 => target.call(effect()) as i32;
+}
+
+test "C++ receiver place is selected before a later callback rebinds the capture" {
+    var first = ::NativeCaptureReceiver { 1 };
+    var second = ::NativeCaptureReceiver { 9 };
+    var closure = captured_receiver(&first);
+    let change = [&closure, &second]() -> i32 {
+        closure = captured_receiver(&second);
+        return 2;
+    };
+    check(closure(change) == 1);
+}

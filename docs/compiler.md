@@ -58,6 +58,11 @@ preserving effects, storage observations, and lifetimes. C++ supplies native typ
 properties, template instantiation, optimization, and machine code. Runtime
 support uses standard-library numerical conversion.
 
+`SemIRProgram` owns immutable `TypeContents` computed after storage topology
+validation. Published-program consumers read these facts through an identity-checked
+query. Constant execution during construction queries the draft's type facts,
+including types whose dependencies are still being completed.
+
 Semantic facts retain the identity and scope of the operation or storage they
 describe. Ownership, nullability, normal-completion constants, and slice extents
 have distinct propagation rules, described in their owning sections below.
@@ -174,16 +179,15 @@ source operand order for execution.
 ### Default initialization
 
 `semir.initialization` defines default availability and native-construction
-classification over type shapes. Construction and published-program adapters use
-the same traversal, including unresolved array and slice type terms during
-construction. Empty arrays have no element-construction requirement. Enum and
+classification over type shapes. Construction queries and published-program
+queries share the traversal, with unresolved array and slice type terms supported
+during construction. Published queries read `SemIRProgram` directly. Empty arrays have no element-construction requirement. Enum and
 callable types have no implicit selected value.
 
-Shared aggregate expression construction selects explicit fields in source order
-and appends defaulted fields in declaration order. Each omitted field becomes a
-typed `SemDefault` operation; published `SemStruct` values still contain every
-field exactly once. An empty `T {}` uses one `SemDefault` for the whole value.
-Default aggregates remain compact, independently of their array extents.
+Nonempty structure construction maps source expressions to declared fields in
+source order and requires every field exactly once. Published `SemStruct` values
+retain that order and mapping. An empty `T {}` uses one `SemDefault` for the whole
+value, keeping default aggregates compact independently of their array extents.
 
 The executor realizes defaults using ordinary owned values and aggregate slots,
 charging execution steps and aggregate work before materialization. Existing
@@ -261,11 +265,11 @@ operation; that path accepts no inferred failure terms.
 Callable recursion and recursive failure constraints retain their own identities
 and solving rules.
 
-`finish()` constructs a local `SemIRProgram`, releases the consumed draft and its
-syntax, imports, and construction solutions, then checks that final program.
-Checks run in this order: program facts and topology, body contracts, global
-semantic contracts, ownership, then local pointer nullability. All checks read
-`const SemIRProgram&`.
+`finish()` constructs a local `SemIRProgram`. Its constructor validates storage
+facts and topology, then computes type contents. After releasing the consumed
+draft, syntax, imports, and construction solutions, `finish()` checks body
+contracts, global semantic contracts, ownership, and local pointer nullability,
+in that order. All checks read `const SemIRProgram&`.
 Source diagnostics use a separate channel. Body contracts establish the parameter
 and binding relations used by global checks. Successful checks deliver the program.
 
@@ -293,7 +297,8 @@ Program IDs belong to one program. Binding, pattern, and lifetime IDs belong
 to one body. Name frames exist only during name resolution; bound operations
 retain binding identities and lifetimes. Owning query surfaces validate identity
 and range. Expression, statement, and region occurrences are recursively owned
-values, including during construction. Each binding selection creates a new
+values, including during construction. Their shared owning-edge topology supports
+iterative cleanup, including failed drafts and partially moved values. Each binding selection creates a new
 occurrence; projections own their receiver and index. Function names construct
 callable occurrences directly.
 Construction results read types and constants from their owned expressions.
@@ -605,15 +610,15 @@ construction site and one body.
 
 ## Ownership and backing relationships
 
-An ownership flow has an optional normal completion containing its state and
-result relationships. Every exit carries a state. Return exits carry result
-relationships, failure exits carry a failure type and payload relationships, and
-loop transfers distinguish break from continue.
+An ownership flow has an optional normal completion containing state, result
+relationships, and the storage selected during evaluation. Every exit carries a
+state. Return exits carry result relationships; failure exits carry a failure type
+and payload relationships; loop transfers distinguish break from continue.
 
 An ownership batch prepares local object descriptions, relative temporary
 positions, lifetime membership, and pattern acceptance once for each final body.
-Type contents are prepared once from the final type and declaration stores,
-without borrowing construction state. Coverage borrows pattern tables and stage
+Type contents are read from the completed semantic program, without borrowing
+construction state. Coverage borrows pattern tables and stage
 type facts; exhaustive queries and full diagnostics share its algorithm. Catch
 acceptance describes the current arm, independently of coverage accumulated by
 earlier arms.
@@ -621,8 +626,8 @@ earlier arms.
 Queries distinguish body-local objects from caller inputs. Availability belongs
 to an owner; holder relationships belong to storage positions within that owner.
 Query inputs describe aliases, accesses, availability, relationships, and
-execution state. Known field and element writes replace the relationships at
-that position; unknown element writes merge possible relationships. Type
+execution state. Writes replace relationships for a definite singleton target.
+Unknown elements and multiple possible targets merge possible relationships. Type
 contents identify Carven storage owners (arrays and Strings), closure owners,
 and callable views. These facts propagate to a fixed point over type
 dependencies. Slices and native template arguments propagate only callable-view
@@ -650,9 +655,12 @@ relationships of the values they receive. Callable borrowing uses the selected
 backing object's lifetime to distinguish full-expression storage. Actual writes check
 overlapping live loans; assignment checks after its RHS completes.
 
-Value captures carry copied relationships. Write captures refer to live
-storage, so consumers follow the target's current contents. Lexical regions and
-full expressions release their own objects on each normal and control exit.
+Value captures carry copied relationships. A call reads capture fields through
+the current closure holder. Write captures resolve their current target set each
+time the binding is evaluated. Selected storage remains attached to the evaluation
+result across later callbacks, including closure replacement. Writes through a
+set of possible targets retain each target's possible relationships. Lexical
+regions and full expressions release their objects on each normal and control exit.
 A result's destination lifetime does not change the execution position.
 Lifetime exits check that returned and failed borrowed values retain live backing.
 Catch selection and guards hold the original failure independently of copied
@@ -670,13 +678,32 @@ normalization preserves reachable storage, aliasing, access, and relative
 lifetimes. Diagnostic provenance selects a deterministic witness without becoming
 part of semantic identity.
 
+Recursive storage uses direct backing edges. Call normalization preserves exact
+identities for unambiguous interface roots and their inline callable/capture
+storage. Other reachable objects are grouped by allocation site
+`(BodyID, slot, input-or-local)`. A summary that may represent multiple objects
+retains that property through subsequent calls. Exact inline traversal stops at
+slice backing and ambiguous or unknown-index targets. The semantic restrictions
+on callable-view storage in nominal types and captures bound inline callable
+chains. Allocation identity is separate from diagnostic provenance.
+
+Availability and outlives facts join by conjunction; possible relationships join
+by union. A per-object modification bit distinguishes an untouched caller object
+from a write whose abstract edges happen to be unchanged. Query entry clears
+modification history. An unchanged completion leaves the caller object alone;
+a modified singleton is restored exactly, while a modified summary weakly updates
+all possible source objects. Summarized relationships restore all possible
+backing alternatives. Ambiguous same-site summaries retain possible loans;
+exact replacement requires a definite singleton target.
+
 The ownership solver tracks dependencies between call queries. Recursive calls
-read the current answer; changed answers trigger dependent analysis. Dependencies
-include unfinished answers and persist when call contexts change. Answers are
-not assumed to grow monotonically: a new context can temporarily remove an exit.
-Solving ends after all new queries and changed answers have propagated. Diagnosis
-then reads sealed answers without creating queries or mutating results. This
-state remains private to semantic analysis.
+read the current answer; changed answers trigger dependent analysis. Normal,
+typed-failure and test-stop answers join monotonically. The finite source sites,
+inline paths, distinguished roles, and graph relations bound query identity.
+An escaping callee-local relationship produces an invalid completion, stops
+solving, and replays the offending input with diagnostics enabled to retain
+the original access and lifetime witness. Diagnosis reads sealed answers without
+creating queries or mutating results. This state remains private to analysis.
 
 Unfinished calls retain direct place and borrowed-target accesses. Array iteration
 retains its source owner. Match guards

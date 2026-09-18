@@ -27,8 +27,8 @@ use the local compiler, and compile as C++20; they are not standalone packages.
 Initial configuration may need to obtain the Carven Xmake rule.
 
 Each example occupies one directory with a single `main.cv` entry and any helper
-modules beside it. The C++ host example uses `main.cpp` as its process entry and
-calls exported Carven functions.
+modules beside it. Top-level statements form the implicit program entry. The C++
+host example uses `main.cpp` as its process entry and calls exported Carven functions.
 
 ## Choose an example
 
@@ -37,7 +37,7 @@ constant computation, failures, and C++ integration, or choose a topic directly.
 
 | Example | What it demonstrates | Target |
 | --- | --- | --- |
-| [Hello World](helloworld/) | Entry point, string literal, and builtin output | `carven-example-hello-world` |
+| [Hello World](helloworld/) | Top-level entry, string literal, and builtin output | `carven-example-hello-world` |
 | [Shipping](modules/) | Relative imports and private constants | `carven-example-shipping` |
 | [Receipt](basics/) | Records, enums, match, arrays, loops, and calculation functions | `carven-example-receipt` |
 | [Inventory](ownership/) | Read, Write, Take, copying and reassignment | `carven-example-inventory` |

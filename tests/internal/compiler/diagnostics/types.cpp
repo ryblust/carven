@@ -199,17 +199,17 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
         },
         {
             .name = "positional construction missing field",
-            .source = "enum Choice { Item } struct Record { first: i32, second: Choice } "
+            .source = "struct Record { first: i32, second: i32 } "
                       "fn invalid() -> Record { return Record { 1 }; }",
-            .code = "CV-TYPE-DEFAULT-INITIALIZATION",
-            .primary_text = "Record",
+            .code = "CV-TYPE-CONSTRUCT-ARITY",
+            .primary_text = "1",
         },
         {
             .name = "named construction missing field",
-            .source = "enum Choice { Item } struct Record { first: i32, second: Choice } "
+            .source = "struct Record { first: i32, second: i32 } "
                       "fn invalid() -> Record { return Record { first: 1 }; }",
-            .code = "CV-TYPE-DEFAULT-INITIALIZATION",
-            .primary_text = "Record",
+            .code = "CV-TYPE-CONSTRUCT-ARITY",
+            .primary_text = "first: 1",
         },
         {
             .name = "empty literal mismatches nonzero expected array",

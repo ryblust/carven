@@ -12,7 +12,7 @@ enum TextFailure {
 }
 
 fn owned_failure(text: str) throw TextError {
-    let error = TextError { message: String::from_str(text) };
+    let error = TextError { message: text as String };
     throw error;
 }
 
@@ -36,10 +36,10 @@ fn forward_failure(text: String) throw ViewError {
 fn recovered(text: String, reject: bool) -> String {
     return try {
         forward_failure(text)?;
-        String::new()
+        String {}
     } catch {
-        ViewError(error) if reject => String::from_str(error.message),
-        ViewError(error) => String::from_str(error.message),
+        ViewError(error) if reject => error.message as String,
+        ViewError(error) => error.message as String,
     };
 }
 
@@ -51,14 +51,14 @@ test "String failures: owning payloads copy Take and survive rejected guards" {
             TextError(error) if error.message.is_empty() => {},
             TextError(_) => rethrow,
         }
-        String::new()
+        String {}
     } catch {
         TextError(error) => error.message,
     };
     check(result == "é我😀");
     let taken = try {
         taken_failure()?;
-        String::new()
+        String {}
     } catch {
         TextError(error) => error.message,
     };
@@ -73,9 +73,9 @@ test "String failures: borrowed payloads preserve caller backing and owning reco
     let owner: String = "enum";
     let result = try {
         throw TextFailure::Borrowed(owner);
-        String::new()
+        String {}
     } catch {
-        TextFailure(.Borrowed(v)) => String::from_str(v),
+        TextFailure(.Borrowed(v)) => v as String,
         TextFailure(.Owned(s)) => s,
     };
     check(result == "enum");
@@ -95,20 +95,23 @@ fn element_failure(source: [String; 2], index: usize) throw ViewError {
 
 test "String failures: projected Read arguments keep the caller's backing" {
     let expected = "a longer text keeps a dynamically allocated UTF-8 buffer: 我😀";
-    let source = TextSource { text: String::from_str(expected) };
+    let source = TextSource { text: expected as String };
     let field = try {
         field_failure(source)?;
-        String::new()
+        String {}
     } catch {
-        ViewError(error) => String::from_str(error.message),
+        ViewError(error) => error.message as String,
     };
     check(field.as_str() == expected);
-    let values = [String::new(), String::from_str(expected)];
+    let values = [
+        String {},
+        expected as String
+    ];
     let element = try {
         element_failure(values, 1usize)?;
-        String::new()
+        String {}
     } catch {
-        ViewError(error) => String::from_str(error.message),
+        ViewError(error) => error.message as String,
     };
     check(element.as_str() == expected);
 }

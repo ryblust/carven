@@ -22,10 +22,10 @@ local case_specs = {
             {args = {"check", "input.cv", "--stdout"}, exit_code = 1, stderr_contains = {"unknown check option", "carven check --help"}},
             {args = {"check", "missing.cv"}, exit_code = 1, stderr_contains = {"cannot read source file"}},
             {args = {"check", "syntax.cv"}, exit_code = 1, stderr_contains = {"CV-SYNTAX", "syntax.cv:1:12"}},
-            {args = {"check", "warning.cv"}, stderr_contains = {"CV-LINT-UNUSED-LOCAL"}},
+            {args = {"check", "warning.cv"}, stderr_ordered = {"CV-LINT-UNUSED-LOCAL", "carven: check passed\n"}},
             {args = {"check", "static_failure.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-TEST"}},
             {args = {"check", "invalid_test.cv"}, exit_code = 1, stderr_contains = {"CV-TYPE-MISMATCH", "invalid_test.cv:2:"}},
-            {args = {"check", "declarations.cv"}},
+            {args = {"check", "declarations.cv"}, stderr = "passed.txt"},
             {
                 args = {"check", "input.cv"}, exit_code = 1,
                 stderr_contains = {"CV-IMPORT-RESOLUTION", "input.cv"},
@@ -48,11 +48,11 @@ local case_specs = {
             ["../../output/state/preexisting.fixture"] = "blocked",
         },
         steps = {
-            {args = {"check", "input.cv"}, stdout = "compile.txt"},
+            {args = {"check", "input.cv"}, stdout = "compile.txt", stderr = "../check/passed.txt"},
             {
                 args = {"check", "--timings", "input.cv", "--timings", "declarations.cv"}, stdout = "compile.txt",
                 stderr_ordered = {"carven: check passed in ", "Source loading", "Lexing", "Parsing", "Semantic analysis"},
-                stderr_not_contains = {"C++ generation", "Program execution"},
+                stderr_not_contains = {"C++ generation", "Program execution", "carven: check passed\n"},
             },
             {
                 args = {"compile", "input.cv", "--timings", "-o", "emit"}, stdout = "compile.txt",
@@ -117,7 +117,7 @@ local case_specs = {
     ["commands/default_initialization"] = {
         inputs = {"input.cv"},
         steps = {
-            {args = {"check", "input.cv"}, stdout = "compile.txt"},
+            {args = {"check", "input.cv"}, stdout = "compile.txt", stderr = "../check/passed.txt"},
             {args = {"interpret", "input.cv"}, stdout = "run.txt"},
             {args = {"input.cv"}, stdout = "run.txt"},
         },
@@ -125,7 +125,7 @@ local case_specs = {
     ["commands/constant_blocks"] = {
         inputs = {"input.cv", "helper.cv"},
         steps = {
-            {args = {"check", "input.cv", "helper.cv"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
+            {args = {"check", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"compile", "input.cv", "helper.cv", "-o", "emit"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
             {args = {"input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
@@ -143,6 +143,28 @@ local case_specs = {
         inputs = {"input.cv", "lexical_error.cv", "syntax_error.cv"},
         steps = {
             {args = {"dump"}, exit_code = 1, stderr_contains = {"expected", "carven dump --help"}},
+            {args = {"dump", "input.cv"}, stdout = "all.txt"},
+            {args = {"dump", "--timings", "input.cv", "--timings"}, stdout = "all.txt",
+                stderr_ordered = {"carven: dump finished in ", "Source loading", "Lexing", "Parsing"},
+                stderr_not_contains = {"Semantic analysis"}},
+            {args = {"dump", "tokens", "input.cv", "--timings"}, stdout_contains = {"Tokens \"input.cv\""},
+                stderr_ordered = {"carven: dump finished in ", "Source loading", "Lexing"},
+                stderr_not_contains = {"Parsing", "Semantic analysis"}},
+            {args = {"dump", "--timings", "ast", "input.cv"}, stdout_contains = {"SourceModule"},
+                stderr_ordered = {"carven: dump finished in ", "Source loading", "Lexing", "Parsing"}},
+            {args = {"dump", "--timings", "missing.cv"}, exit_code = 1,
+                stderr_ordered = {"cannot read source file", "carven: dump failed in ", "Source loading"},
+                stderr_not_contains = {"Lexing", "Parsing"}},
+            {args = {"dump", "lexical_error.cv", "--timings"}, exit_code = 1, stdout = "lexical.txt",
+                stderr_ordered = {"CV-LEXICAL", "carven: dump failed in ", "Lexing"},
+                stderr_not_contains = {"Parsing"}},
+            {args = {"dump", "syntax_error.cv", "--timings"}, exit_code = 1, stdout = "syntax.txt",
+                stderr_ordered = {"CV-SYNTAX", "carven: dump failed in ", "Parsing"}},
+            {args = {"dump", "tokens"}, exit_code = 1, stderr_contains = {"expected"}},
+            {args = {"dump", "unknown", "input.cv"}, exit_code = 1, stderr_contains = {"unknown dump kind"}},
+            {args = {"dump", "--timings", "input.cv", "--unknown"}, exit_code = 1,
+                stderr_contains = {"unknown option"}, stderr_not_contains = {"carven: dump failed in "}},
+            {args = {"dump", "ast", "input.cv", "input.cv"}, exit_code = 1, stderr_contains = {"expected"}},
             {args = {"dump", "tokens", "input.cv"}, stdout_contains = {"Tokens \"input.cv\""}},
             {args = {"dump", "ast", "input.cv"}, stdout_contains = {"SourceModule"}},
             {

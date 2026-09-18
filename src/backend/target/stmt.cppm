@@ -4,6 +4,7 @@ import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
+import :support.tree_value;
 import std;
 
 struct TargetExprStmt final {
@@ -29,7 +30,7 @@ enum class TargetVariableBinding {
 struct TargetVariableStmt final {
     TargetVariableBinding binding;
     bool maybe_unused;
-    TargetIdentifier name;
+    TargetLocalID local;
     TargetTypeID type;
     TargetExpr initializer;
 };
@@ -150,13 +151,15 @@ struct TargetForStmt final {
 struct TargetRangeForStmt final {
     TargetVariableBinding binding;
     bool maybe_unused;
-    TargetIdentifier name;
+    TargetLocalID local;
     TargetTypeID type;
     TargetExpr range;
     std::vector<TargetStmt> body;
 };
 
-using TargetStmtValue = std::variant<
+struct TargetStatementCleanup;
+using TargetStmtValue = TreeValue<
+    TargetStatementCleanup,
     TargetExprStmt,
     TargetDiscardStmt,
     TargetReturnStmt,
@@ -174,6 +177,10 @@ using TargetStmtValue = std::variant<
     TargetWhileStmt,
     TargetForStmt,
     TargetRangeForStmt>;
+
+struct TargetStatementCleanup final {
+    static auto clear(TargetStmtValue& value) noexcept -> void;
+};
 
 struct TargetStmt final {
     TargetStmtValue value;

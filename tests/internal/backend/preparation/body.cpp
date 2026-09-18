@@ -28,11 +28,11 @@ TEST_CASE("Preparation: effects and operand access belong to semantic occurrence
         const auto preparation = BodyPreparation(semantic, entry.id);
         CHECK(std::addressof(preparation.body()) == std::addressof(entry.value));
         visit_semantic_nodes(entry.value.region(), [&](const SemanticExpression& source) noexcept {
-            const auto& expression = preparation.operation(source);
+            const auto& expression = preparation.prepare(source);
             if (const auto* marker = std::get_if<SemPropagate>(&source.value)) {
                 CHECK(
-                    std::addressof(expression)
-                    == std::addressof(preparation.operation(*marker->operand))
+                    std::addressof(preparation.summary(source))
+                    == std::addressof(preparation.summary(*marker->operand))
                 );
                 CHECK(std::addressof(expression.operation) == std::addressof(*marker->operand));
                 propagation = true;
@@ -44,7 +44,7 @@ TEST_CASE("Preparation: effects and operand access belong to semantic occurrence
                 if (binary->operation == BinaryOperator::Add && !addition) {
                     CHECK_FALSE(expression.executes_operation);
                     CHECK(expression.requires_execution);
-                    CHECK(preparation.operation(*inputs[0].expression).executes_operation);
+                    CHECK(preparation.prepare(*inputs[0].expression).executes_operation);
                     CHECK(inputs[0].expression == std::addressof(*binary->left));
                     CHECK(inputs[1].expression == std::addressof(*binary->right));
                     addition = true;
@@ -92,6 +92,6 @@ TEST_CASE("Preparation: a foreign occurrence cannot acquire another body's facts
     REQUIRE(foreign != nullptr);
     const auto preparation = BodyPreparation(semantic, *first);
     CHECK(expect_termination("foreign preparation occurrence", [&] noexcept {
-        static_cast<void>(preparation.operation(*foreign));
+        static_cast<void>(preparation.prepare(*foreign));
     }));
 }

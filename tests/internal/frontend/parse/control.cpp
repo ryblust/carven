@@ -139,3 +139,15 @@ TEST_CASE("Parser: semantic invalidity does not reject a grammar AST") {
         parse_valid(text);
     }
 }
+
+TEST_CASE("Parser: outer parentheses do not change nested block boundaries") {
+    auto expression = std::string("1");
+    for (auto depth = 0uz; depth < 60uz; ++depth) {
+        expression.insert(0, "if ready { (");
+        expression += ") } else { 2 }";
+    }
+    const auto result = parse_valid("fn nested(ready) => (" + expression + ");");
+    CHECK_EQ(root(result).items.size(), 1uz);
+    check_invalid("fn nested(ready) => (if ready { (if ready { 1 } else 2) } else { 3 });");
+    static_cast<void>(parse_valid("fn nested() => (if (Flag { true }).value { 1 } else { 2 });"));
+}

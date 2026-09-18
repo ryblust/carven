@@ -559,7 +559,7 @@ public:
     ) noexcept;
     auto run() noexcept -> AnalysisTask<void>;
     auto defer_constant_block(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         const ASTConstantBlock& source,
         BodyLocalNames locals = {}
     ) noexcept -> void;
@@ -575,7 +575,7 @@ public:
 
 private:
     struct PendingConstantBlock final {
-        ProgramModuleID module;
+        ProgramModuleID module_id;
         ASTConstantBlock syntax;
         BodyLocalNames locals;
     };

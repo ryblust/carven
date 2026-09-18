@@ -164,6 +164,13 @@ auto ASTDumper::render_ordinary_block(
 
 auto ASTDumper::render_pattern(ASTPatternID id, std::string_view prefix, bool is_last) noexcept
     -> void {
+    events.emplace_back(
+        Node {.value = id, .prefix = std::string(prefix), .is_last = is_last, .field = {}}
+    );
+}
+
+auto ASTDumper::render_pattern_node(ASTPatternID id, std::string_view prefix, bool is_last) noexcept
+    -> void {
     const auto& pattern = ast.pattern(id);
     const auto render_name = [&](const ASTQualifiedName& name,
                                  std::string_view item_prefix,

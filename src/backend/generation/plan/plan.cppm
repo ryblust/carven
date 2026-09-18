@@ -10,7 +10,6 @@ import :backend.target.origin;
 import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
-import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
@@ -205,7 +204,6 @@ public:
     auto identity() const noexcept -> TargetPlanIdentity;
     auto names() const noexcept -> const TargetNamePlan&;
     auto failure_abi() const noexcept -> const FailureABI&;
-    auto read_borrows_storage(TypeID type) const noexcept -> bool;
     auto artifacts() const noexcept -> TargetPlanTableEntries<TargetArtifactPlan, TargetArtifactID>;
     auto artifact_count() const noexcept -> std::size_t;
     auto artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan&;
@@ -219,7 +217,6 @@ private:
         TargetPlanIdentity identity,
         TargetNamePlan names,
         FailureABI failure_abi,
-        std::vector<TypeContents> type_contents,
         TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifacts
     ) noexcept;
 
@@ -227,7 +224,6 @@ private:
     TargetPlanIdentity plan_identity;
     TargetNamePlan name_plan;
     FailureABI failure_abi_plan;
-    std::vector<TypeContents> type_contents;
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifact_plans;
 
     friend class PlannedCompilation;

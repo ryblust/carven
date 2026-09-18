@@ -136,6 +136,7 @@ auto claim_spelling(
 
 auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
     switch (kind) {
+        case TargetTemporaryNameKind::Display:              return "display";
         case TargetTemporaryNameKind::Discard:              return "discard";
         case TargetTemporaryNameKind::Operand:              return "operand";
         case TargetTemporaryNameKind::MatchDone:            return "match_done";

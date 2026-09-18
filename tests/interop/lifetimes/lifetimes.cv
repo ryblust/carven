@@ -910,3 +910,50 @@ test "Lifetimes: named return operands copy native and aggregate values" {
     check(::lifetime_probe::native_take_copy_count() == 1);
     check(returned.text == "owned");
 }
+
+private fn crossed_step(value: i32, succeeds: bool) -> i32 throw Failure {
+    mark(value);
+    if !succeeds { throw Failure::Stop; }
+    return value;
+}
+
+private fn crossed_combine(first: bool, second: bool, third: i32) -> bool {
+    mark(9);
+    return first && second && third > 0;
+}
+
+private fn crossed_run(selected: bool, succeeds: bool) -> bool throw Failure {
+    return crossed_combine(
+        Owner { 1 }.probe() as bool,
+        if selected {
+            FixedOwner { 2 }.probe(crossed_step(3, succeeds)?, 4) as bool
+        } else {
+            false
+        },
+        crossed_step(5, true)?
+    );
+}
+
+test "crossed conditional owners preserve source cleanup order" {
+    reset();
+    try {
+        check(crossed_run(true, true)?);
+    } catch {
+        Failure(_) => fail("unexpected"),
+    }
+    check(matches("1 11 2 3 9 -2 5 9 -1 "));
+    reset();
+    try {
+        check(!crossed_run(false, true)?);
+    } catch {
+        Failure(_) => fail("unexpected"),
+    }
+    check(matches("1 11 5 9 -1 "));
+    reset();
+    try {
+        let _ = crossed_run(true, false)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("1 11 2 3 -2 -1 8 "));
+}

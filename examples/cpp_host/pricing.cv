@@ -1,5 +1,5 @@
 export(cpp) fn price_cents(quantity: i32) -> i32 {
-    let unit_price: i32 = match quantity {
+    let unit_price = match quantity {
         ..10 => 100,
         10.. => 90
     };

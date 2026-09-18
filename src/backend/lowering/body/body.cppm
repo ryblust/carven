@@ -15,7 +15,7 @@ struct TestBodyExit final {};
 using BodyExit = std::variant<CallableBodyExit, TestBodyExit>;
 
 struct BodyLoweringInputs final {
-    std::vector<TargetIdentifier> parameters;
+    std::vector<TargetLocalID> parameters;
     std::vector<TargetIdentifier> captures;
     BodyExit exit;
 };

@@ -16,7 +16,7 @@ const fn positive(value: i32) -> bool => value > 0;
 const fn extent() -> usize => 3usize;
 
 const fn make_label(count: i32) -> String {
-    var result = String::new();
+    var result = String {};
     for index in 0..count {
         let piece = f"{index:02}";
         result.append(piece);

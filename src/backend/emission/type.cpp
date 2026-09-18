@@ -9,7 +9,7 @@ auto TargetRenderer::render_type(TargetTypeID id, bool constant) noexcept -> Lay
     return render_type_layouts(id, constant).wrapping;
 }
 
-auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcept -> SyntaxLayouts {
+auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -> SyntaxLayouts {
     const auto& value = unit.type(id);
     auto rendered = value.value.visit(
         Overloaded {
@@ -115,4 +115,9 @@ auto TargetRenderer::render_type_layouts(TargetTypeID id, bool constant) noexcep
         }
     }
     return rendered;
+}
+
+auto TargetRenderer::render_type_layouts(TargetTypeID type, bool constant) noexcept
+    -> SyntaxLayouts {
+    return type_layouts.at(type.index()).value()[constant ? 1 : 0];
 }

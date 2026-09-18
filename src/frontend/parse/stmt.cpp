@@ -462,6 +462,7 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
     auto steps = std::vector<ASTForStep> {};
     if (!check(TokenKind::LeftBrace)) {
         const auto depth = enter_depth(block_boundary_depth);
+        const auto boundary = set_depth(expression_nesting, 0);
         while (!failed) {
             auto step = parse_for_step();
             if (!step) {

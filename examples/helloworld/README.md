@@ -1,6 +1,7 @@
 # Hello World
 
-`main` calls the builtin `println` with an ordinary string literal. It writes
+A top-level statement calls the builtin `println` with an ordinary string literal.
+It forms the implicit program entry and writes
 `Hello World` followed by a newline. No import is needed.
 
 From the repository root:

@@ -546,7 +546,7 @@ address stability, trailing NUL, and allocation count are unspecified.
 
 | Operation | Access and result |
 | --- | --- |
-| `String::new()` | Empty owning `String` |
+| `String {}` | Empty owning `String` |
 | `String::from_str(text: str)` | Read text; independent owning copy |
 | `s.len()` / `s.is_empty()` | Read receiver; `usize` / `bool` |
 | `s.as_str()` | Read receiver; borrowed `str` |
@@ -581,8 +581,8 @@ expressions and functions can construct owning String values, but a constant ini
 an owning text result to `str`; there is no stored owning String constant.
 String literal patterns, indexing, ordering, truthiness, concatenation,
 direct iteration, and access to C++ container members are unsupported.
-`String(...)`, `String { ... }`, and `String as str` are invalid. Iterate `s.bytes`
-or `s.chars` instead.
+Nonempty `String { ... }`, `String(...)`, and `String as str` are invalid.
+Iterate `s.bytes` or `s.chars`.
 
 Copying String creates independently owned content. Whole-owner Take transfers
 the value and makes its source unavailable. Read String parameters alias the
@@ -691,7 +691,7 @@ and destroying temporary values. Discarding the result still executes formatting
 Direct interpolation and interpolation in constant functions use the same
 supported builtin formatting subset in required constant contexts. For example,
 `const title = f"build-{42:04}";` produces static `str` text, and
-`const bytes = f"{'我'}".len();` produces `3usize`. Nested calls, `String::new()`,
+`const bytes = f"{'我'}".len();` produces `3usize`. Nested calls, `String {}`,
 `String::from_str(...)`, `.as_str()`, `.len()` and `.is_empty()` compose before
 initializer completion. Each constant interpolation is limited to 1 MiB of
 result text; unsupported formatting is diagnosed without runtime fallback.
@@ -990,7 +990,7 @@ function call, even when all arguments happen to be known.
 
 ```carven
 const fn label(count: i32) -> String {
-    var result = String::new();
+    var result = String {};
     for index in 0..count {
         result.append_format(f"{index:02}");
     }
@@ -1018,7 +1018,7 @@ with literal, integer range, enum-case, binding, wildcard and or patterns, inclu
 Recursion is allowed when signatures and bodies can be completed without a
 construction dependency cycle.
 
-Text operations include `String::new`, `String::from_str`, the equivalent
+Text operations include `String {}`, `String::from_str`, the owning
 `str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
 `push`, `clear`, and interpolation. Constant formatting accepts default integer, bool, char and
 text formatting, plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with
@@ -1245,15 +1245,16 @@ required. An annotated `fn(...) -> R` binding requests a view instead.
 A structure is a nominal product with ordered, uniquely named fields. Field
 access selects by name. Positional construction maps supplied values to fields
 in declaration order; named construction maps each initializer to its declared
-field. Supplied expressions execute once in source order. Omitted fields are
-then default-initialized in declaration order, including trailing positional
-fields. Duplicate, unknown, extra, or incompatible initializers remain invalid.
+field. Nonempty construction requires every field exactly once. Supplied
+expressions execute once in source order. An empty `T {}` requests default
+initialization of the whole value, with fields initialized in declaration order.
+Duplicate, unknown, extra, or incompatible initializers are invalid.
 
 ```carven
 struct Config { attempts: i32, enabled: bool, label: String }
 let empty = Config {};                    // 0, false, empty String
-let named = Config { enabled: true };      // 0, true, empty String
-let positional = Config { 3, true };       // 3, true, empty String
+let named = Config { attempts: 3, enabled: true, label: String {} };
+let positional = Config { 3, true, String {} };
 ```
 
 Default initialization is a type operation with these values:
@@ -1273,8 +1274,8 @@ Default initialization is a type operation with these values:
 
 A zero-length array requires no element default. Numeric and payload enums,
 callable values and views, `void`, and entry or iteration-only opaque types have
-no default value. A structure or nonempty array containing such a type requires
-an explicit value for the affected component. Carven does not select an enum
+no default value. A structure or nonempty array containing such a type also has
+no default value and must be constructed explicitly. Carven does not select an enum
 case or invent a callable target. `CV-TYPE-DEFAULT-INITIALIZATION` identifies a
 requested default that is unavailable. External constructors and their effects
 retain the native boundary's existing requirements.

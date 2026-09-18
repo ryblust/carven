@@ -78,13 +78,13 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
            ImportUsage& usage,
            DiagnosticSink&) static noexcept {
             auto requests = ProgramConstruction(draft, catalog, usage);
-            const auto module = catalog.modules().front().module_id;
+            const auto module_id = catalog.modules().front().module_id;
             const auto seed = function_named(catalog, "seed");
             const auto last = function_named(catalog, "value_31");
             CHECK(
                 draft.module_declaration_copy(catalog.modules().front().declaration)
                     .provenance_module
-                == module
+                == module_id
             );
             CHECK_FALSE(draft.function_for_callable(seed.callable).has_value());
             CHECK(expect_termination("unprepared-function-head-read", [&] {
@@ -95,7 +95,7 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 static_cast<void>(draft.body_draft(reserved.id()));
             }));
             auto first_body =
-                requests.ensure_function_body(seed.function, module, Span::at(0u)).run();
+                requests.ensure_function_body(seed.function, module_id, Span::at(0u)).run();
             REQUIRE(first_body.has_value());
             const auto* saved = std::addressof(draft.body_draft(*first_body));
             CHECK(draft.function_for_callable(seed.callable) == seed.function);
@@ -120,7 +120,7 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
             }
             CHECK_EQ(completed_bodies.size(), 35uz);
             const auto repeated =
-                requests.ensure_function_body(seed.function, module, Span::at(0u)).run();
+                requests.ensure_function_body(seed.function, module_id, Span::at(0u)).run();
             REQUIRE(repeated.has_value());
             CHECK(*repeated == *first_body);
             REQUIRE(requests.run().has_value());
@@ -141,11 +141,11 @@ TEST_CASE("Construction: pending results require completion before contract acce
            DiagnosticSink&) static noexcept {
             auto construction = ProgramConstruction(draft, catalog, usage);
             const auto function = function_named(catalog, "inferred");
-            const auto module = catalog.modules().front().module_id;
+            const auto module_id = catalog.modules().front().module_id;
             REQUIRE(construction
                         .ensure_declaration(
                             catalog.function_symbol(function.function),
-                            module,
+                            module_id,
                             Span::at(0u)
                         )
                         .run()
@@ -154,7 +154,8 @@ TEST_CASE("Construction: pending results require completion before contract acce
             CHECK(expect_termination("pending-function-contract-read", [&] {
                 static_cast<void>(draft.construction_callable_contract_copy(function.callable));
             }));
-            REQUIRE(construction.ensure_function_signature(function.function, module, Span::at(0u))
+            REQUIRE(construction
+                        .ensure_function_signature(function.function, module_id, Span::at(0u))
                         .run()
                         .has_value());
             CHECK_FALSE(draft.pending_function_contract_copy(function.callable).has_value());

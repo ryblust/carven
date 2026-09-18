@@ -37,13 +37,13 @@ auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type)
 
 struct StructureInitializer final {
     std::uint32_t declaration_index;
-    std::optional<ASTExprID> expression;
+    ASTExprID expression;
 };
 
 auto select_structure_initializers(
     const ProgramDraft& draft,
-    ProgramModuleID module,
-    const ASTConstructionExpr& source,
+    ProgramModuleID module_id,
+    const ASTConstructionInitializer& source,
     std::span<const ConstructionStructField> fields
 ) noexcept -> AnalysisResult<std::vector<StructureInitializer>>;
 

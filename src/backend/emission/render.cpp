@@ -194,3 +194,7 @@ auto TargetRenderer::with_attribution(
         }
     );
 }
+
+auto TargetRenderer::render_identifier(TargetLocalID value) noexcept -> LayoutNodeID {
+    return render_identifier(unit.local_name(value));
+}

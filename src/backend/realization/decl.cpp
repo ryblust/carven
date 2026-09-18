@@ -2,7 +2,6 @@ module carven:backend.realization.decl.impl;
 
 import :backend.realization.decl;
 import :backend.target.expr;
-import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.traversal;
 import :support.invariant;
@@ -10,124 +9,55 @@ import std;
 
 namespace {
 
-class DeclarationUses final {
-public:
-    DeclarationUses(
-        std::span<const TargetIdentifier> parameters,
-        std::span<const TargetIdentifier> captures,
-        const std::flat_set<std::string>& mutable_owners
-    ) noexcept;
-    auto enter_scope(TargetTraversalScope) noexcept -> bool;
-    auto leave_scope(TargetTraversalScope) noexcept -> bool;
-    auto visit_local_parameter(const TargetIdentifier& name) noexcept -> bool;
+struct LocalUses final {
+    std::flat_set<TargetLocalID> referenced;
+    std::flat_set<TargetLocalID> read;
 
-    template<typename Variable>
-    auto visit_variable(Variable& variable) noexcept -> bool {
-        if (variable.binding == TargetVariableBinding::ConstValue
-            && mutable_owners.contains(std::string(variable.name.spelling()))) {
-            variable.binding = TargetVariableBinding::MutableValue;
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole role) noexcept
+        -> bool {
+        if (const auto* local = std::get_if<TargetLocalExpr>(&expression.value)) {
+            referenced.insert(local->local);
+            if (role == TargetExpressionRole::Operand) {
+                read.insert(local->local);
+            }
         }
-        declare(
-            variable.name,
-            {.maybe_unused = &variable.maybe_unused, .parameter_index = std::nullopt}
-        );
         return true;
     }
-
-    auto enter_expression(const TargetExpr& expression, TargetExpressionRole role) noexcept -> bool;
-    auto finish() && noexcept -> std::vector<bool>;
-
-private:
-    struct Declaration final {
-        bool* maybe_unused;
-        std::optional<std::size_t> parameter_index;
-    };
-
-    auto declare(const TargetIdentifier& name, Declaration declaration) noexcept -> void;
-
-    const std::flat_set<std::string>& mutable_owners;
-    std::vector<bool> parameter_references;
-    std::vector<std::flat_map<std::string, Declaration>> scopes {1uz};
 };
 
-DeclarationUses::DeclarationUses(
-    std::span<const TargetIdentifier> parameters,
-    std::span<const TargetIdentifier> captures,
-    const std::flat_set<std::string>& mutable_owners
-) noexcept
-    : mutable_owners(mutable_owners),
-      parameter_references(parameters.size(), false) {
-    for (const auto& capture : captures) {
-        declare(capture, {.maybe_unused = nullptr, .parameter_index = std::nullopt});
-    }
-    for (auto index = 0uz; index < parameters.size(); ++index) {
-        declare(parameters[index], {.maybe_unused = nullptr, .parameter_index = index});
-    }
-}
+struct DeclarationUses final {
+    const LocalUses& uses;
+    const std::flat_set<TargetLocalID>& mutable_owners;
 
-auto DeclarationUses::enter_scope(TargetTraversalScope) noexcept -> bool {
-    scopes.emplace_back();
-    return true;
-}
-
-auto DeclarationUses::leave_scope(TargetTraversalScope) noexcept -> bool {
-    scopes.pop_back();
-    return true;
-}
-
-auto DeclarationUses::visit_local_parameter(const TargetIdentifier& name) noexcept -> bool {
-    declare(name, {.maybe_unused = nullptr, .parameter_index = std::nullopt});
-    return true;
-}
-
-auto DeclarationUses::enter_expression(
-    const TargetExpr& expression,
-    TargetExpressionRole role
-) noexcept -> bool {
-    const auto* reference = std::get_if<TargetNameExpr>(&expression.value);
-    if (reference == nullptr
-        || reference->name.is_globally_qualified()
-        || reference->name.components().size() != 1uz) {
+    template<typename Variable>
+    auto visit_variable(Variable& variable) const noexcept -> bool {
+        if (variable.binding == TargetVariableBinding::ConstValue
+            && mutable_owners.contains(variable.local)) {
+            variable.binding = TargetVariableBinding::MutableValue;
+        }
+        if (uses.read.contains(variable.local)) {
+            variable.maybe_unused = false;
+        }
         return true;
     }
-    const auto name = std::string(reference->name.components().front().spelling());
-    for (const auto& scope : scopes | std::views::reverse) {
-        const auto found = scope.find(name);
-        if (found == scope.end()) {
-            continue;
-        }
-        const auto& declaration = found->second;
-        if (declaration.parameter_index.has_value()) {
-            parameter_references[*declaration.parameter_index] = true;
-        }
-        if (role == TargetExpressionRole::Operand && declaration.maybe_unused != nullptr) {
-            *declaration.maybe_unused = false;
-        }
-        break;
-    }
-    return true;
-}
-
-auto DeclarationUses::finish() && noexcept -> std::vector<bool> {
-    return std::move(parameter_references);
-}
-
-auto DeclarationUses::declare(const TargetIdentifier& name, Declaration declaration) noexcept
-    -> void {
-    scopes.back().insert_or_assign(std::string(name.spelling()), declaration);
-}
+};
 
 } // namespace
 
 auto finish_body_declarations(
     std::span<TargetStmt> statements,
-    std::span<const TargetIdentifier> parameters,
-    std::span<const TargetIdentifier> captures,
-    const std::flat_set<std::string>& mutable_owners
+    std::span<const TargetLocalID> parameters,
+    const std::flat_set<TargetLocalID>& mutable_owners
 ) noexcept -> std::vector<bool> {
-    auto uses = DeclarationUses(parameters, captures, mutable_owners);
-    if (!traverse_target_statements(statements, uses)) {
+    auto uses = LocalUses();
+    auto declarations = DeclarationUses {.uses = uses, .mutable_owners = mutable_owners};
+    if (!traverse_target_statements(statements, uses)
+        || !traverse_target_statements(statements, declarations)) {
         invariant_violation("body declaration traversal did not complete");
     }
-    return std::move(uses).finish();
+    auto referenced = std::vector<bool>();
+    for (const auto parameter : parameters) {
+        referenced.push_back(uses.referenced.contains(parameter));
+    }
+    return referenced;
 }

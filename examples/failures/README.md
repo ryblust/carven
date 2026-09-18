@@ -35,7 +35,8 @@ record. These types need no shared base type. Their failure sets combine when
 private `primary_quote` calls both providers:
 
 ```carven
-return (line_total(quantity, available) + delivery_fee(zone))?;
+private fn primary_quote(quantity: i32, available: i32, zone: i32) -> i32 =>
+    (line_total(quantity, available) + delivery_fee(zone))?;
 ```
 
 One `?` propagates the composite expression's failures. `primary_quote` infers

@@ -13,21 +13,17 @@ enum SampleError {
     InvalidCount(i32),
 }
 
-const fn mean(total: f64, count: i32) -> f64 throw SampleError {
-    return match count {
-        ..=0 => throw SampleError::InvalidCount(count),
-        _ => total / (count as f64),
-    };
-}
+const fn mean(total: f64, count: i32) -> f64 throw SampleError => match count {
+    ..=0 => throw SampleError::InvalidCount(count),
+    _ => total / (count as f64),
+};
 
-const fn mean_label(total: f64, count: i32) -> String {
-    return try {
-        let value = mean(total, count)?;
-        f"Mean: {value:.2f}"
-    } catch {
-        SampleError(.InvalidCount(count)) => f"No mean for {count} samples",
-    };
-}
+const fn mean_label(total: f64, count: i32) -> String => try {
+    let value = mean(total, count)?;
+    f"Mean: {value:.2f}"
+} catch {
+    SampleError(.InvalidCount(count)) => f"No mean for {count} samples",
+};
 
 // A successful fallible call can initialize a constant; an escaping failure cannot.
 const average = mean(7.5, 3)?;
@@ -42,12 +38,10 @@ const test "prepared measurements recover missing samples" {
     check(missing_measurement == "No mean for 0 samples");
 }
 
-fn fibonacci(value: i32) -> i32 {
-    return match value {
-        ..2 => value,
-        _ => fibonacci(value - 1) + fibonacci(value - 2),
-    };
-}
+fn fibonacci(value: i32) -> i32 => match value {
+    ..2 => value,
+    _ => fibonacci(value - 1) + fibonacci(value - 2),
+};
 
 println(heading);
 

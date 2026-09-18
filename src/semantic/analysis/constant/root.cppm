@@ -41,7 +41,7 @@ public:
 
     static auto operand_state() noexcept -> OperandState { return {.completes = true}; }
 
-    auto module_id() const noexcept -> ProgramModuleID { return module; }
+    auto module_id() const noexcept -> ProgramModuleID { return source_module_id; }
 
     auto permits_pointer_narrowing() const noexcept -> bool { return true; }
 
@@ -105,24 +105,24 @@ public:
 
     ConstantRootSite(
         ProgramDraft& program,
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         ASTView syntax,
         Scope& scope,
         Span root_span
     ) noexcept
         : shapes(program),
           program(program),
-          module(module),
+          source_module_id(module_id),
           ast(syntax),
           scope(scope),
           lifetimes(program.create_evaluation_root_identity()),
           lifetime(lifetimes.add({
               .parent = std::nullopt,
               .kind = LifetimeRegionKind::FullExpression,
-              .origin = program.append_source_origin(program.module_source(module), root_span),
+              .origin = program.append_source_origin(program.module_source(module_id), root_span),
           })),
           empty_failures(program.intern_failure_set({})) {
-        if (syntax.source_id() != program.syntax_tree(module).view().source_id()) {
+        if (syntax.source_id() != program.syntax_tree(module_id).view().source_id()) {
             invariant_violation("constant expression mixed a module with another syntax tree");
         }
     }
@@ -233,7 +233,7 @@ public:
     auto extension(const ASTNameExpr& name, Span span, std::optional<ConstructionTypeRef>) noexcept
         -> ExpressionTask<Value> {
         auto resolved = (co_await scope.resolve_name(
-            program.source_slice_copy(module, name.name_span),
+            program.source_slice_copy(source_module_id, name.name_span),
             name.name_span
         ));
         if (!resolved.has_value()) {
@@ -260,7 +260,8 @@ public:
         pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
         program.require_non_empty_failures(
             program.add_union_failure_term(std::move(terms)),
-            program.append_source_origin(program.module_source(module), source.operator_span)
+            program
+                .append_source_origin(program.module_source(source_module_id), source.operator_span)
         );
         const auto result_type = type(*operand);
         co_return make(
@@ -317,7 +318,7 @@ public:
     }
 
     auto spelling(Span span) const noexcept -> std::string {
-        return program.source_slice_copy(module, span);
+        return program.source_slice_copy(source_module_id, span);
     }
 
     auto resolve_enum_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
@@ -330,7 +331,8 @@ public:
         if (!selected) {
             co_return std::unexpected(selected.error());
         }
-        auto prepared = (co_await scope.construction_requests().ensure_type(type, module, span));
+        auto prepared =
+            (co_await scope.construction_requests().ensure_type(type, source_module_id, span));
         if (!prepared) {
             co_return std::unexpected(prepared.error());
         }
@@ -460,7 +462,8 @@ public:
             co_return std::unexpected(ExpressionNotAdmitted {});
         }
         auto& requests = scope.construction_requests();
-        auto completed = (co_await requests.ensure_function_signature(**selected, module, span));
+        auto completed =
+            (co_await requests.ensure_function_signature(**selected, source_module_id, span));
         if (!completed) {
             co_return std::unexpected(completed.error());
         }
@@ -560,7 +563,7 @@ private:
         return SemanticExpression {
             .type = BodyType(type),
             .lifetime = lifetime,
-            .origin = program.append_source_origin(program.module_source(module), span),
+            .origin = program.append_source_origin(program.module_source(source_module_id), span),
             .constant = known,
             .failures = empty_failures,
             .exits_test = false,
@@ -578,7 +581,7 @@ public:
 private:
     ExecutionTypeShapes shapes;
     ProgramDraft& program;
-    ProgramModuleID module;
+    ProgramModuleID source_module_id;
     ASTView ast;
     Scope& scope;
     MutableBodyTable<LifetimeRegion, LifetimeRegionID> lifetimes;
@@ -600,13 +603,14 @@ private:
 template<typename Scope>
 auto evaluate_constant_expression(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     Scope& scope,
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected = std::nullopt
 ) noexcept -> ExpressionTask<ConstantID> {
-    auto site = ConstantRootSite(draft, module, syntax, scope, syntax.expression(expression).span);
+    auto site =
+        ConstantRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
     auto result = (co_await site.read(expression, expected));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
@@ -638,12 +642,13 @@ auto evaluate_constant_expression(
 template<typename Scope>
 auto evaluate_array_extent(
     ProgramDraft& draft,
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     ASTView syntax,
     Scope& scope,
     ASTExprID expression
 ) noexcept -> AnalysisTask<std::uint64_t> {
-    auto site = ConstantRootSite(draft, module, syntax, scope, syntax.expression(expression).span);
+    auto site =
+        ConstantRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
     auto value = (co_await site.read(expression, std::nullopt));
     if (!value) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&value.error())) {

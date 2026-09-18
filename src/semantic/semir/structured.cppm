@@ -5,6 +5,7 @@ import :semantic.semir.format;
 import :semantic.semir.ids;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.tree_value;
 import :support.unique_indirect;
 import std;
 
@@ -230,6 +231,46 @@ struct SemTry final {
 
 enum class SemanticValueCategory { Value, Place };
 
+struct SemanticExpressionCleanup;
+using SemanticExpressionValue = TreeValue<
+    SemanticExpressionCleanup,
+    SemDefault,
+    SemConstant,
+    SemBinding,
+    SemCallable,
+    SemEnumConstructor,
+    SemCpp,
+    SemCppCall,
+    SemArray,
+    SemRange,
+    SemArrayAdopt,
+    SemStruct,
+    SemEnumCase,
+    SemUnary,
+    SemBinary,
+    SemShortCircuit,
+    SemCast,
+    SemField,
+    SemDereference,
+    SemIndex,
+    SemTextIntrinsic,
+    SemSliceIntrinsic,
+    SemPrint,
+    SemTestReport,
+    SemFormat,
+    SemCall,
+    SemClosure,
+    SemBorrowCallable,
+    SemTake,
+    SemPropagate,
+    SemIf,
+    SemMatch,
+    SemTry>;
+
+struct SemanticExpressionCleanup final {
+    static auto clear(SemanticExpressionValue& value) noexcept -> void;
+};
+
 struct SemanticExpression final {
     BodyType type;
     LifetimeRegionID lifetime;
@@ -240,40 +281,7 @@ struct SemanticExpression final {
     // Body completion includes callee effects before publication.
     bool exits_test;
     SemanticValueCategory category;
-    std::variant<
-        SemDefault,
-        SemConstant,
-        SemBinding,
-        SemCallable,
-        SemEnumConstructor,
-        SemCpp,
-        SemCppCall,
-        SemArray,
-        SemRange,
-        SemArrayAdopt,
-        SemStruct,
-        SemEnumCase,
-        SemUnary,
-        SemBinary,
-        SemShortCircuit,
-        SemCast,
-        SemField,
-        SemDereference,
-        SemIndex,
-        SemTextIntrinsic,
-        SemSliceIntrinsic,
-        SemPrint,
-        SemTestReport,
-        SemFormat,
-        SemCall,
-        SemClosure,
-        SemBorrowCallable,
-        SemTake,
-        SemPropagate,
-        SemIf,
-        SemMatch,
-        SemTry>
-        value;
+    SemanticExpressionValue value;
 
     // A Read can retain this expression's selected object. Consuming a value
     // still creates independent destination storage through the normal use rules.
@@ -379,22 +387,29 @@ struct SemRangeLoop final {
     OwnedSemanticRegion body;
 };
 
+struct SemanticStatementCleanup;
+using SemanticStatementValue = TreeValue<
+    SemanticStatementCleanup,
+    SemReturn,
+    SemBreak,
+    SemContinue,
+    SemRethrow,
+    SemThrow,
+    SemExpressionStatement,
+    SemInitialize,
+    SemAssign,
+    SemLoop,
+    SemRangeLoop,
+    OwnedSemanticRegion>;
+
+struct SemanticStatementCleanup final {
+    static auto clear(SemanticStatementValue& value) noexcept -> void;
+};
+
 struct SemanticStatement final {
     ProgramOriginID origin;
     LifetimeRegionID lifetime;
-    std::variant<
-        SemReturn,
-        SemBreak,
-        SemContinue,
-        SemRethrow,
-        SemThrow,
-        SemExpressionStatement,
-        SemInitialize,
-        SemAssign,
-        SemLoop,
-        SemRangeLoop,
-        OwnedSemanticRegion>
-        value;
+    SemanticStatementValue value;
 };
 
 template<typename Visitor>
@@ -445,8 +460,6 @@ auto cpp_call_query(const SemCppCall& call, TypeReader type) noexcept -> CppQuer
         .expression = CppCallQuery {.callee = std::move(callee), .arguments = std::move(arguments)}
     };
 }
-
-using SemanticExpressionValue = decltype(SemanticExpression::value);
 
 struct SemIRBodyData final {
     BodyID id;

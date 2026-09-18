@@ -7,7 +7,7 @@ import :backend.target.stmt;
 import std;
 
 struct TargetParameter final {
-    std::optional<TargetIdentifier> name;
+    std::optional<TargetLocalID> local;
     TargetTypeID type;
     std::optional<TargetExpr> default_value;
 };
