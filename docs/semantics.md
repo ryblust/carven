@@ -311,6 +311,9 @@ and `usize`; the floating types are `f32` and `f64`. `char` is not numeric.
 Unsuffixed integer literals default to `i32` and unsuffixed floating literals
 default to `f64`. In an expected numeric context, an unsuffixed literal may
 instead adopt a representable type from the same integer or floating family.
+Floating literal text is converted directly to the selected precision using the
+host's native parsing, without an intermediate floating type. A literal outside
+the selected type's conversion range is rejected.
 
 Numeric types are otherwise compatible only with the identical
 canonical type. There is no implicit integer promotion, signedness conversion,

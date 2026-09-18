@@ -1,7 +1,7 @@
 # Command-line interface
 
-The `carven` command runs `.cv` source files with fixed Crafts roots, generates
-C++ artifacts, and inspects frontend representations. This
+The `carven` command runs `.cv` source files with fixed Crafts roots, checks source
+batches, generates C++ artifacts, and inspects frontend representations. This
 document defines invocation, input paths, output writes, and process behavior.
 
 ## Invocation
@@ -9,15 +9,17 @@ document defines invocation, input paths, output writes, and process behavior.
 ```text
 carven <source-file>... [-- <arguments>...]
 carven compile [options...] <source-file>...
+carven check <source-file>...
 carven interpret [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump tokens <source-file>
 carven dump ast <source-file>
 ```
 
-`carven --help`, `carven compile --help`, and `carven interpret --help`
-print help (`-h` is also accepted). `carven --version` and `carven -V` print
-`carven v<version>` followed by a newline. With no arguments, `carven` prints
-the top-level help and succeeds.
+`carven --help`, `carven compile --help`, `carven check --help`,
+`carven interpret --help`, and `carven dump --help` print help (`-h` is also
+accepted). Top-level help lists commands; each command has its own usage and
+options. `carven --version` and `carven -V` print `carven v<version>` followed by
+a newline. With no arguments, `carven` prints the top-level help and succeeds.
 
 ## Native execution
 
@@ -51,6 +53,21 @@ Generated files and the executable reside in a unique temporary directory,
 removed when the driver returns after execution or a handled failure. Carven
 returns the native compiler's failure status or the program's exit status. On
 POSIX, termination by signal yields `128 + signal`.
+
+## Checking
+
+`check` analyzes the explicit source batch through the same pipeline as `compile`,
+including required constant evaluation and `const test` execution. Ordinary
+functions and runtime tests receive semantic checks without execution. An entry
+point is optional.
+
+The command completes after semantic analysis and produces no artifacts. Native
+overload resolution, template instantiation, and native type properties are
+checked by the C++ compiler.
+
+`check` requires at least one source file. Its only options are standalone
+`--help` and `-h`. Invocation, input, and analysis errors return status 1;
+success returns 0, including when warnings are reported.
 
 ## Interpretation
 
@@ -106,8 +123,8 @@ completion returns 0, following the existing entry-result convention.
 
 A source invocation requires one or more explicitly named source files. The
 compiler analyzes that complete batch; imports resolve among those inputs. Native
-execution additionally collects the fixed Crafts roots described above. `compile`
-and `interpret` keep their explicit-input contracts.
+execution additionally collects the fixed Crafts roots described above.
+`compile`, `check`, and `interpret` keep their explicit-input contracts.
 
 Input paths use UTF-8, `/` separators, and a `.cv` extension. Relative paths
 determine module identities after lexical normalization:
@@ -206,7 +223,8 @@ identity or define a public C++ ABI.
 ## Diagnostics and status
 
 Invalid invocation, input loading failure, source errors, and artifact-sink
-failure produce diagnostics on standard error and a nonzero status. Source
+failure produce diagnostics on standard error and a nonzero status. Invocation
+errors include a command help hint. Source
 warnings are printed on standard error while a successful compilation and
 materialization still return zero.
 

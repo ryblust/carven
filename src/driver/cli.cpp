@@ -1,5 +1,6 @@
 module carven:driver.cli.impl;
 
+import :driver.check;
 import :driver.cli;
 import :driver.compile;
 import :driver.dump;
@@ -11,30 +12,24 @@ namespace {
 
 auto print_help() noexcept -> int {
     std::print(
-        "Carven\n"
+        "Carven compiler and runner\n"
         "\n"
-        "USAGE:\n"
-        "    carven <source-file>... [-- <arguments>...]\n"
-        "    carven compile [options...] <source-file>...\n"
-        "    carven interpret <source-file>... [-- <arguments>...]\n"
-        "    carven dump tokens <source-file>\n"
-        "    carven dump ast <source-file>\n"
+        "Usage:\n"
+        "  carven <source-file>... [-- <arguments>...]\n"
+        "  carven <command> [options] <source-file>...\n"
         "\n"
-        "COMPILE OPTIONS:\n"
-        "    -o, --output-dir <dir>   Write generated files below this directory\n"
-        "                             (default: current directory)\n"
-        "    --stdout                 Print all generated artifacts for inspection\n"
-        "    --tests=default          Emit tests, runner header, and default main\n"
-        "    --tests=external         Emit tests and runner header without main\n"
-        "    --linkage-domain=<value> Override the generated linkage domain\n"
+        "Commands:\n"
+        "  compile      Generate C++ headers and sources\n"
+        "  check        Check sources and run const tests\n"
+        "  interpret    Run the supported language subset with the interpreter\n"
+        "  dump         Inspect tokens or the syntax tree\n"
         "\n"
-        "DEVELOPER COMMANDS:\n"
-        "    dump tokens              Dump the token stream to stdout\n"
-        "    dump ast                 Dump the syntax tree to stdout\n"
+        "Options:\n"
+        "  -h, --help       Show this help\n"
+        "  -V, --version    Show the version\n"
         "\n"
-        "GLOBAL OPTIONS:\n"
-        "    -h, --help               Show help message\n"
-        "    -V, --version            Show Carven version\n"
+        "Source files without a command are compiled and run natively.\n"
+        "Use 'carven <command> --help' for command options.\n"
     );
     return 0;
 }
@@ -63,11 +58,11 @@ auto carven_main(int argc, const char* const* argv) noexcept -> int {
     }
 
     if (first_arg == "compile") {
-        if (args.size() == 2
-            && (std::string_view(args[1]) == "--help" || std::string_view(args[1]) == "-h")) {
-            return print_help();
-        }
         return run_compile_command(args.subspan(1));
+    }
+
+    if (first_arg == "check") {
+        return run_check_command(args.subspan(1));
     }
 
     if (first_arg == "interpret") {

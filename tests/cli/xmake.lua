@@ -1,4 +1,32 @@
 local case_specs = {
+    ["commands/check"] = {
+        inputs = {"input.cv", "invalid_test.cv", "crafts/demo/dependency.cv"},
+        fixtures = {
+            ["../interpretation/declarations.cv"] = "declarations.cv",
+            ["../interpretation/static_failure.cv"] = "static_failure.cv",
+            ["../../diagnostics/syntax/input.cv"] = "syntax.cv",
+            ["../../diagnostics/warning/input.cv"] = "warning.cv",
+        },
+        steps = {
+            {args = {"check"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven check --help"}},
+            {args = {"check", "input.cv", "--stdout"}, exit_code = 1, stderr_contains = {"unknown check option", "carven check --help"}},
+            {args = {"check", "missing.cv"}, exit_code = 1, stderr_contains = {"cannot read source file"}},
+            {args = {"check", "syntax.cv"}, exit_code = 1, stderr_contains = {"CV-SYNTAX", "syntax.cv:1:12"}},
+            {args = {"check", "warning.cv"}, stderr_contains = {"CV-LINT-UNUSED-LOCAL"}},
+            {args = {"check", "static_failure.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-TEST"}},
+            {args = {"check", "invalid_test.cv"}, exit_code = 1, stderr_contains = {"CV-TYPE-MISMATCH", "invalid_test.cv:2:"}},
+            {args = {"check", "declarations.cv"}},
+            {
+                args = {"check", "input.cv"}, exit_code = 1,
+                stderr_contains = {"CV-IMPORT-RESOLUTION", "input.cv"},
+            },
+            {
+                args = {"check", "input.cv", "crafts/demo/dependency.cv"},
+                stdout = "stdout.txt", stderr = "stderr.txt",
+                absent_files = {"input.cpp", "crafts/demo/dependency.cpp", "warning.cpp", "carven", "program", "program.exe"},
+            },
+        },
+    },
     ["commands/static_execution"] = {
         inputs = {"input.cv"},
         steps = {
@@ -9,6 +37,7 @@ local case_specs = {
     ["commands/dump"] = {
         inputs = {"input.cv", "lexical_error.cv", "syntax_error.cv"},
         steps = {
+            {args = {"dump"}, exit_code = 1, stderr_contains = {"expected", "carven dump --help"}},
             {args = {"dump", "tokens", "input.cv"}, stdout_contains = {"Tokens \"input.cv\""}},
             {args = {"dump", "ast", "input.cv"}, stdout_contains = {"SourceModule"}},
             {
@@ -27,7 +56,14 @@ local case_specs = {
     ["invocation/help"] = {
         steps = {
             {args = {"--help"}, stdout = "stdout.txt"},
-            {args = {"compile", "--help"}, stdout = "stdout.txt"},
+            {args = {"compile", "--help"}, stdout = "compile.txt"},
+            {args = {"compile", "-h"}, stdout = "compile.txt"},
+            {args = {"check", "--help"}, stdout = "check.txt"},
+            {args = {"check", "-h"}, stdout = "check.txt"},
+            {args = {"interpret", "--help"}, stdout = "interpret.txt"},
+            {args = {"interpret", "-h"}, stdout = "interpret.txt"},
+            {args = {"dump", "--help"}, stdout = "dump.txt"},
+            {args = {"dump", "-h"}, stdout = "dump.txt"},
             {args = {}, stdout = "stdout.txt"},
         },
     },
@@ -165,7 +201,7 @@ local case_specs = {
     ["invocation/invalid_option"] = {
         args = {"compile", "--unknown", "input.cv"},
         exit_code = 1,
-        stderr_contains = {"unknown option '--unknown'"},
+        stderr_contains = {"unknown option '--unknown'", "carven compile --help"},
     },
     ["module_layout/duplicate"] = {
         project = "../project",
@@ -239,7 +275,7 @@ case_specs["commands/native_execution"] = {
         {
             args = {"input.cv", "--stdout"},
             exit_code = 1,
-            stderr_contains = {"unknown option '--stdout'"},
+            stderr_contains = {"unknown option '--stdout'", "carven --help"},
         },
     },
 }
@@ -250,6 +286,7 @@ case_specs["commands/interpretation"] = {
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv",
     },
     steps = {
+        {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
         {
             args = {"interpret", "typed_failures.cv"},
             stdout = "typed_failures.txt",

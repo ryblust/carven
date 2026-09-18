@@ -800,15 +800,14 @@ auto evaluate_cast_constant_value(
         }
         if (kind == CastKind::IntegerToFloating
             && (*target == BuiltinType::F32 || *target == BuiltinType::F64)) {
-            const auto value = integer->negative() ? -static_cast<double>(integer->magnitude())
-                                                   : static_cast<double>(integer->magnitude());
-            if (*target == BuiltinType::F32) {
-                return ConstantFact {
-                    .type = result,
-                    .value = F32Constant {.value = static_cast<float>(value)},
-                };
-            }
-            return ConstantFact {.type = result, .value = F64Constant {.value = value}};
+            const auto convert = [&]<typename Floating>() noexcept -> ConstantFact {
+                using Native = decltype(Floating::value);
+                const auto value = integer->negative() ? static_cast<Native>(*integer->as_signed())
+                                                       : static_cast<Native>(integer->magnitude());
+                return ConstantFact {.type = result, .value = Floating {.value = value}};
+            };
+            return *target == BuiltinType::F32 ? convert.template operator()<F32Constant>()
+                                               : convert.template operator()<F64Constant>();
         }
     }
     if (const auto* character = std::get_if<CharacterConstant>(&operand.value)) {

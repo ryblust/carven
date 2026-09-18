@@ -61,9 +61,37 @@ auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
 } // namespace
 
 auto run_compile_command(std::span<const char* const> args) noexcept -> int {
+    if (args.size() == 1
+        && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
+        std::print(
+            "Generate C++ headers and sources from an explicit source batch.\n"
+            "\n"
+            "Usage:\n"
+            "  carven compile [options] <source-file>...\n"
+            "\n"
+            "Output options:\n"
+            "  -o, --output-dir <dir>    Write files below <dir> (default: .)\n"
+            "      --stdout              Print generated files with path headings\n"
+            "      --linkage-domain=<id> Set the private namespace identity\n"
+            "                            (default: derived from the output directory)\n"
+            "\n"
+            "Test options:\n"
+            "      --tests=default       Emit runtime tests, runner, and test entry\n"
+            "      --tests=external      Emit runtime tests and runner without test entry\n"
+            "                            (default: no runtime test artifacts)\n"
+            "\n"
+            "Options:\n"
+            "  -h, --help                Show this help\n"
+            "\n"
+            "Imports resolve among the supplied sources. C++ compilation and linking\n"
+            "belong to the consuming build.\n"
+        );
+        return 0;
+    }
     auto request = parse_compile_command_options(args);
     if (!request) {
         std::println(std::cerr, "carven: error: {}", format_compile_option_error(request.error()));
+        std::println(std::cerr, "Run 'carven compile --help' for usage.");
         return 1;
     }
 

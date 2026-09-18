@@ -205,7 +205,7 @@ TEST_CASE("Lexer: character scanner exposes typed values and error facts") {
     CHECK_EQ(invalid_character.error().error_offset, 1uz);
 }
 
-TEST_CASE("Lexer: numeric tokens carry converted values") {
+TEST_CASE("Lexer: numeric tokens preserve integer values and floating spellings") {
     static constexpr auto spellings = std::to_array<std::string_view>({
         "0",
         "42i32",
@@ -234,10 +234,11 @@ TEST_CASE("Lexer: numeric tokens carry converted values") {
         const auto* integer = std::get_if<IntegerLiteralValue>(&value);
         const auto* floating = std::get_if<FloatingLiteralValue>(&value);
         REQUIRE((integer != nullptr || floating != nullptr));
-        CHECK_EQ(
-            integer != nullptr ? integer->conversion : floating->conversion,
-            NumericConversion::Exact
-        );
+        if (integer != nullptr) {
+            CHECK_EQ(integer->conversion, NumericConversion::Exact);
+        } else {
+            CHECK_EQ(floating->spelling, slice(spelling, floating->value_span));
+        }
     }
 }
 

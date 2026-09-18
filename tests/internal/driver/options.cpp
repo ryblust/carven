@@ -116,7 +116,7 @@ TEST_CASE("Compile options: invalid combinations report structured failures") {
             .args = {"--tests=default"},
             .kind = CompileOptionErrorKind::NoSourceInput,
             .option = std::nullopt,
-            .message = "no source input",
+            .message = "compile requires at least one source file",
         },
     };
 

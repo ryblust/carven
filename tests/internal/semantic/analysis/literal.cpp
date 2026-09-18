@@ -103,9 +103,8 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
             .value =
                 FloatingLiteralValue {
                     .value_span = Span::at(0u),
-                    .value = 1.25,
+                    .spelling = "1.25",
                     .suffix = NumericSuffix::None,
-                    .conversion = NumericConversion::Exact,
                 },
         },
         ConstructionTypeRef {f32}
@@ -120,9 +119,8 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
             .span = Span::at(0u),
             .value = FloatingLiteralValue {
                 .value_span = Span::at(0u),
-                .value = 1.25,
+                .spelling = "1.25",
                 .suffix = NumericSuffix::None,
-                .conversion = NumericConversion::Exact,
             },
         }
     );
@@ -135,9 +133,8 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
             .span = Span::at(0u),
             .value = FloatingLiteralValue {
                 .value_span = Span::at(0u),
-                .value = std::numeric_limits<double>::max(),
+                .spelling = "1.7976931348623157e308",
                 .suffix = NumericSuffix::F32,
-                .conversion = NumericConversion::Exact,
             },
         }
     );
@@ -155,4 +152,133 @@ TEST_CASE("Semantic constant evaluation: literals normalize suffix, context, sig
     const auto spelling = std::get<StringConstant>(string->value).value;
     CHECK_EQ(compilation.spelling_copy(spelling), "hello");
     CHECK_EQ(std::get<StringConstant>(string->value).value, spelling);
+}
+
+TEST_CASE("Semantic literals: floating conversion uses the selected precision and range") {
+    auto fixture = ConstantEvaluationFixture();
+    auto& compilation = fixture.compilation;
+    const auto f32 = compilation.builtin_type(BuiltinType::F32);
+    const auto f64 = compilation.builtin_type(BuiltinType::F64);
+
+    struct Case final {
+        std::string_view spelling;
+        NumericSuffix suffix;
+        BuiltinType expected_type;
+        std::optional<std::uint64_t> bits;
+    };
+
+    const auto cases = std::array {
+        Case {
+            .spelling = "1.0000000596046447",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F64,
+            .bits = 0x3f800000u
+        },
+        Case {
+            .spelling = "1.000000059604644775390625",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F64,
+            .bits = 0x3f800000u
+        },
+        Case {
+            .spelling = "1.0000000596046448",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F64,
+            .bits = 0x3f800001u
+        },
+        Case {
+            .spelling = "1.0000000596046448",
+            .suffix = NumericSuffix::None,
+            .expected_type = BuiltinType::F32,
+            .bits = 0x3f800001u
+        },
+        Case {
+            .spelling = "1.0000000000000002",
+            .suffix = NumericSuffix::F64,
+            .expected_type = BuiltinType::F32,
+            .bits = 0x3ff0000000000001ull
+        },
+        Case {
+            .spelling = "1.401298464324817e-45",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F32,
+            .bits = 1u
+        },
+        Case {
+            .spelling = "5e-324",
+            .suffix = NumericSuffix::F64,
+            .expected_type = BuiltinType::F64,
+            .bits = 1u
+        },
+        Case {
+            .spelling = "0.0",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F32,
+            .bits = 0u
+        },
+        Case {
+            .spelling = "3.5e38",
+            .suffix = NumericSuffix::F32,
+            .expected_type = BuiltinType::F32,
+            .bits = std::nullopt
+        },
+        Case {
+            .spelling = "1e-50",
+            .suffix = NumericSuffix::None,
+            .expected_type = BuiltinType::F32,
+            .bits = std::nullopt
+        },
+        Case {
+            .spelling = "1e309",
+            .suffix = NumericSuffix::F64,
+            .expected_type = BuiltinType::F64,
+            .bits = std::nullopt
+        },
+        Case {
+            .spelling = "1e-400",
+            .suffix = NumericSuffix::F64,
+            .expected_type = BuiltinType::F64,
+            .bits = std::nullopt
+        },
+    };
+    const auto signs = std::array {LiteralSign::Positive, LiteralSign::Negative};
+    for (const auto& item : cases) {
+        for (const auto sign : signs) {
+            CAPTURE(item.spelling);
+            CAPTURE(item.suffix);
+            CAPTURE(sign);
+            const auto result = normalize_literal(
+                compilation,
+                ASTLiteral {
+                    .span = Span::at(0u),
+                    .value =
+                        FloatingLiteralValue {
+                            .value_span = Span::at(0u),
+                            .spelling = std::string(item.spelling),
+                            .suffix = item.suffix,
+                        },
+                },
+                ConstructionTypeRef {compilation.builtin_type(item.expected_type)},
+                sign
+            );
+            if (!item.bits.has_value()) {
+                REQUIRE_FALSE(result.has_value());
+                CHECK_EQ(result.error(), ConstantEvaluationFailure::FloatingLiteralOutOfRange);
+                continue;
+            }
+            REQUIRE(result.has_value());
+            const auto narrow = item.suffix == NumericSuffix::F32
+                || (item.suffix == NumericSuffix::None && item.expected_type == BuiltinType::F32);
+            CHECK_EQ(result->type, narrow ? f32 : f64);
+            const auto sign_bit = sign == LiteralSign::Negative
+                ? (narrow ? 0x80000000ull : 0x8000000000000000ull)
+                : 0ull;
+            const auto bits = narrow
+                ? std::uint64_t {std::bit_cast<std::uint32_t>(
+                      std::get<F32Constant>(result->value).value
+                  )}
+                : std::bit_cast<std::uint64_t>(std::get<F64Constant>(result->value).value);
+            CHECK_EQ(bits, *item.bits | sign_bit);
+        }
+    }
 }

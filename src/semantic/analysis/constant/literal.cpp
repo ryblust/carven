@@ -107,31 +107,33 @@ auto normalize_literal(
                 }
                 return ConstantFact {.type = type, .value = integer};
             } else if constexpr (std::same_as<Value, FloatingLiteralValue>) {
-                if (value.conversion == NumericConversion::OutOfRange) {
-                    return std::unexpected(ConstantEvaluationFailure::FloatingLiteralOutOfRange);
-                }
                 const auto type = normalized_numeric_type(draft, value.suffix, true, expected);
                 const auto kind = builtin_type(draft, type);
                 if (!kind.has_value() || (*kind != BuiltinType::F32 && *kind != BuiltinType::F64)) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
                 }
-                const auto number = negative ? -value.value : value.value;
-                if (*kind == BuiltinType::F32) {
-                    const auto narrowed = static_cast<float>(number);
-                    if (std::isfinite(number) && !std::isfinite(narrowed)) {
+                const auto parse = [&]<typename Floating>() noexcept
+                    -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+                    auto number = decltype(Floating::value) {};
+                    const auto* first = value.spelling.data();
+                    const auto* last = first + value.spelling.size();
+                    const auto parsed =
+                        std::from_chars(first, last, number, std::chars_format::general);
+                    if (parsed.ec == std::errc::result_out_of_range) {
                         return std::unexpected(
                             ConstantEvaluationFailure::FloatingLiteralOutOfRange
                         );
                     }
+                    if (parsed.ec != std::errc {} || parsed.ptr != last) {
+                        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                    }
                     return ConstantFact {
                         .type = type,
-                        .value = F32Constant {.value = narrowed},
+                        .value = Floating {.value = negative ? -number : number},
                     };
-                }
-                return ConstantFact {
-                    .type = type,
-                    .value = F64Constant {.value = number},
                 };
+                return *kind == BuiltinType::F32 ? parse.template operator()<F32Constant>()
+                                                 : parse.template operator()<F64Constant>();
             } else if constexpr (std::same_as<Value, NullPointerLiteralValue>) {
                 const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
                 if (negative

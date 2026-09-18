@@ -167,13 +167,15 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     for (; separator < args.size() && std::string_view(args[separator]) != "--"; ++separator) {
         const auto argument = std::string_view(args[separator]);
         if (argument.starts_with('-')) {
-            return fail(std::format("unknown option '{}'", argument));
+            return fail(std::format(
+                "unknown option '{}'\nRun 'carven --help' for usage.", argument
+            ));
         }
         input_paths.push_back(argument);
     }
     if (input_paths.empty()) {
         return fail(
-            "usage: carven <source-file>... [-- <arguments>...]; source files are required"
+            "running a program requires at least one source file\nRun 'carven --help' for usage."
         );
     }
     const auto crafts = find_crafts_directory(executable);

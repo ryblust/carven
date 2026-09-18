@@ -88,3 +88,16 @@ test "floating constants survive native reconstruction" {
     check(nonfinite_array != nonfinite_array);
     check(classify(1.5) == 1 && classify(2.0) == 2 && classify(nan) == 0);
 }
+
+const test "Numeric types: literals and integer casts round directly to their destination" {
+    let contextual: f32 = 1.0000000596046448;
+    check(contextual == 1.00000011920928955078125f32);
+    check(1.0000000596046448f32 == 1.00000011920928955078125f32);
+    check(-1.0000000596046448f32 == -1.00000011920928955078125f32);
+    check((9223372586610589697u64 as f32) == 9223373136366403584f32);
+    check((4611686293305294849i64 as f32) == 4611686568183201792f32);
+    check((-4611686293305294849i64 as f32) == -4611686568183201792f32);
+    check((-9223372036854775808i64 as f32) == -9223372036854775808f32);
+    check((18446744073709551615u64 as f32) == 18446744073709551616f32);
+    check((9007199254740993u64 as f64) == 9007199254740992f64);
+}

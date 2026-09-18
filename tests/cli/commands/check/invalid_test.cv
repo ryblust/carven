@@ -1,0 +1,4 @@
+test "runtime body is checked" {
+    let value: i32 = true;
+    check(value == 1);
+}

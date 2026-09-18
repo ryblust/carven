@@ -152,7 +152,7 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
         case CompileOptionErrorKind::EmptyLinkageDomain: return "linkage domain is empty";
         case CompileOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);
-        case CompileOptionErrorKind::NoSourceInput: return "no source input";
+        case CompileOptionErrorKind::NoSourceInput: return "compile requires at least one source file";
     }
     std::unreachable();
 }

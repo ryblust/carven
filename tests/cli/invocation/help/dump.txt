@@ -1,0 +1,13 @@
+Inspect source syntax.
+
+Usage:
+  carven dump <kind> <source-file>
+
+Kinds:
+  tokens    Print the token stream
+  ast       Print the syntax tree
+
+Options:
+  -h, --help    Show this help
+
+Reads one source file without semantic analysis.

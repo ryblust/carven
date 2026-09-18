@@ -1,0 +1,13 @@
+Run the supported Carven language subset with the interpreter.
+
+Usage:
+  carven interpret [options] <source-file>... [-- <arguments>...]
+
+Options:
+      --trace          Show executed statements, calls, and returns on stderr
+      --max-steps <n>  Set the execution step budget (default: 100000)
+  -h, --help           Show this help
+
+Imports resolve among the supplied sources. An entry point is optional.
+The entry must take no parameters; arguments after '--' are ignored.
+Native C++ integration requires compiled execution.

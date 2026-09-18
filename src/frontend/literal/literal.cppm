@@ -41,9 +41,8 @@ struct IntegerLiteralValue final {
 
 struct FloatingLiteralValue final {
     Span value_span;
-    double value;
+    std::string spelling;
     NumericSuffix suffix;
-    NumericConversion conversion;
 };
 
 struct StringLiteralValue final {

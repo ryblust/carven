@@ -17,6 +17,7 @@ namespace {
 
 auto fail(std::string_view message) noexcept -> int {
     std::println(std::cerr, "carven: error: {}", message);
+    std::println(std::cerr, "Run 'carven interpret --help' for usage.");
     return 1;
 }
 
@@ -54,11 +55,20 @@ auto report_execution_error(const SemIRProgram& program, const ExecutionDiagnost
 auto run_interpret_command(std::span<const char* const> args) noexcept -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
-        std::println(
-            "Usage: carven interpret [--trace] [--max-steps N] <source-file>... [-- <arguments>...]\n"
-            "Interpret the supported Carven subset after semantic analysis.\n"
-            "--trace         Show executed statement locations and function calls/returns.\n"
-            "--max-steps N   Set the execution step budget (default: 100000)."
+        std::print(
+            "Run the supported Carven language subset with the interpreter.\n"
+            "\n"
+            "Usage:\n"
+            "  carven interpret [options] <source-file>... [-- <arguments>...]\n"
+            "\n"
+            "Options:\n"
+            "      --trace          Show executed statements, calls, and returns on stderr\n"
+            "      --max-steps <n>  Set the execution step budget (default: 100000)\n"
+            "  -h, --help           Show this help\n"
+            "\n"
+            "Imports resolve among the supplied sources. An entry point is optional.\n"
+            "The entry must take no parameters; arguments after '--' are ignored.\n"
+            "Native C++ integration requires compiled execution.\n"
         );
         return 0;
     }

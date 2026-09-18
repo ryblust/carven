@@ -106,18 +106,13 @@ auto floating_value(
     std::uint32_t source_offset,
     NumericSuffix suffix
 ) noexcept -> FloatingLiteralValue {
-    auto value = double {};
-    const auto* first = spelling.data();
-    const auto* last = spelling.data() + spelling.size();
-    const auto parsed = std::from_chars(first, last, value, std::chars_format::general);
     return {
         .value_span = Span::from_bounds(
             source_offset,
             source_offset + static_cast<std::uint32_t>(spelling.size())
         ),
-        .value = value,
+        .spelling = std::string(spelling),
         .suffix = suffix,
-        .conversion = conversion_status(parsed.ec, parsed.ptr == last),
     };
 }
 

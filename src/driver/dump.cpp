@@ -24,11 +24,19 @@ struct DumpRequest final {
 
 auto print_help() noexcept -> int {
     std::print(
-        "carven dump - Developer syntax inspection\n"
+        "Inspect source syntax.\n"
         "\n"
-        "USAGE:\n"
-        "    carven dump tokens <source-file>\n"
-        "    carven dump ast <source-file>\n"
+        "Usage:\n"
+        "  carven dump <kind> <source-file>\n"
+        "\n"
+        "Kinds:\n"
+        "  tokens    Print the token stream\n"
+        "  ast       Print the syntax tree\n"
+        "\n"
+        "Options:\n"
+        "  -h, --help    Show this help\n"
+        "\n"
+        "Reads one source file without semantic analysis.\n"
     );
     return 0;
 }
@@ -63,6 +71,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
     const auto request = parse_request(args);
     if (!request) {
         std::println(std::cerr, "carven dump: error: {}", request.error());
+        std::println(std::cerr, "Run 'carven dump --help' for usage.");
         return 1;
     }
 

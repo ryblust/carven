@@ -1,0 +1,25 @@
+import demo::dependency using answer;
+import "missing.hpp" using missing_native_function;
+
+const fn value() {
+    println("prepared");
+    return 7;
+}
+
+const result = value();
+
+const test "static" {
+    check(result == 7);
+    println("checked");
+    eprintln("error stream");
+}
+
+fn main() {
+    missing_native_function();
+    println(answer());
+}
+
+test "runtime" {
+    check(false);
+    println("runtime test");
+}

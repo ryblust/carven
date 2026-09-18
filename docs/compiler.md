@@ -21,7 +21,8 @@ external builds and tests continue to use their build-system integration.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics using the source manager.
 Compile and run commands send the program to the backend; interpret sends it to
-the interpreter. Dump commands consume lexical or syntax results directly.
+the interpreter. Check completes after successful analysis without invoking a
+backend or interpreter. Dump commands consume lexical or syntax results directly.
 
 ```text
 SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram

@@ -1,0 +1,21 @@
+Generate C++ headers and sources from an explicit source batch.
+
+Usage:
+  carven compile [options] <source-file>...
+
+Output options:
+  -o, --output-dir <dir>    Write files below <dir> (default: .)
+      --stdout              Print generated files with path headings
+      --linkage-domain=<id> Set the private namespace identity
+                            (default: derived from the output directory)
+
+Test options:
+      --tests=default       Emit runtime tests, runner, and test entry
+      --tests=external      Emit runtime tests and runner without test entry
+                            (default: no runtime test artifacts)
+
+Options:
+  -h, --help                Show this help
+
+Imports resolve among the supplied sources. C++ compilation and linking
+belong to the consuming build.
