@@ -1,0 +1,53 @@
+fn check_value(value: i32) {
+    check(value == 3);
+}
+
+fn stop() {
+    require(false, "stop helper");
+    println("unreachable helper");
+}
+
+fn stop_failure() {
+    fail("explicit failure");
+}
+
+struct Problem {}
+
+fn recoverable() throw Problem {
+    throw Problem {};
+}
+
+test "ordinary" {
+    var n: u8 = 255;
+    ++n;
+    check(n == 0);
+    check_value(3);
+    println("ordinary");
+}
+
+test "checks continue" {
+    check(false, "first check");
+    check(false, "second check");
+    println("after checks");
+}
+
+test "require stops through recovery" {
+    try {
+        stop();
+        recoverable()?;
+    } catch {
+        Problem(_) => { println("unexpected recovery"); },
+    }
+    println("unreachable test");
+}
+
+test "fail stops helper" {
+    stop_failure();
+    println("unreachable fail test");
+}
+
+test "later test" {
+    println("later");
+}
+
+println("program entry");

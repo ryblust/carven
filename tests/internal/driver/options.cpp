@@ -41,7 +41,7 @@ TEST_CASE("Compile options: explicit modes retain their selected values") {
     CHECK_EQ(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
     CHECK_EQ(output->linkage_domain->value(), "-domain=value");
 
-    const auto stdout_args = std::to_array<const char*>({"--stdout", "--tests=default", "main.cv"});
+    const auto stdout_args = std::to_array<const char*>({"--stdout", "--tests", "main.cv"});
     const auto stdout = parse_compile_command_options(stdout_args);
 
     REQUIRE(stdout.has_value());
@@ -59,10 +59,10 @@ TEST_CASE("Compile options: invalid combinations report structured failures") {
 
     const auto cases = std::array {
         InvalidCase {
-            .args = {"--tests", "main.cv"},
-            .kind = CompileOptionErrorKind::UnknownOption,
-            .option = "--tests",
-            .message = "unknown option '--tests'",
+            .args = {"--tests", "--tests=default", "main.cv"},
+            .kind = CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce,
+            .option = std::nullopt,
+            .message = "test emission mode was specified more than once",
         },
         InvalidCase {
             .args = {"--stdout", "-o", "emit", "main.cv"},

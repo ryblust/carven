@@ -7,6 +7,7 @@ Options:
       --timings Show total and stage timings on stderr
   -h, --help    Show this help
 
-Imports resolve among the supplied sources. No entry point is required.
+Sources include the fixed toolchain and working-directory Crafts roots.
+No entry point is required.
 Runtime code is checked without execution; no C++ files are generated.
 Delegated native operations are checked by the C++ compiler.

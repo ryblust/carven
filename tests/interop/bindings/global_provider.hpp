@@ -8,7 +8,9 @@ inline auto global_point() noexcept -> GlobalPoint {
 }
 
 namespace global_native {
+
 inline auto sum(const GlobalPoint& point) noexcept -> std::int32_t {
     return point.x + point.y;
 }
-}
+
+} // namespace global_native

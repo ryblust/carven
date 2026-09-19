@@ -5,3 +5,9 @@ export(cpp) fn price_cents(quantity: i32) -> i32 {
     };
     return quantity * unit_price;
 }
+
+export(cpp) fn quote(quantity: i32) -> String => f"{quantity} items: {price_cents(quantity)} cents";
+
+export(cpp) fn append_note(&text: String, note: str) => text.append(note);
+
+export(cpp) fn finish(&&text: String) -> String => text;

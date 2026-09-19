@@ -4,11 +4,13 @@ Usage:
   carven interpret [options] <source-file>... [-- <arguments>...]
 
 Options:
+      --tests          Run runtime tests instead of the program entry
       --timings        Show total and stage timings on stderr
       --trace          Show executed statements, calls, and returns on stderr
       --max-steps <n>  Set the execution step budget (default: 100000)
   -h, --help           Show this help
 
-Imports resolve among the supplied sources. An entry point is optional.
+Sources include the fixed toolchain and working-directory Crafts roots.
+Program execution requires top-level statements or main.
 The entry must take no parameters; arguments after '--' are ignored.
 Native C++ integration requires compiled execution.

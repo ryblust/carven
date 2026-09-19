@@ -33,12 +33,12 @@ From the repository root:
 ./xmakew run carven compile --stdout main.cv
 ```
 
-The first execution command compiles and runs a native program on POSIX hosts.
+The first execution command compiles and runs a native program using the C++ toolchain.
 The second interprets the same source using the supported semantic subset. Both
 print `42`. The third prints generated C++ and artifact headings for inspection.
 Use `carven interpret --trace main.cv` to observe statement locations and calls.
-In Windows PowerShell, use `.\xmakew.ps1`; native execution through the CLI is
-currently POSIX-only, while generation and interpretation are available separately.
+In Windows PowerShell, use `.\xmakew.ps1`. Native execution supports POSIX and
+Windows process environments.
 
 Imports form the start of a source file. Types and constants normally precede
 functions that use them; helper functions precede their callers. Carven also
@@ -65,7 +65,10 @@ fn main() {
 ```
 
 Supply both files to the compiler, for example
-`./xmakew run carven compile --stdout main.cv math.cv`. Imports do not discover files.
+`./xmakew run carven compile --stdout main.cv math.cv`. Application files are
+explicit inputs. The commands also collect all `.cv` and `.cpp` files under the
+toolchain's `crafts/carven/` and the working directory's `crafts/`. Imports resolve
+within the resulting module batch.
 
 An unprefixed module reference starts at the current craft's root. A leading
 `.` starts in the importing module's directory. `json::parser` selects a module
@@ -371,7 +374,7 @@ converts the external result to `usize`. Carven still checks access and ownershi
 A header import without `using` introduces no short names. Include search paths
 and linked libraries are supplied by the native build.
 
-`import(cpp)` declares a scalar function provided by C++, while `export(cpp)`
+`import(cpp)` declares a function provided by C++, while `export(cpp)`
 publishes a Carven function to a C++ caller:
 
 ```carven
@@ -379,19 +382,52 @@ import "native/provider.hpp";
 
 private import(cpp) fn native_answer() -> i32;
 
-export(cpp) fn answer() -> i32 {
-    return native_answer();
-}
+export(cpp) fn answer() -> i32 => native_answer();
 ```
 
-These explicit boundaries accept infallible scalar signatures. The provider
-uses the same unqualified global C++ name. A top-level `#[cpp]` fragment can
-also supply implementation C++ between matching fences of at least three `-`
-characters.
+These explicit boundaries use ordinary Carven types, Read/Write/Take access,
+and declared failures. C++ checks whether the native declaration accepts the
+generated call; the provider author must honor its behavior and lifetime contract.
+Carven does not parse the C++ implementation.
 
-Carven failures and C++ exceptions are separate. A C++ adapter must handle an
-exception before it escapes a generated `noexcept` boundary if execution is
-to continue.
+An exported interface can return an owner, mutate a caller's owner, or take it:
+
+```carven
+export(cpp) fn greeting(name: str) -> String => f"Hello, {name}!";
+export(cpp) fn append_note(&text: String, note: str) => text.append(note);
+export(cpp) fn finish(&&text: String) -> String => text;
+```
+
+`String` maps to `carven::runtime::String`, and `str` to `std::string_view`.
+Read uses the ordinary value/reference policy, Write uses a mutable reference,
+and Take receives an owned value. C++ callers pass an lvalue for Write and can
+use `std::move` to transfer a String into Take. The generated API header supplies
+the required type and runtime headers.
+
+A top-level `#[cpp]` fragment supplies implementation C++ between matching fences
+of at least three `-` characters. It can define templates and adapters, including
+native exception handlers. A C++ parser adapter can catch parse exceptions and
+return `carven::runtime::Outcome<Result, Failure>`. Its Carven declaration is:
+
+```carven
+struct InvalidPort {}
+
+import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort;
+
+fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, InvalidPort {})?;
+```
+
+Implement `parse_port_native` as a C++ function template that deduces the generated
+failure type from `invalid`. It returns a success value or that failure; Carven's `?` and `catch` then operate
+on the declared failure contract. There is no automatic exception conversion.
+The adapter must catch any C++ exception it intends to recover from before it
+escapes a generated `noexcept` boundary. Enable exceptions in the native build
+for sources containing `try`/`throw`.
+
+Fragments supply implementation C++. Publish Carven functions through
+`export(cpp)` and native declarations through C++ headers. Native code must keep
+borrowed storage valid for every use and return values satisfying the declared
+Carven types.
 
 ## Acquiring an external address
 
@@ -445,7 +481,16 @@ test "addition produces the expected value" {
 
 A failed `check` reports and continues. A failed `require` reports and exits
 the test. `fail()` reports and exits unconditionally. Tests are analyzed with
-the source; generating a test executable requires selecting test emission.
+the source. Run ordinary tests natively or in the interpreter's supported subset:
+
+```shell
+carven --tests tests.cv
+carven interpret --tests tests.cv
+```
+
+Both commands select runtime tests and leave the program entry unexecuted.
+`compile --tests` generates the corresponding C++ test sources. `const test`
+executes during analysis in all three modes.
 
 ## Compile-time execution
 

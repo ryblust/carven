@@ -42,7 +42,7 @@ CommandTimings::~CommandTimings() {
         "C++ generation",
         "Artifact writing",
         "Native compilation",
-        "Program execution"
+        "Execution"
     };
     static_assert(labels.size() == static_cast<std::size_t>(TimingStage::Count));
     for (auto index = 0uz; index < labels.size(); ++index) {

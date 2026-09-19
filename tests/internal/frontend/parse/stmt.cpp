@@ -19,6 +19,7 @@ import :test.internal.frontend.parse.fixture;
 import std;
 
 namespace {
+
 auto body_of(const SyntaxTree& tree) noexcept -> const ASTBlock& {
     return function_body(tree);
 }
@@ -26,6 +27,7 @@ auto body_of(const SyntaxTree& tree) noexcept -> const ASTBlock& {
 auto statement_at(const SyntaxTree& tree, std::size_t index) noexcept -> const ASTStmt& {
     return tree.view().statement(body_of(tree).statements[index]);
 }
+
 } // namespace
 
 TEST_CASE("Parser: else-if chains use an ordered branch list") {

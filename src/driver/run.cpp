@@ -5,9 +5,9 @@ import :artifacts;
 import :backend.generate;
 import :backend.generation.request;
 import :driver.analysis;
-import :driver.input_path;
 import :driver.process;
 import :driver.run;
+import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.decl;
@@ -51,124 +51,23 @@ TemporaryDirectory::~TemporaryDirectory() {
     }
 }
 
-auto find_crafts_directory(std::string_view executable) noexcept -> std::filesystem::path {
-    const auto program = current_executable_path(executable);
-    if (program.empty()) {
-        return {};
-    }
-    auto error = std::error_code();
-    auto installed = program.parent_path().parent_path() / "crafts";
-    if (std::filesystem::is_regular_file(installed / "carven/runtime/runtime.hpp", error)) {
-        return installed;
-    }
-    // Development binaries must belong to a Carven source checkout.
-    for (auto root = program.parent_path(); root != root.parent_path(); root = root.parent_path()) {
-        if (std::filesystem::is_regular_file(root / "src/carven.cppm", error)
-            && std::filesystem::is_regular_file(root / "xmake.lua", error)
-            && std::filesystem::is_regular_file(
-                root / "crafts/carven/runtime/runtime.hpp",
-                error
-            )) {
-            return root / "crafts";
-        }
-    }
-    return {};
-}
-
-struct RunSources final {
-    std::vector<std::string> carven;
-    std::vector<std::string> native;
-};
-
-// Application inputs remain explicit. Only the two fixed Crafts roots are
-// collected; imports, manifests, and parent directories are not searched.
-auto collect_run_sources(
-    std::span<const std::string_view> inputs,
-    const std::filesystem::path& crafts
-) noexcept -> std::expected<RunSources, std::string> {
-    auto result = RunSources {};
-    auto seen = std::set<std::filesystem::path>();
-    const auto add =
-        [&](const std::filesystem::path& path) noexcept -> std::expected<void, std::string> {
-        const auto spelling = path_to_generic_utf8(path);
-        if (path.extension() == ".cv") {
-            const auto module_path = derive_input_module_path(spelling);
-            if (!module_path) {
-                return std::unexpected(module_path.error());
-            }
-        }
-        auto error = std::error_code();
-        const auto identity = std::filesystem::canonical(path, error);
-        if (error) {
-            return std::unexpected(
-                std::format("cannot read source file '{}': {}", spelling, error.message())
-            );
-        }
-        if (seen.insert(identity).second) {
-            (path.extension() == ".cv" ? result.carven : result.native).push_back(spelling);
-        }
-        return {};
-    };
-    for (const auto input : inputs) {
-        // Validate explicit inputs even if they duplicate a discovered file.
-        const auto module_path = derive_input_module_path(input);
-        if (!module_path) {
-            return std::unexpected(module_path.error());
-        }
-        if (const auto added = add(path_from_utf8(input)); !added) {
-            return std::unexpected(added.error());
-        }
-    }
-    const auto roots = std::array {crafts / "carven", std::filesystem::path("crafts")};
-    for (const auto& root : roots) {
-        auto error = std::error_code();
-        const auto exists = std::filesystem::exists(root, error);
-        if (!error && !exists && root == std::filesystem::path("crafts")) {
-            continue;
-        }
-        auto iterator = std::filesystem::recursive_directory_iterator(root, error);
-        const auto end = std::filesystem::recursive_directory_iterator();
-        auto files = std::vector<std::filesystem::path>();
-        while (!error && iterator != end) {
-            const auto path = iterator->path();
-            if ((path.extension() == ".cv" || path.extension() == ".cpp")
-                && iterator->is_regular_file(error)) {
-                files.push_back(path);
-            }
-            if (!error) {
-                iterator.increment(error);
-            }
-        }
-        if (error) {
-            return std::unexpected(
-                std::format(
-                    "cannot scan Crafts directory '{}': {}",
-                    path_to_generic_utf8(root),
-                    error.message()
-                )
-            );
-        }
-        std::ranges::sort(files);
-        for (const auto& path : files) {
-            if (const auto added = add(path); !added) {
-                return std::unexpected(added.error());
-            }
-        }
-    }
-    std::ranges::sort(result.carven);
-    std::ranges::sort(result.native);
-    return result;
-}
-
 } // namespace
 
 auto run_native_command(std::string_view executable, std::span<const char* const> args) noexcept
     -> int {
     auto show_timings = false;
+    auto tests = false;
     auto input_paths = std::vector<std::string_view> {};
     auto separator = 0uz;
     for (; separator < args.size() && std::string_view(args[separator]) != "--"; ++separator) {
         const auto argument = std::string_view(args[separator]);
+        if (argument == "--tests") {
+            if (tests) {
+                return fail("--tests may be specified only once");
+            }
+            tests = true;
+            continue;
+        }
         if (argument == "--timings") {
             show_timings = true;
             continue;
@@ -186,23 +85,12 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         );
     }
     auto timings = CommandTimings(show_timings, "run");
-    auto collection = TimingScope(timings.recorder(), TimingStage::SourceCollection);
-    const auto crafts = find_crafts_directory(executable);
-    if (crafts.empty()) {
-        return fail("cannot locate Crafts in the Carven installation or source checkout");
-    }
-    const auto sources = collect_run_sources(input_paths, crafts);
+    const auto sources = collect_command_sources(executable, input_paths, timings.recorder());
     if (!sources) {
         return fail(sources.error());
     }
-    collection.stop();
-    // Own all path strings before forming the views consumed by analysis.
-    input_paths.clear();
-    for (const auto& input : sources->carven) {
-        input_paths.push_back(input);
-    }
     auto semantic = load_and_analyze_sources(
-        input_paths,
+        sources->carven,
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         },
@@ -215,14 +103,21 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         semantic->declarations().functions(),
         [](const auto& record) static noexcept { return record.value.entry_point.has_value(); }
     );
-    if (!has_entry) {
+    if (tests
+        && !std::ranges::any_of(
+            semantic->tests().entries(),
+            [](const auto& record) static noexcept { return !record.value.is_const; }
+        )) {
+        return fail("running tests requires at least one runtime test");
+    }
+    if (!tests && !has_entry) {
         return fail("running a program requires an entry point");
     }
     auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
-            .test_mode = TestGenerationMode::None,
+            .test_mode = tests ? TestGenerationMode::RunnerEntryPoint : TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),
         }
     );
@@ -260,7 +155,8 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         || compiler_name == "clang-cl.exe";
     auto native_sources = std::vector<std::string>();
     for (const auto& artifact : artifacts.entries()) {
-        if (artifact.role == GeneratedArtifactRole::ModuleImplementation) {
+        if (artifact.role == GeneratedArtifactRole::ModuleImplementation
+            || artifact.role == GeneratedArtifactRole::TestEntry) {
             native_sources.push_back(
                 path_to_generic_utf8(*directory / path_from_utf8(artifact.logical_path))
             );
@@ -269,7 +165,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     native_sources.append_range(sources->native);
     const auto includes = std::array {
         output_directory,
-        path_to_generic_utf8(crafts),
+        path_to_generic_utf8(sources->crafts),
         std::string("crafts"),
         std::string(".")
     };
@@ -328,7 +224,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             program_args.emplace_back(argument);
         }
     }
-    auto execution = TimingScope(timings.recorder(), TimingStage::ProgramExecution);
+    auto execution = TimingScope(timings.recorder(), TimingStage::Execution);
     const auto executed = run_process(std::move(program_args));
     execution.stop();
     if (executed) {

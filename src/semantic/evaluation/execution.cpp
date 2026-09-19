@@ -16,6 +16,13 @@ ExecutionBody::ExecutionBody(const StructuredBodyDraft& body) noexcept
 ExecutionBody::ExecutionBody(const SemIRBody& body) noexcept
     : body(&body) {}
 
+auto ExecutionBody::kind() const noexcept -> BodyKind {
+    if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
+        return (*draft)->kind;
+    }
+    return std::get<const SemIRBody*>(body)->kind();
+}
+
 auto ExecutionBody::region() const noexcept -> const SemanticRegion& {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
         return (*draft)->region;
@@ -77,10 +84,10 @@ auto execute_constant_root(
     co_return finish_execution(context, (co_await executor.evaluate_root(expression)));
 }
 
-auto execute_constant_body(
+auto execute_body(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
-    const StructuredBodyDraft& body,
+    ExecutionBody body,
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<void> {
     auto executor = SemanticExecutor(values, context, limits);

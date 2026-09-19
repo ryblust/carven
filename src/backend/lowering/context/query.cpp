@@ -23,13 +23,14 @@ auto ModuleLowering::cpp_name(const CppNameReference& name) noexcept -> TargetNa
     return TargetName::globally_qualified(std::move(components));
 }
 
-auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> TargetExpr {
+auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept
+    -> TargetExpr {
     const auto operand = [&](const CppTypeOperand& value) noexcept -> TargetExpr {
         return {
             .value = TargetCallExpr {
                 .callee = target_child(intrinsic_expression(TargetSymbol::StdDeclval)),
                 .template_arguments = {reference_type(
-                    lower_type(value.type),
+                    lower_type(value.type, scope),
                     value.access == AccessMode::Read,
                     value.access == AccessMode::Take
                 )},
@@ -138,9 +139,10 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query) noexcept -> Targe
     );
 }
 
-auto ModuleLowering::lower_cpp_query(const CppQueryType& query) noexcept -> TargetTypeID {
+auto ModuleLowering::lower_cpp_query(const CppQueryType& query, TypeNameScope scope) noexcept
+    -> TargetTypeID {
     const auto type = target().intern_type({
-        .value = TargetDecltypeType(cpp_type_query(query)),
+        .value = TargetDecltypeType(cpp_type_query(query, scope)),
         .const_qualified = false,
     });
     artifact_lowering.name_query_type(type);

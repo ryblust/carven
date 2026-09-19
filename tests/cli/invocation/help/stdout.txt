@@ -11,6 +11,7 @@ Commands:
   dump         Inspect tokens or the syntax tree
 
 Options:
+      --tests      Compile and run runtime tests instead of the program entry
       --timings    Show total and stage timings on stderr
   -h, --help       Show this help
   -V, --version    Show the version

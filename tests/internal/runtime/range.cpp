@@ -8,6 +8,7 @@ module carven:test.internal.runtime.range;
 import std;
 
 namespace {
+
 constexpr auto count_interval(carven::runtime::Range<std::uint64_t> range) noexcept -> int {
     auto count = 0;
     for (const auto value : range) {
@@ -17,6 +18,7 @@ constexpr auto count_interval(carven::runtime::Range<std::uint64_t> range) noexc
     }
     return count;
 }
+
 } // namespace
 
 TEST_CASE("Runtime: integer intervals support constant evaluation and maximum endpoints") {

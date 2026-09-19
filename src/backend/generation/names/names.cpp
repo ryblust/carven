@@ -153,7 +153,6 @@ auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
         case TargetTemporaryNameKind::Continue:             return "continue_target";
         case TargetTemporaryNameKind::TestValue:            return "test_value";
         case TargetTemporaryNameKind::CppBoundaryParameter: return "cpp_boundary_parameter";
-        case TargetTemporaryNameKind::CppProviderPointer:   return "cpp_provider_pointer";
     }
     std::unreachable();
 }

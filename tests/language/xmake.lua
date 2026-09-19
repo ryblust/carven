@@ -64,6 +64,30 @@ target("carven-test-language-reporting")
     end)
 target_end()
 
+target("carven-test-language-runner-failure")
+    set_default(false)
+    add_rules("@carven/carven", {tests = "default"})
+    set_languages("c++20")
+    add_files(path.join(language_dir, "testing", "runner_failure.cv"))
+    add_tests("failure", {group = "language"})
+    on_test(function (target)
+        local stdout_file, stderr_file = os.tmpfile(), os.tmpfile()
+        local status = os.execv(target:targetfile(), {}, {
+            try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
+        })
+        local stdout = (io.readfile(stdout_file) or ""):gsub("\r\n", "\n")
+        local stderr = (io.readfile(stderr_file) or ""):gsub("\r\n", "\n")
+        os.tryrm(stdout_file)
+        os.tryrm(stderr_file)
+        assert(status == 1, "failed tests must produce exit code 1: " .. tostring(status))
+        assert(stdout == "ordinary\nafter checks\nlater\n", "unexpected test execution: " .. stdout)
+        for _, message in ipairs({"first check", "second check", "stop helper", "explicit failure"}) do
+            assert(stderr:find(message, 1, true), "missing test failure: " .. message .. "\n" .. stderr)
+        end
+        return true
+    end)
+target_end()
+
 for _, mode in ipairs({
     {standard = "c++20", suffix = ""},
     {standard = "c++23", suffix = "-cxx23"},

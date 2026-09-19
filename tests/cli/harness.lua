@@ -90,14 +90,21 @@ function main(target, opt, case_specs)
         local stdout_file = path.join(work_dir, ".stdout-" .. index)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
         local step_program = program
+        local args = table.clone(step.args)
         if step.installed_toolchain then
-            local prefix = path.join(work_dir, "toolchain with spaces")
+            local prefix = path.join(work_dir, "installation", "crafts", "toolchain with spaces")
             step_program = path.join(prefix, "bin", path.filename(program))
             os.mkdir(path.directory(step_program))
             os.cp(program, step_program)
             os.cp(path.join(os.projectdir(), "crafts", "carven"), path.join(prefix, "crafts", "carven"))
+            for _, source in ipairs(step.installed_inputs or {}) do
+                table.insert(args, path.join(prefix, "crafts", source))
+            end
         end
-        local exit_code, run_error = os.execv(step_program, step.args, {
+        for _, source in ipairs(step.absolute_inputs or {}) do
+            table.insert(args, path.join(work_dir, source))
+        end
+        local exit_code, run_error = os.execv(step_program, args, {
             try = true, timeout = 30000, curdir = work_dir,
             stdout = stdout_file, stderr = stderr_file,
         })
@@ -123,9 +130,11 @@ function main(target, opt, case_specs)
             step.stdout_contains, step.stdout_ordered, step.stdout_unordered)
         check_stream(failures, prefix .. "stderr", stderr, expected_output(step.stderr),
             step.stderr_contains, step.stderr_ordered)
-        for _, fragment in ipairs(step.stderr_not_contains or {}) do
-            if stderr:find(fragment, 1, true) then
-                table.insert(failures, prefix .. "stderr unexpectedly contains: " .. fragment)
+        for stream, value in pairs({stdout = stdout, stderr = stderr}) do
+            for _, fragment in ipairs(step[stream .. "_not_contains"] or {}) do
+                if value:find(fragment, 1, true) then
+                    table.insert(failures, prefix .. stream .. " unexpectedly contains: " .. fragment)
+                end
             end
         end
         for _, filename in ipairs(step.output_files or {}) do

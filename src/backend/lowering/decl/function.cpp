@@ -62,9 +62,6 @@ auto lower_cpp_import(
     }
     const auto& semantic_signature =
         context.semantic().callable_signatures().signature(callable.signature);
-    if (!context.plan().failure_abi().members(semantic_signature.failures).empty()) {
-        invariant_violation("C++ import lowering received a fallible signature");
-    }
     auto names = context.make_callable_name_allocator();
     auto parameters = std::vector<TargetParameter>();
     auto argument_names = std::vector<TargetLocalID>();
@@ -85,50 +82,33 @@ auto lower_cpp_import(
     }
     auto body = std::vector<TargetStmt>();
     if (!declaration_only) {
-        const auto provider =
-            context.target().add_local(names.fresh(TargetTemporaryNameKind::CppProviderPointer));
         auto provider_name = std::vector<TargetIdentifier>();
         provider_name.push_back(
             TargetIdentifier::from_spelling(context.semantic().provenance().spelling(function.name))
         );
-        body.push_back(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .local = provider,
-                .type = context.intrinsic_type(TargetSymbol::Auto),
-                .initializer = call_expression(
-                    intrinsic_expression(TargetSymbol::StdAddressof),
-                    target_expressions(
-                        name_expression(TargetName::globally_qualified(std::move(provider_name)))
-                    )
-                ),
-            }
-        ));
         auto arguments = std::vector<TargetExpr>();
-        for (const auto& name : argument_names) {
-            arguments.push_back(name_expression(name));
+        for (auto index = 0uz; index < argument_names.size(); ++index) {
+            auto argument = name_expression(argument_names[index]);
+            if (semantic_signature.parameters[index].access == AccessMode::Take) {
+                argument = call_expression(
+                    intrinsic_expression(TargetSymbol::StdMove),
+                    target_expressions(std::move(argument))
+                );
+            }
+            arguments.push_back(std::move(argument));
         }
-        auto call = call_expression(name_expression(provider), std::move(arguments));
-        if (is_char_type(context.semantic(), semantic_signature.result)) {
+        auto call = call_expression(
+            name_expression(TargetName::globally_qualified(std::move(provider_name))),
+            std::move(arguments)
+        );
+        if (context.plan().failure_abi().members(semantic_signature.failures).empty()
+            && is_char_type(context.semantic(), semantic_signature.result)) {
             call = call_expression(
                 intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
                 target_expressions(std::move(call))
             );
         }
-        if (context.is_void(semantic_signature.result)) {
-            body.push_back(generated_statement(
-                TargetExprStmt {
-                    .expression = std::move(call),
-                }
-            ));
-        } else {
-            body.push_back(generated_statement(
-                TargetReturnStmt {
-                    .expression = std::move(call),
-                }
-            ));
-        }
+        body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(call)}));
     }
     return TargetFunctionDecl {
         .name = TargetName {context.names().function_identifier(function_id)},

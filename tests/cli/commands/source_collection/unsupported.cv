@@ -1,0 +1,9 @@
+import std::utf.scalar using char_from_u32;
+
+println(
+    try {
+        char_from_u32(65)?
+    } catch {
+        _ => '?',
+    }
+);

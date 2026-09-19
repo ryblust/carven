@@ -47,10 +47,10 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return symbol_info("carven::runtime::ReadArg", "carven/runtime/passing.hpp");
         case TargetSymbol::RuntimeTransfer:
             return symbol_info("carven::runtime::transfer", "carven/runtime/passing.hpp", true);
-        case TargetSymbol::RuntimeUnwrapNativeResult:
+        case TargetSymbol::RuntimeNativeTestResult:
             return symbol_info(
-                "carven::runtime::unwrap_native_result",
-                "carven/runtime/outcome.hpp",
+                "carven::runtime::native_test_result",
+                "carven/runtime/testing.hpp",
                 true
             );
         case TargetSymbol::RuntimeTestStopped:

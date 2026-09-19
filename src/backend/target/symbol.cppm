@@ -25,7 +25,7 @@ enum class TargetSymbol {
     RuntimeReadArg,
     RuntimeTransfer,
     RuntimeDeferredResult,
-    RuntimeUnwrapNativeResult,
+    RuntimeNativeTestResult,
     RuntimeTestStopped,
     RuntimeCurrentTest,
     RuntimeOutcome,

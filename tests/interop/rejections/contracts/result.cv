@@ -1,0 +1,8 @@
+import "providers/contracts.hpp";
+
+import(cpp) fn contract_text(value: String) -> ptr<i32>;
+
+export fn use() -> ptr<i32> {
+    let text: String = "text";
+    return contract_text(text);
+}

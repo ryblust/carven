@@ -5,59 +5,10 @@ import :diagnostics.diagnostic;
 import :semantic.analysis.interop;
 import :semantic.analysis.program;
 import :semantic.semir.decl;
-import :semantic.semir.type;
 import :source.cpp.identifier;
-import :support.invariant;
 import std;
 
 namespace {
-
-auto is_cpp_scalar_type(BuiltinType type) noexcept -> bool {
-    using enum BuiltinType;
-    switch (type) {
-        case Bool:
-        case Char:
-        case I8:
-        case I16:
-        case I32:
-        case I64:
-        case U8:
-        case U16:
-        case U32:
-        case U64:
-        case Isize:
-        case Usize:
-        case F32:
-        case F64:          return true;
-        case Void:
-        case String:
-        case Str:
-        case StrCharsView:
-        case EntryArgs:    return false;
-    }
-    std::unreachable();
-}
-
-auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<BuiltinType> {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    if (concrete == nullptr) {
-        return std::nullopt;
-    }
-    const auto resolved = draft.type_copy(*concrete);
-    const auto* builtin = std::get_if<BuiltinTypeValue>(&resolved.value);
-    return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
-}
-
-auto is_cpp_parameter_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
-    const auto builtin = builtin_type(draft, type);
-    return builtin.has_value() && is_cpp_scalar_type(*builtin);
-}
-
-auto is_cpp_result_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
-    const auto builtin = builtin_type(draft, type);
-    return builtin.has_value() && (*builtin == BuiltinType::Void || is_cpp_scalar_type(*builtin));
-}
 
 auto is_unrepresentable_cpp_provider_name(std::string_view name) noexcept -> bool {
     return name == "main" || name == "std" || name == "carven";
@@ -81,15 +32,12 @@ auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept ->
 
 } // namespace
 
-auto validate_cpp_boundary_head(
+auto validate_cpp_provider(
     ProgramDraft& draft,
     ProgramModuleID module_id,
-    const ASTFunctionDecl& function,
-    std::span<const ConstructionCallableParameter> parameters
+    const ASTFunctionDecl& function
 ) noexcept -> AnalysisResult<void> {
-    const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
-    const auto cpp_export = function.cpp_export.has_value();
-    if (!cpp_import && !cpp_export) {
+    if (!std::holds_alternative<ASTCppImportForm>(function.implementation)) {
         return {};
     }
 
@@ -99,41 +47,14 @@ auto validate_cpp_boundary_head(
                                                 .primary(locate(source_id(draft, module_id), span))
                                                 .build());
     };
-    if (function.throw_clause.has_value()) {
-        diagnose(
-            function.throw_clause->span,
-            "a C++ boundary function cannot declare failures",
-            DiagnosticCode::CppBoundary
-        );
-    }
-    if (parameters.size() != function.parameters.size()) {
-        invariant_violation("C++ boundary syntax and callable parameters are not aligned");
-    }
-    for (const auto [index, parameter] : std::views::enumerate(parameters)) {
-        const auto& source = function.parameters[index];
-        if (parameter.access != AccessMode::Read) {
-            diagnose(
-                source.access.marker.value_or(source.span),
-                "C++ boundary parameters must use Read access",
-                DiagnosticCode::CppBoundary
-            );
-        }
-        if (!is_cpp_parameter_type(draft, parameter.type)) {
-            diagnose(
-                source.span,
-                "C++ boundary parameters require a supported scalar type",
-                DiagnosticCode::CppBoundaryType
-            );
-        }
-    }
     const auto name = draft.source_slice_copy(module_id, function.name_span);
-    if (cpp_import && !is_supported_cpp_identifier(name)) {
+    if (!is_supported_cpp_identifier(name)) {
         diagnose(
             function.name_span,
             "C++ provider name must be a supported C++ identifier",
             DiagnosticCode::CppIdentifier
         );
-    } else if (cpp_import && is_unrepresentable_cpp_provider_name(name)) {
+    } else if (is_unrepresentable_cpp_provider_name(name)) {
         diagnose(
             function.name_span,
             "this name cannot be represented as a global C++ provider",
@@ -142,30 +63,6 @@ auto validate_cpp_boundary_head(
     }
     return failure.has_value() ? AnalysisResult<void>(std::unexpected(*failure))
                                : AnalysisResult<void>();
-}
-
-auto validate_cpp_boundary_result(
-    const ProgramDraft& draft,
-    ProgramModuleID module_id,
-    ASTView syntax,
-    const ASTFunctionDecl& function,
-    ConstructionTypeRef result
-) noexcept -> AnalysisResult<void> {
-    if ((!std::holds_alternative<ASTCppImportForm>(function.implementation)
-         && !function.cpp_export.has_value())
-        || is_cpp_result_type(draft, result)) {
-        return {};
-    }
-    const auto span = function.result_type.has_value() ? syntax.type(*function.result_type).span
-                                                       : function.name_span;
-    return std::unexpected(draft.diagnostics().error(
-        DiagnosticBuilder(
-            DiagnosticCode::CppBoundaryType,
-            "a C++ boundary result requires a supported scalar type or void"
-        )
-            .primary(locate(source_id(draft, module_id), span))
-            .build()
-    ));
 }
 
 auto diagnose_cpp_api_surface(ProgramDraft& draft, AnalysisCatalogView catalog) noexcept

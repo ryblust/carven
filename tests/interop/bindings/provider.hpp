@@ -3,6 +3,7 @@
 #include <utility>
 
 namespace native {
+
 inline std::int32_t trace = 0;
 
 inline auto record(std::int32_t value) -> std::int32_t {
@@ -116,7 +117,7 @@ inline auto moves() -> std::int32_t {
 inline auto live() -> std::int32_t {
     return Owner::live;
 }
-}
+} // namespace native
 
 inline auto plain(std::int32_t value) -> std::int32_t {
     return value;

@@ -1,4 +1,4 @@
-Generate C++ headers and sources from an explicit source batch.
+Generate C++ headers and sources from application inputs and fixed Crafts roots.
 
 Usage:
   carven compile [options] <source-file>...
@@ -10,7 +10,8 @@ Output options:
                             (default: derived from the output directory)
 
 Test options:
-      --tests=default       Emit runtime tests, runner, and test entry
+      --tests               Emit runtime tests, runner, and test entry
+      --tests=default       Alias for --tests
       --tests=external      Emit runtime tests and runner without test entry
                             (default: no runtime test artifacts)
 
@@ -18,5 +19,5 @@ Options:
       --timings             Show total and stage timings on stderr
   -h, --help                Show this help
 
-Imports resolve among the supplied sources. C++ compilation and linking
-belong to the consuming build.
+Sources include the fixed toolchain and working-directory Crafts roots.
+C++ compilation and linking belong to the consuming build.

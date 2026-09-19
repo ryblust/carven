@@ -110,4 +110,4 @@ struct Guard final {
     ~Guard() { record('g', value); }
 };
 
-}
+} // namespace tail_outcome_probe

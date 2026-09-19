@@ -15,4 +15,4 @@ auto same_backing(
     return owner.data() == view.data();
 }
 
-}
+} // namespace slice_observation

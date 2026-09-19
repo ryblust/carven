@@ -38,9 +38,9 @@ including crafts headers they use. Generated-code findings are addressed in the
 generator and verified after regeneration. Static analysis is read-only; fixes
 are made in the owning source.
 
-The [base configuration](../.clang-tidy) applies to handwritten C++; generated
-C++ uses [its derived configuration](../xmake/generated.clang-tidy). Findings
-from selected checks fail the analysis command in both profiles.
+`.clang-tidy` applies to handwritten C++; generated C++ uses
+`xmake/generated.clang-tidy`. Findings from selected checks fail the analysis
+command in both profiles.
 
 Reproduce unexpected module or dependency failures after `./xmakew clean` and
 `./xmakew build`. Clean the build tree before changing toolchains or switching
@@ -100,7 +100,15 @@ A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
 `interop`. Internal tests use doctest; generated programs use Carven's testing
 support. `const test` checks execute during Carven compilation and do not generate
-runtime test functions. Use them for compiler-executed behavior; retain runtime
+runtime test functions. `carven interpret --tests` executes ordinary tests in the
+interpreter subset with runtime semantics. Use shared fixtures to compare interpreted
+and native behavior, including helper assertions and execution ordering.
+
+Internal interpreter tests cover admission, failure propagation, and per-test
+execution budgets. Language tests cover generated test runners and their exit
+status. CLI tests cover test options, source ordering, and report output.
+
+Use static tests for compiler-executed behavior; retain runtime
 cases for C++ generation, runtime support, and native integration.
 
 User-facing programs live under `examples/`. Their output checks belong to the
@@ -165,9 +173,10 @@ documents.
 
 `xmake/build_pulse.lua` measures fresh build throughput, module scaling, and
 private-edit locality. `xmake/analysis_pulse.lua` measures call-chain ordering,
-shared nominal and native-query dependencies, and structured loop depth. Run
-instructions and sampling options are in the [Xmake support
-README](../xmake/README.md#performance-pulses).
+shared nominal and native-query dependencies, and structured loop depth. After
+building the compiler, run `./xmakew bench-build` or `./xmakew bench-analysis`.
+Use `--samples=<count>` and `--warmups=<count>` to set measured and warmup runs,
+and `--compiler=<path>` to select another compiler executable.
 
 ## Organization
 
@@ -222,11 +231,11 @@ acceptance uses expected program results; compiled execution also exercises gene
 ## Graver
 
 `./xmakew test -g graver` runs C++ tests for source preservation, layout,
-formatting, batch results, and file replacement. Formatting examples check exact
-output and idempotence in one process. Repository sources check syntax preservation
-and output stability after horizontal-whitespace changes. Invalid inputs check
-lexical and syntax errors.
+formatting, batch results, and file replacement. Formatting fixtures check exact
+output, idempotence, and output stability after horizontal-whitespace changes.
+Invalid inputs check lexical and syntax errors. The separately registered corpus
+test checks formatting, output parsing, and idempotence for repository programs.
 
 Xmake registers each CLI scenario separately for selection and reporting. The
-CLI harness checks exit codes, stdout, stderr, and filesystem changes. See
-[Graver](../tools/graver/README.md) for fixture layout and commands.
+CLI harness checks exit codes, stdout, stderr, and filesystem changes. Formatting
+fixtures under `tools/graver/tests/format/` pair `input.cv` with `expected.cv`.

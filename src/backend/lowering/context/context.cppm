@@ -60,6 +60,8 @@ private:
     friend class ModuleLowering;
 };
 
+enum class TypeNameScope { Module, Global };
+
 class ModuleLowering final {
 public:
     ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept;
@@ -75,10 +77,13 @@ public:
     auto active_module() const noexcept -> ModuleID;
     auto names() const noexcept -> const TargetNamePlan&;
     auto global_function_name(FunctionID id) noexcept -> TargetName;
-    auto structure_name(StructID id) noexcept -> TargetName;
-    auto enumeration_name(EnumID id) noexcept -> TargetName;
+    auto structure_name(StructID id, TypeNameScope scope = TypeNameScope::Module) noexcept
+        -> TargetName;
+    auto enumeration_name(EnumID id, TypeNameScope scope = TypeNameScope::Module) noexcept
+        -> TargetName;
     auto callable_name(CallableID id) noexcept -> TargetName;
-    auto closure_type_name(CallableID id) noexcept -> TargetName;
+    auto closure_type_name(CallableID id, TypeNameScope scope = TypeNameScope::Module) noexcept
+        -> TargetName;
     auto require_callable(CallableID id) noexcept -> void;
     auto next_required_callable() noexcept -> std::optional<CallableID>;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
@@ -94,12 +99,22 @@ public:
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(TypeID type) noexcept -> TargetTypeID;
-    auto lower_type(TypeID id) noexcept -> TargetTypeID;
-    auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
-    auto lower_cpp_query(const CppQueryType& query) noexcept -> TargetTypeID;
-    auto lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID;
-    auto lower_signature_result(CallableSignatureID signature, bool stops_test) noexcept
+    auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetTypeID;
+    auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
+    auto lower_cpp_query(
+        const CppQueryType& query,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetTypeID;
+    auto lower_parameter(
+        const CallableParameter& parameter,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetTypeID;
+    auto lower_signature_result(
+        CallableSignatureID signature,
+        bool stops_test,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetTypeID;
     auto display_emitter(TypeID type, std::size_t depth = 0) noexcept -> TargetExpr;
     auto take_display_helpers() noexcept -> std::vector<TargetItem>;
     auto is_void(TypeID id) const noexcept -> bool;
@@ -110,18 +125,20 @@ private:
 
     using TypeState = std::variant<Resolving, TargetTypeID>;
 
-    auto function_type(CallableSignatureID signature, bool stops_test) noexcept -> TargetType;
-    auto cpp_type_query(const CppQueryType& query) noexcept -> TargetExpr;
+    auto function_type(CallableSignatureID signature, bool stops_test, TypeNameScope scope) noexcept
+        -> TargetType;
+    auto cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept -> TargetExpr;
 
     ArtifactLowering& artifact_lowering;
     ModuleID module_id;
     TargetNameAllocator allocator;
     std::flat_set<CallableID> required_callables;
     std::deque<CallableID> pending_callables;
-    std::map<TypeID, TypeState> type_cache;
+    std::map<std::pair<TypeID, TypeNameScope>, TypeState> type_cache;
     std::map<std::pair<TypeID, std::size_t>, TargetTypeID> display_types;
     std::vector<TargetItem> display_helpers;
-    std::map<std::pair<CallableSignatureID, bool>, TypeState> signature_result_cache;
+    std::map<std::tuple<CallableSignatureID, bool, TypeNameScope>, TypeState>
+        signature_result_cache;
 };
 
 auto target_child(TargetExpr expression) noexcept -> UniqueIndirect<TargetExpr>;

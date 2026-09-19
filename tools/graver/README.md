@@ -91,7 +91,7 @@ comments, C++ fragments, and type-argument lists may exceed the target.
 
 The `graver` group covers:
 
-- `tests/internal/`: C++ boundary, formatting-example, and repository-corpus tests.
+- `tests/internal/`: C++ boundary, formatting, and repository corpus tests.
 - `tests/cli/`: the process harness and CLI scenarios.
 - `tests/format/`: source-formatting inputs and expected outputs.
 

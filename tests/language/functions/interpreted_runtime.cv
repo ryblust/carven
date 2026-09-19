@@ -1,0 +1,27 @@
+fn interpreted_successor(value: i32) -> i32 => value + 1;
+fn interpreted_check(value: i32) => check(value == 3);
+
+struct InterpretedError {
+    value: i32
+}
+
+fn interpreted_failure() -> i32 throw InterpretedError {
+    throw InterpretedError { value: 7 };
+}
+
+test "Runtime execution: arithmetic storage and recovery agree across executors" {
+    var number: u8 = 255;
+    ++number;
+    check(number == 0);
+    interpreted_check(interpreted_successor(2));
+    var text: String = "a";
+    text.append("b");
+    check(text == "ab");
+    let recovered = try {
+        interpreted_failure()?
+    } catch {
+        InterpretedError(problem) => problem.value,
+    };
+    require(recovered == 7);
+    println("shared runtime test");
+}

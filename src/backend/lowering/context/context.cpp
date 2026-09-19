@@ -111,16 +111,22 @@ auto ModuleLowering::global_function_name(FunctionID id) noexcept -> TargetName 
     return names().global_function_name(id);
 }
 
-auto ModuleLowering::structure_name(StructID id) noexcept -> TargetName {
+auto ModuleLowering::structure_name(StructID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = semantic().declarations().structure(id).module_id;
     artifact_lowering.record_provider_interface(module_id, provider);
-    return names().structure_name(module_id, id);
+    return names().structure_name(
+        scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
+        id
+    );
 }
 
-auto ModuleLowering::enumeration_name(EnumID id) noexcept -> TargetName {
+auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = semantic().declarations().enumeration(id).module_id;
     artifact_lowering.record_provider_interface(module_id, provider);
-    return names().enumeration_name(module_id, id);
+    return names().enumeration_name(
+        scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
+        id
+    );
 }
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
@@ -132,13 +138,16 @@ auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     return names().callable_name(module_id, id);
 }
 
-auto ModuleLowering::closure_type_name(CallableID id) noexcept -> TargetName {
+auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = names().closure_owner(id);
     if (provider == module_id) {
         require_callable(id);
     }
     artifact_lowering.record_provider_interface(module_id, provider);
-    return names().closure_type_name(module_id, id);
+    return names().closure_type_name(
+        scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
+        id
+    );
 }
 
 auto ModuleLowering::require_callable(CallableID id) noexcept -> void {

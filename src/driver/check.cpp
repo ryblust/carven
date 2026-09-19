@@ -2,12 +2,14 @@ module carven:driver.check.impl;
 
 import :driver.analysis;
 import :driver.check;
+import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import std;
 
-auto run_check_command(std::span<const char* const> args) noexcept -> int {
+auto run_check_command(std::string_view executable, std::span<const char* const> args) noexcept
+    -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         std::print(
@@ -20,7 +22,8 @@ auto run_check_command(std::span<const char* const> args) noexcept -> int {
             "      --timings Show total and stage timings on stderr\n"
             "  -h, --help    Show this help\n"
             "\n"
-            "Imports resolve among the supplied sources. No entry point is required.\n"
+            "Sources include the fixed toolchain and working-directory Crafts roots.\n"
+            "No entry point is required.\n"
             "Runtime code is checked without execution; no C++ files are generated.\n"
             "Delegated native operations are checked by the C++ compiler.\n"
         );
@@ -47,8 +50,13 @@ auto run_check_command(std::span<const char* const> args) noexcept -> int {
         return 1;
     }
     auto timings = CommandTimings(show_timings, "check");
+    const auto sources = collect_command_sources(executable, paths, timings.recorder());
+    if (!sources) {
+        std::println(std::cerr, "carven: error: {}", sources.error());
+        return 1;
+    }
     const auto program = load_and_analyze_sources(
-        paths,
+        sources->carven,
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         },

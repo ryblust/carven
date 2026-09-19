@@ -1,0 +1,7 @@
+test "a first" {
+    println("a1");
+}
+
+test "a second" {
+    println("a2");
+}

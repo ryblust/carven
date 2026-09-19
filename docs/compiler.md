@@ -16,8 +16,13 @@ delivered synchronously to the supplied recipient.
 `driver/` owns command options, file loading, diagnostic presentation, artifact
 output, and native process execution. `driver.process` owns POSIX/Windows
 process launching, executable lookup, and temporary run-directory creation.
-The direct-run driver invokes the native compiler without a build-system dependency;
-external builds and tests continue to use their build-system integration.
+`driver.sources` owns executable-relative Crafts lookup and collection from
+the toolchain and working-directory Crafts roots. It supplies physical source paths
+and resolved module identities to checking, C++ generation, and execution.
+It recursively collects all `.cv` and `.cpp` files in those roots, deduplicates
+canonical filesystem paths, and sorts inputs by path spelling. Module imports
+resolve within the collected Carven batch. The direct-run driver compiles collected
+native sources together with generated implementations and executes the result.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics using the source manager's line index for byte locations and
 line ranges.
@@ -66,7 +71,8 @@ including types whose dependencies are still being completed.
 Semantic facts retain the identity and scope of the operation or storage they
 describe. Ownership, nullability, normal-completion constants, and slice extents
 have distinct propagation rules, described in their owning sections below.
-Optional consumers follow the [analysis boundary](principles.md#optimization-analysis-boundary).
+Optional analyses define their fact domains, invalidation rules, and stopping
+conditions; unknown facts retain the ordinary operation.
 
 Backend preparation derives implementation plans from published facts without
 modifying semantic stores. Realization preserves execution, storage, and cleanup
@@ -393,7 +399,7 @@ states. Required initializer and extent evaluation execute the same source
 `SemFormat` directly with execution-local values, a 1 MiB result-text limit, and
 source diagnostics for unsupported conversions. Initializer freezing is a separate
 boundary. Optional formatting choices, encoding proofs, residual formats, and their
-64 KiB materialization budget belong to `backend/preparation` (see backend.md).
+64 KiB materialization budget belong to `backend/preparation`.
 
 Ownership keeps the receiver's Write access separate from formatting inputs and
 enforces ordinary backing lifetimes. Owning formatting constructs independent
@@ -823,14 +829,19 @@ stage so target planning selects only runtime tests.
 Each source batch admits at most one entry: an explicit `main` or the implicit
 function containing one file's top-level statements. Multiple entries are rejected
 by shared semantic analysis. Declaration-only files do not acquire empty entries.
-Compilation does not require an entry; native run commands do. Interpretation
-executes the entry when present. Without an entry, successful analysis, including
-required constant execution and static tests, completes the command successfully.
+Compilation and checking do not require an entry; native and interpreted program
+execution do. Native and interpreted test execution select runtime tests instead of
+the entry and require at least one runtime test. Required constant execution and
+static tests remain part of ordinary analysis in every mode.
 
 `interpreter/` consumes a published `SemIRProgram`. It validates the interpreter
-operation subset from the entry through direct callees, then invokes the shared
-structured executor. Ordinary
-language analysis remains the authority for names, types, access, lifetimes,
+operation subset from the entry or all selected runtime tests through direct
+callees, then invokes the shared structured executor. Runtime tests are ordered by
+canonical module path and source order. Each receives a fresh executor and budget;
+its diagnostics are retained while later tests continue. Test operations are admitted
+in helpers only for test execution. Published tests use the same body execution and
+assertion control as static tests, with runtime arithmetic supplied by the context.
+Ordinary language analysis remains the authority for names, types, access, lifetimes,
 failures, and entry uniqueness; interpretation does not introduce an AST checker.
 
 The executor borrows construction or published bodies through `ExecutionBody`.

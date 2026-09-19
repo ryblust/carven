@@ -74,20 +74,25 @@ public:
     auto global_function_name(FunctionID id) const noexcept -> TargetName;
     auto callable_owner(CallableID id) const noexcept -> ModuleID;
     auto structure_identifier(StructID id) const noexcept -> const TargetIdentifier&;
-    auto structure_name(ModuleID active_module, StructID id) const noexcept -> TargetName;
+    auto structure_name(std::optional<ModuleID> active_module, StructID id) const noexcept
+        -> TargetName;
     auto enumeration_identifier(EnumID id) const noexcept -> const TargetIdentifier&;
-    auto enumeration_name(ModuleID active_module, EnumID id) const noexcept -> TargetName;
+    auto enumeration_name(std::optional<ModuleID> active_module, EnumID id) const noexcept
+        -> TargetName;
     auto enum_case_identifier(EnumCaseID id) const noexcept -> const TargetIdentifier&;
     auto callable_name(ModuleID active_module, CallableID id) const noexcept -> TargetName;
-    auto closure_type_name(ModuleID active_module, CallableID id) const noexcept -> TargetName;
+    auto closure_type_name(std::optional<ModuleID> active_module, CallableID id) const noexcept
+        -> TargetName;
     auto closure_owner(CallableID id) const noexcept -> ModuleID;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto test_function(TestID test) const noexcept -> const TargetIdentifier&;
     auto module_runner(ModuleID id) const noexcept -> const TargetIdentifier&;
 
 private:
-    auto entity_name(ModuleID active_module, const TargetEntityName& entity) const noexcept
-        -> TargetName;
+    auto entity_name(
+        std::optional<ModuleID> active_module,
+        const TargetEntityName& entity
+    ) const noexcept -> TargetName;
     auto global_entity_name(const TargetEntityName& entity) const noexcept -> TargetName;
 
     ProgramIdentity source_identity;
@@ -142,6 +147,7 @@ struct TargetModuleSchedule final {
     std::vector<CallableID> closure_definitions;
     std::vector<CallableID> interface_closures;
     std::vector<TestID> emitted_tests;
+    bool emit_program_entry;
 };
 
 struct TargetInterfaceArtifact final {

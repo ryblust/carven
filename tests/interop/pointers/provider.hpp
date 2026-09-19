@@ -5,6 +5,7 @@
 #include <type_traits>
 
 namespace pointer_probe {
+
 inline std::int32_t first = 10;
 inline std::int32_t second = 20;
 
@@ -98,4 +99,5 @@ inline NativePointer native_slot = &first;
 inline auto nested_native() noexcept -> NativePointer* {
     return &native_slot;
 }
-}
+
+} // namespace pointer_probe

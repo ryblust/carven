@@ -3,7 +3,7 @@ module carven:driver.analysis.impl;
 import :compiler.analysis;
 import :diagnostics.report;
 import :driver.analysis;
-import :driver.input_path;
+import :driver.sources;
 import :source.batch;
 import :source.manager;
 import :source.text;
@@ -11,7 +11,7 @@ import :support.timing;
 import std;
 
 auto load_and_analyze_sources(
-    std::span<const std::string_view> input_paths,
+    std::span<const SourceInput> inputs,
     const ExecutionOutput& output,
     TimingRecorder* timings
 ) noexcept -> std::optional<SemIRProgram> {
@@ -19,15 +19,9 @@ auto load_and_analyze_sources(
     auto has_error = false;
     auto sources = SourceManager();
     auto module_inputs = std::vector<SourceModuleInput> {};
-    module_inputs.reserve(input_paths.size());
-    for (const auto input_path : input_paths) {
-        auto module_path = derive_input_module_path(input_path);
-        if (!module_path) {
-            std::println(std::cerr, "carven: error: {}", module_path.error());
-            has_error = true;
-            continue;
-        }
-        const auto source_id = sources.append_file(input_path);
+    module_inputs.reserve(inputs.size());
+    for (const auto& input : inputs) {
+        const auto source_id = sources.append_file(input.path);
         if (!source_id) {
             std::println(
                 std::cerr,
@@ -40,7 +34,7 @@ auto load_and_analyze_sources(
         }
         module_inputs.push_back({
             .source_id = *source_id,
-            .module_path = std::move(*module_path),
+            .module_path = input.module_path,
         });
     }
     loading.stop();

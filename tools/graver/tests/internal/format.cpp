@@ -7,6 +7,7 @@ module carven:test.graver.format;
 import :diagnostics.diagnostic;
 import :diagnostics.report;
 import :graver.format;
+import :graver.source;
 import :source.manager;
 import :support.path;
 import std;
@@ -29,6 +30,25 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
     REQUIRE(repeated.has_value());
     CHECK(*repeated == *result);
     CHECK(sources.view(*id).text == input);
+    const auto lexical = graver::Source::scan(sources.view(*id));
+    REQUIRE(lexical.has_value());
+    auto perturbed = std::string();
+    const auto tokens = lexical->token_buffer().tokens();
+    for (auto index = 0uz; index <= tokens.size(); ++index) {
+        for (const auto trivia : lexical->trivia_before(index)) {
+            perturbed += trivia.kind == graver::TriviaKind::HorizontalWhitespace
+                ? " \t  "
+                : lexical->spelling(trivia.span);
+        }
+        if (index < tokens.size()) {
+            perturbed += lexical->spelling(tokens[index].span);
+        }
+    }
+    const auto perturbed_id = sources.append_virtual("perturbed.cv", std::move(perturbed));
+    REQUIRE(perturbed_id.has_value());
+    const auto normalized = graver::format(sources, *perturbed_id);
+    REQUIRE(normalized.has_value());
+    CHECK(*normalized == expected);
 }
 
 } // namespace

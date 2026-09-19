@@ -17,6 +17,7 @@ TEST_CASE("Runtime: checked array indexing preserves references") {
 }
 
 namespace {
+
 struct ArrayElement final {
     int value;
     std::vector<int>* trace;
@@ -43,7 +44,8 @@ AdoptedArrayElement::AdoptedArrayElement(const ArrayElement& input) noexcept
 AdoptedArrayElement::~AdoptedArrayElement() noexcept {
     source.trace->push_back(-source.value);
 }
-}
+
+} // namespace
 
 TEST_CASE("Runtime: array adoption directly constructs ordered elements") {
     auto trace = std::vector<int>();

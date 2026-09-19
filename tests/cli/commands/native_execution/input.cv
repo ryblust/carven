@@ -7,6 +7,18 @@ const fn prepare() {
 
 const prepared = prepare();
 
+const test "static execution" {
+    println("static test");
+}
+
+const {
+    println("constant block");
+}
+
+test "unselected test entry" {
+    println("unexpected runtime test");
+}
+
 struct Failure {}
 
 fn main(args) throw Failure {

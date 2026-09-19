@@ -193,8 +193,6 @@ TEST_CASE("Functions: inferred expression results obey visibility and return res
     const auto visibility =
         analyze_test_errors("private struct Hidden {} export fn leak() => Hidden {};");
     CHECK(contains_diagnostic_code(visibility, DiagnosticCode::TypeVisibilityLeak));
-    const auto boundary = analyze_test_errors("struct Value {} export(cpp) fn leak() => Value {};");
-    CHECK(contains_diagnostic_code(boundary, DiagnosticCode::CppBoundaryType));
     const auto view = analyze_test_errors("fn leak(value: fn() -> void) => value;");
     CHECK(contains_diagnostic_code(view, DiagnosticCode::TypeCallableViewEscape));
     const auto captures =

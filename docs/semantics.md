@@ -44,7 +44,7 @@ This document defines the validity and observable behavior of Carven programs.
 ### Compilations, crafts, and modules
 
 A compilation is one closed compiler boundary supplied by the driver or build
-system. Its module catalog is exactly the explicit source-input batch. Every
+system. Its module catalog contains the source batch assembled by that caller. Every
 source input has one canonical module path, a nonempty sequence of components matching
 `[A-Za-z_][A-Za-z0-9_]*`, including keyword spellings.
 Deriving canonical module paths from host filenames is driver policy; the
@@ -807,8 +807,9 @@ parameter representation; a self-dependent representation is rejected by C++.
 Copying, passing, and taking a pointer perform no allocation, reference counting,
 or automatic release. Owners and adapters implement the external resource protocol.
 Native `T**` output protocols and buffer traversal remain in `#[cpp]`; `&p` passes a
-pointer slot by reference and does not implicitly compute a `T**`. Pointers are
-not admitted in scalar `import(cpp)` and `export(cpp)` signatures.
+pointer slot by reference and does not implicitly compute a `T**`. Declared
+`import(cpp)` and `export(cpp)` signatures preserve these same pointer and access
+rules.
 
 ## Bindings, access, and mutation
 
@@ -854,7 +855,7 @@ Read parameters and Read range bindings preserve Carven array, String, and
 closure storage through const references, including storage nested in Carven
 aggregates. Native C++ types and other types use a const value when their C++
 copy construction and destruction are trivial, and a const reference otherwise.
-Explicit scalar `import(cpp)` and `export(cpp)` parameters always cross by value.
+`import(cpp)` and `export(cpp)` use the same Read policy.
 
 A by-value Read argument saves its value when that argument is evaluated. A
 by-reference Read argument retains the selected storage, so writes through
@@ -1735,8 +1736,14 @@ Each top-level `#[cpp]` payload remains an independent, byte-opaque C++ source
 fragment. Carven does not parse or type-check it, interpolate Carven values, or
 bind same-spelled Carven names. C++ owns macros, overloads, templates, linkage,
 exceptions, lifetime, ODR, and undefined behavior inside each fragment.
+Fragments are implementation-only and never publish declarations to generated
+headers. Public Carven entry points use `export(cpp)`; public native declarations
+belong in native headers. Fragment fences do not isolate macro or pragma state.
+A fragment may contain its own configured includes, but cannot configure headers
+already included before it. Distinct native compilation environments belong in
+separate C++ source files managed by the build system.
 
-### Scalar function boundaries
+### Declared function boundaries
 
 An `import(cpp)` declaration is private or bare and has no Carven body:
 
@@ -1744,8 +1751,9 @@ An `import(cpp)` declaration is private or bare and has no Carven body:
 private import(cpp) fn native_value(value: i32) -> i32;
 ```
 
-Calling it invokes a global C++ function with the same unqualified name. Carven
-does not generate the provider declaration or parse, import, or compare its C++
+Calling it invokes the same-named global C++ provider with the declared argument
+access. C++ resolves overloads and function templates from that call. Carven does
+not generate the provider declaration or parse, import, or compare its C++
 signature.
 
 Provider conformance, definition, and link satisfaction are author/toolchain
@@ -1761,33 +1769,51 @@ Carven function with a Carven body. It is also declared in the generated C++
 API for its module:
 
 ```carven
-export(cpp) fn value() -> i32 {
-    return 42;
-}
+export(cpp) fn value() -> i32 => 42;
 ```
 
 An `import(cpp)` declaration cannot be exported directly in any syntactic
 combination; re-export is not a language feature. A wider capability requires
-an explicit ordinary Carven wrapper. Both boundary directions accept only
-concrete, fixed-arity, infallible top-level functions. Every parameter uses
-unmarked Read access and crosses by value. Write/Take access and nonempty
-failure sets are unsupported.
+an explicit ordinary Carven wrapper. Both directions use ordinary function type,
+access, visibility, ownership, and declared failure rules. `void` remains
+result-only; callable-view escape and
+public-surface visibility checks remain ordinary Carven restrictions.
 
-The closed boundary type mapping is:
+The generated signatures use the same C++ representations as Carven functions:
 
-| Carven type | C++ type |
+| Carven contract | C++ representation |
 | --- | --- |
-| `bool` | `bool` |
-| `i8/i16/i32/i64` | `std::int8_t/std::int16_t/std::int32_t/std::int64_t` |
-| `u8/u16/u32/u64` | `std::uint8_t/std::uint16_t/std::uint32_t/std::uint64_t` |
-| `isize/usize` | `std::ptrdiff_t/std::size_t` |
-| `f32/f64` | `float/double` |
-| `char` | `char32_t` |
-| `void` | `void`, result only |
+| Scalars | Their ordinary scalar types, including `char32_t` for `char` |
+| `String` / `str` | `carven::runtime::String` / `std::string_view` |
+| Arrays, slices, ranges, pointers | Their ordinary generated container, view, and pointer types |
+| Structures, enums, concrete closures | Their generated nominal types |
+| Native types | The declared C++ type, with its header environment |
+| Callable views | The runtime callable representation for the declared signature |
+| Read parameters | The ordinary Read policy: value snapshots or const references |
+| Write parameters | Mutable references |
+| Take parameters | Owned values; exports use ordinary transfer and imports forward native rvalues |
+| Infallible result | The ordinary result type, including `void` |
+| Declared failures | `carven::runtime::Outcome<Result, Failures...>` |
 
-`str`, `String`, arrays, structures, enums, callables, process arguments, and iteration
-views are unsupported. An inbound `char32_t` is validated before it becomes a
-Carven `char`; an invalid scalar terminates the program.
+The generated API header includes the required generated type definitions,
+native header environments, and runtime support. Consumers use that header and
+matching runtime headers as a C++ source interface.
+Internal test-stop transport is not added to the exported function's declared
+failure set. An escaping test stop terminates at its native entry; declared
+failures remain observable Outcomes.
+
+Carven checks its side of the contract and generates consistent calls, declarations,
+and definitions. C++ checks native call compatibility and the linker resolves
+symbols. Native providers and callers own lifetime, retention, reentry, and value
+validity obligations, including valid UTF-8 and Unicode scalar values. An imported
+result does not establish an unknown backing relationship. Native Write operations
+do not prove that previously borrowed backing is released. Declared callback
+parameters may be invoked during the call; their declaration does not grant
+permission to retain borrowed callable storage beyond its lifetime.
+
+Direct infallible imported `char` results and exported Read/Take `char` parameters
+also perform a Unicode scalar check; invalid values terminate. This check is not
+recursive validation of aggregates, pointers, mutable references, or Outcomes.
 
 Public module components and exported function names use one deterministic
 encoding. Safe C++ identifiers retain their spelling unless they start with
@@ -1823,7 +1849,8 @@ The integration author owns native exception recovery. To continue Carven
 execution after a native exception, C++ code must handle it before it escapes a
 `noexcept` boundary. The handler may recover internally or communicate an
 application-defined result through the chosen interface. An `import(cpp)`
-adapter obeys the scalar, infallible signature restrictions above.
+adapter can return an explicit Outcome for a declared Carven failure contract;
+C++ exceptions are never translated automatically.
 
 Native handlers may be defined in headers, linked C++ sources, or top-level
 `#[cpp]` fragments under their C++ contracts. Fragments retain their
@@ -2052,8 +2079,6 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-CONST-EVALUATION` | Error | Required constant function execution cannot produce a supported result |
 | `CV-CONST-LIMIT` | Error | Constant execution exceeds a resource budget |
 | `CV-CONST-TEST` | Error | A static test reports failure, or a test operation executes without an active static test |
-| `CV-CPP-BOUNDARY` | Error | An `import(cpp)` or `export(cpp)` function violates the supported declaration shape |
-| `CV-CPP-CARRIER` | Error | A C++ boundary parameter or result has no supported scalar boundary type |
 | `CV-CPP-IDENTIFIER` | Error | A C++ API path or global provider name cannot be represented by generated C++ |
 | `CV-CPP-API-PATH-COLLISION` | Error | A function and namespace require the same prefix in the public C++ API tree |
 | `CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE` | Warning | A catch alternative cannot match a remaining protected failure |

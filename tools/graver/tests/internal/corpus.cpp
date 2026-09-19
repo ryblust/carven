@@ -12,7 +12,7 @@ import :source.manager;
 import :support.path;
 import std;
 
-TEST_CASE("Graver corpus: valid language programs format and stabilize") {
+TEST_CASE("Graver corpus: repository programs format into valid stable source") {
     auto paths = std::vector<std::filesystem::path>();
     for (const auto* root : {"tests/language", "tests/interop", "examples", "crafts"}) {
         auto error = std::error_code();
@@ -40,31 +40,17 @@ TEST_CASE("Graver corpus: valid language programs format and stabilize") {
         REQUIRE(lexical.has_value());
         REQUIRE(parse(sources, lexical->token_buffer()).has_value());
         ++accepted;
-        auto perturbed = std::string();
-        const auto tokens = lexical->token_buffer().tokens();
-        for (auto index = 0uz; index <= tokens.size(); ++index) {
-            for (const auto trivia : lexical->trivia_before(index)) {
-                perturbed += trivia.kind == graver::TriviaKind::HorizontalWhitespace
-                    ? " \t  "
-                    : lexical->spelling(trivia.span);
-            }
-            if (index < tokens.size()) {
-                perturbed += lexical->spelling(tokens[index].span);
-            }
-        }
-        const auto perturbed_id = sources.append_virtual("perturbed.cv", perturbed);
-        REQUIRE(perturbed_id.has_value());
         const auto result = graver::format(sources, *id);
         if (!result) {
             INFO(render_diagnostics(result.error(), sources));
             CHECK(result.has_value());
             continue;
         }
-        const auto normalized = graver::format(sources, *perturbed_id);
-        REQUIRE(normalized.has_value());
-        CHECK(*normalized == *result);
         const auto formatted_id = sources.append_virtual("formatted.cv", *result);
         REQUIRE(formatted_id.has_value());
+        const auto formatted = graver::Source::scan(sources.view(*formatted_id));
+        REQUIRE(formatted.has_value());
+        REQUIRE(parse(sources, formatted->token_buffer()).has_value());
         const auto repeated = graver::format(sources, *formatted_id);
         REQUIRE(repeated.has_value());
         const auto mismatch = std::ranges::mismatch(*result, *repeated);

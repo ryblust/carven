@@ -30,7 +30,9 @@ reference that owns its scope.
 ## Maintenance
 
 - Write concise, factual, neutral explanations of what to do and how. Include
-  mechanisms and rationale where they explain a rule's behavior or use.
+  mechanisms needed to understand a rule's behavior or use. Avoid defenses of
+  design choices, comparisons with removed behavior, and promises about future
+  features or compatibility.
 - Keep each rule in the document that owns its scope. Make each explanation
   locally understandable with the brief context it needs. Use cross-references
   only when essential detail cannot be stated concisely in place. Split documents

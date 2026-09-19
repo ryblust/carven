@@ -23,6 +23,8 @@ public:
         const InterpreterOptions& options
     ) noexcept;
     auto run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic>;
+    auto run_tests() noexcept
+        -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic>;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
@@ -33,6 +35,9 @@ public:
     auto arithmetic() const noexcept -> IntegerArithmetic override;
 
 private:
+    auto admit_body(const SemIRBody& body) noexcept -> void;
+    auto admit_modules() noexcept -> void;
+    auto admit_pending() noexcept -> void;
     auto admit(FunctionID function) noexcept -> void;
     auto reject(ProgramOriginID origin, std::string_view message) noexcept -> void;
     auto supported(TypeID type, bool allow_void = false) const noexcept -> bool;
@@ -48,6 +53,8 @@ private:
     std::set<const SemanticExpression*> direct_callees;
     std::vector<FunctionID> pending;
     std::optional<ExecutionDiagnostic> error;
+    bool testing = false;
+    std::vector<ExecutionDiagnostic> test_diagnostics;
 };
 
 Interpreter::Interpreter(
@@ -120,7 +127,10 @@ auto Interpreter::admit(FunctionID function) noexcept -> void {
         types.push_back(parameter.type);
     }
     parameters.emplace(function, std::move(types));
-    const auto& body = program.bodies().body(*body_id);
+    admit_body(program.bodies().body(*body_id));
+}
+
+auto Interpreter::admit_body(const SemIRBody& body) noexcept -> void {
     for (const auto binding : body.bindings()) {
         if (!supported(binding.value.type)) {
             reject(binding.value.origin, "local type is not supported by the interpreter");
@@ -162,7 +172,7 @@ auto Interpreter::expression(const SemanticExpression& source) noexcept -> void 
         reject(source.origin, *reason);
         return;
     }
-    if (std::holds_alternative<SemTestReport>(source.value)) {
+    if (!testing && std::holds_alternative<SemTestReport>(source.value)) {
         reject(source.origin, "test operations require a test execution context");
         return;
     }
@@ -209,11 +219,14 @@ auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noex
 }
 
 auto Interpreter::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
-    if (!error) {
-        error = diagnostic;
-        error->code = diagnostic.code == DiagnosticCode::ConstLimit
-            ? DiagnosticCode::InterpretLimit
-            : DiagnosticCode::InterpretExecution;
+    auto reported = diagnostic;
+    reported.code = diagnostic.code == DiagnosticCode::ConstLimit
+        ? DiagnosticCode::InterpretLimit
+        : DiagnosticCode::InterpretExecution;
+    if (testing) {
+        test_diagnostics.push_back(std::move(reported));
+    } else if (!error) {
+        error = std::move(reported);
     }
 }
 
@@ -233,7 +246,7 @@ auto Interpreter::trace(const ExecutionTraceEvent& event) noexcept -> void {
     }
 }
 
-auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic> {
+auto Interpreter::admit_modules() noexcept -> void {
     for (const auto module_declaration : program.declarations().modules()) {
         if (!module_declaration.value.cpp_headers.empty()
             || !module_declaration.value.cpp_source_fragments.empty()) {
@@ -243,6 +256,18 @@ auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, Executio
             );
         }
     }
+}
+
+auto Interpreter::admit_pending() noexcept -> void {
+    while (!pending.empty() && !error) {
+        const auto next = pending.back();
+        pending.pop_back();
+        admit(next);
+    }
+}
+
+auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic> {
+    admit_modules();
     const auto& declaration = program.declarations().function(entry);
     if (declaration.entry_point != EntryPointKind::NoArguments) {
         reject(
@@ -251,11 +276,7 @@ auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, Executio
         );
     }
     pending.push_back(entry);
-    while (!pending.empty() && !error) {
-        const auto next = pending.back();
-        pending.pop_back();
-        admit(next);
-    }
+    admit_pending();
     if (error) {
         return std::unexpected(std::move(*error));
     }
@@ -270,6 +291,51 @@ auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, Executio
     return {};
 }
 
+auto Interpreter::run_tests() noexcept
+    -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic> {
+    testing = true;
+    admit_modules();
+    auto selected = std::vector<TestID>();
+    for (const auto row : program.tests().entries()) {
+        if (!row.value.is_const) {
+            selected.push_back(row.id);
+        }
+    }
+    std::ranges::stable_sort(selected, [&](TestID left, TestID right) noexcept {
+        const auto module_name = [&](TestID id) noexcept {
+            const auto& module =
+                program.declarations().module_decl(program.tests().test(id).module_id);
+            return program.provenance().module_record(module.provenance_module).path.value();
+        };
+        return module_name(left) < module_name(right);
+    });
+    for (const auto id : selected) {
+        admit_body(program.bodies().body(program.tests().test(id).body));
+    }
+    admit_pending();
+    if (error) {
+        return std::unexpected(std::move(*error));
+    }
+    auto results = std::vector<InterpreterTestResult>();
+    for (const auto id : selected) {
+        test_diagnostics.clear();
+        const auto result = execute_body(
+                                values,
+                                *this,
+                                ExecutionBody(program.bodies().body(program.tests().test(id).body)),
+                                options.limits
+        )
+                                .run();
+        if (!result && test_diagnostics.empty()) {
+            invariant_violation("interpreted test failed without a diagnostic");
+        }
+        results.push_back(
+            InterpreterTestResult {.test = id, .diagnostics = std::move(test_diagnostics)}
+        );
+    }
+    return results;
+}
+
 } // namespace
 
 auto interpret(
@@ -279,4 +345,12 @@ auto interpret(
     const InterpreterOptions& options
 ) noexcept -> std::expected<void, ExecutionDiagnostic> {
     return Interpreter(program, output, options).run(entry);
+}
+
+auto interpret_tests(
+    const SemIRProgram& program,
+    const ExecutionOutput& output,
+    const InterpreterOptions& options
+) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic> {
+    return Interpreter(program, output, options).run_tests();
 }

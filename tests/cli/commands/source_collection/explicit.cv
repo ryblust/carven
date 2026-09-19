@@ -1,0 +1,3 @@
+import json::parser using answer;
+
+println(answer());

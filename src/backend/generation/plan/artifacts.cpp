@@ -163,6 +163,7 @@ auto plan_artifacts(
             .closure_definitions = {},
             .interface_closures = {},
             .emitted_tests = {},
+            .emit_program_entry = request.test_mode != TestGenerationMode::RunnerEntryPoint,
         };
         auto& closure_definitions = schedules[module_record.id.index()]->closure_definitions;
         closure_definitions.assign(

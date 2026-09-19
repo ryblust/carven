@@ -1,0 +1,5 @@
+import "providers/contracts.hpp";
+
+import(cpp) fn contract_replace(value: String);
+
+export fn use(value: String) => contract_replace(value);

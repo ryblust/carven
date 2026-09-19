@@ -1,5 +1,8 @@
 compiled
+static test
+constant block
 running 1
+--timings
 --help
 space argument
 ; echo injected

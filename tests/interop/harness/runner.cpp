@@ -1,5 +1,6 @@
 #include <carven/api/tests/interop/discarded_results/operations.hpp>
 #include <carven/api/tests/interop/scalars/export_argument.hpp>
+#include <carven/api/tests/interop/providers/contracts.hpp>
 
 #include <carven/generated/carven-test-runner.hpp>
 
@@ -8,9 +9,11 @@
 #include <string_view>
 
 namespace {
+
 auto terminated(int signal) noexcept -> void {
     std::_Exit(signal == SIGABRT ? 73 : 74);
 }
+
 } // namespace
 
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
@@ -24,7 +27,14 @@ auto main(int argc, char** argv) noexcept -> int {
     std::signal(SIGABRT, terminated);
     namespace api = carven::api::tests::interop::discarded_results::operations;
     const auto operation = std::string_view(argv[1]);
-    if (operation == "divide") {
+    if (operation == "contract-stop") {
+        auto context =
+            carven::runtime::TestContext(+[](const carven::runtime::TestFailure&) noexcept {});
+        context.begin_case("contracts", "native test stop");
+        static_cast<void>(
+            carven::api::tests::interop::providers::contracts::guarded_failure(false, false)
+        );
+    } else if (operation == "divide") {
         api::divide(0);
     } else if (operation == "remainder") {
         api::remainder(0);

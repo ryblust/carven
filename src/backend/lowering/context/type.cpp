@@ -108,8 +108,11 @@ auto ModuleLowering::variant_type(std::span<const TypeID> members) noexcept -> T
     });
 }
 
-auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcept -> TargetTypeID {
-    const auto base = lower_type(parameter.type);
+auto ModuleLowering::lower_parameter(
+    const CallableParameter& parameter,
+    TypeNameScope scope
+) noexcept -> TargetTypeID {
+    const auto base = lower_type(parameter.type, scope);
     const auto* builtin =
         std::get_if<BuiltinTypeValue>(&semantic().types().type(parameter.type).value);
     switch (parameter.access) {
@@ -134,30 +137,38 @@ auto ModuleLowering::lower_parameter(const CallableParameter& parameter) noexcep
     std::unreachable();
 }
 
-auto ModuleLowering::function_type(CallableSignatureID id, bool stops_test) noexcept -> TargetType {
+auto ModuleLowering::function_type(
+    CallableSignatureID id,
+    bool stops_test,
+    TypeNameScope scope
+) noexcept -> TargetType {
     const auto& signature = semantic().callable_signatures().signature(id);
     auto parameters = std::vector<TargetTypeID>();
     parameters.reserve(signature.parameters.size());
     for (const auto& parameter : signature.parameters) {
-        parameters.push_back(lower_parameter(parameter));
+        parameters.push_back(lower_parameter(parameter, scope));
     }
     return {
         .value =
             TargetFunctionType {
                 .parameters = std::move(parameters),
-                .result = lower_signature_result(id, stops_test),
+                .result = lower_signature_result(id, stops_test, scope),
             },
         .const_qualified = false,
     };
 }
 
-auto ModuleLowering::lower_signature_result(CallableSignatureID id, bool stops_test) noexcept
-    -> TargetTypeID {
+auto ModuleLowering::lower_signature_result(
+    CallableSignatureID id,
+    bool stops_test,
+    TypeNameScope scope
+) noexcept -> TargetTypeID {
     if (id.owner() != semantic().identity()
         || id.index() >= semantic().callable_signatures().size()) {
         invariant_violation("module lowering received an unknown callable signature");
     }
-    const auto [entry, inserted] = signature_result_cache.try_emplace(std::pair(id, stops_test));
+    const auto [entry, inserted] =
+        signature_result_cache.try_emplace(std::tuple(id, stops_test, scope));
     auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
@@ -169,15 +180,15 @@ auto ModuleLowering::lower_signature_result(CallableSignatureID id, bool stops_t
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
         if (failures.empty() && !stops_test) {
-            return lower_type(signature.result);
+            return lower_type(signature.result, scope);
         }
-        auto arguments = std::vector<TargetTypeID> {lower_type(signature.result)};
+        auto arguments = std::vector<TargetTypeID> {lower_type(signature.result, scope)};
         arguments.reserve(failures.size() + 2);
         if (stops_test) {
             arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped));
         }
         for (const auto member : failures) {
-            arguments.push_back(lower_type(member));
+            arguments.push_back(lower_type(member, scope));
         }
         return target().intern_type({
             .value =
@@ -203,11 +214,11 @@ auto ModuleLowering::call_result(TypeID type) noexcept -> TargetTypeID {
     return lower_signature_result(semantic().call_signature(type), semantic().may_stop_test(type));
 }
 
-auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
+auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID {
     if (id.owner() != semantic().identity() || id.index() >= semantic().types().size()) {
         invariant_violation("module lowering received an unknown semantic type");
     }
-    const auto [entry, inserted] = type_cache.try_emplace(id);
+    const auto [entry, inserted] = type_cache.try_emplace(std::pair(id, scope));
     auto& state = entry->second;
     if (const auto* complete = std::get_if<TargetTypeID>(&state)) {
         return *complete;
@@ -218,7 +229,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
     auto lowered = semantic().types().type(id).value.visit(
         Overloaded {
             [&](const PointerTypeValue& value) noexcept -> TargetType {
-                auto pointee = lower_type(value.target);
+                auto pointee = lower_type(value.target, scope);
                 if (value.access == PointerAccess::Read) {
                     pointee = target().intern_type(
                         {.value =
@@ -244,7 +255,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                     auto arguments = std::vector<TargetTypeID>();
                     for (const auto argument : named->arguments) {
-                        arguments.push_back(lower_type(argument));
+                        arguments.push_back(lower_type(argument, scope));
                     }
                     return {
                         .value =
@@ -256,7 +267,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                         .const_qualified = false
                     };
                 }
-                const auto result = lower_cpp_query(std::get<CppQueryType>(value.form));
+                const auto result = lower_cpp_query(std::get<CppQueryType>(value.form), scope);
                 return {
                     .value =
                         TargetIntrinsicType {
@@ -280,7 +291,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 return {
                     .value =
                         TargetNamedType {
-                            .name = structure_name(value.structure),
+                            .name = structure_name(value.structure, scope),
                             .type_argument_ids = {},
                             .nested = {},
                         },
@@ -291,7 +302,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 return {
                     .value =
                         TargetNamedType {
-                            .name = enumeration_name(value.enumeration),
+                            .name = enumeration_name(value.enumeration, scope),
                             .type_argument_ids = {},
                             .nested = {},
                         },
@@ -303,7 +314,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                     .value =
                         TargetIntrinsicType {
                             .symbol = TargetSymbol::RuntimeSlice,
-                            .type_argument_ids = {lower_type(value.element)},
+                            .type_argument_ids = {lower_type(value.element, scope)},
                         },
                     .const_qualified = false
                 };
@@ -313,7 +324,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                     .value =
                         TargetIntrinsicType {
                             .symbol = TargetSymbol::RuntimeRange,
-                            .type_argument_ids = {lower_type(value.element)},
+                            .type_argument_ids = {lower_type(value.element, scope)},
                         },
                     .const_qualified = false
                 };
@@ -322,7 +333,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 return {
                     .value =
                         TargetArrayType {
-                            .element_type_id = lower_type(value.element),
+                            .element_type_id = lower_type(value.element, scope),
                             .extent = TargetArrayExtent {.magnitude = value.extent},
                         },
                     .const_qualified = false,
@@ -330,13 +341,17 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
             },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {
                 const auto& callable = semantic().declarations().callable(value.callable);
-                return function_type(callable.signature, semantic().may_stop_test(value.callable));
+                return function_type(
+                    callable.signature,
+                    semantic().may_stop_test(value.callable),
+                    scope
+                );
             },
             [&](const ClosureTypeValue& value) noexcept -> TargetType {
                 return {
                     .value =
                         TargetNamedType {
-                            .name = closure_type_name(value.callable),
+                            .name = closure_type_name(value.callable, scope),
                             .type_argument_ids = {},
                             .nested = {},
                         },
@@ -344,7 +359,7 @@ auto ModuleLowering::lower_type(TypeID id) noexcept -> TargetTypeID {
                 };
             },
             [&](const CallableViewTypeValue& value) noexcept -> TargetType {
-                return function_type(value.signature, true);
+                return function_type(value.signature, true, scope);
             },
         }
     );

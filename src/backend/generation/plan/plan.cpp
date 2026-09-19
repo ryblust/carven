@@ -138,10 +138,10 @@ auto TargetNamePlan::domain_namespace() const noexcept -> const TargetName& {
 }
 
 auto TargetNamePlan::entity_name(
-    ModuleID active_module,
+    std::optional<ModuleID> active_module,
     const TargetEntityName& entity
 ) const noexcept -> TargetName {
-    if (active_module.owner() != source_identity) {
+    if (active_module.has_value() && active_module->owner() != source_identity) {
         invariant_violation("target entity name used a foreign active module");
     }
     auto relative = std::vector<TargetIdentifier>(
@@ -230,8 +230,10 @@ auto TargetNamePlan::structure_identifier(StructID id) const noexcept -> const T
         .back();
 }
 
-auto TargetNamePlan::structure_name(ModuleID active_module, StructID id) const noexcept
-    -> TargetName {
+auto TargetNamePlan::structure_name(
+    std::optional<ModuleID> active_module,
+    StructID id
+) const noexcept -> TargetName {
     return entity_name(
         active_module,
         semantic_row(
@@ -254,8 +256,10 @@ auto TargetNamePlan::enumeration_identifier(EnumID id) const noexcept -> const T
         .back();
 }
 
-auto TargetNamePlan::enumeration_name(ModuleID active_module, EnumID id) const noexcept
-    -> TargetName {
+auto TargetNamePlan::enumeration_name(
+    std::optional<ModuleID> active_module,
+    EnumID id
+) const noexcept -> TargetName {
     return entity_name(
         active_module,
         semantic_row(
@@ -290,8 +294,10 @@ auto TargetNamePlan::callable_name(ModuleID active_module, CallableID id) const 
     return entity_name(active_module, *value);
 }
 
-auto TargetNamePlan::closure_type_name(ModuleID active_module, CallableID id) const noexcept
-    -> TargetName {
+auto TargetNamePlan::closure_type_name(
+    std::optional<ModuleID> active_module,
+    CallableID id
+) const noexcept -> TargetName {
     const auto& value = semantic_row(
         target_closure_type_names,
         source_identity,

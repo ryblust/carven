@@ -85,7 +85,7 @@ inline auto context_value() noexcept -> ContextValue {
     return {};
 }
 
-}
+} // namespace formatted_append_probe
 
 template<>
 struct std::formatter<formatted_append_probe::Value> final : std::formatter<int> {

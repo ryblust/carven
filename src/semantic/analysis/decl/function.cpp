@@ -161,16 +161,9 @@ auto DeclResolver::resolve_function(
             : FailureContractPolicy::UndeclaredExplicit;
     }
 
-    auto head_boundary = validate_cpp_boundary_head(draft, symbol.module_id, function, parameters);
+    auto head_boundary = validate_cpp_provider(draft, symbol.module_id, function);
     if (!head_boundary.has_value()) {
         co_return std::unexpected(head_boundary.error());
-    }
-    if (result.has_value()) {
-        auto boundary =
-            validate_cpp_boundary_result(draft, symbol.module_id, syntax, function, *result);
-        if (!boundary.has_value()) {
-            co_return std::unexpected(boundary.error());
-        }
     }
     draft.define_declaration(
         form.function,

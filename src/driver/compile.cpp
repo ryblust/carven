@@ -7,6 +7,7 @@ import :backend.generation.request;
 import :driver.analysis;
 import :driver.compile;
 import :driver.options;
+import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
@@ -62,11 +63,12 @@ auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
 
 } // namespace
 
-auto run_compile_command(std::span<const char* const> args) noexcept -> int {
+auto run_compile_command(std::string_view executable, std::span<const char* const> args) noexcept
+    -> int {
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         std::print(
-            "Generate C++ headers and sources from an explicit source batch.\n"
+            "Generate C++ headers and sources from application inputs and fixed Crafts roots.\n"
             "\n"
             "Usage:\n"
             "  carven compile [options] <source-file>...\n"
@@ -78,7 +80,8 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             "                            (default: derived from the output directory)\n"
             "\n"
             "Test options:\n"
-            "      --tests=default       Emit runtime tests, runner, and test entry\n"
+            "      --tests               Emit runtime tests, runner, and test entry\n"
+            "      --tests=default       Alias for --tests\n"
             "      --tests=external      Emit runtime tests and runner without test entry\n"
             "                            (default: no runtime test artifacts)\n"
             "\n"
@@ -86,8 +89,8 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
             "      --timings             Show total and stage timings on stderr\n"
             "  -h, --help                Show this help\n"
             "\n"
-            "Imports resolve among the supplied sources. C++ compilation and linking\n"
-            "belong to the consuming build.\n"
+            "Sources include the fixed toolchain and working-directory Crafts roots.\n"
+            "C++ compilation and linking belong to the consuming build.\n"
         );
         return 0;
     }
@@ -105,8 +108,14 @@ auto run_compile_command(std::span<const char* const> args) noexcept -> int {
         return 1;
     }
 
+    const auto sources =
+        collect_command_sources(executable, request->input_paths, timings.recorder());
+    if (!sources) {
+        std::println(std::cerr, "carven: error: {}", sources.error());
+        return 1;
+    }
     auto semantic = load_and_analyze_sources(
-        request->input_paths,
+        sources->carven,
         [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
             const auto to_error = stream == ExecutionOutputStream::Error
                 || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);

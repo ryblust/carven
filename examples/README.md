@@ -44,8 +44,8 @@ constant computation, failures, and C++ integration, or choose a topic directly.
 | [Greeting](strings/) | UTF-8 String, independent copies, and scoped borrowing | `carven-example-strings` |
 | [Constant computation](constant/) | Text construction, fixed arrays, frozen slices, and typed record tables, with ordinary runtime calls | `carven-example-constant` |
 | [Failure contracts](failures/) | Expression propagation, recovery, callable contracts, and owned or borrowed failure payloads | `carven-example-failures` |
-| [Native parser](call_cpp/) | Header imports and native exception recovery | `carven-example-native-parser` |
-| [Pricing library](cpp_host/) | Exported functions and generated public headers | `carven-example-cpp-host` |
+| [Native parser](call_cpp/) | Header imports, `#[cpp]`, and native exceptions converted to declared failures | `carven-example-native-parser` |
+| [Pricing library](cpp_host/) | Generated public headers, owning String results, Write, and Take | `carven-example-cpp-host` |
 
 Within each example, follow its reading guide from declarations and providers
 to helpers and callers. Change the small inputs, rebuild, and run to observe the

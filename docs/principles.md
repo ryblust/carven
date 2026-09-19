@@ -1,9 +1,8 @@
 # Design principles
 
 This document states the criteria for Carven's language and implementation
-choices. Current behavior is defined in the language and toolchain references;
-implementation responsibilities are defined in the compiler and backend documents.
-See the [documentation index](README.md) for their scopes.
+choices. Language and toolchain references specify current behavior; compiler
+and backend documents describe implementation responsibilities.
 
 ## Intent over mechanism
 
@@ -160,8 +159,10 @@ C++ resolves delegated declarations, types, and operations. Providers and caller
 satisfy the external behavior and storage contracts; native results establish
 only the relationships supported by the boundary's semantic model.
 
-The build system owns dependency acquisition, source collection, and native
-build configuration.
+The driver combines explicit application inputs with installed Crafts. Package
+authors prepare Crafts that build together in the selected environment. The build
+system owns dependency acquisition, additional source selection, and native build
+configuration.
 
 Give each semantic fact one authority. Later stages consume published facts;
 generated names and text represent their output.

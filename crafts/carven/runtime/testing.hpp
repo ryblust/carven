@@ -1,13 +1,16 @@
 #pragma once
 
 #include "display.hpp"
+#include "outcome.hpp"
 
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 
 namespace carven::runtime {
 
@@ -54,6 +57,48 @@ inline auto observe_short_circuit(
 }
 
 struct TestStopped final {};
+
+// Native calls retain declared failures; a test stop cannot cross this boundary.
+template<typename Result, typename... Failures>
+auto native_test_result(Outcome<Result, TestStopped, Failures...>&& outcome) noexcept
+    -> std::conditional_t<sizeof...(Failures) == 0, Result, Outcome<Result, Failures...>> {
+    using NativeResult =
+        std::conditional_t<sizeof...(Failures) == 0, Result, Outcome<Result, Failures...>>;
+    if (auto* success = outcome.success_if()) {
+        if constexpr (sizeof...(Failures) == 0) {
+            if constexpr (!std::is_void_v<Result>) {
+                return transfer(success->value);
+            } else {
+                return;
+            }
+        } else if constexpr (std::is_void_v<Result>) {
+            return NativeResult::success();
+        } else {
+            return NativeResult::success_from([&]() noexcept -> Result {
+                return transfer(success->value);
+            });
+        }
+    }
+    if constexpr (sizeof...(Failures) > 0) {
+        const auto propagate = [&]<typename First, typename... Rest>(
+                                   const auto& self,
+                                   std::type_identity<First>,
+                                   std::type_identity<Rest>... rest
+                               ) noexcept -> NativeResult {
+            if (auto* failure = outcome.template failure_if<First>()) {
+                return NativeResult::failure(transfer(*failure));
+            }
+            if constexpr (sizeof...(Rest) > 0) {
+                return self(self, rest...);
+            } else {
+                std::terminate();
+            }
+        };
+        return propagate(propagate, std::type_identity<Failures> {}...);
+    } else {
+        std::terminate();
+    }
+}
 
 namespace detail {
 
@@ -113,6 +158,7 @@ inline auto default_reporter(const TestFailure& failure) noexcept -> void {
 class TestContext;
 
 namespace detail {
+
 inline thread_local TestContext* active_test_context = nullptr;
 } // namespace detail
 

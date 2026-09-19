@@ -164,7 +164,16 @@ records this declaration contract; emission attaches its const-correctness
 annotation. Backend operand storage and projections receive ordinary analysis.
 
 The parameter policy is shared by declarations, definitions, and callable signatures.
-C++ imports and export façades obey their explicit boundary signatures.
+C++ imports and export façades use this same parameter policy, type realization,
+and failure ABI. Export Take parameters are forwarded through `transfer`; import
+Take parameters use the native rvalue category. Read and Write retain their
+reference/value categories. Import bridges call the globally qualified
+provider directly, allowing C++ overload resolution and template deduction.
+Type lowering receives an explicit naming scope: public signatures use globally
+qualified nominal names, while module bodies retain local names. Both use the
+same dependency discovery and callable work queue. Export façades project internal
+test-stop transport to the declared result carrier, retaining declared failures
+and terminating on an escaping test stop.
 
 Concrete closures use named structures with const call operators defined in the
 source artifact. Closures exposed by function result types publish their layouts
@@ -267,8 +276,9 @@ the test body consumes the exit by returning to its runner. `TestStopped` is
 internal transport and is absent from Carven failure sets.
 
 The runner activates a thread-local `TestContext` for each case. Report operations
-use that context. Native export facades unwrap successful outcomes and terminate
-on a test stop. Arbitrary C++ callbacks do not participate in Carven propagation.
+use that context. Native export façades remove `TestStopped` from the result
+carrier, preserving success and every declared failure. An escaping test stop
+terminates. Arbitrary C++ callbacks do not participate in Carven propagation.
 
 Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
 otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection
@@ -566,7 +576,9 @@ provider sets are consumed into include directives.
 Each runtime test becomes a function. Static tests have already executed during
 analysis and receive no target function name or runner entry. Module runners call
 tests in source order; the runner header calls modules in canonical order. The default entry calls
-that same runner. Explicit C++ fragments preserve their bytes and source order.
+that same runner. Default test-entry mode disables the program entry wrapper in
+the module schedule; external-runner mode retains it for the consuming build.
+Explicit C++ fragments preserve their bytes and source order.
 
 ## Target syntax and emission
 

@@ -18,46 +18,38 @@ import std;
 TEST_CASE("Compiler diagnostics: interop failures preserve code and precise span") {
     static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {
-            .name = "unsupported import(cpp) boundary type",
-            .source = "private import(cpp) fn invalid(value: str);",
-            .code = "CV-CPP-CARRIER",
-            .primary_text = "value: str",
+            .name = "import parameters require value types",
+            .source = "import(cpp) fn invalid(value: void);",
+            .code = "CV-TYPE-VALUE-REQUIRED",
+            .primary_text = "void",
         },
         {
-            .name = "unsupported export(cpp) boundary type",
-            .source = "export(cpp) fn invalid(value: str) {}",
-            .code = "CV-CPP-CARRIER",
-            .primary_text = "value: str",
+            .name = "import Write requires mutable storage",
+            .source = "import(cpp) fn change(&value: String); "
+                      "fn f() { let value: String = \"text\"; change(&value); }",
+            .code = "CV-ACCESS-IMMUTABLE",
+            .primary_text = "&value",
         },
         {
-            .name = "C++ boundary access mode",
-            .source = "private import(cpp) fn invalid(&value: i32);",
-            .code = "CV-CPP-BOUNDARY",
-            .primary_text = "&",
+            .name = "import Take consumes the source",
+            .source =
+                "import(cpp) fn consume(&&value: String); "
+                "fn f() { let value: String = \"text\"; consume(&&value); consume(&&value); }",
+            .code = "CV-ACCESS-UNAVAILABLE",
+            .primary_text = "value",
         },
         {
-            .name = "expression function boundary parameter",
-            .source = "export(cpp) fn invalid(value: str) => invalid(value);",
-            .code = "CV-CPP-CARRIER",
-            .primary_text = "value: str",
+            .name = "export signatures obey nominal visibility",
+            .source = "private struct Hidden {} export(cpp) fn leak() => Hidden {};",
+            .code = "CV-TYPE-VISIBILITY-LEAK",
+            .primary_text = "export(cpp) fn leak() => Hidden {};",
         },
         {
-            .name = "expression function boundary failure contract",
-            .source = "struct Failure {} export(cpp) fn invalid() throw Failure => invalid();",
-            .code = "CV-CPP-BOUNDARY",
-            .primary_text = "throw Failure",
-        },
-        {
-            .name = "inferred C++ boundary result",
-            .source = "export(cpp) fn invalid() => \"text\";",
-            .code = "CV-CPP-CARRIER",
-            .primary_text = "invalid",
-        },
-        {
-            .name = "C++ boundary failure contract",
-            .source = "struct Failure {} private import(cpp) fn invalid() throw Failure;",
-            .code = "CV-CPP-BOUNDARY",
-            .primary_text = "throw Failure",
+            .name = "import failures require propagation",
+            .source = "struct Failure {} import(cpp) fn native() throw Failure; "
+                      "private fn f() { native(); }",
+            .code = "CV-EFFECT-UNMARKED",
+            .primary_text = "native()",
         },
         {
             .name = "unrepresentable std provider name",

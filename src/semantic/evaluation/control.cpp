@@ -357,7 +357,7 @@ auto SemanticExecutor::test_report(
 ) noexcept -> ExecutionTask<ExecutionValue> {
     if (!testing) {
         co_return std::unexpected(
-            fail(origin, DiagnosticCode::ConstTest, "test operation requires an active const test")
+            fail(origin, DiagnosticCode::ConstTest, "test operation requires an active test")
         );
     }
     auto passed = false;

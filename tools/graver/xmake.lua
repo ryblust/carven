@@ -20,7 +20,10 @@ target("graver-test-internal")
     add_deps("graver-modules")
     add_includedirs(path.join(os.projectdir(), "tests", "internal", "thirdparty"))
     add_files(path.join(os.scriptdir(), "tests", "internal", "*.cpp"))
-    add_tests("graver", {group = "graver", run_timeout = 60000})
+    add_tests("graver", {group = "graver", run_timeout = 60000,
+        runargs = {"--test-case-exclude=Graver corpus:*"}})
+    add_tests("corpus", {group = "graver", run_timeout = 60000,
+        runargs = {"--test-case=Graver corpus:*"}})
 target_end()
 
 target("graver-test-cli")

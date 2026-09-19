@@ -4,6 +4,7 @@
 #include <memory>
 
 namespace pointer_values {
+
 inline std::int32_t first = 10;
 inline std::int32_t second = 20;
 
@@ -19,4 +20,5 @@ template<typename T>
 auto address(T& value) noexcept -> T* {
     return std::addressof(value);
 }
-}
+
+} // namespace pointer_values

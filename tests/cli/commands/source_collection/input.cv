@@ -1,0 +1,4 @@
+import std::utf.scalar using char_to_u32;
+import demo::value using answer;
+
+println(char_to_u32('A'), answer());

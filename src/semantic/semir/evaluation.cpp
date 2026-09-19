@@ -16,6 +16,7 @@ import :support.visit;
 import std;
 
 namespace {
+
 auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
     const auto& value = semantic.types().type(type).value;
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&value)) {
@@ -31,6 +32,7 @@ auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
     }
     return false;
 }
+
 } // namespace
 
 auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept

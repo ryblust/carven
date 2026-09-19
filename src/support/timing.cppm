@@ -11,7 +11,7 @@ enum class TimingStage {
     CppGeneration,
     ArtifactWriting,
     NativeCompilation,
-    ProgramExecution,
+    Execution,
     Count,
 };
 

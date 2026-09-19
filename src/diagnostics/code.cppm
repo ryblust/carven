@@ -29,8 +29,6 @@ enum class DiagnosticCode {
     AccessRangeIterable,
     Catalog,
     CompilationInput,
-    CppBoundary,
-    CppBoundaryType,
     CppIdentifier,
     CppAPIPathCollision,
     ConstArrayExtent,

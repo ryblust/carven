@@ -49,8 +49,8 @@ source-layout and style rules apply to handwritten code.
 - Use a global module fragment only for macro-only test headers and required
   platform headers.
 - Put translation-unit-private declarations in an anonymous namespace. Close
-  anonymous namespaces with a namespace comment; named namespace closing
-  comments are optional.
+  every namespace with a namespace comment, using the namespace name for named
+  namespaces.
 - In support headers, `detail` contains helpers used only by that header.
   Cross-header dependencies use named contracts in the owning namespace.
 - Helpers used only by one class belong in its private scope where C++

@@ -6,6 +6,7 @@ import :support.visit;
 import std;
 
 namespace {
+
 auto valid_query(const TargetExpr& expression) noexcept -> bool {
     return expression.value.visit(
         Overloaded {
@@ -68,7 +69,8 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
         }
     });
 }
-}
+
+} // namespace
 
 TargetDecltypeType::TargetDecltypeType(TargetExpr expression) noexcept
     : queried_expression(std::move(expression)) {

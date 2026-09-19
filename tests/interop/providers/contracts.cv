@@ -1,0 +1,102 @@
+import "providers/contracts.hpp";
+
+export struct Record {
+    text: String,
+    count: i32,
+}
+
+export struct Failure {
+    code: i32
+}
+
+export enum State {
+    Ready,
+    Done
+}
+
+import(cpp) fn contract_text(value: String) -> String;
+import(cpp) fn contract_replace(&value: String);
+import(cpp) fn contract_take(&&value: ::boundary::Owned) -> ::boundary::Owned;
+import(cpp) fn contract_owner() -> ::boundary::Owned;
+import(cpp) fn contract_pointer(value: ptr<&i32>) -> ptr<&i32>;
+import(cpp) fn contract_record(value: Record) -> Record;
+import(cpp) fn contract_callback(value: fn(i32) -> i32) -> i32;
+import(cpp) fn contract_failure(fail: bool, error: Failure) -> String throw Failure;
+import(cpp) fn contract_identity(value: [i32; 2]) -> [i32; 2];
+import(cpp) fn contract_void(fail: bool, error: Failure) throw Failure;
+import(cpp) fn contract_access(&&value: i32) -> i32;
+import(cpp) fn contract_consumer() -> bool;
+
+export(cpp) fn make_failure() -> Failure => Failure { 17 };
+
+export(cpp) fn text() -> String => "owned";
+export(cpp) fn copy(value: String) -> String => contract_text(value);
+export(cpp) fn replace(&value: String) => contract_replace(&value);
+export(cpp) fn take(&&value: ::boundary::Owned) -> ::boundary::Owned => contract_take(&&value);
+export(cpp) fn pointer(value: ptr<&i32>) -> ptr<&i32> => contract_pointer(value);
+export(cpp) fn record(value: Record) -> Record => contract_record(value);
+
+export(cpp) fn make_record() -> Record => Record {
+    text: "record",
+    count: 9
+};
+
+export(cpp) fn state(value: State) -> State => value;
+export(cpp) fn array(value: [i32; 2]) -> [i32; 2] => contract_identity(value);
+export(cpp) fn slice(value: [i32]) -> [i32] => value;
+export(cpp) fn closure() => [](value: i32) => value + 3;
+export(cpp) fn view(value: str) -> str => value;
+export(cpp) fn callback(value: fn(i32) -> i32) -> i32 => contract_callback(value);
+
+export(cpp) fn failure(fail: bool) -> String throw Failure => contract_failure(
+    fail,
+    Failure { 17 }
+)?;
+
+export(cpp) fn guarded_failure(fail: bool, proceed: bool) -> String throw Failure {
+    require(proceed);
+    return contract_failure(fail, Failure { 17 })?;
+}
+
+export(cpp) fn failed_void(fail: bool) throw Failure => contract_void(fail, Failure { 23 })?;
+
+export(cpp) fn guarded_void(fail: bool, proceed: bool) throw Failure {
+    require(proceed);
+    contract_void(fail, Failure { 23 })?;
+}
+
+fn increment(value: i32) -> i32 => value + 1;
+
+test "C++ contracts: owners, mutation, pointers, records, and borrowed callbacks" {
+    let consumed = 3;
+    check(contract_access(&&consumed) == 1);
+    let original: String = "original";
+    check(copy(original) == "original");
+    var changed: String = "before";
+    replace(&changed);
+    check(changed == "replaced");
+    let owner = contract_owner();
+    let moved = take(&&owner);
+    check(::contract_owned_value(moved) == 42);
+    var number = 8;
+    let input: ptr<&i32> = ::contract_address(&number);
+    let address = pointer(input);
+    check(number == 9);
+    if address != nullptr { check(*address == 9); } else { check(false); }
+    let value = record(make_record());
+    check(value.text == "record");
+    check(value.count == 9);
+    check(callback(increment) == 8);
+    check(state(State::Ready) == State::Ready);
+    check(contract_consumer());
+}
+
+test "C++ contracts: declared native failures participate in Carven handling" {
+    try {
+        check(failure(false)? == "success");
+        failure(true)?;
+        check(false);
+    } catch {
+        Failure(error) => { check(error.code == 17); },
+    }
+}

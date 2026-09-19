@@ -5,6 +5,7 @@
 #include <type_traits>
 
 namespace interpolation_probe {
+
 inline int live = 0;
 inline int formatted = 0;
 inline int observed_live = 0;
@@ -71,7 +72,8 @@ struct Unformatted final {};
 inline auto unformatted() noexcept -> Unformatted {
     return {};
 }
-}
+
+} // namespace interpolation_probe
 
 template<>
 struct std::formatter<interpolation_probe::Value> final : std::formatter<int> {

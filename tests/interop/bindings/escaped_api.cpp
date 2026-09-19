@@ -2,6 +2,7 @@
 #include <cstdlib>
 
 namespace {
+
 namespace api = carven::api::tests::interop::bindings::cv_escaped_6578706f7274;
 
 struct VerifyEscapedAPI final {
@@ -16,4 +17,5 @@ struct VerifyEscapedAPI final {
 };
 
 const VerifyEscapedAPI verify;
+
 } // namespace

@@ -42,7 +42,7 @@ public:
         SemanticExecutionContext& context,
         ExecutionLimits limits
     ) noexcept;
-    auto evaluate_body(const StructuredBodyDraft& body) noexcept -> ExecutionTask<void>;
+    auto evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void>;
     auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto invoke(
         FunctionID function,

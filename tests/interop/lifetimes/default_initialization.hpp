@@ -3,6 +3,7 @@
 #include <cstdint>
 
 namespace default_probe {
+
 inline auto trace = std::int32_t {0};
 inline auto live = std::int32_t {0};
 
@@ -53,4 +54,5 @@ struct Fixed final {
 
     ~Fixed() { --live; }
 };
+
 } // namespace default_probe

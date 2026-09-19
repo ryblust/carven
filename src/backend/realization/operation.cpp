@@ -27,6 +27,7 @@ import :support.visit;
 import std;
 
 namespace {
+
 auto restore_integer_type(ModuleLowering& context, TargetExpr expression, TypeID type) noexcept
     -> TargetExpr {
     const auto* builtin =
@@ -169,6 +170,7 @@ auto realize_binary(
 }
 
 namespace {
+
 auto field_identifier(ModuleLowering& context, StructID owner, std::uint32_t index) noexcept
     -> TargetIdentifier {
     const auto& structure = context.semantic().declarations().structure(owner);

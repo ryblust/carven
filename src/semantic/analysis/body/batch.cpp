@@ -17,7 +17,6 @@ import :semantic.analysis.constant.admission;
 import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
-import :semantic.analysis.interop;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -395,11 +394,6 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     if (pending.has_value()) {
         const auto result = elaborator.inferred_result_type();
         draft->complete_function_result(declaration.callable, result);
-        auto boundary =
-            validate_cpp_boundary_result(*draft, symbol.module_id, ast, function, result);
-        if (!boundary.has_value()) {
-            co_return std::unexpected(boundary.error());
-        }
     }
     if (declaration.is_const) {
         auto admitted = validate_constant_function(*draft, id, *body);

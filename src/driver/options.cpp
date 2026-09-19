@@ -80,14 +80,14 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         const auto arg = std::string_view(args[index]);
         if (arg == "--timings") {
             request.timings = true;
-        } else if (arg == "--tests=default" || arg == "--tests=external") {
+        } else if (arg == "--tests" || arg == "--tests=default" || arg == "--tests=external") {
             if (has_test_option) {
                 return std::unexpected(
                     compile_option_error(CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce)
                 );
             }
-            request.test_mode = arg == "--tests=default" ? TestGenerationMode::RunnerEntryPoint
-                                                         : TestGenerationMode::RunnerHeader;
+            request.test_mode = arg == "--tests=external" ? TestGenerationMode::RunnerHeader
+                                                          : TestGenerationMode::RunnerEntryPoint;
             has_test_option = true;
         } else if (arg == "-o" || arg == "--output-dir") {
             auto path = next_output_path(index, arg);

@@ -5,6 +5,7 @@
 #include <cstdint>
 
 namespace native_text {
+
 inline std::string_view retained;
 
 inline auto read(std::string_view value) noexcept -> std::size_t {
@@ -40,6 +41,7 @@ inline auto aliases_retained(carven::runtime::ReadArg<carven::runtime::String> v
     -> bool {
     return value.as_str().data() == retained.data();
 }
+
 } // namespace native_text
 
 struct String final {

@@ -16,3 +16,16 @@ auto interpret(
     const ExecutionOutput& output,
     const InterpreterOptions& options
 ) noexcept -> std::expected<void, ExecutionDiagnostic>;
+
+struct InterpreterTestResult final {
+    TestID test;
+    std::vector<ExecutionDiagnostic> diagnostics;
+};
+
+// Admission covers every runtime test before any runtime body executes.
+// Each test receives fresh storage and an independent execution budget.
+auto interpret_tests(
+    const SemIRProgram& program,
+    const ExecutionOutput& output,
+    const InterpreterOptions& options
+) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic>;

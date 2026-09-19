@@ -488,15 +488,14 @@ auto SemanticExecutor::read_borrows_storage(TypeID type) noexcept -> bool {
     return borrows;
 }
 
-auto SemanticExecutor::evaluate_body(const StructuredBodyDraft& body) noexcept
-    -> ExecutionTask<void> {
-    testing = body.kind == BodyKind::Test;
+auto SemanticExecutor::evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void> {
+    testing = body.kind() == BodyKind::Test;
     auto frame = ExecutionFrame {
-        .body = ExecutionBody(body),
-        .slots = std::vector<ExecutionSlot>(body.bindings.size()),
+        .body = body,
+        .slots = std::vector<ExecutionSlot>(body.binding_count()),
         .caught = {}
     };
-    const auto result = (co_await region(frame, body.region));
+    const auto result = (co_await region(frame, body.region()));
     if (!result) {
         co_return std::unexpected(result.error());
     }

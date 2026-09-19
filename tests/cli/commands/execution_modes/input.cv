@@ -1,0 +1,16 @@
+test "runtime" {
+    println("runtime test");
+}
+
+const test "compile-time" {
+    println("compile-time test");
+}
+
+let a = 1;
+println(f"runtime output: {a + 1}");
+
+const b = 2;
+
+const {
+    println(f"compile-time output: {b + 1}");
+}

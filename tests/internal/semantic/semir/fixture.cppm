@@ -151,4 +151,4 @@ auto publish(StructuredBodyDraft body, ProgramDraft& builder) noexcept -> void {
     publish(std::move(bodies), builder);
 }
 
-}
+} // namespace semir_test

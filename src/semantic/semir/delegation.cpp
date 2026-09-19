@@ -37,6 +37,7 @@ auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arit
 }
 
 namespace {
+
 template<typename Visitor>
 auto visit_query_operands(const CppQueryType& query, Visitor visit) noexcept -> void {
     query.expression.visit([&](const auto& value) noexcept {

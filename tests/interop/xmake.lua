@@ -23,6 +23,8 @@ end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 
 local rejection_cases = {
+    ["contracts/result"] = {"no viable conversion", "contract_text", site = "source"},
+    ["contracts/access"] = {"drops 'const' qualifier", "contract_replace", site = "source"},
     ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed", site = "source"},
     ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed", site = "source"},
     ["pointers/native_double_output"] = {"cannot initialize a parameter", "pointer_probe::output", site = "source"},
@@ -56,7 +58,7 @@ target("carven-test-interop")
         "divide", "remainder", "shift", "width", "index",
         "slice-index", "slice-negative", "slice-range", "slice-reversed",
         "slice-known-length", "slice-known-empty", "slice-known-format",
-        "unicode", "unicode-export"
+        "unicode", "unicode-export", "contract-stop"
     }) do
         add_tests(operation, {group = "interop"})
     end

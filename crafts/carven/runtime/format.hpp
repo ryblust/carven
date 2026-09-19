@@ -16,6 +16,7 @@ struct std::formatter<carven::runtime::String> final : std::formatter<std::strin
 };
 
 namespace carven::runtime {
+
 template<typename T>
 auto format_argument(const T& value) noexcept -> const T& {
     // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter): Borrowed within the synchronous format call.

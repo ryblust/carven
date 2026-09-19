@@ -8,6 +8,7 @@ import :backend.target.traversal;
 import std;
 
 namespace {
+
 struct Cleanup final {
     static constexpr bool cleanup_edges = true;
 

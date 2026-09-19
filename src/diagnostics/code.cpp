@@ -30,8 +30,6 @@ namespace {
     X(AccessRangeIterable, "CV-ACCESS-RANGE-ITERABLE", Error, "Invalid Write range iterable.")     \
     X(Catalog, "CV-CATALOG", Error, "Semantic catalog failure.")                                   \
     X(CompilationInput, "CV-COMPILATION-INPUT", Error, "Invalid closed-compilation input.")        \
-    X(CppBoundary, "CV-CPP-BOUNDARY", Error, "Invalid C++ boundary declaration.")                  \
-    X(CppBoundaryType, "CV-CPP-CARRIER", Error, "Unsupported C++ boundary type.")                  \
     X(CppIdentifier, "CV-CPP-IDENTIFIER", Error, "Invalid C++ boundary identifier.")               \
     X(CppAPIPathCollision,                                                                         \
       "CV-CPP-API-PATH-COLLISION",                                                                 \

@@ -2,13 +2,27 @@ import "parser.hpp";
 
 struct InvalidPort {}
 
-fn port(text: str) -> i32 throw InvalidPort {
-    let value = ::parse_port(text) as i32;
-    return match value {
-        ..0 => throw InvalidPort {},
-        _ => value,
-    };
+#[cpp] ---
+#include <carven/runtime/outcome.hpp>
+
+template<typename Failure>
+auto parse_port_native(std::string_view text, const Failure& invalid) noexcept
+    -> carven::runtime::Outcome<std::int32_t, Failure> {
+    using Result = carven::runtime::Outcome<std::int32_t, Failure>;
+    try {
+        const auto port = parse_port(text);
+        return Result::success_from([port]() noexcept -> std::int32_t { return port; });
+    } catch (const std::invalid_argument&) {
+        return Result::failure(invalid);
+    } catch (const std::out_of_range&) {
+        return Result::failure(invalid);
+    }
 }
+---
+
+import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort;
+
+fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, InvalidPort {})?;
 
 fn report(text: str) {
     try {

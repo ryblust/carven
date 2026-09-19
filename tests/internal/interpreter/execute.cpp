@@ -169,3 +169,89 @@ TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
         CHECK(program.constants().size() == constants);
     }
 }
+
+TEST_CASE(
+    "Interpreter: runtime tests execute published bodies without admitting the program entry"
+) {
+    const auto program = analyze_test_program(R"(
+        private import(cpp) fn native();
+        fn main() { native(); }
+        const test "static" { check(true); }
+        fn helper() { check(false, "first"); require(false, "stop"); }
+        struct Problem {}
+        fn recoverable() throw Problem { throw Problem {}; }
+        test "failed" {
+            try { helper(); recoverable()?; }
+            catch { Problem(_) => { println("unexpected recovery"); } }
+            println("unreachable");
+        }
+        fn stop() { fail("explicit failure"); }
+        test "explicit" { stop(); println("unreachable"); }
+        test "next" { println("next"); }
+    )");
+    const auto constants = program.constants().size();
+    const auto types = program.types().size();
+    for (auto attempt = 0; attempt < 2; ++attempt) {
+        auto output = std::string();
+        const auto results = interpret_tests(
+            program,
+            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        );
+        REQUIRE(results.has_value());
+        REQUIRE(results->size() == 3);
+        CHECK(
+            program.provenance().spelling(program.tests().test((*results)[0].test).name) == "failed"
+        );
+        REQUIRE((*results)[0].diagnostics.size() == 2);
+        CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretExecution);
+        CHECK((*results)[0].diagnostics[0].message.contains("first"));
+        CHECK((*results)[0].diagnostics[1].message.contains("stop"));
+        CHECK(!(*results)[0].diagnostics[1].calls.empty());
+        REQUIRE((*results)[1].diagnostics.size() == 1);
+        CHECK((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretExecution);
+        CHECK((*results)[1].diagnostics[0].message.contains("explicit failure"));
+        CHECK((*results)[2].diagnostics.empty());
+        CHECK(output == "next\n");
+        CHECK(program.constants().size() == constants);
+        CHECK(program.types().size() == types);
+    }
+}
+
+TEST_CASE("Interpreter: all runtime tests are admitted before any test executes") {
+    const auto program = analyze_test_program(R"(
+        private import(cpp) fn native();
+        test "accepted" { println("must not run"); }
+        test "rejected" { if false { native(); } }
+    )");
+    auto output = std::string();
+    const auto results = interpret_tests(
+        program,
+        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+    );
+    REQUIRE(!results.has_value());
+    CHECK(results.error().code == DiagnosticCode::InterpretAdmission);
+    CHECK(output.empty());
+}
+
+TEST_CASE("Interpreter: each runtime test receives an independent execution budget") {
+    const auto program = analyze_test_program(R"(
+        test "limited" { while true {} }
+        test "fresh" { check(true); println("fresh"); }
+    )");
+    auto limits = constant_execution_limits();
+    limits.steps = 20uz;
+    auto output = std::string();
+    const auto results = interpret_tests(
+        program,
+        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+        InterpreterOptions {.limits = limits, .trace = {}}
+    );
+    REQUIRE(results.has_value());
+    REQUIRE(results->size() == 2);
+    REQUIRE((*results)[0].diagnostics.size() == 1);
+    CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretLimit);
+    CHECK((*results)[1].diagnostics.empty());
+    CHECK(output == "fresh\n");
+}

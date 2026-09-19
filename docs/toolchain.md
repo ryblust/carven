@@ -95,7 +95,7 @@ stale artifact removal, installation, and native dependency scheduling.
 
 The `compile` command writes artifacts directly and does not compile C++.
 The direct-run entry collects fixed Crafts roots and invokes the native compiler
-for temporary execution as described in [CLI Reference](cli.md).
+to compile, link, and execute a program in a temporary directory.
 Consumers provide the output root and installed support root as include search
 paths, compile the generated implementations, and link their C++ providers.
 Header imports do not add include directories or link inputs.
@@ -129,13 +129,13 @@ The rule passes the complete `.cv` batch to Carven before native dependency
 scanning, supplies a target-private output root and linkage domain, and registers
 generated implementations as C++ sources. Installed source paths preserve their
 `crafts/carven/` hierarchy. The compiler derives module identities from the supplied
-filenames and diagnoses duplicates. Imports resolve within that batch; `std::`
-selects modules under `crafts/carven/std/`.
+filenames, deduplicates canonical file paths, and rejects conflicting module
+identities. The CLI also collects its fixed Crafts roots. Imports resolve within
+the combined batch; `std::` selects modules under `crafts/carven/std/`.
 
 Generation runs in a staging directory before updating live artifacts. A failed
 compiler invocation leaves live output intact; promotion itself can fail partway
-through. The [rule repository](https://github.com/ryblust/carven-xmake-repo) owns
-batch scheduling, incremental promotion, and recovery.
+through. The Xmake rule owns batch scheduling, incremental promotion, and recovery.
 
 The installed layout places `crafts/` beside `bin/`. The official `carven` craft
 contains runtime support and the standard library. Capability modules keep their

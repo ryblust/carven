@@ -5,6 +5,7 @@ import :semantic.semir.structured;
 import std;
 
 namespace {
+
 using Node = std::variant<SemanticExpression*, SemanticStatement*, SemanticRegion*>;
 
 struct Event final {
@@ -57,6 +58,7 @@ auto clear_tree(Value& value) noexcept -> void {
     }
     discard(value);
 }
+
 } // namespace
 
 auto SemanticExpressionCleanup::clear(SemanticExpressionValue& value) noexcept -> void {

@@ -46,6 +46,7 @@ class ExecutionBody final {
 public:
     explicit ExecutionBody(const StructuredBodyDraft& body) noexcept;
     explicit ExecutionBody(const SemIRBody& body) noexcept;
+    auto kind() const noexcept -> BodyKind;
     auto region() const noexcept -> const SemanticRegion&;
     auto parameters() const noexcept -> std::span<const LocalBindingID>;
     auto binding_count() const noexcept -> std::size_t;
@@ -103,10 +104,10 @@ auto execute_constant_root(
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<ExecutionValue>;
 
-auto execute_constant_body(
+auto execute_body(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
-    const StructuredBodyDraft& body,
+    ExecutionBody body,
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<void>;
 

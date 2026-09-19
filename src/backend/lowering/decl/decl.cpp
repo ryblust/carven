@@ -54,8 +54,7 @@ auto exported_signature(const ModuleLowering& context, FunctionID id) noexcept
     const auto& function = context.semantic().declarations().function(id);
     const auto& callable = context.semantic().declarations().callable(function.callable);
     const auto& signature = context.semantic().callable_signatures().signature(callable.signature);
-    if (!function.cpp_export_origin.has_value()
-        || !context.plan().failure_abi().members(signature.failures).empty()) {
+    if (!function.cpp_export_origin.has_value()) {
         invariant_violation("C++ export lowering received an invalid signature");
     }
     return signature;
@@ -138,7 +137,7 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
     for (const auto& parameter : signature.parameters) {
         parameters.push_back(
             {.local = std::nullopt,
-             .type = context.lower_parameter(parameter),
+             .type = context.lower_parameter(parameter, TypeNameScope::Global),
              .default_value = std::nullopt}
         );
     }
@@ -150,7 +149,11 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
                                     .module_names(context.names().callable_owner(source.callable))
                                     .public_functions.at(function)},
             .parameters = std::move(parameters),
-            .result = context.lower_type(signature.result),
+            .result = context.lower_signature_result(
+                context.semantic().declarations().callable(source.callable).signature,
+                false,
+                TypeNameScope::Global
+            ),
             .form = TargetFreeFunctionDeclaration {},
             .constexpr_specifier = false,
             .static_specifier = false,
@@ -161,9 +164,6 @@ auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID fun
 
 auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexcept -> TargetItem {
     const auto& source = context.semantic().declarations().function(function);
-    const auto& callable = context.semantic().declarations().callable(source.callable);
-    const auto& semantic_signature =
-        context.semantic().callable_signatures().signature(callable.signature);
     const auto& signature = exported_signature(context, function);
     auto names = context.make_callable_name_allocator();
     auto parameters = std::vector<TargetParameter>();
@@ -173,15 +173,20 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
             context.target().add_local(names.fresh(TargetTemporaryNameKind::CppBoundaryParameter));
         parameters.push_back(
             {.local = name,
-             .type = context.lower_parameter(signature.parameters[index]),
+             .type = context.lower_parameter(signature.parameters[index], TypeNameScope::Global),
              .default_value = std::nullopt}
         );
         auto argument = name_expression(name);
-        if (is_char_type(context.semantic(), semantic_signature.parameters[index].type)) {
+        if (signature.parameters[index].access != AccessMode::Write
+            && is_char_type(context.semantic(), signature.parameters[index].type)) {
             argument = call_expression(
                 intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
                 target_expressions(std::move(argument))
             );
+        }
+        if (signature.parameters[index].access == AccessMode::Take
+            && !is_char_type(context.semantic(), signature.parameters[index].type)) {
+            argument = transfer_expression(std::move(argument));
         }
         arguments.push_back(std::move(argument));
     }
@@ -191,24 +196,12 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
     );
     if (context.semantic().may_stop_test(source.callable)) {
         call = call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeUnwrapNativeResult),
+            intrinsic_expression(TargetSymbol::RuntimeNativeTestResult),
             target_expressions(std::move(call))
         );
     }
     auto body = std::vector<TargetStmt>();
-    if (context.is_void(semantic_signature.result)) {
-        body.push_back(generated_statement(
-            TargetExprStmt {
-                .expression = std::move(call),
-            }
-        ));
-    } else {
-        body.push_back(generated_statement(
-            TargetReturnStmt {
-                .expression = std::move(call),
-            }
-        ));
-    }
+    body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(call)}));
     return expansion_item(
         context.semantic(),
         *source.cpp_export_origin,
@@ -217,7 +210,11 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
                                     .module_names(context.names().callable_owner(source.callable))
                                     .public_functions.at(function)},
             .parameters = std::move(parameters),
-            .result = context.lower_type(signature.result),
+            .result = context.lower_signature_result(
+                context.semantic().declarations().callable(source.callable).signature,
+                false,
+                TypeNameScope::Global
+            ),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
@@ -274,7 +271,7 @@ auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& 
         if (declaration.cpp_export_origin.has_value()) {
             result.cpp_export_facades.push_back(lower_cpp_export_facade(context, *function));
         }
-        if (declaration.entry_point.has_value()) {
+        if (schedule.emit_program_entry && declaration.entry_point.has_value()) {
             if (result.entry_wrapper.has_value()) {
                 invariant_violation("module lowering observed multiple entry points");
             }

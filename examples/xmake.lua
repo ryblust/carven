@@ -115,7 +115,7 @@ Source bytes after clear: 0
 ]]},
     {name = "native-parser", dir = "call_cpp", exceptions = true,
         output = "Port: 8080\nInvalid port\nInvalid port\nInvalid port\n"},
-    {name = "cpp-host", dir = "cpp_host", output = "Price in cents:\n1080\n"},
+    {name = "cpp-host", dir = "cpp_host", output = "12 items: 1080 cents (delivery included)\n"},
 }
 
 local names = {}

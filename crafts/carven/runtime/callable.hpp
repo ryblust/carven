@@ -178,6 +178,6 @@ private:
     Thunk thunk;
 };
 
-}
+} // namespace carven::runtime
 
 #undef CARVEN_RUNTIME_LIFETIME_BOUND

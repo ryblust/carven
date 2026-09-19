@@ -6,6 +6,7 @@ import :support.invariant;
 import std;
 
 namespace {
+
 struct TypeEvent final {
     TargetTypeID type;
     bool finish;
@@ -20,6 +21,7 @@ auto TypeDependencies::visit_type(TargetTypeID child) noexcept -> bool {
     pending.push_back({.type = child, .finish = false});
     return true;
 }
+
 } // namespace
 
 auto TargetRenderer::LayoutConstruction::visit_type(TargetTypeID type) noexcept -> bool {

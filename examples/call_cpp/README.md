@@ -1,31 +1,33 @@
 # Adapt a C++ parser
 
-Read `parser.hpp` first. It declares `parse_port` in the global C++ namespace.
-The C++ adapter catches `invalid_argument` and `out_of_range`, validates complete
-consumption and the port range, and returns -1 for invalid input. It retains
-`std::stoi`'s acceptance of leading whitespace and a plus sign.
+The global `parse_port` function in `parser.hpp` calls `std::stoi`, checks
+complete consumption and the port range, and throws C++ exceptions for invalid
+input. It retains `std::stoi`'s acceptance of leading whitespace and a plus sign.
+This header has no Carven dependency.
 
-Then read the imports in `main.cv`. `import "parser.hpp";` includes its declarations;
-`::parse_port(text)` directly names the global function without introducing a
-Carven short name. Carven does not parse the header. C++ checks the referenced
-declaration and call.
+In `main.cv`, the header import supplies the native declarations. A `#[cpp]`
+fragment defines
+`parse_port_native`, which catches `invalid_argument` and `out_of_range` and
+returns `carven::runtime::Outcome<std::int32_t, Failure>`.
 
-To give the parser a short name, use
-`import "parser.hpp" using parse_port;` and call `parse_port(text)`. Multiple
-global declarations can use a list such as `using { Point, calculate }`.
+The adapter is a C++ function template. Carven passes an `InvalidPort` value,
+allowing C++ to deduce its generated type without spelling a compiler-private
+namespace. `Result::success_from` constructs the successful value;
+`Result::failure` constructs the declared failure. Parse the input before entering
+the success factory so parse exceptions reach the adapter's handlers.
 
-Carven text crosses the parser call as `std::string_view`; the adapter
-constructs a `std::string` for `std::stoi`.
+The `import(cpp)` declaration gives Carven the signature and failure contract.
+Its `str` parameter uses `std::string_view`, and its failure parameter uses the
+ordinary representation of a Carven structure. The `port` expression function
+forwards the result with `?`. `report` handles `InvalidPort` using Carven's
+`catch`.
 
-The Carven wrapper converts the external numeric result to i32 and turns -1
-into its own `InvalidPort` failure. Carven's `catch` handles that value; it does
-not catch a C++ exception.
-
-The provider has no `noexcept` declaration. Its expected parse exceptions are
-handled internally. Other exceptions, such as allocation failure, are not
-recovered here and terminate if they escape the generated `noexcept` boundary.
-This target enables native C++ exceptions and RTTI independently of the
-compiler's own build settings.
+Carven checks its calls and failure handling. C++ checks the native declaration,
+template instantiation, and carrier compatibility. The adapter author decides
+which native exceptions become which Carven failures. Other exceptions, such as
+allocation failure, are not recovered here and terminate if they escape the
+`noexcept` adapter. This target enables native C++ exceptions and RTTI
+independently of the compiler's own build settings.
 
 From the repository root:
 
@@ -47,6 +49,4 @@ Invalid port
 Invalid port
 ```
 
-Try `"65536"`, `"0"`, or `"443"`. The adapter could also be implemented in a
-linked C++ source or a top-level `#[cpp]` fragment; a header keeps both sides
-visible in this example.
+For direct header calls, see [Calling C++](../../docs/tutorial.md#calling-c).

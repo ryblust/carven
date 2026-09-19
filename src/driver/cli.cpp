@@ -25,6 +25,7 @@ auto print_help() noexcept -> int {
         "  dump         Inspect tokens or the syntax tree\n"
         "\n"
         "Options:\n"
+        "      --tests      Compile and run runtime tests instead of the program entry\n"
         "      --timings    Show total and stage timings on stderr\n"
         "  -h, --help       Show this help\n"
         "  -V, --version    Show the version\n"
@@ -59,15 +60,15 @@ auto carven_main(int argc, const char* const* argv) noexcept -> int {
     }
 
     if (first_arg == "compile") {
-        return run_compile_command(args.subspan(1));
+        return run_compile_command(argv[0], args.subspan(1));
     }
 
     if (first_arg == "check") {
-        return run_check_command(args.subspan(1));
+        return run_check_command(argv[0], args.subspan(1));
     }
 
     if (first_arg == "interpret") {
-        return run_interpret_command(args.subspan(1));
+        return run_interpret_command(argv[0], args.subspan(1));
     }
 
     return run_native_command(argv[0], args);
