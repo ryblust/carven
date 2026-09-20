@@ -1,0 +1,83 @@
+struct Item {
+    value: i32,
+}
+
+struct Group {
+    item: Item,
+    items: [Item; 2],
+}
+
+struct Empty {}
+struct Failed {}
+
+const fn item(value: i32) -> Item {
+    return { value: value };
+}
+
+fn choose(value: i32) -> Item {
+    return match value {
+        0 => { value: 10 },
+        _ => {
+            let next = value + 1;
+            { value: next }
+        },
+    };
+}
+
+fn empty(value: bool) -> Empty => match value {
+    true => ({}),
+    false => { {} },
+};
+
+fn recover(fail: bool) -> Item {
+    return try {
+        if fail { throw Failed {}; }
+        { value: 4 }
+    } catch {
+        Failed(_) => { value: 5 },
+    };
+}
+
+fn read(item: Item) -> i32 => item.value;
+
+const known: Group = {
+    item: { value: 1 },
+    items: [
+        { value: 2 },
+        {}
+    ],
+};
+
+const test "contextual construction executes in constants" {
+    check(item(7).value == 7);
+    check(known.item.value == 1);
+    check(known.items[0].value == 2);
+    check(known.items[1].value == 0);
+}
+
+test "contextual construction follows declared destinations" {
+    var group: Group = {
+        item: { value: 3 },
+        items: [
+            { value: 4 },
+            { value: 5 }
+        ],
+    };
+    group.item = { value: 6 };
+    check(group.item.value == 6);
+    check(read({ value: 8 }) == 8);
+    check(choose(0).value == 10);
+    check(choose(8).value == 9);
+    check(recover(false).value == 4);
+    check(recover(true).value == 5);
+    check(empty(true) == empty(false));
+    let zero: i32 = {};
+    check(zero == 0);
+    let selected: Item = if true { { value: 11 } } else { {} };
+    check(selected.value == 11);
+    let callable: fn(i32) -> Item = [](value) => { value: value };
+    check(callable(12).value == 12);
+    match 0 {
+        _ => {}
+    }
+}

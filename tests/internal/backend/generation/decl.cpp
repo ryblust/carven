@@ -107,7 +107,7 @@ TEST_CASE("Declarations: reads clear attributes while writes retain names") {
     ));
     body.push_back(target_lowering_statement(TargetReturnStmt {.expression = reference(returned)}));
     const auto parameters = std::array {parameter, absent};
-    CHECK(finish_body_declarations(body, parameters, {}) == std::vector<bool> {true, false});
+    CHECK(finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false});
     CHECK(flags(body) == std::vector<bool> {false, true, true, true});
 }
 
@@ -146,7 +146,7 @@ TEST_CASE("Declarations: sibling declarations and lambda parameters have lexical
     body.push_back(target_lowering_statement(
         TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, true, false, true});
 }
 
@@ -196,7 +196,7 @@ TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
             .body = std::move(iteration)
         }
     ));
-    static_cast<void>(finish_body_declarations(body, {}, {}));
+    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
     CHECK(flags(body) == std::vector<bool> {false, false, true, false, false});
 }
 
@@ -207,7 +207,7 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
             "fn forward(parameter: i32) { let local = parameter; return consume(local); } "
             "fn inactive(parameter: i32) { if false { consume(parameter); } } "
             "fn only_write(&parameter: i32) { parameter = 2; } "
-            "fn unused_local() { let retained = 2; } "
+            "fn effect() -> i32 => 2; fn unused_local() { let retained = effect(); } "
             "struct Stop {} fn pair(&first: i32, second: i32) {} "
             "fn terminal(&parameter: i32) throw Stop { "
             "return pair(&parameter, if true { throw Stop {}; } else { throw Stop {}; }); } "
@@ -257,6 +257,6 @@ TEST_CASE("Declarations: final generated bodies own parameter and local use fact
         query.unit = &unit;
         CHECK(traverse_target_unit(unit.sections(), query));
     }
-    CHECK(query.definitions == 7uz);
+    CHECK(query.definitions == 8uz);
     CHECK(query.locals == 2uz);
 }

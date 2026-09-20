@@ -60,6 +60,40 @@ auto ConstantBodyAdmission::reject(ProgramOriginID origin, std::string message) 
 
 auto ConstantBodyAdmission::supported_type(ConstructionTypeRef type, bool allow_void) const noexcept
     -> bool {
+    auto pending = std::vector<ConstructionTypeRef> {type};
+    auto visited = std::set<ConstructionTypeRef>();
+    while (!pending.empty()) {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (!visited.insert(current).second) {
+            continue;
+        }
+        const auto* concrete = std::get_if<TypeID>(&current);
+        if (!concrete) {
+            return false;
+        }
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
+            const auto declaration = draft.construction_struct_declaration_copy(record->structure);
+            if (declaration.kind == RecordKind::Class) {
+                return false;
+            }
+            for (const auto& field : declaration.fields) {
+                pending.push_back(field.type);
+            }
+        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
+            pending.push_back(array->element);
+        } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
+            pending.push_back(slice->element);
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
+            for (const auto id : draft.enum_declaration_copy(enumeration->enumeration).cases) {
+                for (const auto payload :
+                     draft.construction_enum_case_declaration_copy(id).payload_types) {
+                    pending.push_back(payload);
+                }
+            }
+        }
+    }
     return supported_execution_type(draft, shapes, type, allow_void);
 }
 

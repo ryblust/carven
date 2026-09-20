@@ -98,7 +98,6 @@ auto BodyRealizer::ExpressionBuilder::build(
     const SemanticExpression& expression,
     bool result_needed,
     PreparedUse result_use,
-    bool full_expression_root,
     bool propagate_outcome,
     ConstantLiteralContext literal,
     bool direct_return,
@@ -362,9 +361,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     children.reserve(inputs.size());
     const auto suffix_begin = sequenced_suffix_begin(value);
     const auto postfix_end = first_unsequenced(value);
-    const auto direct_scalars = previous_frame == nullptr
-        && owner.metadata.lifetime_regions().region(cleanup).kind
-            == LifetimeRegionKind::FullExpression;
+    const auto direct_scalars = independent_scope;
     auto effects = std::vector<std::size_t>();
     auto reads = std::vector<std::size_t>();
     auto effect_cursor = 0uz;
@@ -408,13 +405,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
     };
     const auto* binary = std::get_if<SemBinary>(&value.operation.value);
-    const auto typed_arithmetic = binary != nullptr
-        && owner.context.is_integer(value.operation.type.resolved())
-        && (binary->operation == BinaryOperator::Add
-            || binary->operation == BinaryOperator::Subtract
-            || binary->operation == BinaryOperator::Multiply
-            || binary->operation == BinaryOperator::Divide
-            || binary->operation == BinaryOperator::Remainder);
+    const auto* arithmetic = std::get_if<PreparedBinary>(value.preparation.get());
+    const auto typed_arithmetic = arithmetic != nullptr && arithmetic->target_typed_operands;
     // Construct later fragments first so the storage demand of an earlier
     // source occurrence is known before its residual tree is constructed.
     // Only the following forward pass adopts statements and declarations.
@@ -436,7 +428,8 @@ auto BodyRealizer::ExpressionBuilder::build(
                     || (input_source.reads_storage && later_effect)));
         const auto keep = input.demand == PreparedDemand::Value;
         const auto child_literal = input.use == PreparedUse::OperandValue
-            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped : literal)
+            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped
+                                : ConstantLiteralContext::Exact)
             : std::holds_alternative<SemArray>(value.operation.value)
             ? ConstantLiteralContext::TargetTyped
             : ConstantLiteralContext::Exact;
@@ -444,7 +437,6 @@ auto BodyRealizer::ExpressionBuilder::build(
             *input.expression,
             keep && (result_needed || value.executes_operation),
             input.use,
-            false,
             false,
             child_literal,
             false,
@@ -505,9 +497,12 @@ auto BodyRealizer::ExpressionBuilder::build(
     if (!result_needed && !value.executes_operation) {
         co_return finish_fragment(std::move(fragment));
     }
-    const auto needs_source = std::holds_alternative<SemArrayAdopt>(value.operation.value)
-        || (std::holds_alternative<SemBorrowCallable>(value.operation.value)
-            && inputs.front().use == PreparedUse::ConstPlace);
+    const auto* field = std::get_if<SemField>(&value.operation.value);
+    const auto owning_field = field != nullptr && field->consumes_source();
+    const auto* adaptation = std::get_if<PreparedCallableAdaptation>(value.preparation.get());
+    const auto needs_source = owning_field
+        || (adaptation != nullptr
+            && (adaptation->array || adaptation->adaptation.borrows_storage()));
     if (needs_source) {
         anchor(children.front(), inputs.front().use, true);
         adopt(children.front());
@@ -524,11 +519,18 @@ auto BodyRealizer::ExpressionBuilder::build(
             continue;
         }
         const auto child_literal = inputs[index].use == PreparedUse::OperandValue
-            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped : literal)
+            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped
+                                : ConstantLiteralContext::Exact)
             : std::holds_alternative<SemArray>(value.operation.value)
             ? ConstantLiteralContext::TargetTyped
             : ConstantLiteralContext::Exact;
-        operands.push_back(emit(children[index], inputs[index].use, child_literal));
+        // An owning projection keeps the complete source alive for cleanup,
+        // then transfers only the selected field from its mutable storage.
+        operands.push_back(emit(
+            children[index],
+            owning_field ? PreparedUse::WritePlace : inputs[index].use,
+            child_literal
+        ));
     }
     if (std::holds_alternative<SemTake>(value.operation.value)) {
         complete(
@@ -536,13 +538,25 @@ auto BodyRealizer::ExpressionBuilder::build(
             result_use == PreparedUse::NativeTake ? std::move(operands.front())
                                                   : transfer_expression(std::move(operands.front()))
         );
-    } else if (const auto* adoption = std::get_if<SemArrayAdopt>(&value.operation.value)) {
+    } else if (owning_field) {
+        auto projected = realize_operation(
+            owner.context,
+            value.operation,
+            value.preparation.get(),
+            std::move(operands)
+        );
+        complete(
+            fragment,
+            result_use == PreparedUse::NativeTake ? std::move(projected)
+                                                  : transfer_expression(std::move(projected))
+        );
+    } else if (adaptation != nullptr && adaptation->array) {
         complete(
             fragment,
             realize_callable_adaptation(
                 owner.context,
                 std::move(operands.front()),
-                adoption->source->type.resolved(),
+                *adaptation,
                 value.operation.type.resolved()
             )
         );
@@ -578,12 +592,6 @@ auto BodyRealizer::ExpressionBuilder::build(
             *transport,
             result_needed && !owner.context.is_void(value.operation.type.resolved()),
             result_use,
-            full_expression_root
-                && previous_frame == nullptr
-                && owner.metadata.lifetime_regions().region(cleanup).kind
-                    == LifetimeRegionKind::FullExpression
-                && declarations.empty()
-                && !statements.owns_storage(),
             propagate_outcome
         );
     }

@@ -295,12 +295,12 @@ private:
         visit_fields(value.visibility, value.name_span, value.underlying_type, value.cases);
     }
 
-    auto visit(const ASTStructField& value) noexcept -> void {
+    auto visit(const ASTRecordField& value) noexcept -> void {
         visit_fields(value.span, value.name_span, value.type);
     }
 
-    auto visit(const ASTStructDecl& value) noexcept -> void {
-        visit_fields(value.visibility, value.name_span, value.fields);
+    auto visit(const ASTRecordDecl& value) noexcept -> void {
+        visit_fields(value.visibility, value.name_span, value.fields, value.operations);
     }
 
     auto visit(const ASTFunctionParameter& value) noexcept -> void {

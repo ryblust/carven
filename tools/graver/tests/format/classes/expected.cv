@@ -1,0 +1,15 @@
+export class Counter {
+    value: i32,
+
+    fn create(value: i32) -> Counter {
+        return { value: value };
+    }
+
+    private fn read(self) -> i32 {
+        return self.value;
+    }
+
+    fn increment(&self) {
+        self.value += 1;
+    }
+}

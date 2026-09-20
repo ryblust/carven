@@ -88,7 +88,7 @@ auto BodyRealizer::emit_failure(
     if (exit) {
         const auto& failure_destination = *exit;
         destination.emit(statement_expression(call_member(
-            name_expression(failure_destination.storage),
+            name_expression(failure_destination.slot.storage),
             "emplace",
             target_expressions(std::move(value))
         )));
@@ -124,7 +124,7 @@ auto BodyRealizer::emit_failure(
 }
 
 auto BodyRealizer::transfer_failure(
-    TargetLocalID storage,
+    FailureSlot slot,
     FailureSetID failures,
     const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
@@ -132,7 +132,19 @@ auto BodyRealizer::transfer_failure(
     if (!destination.continues()) {
         return;
     }
-    destination.scope(dispatch_failure(VariantFailureSource {.storage = storage}, failures, exit));
+    destination.scope(dispatch_failure(slot, failures, exit));
+}
+
+auto BodyRealizer::failure_projection(FailureSlot slot, TypeID type) noexcept -> TargetExpr {
+    auto payload = address_expression(dereference_expression(name_expression(slot.storage)));
+    if (context.plan().failure_abi().members(slot.layout).size() == 1uz) {
+        return payload;
+    }
+    return template_call_expression(
+        intrinsic_expression(TargetSymbol::StdGetIf),
+        {context.lower_type(type)},
+        target_expressions(std::move(payload))
+    );
 }
 
 auto BodyRealizer::dispatch_failure(
@@ -141,7 +153,8 @@ auto BodyRealizer::dispatch_failure(
     const std::optional<FailureDestination>& exit
 ) noexcept -> LoweringStmtBuilder {
     auto transfers = LoweringStmtBuilder();
-    for (const auto type : context.plan().failure_abi().members(failures)) {
+    const auto candidates = context.plan().failure_abi().members(failures);
+    for (const auto type : candidates) {
         const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
         transfers.emit(generated_statement(
             TargetVariableStmt {
@@ -165,14 +178,8 @@ auto BodyRealizer::dispatch_failure(
                                 {}
                             );
                         },
-                        [&](const VariantFailureSource& variant) noexcept {
-                            return template_call_expression(
-                                intrinsic_expression(TargetSymbol::StdGetIf),
-                                {context.lower_type(type)},
-                                target_expressions(address_expression(
-                                    dereference_expression(name_expression(variant.storage))
-                                ))
-                            );
+                        [&](const FailureSlot& slot) noexcept {
+                            return failure_projection(slot, type);
                         }
                     }
                 )
@@ -184,6 +191,10 @@ auto BodyRealizer::dispatch_failure(
             exit,
             transfer
         );
+        if (type == candidates.back()) {
+            transfers.append(std::move(transfer));
+            return transfers;
+        }
         transfers.record_exits(transfer.exits());
         auto branches = std::vector<TargetIfBranch>();
         branches.push_back(
@@ -203,7 +214,8 @@ auto BodyRealizer::dispatch_failure(
 auto BodyRealizer::result_expression(
     const SemanticExpression& source,
     const LoweringResultDestination& result,
-    LoweringStmtBuilder& destination
+    LoweringStmtBuilder& destination,
+    std::optional<LifetimeRegionID> delivered_region
 ) noexcept -> ContinuationTask<std::monostate> {
     if (!destination.continues()) {
         co_return {};
@@ -215,7 +227,14 @@ auto BodyRealizer::result_expression(
         co_return {};
     }
     if (std::holds_alternative<LoweringDiscardResult>(result)) {
-        static_cast<void>(destination.accept((co_await discard(source))));
+        if (preparation.summary(source).requires_execution) {
+            static_cast<void>(destination.accept((co_await expression(
+                source,
+                ConstantLiteralContext::Exact,
+                ResultDemand::Discard,
+                delivered_region
+            ))));
+        }
         co_return {};
     }
     const auto& expression_source = preparation.operation(source);
@@ -227,12 +246,12 @@ auto BodyRealizer::result_expression(
         && transport
         && !transport->destination
         && call != nullptr
-        && context.call_result(call->callee->type.resolved())
-            == context.callable_result(callable->callable_id)) {
+        && context.call_result(*call) == context.callable_result(callable->callable_id)) {
         auto value = destination.accept((co_await expression(
             source,
             ConstantLiteralContext::Exact,
-            ResultDemand::PropagateOutcome
+            ResultDemand::PropagateOutcome,
+            delivered_region
         )));
         if (value) {
             if (!context.plan().failure_abi().members(transport->failures).empty()) {
@@ -272,7 +291,8 @@ auto BodyRealizer::result_expression(
         && !context.semantic().may_stop_test(callable->callable_id)) {
         demand = ResultDemand::DirectReturn;
     }
-    auto value = destination.accept((co_await expression(source, literal, demand)));
+    auto value =
+        destination.accept((co_await expression(source, literal, demand, delivered_region)));
     if (value) {
         deliver_result(std::move(*value), result, destination);
     }
@@ -324,7 +344,7 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 co_return {};
             },
             [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
-                transfer_failure(caught->storage, caught->failures, current_failure, destination);
+                transfer_failure(caught->slot, caught->failures, current_failure, destination);
                 co_return {};
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {

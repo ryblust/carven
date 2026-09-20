@@ -14,7 +14,7 @@ struct GlobalRows {
 }
 
 fn global_rows() -> GlobalRows {
-    return GlobalRows {
+    return {
         values: ::std::vector<::std::vector<::GlobalPoint>> {
             ::std::vector<::GlobalPoint> { ::global_point() },
         },

@@ -41,6 +41,10 @@ auto ProgramDraft::solve_test_stops(
                 mark(entry.id);
             }
             if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                if (call->target) {
+                    callers[call->target->index()].push_back(entry.id);
+                    return;
+                }
                 const auto& type =
                     types.type(resolved_types.resolve(call->callee->type.construction())).value;
                 if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {

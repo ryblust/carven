@@ -10,6 +10,25 @@ Current language and compiler contracts belong in `docs/`.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
 
+## Design ownership
+
+| Proposal | Decision owned here |
+| --- | --- |
+| [Generics](generics.md) | Type parameters, definition-site checking, canonical static evidence and instances |
+| [Operators](operators.md) | Mapping existing tokens to checked operations; consumes generic evidence |
+| [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
+| [Constant storage](constant-storage.md) | Library storage operations during constant execution and retained results |
+| [Failure values](failure-value.md) | Payload admission and ownership across throw, matching, and rethrow |
+| [Formatting](formatting.md) | Capacity and composition across text/output observation boundaries |
+| [Async](async.md) | Suspension, cancellation, and structured operation lifetime |
+| [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
+| [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
+
+Dependencies do not transfer ownership of a rule. Operator syntax does not define
+generic evidence; async suspension does not define cross-thread sharing; constant
+execution does not define a container's public API. Implemented behavior belongs
+in `docs/`; the roadmap holds candidate work that has no developed design yet.
+
 ## Status
 
 Design maturity and implementation progress are recorded separately.

@@ -91,12 +91,10 @@ TEST_CASE("External types: C string storage has a closed operand and type contra
     CHECK(valid_cpp_type(type));
     CHECK(cpp_type_references(type).empty());
     CHECK(cpp_type_name(type) == nullptr);
-    CHECK(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 0uz));
-    CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "abc"}, 1uz));
-    CHECK_FALSE(
-        cpp_operation_accepts_arity(CppCStringOperation {.bytes = std::string("a\0b", 3)}, 0uz)
-    );
-    CHECK_FALSE(cpp_operation_accepts_arity(CppCStringOperation {.bytes = "\xff"}, 0uz));
+    CHECK(valid_cstring_bytes("abc"));
+    CHECK(valid_cstring_bytes(""));
+    CHECK_FALSE(valid_cstring_bytes(std::string("a\0b", 3)));
+    CHECK_FALSE(valid_cstring_bytes("\xff"));
 }
 
 TEST_CASE("External types: query operand access participates in canonical identity") {
@@ -267,6 +265,7 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                 declarations.define(
                     id,
                     ConstructionStructDeclaration {
+                        .kind = RecordKind::Struct,
                         .module_id = module_id,
                         .name = program.declarations().structure(id).name,
                         .origin = source.origin,

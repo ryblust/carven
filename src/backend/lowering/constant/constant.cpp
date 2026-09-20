@@ -179,6 +179,17 @@ auto constant_expression(
                     TargetStringLiteralKind::StringView
                 );
             },
+            [&](const CStringConstant& value) noexcept {
+                return TargetExpr {
+                    .value = TargetStaticCastExpr {
+                        .type = context.lower_type(fact.type),
+                        .operand = target_child(string_expression(
+                            std::string(context.semantic().provenance().spelling(value.value)),
+                            TargetStringLiteralKind::String
+                        ))
+                    }
+                };
+            },
             [&](const F32Constant& value) noexcept -> TargetExpr {
                 return floating_expression(context, value.value, fact.type);
             },

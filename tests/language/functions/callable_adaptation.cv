@@ -105,3 +105,21 @@ test "Callable adaptation: equal copies snapshot targets while widening borrows 
     };
     check(replaced == 6);
 }
+
+fn known_target(&trace: i32, value: i32) -> i32 {
+    trace = trace * 10 + 2;
+    return value + 1;
+}
+
+fn known_argument(&trace: i32) -> i32 {
+    trace = trace * 10 + 1;
+    return 6;
+}
+
+test "Callable adaptation: immutable function targets preserve argument and call execution" {
+    var trace = 0;
+    let callback: fn(&i32, i32) -> i32 = known_target;
+    let copy = callback;
+    check(copy(&trace, known_argument(&trace)) == 7);
+    check(trace == 12);
+}

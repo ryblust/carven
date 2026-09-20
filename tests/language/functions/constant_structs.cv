@@ -125,7 +125,7 @@ const fn entry_copy_take() -> ConstantEntryGroup {
 
 const fn entry_field_order() -> ConstantEntry {
     var state = ConstantEntry { 1, 2 };
-    return ConstantEntry {
+    return {
         value: if true {
             state.key = 7;
             state.value
@@ -149,7 +149,7 @@ const fn entry_constructor_copy() -> ConstantEntryPair {
         ],
         true
     };
-    return ConstantEntryPair {
+    return {
         first: group,
         second: if true {
             group.entries[0].key = 7;
@@ -186,7 +186,7 @@ const fn entry_assignment_order() -> [i32; 3] {
 }
 
 const fn entry_text(text: str) -> ConstantTextEntry => ConstantTextEntry { text, '我', true };
-const fn entry_zero() -> ConstantEmpty => ConstantEmpty {};
+const fn entry_zero() -> ConstantEmpty => {};
 fn entry_view() -> [ConstantEntry] => entry_middle;
 
 // Constant functions and frozen constant slices retain existing struct semantics.

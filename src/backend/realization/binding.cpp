@@ -12,6 +12,7 @@ import :backend.target.type;
 import :semantic.semir.body;
 import :semantic.semir.ids;
 import :semantic.semir.structured;
+import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -36,7 +37,11 @@ auto BodyRealizer::declare_binding(
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
     // A typed aggregate initializer already fixes its exact native value type.
-    const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value)
+    const auto deduced_native = std::holds_alternative<TargetConstructionExpr>(initializer.value)
+        && std::holds_alternative<CppTypeValue>(
+                                    context.semantic().types().type(binding.type).value
+        );
+    const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value) || deduced_native
         ? context.intrinsic_type(TargetSymbol::Auto)
         : context.lower_type(binding.type);
     destination.emit(generated_statement(

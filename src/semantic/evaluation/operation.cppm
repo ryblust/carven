@@ -102,3 +102,73 @@ auto fold_text_intrinsic_constant(
     std::optional<ConstantID> operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
+// Only patterns whose selection has no execution or binding-path obligations.
+template<typename Pattern>
+auto known_pattern_match(
+    const ExecutionValueAccess& values,
+    const Pattern& pattern,
+    std::optional<ConstantID> subject
+) noexcept -> std::optional<bool> {
+    return pattern.value.visit([&](const auto& value) noexcept -> std::optional<bool> {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, WildcardPattern>
+                      || std::same_as<Value, BindingPattern>
+                      || std::same_as<Value, TypeConstraintPattern>
+                      || std::same_as<Value, ElaboratedTypeConstraintPattern>) {
+            return true;
+        } else {
+            if (!subject) {
+                return std::nullopt;
+            }
+            const auto& fact = values.constant(*subject);
+            if constexpr (std::same_as<Value, LiteralPattern>) {
+                return constant_value_equal(
+                    values,
+                    fact.value,
+                    values.constant(value.constant).value
+                );
+            } else if constexpr (std::same_as<Value, RangePattern>) {
+                if ((value.begin && !value.begin->constant)
+                    || (value.end && !value.end->constant)) {
+                    return std::nullopt;
+                }
+                const auto compare = [&](const RangePatternBound& bound,
+                                         BinaryOperator operation) noexcept -> std::optional<bool> {
+                    const auto result = evaluate_binary_constant_value(
+                        values,
+                        operation,
+                        fact,
+                        values.constant(*bound.constant),
+                        values.builtin_type(BuiltinType::Bool)
+                    );
+                    if (!result) {
+                        return std::nullopt;
+                    }
+                    const auto* truth = std::get_if<BooleanConstant>(&result->value);
+                    return truth ? std::optional(truth->value) : std::nullopt;
+                };
+                const auto first = value.begin ? compare(*value.begin, BinaryOperator::GreaterEqual)
+                                               : std::optional(true);
+                const auto last = value.end
+                    ? compare(
+                          *value.end,
+                          value.inclusive ? BinaryOperator::LessEqual : BinaryOperator::Less
+                      )
+                    : std::optional(true);
+                return first && last ? std::optional(*first && *last) : std::nullopt;
+            } else if constexpr (std::same_as<Value, EnumCasePattern>) {
+                if (!value.payload.empty()) {
+                    return std::nullopt;
+                }
+                if (const auto* numeric = std::get_if<NumericEnumConstant>(&fact.value)) {
+                    return numeric->enum_case == value.enum_case;
+                }
+                if (const auto* payload = std::get_if<PayloadEnumConstant>(&fact.value)) {
+                    return payload->enum_case == value.enum_case;
+                }
+            }
+            return std::nullopt;
+        }
+    });
+}

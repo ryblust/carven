@@ -1,4 +1,4 @@
-import .validation using { UTF8Error, validator, push, error };
+import .validation using { UTF8Error, UTF8Validator };
 
 export struct UTF8Encoded {
     bytes: [u8; 4],
@@ -11,12 +11,11 @@ export enum UTF8Decode {
 }
 
 export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
-    if bytes.is_empty() { return .End; }
-    var state = validator();
+    var state = UTF8Validator::create();
     var scalar: u32 = 0;
     for byte in bytes {
-        push(&state, byte)?;
-        if state.offset == 1 {
+        state.push(byte)?;
+        if state.processed_bytes() == 1 {
             scalar = match byte {
                 ..0x80 => byte as u32,
                 0x80..0xe0 => (byte & 31) as u32,
@@ -26,9 +25,12 @@ export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
         } else {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
-        if state.remaining == 0 { return .Scalar(char::from_u32_unchecked(scalar), state.offset); }
+        if state.is_complete() {
+            return .Scalar(char::from_u32_unchecked(scalar), state.processed_bytes());
+        }
     }
-    throw error(state, .Truncated);
+    state.finish()?;
+    return .End;
 }
 
 private fn continuation(value: u32, shift: u32) -> u8 {
@@ -39,15 +41,15 @@ private fn continuation(value: u32, shift: u32) -> u8 {
 export fn encode_utf8(character: char) -> UTF8Encoded {
     let value = character as u32;
     return match value {
-        ..=0x7f => UTF8Encoded {
+        ..=0x7f => {
             bytes: [value as u8, 0, 0, 0],
             width: 1,
         },
-        0x80..=0x7ff => UTF8Encoded {
+        0x80..=0x7ff => {
             bytes: [(0xc0 | (value >> 6)) as u8, continuation(value, 0), 0, 0],
             width: 2,
         },
-        0x800..=0xffff => UTF8Encoded {
+        0x800..=0xffff => {
             bytes: [
                 (0xe0 | (value >> 12)) as u8,
                 continuation(value, 6),
@@ -56,7 +58,7 @@ export fn encode_utf8(character: char) -> UTF8Encoded {
             ],
             width: 3,
         },
-        0x10000.. => UTF8Encoded {
+        0x10000.. => {
             bytes: [
                 (0xf0 | (value >> 18)) as u8,
                 continuation(value, 12),

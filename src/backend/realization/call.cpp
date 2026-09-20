@@ -24,20 +24,13 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     const FallibleCall& transport,
     bool project_success,
     PreparedUse use,
-    bool direct,
     bool propagate_outcome
 ) noexcept -> void {
-    const auto callee_type =
-        std::get<SemCall>(source(fragment).operation.value).callee->type.resolved();
+    const auto& call = std::get<SemCall>(source(fragment).operation.value);
     const auto outcome = owner.fresh_local(TargetTemporaryNameKind::Outcome);
-    const auto storage = LoweringDeferredStorage {
-        .local = outcome,
-        .value_type = owner.context.call_result(callee_type)
-    };
-    // All operand fragments have been completed before choosing storage. A
-    // direct root has no retained auxiliary owners or shared execution;
-    // its ordinary Outcome local therefore preserves reverse destruction.
-    if (direct) {
+    const auto storage =
+        LoweringDeferredStorage {.local = outcome, .value_type = owner.context.call_result(call)};
+    if (automatic_storage) {
         statements.emit(generated_statement(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
@@ -52,7 +45,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         owner.initialize_deferred(storage, raw(fragment), statements);
     }
     auto access = name_expression(outcome);
-    if (!direct) {
+    if (!automatic_storage) {
         access = dereference_expression(std::move(access));
     }
     if (propagate_outcome) {
@@ -71,9 +64,9 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         );
         return;
     }
-    if (owner.context.semantic().may_stop_test(callee_type)) {
+    if (owner.context.semantic().may_stop_test(call)) {
         auto stopped_access = name_expression(outcome);
-        if (!direct) {
+        if (!automatic_storage) {
             stopped_access = dereference_expression(std::move(stopped_access));
         }
         auto stopped = template_call_expression(
@@ -119,7 +112,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
         complete(fragment, LoweringCompleted {});
     }
     auto failure = owner.dispatch_failure(
-        OutcomeFailureSource {.storage = outcome, .deferred = !direct},
+        OutcomeFailureSource {.storage = outcome, .deferred = !automatic_storage},
         transport.failures,
         transport.destination
     );

@@ -54,6 +54,11 @@ auto BodyExprSite::known(const Value& value) const noexcept -> std::optional<Con
     return value.constant();
 }
 
+auto BodyExprSite::condition_constant(const Value& value) const noexcept
+    -> std::optional<ConstantID> {
+    return body.active_builder().known_constant(value.expression());
+}
+
 auto BodyExprSite::external(ConstructionTypeRef type) const noexcept -> bool {
     return body.is_cpp_type(type);
 }
@@ -89,19 +94,6 @@ auto BodyExprSite::resolve_type(ASTTypeID type) noexcept -> ExpressionTask<Const
     co_return (co_await body.resolve_type(type));
 }
 
-auto BodyExprSite::c_string(std::string_view bytes, Span span) noexcept -> Value {
-    const auto type =
-        draft().intern_type({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
-    return body.make_built(
-        type,
-        SemCpp {
-            .operation = CppCStringOperation {.bytes = std::string(bytes)},
-            .operands = {},
-        },
-        span
-    );
-}
-
 auto BodyExprSite::constant(ConstantID constant, Span span) noexcept -> Value {
     return body
         .make_built(draft().constant(constant).type, SemConstant {.constant = constant}, span);
@@ -120,7 +112,7 @@ auto BodyExprSite::finish_short_circuit(
 ) noexcept -> ExpressionResult<Value> {
     auto pending = take_pending_failures(left);
     append_pending_failures(pending, take_pending_failures(right));
-    const auto& truth = known_boolean_constant(draft(), left.constant());
+    const auto truth = known_boolean_constant(draft(), condition_constant(left));
     const auto completes = left.completes && (truth == !conjunction || right.completes);
     auto first = body.consume_value(left, span, AccessMode::Read);
     if (!first.has_value()) {
@@ -130,6 +122,8 @@ auto BodyExprSite::finish_short_circuit(
     if (!second.has_value()) {
         return std::unexpected(second.error());
     }
+    first->constant = body.active_builder().known_constant(*first);
+    second->constant = body.active_builder().known_constant(*second);
     return finish(
         draft().builtin_type(BuiltinType::Bool),
         SemShortCircuit {
@@ -229,7 +223,7 @@ auto BodyExprSite::extension(
     Span span,
     [[maybe_unused]] std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<Selection> {
-    co_return (co_await construct_structure_expression(*this, value, span));
+    co_return (co_await construct_structure_expression(*this, value, span, expected));
 }
 
 auto BodyExprSite::extension(
@@ -297,9 +291,9 @@ auto BodyExprSite::resolve_name(std::string_view name, Span span) noexcept
     co_return (co_await body.resolve_constant_name(name, span));
 }
 
-auto BodyExprSite::resolve_enum_qualifier(ASTExprID id) noexcept
+auto BodyExprSite::resolve_nominal_qualifier(ASTExprID id) noexcept
     -> ExpressionTask<std::optional<TypeID>> {
-    co_return (co_await body.resolve_enum_qualifier(id));
+    co_return (co_await body.resolve_nominal_qualifier(id));
 }
 
 auto BodyExprSite::resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
@@ -319,11 +313,11 @@ auto BodyExprSite::spelling(Span span) const noexcept -> std::string {
     return body.spelling(span);
 }
 
-auto BodyExprSite::invalid_enum_qualifier(Span span) noexcept -> ExpressionResult<Value> {
+auto BodyExprSite::invalid_nominal_qualifier(Span span) noexcept -> ExpressionResult<Value> {
     return std::unexpected(fail(
         span,
-        DiagnosticCode::TypeEnumContext,
-        "enum case qualifier does not name an enum type"
+        DiagnosticCode::TypeMismatch,
+        "scope qualifier does not name an enum or class type"
     ));
 }
 
@@ -380,6 +374,25 @@ auto BodyExprSite::member_call(
     Value operand,
     Span span
 ) noexcept -> ExpressionTask<Value> {
+    const auto type = operand.type();
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft().type_copy(*concrete);
+        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
+            const auto declaration =
+                draft().construction_struct_declaration_copy(record->structure);
+            const auto name = spelling(member.name_span);
+            const auto field =
+                std::ranges::find_if(declaration.fields, [&](const auto& value) noexcept {
+                    return draft().spelling(value.name) == name;
+                });
+            if (declaration.kind == RecordKind::Class && field == declaration.fields.end()) {
+                co_return (
+                    co_await body
+                        .class_call(source, member, record->structure, std::move(operand), span)
+                );
+            }
+        }
+    }
     auto callee = construct_member_expression(
         *this,
         member,
@@ -522,4 +535,31 @@ auto BodyExprSite::read_array_element(
 
 auto BodyExprSite::operand_state() noexcept -> OperandState {
     return {.pending = {}, .completes = true};
+}
+
+auto BodyExprSite::representation_access(StructID owner, Span span) noexcept
+    -> AnalysisResult<void> {
+    if (body.draft().construction_struct_declaration_copy(owner).kind == RecordKind::Class
+        && body.lexical_class != owner) {
+        return std::unexpected(fail(
+            span,
+            DiagnosticCode::AccessClassPrivate,
+            "class representation is accessible only inside its defining class"
+        ));
+    }
+    return {};
+}
+
+auto BodyExprSite::associated_call(
+    const ASTCallExpr& source,
+    const ASTMemberExpr& member,
+    StructID owner,
+    Span span
+) noexcept -> ExpressionTask<Value> {
+    co_return (co_await body.class_call(source, member, owner, std::nullopt, span));
+}
+
+auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
+    -> ExpressionTask<Value> {
+    co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
 }

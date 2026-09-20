@@ -82,6 +82,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
             || kind == TokenKind::Import
             || kind == TokenKind::Enum
             || kind == TokenKind::Struct
+            || kind == TokenKind::Class
             || kind == TokenKind::Fn
             || kind == TokenKind::Const
             || kind == TokenKind::Test;
@@ -177,6 +178,7 @@ auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void
             || kind == TokenKind::Export
             || kind == TokenKind::Enum
             || kind == TokenKind::Struct
+            || kind == TokenKind::Class
             || kind == TokenKind::Fn
             || kind == TokenKind::Const
             || kind == TokenKind::Test

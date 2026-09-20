@@ -285,3 +285,79 @@ TEST_CASE("Callable views: stateless targets require no backing object") {
     REQUIRE(result.success_if() != nullptr);
     CHECK(result.success_if()->value == 9);
 }
+
+TEST_CASE("Runtime FunctionRef: value delivery uses the ordinary transfer policy") {
+    struct CopyTrivial final {
+        int* moves;
+
+        explicit CopyTrivial(int& count) noexcept
+            : moves(&count) {}
+
+        CopyTrivial(const CopyTrivial&) = default;
+
+        CopyTrivial(CopyTrivial&& value) noexcept
+            : moves(value.moves) {
+            ++*moves;
+        }
+    };
+
+    auto moves = 0;
+    auto value = CopyTrivial(moves);
+    const auto callable = [](CopyTrivial) static noexcept -> int {
+        return 42;
+    };
+    using View = carven::runtime::FunctionRef<int(CopyTrivial) noexcept>;
+    const auto function = View(+callable);
+    const auto object = View(callable);
+    const auto stateless = View::from_stateless(callable);
+    CHECK(function(carven::runtime::transfer(value)) == 42);
+    CHECK(object(carven::runtime::transfer(value)) == 42);
+    CHECK(stateless(carven::runtime::transfer(value)) == 42);
+    CHECK(moves == 0);
+}
+
+TEST_CASE("Runtime FunctionRef: admission checks delivered arguments and result construction") {
+    struct CopyOnly final {
+        CopyOnly() = default;
+        CopyOnly(const CopyOnly&) = default;
+        CopyOnly(CopyOnly&&) = delete;
+    };
+
+    const auto callable = [](CopyOnly) static noexcept -> int {
+        return 42;
+    };
+    using View = carven::runtime::FunctionRef<int(CopyOnly) noexcept>;
+    static_assert(std::constructible_from<View, decltype(+callable)>);
+    static_assert(std::constructible_from<View, decltype(callable)&>);
+    auto value = CopyOnly {};
+    CHECK(View(+callable)(carven::runtime::transfer(value)) == 42);
+    CHECK(View(callable)(carven::runtime::transfer(value)) == 42);
+    CHECK(View::from_stateless(callable)(carven::runtime::transfer(value)) == 42);
+    const auto rvalue_only = [](CopyOnly&&) static noexcept -> int {
+        return 0;
+    };
+    static_assert(!std::constructible_from<View, decltype(rvalue_only)&>);
+
+    struct Fixed final {
+        Fixed() = default;
+        Fixed(const Fixed&) = delete;
+        Fixed(Fixed&&) = delete;
+    };
+
+    using Narrow = carven::runtime::Outcome<Fixed, ParseFailure>;
+    using Wide = carven::runtime::Outcome<Fixed, ParseFailure, NetworkFailure>;
+    using WideView = carven::runtime::FunctionRef<Wide() noexcept>;
+    const auto plain = []() static noexcept -> Fixed {
+        return {};
+    };
+    const auto narrow = []() static noexcept -> Narrow {
+        return Narrow::success_from([]() static noexcept -> Fixed { return {}; });
+    };
+    static_assert(!std::constructible_from<Wide, Narrow&&>);
+    static_assert(!std::constructible_from<WideView, decltype(+narrow)>);
+    static_assert(!std::constructible_from<WideView, decltype(narrow)&>);
+    const auto direct = carven::runtime::FunctionRef<Narrow() noexcept>(+narrow)();
+    CHECK(direct.success_if() != nullptr);
+    const auto wrapped = WideView(+plain)();
+    CHECK(wrapped.success_if() != nullptr);
+}

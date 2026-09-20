@@ -40,6 +40,7 @@ constant computation, failures, and C++ integration, or choose a topic directly.
 
 | Example | What it demonstrates | Target |
 | --- | --- | --- |
+| [Deduced C++ values](native_values/) | C++ template deduction, indexing, reference-result snapshots, and native formatting | `carven-example-native-values` |
 | [Hello World](helloworld/) | Top-level entry, string literal, and builtin output | `carven-example-hello-world` |
 | [Shipping](modules/) | Relative imports and private constants | `carven-example-shipping` |
 | [Receipt](basics/) | Records, enums, match, arrays, loops, and calculation functions | `carven-example-receipt` |

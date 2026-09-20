@@ -255,8 +255,12 @@ and writes their new contents. The first I/O failure stops the write; files earl
 in the order may already have changed. Directory isolation, stale cleanup, failure protection, and
 content-stable incremental promotion belong to the caller or build system.
 
-`--stdout` selects no filesystem sink. It prints every artifact in canonical
-order with a heading of this form:
+`--stdout` selects no filesystem sink. It displays artifacts belonging to explicit
+source inputs, in canonical order. Dependencies remain as includes; all collected
+sources still participate in analysis. Shared interfaces are displayed when they
+contain an explicit input, so an interface can include declarations from other
+modules. Requested test runner and entry artifacts are also displayed.
+Each artifact has a heading of this form:
 
 ```text
 ==> logical/path <==
@@ -313,6 +317,10 @@ failure produce diagnostics on standard error and a nonzero status. Invocation
 errors include a command help hint. Source
 warnings are printed on standard error while a successful compilation and
 materialization still return zero.
+
+Carven-rendered diagnostics use color when standard error supports terminal
+styling, unless `NO_COLOR` is nonempty or `TERM=dumb`. Carven does not add styling
+when standard error is redirected.
 
 For `compile`, native compilation, linking, and C++ language selection belong
 to the consuming build.

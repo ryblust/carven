@@ -1,4 +1,5 @@
 import "printing/structural.hpp";
+import <vector> using std::vector;
 
 struct Envelope {
     value: ::DisplayCopyable
@@ -10,4 +11,11 @@ fn main() {
     println(f"{value}");
     let record = Envelope { ::DisplayCopyable() };
     println(record);
+    let values = vector { 1, 2, 3 };
+    println(values[0]);
+    println(::display_bool(), ::display_double(), ::display_code_unit());
+    println(::display_function());
+    var pointer = c"safe";
+    pointer = ::display_null_cstring();
+    println(pointer);
 }

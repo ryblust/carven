@@ -57,6 +57,13 @@ auto BodyElaborator::build_pattern(
                 };
             },
             [&](const ASTLiteral& literal) noexcept -> AnalysisTask<BuiltPattern> {
+                if (std::holds_alternative<CStringLiteralValue>(literal.value)) {
+                    co_return std::unexpected(fail(
+                        source.span,
+                        DiagnosticCode::TypeMatchPattern,
+                        "C string pointers are not literal patterns"
+                    ));
+                }
                 auto normalized = normalize_literal(draft(), literal, type);
                 if (!normalized.has_value()) {
                     const auto diagnostic = constant_evaluation_diagnostic(normalized.error());
@@ -508,7 +515,9 @@ auto BodyElaborator::build_match(
         ));
     }
     const auto subject_is_place = std::holds_alternative<PlaceExpression>(subject->storage);
+    const auto subject_constant = active_builder().known_constant(subject->expression());
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
+    subject_tree.constant = subject_constant;
     if (source.arms.empty()) {
         co_return std::unexpected(
             fail(span, DiagnosticCode::MatchNonExhaustive, "match has no arms")
@@ -645,7 +654,12 @@ auto BodyElaborator::build_match(
     auto normal = false;
     auto remaining = selection_reachable;
     for (auto& plan : plans) {
-        const auto useful = remaining && plan.useful;
+        const auto matches = known_pattern_match(
+            draft(),
+            body_builder.pattern_copy(plan.pattern.pattern),
+            subject_constant
+        );
+        const auto useful = remaining && plan.useful && matches != false;
         [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, useful);
         if (useful) {
             draft().add_failure_contribution(
@@ -669,7 +683,10 @@ auto BodyElaborator::build_match(
             if (value_form) {
                 collect_pending(pending, *guard);
             }
-            const auto known = known_boolean_constant(draft(), guard->constant());
+            const auto known = known_boolean_constant(
+                draft(),
+                active_builder().known_constant(guard->expression())
+            );
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 co_return std::unexpected(checked.error());
@@ -678,7 +695,7 @@ auto BodyElaborator::build_match(
             body_reachable = guard->completes && (!known.has_value() || *known);
             guard_may_reject = guard->completes && known != true;
         }
-        if (plan.pattern.irrefutable && !guard_may_reject) {
+        if ((plan.pattern.irrefutable || matches == true) && !guard_may_reject) {
             remaining = false;
         }
         auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
@@ -702,6 +719,7 @@ auto BodyElaborator::build_match(
              std::move(guard_tree),
              std::move(*body),
              useful,
+             matches == true,
              std::move(plan.pattern_bounds)}
         );
         pop_frame();

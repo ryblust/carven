@@ -1,6 +1,7 @@
 module carven:semantic.analysis.validation.operations.impl;
 
 import :semantic.analysis.validation.context;
+import :semantic.evaluation.operation;
 import :semantic.format;
 import :semantic.semir.constant_access;
 import :semantic.semir.format;
@@ -114,14 +115,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         program.declarations().module_decl(name->name.context_module)
                     );
                 }
-                if (std::holds_alternative<CppCStringOperation>(value.operation)
-                    && require_type(source.type.resolved()).value
-                        != CanonicalTypeValue {CppTypeValue {.form = CppConstCharPointerType {}}}) {
-                    invariant_violation("C string literal does not have const char pointer type");
-                }
-                if (!std::holds_alternative<CppConstructOperation>(value.operation)
-                    && !std::holds_alternative<CppCStringOperation>(value.operation)
-                    && !std::holds_alternative<CppConvertOperation>(value.operation)
+                if (!std::holds_alternative<CppConvertOperation>(value.operation)
                     && !std::holds_alternative<CppUpdateOperation>(value.operation)) {
                     auto operands = std::vector<CppTypeOperand>();
                     for (const auto& operand : value.operands) {
@@ -129,8 +123,16 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                             {.type = operand.expression.type.resolved(), .access = operand.access}
                         );
                     }
-                    const auto expected =
-                        CppTypeValue {.form = cpp_query_type(value.operation, operands)};
+                    const auto* construction = std::get_if<CppConstructOperation>(&value.operation);
+                    const auto expected = CppTypeValue {
+                        .form = construction
+                            ? cpp_construct_query(
+                                  construction->target,
+                                  value.operands,
+                                  [&](TypeID type) noexcept { return require_type(type); }
+                              )
+                            : cpp_query_type(value.operation, operands)
+                    };
                     const auto* actual =
                         std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
                     if (!valid_cpp_type(expected) || actual == nullptr || *actual != expected) {
@@ -163,9 +165,24 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemCall& value) noexcept {
-                const auto& signature = program.callable_signatures().signature(
-                    signature_for_type(value.callee->type.resolved())
-                );
+                const auto& signature =
+                    program.callable_signatures().signature(program.call_signature(value));
+                if (value.target) {
+                    const auto& view = program.callable_signatures().signature(
+                        program.call_signature(value.callee->type.resolved())
+                    );
+                    if (signature.parameters != view.parameters
+                        || signature.result != view.result
+                        || !std::ranges::includes(
+                            require_failure_set(view.failures).members,
+                            require_failure_set(signature.failures).members,
+                            {},
+                            &TypeID::index,
+                            &TypeID::index
+                        )) {
+                        invariant_violation("known call target differs from callee contract");
+                    }
+                }
                 if (signature.result != source.type.resolved()
                     || signature.parameters.size() != value.arguments.size()
                     || signature.failures != value.callee_failures.resolved()) {
@@ -428,6 +445,16 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 for (const auto& arm : value.arms) {
                     const auto roots = std::array {arm.pattern};
                     verify_pattern_bounds(roots, arm.pattern_bounds);
+                    if (arm.pattern_always_matches
+                        && known_pattern_match(
+                               PublishedConstantValues(program),
+                               body.pattern(arm.pattern),
+                               value.subject->constant
+                           ) != true) {
+                        invariant_violation(
+                            "match selection fact is not established by its subject and pattern"
+                        );
+                    }
                     if (body.pattern(arm.pattern).type != value.subject->type.resolved()) {
                         invariant_violation("match pattern type mismatch");
                     }
@@ -445,11 +472,30 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                 }
             },
             [&](const SemTry& value) noexcept {
+                const auto& protected_types =
+                    require_failure_set(value.protected_failures.resolved()).members;
+                const auto require_subset = [&](FailureSetID set) noexcept {
+                    const auto& members = require_failure_set(set).members;
+                    for (const auto type : members) {
+                        if (!std::ranges::contains(protected_types, type)) {
+                            invariant_violation("catch candidates exceed protected failure set");
+                        }
+                    }
+                    return std::span<const TypeID>(members);
+                };
+                static_cast<void>(require_subset(value.residual_failures.resolved()));
                 for (const auto& arm : value.arms) {
+                    const auto accepted = require_subset(arm.accepted_failures.resolved());
                     auto roots = std::vector<PatternID>();
                     for (const auto& alternative : arm.alternatives) {
                         if (const auto* typed =
                                 std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                            if (alternative.reachable
+                                && !std::ranges::contains(accepted, typed->type.resolved())) {
+                                invariant_violation(
+                                    "reachable catch type is absent from accepted failures"
+                                );
+                            }
                             roots.push_back(typed->inner);
                         }
                     }

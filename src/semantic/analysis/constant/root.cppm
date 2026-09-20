@@ -43,6 +43,10 @@ public:
 
     auto module_id() const noexcept -> ProgramModuleID { return source_module_id; }
 
+    auto construction_requests() noexcept -> ConstructionRequests& {
+        return scope.construction_requests();
+    }
+
     auto permits_pointer_narrowing() const noexcept -> bool { return true; }
 
     auto infer_type(Value& value, Span) const noexcept -> AnalysisResult<ConstructionTypeRef> {
@@ -57,6 +61,17 @@ public:
     auto cpp_construct(const ASTConstructionExpr&, ConstructionTypeRef, Span) const noexcept
         -> ExpressionTask<Value> {
         co_return std::unexpected(ExpressionNotAdmitted {});
+    }
+
+    auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void> {
+        if (draft().construction_struct_declaration_copy(owner).kind == RecordKind::Class) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::ConstAdmission,
+                "class representation is not admitted in required constant expressions"
+            ));
+        }
+        return {};
     }
 
     auto aggregate_cost(std::size_t count, Span span) noexcept -> AnalysisResult<void> {
@@ -170,6 +185,10 @@ public:
         return value.constant;
     }
 
+    auto condition_constant(const Value& value) const noexcept -> std::optional<ConstantID> {
+        return value.constant;
+    }
+
     auto external(ConstructionTypeRef type) const noexcept -> bool {
         const auto* concrete = std::get_if<TypeID>(&type);
         return concrete != nullptr
@@ -187,10 +206,6 @@ public:
 
     auto resolve_type(ASTTypeID type) noexcept -> ExpressionTask<ConstructionTypeRef> {
         co_return (co_await scope.resolve_type(type));
-    }
-
-    auto c_string(std::string_view, Span) const noexcept -> ExpressionResult<Value> {
-        return std::unexpected(ExpressionNotAdmitted {});
     }
 
     auto constant(ConstantID value, Span span) noexcept -> Value {
@@ -288,9 +303,9 @@ public:
     auto extension(
         const ASTConstructionExpr& source,
         Span span,
-        std::optional<ConstructionTypeRef>
+        std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Value> {
-        co_return (co_await construct_structure_expression(*this, source, span));
+        co_return (co_await construct_structure_expression(*this, source, span, expected));
     }
 
     auto extension(
@@ -321,8 +336,8 @@ public:
         return program.source_slice_copy(source_module_id, span);
     }
 
-    auto resolve_enum_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
-        co_return (co_await scope.resolve_enum_qualifier(id));
+    auto resolve_nominal_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
+        co_return (co_await scope.resolve_nominal_qualifier(id));
     }
 
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
@@ -339,7 +354,7 @@ public:
         co_return selected;
     }
 
-    auto invalid_enum_qualifier(Span) const noexcept -> ExpressionResult<Value> {
+    auto invalid_nominal_qualifier(Span) const noexcept -> ExpressionResult<Value> {
         return std::unexpected(ExpressionNotAdmitted {});
     }
 
@@ -510,6 +525,7 @@ public:
             contract.result,
             SemCall {
                 .callee = OwnedSemanticExpression(std::move(selected_callee)),
+                .target = std::nullopt,
                 .arguments = std::move(arguments),
                 .callee_failures = BodyFailures(contract.failures)
             },

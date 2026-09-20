@@ -3,6 +3,7 @@ module carven:semantic.analysis.expr.aggregate;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
+import :semantic.analysis.construction.requests;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
@@ -123,25 +124,65 @@ template<typename Site>
 auto construct_structure_expression(
     Site& site,
     const ASTConstructionExpr& source,
-    Span span
+    Span span,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<typename Site::Value> {
-    auto resolved = (co_await site.resolve_construction_type(source.type));
+    if (!source.type && !expected) {
+        co_return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::TypeConstructContext,
+            "construction requires an explicit type or a known expected type"
+        ));
+    }
+    auto resolved = source.type ? (co_await site.resolve_construction_type(*source.type))
+                                : AnalysisResult<ConstructionTypeRef>(*expected);
     if (!resolved) {
         co_return std::unexpected(resolved.error());
     }
-    if (site.external(*resolved)) {
-        co_return (co_await site.cpp_construct(source, *resolved, span));
+    if (!source.type) {
+        auto prepared =
+            (co_await site.construction_requests().ensure_type(*resolved, site.module_id(), span));
+        if (!prepared) {
+            co_return std::unexpected(prepared.error());
+        }
     }
-    if (std::holds_alternative<std::monostate>(source.initializer.value)) {
-        co_return construct_default_expression(site, *resolved, span);
+    if (site.external(*resolved)) {
+        if (!source.type) {
+            co_return std::unexpected(site.fail(
+                span,
+                DiagnosticCode::TypeConstructContext,
+                "native construction requires an explicit type"
+            ));
+        }
+        co_return (co_await site.cpp_construct(source, *resolved, span));
     }
     const auto* concrete = std::get_if<TypeID>(&*resolved);
     const auto canonical =
         concrete ? std::optional(site.draft().type_copy(*concrete)) : std::nullopt;
     const auto* structure = canonical ? std::get_if<StructTypeValue>(&canonical->value) : nullptr;
+    if (structure != nullptr) {
+        if (auto access = site.representation_access(structure->structure, span); !access) {
+            co_return std::unexpected(access.error());
+        }
+        const auto declaration =
+            site.draft().construction_struct_declaration_copy(structure->structure);
+        if (declaration.kind == RecordKind::Class
+            && declaration.fields.empty()
+            && std::holds_alternative<std::monostate>(source.initializer.value)) {
+            co_return site.finish_constructed(
+                *concrete,
+                SemStruct {.structure = structure->structure, .fields = {}},
+                Site::operand_state(),
+                span
+            );
+        }
+    }
+    if (std::holds_alternative<std::monostate>(source.initializer.value)) {
+        co_return construct_default_expression(site, *resolved, span);
+    }
     if (structure == nullptr) {
         co_return std::unexpected(site.fail(
-            source.type.span,
+            source.type ? source.type->span : span,
             DiagnosticCode::TypeConstructNotStruct,
             "construction expression requires a structure type"
         ));

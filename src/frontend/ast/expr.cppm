@@ -84,7 +84,7 @@ struct ASTConstructionInitializer final {
 };
 
 struct ASTConstructionExpr final {
-    ASTConstructionType type;
+    std::optional<ASTConstructionType> type;
     ASTConstructionInitializer initializer;
 };
 

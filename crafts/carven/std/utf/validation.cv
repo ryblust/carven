@@ -13,83 +13,91 @@ export struct UTF8Error {
     sequence_start: usize,
 }
 
-export struct UTF8Validator {
+export class UTF8Validator {
     remaining: u8,
     lead: u8,
     offset: usize,
     sequence_start: usize,
-}
 
-export fn validator() -> UTF8Validator {
-    return UTF8Validator {
-        remaining: 0,
-        lead: 0,
-        offset: 0,
-        sequence_start: 0,
-    };
-}
-
-fn error(state: UTF8Validator, kind: UTF8ErrorKind) -> UTF8Error {
-    return UTF8Error {
-        kind: kind,
-        offset: state.offset,
-        sequence_start: state.sequence_start,
-    };
-}
-
-// A rejected byte leaves the caller's state unchanged.
-export fn push(&state: UTF8Validator, byte: u8) throw UTF8Error {
-    var next = state;
-    if next.remaining == 0 {
-        next.sequence_start = next.offset;
-        match byte {
-            0x00..=0x7f => {
-                next.lead = 0;
-            },
-            0xc2..=0xdf => {
-                next.remaining = 1;
-                next.lead = 0;
-            },
-            0xe0..=0xef => {
-                next.remaining = 2;
-                next.lead = byte;
-            },
-            0xf0..=0xf4 => {
-                next.remaining = 3;
-                next.lead = byte;
-            },
-            _ => throw error(next, .InvalidLead),
-        }
-    } else {
-        match byte {
-            ..0x80 | 0xc0.. => throw error(next, .InvalidContinuation),
-            ..0xa0 if next.lead == 0xe0 => throw error(next, .Overlong),
-            0xa0.. if next.lead == 0xed => throw error(next, .Surrogate),
-            ..0x90 if next.lead == 0xf0 => throw error(next, .Overlong),
-            0x90.. if next.lead == 0xf4 => throw error(next, .TooLarge),
-            _ => {},
-        }
-        next.lead = 0;
-        next.remaining -= 1;
+    fn create() -> UTF8Validator {
+        return {
+            remaining: 0,
+            lead: 0,
+            offset: 0,
+            sequence_start: 0,
+        };
     }
-    next.offset += 1;
-    if next.remaining == 0 { next.sequence_start = next.offset; }
-    state = next;
-}
 
-// A block boundary can split a scalar; only finish declares EOF.
-export fn feed(&state: UTF8Validator, bytes: [u8]) throw UTF8Error {
-    for byte in bytes {
-        push(&state, byte)?;
+    private fn error(self, kind: UTF8ErrorKind) -> UTF8Error {
+        return {
+            kind: kind,
+            offset: self.offset,
+            sequence_start: self.sequence_start,
+        };
     }
-}
 
-export fn finish(state: UTF8Validator) throw UTF8Error {
-    if state.remaining != 0 { throw error(state, .Truncated); }
+    // A rejected byte leaves the caller's state unchanged.
+    fn push(&self, byte: u8) throw UTF8Error {
+        var next = self;
+        if next.remaining == 0 {
+            next.sequence_start = next.offset;
+            match byte {
+                0x00..=0x7f => {
+                    next.lead = 0;
+                },
+                0xc2..=0xdf => {
+                    next.remaining = 1;
+                    next.lead = 0;
+                },
+                0xe0..=0xef => {
+                    next.remaining = 2;
+                    next.lead = byte;
+                },
+                0xf0..=0xf4 => {
+                    next.remaining = 3;
+                    next.lead = byte;
+                },
+                _ => throw next.error(.InvalidLead),
+            }
+        } else {
+            match byte {
+                ..0x80 | 0xc0.. => throw next.error(.InvalidContinuation),
+                ..0xa0 if next.lead == 0xe0 => throw next.error(.Overlong),
+                0xa0.. if next.lead == 0xed => throw next.error(.Surrogate),
+                ..0x90 if next.lead == 0xf0 => throw next.error(.Overlong),
+                0x90.. if next.lead == 0xf4 => throw next.error(.TooLarge),
+                _ => {},
+            }
+            next.lead = 0;
+            next.remaining -= 1;
+        }
+        next.offset += 1;
+        if next.remaining == 0 { next.sequence_start = next.offset; }
+        self = next;
+    }
+
+    // A block boundary can split a scalar; only finish declares EOF.
+    fn feed(&self, bytes: [u8]) throw UTF8Error {
+        for byte in bytes {
+            self.push(byte)?;
+        }
+    }
+
+    fn finish(self) throw UTF8Error {
+        if self.remaining != 0 { throw self.error(.Truncated); }
+    }
+
+    fn is_complete(self) -> bool {
+        return self.remaining == 0;
+    }
+
+    fn processed_bytes(self) -> usize {
+        return self.offset;
+    }
 }
 
 export fn validate_utf8(bytes: [u8]) throw UTF8Error {
-    var state = validator();
-    feed(&state, bytes)?;
-    finish(state)?;
+    var state = UTF8Validator::create();
+    state.feed(bytes)?;
+    state.finish()?;
 }

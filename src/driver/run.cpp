@@ -5,6 +5,7 @@ import :artifacts;
 import :backend.generate;
 import :backend.generation.request;
 import :driver.analysis;
+import :driver.diagnostic;
 import :driver.process;
 import :driver.run;
 import :driver.sources;
@@ -18,11 +19,6 @@ import :support.timing;
 import std;
 
 namespace {
-
-auto fail(std::string_view message) noexcept -> int {
-    std::println(std::cerr, "carven: error: {}", message);
-    return 1;
-}
 
 class TemporaryDirectory final {
 public:
@@ -63,7 +59,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         const auto argument = std::string_view(args[separator]);
         if (argument == "--tests") {
             if (tests) {
-                return fail("--tests may be specified only once");
+                return emit_driver_error("--tests may be specified only once", "carven");
             }
             tests = true;
             continue;
@@ -73,21 +69,17 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             continue;
         }
         if (argument.starts_with('-')) {
-            return fail(
-                std::format("unknown option '{}'\nRun 'carven --help' for usage.", argument)
-            );
+            return emit_driver_error(std::format("unknown option '{}'", argument), "carven");
         }
         input_paths.push_back(argument);
     }
     if (input_paths.empty()) {
-        return fail(
-            "running a program requires at least one source file\nRun 'carven --help' for usage."
-        );
+        return emit_driver_error("running a program requires at least one source file", "carven");
     }
     auto timings = CommandTimings(show_timings, "run");
     const auto sources = collect_command_sources(executable, input_paths, timings.recorder());
     if (!sources) {
-        return fail(sources.error());
+        return emit_driver_error(sources.error());
     }
     auto semantic = load_and_analyze_sources(
         sources->carven,
@@ -108,10 +100,10 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             semantic->tests().entries(),
             [](const auto& record) static noexcept { return !record.value.is_const; }
         )) {
-        return fail("running tests requires at least one runtime test");
+        return emit_driver_error("running tests requires at least one runtime test");
     }
     if (!tests && !has_entry) {
-        return fail("running a program requires an entry point");
+        return emit_missing_entry_error();
     }
     auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
@@ -125,12 +117,12 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     auto writing = TimingScope(timings.recorder(), TimingStage::ArtifactWriting);
     const auto directory = create_run_directory();
     if (!directory) {
-        return fail(directory.error());
+        return emit_driver_error(directory.error());
     }
     const auto cleanup = TemporaryDirectory(*directory);
     const auto output_directory = path_to_generic_utf8(*directory);
     if (const auto written = write_artifacts(output_directory, artifacts); !written) {
-        return fail(written.error());
+        return emit_driver_error(written.error());
     }
     writing.stop();
     auto compilation = TimingScope(timings.recorder(), TimingStage::NativeCompilation);
@@ -194,7 +186,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             }
             const auto compiled = run_process(std::move(compile_args));
             if (!compiled) {
-                return fail(compiled.error());
+                return emit_driver_error(compiled.error());
             }
             if (*compiled != 0) {
                 return *compiled;
@@ -212,7 +204,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     }
     const auto compiled = run_process(std::move(native_args));
     if (!compiled) {
-        return fail(compiled.error());
+        return emit_driver_error(compiled.error());
     }
     if (*compiled != 0) {
         return *compiled;
@@ -230,5 +222,5 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (executed) {
         timings.set_outcome(std::format("exited with code {}", *executed));
     }
-    return executed ? *executed : fail(executed.error());
+    return executed ? *executed : emit_driver_error(executed.error());
 }

@@ -1,4 +1,4 @@
-fn entries() -> Entries => Entries { values: vector<Entry> { Entry { value: 11 } } };
+fn entries() -> Entries => { values: vector<Entry> { Entry { value: 11 } } };
 let pair = Pair { Entry { value: 1 }, 2 };
 let grouped = Box { value: (Entry { value: 3 }) };
 let values = Box { values: [1, 2] };

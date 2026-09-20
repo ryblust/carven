@@ -210,8 +210,8 @@ auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetT
     );
 }
 
-auto ModuleLowering::call_result(TypeID type) noexcept -> TargetTypeID {
-    return lower_signature_result(semantic().call_signature(type), semantic().may_stop_test(type));
+auto ModuleLowering::call_result(const SemCall& call) noexcept -> TargetTypeID {
+    return lower_signature_result(semantic().call_signature(call), semantic().may_stop_test(call));
 }
 
 auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID {
@@ -225,6 +225,22 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
     }
     if (!inserted) {
         invariant_violation("recursive structural type reached target lowering");
+    }
+    if (const auto* native = std::get_if<CppTypeValue>(&semantic().types().type(id).value)) {
+        const auto* query = std::get_if<CppQueryType>(&native->form);
+        const auto* construction =
+            query == nullptr ? nullptr : std::get_if<CppConstructQuery>(&query->expression);
+        if (construction != nullptr) {
+            const auto* target_type =
+                std::get_if<CppTypeValue>(&semantic().types().type(construction->target).value);
+            const auto* named =
+                target_type == nullptr ? nullptr : std::get_if<CppNamedType>(&target_type->form);
+            if (named != nullptr && !named->arguments.empty()) {
+                const auto result = lower_type(construction->target, scope);
+                state = result;
+                return result;
+            }
+        }
     }
     auto lowered = semantic().types().type(id).value.visit(
         Overloaded {

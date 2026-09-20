@@ -80,9 +80,14 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
     -> void {
     value.visit([&](const auto& item) noexcept {
         using Item = std::remove_cvref_t<decltype(item)>;
-        if constexpr (std::same_as<Item, StringConstant>) {
+        if constexpr (std::same_as<Item, StringConstant> || std::same_as<Item, CStringConstant>) {
             if (!values.owns(item.value)) {
                 invariant_violation("evaluator received a foreign spelling");
+            }
+            if constexpr (std::same_as<Item, CStringConstant>) {
+                if (!valid_cstring_bytes(values.spelling(item.value))) {
+                    invariant_violation("evaluator received invalid C string bytes");
+                }
             }
         } else if constexpr (std::same_as<Item, NumericEnumConstant>) {
             if (item.enum_case.owner() != values.identity()) {
@@ -149,6 +154,9 @@ auto validate_constant_fact(const ExecutionValueAccess& values, const ConstantFa
         } else if constexpr (std::same_as<Value, StringConstant>) {
             const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
             return builtin != nullptr && builtin->kind == BuiltinType::Str;
+        } else if constexpr (std::same_as<Value, CStringConstant>) {
+            const auto* cpp = std::get_if<CppTypeValue>(&type.value);
+            return cpp != nullptr && std::holds_alternative<CppConstCharPointerType>(cpp->form);
         } else if constexpr (std::same_as<Value, F32Constant>) {
             const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
             return builtin != nullptr && builtin->kind == BuiltinType::F32;

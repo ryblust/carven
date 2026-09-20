@@ -70,7 +70,8 @@ auto BodyElaborator::c_style_for_statement(
         if (!value.has_value()) {
             co_return std::unexpected(value.error());
         }
-        known = known_boolean_constant(draft(), value->constant());
+        known =
+            known_boolean_constant(draft(), active_builder().known_constant(value->expression()));
         auto checked = require_bool(*value, ast.expression(id).span);
         if (!checked.has_value()) {
             co_return std::unexpected(checked.error());

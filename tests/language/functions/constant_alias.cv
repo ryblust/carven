@@ -40,7 +40,7 @@ const fn constant_binary_snapshot() -> bool {
             text.append("b");
             String::from_str("a")
         } else {
-            String {}
+            {}
         };
 }
 

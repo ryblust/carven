@@ -121,6 +121,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
                     origin,
                     SemCallable {.callable = function.callable}
                 )),
+                .target = std::nullopt,
                 .arguments = {},
                 .callee_failures = BodyFailures(draft.add_empty_failure_term())
             }

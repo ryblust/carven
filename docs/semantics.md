@@ -104,8 +104,8 @@ resolve Carven modules.
 
 ### Declarations and names
 
-Modules may declare functions, structures, enums, constants, tests, constant
-blocks, and C++ source fragments. Function, structure, enum, and constant names
+Modules may declare functions, structures, classes, enums, constants, tests, constant
+blocks, and C++ source fragments. Function, structure, class, enum, and constant names
 share one module namespace. Duplicate module declarations are invalid; function
 overloading is not supported.
 
@@ -122,7 +122,7 @@ scope may shadow an outer binding. Declaring the same name twice in one lexical
 scope is invalid. Lambda bodies add a capture boundary: a free runtime binding
 must be captured explicitly before ordinary lexical lookup may cross it.
 
-Named functions, structures, enums, and module constants use one visibility
+Named module functions, structures, classes, enums, and module constants use one visibility
 model:
 
 | Declaration form | Audience |
@@ -149,6 +149,8 @@ fields, enum payloads and underlying types, arrays, and a module constant's
 type and normalized semantic value. Function bodies and constant-evaluation
 proofs are implementation; identities eliminated by normalization do not enter
 the published surface. A violation uses `CV-TYPE-VISIBILITY-LEAK`.
+Class fields are private to the class body and may use module-private types;
+class operations remain subject to their declared audience.
 
 
 ## Types and context
@@ -334,6 +336,8 @@ fn example() {
 Blocks use the shared constant-execution type and operation rules, including
 mutable locals, control flow, aggregates, text, `const fn` calls and failure
 recovery. Type checking, ownership and lifetime validation apply to their bodies.
+External C++ construction and calls are outside this execution subset. Required
+evaluation runs in the Carven executor; it does not compile or execute C++ providers.
 
 Each block is an independent required evaluation with its own lexical scope,
 execution storage and resource budget. Visible module and local constants are
@@ -870,7 +874,15 @@ Runtime `let`, `var`, ordinary pattern bindings, and `Take` parameters are
 owners. A `Take` parameter is an immutable owner and may itself be taken.
 `Read` and `Write` parameters, range bindings, closure state, and `const` are
 not Take sources. The initial Take operand must be a complete owner or a
-temporary; member and element Take are invalid.
+temporary; taking a member or element of a still-available owner is invalid.
+
+Field selection from an owning value transfers the selected field using the
+ordinary Carven value-delivery policy. `(&&owner).field` first consumes the
+complete owner; the complete source is evaluated once and retained through the
+full expression, with remaining fields cleaned up normally. Nested owning field
+selection follows the same rule. `owner.field` remains an ordinary Read and
+never consumes `owner`. Returning a view into a destroyed temporary is invalid.
+This does not provide simultaneous decomposition into multiple field owners.
 
 `&&expression` is the ownership-transfer expression and has its operand's value
 type. Taking a complete owner makes that binding unavailable, including for a
@@ -1006,7 +1018,8 @@ const decorated = decorate(label(3)); // "[000102]"
 Parameters use Read or Take access and have builtin numeric, `bool`, `char`,
 `str`, `String`, integer ranges, or supported fixed-array, struct and enum types. Results
 use these types or `void`; a void result cannot initialize a constant. Ordinary
-result annotation and inference rules apply.
+result annotation and inference rules apply. A result can also infer the
+external `const char*` type from a C string literal.
 The entry function and `import(cpp)` functions cannot be `const fn`.
 
 Every definition is checked, including uncalled functions and inactive branches.
@@ -1241,6 +1254,88 @@ required. An annotated `fn(...) -> R` binding requests a view instead.
 
 ## Aggregates
 
+### Ordinary value classes
+
+An ordinary `class` is an encapsulated nominal value. Declaring one adds no heap
+allocation, reference identity, inheritance, virtual dispatch, or custom
+copy/move/destruction hooks.
+Field types determine copying, ownership, stored borrows, and destruction through
+the existing nominal product rules.
+
+```carven
+class Counter {
+    value: i32,
+    fn create(value: i32) -> Counter { return Counter { value: value }; }
+    fn read(self) -> i32 { return self.value; }
+    fn increment(&self) { self.value += 1; }
+}
+var counter = Counter::create(3);
+counter.increment();
+check(counter.read() == 4);
+```
+
+Fields can be selected and the representation can be constructed only within the
+lexical body of the defining class. This authority applies to other values of
+that same class and to lambdas written in its operations. It does not extend to
+module peers or called free functions. Ordinary `fn` follows the class audience;
+`private fn` is accessible only within that exact class body. Operations do not
+enter the module namespace, and fields and operations share one unique-name
+namespace. There is no member overloading or implicit `self` lookup.
+
+Associated operations use `Type::name(...)`; `Type::name` also selects their
+ordinary callable value. Instance operations use
+`expression.name(...)`. The receiver is evaluated once, before explicit arguments,
+and binds through the ordinary Read/Write/Take rules according to untyped
+`self`, `&self`, or `&&self`. The fixed name is contextual to the first class
+operation parameter; `self` remains an ordinary identifier elsewhere. An
+operation without this receiver is associated; there is no `static` keyword.
+Write preserves the original updatable place. Take consumes the complete owner.
+Explicit arguments still require matching access markers. An instance operation
+cannot be selected as a standalone value.
+
+In-body representation construction supplies every field explicitly; an empty
+class permits `ClassName {}` within its body. There is no automatic default or
+implicit factory invocation, including through a containing struct or nonempty
+array. Empty arrays and default pointers/slices do not construct an element.
+Valid existing class values remain copyable or transferable under their field
+contracts. A type name is not callable.
+
+The compiler uses private fields for type contents, ownership, and cleanup. A
+class has no implicit equality; an operation can define its own comparison.
+Structural display prints the class name without expanding its fields. Generated
+C++ represents checked operations as ordinary functions. External C++
+implementations follow their explicit interoperation contracts.
+
+Required constant evaluation rejects class values and operations. Class
+representation patterns, nested class declarations, and C++ import/export
+methods are invalid.
+
+### Contextual construction
+
+A construction can omit its type when the expression already has a known
+expected type: `return { value: 1 };` in a function returning a record is checked
+as construction of that record. Named fields and empty initialization are
+supported; positional construction retains its explicit type. Empty initialization
+has exactly the existing default-initialization rules, including the special
+in-class construction of an empty class. Class representation access, field
+checking, ownership, borrowing, and constant-execution admission are unchanged.
+
+Expected types flow from declared function and callable results, annotated
+bindings, assignment destinations, resolved Carven parameters, record fields,
+and known array element types. Value-control branches receive their surrounding
+expected type. An already established type from the existing forward analysis
+of array elements or branches may also supply context; no later expression or
+use is searched to infer an earlier construction. Missing context is an error.
+There is no structural field-name search, failure-set selection, or native
+constructor/overload inference. Native construction keeps its explicit type.
+For `-> T throw E`, a return construction uses `T`, not the failure carrier.
+
+In expression positions, `{}` means empty initialization. At the start of a
+match or catch arm body, `{ field: value }` is a construction but `{}` remains
+an empty branch block; write `({})` for an empty construction arm. A function,
+if, or try body retains its required block, whose final expression may itself
+be a contextual construction.
+
 ### Structures and arrays
 
 A structure is a nominal product with ordered, uniquely named fields. Field
@@ -1273,7 +1368,7 @@ Default initialization is a type operation with these values:
 | Structure | All fields recursively default-initialized |
 | External C++ type | Native value initialization, validated by C++ |
 
-A zero-length array requires no element default. Numeric and payload enums,
+A zero-length array requires no element default. Ordinary classes, numeric and payload enums,
 callable values and views, `void`, and entry or iteration-only opaque types have
 no default value. A structure or nonempty array containing such a type also has
 no default value and must be constructed explicitly. Carven does not select an enum
@@ -1283,7 +1378,7 @@ retain the native boundary's existing requirements.
 
 An empty `T {}` requests this operation for types accepted by construction
 syntax, including builtin types such as `i32 {}` and `String {}`. Nonempty Carven
-construction requires a structure; enum-case construction and callable adoption
+construction requires a structure or authorized class representation; enum-case construction and callable adoption
 retain their separate forms. Every completed structure construction still
 initializes every field exactly once. Local binding declarations continue to
 require an initializer, and array literals retain their exact element-count rules.
@@ -1356,7 +1451,7 @@ Equality requires compatible operands and an equality-capable type. It is
 available for `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
 whose elements support equality, structures whose fields all support equality,
 numeric enums, payload enums whose payloads all support equality, and pointers
-with identical target types. Callable
+with identical target types. Classes have no implicit equality. Callable
 types, process-entry arguments, slices, and `str.chars` iteration views do
 not support equality.
 
@@ -1482,19 +1577,26 @@ source users by callable failure contracts. Failure values are copyable nominal
 structures or enums. A failure contract denotes a closed set of types; member
 spelling order and declaration order do not affect it. An explicit clause may
 name each failure type only once; `throw E + E` is invalid. An explicit `throw`
-clause is an upper bound on a callable body. Module-private non-entry functions
-and lambdas that omit it infer the least fixed-point failure set across forward
-calls, direct recursion, and mutual recursion. A published function—bare or
-exported—with a nonempty actual set must state an explicit `throw` contract;
-omitting it produces `CV-EFFECT-THROW-PUBLISHED`. Entry functions also require
-an explicit `throw` contract for outward failures, regardless of declaration
-visibility. Tests must handle every failure and cannot expose a failure
-contract. Failure types in a published contract must be visible to that
+clause is an upper bound on a callable body. Module-private non-entry functions,
+implicit entries, and lambdas that omit it infer the least fixed-point failure
+set across forward calls, direct recursion, and mutual recursion. A published
+function—bare or exported—with a nonempty actual set must state an explicit
+`throw` contract;
+omitting it produces `CV-EFFECT-THROW-PUBLISHED`. Explicit entry functions also
+require an explicit `throw` contract for outward failures, regardless of
+declaration visibility. Tests must handle every failure and cannot expose a
+failure contract. Failure types in a published contract must be visible to that
 contract's audience.
 
 Calls use the callee's failure contract. An explicit contract determines the
 call's failure set even when the callee's body produces fewer failures:
 `fn source() throw E {}` still makes `source()` fallible with type `E`.
+
+An immutable local initialized from a known function preserves that target
+through copies and view adaptation. Calling it uses the function's contract,
+including any explicit `throw` clause on the function. A wider view type does
+not add failures to this known call. Calls through parameters, mutable views,
+or unresolved target selections use the view's contract.
 
 ### Propagation and evaluation
 
@@ -1527,9 +1629,10 @@ execution.
 `try` handles failures produced by its protected body. Catch arms may select a
 failure type, wildcard, alternatives, payload patterns, and guards. Remaining
 failures transfer to the enclosing failure target. An enclosing protected body,
-a lambda, a private non-entry function with inferred failures, or a function
-with an explicit `throw` contract accepts this transfer. At a test boundary or
-a published or entry function without an explicit contract, catch arms must
+a lambda, a private non-entry function or implicit entry with inferred
+failures, or a function with an explicit `throw` contract accepts this
+transfer. At a test boundary or a published or explicit entry function
+without an explicit contract, catch arms must
 cover every protected failure. Outward failures remain subject to the enclosing
 callable's contract.
 
@@ -1584,6 +1687,11 @@ contributes an implementation source fragment. `import(cpp)` declares a
 C++-implemented Carven function; `export(cpp)` publishes a Carven function to
 C++ consumers. Source fragments are implementation-only.
 
+Carven has no source operations for creating threads, sharing state between
+threads, or synchronizing access. Read/Write/Take and borrow checking do not
+establish cross-thread safety. C++ fragment authors, import providers, and export
+callers own concurrent calls, shared data, synchronization, and referent lifetimes.
+
 ### Names and lookup
 
 A header import makes its header available through C++ inclusion; Carven does
@@ -1636,7 +1744,13 @@ nested external type applications are supported. External construction uses
 function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
 not Carven compile-time constants and do not participate in pattern coverage or
-failure-set construction. Native compilation checks constructor availability.
+failure-set construction. C++ determines the result of the complete braced
+construction, including template argument deduction and narrowing checks.
+Read scalar expressions with established constant results and no selected source
+storage deliver those constants to native construction. This includes literals,
+named constants, and folded scalar expressions. Their effects and failures still
+execute before value delivery. Reading an ordinary binding retains its storage
+access and does not establish a native constant expression.
 When an earlier aggregate component is saved across a later fallible initializer,
 final construction requires copying or moving it from that storage. An immovable
 component can therefore fail native compilation after successful Carven analysis.
@@ -1649,10 +1763,16 @@ valid. Internal NUL, including `\0` and `\u{0}`, is rejected. Its type is always
 a pointer, including direct native calls and template deduction; it is not a
 character array or a Carven `str`. Copies retain access to static storage.
 
-C strings support runtime type inference and external operations. They are
-excluded from Carven constant declarations and literal patterns. Contextual
-typing preserves their fixed external pointer type; conversions follow the
-external conversion rules below.
+C strings can initialize constants and pass through constant functions, including
+local copies, assignment, and Take. Their bytes and pointer type survive freezing
+in supported aggregates. Each emitted pointer refers to static storage. Pointer
+identity across translation units is unspecified. Printing treats a C string
+value as a native pointer, displaying its address or `nullptr` without
+dereferencing it.
+Pointer comparisons and printing C string values are unsupported during Carven
+constant execution. C string literal patterns are also rejected. Contextual
+typing preserves the fixed external pointer type; conversions follow the external
+conversion rules below.
 
 ```carven
 import <cstdio> using std::printf;
@@ -1914,7 +2034,13 @@ Order {
 Nested text is double-quoted, escaping quotes, backslashes, newline, carriage
 return, tab, and NUL. Nested characters use single quotes and escape a single
 quote. Top-level text retains the verbatim behavior above. Pointers display an address or `nullptr`
-without dereferencing. External C++ types and callable values display `<opaque>`.
+without dereferencing. Native results use C++ type classification: arithmetic
+values display their scalar values, `char32_t` uses character display, and
+`char8_t`, `char16_t`, and `wchar_t` display numeric code units. Known text
+representations use quoted text. Native pointers convertible to `const void*`
+display an address or `nullptr`. Other external types, function pointers, and
+callable values display `<opaque>`.
+Class values display their type name, including when nested in another value.
 
 Structural display never invokes a custom formatter, stream insertion operator,
 or getter, including for nested fields. `println(value)` selects structural
@@ -1951,20 +2077,21 @@ declarations may appear between them and retain their usual meaning: in
 particular, a top-level `const` is a module constant. Top-level `let` and `var`
 bindings are entry locals; module functions cannot capture them. The implicit
 entry introduces no callable source name and has no parameters or declared
-outward failures. Its statements follow ordinary function-body rules, including
+outward failures; it infers outward failures from its body. Its statements
+follow ordinary function-body rules, including
 result inference, access, cleanup, and handling failures. These language rules
 are shared by native compilation and interpretation.
 
-An explicit `main` function's module path,
-module domain, and declaration visibility do not affect entry selection. It
+An explicit `main` function's module path, module domain, and declaration
+visibility do not affect entry selection. It
 accepts no parameters or one untyped Read parameter representing command-line
 arguments; ordinary function parameter rules apply elsewhere. An entry with
 outward failures must declare an explicit `throw` contract, including a
 `private` entry. Its body must stay within that declared failure set.
 
 Normal completion produces process status zero; a declared Carven result, if
-present, is not a process exit status. A typed failure that escapes `main`
-produces the host C++ `EXIT_FAILURE` status. The entry wrapper neither prints the
+present, is not a process exit status. A typed failure that escapes either entry
+produces the host C++ `EXIT_FAILURE` status. The entry wrapper neither prints
 failure payload nor converts it to a C++ exception. Locals, returned values, and
 failure payloads follow their ordinary cleanup rules before process completion.
 Catching a failure and completing normally still produces status zero.
@@ -2115,7 +2242,7 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-EFFECT-CATCH-ALTERNATIVE-UNREACHABLE` | Warning | A catch alternative cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-ARM-UNREACHABLE` | Warning | A catch arm cannot match a remaining protected failure |
 | `CV-EFFECT-CATCH-NON-EXHAUSTIVE` | Error | A catch leaves a protected failure unhandled |
-| `CV-EFFECT-THROW-PUBLISHED` | Error | An entry or published callable has failures without an explicit `throw` contract |
+| `CV-EFFECT-THROW-PUBLISHED` | Error | An explicit entry or published callable has failures without a `throw` contract |
 | `CV-FLOW-MISSING-RETURN` | Error | A reachable path of a value-returning callable omits its result |
 | `CV-FLOW-TRANSFER-VALUE-BRANCH` | Error | `return`, `break`, or `continue` crosses a value-control boundary |
 | `CV-FLOW-UNREACHABLE-MATCH-ARM` | Warning | A match arm pattern is fully covered by preceding unguarded arms; the primary location is that pattern span |

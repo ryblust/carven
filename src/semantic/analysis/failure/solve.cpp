@@ -325,7 +325,7 @@ auto solve_failure_constraints(
                         failure = diagnostics.error(
                             DiagnosticBuilder(
                                 DiagnosticCode::EffectThrowPublished,
-                                "entry or published function with failures requires an explicit 'throw' clause"
+                                "explicit entry or published function with failures requires a 'throw' clause"
                             )
                                 .primary(provenance.source_span(requirement.origin))
                                 .build()

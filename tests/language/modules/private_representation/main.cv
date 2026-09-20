@@ -1,0 +1,6 @@
+import .api using { Box, Indirect };
+
+test "Classes: private representation supports public operations across modules" {
+    let box = Box::create(42);
+    check(box.read() == 42);
+}

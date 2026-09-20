@@ -294,7 +294,7 @@ TEST_CASE("Runtime Outcome: propagation preserves value void and failure alterna
     CHECK_EQ(*propagated_same_failure.failure_if<int>(), 13);
 }
 
-TEST_CASE("Runtime Outcome: propagation uses trivial copying instead of observable moves") {
+TEST_CASE("Runtime Outcome: propagation and widening use the same payload transfer policy") {
     struct CopyTrivial final {
         int* moves;
         int value;
@@ -341,6 +341,15 @@ TEST_CASE("Runtime Outcome: propagation uses trivial copying instead of observab
         propagated_failure.failure_if<CopyTrivial>()->value,
         expected_failure.failure_if<CopyTrivial>()->value
     );
+    using WideValue = carven::runtime::Outcome<CopyTrivial, ParseFailure, CopyTrivial>;
+    auto narrow_success = Value::success_from([&]() noexcept { return initial; });
+    auto narrow_failure = Value::failure(initial);
+    const auto wide_success = WideValue(std::move(narrow_success));
+    const auto wide_failure = WideValue(std::move(narrow_failure));
+    REQUIRE(wide_success.success_if() != nullptr);
+    CHECK(wide_success.success_if()->value.value == 42);
+    REQUIRE(wide_failure.failure_if<CopyTrivial>() != nullptr);
+    CHECK(wide_failure.failure_if<CopyTrivial>()->value == 42);
     CHECK_EQ(moves, 0);
 }
 
@@ -358,21 +367,15 @@ TEST_CASE("Runtime Outcome: propagation preserves payload construction identity"
     static_assert(std::is_trivially_move_constructible_v<Self>);
     static_assert(std::is_trivially_destructible_v<Self>);
     using Value = carven::runtime::Outcome<Self, ParseFailure>;
-    auto manual_source = Value::success_from([]() static noexcept -> Self { return {}; });
     auto source = Value::success_from([]() static noexcept -> Self { return {}; });
-    const auto* manual_address = manual_source.success_if()->value.construction_address;
     const auto* source_address = source.success_if()->value.construction_address;
-    const auto expected = Value::success_from([&]() noexcept -> Self {
-        return carven::runtime::transfer(manual_source.success_if()->value);
-    });
     const auto actual = std::move(source).propagate();
     REQUIRE(actual.success_if() != nullptr);
-    CHECK_EQ(expected.success_if()->value.construction_address, manual_address);
     CHECK_EQ(actual.success_if()->value.construction_address, source_address);
     CHECK_NE(actual.success_if()->value.construction_address, &actual.success_if()->value);
 }
 
-TEST_CASE("Runtime Outcome: propagation matches payload transfer and caller cleanup order") {
+TEST_CASE("Runtime Outcome: propagation preserves payload transfer and caller cleanup order") {
     struct Observed final {
         std::string* events;
         int value;
@@ -407,7 +410,7 @@ TEST_CASE("Runtime Outcome: propagation matches payload transfer and caller clea
     };
 
     using Value = carven::runtime::Outcome<Observed, Observed>;
-    const auto observe = [](bool helper, bool failure) static noexcept -> std::string {
+    const auto observe = [](bool failure) static noexcept -> std::string {
         auto events = std::string();
         {
             const auto before = Guard {.events = &events, .mark = 'a'};
@@ -415,22 +418,11 @@ TEST_CASE("Runtime Outcome: propagation matches payload transfer and caller clea
                 ? Value::failure(Observed(events, 42))
                 : Value::success_from([&]() noexcept { return Observed(events, 42); });
             const auto after = Guard {.events = &events, .mark = 'b'};
-            // Ignore initial construction. Observe only transfer and cleanup,
-            // keeping both implementations' source carrier in the same scope.
+            // Ignore initial construction. Observe transfer and cleanup.
             events.clear();
             events += '[';
             {
-                const auto manual = [&]() noexcept -> Value {
-                    if (source.success_if() != nullptr) {
-                        return Value::success_from([&]() noexcept -> Observed {
-                            return carven::runtime::transfer(source.success_if()->value);
-                        });
-                    }
-                    return Value::failure(
-                        carven::runtime::transfer(*source.failure_if<Observed>())
-                    );
-                };
-                const auto destination = helper ? std::move(source).propagate() : manual();
+                const auto destination = std::move(source).propagate();
                 const auto* payload = failure             ? destination.failure_if<Observed>()
                     : destination.success_if() != nullptr ? &destination.success_if()->value
                                                           : nullptr;
@@ -443,9 +435,25 @@ TEST_CASE("Runtime Outcome: propagation matches payload transfer and caller clea
 
     for (const auto failure : {false, true}) {
         CAPTURE(failure);
-        const auto expected = observe(false, failure);
-        const auto actual = observe(true, failure);
-        CHECK_EQ(expected, "[mrd]bsa");
-        CHECK_EQ(actual, expected);
+        CHECK_EQ(observe(failure), "[mrd]bsa");
     }
+}
+
+TEST_CASE("Runtime Outcome: widening accepts trivially copied payloads with deleted moves") {
+    struct CopyOnly final {
+        CopyOnly() = default;
+        CopyOnly(const CopyOnly&) = default;
+        CopyOnly(CopyOnly&&) = delete;
+    };
+
+    using Source = carven::runtime::Outcome<CopyOnly, CopyOnly>;
+    using Destination = carven::runtime::Outcome<CopyOnly, ParseFailure, CopyOnly>;
+    static_assert(std::constructible_from<Destination, Source&&>);
+    auto success = Source::success_from([]() static noexcept -> CopyOnly { return {}; });
+    const auto value = CopyOnly {};
+    auto failure = Source::failure(value);
+    const auto wide_success = Destination(std::move(success));
+    const auto wide_failure = Destination(std::move(failure));
+    CHECK(wide_success.success_if() != nullptr);
+    CHECK(wide_failure.failure_if<CopyOnly>() != nullptr);
 }

@@ -74,7 +74,12 @@ auto DeclResolver::equality_capabilities(std::span<const ConstructionTypeRef> ro
                             supported[index] = false;
                             return;
                         }
-                        for (const auto& field : structures[value.structure.index()]->fields) {
+                        const auto& declaration = *structures[value.structure.index()];
+                        if (declaration.kind == RecordKind::Class) {
+                            supported[index] = false;
+                            return;
+                        }
+                        for (const auto& field : declaration.fields) {
                             depend(field.type);
                         }
                     },
@@ -429,7 +434,7 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
                 co_return (co_await resolve_function(symbol, form, syntax, *source, item.span));
             },
             [&](const CatalogStructForm& form) noexcept -> AnalysisTask<void> {
-                const auto* source = std::get_if<ASTStructDecl>(&item.value);
+                const auto* source = std::get_if<ASTRecordDecl>(&item.value);
                 if (source == nullptr) {
                     invariant_violation("struct catalog row does not match source syntax");
                 }
@@ -537,9 +542,9 @@ auto DeclResolver::ConstantScope::construction_requests() noexcept -> Constructi
     return resolver.requests;
 }
 
-auto DeclResolver::ConstantScope::resolve_enum_qualifier(ASTExprID expression) noexcept
+auto DeclResolver::ConstantScope::resolve_nominal_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
-    co_return (co_await resolver.resolve_enum_qualifier(module_id, syntax, expression));
+    co_return (co_await resolver.resolve_nominal_qualifier(module_id, syntax, expression));
 }
 
 auto DeclResolver::ConstantScope::resolve_enum_case(

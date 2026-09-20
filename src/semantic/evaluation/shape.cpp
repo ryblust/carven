@@ -74,6 +74,8 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
             }
         } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
             result.supported = true;
+        } else if (const auto* cpp = std::get_if<CppTypeValue>(&canonical.value)) {
+            result.supported = std::holds_alternative<CppConstCharPointerType>(cpp->form);
         } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
             result.supported = builtin_is_numeric(builtin->kind)
                 || builtin->kind == BuiltinType::Bool

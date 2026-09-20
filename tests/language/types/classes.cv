@@ -1,0 +1,123 @@
+private class Counter {
+    value: i32,
+
+    fn create(value: i32) -> Counter {
+        return { value: value };
+    }
+
+    fn read(self) -> i32 {
+        return self.value;
+    }
+
+    fn increment(&self, amount: i32) {
+        self.value += amount;
+    }
+
+    private fn twice(self) -> i32 {
+        return self.value * 2;
+    }
+
+    fn from_other(self, other: Counter) -> i32 {
+        let copy = other;
+        let observe = [copy]() -> i32 {
+            return copy.value;
+        };
+        return observe() + self.twice();
+    }
+}
+
+private class Empty {
+
+    fn create() -> Empty {
+        return {};
+    }
+}
+
+private fn argument(&trace: i32) -> i32 {
+    trace = trace * 10 + 2;
+    return 5;
+}
+
+private class Sequence {
+    value: i32,
+
+    fn create(value: i32) -> Sequence {
+        return { value: value };
+    }
+
+    fn sum(self, value: i32) -> i32 {
+        return self.value + value;
+    }
+}
+
+private fn sequence(&trace: i32) -> Sequence {
+    trace = trace * 10 + 1;
+    return Sequence::create(7);
+}
+
+test "Classes: factories, receivers and lexical access compose ordinary value rules" {
+    let factory: fn(i32) -> Counter = Counter::create;
+    var counter = factory(3);
+    counter.increment(4);
+    check(counter.read() == 7);
+    let copy = counter;
+    counter.increment(1);
+    check(copy.read() == 7);
+    check(counter.from_other(copy) == 23);
+    let _ = Empty::create();
+    check(counter.read() == 8);
+    var trace = 0;
+    check(sequence(&trace).sum(argument(&trace)) == 12);
+    check(trace == 12);
+    let array = [Counter::create(1), Counter::create(2)];
+    check(array[1].read() == 2);
+}
+
+private class Label {
+    text: String,
+
+    fn create(text: str) -> Label {
+        return { text: String::from_str(text) };
+    }
+
+    fn view(self) -> str {
+        return self.text.as_str();
+    }
+
+    fn replace(&self, text: str) {
+        self.text = String::from_str(text);
+    }
+}
+
+test "Classes: private owning storage retains ordinary copy and borrow behavior" {
+    var label = Label::create("first");
+    let copy = label;
+    label.replace("second");
+    check(copy.view() == "first");
+    check(label.view() == "second");
+}
+
+private class TextBuilder {
+    text: String,
+
+    fn create() -> TextBuilder {
+        return { text: String::from_str("") };
+    }
+
+    fn append(&self, text: str) {
+        self.text.append(text);
+    }
+
+    fn build(&&self) -> String {
+        return (&&self).text;
+    }
+}
+
+test "Classes: Take builder delivers its owning string" {
+    var builder = TextBuilder::create();
+    builder.append("Car");
+    builder.append("ven");
+    let result = builder.build();
+    check(result.as_str() == "Carven");
+    check(TextBuilder::create().build().as_str() == "");
+}

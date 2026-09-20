@@ -1,8 +1,8 @@
 module carven:driver.analysis.impl;
 
 import :compiler.analysis;
-import :diagnostics.report;
 import :driver.analysis;
+import :driver.diagnostic;
 import :driver.sources;
 import :source.batch;
 import :source.manager;
@@ -23,11 +23,8 @@ auto load_and_analyze_sources(
     for (const auto& input : inputs) {
         const auto source_id = sources.append_file(input.path);
         if (!source_id) {
-            std::println(
-                std::cerr,
-                "carven: error: {}: '{}'",
-                source_id.error().message,
-                source_id.error().origin
+            emit_driver_error(
+                std::format("{}: '{}'", source_id.error().message, source_id.error().origin)
             );
             has_error = true;
             continue;
@@ -45,11 +42,11 @@ auto load_and_analyze_sources(
     auto result =
         analyze_compilation(sources, SourceBatch {.modules = module_inputs}, output, timings);
     if (!result) {
-        std::print(std::cerr, "{}", render_diagnostics(result.error(), sources));
+        emit_source_diagnostics(result.error(), sources);
         return std::nullopt;
     }
     if (!result->diagnostics.empty()) {
-        std::print(std::cerr, "{}", render_diagnostics(result->diagnostics, sources));
+        emit_source_diagnostics(result->diagnostics, sources);
     }
     return std::move(result->value);
 }

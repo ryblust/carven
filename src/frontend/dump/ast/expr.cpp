@@ -194,7 +194,11 @@ auto ASTDumper::render_expression(
         )
     );
     const auto nested_prefix = child_prefix(prefix, is_last);
-    render_construction_type(construction.type, nested_prefix, false);
+    if (construction.type) {
+        render_construction_type(*construction.type, nested_prefix, false);
+    } else {
+        append_line(nested_prefix, false, "type <contextual>");
+    }
     construction.initializer.value.visit(
         Overloaded {
             [&](std::monostate) noexcept {

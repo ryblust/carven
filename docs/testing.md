@@ -213,8 +213,8 @@ Register generated-program termination and entry scenarios as separate Xmake
 tests. Share the executable when their build requirements match.
 
 Native compilation rejection fixtures live under `tests/interop/rejections/`.
-Each fixture is registered independently with an expected primary diagnostic,
-subject, and source or generated-header attribution. The shared compile harness
+Each fixture is registered independently with an expected diagnostic, subject,
+and source or generated-header attribution. The shared compile harness
 requires Carven generation to succeed, then checks native compiler exit status
 `1` and the expected diagnostic. It retains artifacts on failure. Accepted
 counterparts belong to the ordinary interop sources and are checked by the

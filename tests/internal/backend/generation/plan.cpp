@@ -119,7 +119,7 @@ auto public_names(std::string source_text) noexcept -> std::array<std::string, 2
     );
     const auto structure = [&]() noexcept {
         for (const auto entry : compilation.semantic().declarations().structures()) {
-            if (compilation.semantic().provenance().spelling(entry.value.name) == "class_cv") {
+            if (compilation.semantic().provenance().spelling(entry.value.name) == "union_cv") {
                 return entry.id;
             }
         }
@@ -224,12 +224,12 @@ TEST_CASE("Target plan: malformed artifact path schedules fail before seal") {
 
 TEST_CASE("Target names: private collisions do not perturb public allocation") {
     constexpr auto with_private =
-        "private struct class {}\n"
-        "export struct class_cv { value: i32, }\n"
-        "export fn identity(value: class_cv) -> class_cv { return value; }\n";
+        "private struct union {}\n"
+        "export struct union_cv { value: i32, }\n"
+        "export fn identity(value: union_cv) -> union_cv { return value; }\n";
     constexpr auto without_private =
-        "export struct class_cv { value: i32, }\n"
-        "export fn identity(value: class_cv) -> class_cv { return value; }\n";
+        "export struct union_cv { value: i32, }\n"
+        "export fn identity(value: union_cv) -> union_cv { return value; }\n";
 
     CHECK_EQ(public_names(with_private), public_names(without_private));
 }

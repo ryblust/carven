@@ -1,0 +1,105 @@
+import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
+    CopyTrivial,
+    CopyOnly,
+    reset,
+    move_count,
+};
+
+import "lifetimes/owning_fields.hpp" using owning_field_probe::{
+    Resource,
+    count,
+    evaluated,
+    calls,
+};
+
+private struct Pair {
+    selected: Resource,
+    remainder: Resource,
+}
+
+private fn pair() -> Pair {
+    let _ = evaluated();
+    return {
+        selected: Resource { 1 },
+        remainder: Resource { 2 }
+    };
+}
+
+private fn extract(&&owner: Pair) -> Resource {
+    return (&&owner).selected;
+}
+
+private class ResourceBox {
+    pair: Pair,
+
+    fn create() -> ResourceBox {
+        return { pair: pair() };
+    }
+
+    fn finish(&&self) -> Resource {
+        return (&&self).pair.selected;
+    }
+}
+
+test "Owning fields: noncopyable field transfer retains remaining field cleanup" {
+    let before = calls();
+    if true {
+        let owner = pair();
+        let result = extract(&&owner);
+        check(result.id() == 1);
+        check(count(1) == 1);
+        check(count(2) == 0);
+    }
+    check(count(1) == 0);
+    check(calls() == before + 1);
+    if true {
+        let result = ResourceBox::create().finish();
+        check(result.id() == 1);
+        check(count(1) == 1);
+        check(count(2) == 0);
+    }
+    check(count(1) == 0);
+    check(calls() == before + 2);
+}
+
+private struct Failure {}
+
+private fn fail_argument() -> i32 throw Failure {
+    throw Failure {};
+}
+
+private fn accept(&&resource: Resource, number: i32) -> i32 {
+    return resource.id() + number;
+}
+
+test "Owning fields: a later failing argument cleans the projected owner" {
+    try {
+        let _ = accept(&&pair().selected, fail_argument()?);
+        fail("expected failure");
+    } catch {
+        Failure(_) => {},
+    }
+    check(count(1) == 0);
+    check(count(2) == 0);
+}
+
+private struct TrivialFields {
+    selected: CopyTrivial,
+    other: CopyOnly,
+}
+
+private fn trivial_fields() -> TrivialFields {
+    return {
+        selected: CopyTrivial { 7 },
+        other: CopyOnly { 8 }
+    };
+}
+
+test "Owning fields: field delivery preserves the ordinary trivial-copy policy" {
+    reset();
+    let selected = trivial_fields().selected;
+    let other = trivial_fields().other;
+    check(selected.get() == 7);
+    check(other.get() == 8);
+    check(move_count() == 0);
+}

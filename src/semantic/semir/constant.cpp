@@ -2,6 +2,7 @@ module carven:semantic.semir.constant.impl;
 
 import :semantic.semir.constant;
 import :support.invariant;
+import :support.utf8;
 import std;
 
 namespace {
@@ -137,6 +138,10 @@ ConstantStoreBuilder::ConstantStoreBuilder(
     : program_identity(owner),
       provenance_identity(provenance) {}
 
+auto valid_cstring_bytes(std::string_view bytes) noexcept -> bool {
+    return !bytes.contains('\0') && UTF8Decoder::is_valid(bytes);
+}
+
 auto constant_children(const ConstantValue& value) noexcept
     -> std::optional<std::span<const ConstantID>> {
     return value.visit(
@@ -165,7 +170,7 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
     mix(fact.value.index());
     fact.value.visit([&](const auto& value) noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, StringConstant>) {
+        if constexpr (std::same_as<Value, StringConstant> || std::same_as<Value, CStringConstant>) {
             if (value.value.owner() != provenance_identity) {
                 invariant_violation("string constant used a foreign spelling");
             }

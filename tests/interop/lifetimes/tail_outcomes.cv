@@ -1,5 +1,6 @@
 import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
     CopyTrivial,
+    CopyOnly,
     Self,
     Tracked,
     Guard,
@@ -116,4 +117,62 @@ test "Tail outcomes: failure payload transfer preserves borrowed argument cleanu
     }
     // Catch storage receives the failure before the named pattern copies it.
     check(matches("G1 G2 c53 m53 s-53 m53 s-53 g2 g1 m53 s-53 p53 r53 d53 d53 "));
+}
+
+private fn take_copy(&&value: CopyTrivial) -> i32 => value.get();
+private fn read_copy(value: CopyTrivial) -> i32 => value.get();
+
+private struct OtherFailure {}
+
+private fn rethrow_payload() -> i32 throw PayloadFailure {
+    return try {
+        rejected_result(Guard { 3 }, 59)?
+    } catch {
+        PayloadFailure(error) if error.payload.get() == 0 => 0,
+        PayloadFailure(_) => rethrow,
+    };
+}
+
+test "Failure slots: rejected guards and rethrow preserve the original payload" {
+    reset();
+    let value = try {
+        rethrow_payload()?
+    } catch {
+        PayloadFailure(error) => error.payload.get(),
+    };
+    check(value == 59);
+    check(matches("G3 c59 m59 s-59 m59 s-59 g3 p59 r59 d59 m59 s-59 m59 s-59 p59 r59 d59 d59 "));
+}
+
+test "Callable delivery: values and widened results preserve trivial copying" {
+    reset();
+    let take_view: fn(&&CopyTrivial) -> i32 = take_copy;
+    let read_view: fn(CopyTrivial) -> i32 = read_copy;
+    let result_view: fn(i32) -> CopyTrivial throw Failure + OtherFailure = copy_result;
+    let owner = CopyTrivial { 42 };
+    check(read_view(owner) == 42);
+    check(take_view(&&owner) == 42);
+    try {
+        check(result_view(43)?.get() == 43);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+        OtherFailure(_) => fail("unexpected failure"),
+    }
+    check(move_count() == 0);
+}
+
+private fn take_copy_only(&&value: CopyOnly) -> i32 => value.get();
+private fn copy_only_result() -> CopyOnly throw Failure => CopyOnly { 47 };
+
+test "Callable delivery: deleted native move does not exclude ordinary transfer" {
+    let take_view: fn(&&CopyOnly) -> i32 = take_copy_only;
+    let result_view: fn() -> CopyOnly throw Failure + OtherFailure = copy_only_result;
+    let owner = CopyOnly { 46 };
+    check(take_view(&&owner) == 46);
+    try {
+        check(result_view()?.get() == 47);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+        OtherFailure(_) => fail("unexpected failure"),
+    }
 }

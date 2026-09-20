@@ -42,9 +42,6 @@ auto interpret_literal(
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign = LiteralSign::Positive
 ) noexcept -> ExpressionResult<typename Site::Value> {
-    if (const auto* value = std::get_if<CStringLiteralValue>(&source.value)) {
-        return site.c_string(value->bytes, span);
-    }
     if (std::holds_alternative<NullPointerLiteralValue>(source.value)) {
         const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
         if (type == nullptr
@@ -197,8 +194,7 @@ auto interpret_binary(
             co_return std::unexpected(checked.error());
         }
         const auto and_operation = source.op == ASTBinaryOperator::LogicalAnd;
-        const auto truth = [&](const auto& value) noexcept -> std::optional<bool> {
-            const auto known = site.known(value);
+        const auto truth = [&](std::optional<ConstantID> known) noexcept -> std::optional<bool> {
             if (!known.has_value()) {
                 return std::nullopt;
             }
@@ -206,7 +202,7 @@ auto interpret_binary(
             const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
             return boolean == nullptr ? std::nullopt : std::optional(boolean->value);
         };
-        const auto left_truth = truth(*left);
+        const auto left_truth = truth(site.condition_constant(*left));
         [[maybe_unused]] const auto execution =
             site.enter_operand_execution(!left_truth.has_value() || *left_truth == and_operation);
         auto right = (co_await site.read(source.right, boolean));
@@ -218,10 +214,11 @@ auto interpret_binary(
         if (!checked.has_value()) {
             co_return std::unexpected(checked.error());
         }
-        const auto right_truth = truth(*right);
+        const auto source_left_truth = truth(site.known(*left));
+        const auto right_truth = truth(site.known(*right));
         auto result = std::optional<bool>();
-        if (left_truth.has_value()) {
-            result = *left_truth == and_operation ? right_truth : left_truth;
+        if (source_left_truth.has_value()) {
+            result = *source_left_truth == and_operation ? right_truth : source_left_truth;
         } else if (right_truth.has_value() && *right_truth != and_operation) {
             result = right_truth;
         }

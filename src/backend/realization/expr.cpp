@@ -30,16 +30,36 @@ import std;
 
 BodyRealizer::ExpressionBuilder::ExpressionBuilder(
     BodyRealizer& owner,
-    const SemanticExpression& source
+    const SemanticExpression& source,
+    std::optional<LifetimeRegionID> delivered_region
 ) noexcept
     : owner(owner),
       cleanup(owner.preparation.operation(source).lifetime),
-      previous_frame(std::exchange(owner.active_frame, this)) {
+      previous_frame(std::exchange(owner.active_frame, this)),
+      independent_scope(has_independent_scope(delivered_region)),
+      automatic_storage(
+          independent_scope && !owner.preparation.summary(source).conditional_evaluation
+      ) {
     static_cast<void>(owner.metadata.lifetime_regions().region(cleanup));
 }
 
 BodyRealizer::ExpressionBuilder::~ExpressionBuilder() noexcept {
     owner.active_frame = previous_frame;
+}
+
+auto BodyRealizer::ExpressionBuilder::has_independent_scope(
+    std::optional<LifetimeRegionID> delivered_region
+) const noexcept -> bool {
+    if (owner.metadata.lifetime_regions().region(cleanup).kind != LifetimeRegionKind::FullExpression
+        && delivered_region != cleanup) {
+        return false;
+    }
+    for (const auto* frame = previous_frame; frame != nullptr; frame = frame->previous_frame) {
+        if (frame->cleanup == cleanup) {
+            return false;
+        }
+    }
+    return true;
 }
 
 auto BodyRealizer::ExpressionBuilder::owns(const SemanticExpression& source) const noexcept
@@ -85,7 +105,6 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
         source,
         demand != ResultDemand::Discard,
         final_use,
-        !shared,
         demand == ResultDemand::PropagateOutcome,
         literal,
         demand == ResultDemand::DirectReturn
@@ -121,7 +140,6 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         initialization.initializer,
         true,
         PreparedUse::Consume,
-        true,
         false,
         ConstantLiteralContext::TargetTyped,
         false,
@@ -172,6 +190,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
     const SemAssign& assignment,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
+    automatic_storage &= !owner.preparation.summary(assignment.target).conditional_evaluation;
     auto target = (co_await build(assignment.target, true, PreparedUse::WritePlace));
     adopt(target);
     if (!statements.continues()) {
@@ -223,7 +242,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
         ));
         previous = name;
     }
-    auto right = (co_await build(assignment.value, true, PreparedUse::Consume, true));
+    auto right = (co_await build(assignment.value, true, PreparedUse::Consume));
     adopt(right);
     if (statements.continues()) {
         auto value = emit(right, PreparedUse::Consume, ConstantLiteralContext::Exact);
@@ -231,10 +250,14 @@ auto BodyRealizer::ExpressionBuilder::assign(
         if (assignment.compound && !external) {
             value = realize_binary(
                 owner.context,
+                prepare_binary(
+                    owner.context.semantic(),
+                    *assignment.compound,
+                    target_type,
+                    assignment.value.constant
+                ),
                 previous ? name_expression(*previous) : raw(target),
-                *assignment.compound,
-                std::move(value),
-                target_type
+                std::move(value)
             );
         } else if (assignment.compound) {
             switch (*assignment.compound) {
@@ -282,12 +305,14 @@ auto BodyRealizer::ExpressionBuilder::assign(
 auto BodyRealizer::expression(
     const SemanticExpression& source,
     ConstantLiteralContext literal,
-    ResultDemand demand
+    ResultDemand demand,
+    std::optional<LifetimeRegionID> delivered_region
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
     if (active_frame != nullptr && active_frame->owns(source)) {
         co_return (co_await active_frame->evaluate(source, literal, demand, PreparedUse::Consume));
     }
-    co_return co_await ExpressionBuilder(*this, source).finish_expression(source, literal, demand);
+    co_return co_await ExpressionBuilder(*this, source, delivered_region)
+        .finish_expression(source, literal, demand);
 }
 
 auto BodyRealizer::operand(PreparedOperand source, ConstantLiteralContext literal) noexcept
@@ -386,6 +411,17 @@ auto BodyRealizer::initialize_binding(
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
     const auto& initializer = preparation.operation(source.initializer);
+    const auto& type = context.semantic().types().type(metadata.binding(source.binding).type).value;
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
+    if (!preparation.summary(source.initializer).requires_execution
+        && ((builtin != nullptr
+             && (builtin_is_numeric(builtin->kind)
+                 || builtin->kind == BuiltinType::Bool
+                 || builtin->kind == BuiltinType::Char))
+            || std::holds_alternative<CallableViewTypeValue>(type)
+            || std::holds_alternative<FunctionTypeValue>(type))) {
+        removable_locals.insert(binding_locals.at(source.binding));
+    }
     const auto escapes = source.initializer.exits_test
         || !context.semantic()
                 .failure_sets()

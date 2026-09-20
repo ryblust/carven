@@ -211,10 +211,13 @@ auto realize_observed_comparison(
         TargetReturnStmt {
             .expression = realize_binary(
                 context,
+                prepare_binary(
+                    context.semantic(),
+                    operation.operation,
+                    context.semantic().types().builtin_type(BuiltinType::Bool)
+                ),
                 name_expression(left),
-                operation.operation,
-                name_expression(right),
-                context.semantic().types().builtin_type(BuiltinType::Bool)
+                name_expression(right)
             )
         }
     ));

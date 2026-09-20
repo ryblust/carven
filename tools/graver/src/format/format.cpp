@@ -517,14 +517,14 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         continuation_groups[token_at(item.span.start())] = false;
         item.value.visit([&](const auto& value) noexcept {
             using T = std::decay_t<decltype(value)>;
-            if constexpr (std::same_as<T, ASTStructDecl> || std::same_as<T, ASTEnumDecl>) {
+            if constexpr (std::same_as<T, ASTRecordDecl> || std::same_as<T, ASTEnumDecl>) {
                 mark_block(item.span);
                 const auto mark_members = [&](const auto& members) noexcept {
                     for (const auto& member : members) {
                         separation_before[token_at(member.span.start())] = Separation::Hard;
                     }
                 };
-                if constexpr (std::same_as<T, ASTStructDecl>) {
+                if constexpr (std::same_as<T, ASTRecordDecl>) {
                     mark_members(value.fields);
                 } else {
                     mark_members(value.cases);
@@ -653,14 +653,16 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                         }
                     }
                 });
-                value.type.value.visit([&](const auto& type) noexcept {
-                    using U = std::decay_t<decltype(type)>;
-                    if constexpr (std::same_as<U, ASTNamedType>) {
-                        mark_named(type, value.type.span);
-                    } else {
-                        mark_function_type(type);
-                    }
-                });
+                if (value.type) {
+                    value.type->value.visit([&](const auto& type) noexcept {
+                        using U = std::decay_t<decltype(type)>;
+                        if constexpr (std::same_as<U, ASTNamedType>) {
+                            mark_named(type, value.type->span);
+                        } else {
+                            mark_function_type(type);
+                        }
+                    });
+                }
             }
             mark_control(value);
         });

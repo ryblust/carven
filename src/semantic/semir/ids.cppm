@@ -5,12 +5,16 @@ import std;
 
 template<typename Value, typename ID>
 class MutableProgramTable;
+
 template<typename Value, typename ID>
 class ReservedProgramTable;
+
 template<typename Value, typename ID>
 class MutableBodyTable;
+
 template<typename Value, typename ID>
 class ImmutableBodyTable;
+
 template<typename ID, typename Value, typename Identity>
 class IDTableEntries;
 

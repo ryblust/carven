@@ -15,12 +15,6 @@ auto default_initialization(const SemIRProgram& program, TypeID type) noexcept
             }
             return program.types().type(*concrete);
         },
-        [&](StructID structure) noexcept {
-            auto fields = std::vector<ConstructionTypeRef>();
-            for (const auto& field : program.declarations().structure(structure).fields) {
-                fields.emplace_back(field.type);
-            }
-            return fields;
-        }
+        [&](StructID structure) noexcept { return program.declarations().structure(structure); }
     );
 }

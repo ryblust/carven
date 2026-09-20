@@ -724,6 +724,7 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
         }
         const auto final_id = final_structures.add(
             StructDeclaration {
+                .kind = declaration.kind,
                 .module_id = declaration.module_id,
                 .name = declaration.name,
                 .origin = declaration.origin,

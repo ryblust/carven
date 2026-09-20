@@ -41,6 +41,7 @@ enum class TokenKind {
     Private,
     Return,
     Struct,
+    Class,
     Test,
     Throw,
     True,

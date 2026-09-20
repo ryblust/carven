@@ -18,3 +18,23 @@ struct std::formatter<DisplayNative> : std::formatter<std::string_view> {
         return std::formatter<std::string_view>::format("custom", context);
     }
 };
+
+inline auto display_bool() noexcept -> bool {
+    return true;
+}
+
+inline auto display_double() noexcept -> double {
+    return 1.5;
+}
+
+inline auto display_code_unit() noexcept -> char16_t {
+    return u'A';
+}
+
+inline auto display_function() noexcept {
+    return &display_bool;
+}
+
+inline auto display_null_cstring() noexcept -> const char* {
+    return nullptr;
+}

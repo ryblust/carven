@@ -27,6 +27,7 @@ struct CatalogFunctionForm final {
 
 struct CatalogStructForm final {
     StructID structure;
+    std::vector<FunctionID> operations;
 };
 
 struct CatalogEnumForm final {
@@ -44,6 +45,14 @@ struct CatalogConstantForm final {
     ModuleConstantID constant;
 };
 
+enum class MemberVisibility { Public, Private };
+
+struct ClassOperation final {
+    StructID owner;
+    MemberVisibility visibility;
+    bool receiver;
+};
+
 using CatalogSymbolForm = std::variant<
     CatalogFunctionForm,
     CatalogStructForm,
@@ -59,6 +68,7 @@ struct CatalogSymbol final {
     CatalogSymbolForm form;
     DeclarationVisibility visibility;
     Span declaration_span;
+    std::optional<ClassOperation> class_operation;
 };
 
 struct CatalogTestForm final {

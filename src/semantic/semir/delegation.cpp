@@ -3,7 +3,6 @@ module carven:semantic.semir.delegation.impl;
 import :semantic.semir.delegation;
 import :source.cpp.identifier;
 import :support.invariant;
-import :support.utf8;
 import :support.visit;
 import std;
 
@@ -19,10 +18,6 @@ auto cpp_operation_accepts_arity(const CppOperation& operation, std::size_t arit
         using Value = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::same_as<Value, CppNameOperation>) {
             return arity == 0uz && valid_cpp_name(value.name);
-        } else if constexpr (std::same_as<Value, CppCStringOperation>) {
-            return arity == 0uz
-                && !value.bytes.contains('\0')
-                && UTF8Decoder::is_valid(value.bytes);
         } else if constexpr (std::same_as<Value, CppConstructOperation>) {
             return true;
         } else if constexpr (std::same_as<Value, CppMemberOperation>) {
@@ -46,6 +41,10 @@ auto visit_query_operands(const CppQueryType& query, Visitor visit) noexcept -> 
             visit_cpp_callee_operand(value.callee, visit);
             for (const auto& argument : value.arguments) {
                 visit(argument);
+            }
+        } else if constexpr (std::same_as<Value, CppConstructQuery>) {
+            for (const auto& argument : value.arguments) {
+                visit(argument.operand);
             }
         } else if constexpr (std::same_as<Value, CppMemberQuery>) {
             visit(value.receiver);
@@ -114,10 +113,13 @@ auto cpp_type_references(const CppTypeValue& type) noexcept -> std::vector<TypeI
     if (std::holds_alternative<CppConstCharPointerType>(type.form)) {
         return result;
     }
-    visit_query_operands(
-        std::get<CppQueryType>(type.form),
-        [&](const CppTypeOperand& operand) noexcept { result.push_back(operand.type); }
-    );
+    const auto& query = std::get<CppQueryType>(type.form);
+    if (const auto* construction = std::get_if<CppConstructQuery>(&query.expression)) {
+        result.push_back(construction->target);
+    }
+    visit_query_operands(query, [&](const CppTypeOperand& operand) noexcept {
+        result.push_back(operand.type);
+    });
     return result;
 }
 
@@ -158,6 +160,13 @@ auto valid_cpp_type(const CppTypeValue& type) noexcept -> bool {
         using Value = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::same_as<Value, CppMemberQuery>) {
             return is_supported_cpp_identifier(value.member);
+        } else if constexpr (std::same_as<Value, CppConstructQuery>) {
+            return std::ranges::all_of(
+                value.arguments,
+                [](const CppConstructArgument& argument) static noexcept {
+                    return !argument.constant || argument.operand.access == AccessMode::Read;
+                }
+            );
         } else if constexpr (std::same_as<Value, CppCallQuery>) {
             const auto* member = std::get_if<CppMemberCallee<CppTypeOperand>>(&value.callee);
             return member == nullptr || is_supported_cpp_identifier(member->member);

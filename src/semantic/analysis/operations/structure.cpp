@@ -91,12 +91,7 @@ auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type)
             return draft.construction_type_copy(std::get<TypeTermID>(reference));
         },
         [&](StructID structure) noexcept {
-            const auto declaration = draft.construction_struct_declaration_copy(structure);
-            auto fields = std::vector<ConstructionTypeRef>();
-            for (const auto& field : declaration.fields) {
-                fields.push_back(field.type);
-            }
-            return fields;
+            return draft.construction_struct_declaration_copy(structure);
         }
     );
 }

@@ -109,13 +109,13 @@ TEST_CASE("Compiler diagnostics: C++ API namespace collisions are Carven-owned")
 TEST_CASE("Compiler diagnostics: external delegation retains Carven access rules") {
     constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "global keyword expression",
-         .source = "fn f() { ::native::class(); }",
+         .source = "fn f() { ::native::union(); }",
          .code = "CV-CPP-IDENTIFIER",
-         .primary_text = "class"},
+         .primary_text = "union"},
         {.name = "global keyword type",
-         .source = "fn f(value: ::native::class) {}",
+         .source = "fn f(value: ::native::union) {}",
          .code = "CV-CPP-IDENTIFIER",
-         .primary_text = "class"},
+         .primary_text = "union"},
         {.name = "external result is not a Carven constant",
          .source = "import <native> using value; fn f() { const x = value(); }",
          .code = "CV-CONST-INITIALIZER",
@@ -125,9 +125,9 @@ TEST_CASE("Compiler diagnostics: external delegation retains Carven access rules
          .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
          .primary_text = "value()"},
         {.name = "external spelling must be representable",
-         .source = "import <native> using native::class;",
+         .source = "import <native> using native::union;",
          .code = "CV-CPP-IDENTIFIER",
-         .primary_text = "class"},
+         .primary_text = "union"},
         {.name = "external Write cannot mutate let",
          .source = "import <native> using change; fn f() { let x = 1; change(&x); }",
          .code = "CV-ACCESS-IMMUTABLE",
@@ -258,7 +258,6 @@ TEST_CASE("Compiler diagnostics: explicit selections and C strings enforce their
          R"(fn f() { match 1 { c"abc" => {}, _ => {} } })",
          "CV-TYPE-MATCH-PATTERN",
          R"(c"abc")"},
-        {"C string constant", R"(const p = c"abc";)", "CV-CONST-INITIALIZER", R"(c"abc")"},
     });
     check_compiler_errors(cases);
 }

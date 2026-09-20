@@ -24,6 +24,7 @@ enum class SourceKeyword {
     Private,
     Return,
     Struct,
+    Class,
     Test,
     Throw,
     True,

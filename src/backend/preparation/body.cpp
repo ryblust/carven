@@ -1,6 +1,7 @@
 module carven:backend.preparation.body.impl;
 
 import :backend.preparation.body;
+import :semantic.semir.children;
 import :semantic.semir.evaluation;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -52,9 +53,36 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
                 reads |= child.reads_storage;
             }
         }
-        effects.emplace(
+        auto conditional = std::holds_alternative<SemIf>(source.value)
+            || std::holds_alternative<SemMatch>(source.value)
+            || std::holds_alternative<SemTry>(source.value)
+            || rule.action == EvaluationAction::ShortCircuit
+            || std::holds_alternative<SemReport>(source.value);
+        // Required operations may omit executed children from their evaluation
+        // rule. Storage scope includes their nested regions; a short circuit
+        // with a known left value includes only its selected operands.
+        if (std::holds_alternative<SemShortCircuit>(source.value)) {
+            for (const auto* input : rule.operands) {
+                if (input != nullptr) {
+                    conditional |= summary(*input).conditional_evaluation;
+                }
+            }
+        } else {
+            visit_semantic_children(source.value, [&](const auto& child) noexcept {
+                if constexpr (std::same_as<
+                                  std::remove_cvref_t<decltype(child)>,
+                                  SemanticExpression>) {
+                    conditional |= summary(child).conditional_evaluation;
+                }
+            });
+        }
+        summaries.emplace(
             std::addressof(source),
-            ExpressionEffects {.requires_execution = execution, .reads_storage = reads}
+            ExpressionSummary {
+                .requires_execution = execution,
+                .reads_storage = reads,
+                .conditional_evaluation = conditional
+            }
         );
     };
 
@@ -76,14 +104,14 @@ auto BodyPreparation::operation(const SemanticExpression& source) noexcept
 }
 
 auto BodyPreparation::summary(const SemanticExpression& source) const noexcept
-    -> const ExpressionEffects& {
-    return effects.at(std::addressof(operation(source)));
+    -> const ExpressionSummary& {
+    return summaries.at(std::addressof(operation(source)));
 }
 
 auto BodyPreparation::prepare(const SemanticExpression& input) const noexcept -> PreparedOperation {
     const auto& source = operation(input);
-    auto inputs = operands(source);
     auto preparation = prepare_operation(semantic, source);
+    auto inputs = operands(source, preparation.get());
     if (const auto* prepared = std::get_if<PreparedFormat>(preparation.get())) {
         const auto& format = std::get<SemFormat>(source.value);
         const auto offset = format.receiver ? 1uz : 0uz;
@@ -96,6 +124,13 @@ auto BodyPreparation::prepare(const SemanticExpression& input) const noexcept ->
     } else if (const auto* prepared = std::get_if<PreparedPrint>(preparation.get())) {
         for (auto index = 0uz; index < inputs.size(); ++index) {
             if (prepared->operand_text[index]) {
+                inputs[index].demand = PreparedDemand::Effects;
+            }
+        }
+    }
+    if (const auto* construction = std::get_if<PreparedNativeConstruction>(preparation.get())) {
+        for (const auto [index, argument] : std::views::enumerate(construction->arguments)) {
+            if (std::holds_alternative<const CppConstructArgument*>(argument)) {
                 inputs[index].demand = PreparedDemand::Effects;
             }
         }

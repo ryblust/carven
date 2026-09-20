@@ -29,5 +29,16 @@ constexpr auto transfer(Value& value) noexcept -> decltype(auto) {
     }
 }
 
+// Deliver an already evaluated parameter. Reference contracts retain their exact
+// category; owned value parameters use the ordinary Carven transfer policy.
+template<typename Parameter>
+constexpr auto deliver_argument(std::remove_reference_t<Parameter>& value) noexcept
+    -> decltype(auto) {
+    if constexpr (std::is_reference_v<Parameter>) {
+        return std::forward<Parameter>(value);
+    } else {
+        return transfer(value);
+    }
+}
 
 } // namespace carven::runtime

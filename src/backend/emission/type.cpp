@@ -69,7 +69,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     text(std::to_string(array.extent.magnitude))
                 };
                 const auto result =
-                    concat({text("std::array"), delimited_list(arguments, "<", ">")});
+                    concat({text("::std::array"), delimited_list(arguments, "<", ">")});
                 return {.inline_qualified = result, .wrapping = result};
             },
             [&](const TargetFunctionType& function) noexcept -> SyntaxLayouts {

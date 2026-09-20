@@ -220,6 +220,18 @@ TEST_CASE("Emission: binary grouping preserves associativity and makes compariso
             .nested_left = false,
             .expected = "a + b * c;"
         },
+        Case {
+            .outer = TargetBinaryOperator::LeftShift,
+            .inner = TargetBinaryOperator::Add,
+            .nested_left = true,
+            .expected = "(a + b) << c;"
+        },
+        Case {
+            .outer = TargetBinaryOperator::RightShift,
+            .inner = TargetBinaryOperator::Add,
+            .nested_left = false,
+            .expected = "a >> (b + c);"
+        },
     };
     const auto name = [](std::string_view spelling) static noexcept {
         return TargetExpr {

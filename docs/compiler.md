@@ -26,6 +26,9 @@ native sources together with generated implementations and executes the result.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics using the source manager's line index for byte locations and
 line ranges.
+The driver selects terminal styling and writes diagnostics to standard error.
+It presents command failures with usage hints for invalid invocations.
+`diagnostics.report` renders source diagnostics from their codes and source spans.
 Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Check completes after successful analysis without invoking a
 backend or interpreter. Dump commands consume lexical or syntax results directly.
@@ -79,6 +82,25 @@ modifying semantic stores. Realization preserves execution, storage, and cleanup
 obligations while delivering the selected result; emission serializes target
 syntax. Semantic analysis owns source facts, preparation owns implementation
 selection, and runtime performs the remaining work.
+
+## Ordinary class declarations
+
+`ASTRecordDecl` carries the source record kind, fields, and nested operation
+identities. Catalog class operations have explicit owner, visibility, and receiver
+metadata and do not enter module lookup. Both record forms use the nominal product
+storage currently identified by `StructID`; `RecordKind` preserves the source
+distinction through semantic publication. Published class operations are ordinary
+function declarations; the catalog retains their source ownership during analysis.
+
+Body elaboration supplies lexical class authority and inherits it only into
+lexically nested lambdas. It checks representation access before constructing
+field or aggregate operations. A dot-call receiver is elaborated once and passed
+to the ordinary argument binder, preserving its place until access is applied.
+The completed operation uses `SemCall` with an ordinary receiver argument.
+Declaration analysis checks the receiver contract; recursive default
+initialization rejects classes in both construction and published-program queries.
+Private representation remains available to type contents, ownership, and target
+realization. Required constant evaluation rejects class values and operations.
 
 ## Subsystem ownership
 
@@ -160,6 +182,14 @@ results check independently typed returns for invariant compatibility. Missing
 returns and result-inference cycles are checked during body and signature
 completion, before constant admission. Constant execution consumes the completed
 contract; call arguments do not specialize the function's result type.
+
+Contextual record construction reuses the ordinary construction operation.
+The AST preserves the absence of a written type; expression analysis obtains
+that type from its existing expected-type input, prepares the nominal definition,
+and applies the same representation-access and initializer checks as explicit
+construction. No unresolved contextual construction reaches semantic publication
+or the backend. Parsing distinguishes named construction from branch blocks by
+tokens, independently of expected types.
 
 ### Expression construction results
 
@@ -416,6 +446,22 @@ Construction and publication use the same child-selection rules for known
 conditions and coverage. Callable views conservatively admit test stop.
 Backend consumers read the completed expression and callable effects.
 
+Match construction checks coverage over the subject type before applying a known
+subject value. Pure patterns that cannot match are unreachable; reachable arms
+can record that their pattern always matches. Failure inference, test-stop,
+ownership, nullability, and realization consume these facts. Subject evaluation
+and guards retain their execution obligations. Selection handles root literals,
+static ranges, payload-free enum cases, and unconditional patterns; dynamic bounds
+and compound binding paths retain ordinary matching. Publication verifies a
+recorded match success against the subject fact and pattern. Explicit callable
+failure contracts and source constant-expression admission remain independent.
+
+Immutable locals initialized from a known function retain its identity through
+copies and callable adaptation. Calls publish that target alongside the original
+callee expression. Failure and test-stop solving use the target's contract;
+ownership analysis still checks evaluation and availability of the callee.
+Mutable slots, captured objects, and unresolved selections retain dynamic calls.
+
 Bindings carry their role and access. Scope and full-expression boundaries
 record lifetimes. Function return, failure propagation, loop transfer, and test
 exit retain their destinations. Nested callables have separate boundaries.
@@ -575,6 +621,11 @@ execution requirements are checked separately; known results retain required
 operands and effects. Publication checks that every attached normal-completion
 fact belongs to this program and has the expression's exact resolved type.
 
+Immutable Boolean locals supply normal-completion facts to conditions, guards,
+and Boolean selection before failure solving. Their initializers retain required
+execution. These facts do not change admission or checked arithmetic for source
+constant expressions; ordinary integer arithmetic retains runtime wrapping.
+
 `SemSliceIntrinsic.result_extent` records a slice's length on normal completion.
 Array borrowing uses the array type's extent, including for mutable array owners.
 Subslice construction records `end - start` for known unsigned bounds with
@@ -604,6 +655,11 @@ operations, and floating computations retain execution. The backend prepares and
 consumes body-local execution, storage-read, lifetime, and exit summaries during
 body realization. Shared type rules consume
 the relevant stage's facts.
+
+Known nonzero integer divisors and in-range shift counts remove the operation's
+termination obligation. Discarded operations still evaluate required operands.
+This fact is independent of whether C++ can express the value with a native
+operator, including signed minimum divided by negative one.
 
 ### Program validation
 
@@ -670,6 +726,10 @@ A result's destination lifetime does not change the execution position.
 Lifetime exits check that returned and failed borrowed values retain live backing.
 Catch selection and guards hold the original failure independently of copied
 bindings; rethrow forwards its payload relationships.
+
+`semantic.semir.callable` classifies completed callable adaptations as target
+copy, function target, stateless closure, or object borrow. Ownership and backend
+preparation share this query; array elements use the same classification.
 
 Calls map parameters and captures to actual storage, preserving Read storage aliases.
 Unpassed holders that constrain reachable storage backing contribute reader loans

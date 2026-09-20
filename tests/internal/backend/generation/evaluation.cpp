@@ -1149,3 +1149,359 @@ TEST_CASE("Generation: simple patterns use predicates without mutable match stat
         CHECK(query.mutable_booleans == 0uz);
     }
 }
+
+TEST_CASE("Generation: linear native printing uses automatic operand storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "import <vector> using std::vector; "
+            "fn show() { let v = vector {1, 2, 3}; println(v[0]); }"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("linear_native_print")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t variables = 0;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                ++variables;
+                if (const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
+                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                }
+            }
+            return true;
+        }
+    };
+
+    auto variables = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        CHECK(traverse_target_unit(unit.sections(), query));
+        variables += query.variables;
+    }
+    CHECK(variables > 0);
+}
+
+TEST_CASE("Generation: a folded short circuit does not defer later argument storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "import <string> using std::string; "
+            "fn probe() -> bool { return true; } "
+            "fn show() { println(false && probe(), "
+            "string { c\"first\" }, string { c\"second\" }); }"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("folded_short_circuit")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                if (const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
+                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                }
+            }
+            return true;
+        }
+    };
+
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        CHECK(traverse_target_unit(unit.sections(), query));
+    }
+}
+
+TEST_CASE("Generation: integer facts select direct operations and preserve required operands") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn effect() -> i32 => 8;
+            fn quotient(value: i32) -> i32 => value / 2;
+            fn remainder(value: u8) -> u8 => value % 3;
+            fn shift(value: i16) -> i16 => value >> 2;
+            fn wrap(value: u32) -> u32 => value * 3 + 1;
+            fn discard() { effect() / 2; effect() / -1; effect() >> 2; }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("integer_facts")}
+    );
+
+    struct Query final {
+        std::size_t operations = 0;
+        std::size_t effects = 0;
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            operations += std::holds_alternative<TargetBinaryExpr>(expression.value);
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
+                REQUIRE(name != nullptr);
+                CHECK(name->name.components().back().spelling() == "effect");
+                ++effects;
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.operations == 5uz);
+    CHECK(query.effects == 3uz);
+}
+
+TEST_CASE("Generation: immutable conditions and known callees need no selection or view storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            struct Failure {}
+            fn increment(value: i32) -> i32 => value + 1;
+            fn choose(value: i32) -> i32 {
+                let disabled = false;
+                if disabled && true { throw Failure {}; }
+                if !disabled {} else { throw Failure {}; }
+                let callback: fn(i32) -> i32 = increment;
+                let copy = callback;
+                return copy(value);
+            }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("known_selection")}
+    );
+
+    struct Query final {
+        std::size_t calls = 0;
+
+        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
+            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    CHECK(name->name.components().back().spelling() == "increment");
+                    ++calls;
+                }
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.calls == 1uz);
+}
+
+TEST_CASE("Generation: explicit native construction targets need no deduction query") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(
+            "import <vector> using std::vector; "
+            "fn count() { let values = vector<i32> { 1, 2 }; return values.size(); }"
+        ),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("explicit_construction")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t constructions = 0;
+
+        auto visit_type(TargetTypeID id) noexcept -> bool {
+            const auto& type = unit.type(id);
+            if (const auto* deduced = std::get_if<TargetDecltypeType>(&type.value)) {
+                CHECK_FALSE(
+                    std::holds_alternative<TargetConstructionExpr>(deduced->expression().value)
+                );
+            }
+            return visit_target_type_children(type.value, *this);
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* construction = std::get_if<TargetConstructionExpr>(&expression.value)) {
+                constructions +=
+                    std::holds_alternative<TargetNamedType>(unit.type(construction->type).value);
+            }
+            return true;
+        }
+    };
+
+    auto constructions = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+        constructions += query.constructions;
+    }
+    CHECK(constructions == 1uz);
+}
+
+TEST_CASE("Generation: unconditional pattern binding uses direct value initialization") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program("fn copy(value: i32) -> i32 => match value { bound => bound, };"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+
+        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetAssignmentStmt>(statement.value));
+            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                CHECK_FALSE(
+                    std::holds_alternative<TargetPointerType>(unit.type(variable->type).value)
+                );
+            }
+            return true;
+        }
+    };
+
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        const auto query = Query {.unit = unit};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+}
+
+TEST_CASE("Generation: independent expression and region results use automatic outcome storage") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            struct Failure {}
+            fn source(flag: bool) -> i32 throw Failure {
+                if flag { throw Failure {}; }
+                return 7;
+            }
+            fn recover(flag: bool) -> i32 => try {
+                let value = source(flag)?;
+                value
+            } catch { Failure(_) => 0, };
+            fn tail(flag: bool) -> i32 => try { source(flag)? } catch { Failure(_) => 0, };
+            fn selected(flag: bool) -> i32 => if flag {
+                (try { source(flag)? } catch { Failure(_) => 0, })
+            } else { 0 };
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("nested_full_expression")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t outcomes = 0;
+
+        auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+            const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
+            if (type != nullptr && type->symbol == TargetSymbol::RuntimeOutcome) {
+                ++outcomes;
+            }
+            if (type != nullptr && type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                const auto* contained = std::get_if<TargetIntrinsicType>(
+                    &unit.type(type->type_argument_ids.front()).value
+                );
+                REQUIRE(contained != nullptr);
+                CHECK(contained->symbol != TargetSymbol::RuntimeOutcome);
+            }
+            return true;
+        }
+    };
+
+    auto outcomes = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+        outcomes += query.outcomes;
+    }
+    CHECK(outcomes == 3uz);
+}
+
+TEST_CASE("Generation: known match predicates disappear while required calls remain") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            fn effect() -> bool => true;
+            fn choose() -> i32 => match effect() && false {
+                true => 0,
+                false if effect() && false => 1,
+                false => 2,
+            };
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("known_match")}
+    );
+
+    struct Query final {
+        std::size_t effects = 0;
+
+        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
+            return true;
+        }
+
+        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
+            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    CHECK(name->name.components().back().spelling() == "effect");
+                    ++effects;
+                }
+            }
+            return true;
+        }
+    };
+
+    auto query = Query();
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+    CHECK(query.effects == 2uz);
+}
+
+TEST_CASE("Generation: a sole failure needs no type selection in its handler or dispatch") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            struct Failure {}
+            fn source() -> i32 throw Failure { throw Failure {}; }
+            fn recover() -> i32 => try { source()? } catch { Failure(_) => 7, };
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("sole_failure")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+        std::size_t branches = 0;
+
+        auto visit_type(TargetTypeID id) const noexcept -> bool {
+            if (const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(id).value)) {
+                CHECK(type->symbol != TargetSymbol::StdVariant);
+            }
+            return visit_target_type_children(unit.type(id).value, *this);
+        }
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            branches += std::holds_alternative<TargetIfStmt>(statement.value);
+            return true;
+        }
+    };
+
+    auto branches = 0uz;
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+        branches += query.branches;
+    }
+    CHECK(branches == 1uz); // The call's success/failure distinction remains.
+}

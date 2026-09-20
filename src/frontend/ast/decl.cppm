@@ -94,16 +94,20 @@ struct ASTEnumDecl final {
     std::vector<ASTEnumCase> cases;
 };
 
-struct ASTStructField final {
+struct ASTRecordField final {
     Span span;
     Span name_span;
     ASTTypeID type;
 };
 
-struct ASTStructDecl final {
+enum class ASTRecordKind { Struct, Class };
+
+struct ASTRecordDecl final {
+    ASTRecordKind kind;
     ASTDeclarationVisibility visibility;
     Span name_span;
-    std::vector<ASTStructField> fields;
+    std::vector<ASTRecordField> fields;
+    std::vector<ASTItemID> operations;
 };
 
 struct ASTFunctionParameter final {
@@ -162,7 +166,7 @@ struct ASTItem final {
     Span span;
     std::variant<
         ASTEnumDecl,
-        ASTStructDecl,
+        ASTRecordDecl,
         ASTFunctionDecl,
         ASTConstantDecl,
         ASTConstantBlock,

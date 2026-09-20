@@ -96,23 +96,37 @@ auto BodyElaborator::build_call_argument(
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }
-    // Keep explicit type selection for the Clang 23 coroutine workaround.
-    // Do not replace with value_or; see decl/constant.cpp.
-    const auto type = expected ? *expected : built->type();
-    if (mismatch_code && !is_cpp_type(built->type()) && !compatible(built->type(), type)) {
-        co_return std::unexpected(
-            fail(source.span, *mismatch_code, "argument does not match the required parameter type")
+    co_return bind_call_argument(
+        std::move(*built),
+        access_mode,
+        expected,
+        source.span,
+        mismatch_code
+    );
+}
+
+auto BodyElaborator::bind_call_argument(
+    BuiltExpression built,
+    AccessMode access_mode,
+    std::optional<ConstructionTypeRef> expected,
+    Span span,
+    std::optional<DiagnosticCode> mismatch_code
+) noexcept -> AnalysisResult<BuiltCallArgument> {
+    const auto type = expected ? *expected : built.type();
+    if (mismatch_code && !is_cpp_type(built.type()) && !compatible(built.type(), type)) {
+        return std::unexpected(
+            fail(span, *mismatch_code, "argument does not match the required parameter type")
         );
     }
-    auto pending_failures = take_pending_failures(*built);
+    auto pending_failures = take_pending_failures(built);
     if (access_mode == AccessMode::Write) {
-        auto compatible_storage = require_invariant_type(built->type(), type, source.span);
+        auto compatible_storage = require_invariant_type(built.type(), type, span);
         if (!compatible_storage.has_value()) {
-            co_return std::unexpected(compatible_storage.error());
+            return std::unexpected(compatible_storage.error());
         }
-        auto place = consume_place(*built, source.span);
+        auto place = consume_place(built, span);
         if (!place.has_value()) {
-            co_return std::unexpected(place.error());
+            return std::unexpected(place.error());
         }
         if (place->expression.type.construction() != type) {
             *place = active_builder().cpp_place(
@@ -120,42 +134,40 @@ auto BodyElaborator::build_call_argument(
                 type,
                 CppConvertOperation {.explicit_cast = false},
                 {},
-                origin(source.span)
+                origin(span)
             );
         }
-        co_return BuiltCallArgument {
+        return BuiltCallArgument {
             .argument = SemCallArgument {AccessMode::Write, std::move(place->expression)},
             .pending_failures = std::move(pending_failures),
-            .completes = built->completes,
+            .completes = built.completes,
         };
     }
-    if (access_mode == AccessMode::Take && pointer_shape(draft(), type) && built->type() != type) {
-        co_return std::unexpected(fail(
-            source.span,
-            DiagnosticCode::TypeMismatch,
-            "Take requires the same complete ptr type"
-        ));
+    if (access_mode == AccessMode::Take && pointer_shape(draft(), type) && built.type() != type) {
+        return std::unexpected(
+            fail(span, DiagnosticCode::TypeMismatch, "Take requires the same complete ptr type")
+        );
     }
     // Declaration references acquire callable storage during conversion.
-    if (access_mode == AccessMode::Take && !built->is_function_reference()) {
-        auto taken = consume_value(*built, source.span, AccessMode::Take);
+    if (access_mode == AccessMode::Take && !built.is_function_reference()) {
+        auto taken = consume_value(built, span, AccessMode::Take);
         if (!taken) {
-            co_return std::unexpected(taken.error());
+            return std::unexpected(taken.error());
         }
-        built->storage = std::move(*taken);
+        built.storage = std::move(*taken);
     }
-    auto coerced = coerce_to(*built, type, source.span);
+    auto coerced = coerce_to(built, type, span);
     if (!coerced.has_value()) {
-        co_return std::unexpected(coerced.error());
+        return std::unexpected(coerced.error());
     }
-    auto value = consume_value(*built, source.span, AccessMode::Read);
+    auto value = consume_value(built, span, AccessMode::Read);
     if (!value.has_value()) {
-        co_return std::unexpected(value.error());
+        return std::unexpected(value.error());
     }
-    co_return BuiltCallArgument {
+    return BuiltCallArgument {
         .argument = {access_mode, std::move(*value)},
         .pending_failures = std::move(pending_failures),
-        .completes = built->completes,
+        .completes = built.completes,
     };
 }
 
@@ -174,7 +186,8 @@ auto BodyElaborator::enum_case_reference(
 auto BodyElaborator::call_expression(
     const ASTCallExpr& source,
     Span span,
-    std::optional<SelectedExpression> prepared_callee
+    std::optional<SelectedExpression> prepared_callee,
+    std::optional<BuiltExpression> receiver
 ) noexcept -> AnalysisTask<BuiltExpression> {
     const auto& callee_source = ast.expression(source.callee);
     if (const auto* name = std::get_if<ASTNameExpr>(&callee_source.value)) {
@@ -299,18 +312,22 @@ auto BodyElaborator::call_expression(
     }
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
+    const auto target = callee->is_function_reference()
+        ? std::nullopt
+        : active_builder().known_callable(callee->expression());
     auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {
         co_return std::unexpected(contract.error());
     }
-    if (source.arguments.size() != contract->parameters.size()) {
+    const auto offset = receiver.has_value() ? 1uz : 0uz;
+    if (source.arguments.size() + offset != contract->parameters.size()) {
         co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeCallArity,
             std::format(
                 "call expects {} arguments but received {}",
-                contract->parameters.size(),
+                contract->parameters.size() - offset,
                 source.arguments.size()
             )
         ));
@@ -327,12 +344,27 @@ auto BodyElaborator::call_expression(
     }
     auto completes = callee->completes;
     auto arguments = std::vector<SemCallArgument>();
-    arguments.reserve(source.arguments.size());
+    arguments.reserve(contract->parameters.size());
+    if (receiver) {
+        auto bound = bind_call_argument(
+            std::move(*receiver),
+            contract->parameters.front().access,
+            contract->parameters.front().type,
+            ast.expression(source.callee).span,
+            std::nullopt
+        );
+        if (!bound) {
+            co_return std::unexpected(bound.error());
+        }
+        append_pending_failures(pending_failures, bound->pending_failures);
+        completes &= bound->completes;
+        arguments.push_back(std::move(bound->argument));
+    }
     for (auto index = 0uz; index < source.arguments.size(); ++index) {
         auto argument = (co_await build_call_argument(
             source.arguments[index].expression,
-            contract->parameters[index].access,
-            contract->parameters[index].type
+            contract->parameters[index + offset].access,
+            contract->parameters[index + offset].type
         ));
         if (!argument.has_value()) {
             co_return std::unexpected(argument.error());
@@ -341,7 +373,8 @@ auto BodyElaborator::call_expression(
         completes &= argument->completes;
         arguments.push_back(std::move(argument->argument));
     }
-    const auto failures = contract->failures;
+    const auto failures =
+        target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;
     append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
     auto result = active_builder().make_expression(
         contract->result,
@@ -349,6 +382,7 @@ auto BodyElaborator::call_expression(
         origin(span),
         SemCall {
             .callee = UniqueIndirect(std::move(*callee_operand)),
+            .target = target,
             .arguments = std::move(arguments),
             .callee_failures = BodyFailures(failures)
         }
@@ -360,4 +394,77 @@ auto BodyElaborator::call_expression(
         .takeable = true,
         .completes = completes,
     };
+}
+
+auto BodyElaborator::class_operation(
+    StructID owner,
+    std::string_view name,
+    bool receiver,
+    Span span
+) noexcept -> AnalysisTask<BuiltExpression> {
+    const auto* symbol = catalog().symbol(catalog().struct_symbol(owner));
+    const auto& form = std::get<CatalogStructForm>(symbol->form);
+    for (const auto function : form.operations) {
+        const auto* selected = catalog().symbol(catalog().function_symbol(function));
+        if (selected->name != name) {
+            continue;
+        }
+        const auto operation = *selected->class_operation;
+        if (operation.visibility == MemberVisibility::Private && lexical_class != owner) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AccessClassPrivate,
+                "private operation is accessible only inside its defining class"
+            ));
+        }
+        if (operation.receiver != receiver) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeMethodCall,
+                operation.receiver ? "instance operation requires a receiver"
+                                   : "associated operation requires Type::name"
+            ));
+        }
+        auto ready = (co_await batch->ensure_function_signature(function, source_module_id, span));
+        if (!ready) {
+            co_return std::unexpected(ready.error());
+        }
+        const auto declaration = draft().function_declaration_copy(function);
+        auto callee = BuiltExpression {
+            .storage = active_builder().callable_expression(declaration.callable, origin(span)),
+            .pending_failures = {},
+            .takeable = false,
+            .completes = true
+        };
+        co_return callee;
+    }
+    co_return std::unexpected(fail(
+        span,
+        DiagnosticCode::TypeMemberUnresolved,
+        std::format("class has no operation named '{}'", name)
+    ));
+}
+
+auto BodyElaborator::class_call(
+    const ASTCallExpr& source,
+    const ASTMemberExpr& member,
+    StructID owner,
+    std::optional<BuiltExpression> receiver,
+    Span span
+) noexcept -> AnalysisTask<BuiltExpression> {
+    auto callee = (co_await class_operation(
+        owner,
+        spelling(member.name_span),
+        receiver.has_value(),
+        member.name_span
+    ));
+    if (!callee) {
+        co_return std::unexpected(callee.error());
+    }
+    co_return (co_await call_expression(
+        source,
+        span,
+        SelectedExpression(std::move(*callee)),
+        std::move(receiver)
+    ));
 }

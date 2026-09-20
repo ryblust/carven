@@ -117,3 +117,56 @@ test "Evaluation: snapshots precede later mutations" {
     check(evaluation_pair(n + 1, evaluation_write(&n)) == 22);
     check(n == 9);
 }
+
+fn divided_by_two(value: i32) -> i32 => value / 2;
+fn divided_by_negative_one(value: i32) -> i32 => value / -1;
+fn remainder_by_negative_one(value: i32) -> i32 => value % -1;
+fn signed_right_shift(value: i8) -> i8 => value >> 2;
+fn unsigned_product(value: u32) -> u32 => value * 3 + 1;
+fn narrow_product(value: u16) -> u16 => value * value;
+fn unsigned_left_shift(value: u64) -> u64 => (value + 1) << 40;
+
+fn local_runtime_overflow() -> i32 {
+    let maximum = 2147483647;
+    return maximum + 1;
+}
+
+test "Numeric types: known operands preserve runtime width and wrapping" {
+    check(divided_by_two(-7) == -3);
+    check(divided_by_negative_one(-2147483648) == -2147483648);
+    check(remainder_by_negative_one(-2147483648) == 0);
+    check(signed_right_shift(-7i8) == -2i8);
+    check(unsigned_product(4294967295u32) == 4294967294u32);
+    check(narrow_product(65535u16) == 1u16);
+    check(unsigned_left_shift(1u64) == 2199023255552u64);
+    check(local_runtime_overflow() == -2147483648);
+}
+
+fn immutable_selection(&trace: i32) -> i32 {
+    let disabled = evaluation_touch(&trace) && false;
+    if disabled { throw EvaluationFailure {}; }
+    if disabled && evaluation_fail(&trace)? { return 0; }
+    if !disabled { return trace; }
+    return 0;
+}
+
+test "Evaluation: immutable conditions retain initializer effects and exclude dead failures" {
+    var trace = 0;
+    check(immutable_selection(&trace) == 1);
+    check(trace == 1);
+}
+
+fn boolean_runtime_overflow() -> i32 {
+    let disabled = false;
+    return 2147483647 + ((!disabled) as i32);
+}
+
+fn selection_runtime_overflow() -> i32 {
+    let enabled = true;
+    return 2147483647 + ((enabled && true) as i32);
+}
+
+test "Numeric types: local Boolean facts preserve runtime arithmetic through casts" {
+    check(boolean_runtime_overflow() == -2147483648);
+    check(selection_runtime_overflow() == -2147483648);
+}

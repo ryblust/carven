@@ -259,11 +259,15 @@ auto ASTDumper::render_top_level_item(
                     }
                 );
             },
-            [&](const ASTStructDecl& declaration) noexcept {
+            [&](const ASTRecordDecl& declaration) noexcept {
                 append_line(
                     prefix,
                     is_last,
-                    std::format("StructDeclaration {}", format_dump_span(item.span))
+                    std::format(
+                        "{}Declaration {}",
+                        declaration.kind == ASTRecordKind::Class ? "Class" : "Struct",
+                        format_dump_span(item.span)
+                    )
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(declaration.visibility, nested_prefix);
@@ -273,7 +277,7 @@ auto ASTDumper::render_top_level_item(
                     true,
                     "fields",
                     declaration.fields,
-                    [&](const ASTStructField& field,
+                    [&](const ASTRecordField& field,
                         std::string_view item_prefix,
                         bool item_last) noexcept {
                         append_line(
@@ -286,6 +290,17 @@ auto ASTDumper::render_top_level_item(
                         render_type(field.type, field_prefix, true, "type ");
                     }
                 );
+                if (!declaration.operations.empty()) {
+                    render_list(
+                        nested_prefix,
+                        true,
+                        "operations",
+                        declaration.operations,
+                        [&](ASTItemID id, std::string_view prefix, bool last) noexcept {
+                            render_top_level_item(id, prefix, last);
+                        }
+                    );
+                }
             },
             [&](const ASTFunctionDecl& definition) noexcept {
                 append_line(

@@ -381,6 +381,8 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         policy != FailureContractPolicy::UndeclaredExplicit,
         false
     );
+    elaborator.lexical_class =
+        symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto index = 0uz; index < function.parameters.size(); ++index) {
         auto parameter = elaborator.add_parameter(function.parameters[index], parameters[index]);
         if (!parameter.has_value()) {

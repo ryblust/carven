@@ -79,7 +79,7 @@ The following spellings are reserved keywords and are not emitted as
 `IDENTIFIER` tokens:
 
 ```text
-as break catch const continue else enum export false fn for if import in is let
+as break catch class const continue else enum export false fn for if import in is let
 match nullptr private rethrow return struct test throw true try using var while
 ```
 
@@ -278,6 +278,7 @@ visibility-modifier = "private" | "export";
 
 module-declaration = enum-declaration
                    | struct-declaration
+                   | class-declaration
                    | function-definition
                    | module-constant-declaration;
 
@@ -392,7 +393,28 @@ struct-field = IDENTIFIER, ":", type;
 The declaration has no trailing semicolon in Carven syntax. Struct bodies
 contain fields only.
 
-### 3.4 Functions
+### 3.4 Classes and functions
+
+```ebnf
+class-declaration = "class", IDENTIFIER, "{", { class-member }, "}";
+class-member = struct-field, ","
+             | [ "private" ], class-operation;
+class-operation = "fn", IDENTIFIER,
+                  "(", [ class-parameter-list ], ")",
+                  [ "->", function-result-type ], [ throw-clause ], function-body;
+class-parameter-list = receiver, [ ",", parameter-list ] | parameter-list;
+receiver = [ "&" | "&&" ], "self";
+```
+
+The final field may omit its comma before `}`. An instance operation's first
+parameter is untyped `self`, `&self`, or `&&self`. This fixed spelling is
+contextual, not a globally reserved keyword. Without that receiver, a class
+function is an associated operation; no `static` keyword is needed. Other
+parameters require ordinary type annotations. Class fields and operations
+may be interleaved. Class forms, nested declarations, `const fn`, and C++ boundary
+operations are not admitted within class bodies.
+
+### Functions
 
 ```ebnf
 function-definition = function-head, function-body;
@@ -415,7 +437,7 @@ function-result-type = type;
 throw-clause = "throw", named-type, { "+", named-type };
 ```
 
-Function definitions are top-level items. `import(cpp)` uses the same function
+Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head followed by `;`; `export(cpp)` uses either function-body form.
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions, default arguments,
@@ -762,7 +784,8 @@ contextual-case-expression = ".", IDENTIFIER;
 grouped-expression = "(", expression, ")";
 
 construction-expression = construction-type,
-                          "{", [ construction-initializer-list ], "}";
+                          "{", [ construction-initializer-list ], "}"
+                        | "{", [ field-initializer-list ], "}";
 
 construction-type = named-type | function-type;
 
@@ -954,7 +977,13 @@ expression grammar outside a pattern.
 
 ### 10.5 Construction and Calls
 
-`T { ... }` is the only source form introduced by `construction-expression`.
+`T { ... }` supplies an explicit construction type. `{ ... }` omits the type
+and accepts only named fields or an empty initializer; semantic analysis requires
+a known expected type. In match and catch arm bodies, a leading `{` followed by
+`IDENTIFIER :` begins a construction expression. Other leading braces begin a
+branch block, so an empty `{}` remains an empty block. Use `({})` for an empty
+construction arm. Required function and control-flow bodies remain blocks.
+These decisions use tokens only, without name or type lookup.
 Parentheses following a parsed expression always start a call operation.
 `T(...)` is parsed as a call regardless of the name's resolved meaning. The
 production accepts the `construction-type` forms defined above.

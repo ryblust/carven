@@ -213,15 +213,40 @@ auto plan_artifacts(
         return module_path(semantic, left) < module_path(semantic, right);
     });
 
+    auto interface_nominals = std::flat_set<NominalDeclarationRef>();
     for (const auto nominal : ordered_nominals) {
         if (published_nominal(semantic, nominal)) {
+            interface_nominals.insert(nominal);
+        }
+    }
+    auto references = collect_target_references(semantic, surface_declarations);
+    // A class may hide a private representation in its source surface, but its
+    // C++ definition still needs the complete layout of each by-value field.
+    for (;;) {
+        auto added = false;
+        for (const auto& requirements : references.surface_requirements) {
+            for (const auto& [nominal, completeness] : requirements) {
+                if (completeness != TargetTypeCompleteness::CompleteDefinition
+                    || !interface_nominals.insert(nominal).second) {
+                    continue;
+                }
+                const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
+                surface_declarations[owner.index()].push_back(target_declaration_ref(nominal));
+                added = true;
+            }
+        }
+        if (!added) {
+            break;
+        }
+        references = collect_target_references(semantic, surface_declarations);
+    }
+    for (const auto nominal : ordered_nominals) {
+        if (interface_nominals.contains(nominal)) {
             continue;
         }
         const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
         schedules[owner.index()]->private_nominal_order.push_back(nominal);
     }
-
-    const auto references = collect_target_references(semantic, surface_declarations);
     auto exposed_closures = std::flat_set<CallableID>();
     for (const auto& requirements : references.surface_closures) {
         exposed_closures.insert(requirements.begin(), requirements.end());
@@ -248,9 +273,6 @@ auto plan_artifacts(
         for (const auto& [nominal, completeness] : references.surface_requirements[index]) {
             if (completeness != TargetTypeCompleteness::CompleteDefinition) {
                 continue;
-            }
-            if (!published_nominal(semantic, nominal)) {
-                invariant_violation("published surface requires a module-private nominal");
             }
             const auto dependency = target_owner_module(semantic, target_declaration_ref(nominal));
             if (dependency != module_id) {
@@ -316,7 +338,7 @@ auto plan_artifacts(
     auto component_nominals =
         std::vector<std::vector<NominalDeclarationRef>>(component_members.size());
     for (const auto nominal : ordered_nominals) {
-        if (!published_nominal(semantic, nominal)) {
+        if (!interface_nominals.contains(nominal)) {
             continue;
         }
         const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
@@ -350,15 +372,12 @@ auto plan_artifacts(
         for (const auto member : component_members[component_index]) {
             for (const auto& [nominal, completeness] :
                  references.surface_requirements[member.index()]) {
-                if (!published_nominal(semantic, nominal)) {
-                    invariant_violation("published surface references a private nominal");
-                }
                 const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-                if (!module_component[owner.index()].has_value()) {
-                    invariant_violation("interface nominal dependency has no component");
-                }
-                const auto owner_component = *module_component[owner.index()];
-                if (owner_component == component_index || included_components[owner_component]) {
+                const auto owner_component = module_component[owner.index()];
+                if (interface_nominals.contains(nominal)
+                    && owner_component.has_value()
+                    && (*owner_component == component_index
+                        || included_components[*owner_component])) {
                     continue;
                 }
                 if (completeness == TargetTypeCompleteness::CompleteDefinition) {

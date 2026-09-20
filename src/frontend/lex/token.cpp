@@ -140,6 +140,7 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case Return:             return "Return";
         case Rethrow:            return "Rethrow";
         case Struct:             return "Struct";
+        case Class:              return "Class";
         case Test:               return "Test";
         case Throw:              return "Throw";
         case True:               return "True";

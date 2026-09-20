@@ -65,9 +65,13 @@ public:
             quoted(value.as_str());
         } else if constexpr (std::is_same_v<T, char32_t>) {
             quoted(carven::runtime::format_argument(value).as_str(), true);
+        } else if constexpr (std::is_same_v<T, char8_t>
+                             || std::is_same_v<T, char16_t>
+                             || std::is_same_v<T, wchar_t>) {
+            text(std::format("{}", +value));
         } else if constexpr (std::is_arithmetic_v<T>) {
             text(std::format("{}", carven::runtime::format_argument(value)));
-        } else if constexpr (std::is_pointer_v<T>) {
+        } else if constexpr (std::is_pointer_v<T> && std::is_convertible_v<T, const void*>) {
             if (value == nullptr) {
                 text("nullptr");
             } else {

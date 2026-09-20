@@ -84,6 +84,10 @@ struct FixedOwner final {
     }
 };
 
+inline auto observe_fixed(const FixedOwner&, const FixedOwner&, std::int32_t) noexcept -> void {
+    mark(9);
+}
+
 struct PatternOwner final {
     std::int32_t id;
 

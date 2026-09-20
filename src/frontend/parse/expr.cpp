@@ -459,6 +459,13 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
+    if (check(TokenKind::LeftBrace) && construction_allowed_here()) {
+        if (const auto construction = try_parse_construction()) {
+            return *construction;
+        }
+        fail_here("expected contextual construction");
+        return std::nullopt;
+    }
     if (check(TokenKind::ColonColon)) {
         if (construction_allowed_here()) {
             if (const auto construction = try_parse_construction()) {
@@ -755,6 +762,13 @@ auto Parser::construction_allowed_here() const noexcept -> bool {
     return block_boundary_depth == 0 || expression_nesting != 0;
 }
 
+auto Parser::starts_field_construction() const noexcept -> bool {
+    return check(TokenKind::LeftBrace)
+        && cursor + 2 < tokens.size()
+        && tokens[cursor + 1].kind == TokenKind::Identifier
+        && tokens[cursor + 2].kind == TokenKind::Colon;
+}
+
 auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
     const auto checkpoint = begin_speculation();
     const auto start = current().span;
@@ -773,7 +787,7 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
                 .value = std::move(parsed->value),
             };
         }
-    } else {
+    } else if (!check(TokenKind::LeftBrace)) {
         fail_here("expected construction type");
     }
 
@@ -873,6 +887,10 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
         right = expect(TokenKind::RightBrace, "expected '}' after construction initializer");
     }
 
+    if (!construction_type
+        && std::holds_alternative<ASTPositionalInitializerList>(initializer.value)) {
+        fail_here("contextual construction requires named fields");
+    }
     const auto success = !failed;
     finish_speculation(checkpoint, success);
     if (!success) {
@@ -882,7 +900,7 @@ auto Parser::try_parse_construction() noexcept -> std::optional<ASTExprID> {
         ASTExpr {
             .span = join(start, right.span),
             .value = ASTConstructionExpr {
-                .type = *construction_type,
+                .type = std::move(construction_type),
                 .initializer = initializer,
             },
         }

@@ -9,6 +9,8 @@ import "text/c_strings.hpp" using c_strings::{
     Box,
 };
 
+import .cstring_constant_api using constant_text_value;
+
 import "text/c_strings.hpp" using c_strings::select;
 import "text/c_strings.hpp" using c_other::*;
 
@@ -16,6 +18,26 @@ fn retain_literal() {
     let text = c"retained";
     remember(text);
 }
+
+const fn choose_cstring(value: bool) => if value { c"你好" } else { c"" };
+
+const saved_cstring = choose_cstring(true);
+const empty_cstring = choose_cstring(false);
+
+const fn copy_cstring() {
+    var current = c"old";
+    let snapshot = current;
+    current = c"new";
+    let taken = &&current;
+    current = snapshot;
+    return current;
+}
+
+const copied_cstring = copy_cstring();
+
+const fn make_cstrings() => [c"left", c"right"];
+
+const frozen_cstrings = make_cstrings();
 
 test "C strings: static storage and exact native pointer values" {
     check(same(c"", c""));
@@ -27,6 +49,17 @@ test "C strings: static storage and exact native pointer values" {
     check(const_pointer_reference(text));
     retain_literal();
     check(remembered());
+}
+
+test "C strings: compile-time values retain bytes across modules" {
+    check(unicode(saved_cstring));
+    check(same(empty_cstring, c""));
+    check(same(copied_cstring, c"old"));
+    check(pointer_value(saved_cstring));
+    check(const_pointer_reference(saved_cstring));
+    check(same(c"shared across modules", constant_text_value()));
+    check(same(frozen_cstrings[0], c"left"));
+    check(same(frozen_cstrings[1], c"right"));
 }
 
 test "C++ selections: explicit paths precede open namespaces" {

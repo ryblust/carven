@@ -6,6 +6,7 @@ import :diagnostics.report;
 import :source.location;
 import :source.manager;
 import :source.text;
+import :support.terminal;
 import :support.utf8;
 import std;
 
@@ -212,20 +213,23 @@ auto append_frame(
 
 } // namespace
 
-auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& sources) noexcept
-    -> std::string {
+auto render_diagnostic(
+    const Diagnostic& diagnostic,
+    const SourceManager& sources,
+    bool use_color
+) noexcept -> std::string {
     const auto& finding = diagnostic.finding;
     const auto& attachment = diagnostic.attachment;
     const auto* severity = finding.severity == DiagnosticSeverity::Warning ? "warning" : "error";
+    const auto styler = TerminalStyler(use_color);
+    const auto styled_severity = finding.severity == DiagnosticSeverity::Warning
+        ? styler.bold_yellow(severity)
+        : styler.bold_red(severity);
+    const auto styled_code = styler.bold(diagnostic_code_info(finding.code).name);
     if (!attachment.primary.has_value()) {
-        auto output = std::format(
-            "{} [{}]: {}\n",
-            severity,
-            diagnostic_code_info(finding.code).name,
-            finding.message
-        );
+        auto output = std::format("{} [{}]: {}\n", styled_severity, styled_code, finding.message);
         for (const auto& note : attachment.notes) {
-            output += std::format("note: {}\n", note.message);
+            output += std::format("{} {}\n", styler.bold_cyan("note:"), note.message);
         }
         return output;
     }
@@ -237,12 +241,7 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
         }
     }
 
-    auto output = std::format(
-        "{} [{}]: {}\n",
-        severity,
-        diagnostic_code_info(finding.code).name,
-        finding.message
-    );
+    auto output = std::format("{} [{}]: {}\n", styled_severity, styled_code, finding.message);
     for (auto source_index = 0uz; source_index < source_order.size(); ++source_index) {
         const auto source_id = source_order[source_index];
         const auto source = sources.view(source_id);
@@ -296,9 +295,21 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
         const auto location = sources.location(anchor);
 
         if (source_index == 0) {
-            output += std::format(" --> {}:{}:{}\n", source.origin, location.line, location.column);
+            output += std::format(
+                " {} {}:{}:{}\n",
+                styler.bold_cyan("-->"),
+                source.origin,
+                location.line,
+                location.column
+            );
         } else {
-            output += std::format(" ::: {}:{}:{}\n", source.origin, location.line, location.column);
+            output += std::format(
+                " {} {}:{}:{}\n",
+                styler.bold_cyan(":::"),
+                source.origin,
+                location.line,
+                location.column
+            );
         }
 
         auto largest_line = 1uz;
@@ -315,21 +326,22 @@ auto render_diagnostic(const Diagnostic& diagnostic, const SourceManager& source
         }
     }
     for (const auto& note : attachment.notes) {
-        output += std::format("note: {}\n", note.message);
+        output += std::format("{} {}\n", styler.bold_cyan("note:"), note.message);
     }
     return output;
 }
 
 auto render_diagnostics(
     std::span<const Diagnostic> diagnostics,
-    const SourceManager& sources
+    const SourceManager& sources,
+    bool use_color
 ) noexcept -> std::string {
     auto output = std::string {};
     for (auto index = 0uz; index < diagnostics.size(); ++index) {
         if (index > 0) {
             output += '\n';
         }
-        output += render_diagnostic(diagnostics[index], sources);
+        output += render_diagnostic(diagnostics[index], sources, use_color);
     }
     return output;
 }

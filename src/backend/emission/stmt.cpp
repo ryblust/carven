@@ -108,9 +108,9 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
             [&](const TargetBreakStmt&) noexcept { return text("break;"); },
             [&](const TargetContinueStmt&) noexcept { return text("continue;"); },
             [&](const TargetUnreachableStmt&) noexcept {
-                return text("carven::runtime::unreachable();");
+                return text("::carven::runtime::unreachable();");
             },
-            [&](const TargetRuntimeTrapStmt&) noexcept { return text("std::abort();"); },
+            [&](const TargetRuntimeTrapStmt&) noexcept { return text("::std::abort();"); },
             [&](const TargetGotoStmt& value) noexcept {
                 return concat({text("goto "), render_identifier(value.label), text(";")});
             },

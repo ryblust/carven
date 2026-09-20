@@ -142,7 +142,7 @@ TEST_CASE("Parser: control-flow braces win over ungrouped construction") {
     const auto& typed = get<ASTWhileStmt>(statement_at(result, 2));
     const auto& typed_group = get<ASTGroupExpr>(ast.expression(typed.condition));
     const auto& construction = get<ASTConstructionExpr>(ast.expression(typed_group.expression));
-    CHECK(is<ASTFunctionType>(construction.type));
+    CHECK(is<ASTFunctionType>(*construction.type));
 
     check_invalid("fn f() { while Flag {} {} }");
 }

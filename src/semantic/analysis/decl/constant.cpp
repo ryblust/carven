@@ -138,7 +138,7 @@ auto DeclResolver::resolve_constant_name(
     co_return std::nullopt;
 }
 
-auto DeclResolver::resolve_enum_qualifier(
+auto DeclResolver::resolve_nominal_qualifier(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTExprID expression
@@ -155,6 +155,11 @@ auto DeclResolver::resolve_enum_qualifier(
     auto selected = select_symbol(module_id, spelling, name->name_span);
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
+    }
+    if (const auto* record = std::get_if<CatalogStructForm>(&(*selected)->form)) {
+        co_return std::optional(
+            draft.intern_type({.value = StructTypeValue {.structure = record->structure}})
+        );
     }
     const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
     if (enumeration == nullptr) {
@@ -181,7 +186,7 @@ auto DeclResolver::resolve_constant_enum_case(
             module_id,
             origin,
             DiagnosticCode::TypeEnumContext,
-            "enum case qualifier does not name an enum type"
+            "scope qualifier does not name an enum or class type"
         ));
     }
     const auto owner_symbol_id = catalog.enum_symbol(nominal->enumeration);

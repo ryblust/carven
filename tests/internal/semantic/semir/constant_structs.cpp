@@ -37,6 +37,7 @@ auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
     draft.define_declaration(
         structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = draft.intern_spelling("Entry"),
             .origin = origin,

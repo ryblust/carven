@@ -1,7 +1,6 @@
 #pragma once
 
 #include "passing.hpp"
-#include "unreachable.hpp"
 
 #include <concepts>
 #include <exception>
@@ -100,19 +99,33 @@ class Outcome final {
     constexpr explicit Outcome(std::in_place_type_t<Failure>, Value&& value) noexcept
         : state(std::in_place_type<Failure>, std::forward<Value>(value)) {}
 
-    template<typename Failure, typename... Rest>
-    constexpr auto propagate_failure() noexcept -> Outcome {
-        if (auto* value = failure_if<Failure>()) {
-            return failure(transfer(*value));
-        }
-        if constexpr (sizeof...(Rest) > 0) {
-            return propagate_failure<Rest...>();
-        } else {
-            // Construction is noexcept and assignment is unavailable, so an
-            // Outcome always contains one of its declared alternatives.
-            unreachable();
-        }
+    struct TransferState final {};
+
+    template<typename Destination>
+    constexpr auto transfer_state() noexcept -> Destination {
+        return std::visit(
+            []<typename Alternative>(Alternative& alternative) noexcept -> Destination {
+                if constexpr (std::same_as<Alternative, Success>) {
+                    if constexpr (std::is_void_v<Result>) {
+                        return Destination(std::in_place_type<Success>);
+                    } else {
+                        return Destination(
+                            std::in_place_type<Success>,
+                            std::in_place,
+                            [&]() noexcept -> Result { return transfer(alternative.value); }
+                        );
+                    }
+                } else {
+                    return Destination(std::in_place_type<Alternative>, transfer(alternative));
+                }
+            },
+            state
+        );
     }
+
+    template<typename... SourceFailures>
+    constexpr Outcome(TransferState, Outcome<Result, SourceFailures...>& source) noexcept
+        : state(source.template transfer_state<State>()) {}
 
 public:
     Outcome() = delete;
@@ -123,17 +136,10 @@ public:
         requires OutcomeWidening<
                      Outcome<SourceResult, SourceFailures...>,
                      Outcome<Result, Failures...>>
-        && std::is_move_constructible_v<Success>
-        && (std::is_move_constructible_v<SourceFailures> && ...)
+        && (std::is_void_v<Result> || detail::TransferConstructible<Result>)
+        && (detail::TransferConstructible<SourceFailures> && ...)
     constexpr Outcome(Outcome<SourceResult, SourceFailures...>&& source) noexcept
-        : state(
-              std::visit(
-                  []<typename Alternative>(Alternative& alternative) noexcept -> State {
-                      return State(std::in_place_type<Alternative>, std::move(alternative));
-                  },
-                  source.state
-              )
-          ) {}
+        : Outcome(TransferState {}, source) {}
 
     constexpr ~Outcome() = default;
 
@@ -166,16 +172,7 @@ public:
         requires (std::is_void_v<Result> || detail::TransferConstructible<Result>)
         && (detail::TransferConstructible<Failures> && ...)
     {
-        if constexpr (std::is_void_v<Result>) {
-            if (success_if() != nullptr) {
-                return success();
-            }
-        } else {
-            if (auto* value = success_if()) {
-                return success_from([&]() noexcept -> Result { return transfer(value->value); });
-            }
-        }
-        return propagate_failure<Failures...>();
+        return Outcome(TransferState {}, *this);
     }
 
     constexpr auto success_if() & noexcept -> Success* { return std::get_if<Success>(&state); }

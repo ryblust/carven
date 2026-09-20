@@ -163,6 +163,14 @@ Source-owned writable-pointer declarations retain explicit pointee access. Lower
 records this declaration contract; emission attaches its const-correctness
 annotation. Backend operand storage and projections receive ordinary analysis.
 
+Callable thunks borrow the already evaluated parameters until invocation. Reference
+parameters retain their declared category; value parameters are delivered through
+the ordinary transfer policy. Callable admission checks that exact delivery
+expression and any required result widening. Same-carrier propagation and Outcome
+widening reconstruct the active payload through the same transfer operation,
+including success payloads inside their wrapper. Widening requires construction
+only for the source alternatives; newly admitted failure types need no transfer.
+
 The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades use this same parameter policy, type realization,
 and failure ABI. Export Take parameters are forwarded through `transfer`; import
@@ -215,8 +223,8 @@ cleanup boundary. The runtime owns placement construction. Generated factories
 return complete initializers, preserving explicit construction and
 copy-initialization rules.
 
-Native call results retained for borrowing use deferred storage with the exact
-queried return type. Factory deduction is checked against that query, accounting
+Native call results retained for borrowing use the exact queried return type.
+When deferred storage is used, factory deduction is checked against that query, accounting
 for C++ dropping top-level cv from scalar call results. Exact reference retention
 applies to call results. Owning snapshots instead use the normalized object type.
 
@@ -227,6 +235,13 @@ a prvalue. Later mutation of a borrowed source cannot change that completed
 snapshot. `NativeTake` additionally retains the queried rvalue argument category.
 Borrowing a native call result and acquiring an owning value therefore have
 different storage and delivery contracts.
+
+Ordinary class methods arrive as checked ordinary calls with explicit receiver
+arguments. Factories and field access reuse nominal product realization. Source
+privacy does not require a separate C++ class hierarchy, a runtime access check,
+or re-resolution of methods in the backend. C++ still checks delegated native
+construction and invocation expressions; external implementations remain governed
+by their interoperation contracts.
 
 ## Builtin calls and reports
 
@@ -262,8 +277,8 @@ plus constant-size use sites. Field layout is emitted as literal text;
 sequence emitters receive the known depth for indentation and visit runtime
 elements within display limits. `DisplayWriter` handles scalar conversion, nested text
 escaping, and bounded output. Its completed text uses the ordinary runtime
-printing entry. External and
-callable leaves remain opaque; no user formatter participates. The wrapper is
+printing entry. Callable leaves remain opaque. Native leaves use the runtime scalar classifier;
+unsupported types remain opaque and no user formatter participates. The wrapper is
 consumed synchronously after ordinary Read argument sequencing.
 
 Known successful conditions retain their execution effects and need no report
@@ -349,6 +364,10 @@ transfers. Function-body completion uses these retained demands to select const 
 mutable storage for directly initialized local owners. Deferred initialization
 uses mutable result storage.
 
+Automatic value temporaries use const storage for observation and mutable
+storage for `WritePlace`, `Consume`, and `NativeTake`. Reference and Read-parameter
+storage retain the access qualification selected by their types.
+
 `ProjectionPlace` forwards the consumer's access through fields and array elements;
 `WritePlace` requires mutable access. Realization resolves projection access before
 sequencing, retaining const references for read projections and propagating write
@@ -390,6 +409,12 @@ before argument evaluation;
 callable views retain a target description. Neither choice copies capture contents.
 Source and full-expression scopes preserve lifetimes.
 
+A published function target lowers to a direct call using its actual failure and
+test-stop contract. The callee's required evaluation precedes its arguments.
+Declaration finalization removes unreferenced scalar and nonowning callable locals
+only when semantic preparation establishes effect-free initialization and their
+types require no cleanup. Remaining target references preserve observable storage.
+
 `BodyRealizer::ExpressionBuilder` constructs complete child fragments. Each owns
 its declarations, ordered statement prefix, and either a residual target value,
 saved storage, an explicit binding or constant identity, or completed evaluation. Ordinary
@@ -424,11 +449,26 @@ before constructing children, then propagates retention demand while preserving
 arithmetic order, checks, and traps. Native and floating expressions retain their
 ordinary construction and evaluation paths.
 
+Integer preparation uses known divisors and shift counts to select native
+operators where C++ preserves Carven's value and width. Unsigned arithmetic that
+avoids signed integer promotion uses C++ wrapping. Signed overflow and narrow
+multiplication retain runtime implementations. Operand literal types and explicit
+result conversions preserve promotion, overload, and deduction behavior.
+
 Expression frames use the existing `LifetimeRegionID`. Conditional execution
 that shares a full-expression lifetime uses the same frame; an expression-position
-lexical region retains its own frame. Frames separate storage declarations from
-initialization, reserving temporary storage in source order at the enclosing
-expression boundary and initializing only on the selected path.
+lexical region retains its own frame. An independent full-expression frame with
+no conditional evaluation directly initializes ordinary locals in source order.
+Independence requires a distinct cleanup region from every active outer frame;
+nesting in another expression does not by itself require deferred storage.
+An independent lexical region's tail can use the same storage policy when its
+cleanup ID matches the region. Realization encloses tail evaluation and result
+delivery in one block, so all payload and backing uses precede its cleanup.
+The destination of a result that survives the block retains its own storage.
+Preparation summarizes conditional evaluation through nested operands, including
+report messages. Shared and conditional frames conservatively separate storage
+declarations from initialization, reserving temporary storage in source order at
+the enclosing expression boundary and initializing only on the selected path.
 Reverse destruction order includes those objects and any retained Outcome owners.
 Known or discarded results retain required execution.
 Fallible calls check success before continuing with its value. Result demand controls whether
@@ -448,11 +488,22 @@ For `values.slice(0, 2).len()`, realization executes the checked slice and retur
 `2`; the slice result needs no storage or size query. Failure still prevents
 result delivery.
 
-An independent full-expression root call can initialize an ordinary Outcome local
-when it shares no retained storage or cleanup frame with other operands. Nested
-calls and conditional execution use deferred storage where needed. Both paths
-use the selected result demand and preserve reverse destruction order among
-all retained owners.
+The frame selects storage uniformly for retained operands and Outcome owners.
+This keeps declaration order aligned with construction order; selecting automatic
+and hoisted deferred owners independently could reverse their cleanup order.
+Both representations use the selected result demand and preserve reverse
+destruction order among all retained owners.
+
+### Owning field projection
+
+The semantic `SemField::consumes_source` query distinguishes owning sources
+from selections of existing storage. Value category alone is insufficient: Read
+bindings can still name existing storage. Preparation consumes the owning
+source. Realization anchors the complete source in mutable owned storage, applies
+the common transfer policy to the selected field, and keeps the remainder alive
+through the cleanup frame. It does not ask native overload resolution to infer
+Carven ownership from an incidental C++ value category. Owning field results have
+their own temporary identity for backing and escape analysis.
 
 ## Extending operations
 
@@ -465,7 +516,8 @@ adapters. Both visitors enumerate the semantic expression alternatives explicitl
 Native operation realization also enumerates the `CppOperation` alternatives.
 Structured control retains its specialized realization paths.
 
-Scalar and array callable adaptation share the source capture-policy decision.
+Scalar and array callable adaptation consume `PreparedCallableAdaptation`, which
+retains the shared semantic adaptation classification and the array delivery form.
 Array adoption stabilizes its source through ordinary operand construction, then
 calls `runtime::adopt_array<Destination, Stateless>` in `array.hpp`. Native array
 types determine recursive aggregate initialization; matching types retain ordinary
@@ -504,6 +556,8 @@ Loops use native while conditions when condition evaluation needs no preceding
 statements. Otherwise the iteration body sequences the condition before its exit
 test. Step loops retain a local continue target.
 Known consumers receive results directly, including returns from selected branches.
+An unconditional binding pattern initializes its local directly from the subject;
+partial pattern selection retains address slots until the arm is selected.
 Expression-position value branches with no outward failure or test exit use local
 value lambdas; branches with those exits use deferred initialization. Function
 return applies the failure ABI independently of lambda yield. A retained void
@@ -531,8 +585,14 @@ results use `Outcome`; other results are direct. Widening accepts identity or a
 strict failure-set superset. Calls, propagation, handlers, and callable
 adaptation use this one contract. Handler failures go to the enclosing failure
 target; rethrow preserves the selected failure. Test exit leaves the test.
-Outcome and handler-variant failures share one typed dispatch construction;
-their source forms determine the payload projection.
+Outcome and handler failures share one typed dispatch construction. A handler
+slot uses `optional<E>` for one protected failure type and
+`optional<variant<E...>>` for several. Its layout stays fixed while a catch or
+residual path may narrow the candidate set. The optional retains the failure
+through protected-scope cleanup. Typed projection uses the slot layout; the last
+candidate of a closed dispatch transfers directly after earlier candidates have
+been excluded. Call dispatch follows the success and test-stop checks. Handler
+payload patterns and guards retain their own selection.
 
 A call in function-return position uses `Outcome::propagate() &&` when its
 failure destination is the function exit and its normalized target result type
@@ -577,6 +637,9 @@ requirements form interface edges; strongly connected components share an
 interface. Function declaration return types, including Outcome and arrays,
 require only declarations of their component types. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
+Private nominals needed by an interface layout receive definitions in their
+owner's interface; declaration-only references receive forward declarations.
+This placement does not change Carven source visibility.
 
 Schedules own interface definitions, C++ façades, private nominal and closure
 ordering, and selected tests. Module lowering starts with externally visible
@@ -598,6 +661,11 @@ the module schedule; external-runner mode retains it for the consuming build.
 Explicit C++ fragments preserve their bytes and source order.
 
 ## Target syntax and emission
+
+Generated references to standard-library, runtime, and resolved global symbols
+use leading `::` so enclosing declarations cannot redirect lookup. Namespace
+definitions, local names, and member access retain their own syntax. Native
+source fragments retain author-specified lookup.
 
 Expressions, statements, and items are move-only recursive values.
 `TargetBlockStmt` always denotes an actual C++ block; plain sequences are
@@ -674,19 +742,46 @@ Receiver access is preserved independently of storage made mutable to realize a
 later Take. Discarded external calls need no result storage, so void-returning
 providers remain usable.
 
-C string literal operations have an intrinsic external `const char*` type.
-Lowering emits byte-escaped narrow literal storage with `static_cast<const char*>`,
-preserving pointer semantics for overload resolution and deduction. Ordinary
-string literals retain `std::string_view` realization.
+C string constants have an intrinsic external `const char*` type. Lowering emits
+their decoded bytes as a narrow C++ string literal converted to a pointer, so
+calls and deduction receive the declared pointer type with static storage lifetime.
+Ordinary string literals retain `std::string_view` realization.
+
+### Native construction results
+
+A native construction records its target separately from its result query.
+Each query argument records its type, access, and optional known scalar value.
+Read scalar expressions with known results and no selected source storage deliver
+that constant in both the query and executed construction. Their original
+expressions retain all evaluation and cleanup obligations. Other arguments retain
+their access-qualified type queries and ordinary value delivery.
+`PreparedNativeConstruction` maps each argument to a retained operand index or a
+borrowed constant argument from that query. Operand demands and final argument
+delivery consume this mapping.
+
+The shared argument lowering preserves constant-expression narrowing and native
+overload selection. Later indexing, members, and storage use the construction's
+result type. Implicit value initialization consumes the result; direct prvalue
+construction retains C++ copy elision, including for immovable types.
+
+An explicitly specialized native construction uses its named target as the
+result type. Deduction remains a C++ query when the target has no explicit template
+arguments. The semantic construction query retains argument-delivery facts in
+both cases.
 
 ## Operation preparation
 
 `backend/preparation` consumes immutable semantic operations and their known
-normal-completion values. It owns prepared bytes, integer field plans, residual
+normal-completion values. It owns operation plans, prepared bytes, residual
 operand mappings, size bounds, and UTF-8 proofs. It never interns into semantic
 stores. `PreparedOperation` optionally owns a plan through realization.
 Operations without preparation and print calls without known scalar text hold no
 plan payload.
+
+`PreparedUnary` and `PreparedBinary` select runtime calls or native operators and
+result-type restoration after C++ promotion. The binary plan also specifies
+whether the implementation fixes operand types; shift counts retain independent
+types. Fragment construction and operation realization consume the same plan.
 
 `PreparedFormatText` owns the complete text. `PreparedWriterFormat` owns literal
 segments, builtin fields, reservation bounds, and retained operand indices.

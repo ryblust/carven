@@ -1,0 +1,20 @@
+import <functional> using std::identity;
+
+private class NativeCallback {
+    callback: identity,
+
+    fn create() -> NativeCallback {
+        return {
+            callback: identity {}
+        };
+    }
+
+    fn invoke(self, value: i32) -> i32 {
+        return self.callback(value);
+    }
+}
+
+test "Classes: a private native callable field uses ordinary C++ invocation" {
+    let callback = NativeCallback::create();
+    check(callback.invoke(17) == 17);
+}

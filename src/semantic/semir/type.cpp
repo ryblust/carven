@@ -74,6 +74,16 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
                     } else if constexpr (std::same_as<Expression, CppUnaryQuery>
                                          || std::same_as<Expression, CppBinaryQuery>) {
                         mix(static_cast<std::size_t>(expression.operation));
+                    } else if constexpr (std::same_as<Expression, CppConstructQuery>) {
+                        for (const auto& argument : expression.arguments) {
+                            mix(argument.constant.has_value());
+                            if (argument.constant) {
+                                child(
+                                    *argument.constant,
+                                    "C++ construction used a foreign constant"
+                                );
+                            }
+                        }
                     } else if constexpr (std::same_as<Expression, CppCallQuery>) {
                         mix(expression.callee.index());
                         if (const auto* member =

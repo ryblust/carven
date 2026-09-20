@@ -44,6 +44,14 @@ public:
     auto permits_pointer_narrowing() const noexcept -> bool;
     auto infer_type(Value& value, Span span) noexcept -> ExpressionResult<ConstructionTypeRef>;
     auto aggregate_cost(std::size_t count, Span span) const noexcept -> ExpressionResult<void>;
+    auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
+    auto associated_reference(StructID owner, Span name_span) noexcept -> ExpressionTask<Value>;
+    auto associated_call(
+        const ASTCallExpr& source,
+        const ASTMemberExpr& member,
+        StructID owner,
+        Span span
+    ) noexcept -> ExpressionTask<Value>;
     auto aggregate_admitted(ConstructionTypeRef type, Span span) const noexcept
         -> ExpressionResult<bool>;
     auto read_argument(ASTExprID expression, std::optional<ConstructionTypeRef> expected) noexcept
@@ -78,6 +86,7 @@ public:
     ) noexcept -> ExpressionTask<Value>;
     auto type(const Value& value) const noexcept -> ConstructionTypeRef;
     auto known(const Value& value) const noexcept -> std::optional<ConstantID>;
+    auto condition_constant(const Value& value) const noexcept -> std::optional<ConstantID>;
     auto external(ConstructionTypeRef type) const noexcept -> bool;
     auto dereference(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
@@ -85,7 +94,6 @@ public:
     auto resolve_type(ASTTypeID type) noexcept -> ExpressionTask<ConstructionTypeRef>;
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
         -> ExpressionTask<ConstructionTypeRef>;
-    auto c_string(std::string_view bytes, Span span) noexcept -> Value;
     auto constant(ConstantID constant, Span span) noexcept -> Value;
     auto enter_operand_execution(bool executed) noexcept -> BodyReferencePathGuard;
     auto finish_short_circuit(
@@ -161,13 +169,13 @@ public:
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_function(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<FunctionID>>;
-    auto resolve_enum_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
+    auto resolve_nominal_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;
     auto is_numeric_enum(TypeID type) noexcept -> bool;
     auto admits(const ASTExpr&) const noexcept -> bool;
     auto spelling(Span span) const noexcept -> std::string;
-    auto invalid_enum_qualifier(Span span) noexcept -> ExpressionResult<Value>;
+    auto invalid_nominal_qualifier(Span span) noexcept -> ExpressionResult<Value>;
     auto require_invariant_storage(
         ConstructionTypeRef source,
         ConstructionTypeRef target,

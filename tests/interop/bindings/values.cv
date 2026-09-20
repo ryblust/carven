@@ -35,7 +35,7 @@ struct Entries {
     values: vector<Entry>,
 }
 
-fn entries() -> Entries => Entries {
+fn entries() -> Entries => {
     values: vector<Entry> {
         Entry { value: 11 }
     }

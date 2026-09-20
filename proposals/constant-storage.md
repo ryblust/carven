@@ -16,8 +16,10 @@ admission and retained results for future library containers and class operation
 
 Public containers belong to standard or user crafts. They need generic type
 declarations, encapsulated storage, and defined access, lifetime, mutation, and
-failure behavior. [Generics](generics.md) and [classes](classes.md) supply the
-required language designs.
+failure behavior. [Generics](generics.md) owns parameterized declarations; ordinary
+[class encapsulation](../docs/semantics.md#ordinary-value-classes) is implemented.
+Generic classes and admission of class operations to constant execution remain
+required work for a container that uses them.
 
 Semantic analysis resolves an operation's contract, constant execution implements
 its admitted behavior, and lowering selects native support. Craft-specific

@@ -10,7 +10,7 @@ remains open.
 
 Implemented foundations include:
 
-- modules, structs, payload enums, arrays, matching, constants, and range loops;
+- modules, structs, Read/Write/Take value classes, payload enums, arrays, matching, constants, and range loops;
 - Read/Write/Take, closures and callable views, typed failures, pointer values,
   and local non-null analysis;
 - owning String, tracked text borrows, interpolation, and copyable nominal
@@ -24,51 +24,37 @@ Implemented foundations include:
 These provide consumers and constraints for new abstractions. Native pointers
 do not establish owning resources, and named type arguments or builtin `ptr<T>`
 do not supply user-defined generics. Generic declarations, concepts/impls,
-ordinary and dynamic classes, and async remain unimplemented.
+dynamic classes, and async remain unimplemented.
 
-## Proposed priorities
+## Current consolidation
 
-Priority is an implementation recommendation, not a semantic dependency.
-Ordinary classes and parametric generics can be designed independently.
+Ordinary classes, Read/Write/Take receivers, and owning field projection are
+implemented. `UTF8Validator` uses private representation and checked operations;
+String-backed builders exercise consuming calls and field delivery.
 
-| Priority | Design slice | Why now | Gate before implementation |
-| --- | --- | --- | --- |
-| 1 | Ordinary value class, encapsulation, associated factories, Read/Write/Take receivers | Protect real library invariants and make reusable behavior expressible | Close [Classes](classes.md) `OPEN-01` and `OPEN-02` |
-| 2 | Parametric functions, structs, and enums; local inference and finite instance identity | Reuse the new slice and nominal-value facilities across element types | Revisit [Generics](generics.md) `OPEN-01` scope, then close `OPEN-02` |
-| 3 | Static capabilities, canonical evidence, coherence, and associated types | Let generic algorithms request operations explicitly | Deliver generic core and its definition-site checking first |
-| 4 | Small operator capability surface | Reuse the capability machinery for existing operator tokens | Close [Operators](operators.md) identity, carrier, signature, and equality decisions |
+The current engineering focus is the handoff from checked semantics to C++:
 
-Priorities for dynamic ownership, same-thread async, and containers depend on
-concrete library or application consumers.
+- Native result queries and executed expressions preserve the same access and
+  constant-value requirements.
+- Operand storage serves source order, backing lifetimes, and cleanup obligations.
+- Direct display uses C++ type classification for native scalar results without
+  invoking user formatting protocols.
 
-### Ordinary classes: open decisions
+Validation covers accepted and rejected operations, observable evaluation order,
+and resource lifetime.
 
-Ordinary classes can be designed and delivered independently of dynamic class
-forms, erased values, inheritance, and generic dynamic operations.
+## Proposed capabilities
 
-`UTF8Validator` is a candidate for construction, Read queries, Write operations,
-and private helpers. Its public fields currently hold pending sequence state;
-library functions initialize and mutate it, and `finish` checks EOF. A
-String-backed consuming builder can exercise whole-representation decomposition,
-field disposition, borrows, and success/failure availability.
+| Capability | Consumer | Design gate |
+| --- | --- | --- |
+| Parametric functions, structs, and enums | Type-safe reusable values and algorithms | [Generics](generics.md) scope and finite instance rules |
+| Static capabilities and associated types | Generic algorithms requiring explicit operations | Definition-site checking and coherent evidence |
+| Operator capabilities | User-defined operations for existing tokens | [Operators](operators.md) signature and result rules |
+| Multi-field consuming decomposition | Independent owners extracted from one class | [Ownership contract below](#multi-field-consuming-decomposition) |
 
-#### Next round actions
-
-1. Use `UTF8Validator` to compare construction, query, mutation, and private-helper
-   surfaces. Resolve operation visibility and helper syntax in Classes
-   `OPEN-01`.
-2. Use a small String-backed consuming builder to resolve `OPEN-02`: whole-object
-   decomposition, disposition of every field, outstanding borrows, and receiver
-   availability on success and failure.
-3. Map the selected operations onto frontend syntax, semantic access and ownership,
-   C++ lowering, and craft/native support. Add a runtime primitive only where a
-   concrete operation needs one; public library APIs remain in crafts.
-4. Once those decisions are closed, implement the minimal ordinary value-class
-   slice and validate its accepted and rejected source programs, cross-module
-   visibility, lifetimes, and direct C++ output.
-
-The recommended next slice is ordinary classes. Constant execution of class
-operations requires separate admission and retained-result decisions.
+Generic implementation is deferred while the current contracts are consolidated.
+Class constant execution, generic classes, dynamic ownership, and async retain
+their own design and admission requirements.
 
 ### Generic core: scope decision
 
@@ -83,6 +69,16 @@ by-value storage cycles, and compiler budgets. Candidate validation examples are
 `identity<T>`, a transparent value holder, a payload enum, and a function passing
 through `[T]`. Definition-site checking needs to cover copying, Take, stored
 borrows, and failures.
+
+### Multi-field consuming decomposition
+
+Single-field `(&&owner).field` delivery is implemented. Multi-field extraction
+remains a separate ownership design question. A consumer needing two independent
+field owners must establish whole-representation extraction, with the original
+owner unavailable, exactly-once field evaluation, and deterministic disposition
+of every field on success, failure, and rejected patterns. No usable partially
+moved object remains. Select syntax using a concrete `build`, `finish`, or
+`into_*` operation before implementation. Dynamic values are not a prerequisite.
 
 ### Library consumers and independent work
 
@@ -104,7 +100,7 @@ borrows, and failures.
 Current formatting, output, constant functions, compound execution, and static
 slices are implemented foundations described in `docs/`. Remaining
 [formatting and output composition](formatting.md) work concerns broader capacity
-planning, completion/failure boundaries, and compatibility before any runtime replacement.
+planning and completion/failure boundaries.
 These candidates do not depend on classes or generics.
 
 Constant library storage requires ordinary generic and
@@ -136,26 +132,21 @@ Copyable nominal failures can already contain owning String values and tracked
 borrowed views. [Failure value](failure-value.md) concerns extensions beyond
 that admitted category, such as move-only or managed payloads.
 
-## Concurrency track
+## Dynamic values and concurrency
 
-The async, [memory model](memory-model.md), and
-[threading](threading.md) proposals own distinct semantic authorities. Their
-cross-proposal edges are:
+[Dynamic values](dynamic-values.md) owns erased holding forms, nominal conformance,
+and dispatch. Ordinary class implementation is complete within its documented
+scope. Dynamic ownership begins with a concrete API; it does not block static
+generic declarations or ordinary consuming operations.
 
-```text
-classes: owner/shared value forms -------+
-                                         +--> memory model --> threading
-C++ interoperation: explicit cross-thread use --+
+[Concurrency](concurrency.md) owns cross-thread value admission, shared state,
+data races, ordering, and the thread/synchronization operations that use them.
+A concrete scoped thread or message-passing API selects the first slice.
 
-memory model + threading --> cross-thread async
-```
-
-Same-thread async has no memory-model or threading dependency. Its next design
-work is execution context followed by suspension/borrow/frame rules. Activate
-implementation around a concrete operation such as a timer or I/O consumer;
-generics and ordinary classes are not blanket semantic prerequisites. Threading can
-also exist without async. The classes and C++ interoperation arrows activate
-memory-model work only when a concrete cross-thread value or use case exists.
+[Async](async.md) independently owns suspension, cancellation, and structured
+operation lifetime. Its next decisions are execution context and suspension/
+borrow/frame admission. A timer or I/O consumer can activate same-thread work.
+Migration and cross-thread completion additionally require concurrency contracts.
 
 ## C++ interoperation track
 

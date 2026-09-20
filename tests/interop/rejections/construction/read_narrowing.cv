@@ -1,0 +1,7 @@
+import "bindings/construction.hpp" using construction_probe::Byte;
+
+fn narrow(value: i32) {
+    let byte = Byte { value };
+}
+
+narrow(255);

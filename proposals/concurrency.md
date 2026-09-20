@@ -1,21 +1,21 @@
-# Memory model and shared state
+# Cross-thread concurrency
 
 - **Status:** Exploration
 - **Implementation:** Not started
-- **Scope:** Cross-thread values, shared state, data races, and happens-before
+- **Scope:** Cross-thread value admission, shared-state ordering, and thread/synchronization operations
 - **Depends on:** Concrete ownership or cross-thread APIs for the future model
 
 ## Summary
 
-This proposal defines the questions for a future cross-thread memory model:
-value movement and sharing, valid shared-state access, data races,
-synchronization, and responsibility at C++ boundaries. No model is selected.
+This proposal owns cross-thread execution from value admission and memory ordering
+through the operations that establish those guarantees. No memory model or thread
+API is selected. The design starts from a concrete scoped-thread, shared-state,
+or message-passing use case.
 
-`OPEN-01` asks how permanent documentation should state the current guarantee
-boundary. `OPEN-02` through `OPEN-04` wait for concrete values and operations.
-Thread APIs, atomics, locks, and async operations have separate design scopes.
-These dependencies constrain future ownership and concurrency work without
-committing them to the v0.1.0 milestone.
+Memory rules and operation contracts are separate sections of one design:
+operations consume the value, data-race, and happens-before rules and identify
+which rules are needed. [Async](async.md) owns suspension and structured operation
+lifetime. Same-thread async is independent; migration requires both contracts.
 
 ## Context
 
@@ -50,39 +50,25 @@ shape requires an explicit interoperation contract.
 Owner, borrowed, shared, nullable, and erased values, allocators, dispatch tables,
 and failure/control carriers all affect cross-thread validity. The
 [async proposal](async.md) needs this model when operations, frames, captures,
-continuations, or completions can migrate. [Threading](threading.md) consumes its
+continuations, or completions can migrate. The thread and synchronization operations below consume its
 value-capability, data-race, and ordering rules. A non-async thread, channel,
 shared owner, or C++ integration use case may also activate this work.
 
-## Goals and non-goals
+## Design scope
 
-Define current guarantee boundaries and the decisions required for future
-cross-thread values. Preserve nonexclusive Write unless an explicit new contract
-strengthens it, and state responsibility at each C++ boundary.
+Define the value, data-race, and ordering contracts required by a concrete
+cross-thread operation. Write remains nonexclusive unless a selected contract
+strengthens it.
 
-This proposal does not select atomic or lock APIs, async lifetime or scheduling,
+No atomic or lock API is selected. Async owns suspension lifetime and scheduling.
+This proposal does not select
 capability names or derivation policy, a race detector, borrow checker, lifetime
 annotations, or a C++ library mechanism. Future features require source semantics,
 compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 
-## Open decisions
+## Memory rules
 
-**Next discussion:** `OPEN-01`
-
-### OPEN-01 — How should permanent documentation state the current boundary?
-
-- **Status:** Active
-- **Question:** Decide whether to add an explicit current-guarantee statement.
-- **Constraints:** Describe current facts, preserve Write and C++ responsibility
-  boundaries, and leave future model selection open.
-- **Options:** The proposed statement says Carven defines no cross-thread memory
-  model or thread creation, sharing, synchronization, or atomic source forms,
-  and proves no data-race freedom. Integration authors own cross-thread calling,
-  sharing, synchronization, referent lifetime, and target data-race validity;
-  fragment/provider/export-caller concurrency follows existing boundary duties.
-  This wording is not yet accepted.
-- **Closure condition:** Review language and lowering documentation together,
-  then accept or revise a permanent statement.
+**Next discussion:** `OPEN-02`, when a concrete shared-state API enters design.
 
 ### OPEN-02 — Where do shared-state and data-race guarantees apply?
 
@@ -127,21 +113,78 @@ compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 
 ## Implementation
 
-After `OPEN-01`, a documentation-only change can publish the accepted current
-boundary. It adds no syntax, IR, runtime, or tests.
-
 A future feature must connect a concrete movement, sharing, or synchronization
 operation to semantic guarantees, diagnostics, SemIRProgram facts, target/runtime
 support, C++ boundary obligations, tests, and permanent documentation.
 
 ## Validation
 
-For `OPEN-01`, check consistency with Write/access, callable-view and string-view
-lifetimes, and C++ boundary responsibility. Preserve the distinction between
-integration obligations and source guarantees. The roadmap must expose relevant
-ownership, dynamic-value, and async dependencies without promising release scope
-or dates.
-
-Future features additionally need accepted and rejected source programs,
+Selected features need accepted and rejected source programs,
 diagnostics, happens-before and data-race cases, generated C++ compilation,
 linking and execution, boundary tests, and relevant resource measurements.
+
+## Thread and synchronization operations
+
+The following slices are deferred until a concrete consumer selects the required
+memory rules. They can be delivered independently. A complete threading library,
+work stealing, parallel algorithms, and a production executor are outside this
+scope. C++ mechanisms implement the selected source contract.
+
+### DEFER-01 — Thread lifecycle
+
+- **Reason deferred:** Entry-value capability, data-race validity, and completion
+  synchronization are undefined.
+- **Depends on:** The memory model and a thread-creation use case
+- **Reactivation condition:** A program requires a scoped thread or equivalent
+  cross-thread execution.
+
+Decide handle ownership or sharing, entry-callable and capture capabilities,
+join/detach and structured/process shutdown, typed failure transport, and C++
+thread-local state and callback obligations.
+
+### DEFER-02 — Blocking synchronization
+
+- **Reason deferred:** Guard/access interactions and happens-before need a memory
+  model contract.
+- **Depends on:** The memory model and a shared-state use case
+- **Reactivation condition:** A program needs a blocking mutex, condition,
+  semaphore, or equivalent primitive.
+
+Define guard interaction with Read/Write, lock/unlock guarantees, poisoning,
+failure, cancellation, and early return. Condition waits additionally need guard
+release/reacquisition, spurious-wakeup, and predicate rules. Define whether async
+contexts admit blocking operations and how misuse is diagnosed.
+
+### DEFER-03 — Atomics
+
+- **Reason deferred:** Payload admission, ordering vocabulary, and target fallback
+  depend on the memory model.
+- **Depends on:** The memory model and an atomic use case
+- **Reactivation condition:** A shared-state API needs an operation that a narrower
+  abstraction cannot express.
+
+Choose a type family, capability, or intrinsic-operation family. Define payloads,
+orders and defaults, compare/exchange success and failure ordering, observable
+fallback when lock-free implementation is unavailable, C++ ABI, and platform
+lowering.
+
+### DEFER-04 — Channels and message passing
+
+- **Reason deferred:** Capacity, movement, closure, and synchronization require
+  concrete value capabilities and happens-before rules.
+- **Depends on:** The memory model and a producer/consumer use case
+- **Reactivation condition:** A program requires cross-thread communication.
+  A channel may provide the first narrow slice by reducing shared mutable state.
+
+Decide whether channels are library abstractions or language/runtime primitives.
+Define ownership transfer on send, availability on receive, bounded capacity,
+blocking, closure, and failure. Awaitable channels require explicit integration
+with async semantics.
+
+## Operation validation
+
+For each selected operation, validate thread and capture lifetime on success,
+failure, and shutdown; accepted and rejected cross-thread values; synchronization
+and ordering; target fallback and C++ obligations; and ownership without orphaned
+work or implicit detach. Blocking-in-async behavior requires an explicit async
+integration contract. Validate generated C++ by compilation and execution.

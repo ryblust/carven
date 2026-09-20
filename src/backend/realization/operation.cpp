@@ -26,43 +26,14 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-namespace {
-
-auto restore_integer_type(ModuleLowering& context, TargetExpr expression, TypeID type) noexcept
-    -> TargetExpr {
-    const auto* builtin =
-        std::get_if<BuiltinTypeValue>(&context.semantic().types().type(type).value);
-    if (builtin != nullptr
-        && builtin_integer_width(builtin->kind) < std::numeric_limits<unsigned int>::digits) {
-        return {
-            .value = TargetStaticCastExpr {
-                .type = context.lower_type(type),
-                .operand = target_child(std::move(expression))
-            }
-        };
-    }
-    return expression;
-}
-
-} // namespace
-
 auto realize_callable_adaptation(
     ModuleLowering& context,
     TargetExpr input,
-    TypeID from,
+    const PreparedCallableAdaptation& preparation,
     TypeID to
 ) noexcept -> TargetExpr {
-    const auto& types = context.semantic().types();
-    auto leaf = from;
-    while (const auto* array = std::get_if<ArrayTypeValue>(&types.type(leaf).value)) {
-        leaf = array->element;
-    }
-    auto stateless = false;
-    if (const auto* closure = std::get_if<ClosureTypeValue>(&types.type(leaf).value)) {
-        const auto body_id = context.semantic().declarations().body_for_callable(closure->callable);
-        stateless = context.semantic().bodies().body(*body_id).inputs().captures.empty();
-    }
-    if (std::holds_alternative<ArrayTypeValue>(types.type(to).value)) {
+    const auto stateless = preparation.adaptation.kind == CallableAdaptationKind::StatelessClosure;
+    if (preparation.array) {
         return template_call_expression(
             intrinsic_expression(TargetSymbol::RuntimeAdoptArray),
             {context.lower_type(to), stateless},
@@ -88,83 +59,61 @@ auto realize_callable_adaptation(
 
 auto realize_unary(
     ModuleLowering& context,
-    UnaryOperator operation,
-    TargetExpr operand,
-    TypeID type
+    const PreparedUnary& preparation,
+    TargetExpr operand
 ) noexcept -> TargetExpr {
-    if (operation == UnaryOperator::Negate && context.is_integer(type)) {
-        return template_call_expression(
-            intrinsic_expression(TargetSymbol::RuntimeIntegerNegate),
-            {context.lower_type(type)},
-            target_expressions(std::move(operand))
-        );
-    }
-    const auto prefix = operation == UnaryOperator::LogicalNot ? TargetPrefixOperator::LogicalNot
-        : operation == UnaryOperator::Negate                   ? TargetPrefixOperator::Negate
-                                                               : TargetPrefixOperator::BitwiseNot;
-    auto result = prefix_expression(prefix, std::move(operand));
-    if (operation == UnaryOperator::BitwiseNot) {
-        return restore_integer_type(context, std::move(result), type);
+    auto result = preparation.operation.visit(
+        Overloaded {
+            [&](TargetSymbol runtime) noexcept {
+                return template_call_expression(
+                    intrinsic_expression(runtime),
+                    {context.lower_type(preparation.result_type)},
+                    target_expressions(std::move(operand))
+                );
+            },
+            [&](TargetPrefixOperator operation) noexcept {
+                return prefix_expression(operation, std::move(operand));
+            }
+        }
+    );
+    if (preparation.restore_result_type) {
+        return {
+            .value = TargetStaticCastExpr {
+                .type = context.lower_type(preparation.result_type),
+                .operand = target_child(std::move(result))
+            }
+        };
     }
     return result;
 }
 
 auto realize_binary(
     ModuleLowering& context,
+    const PreparedBinary& preparation,
     TargetExpr left,
-    BinaryOperator operation,
-    TargetExpr right,
-    TypeID type
+    TargetExpr right
 ) noexcept -> TargetExpr {
-    auto runtime = std::optional<TargetSymbol>();
-    if (context.is_integer(type)) {
-        switch (operation) {
-            case BinaryOperator::Add:       runtime = TargetSymbol::RuntimeIntegerAdd; break;
-            case BinaryOperator::Subtract:  runtime = TargetSymbol::RuntimeIntegerSubtract; break;
-            case BinaryOperator::Multiply:  runtime = TargetSymbol::RuntimeIntegerMultiply; break;
-            case BinaryOperator::Divide:    runtime = TargetSymbol::RuntimeIntegerDivide; break;
-            case BinaryOperator::Remainder: runtime = TargetSymbol::RuntimeIntegerRemainder; break;
-            case BinaryOperator::LeftShift: runtime = TargetSymbol::RuntimeIntegerLeftShift; break;
-            case BinaryOperator::RightShift:
-                runtime = TargetSymbol::RuntimeIntegerRightShift;
-                break;
-            default: break;
+    auto result = preparation.operation.visit(
+        Overloaded {
+            [&](TargetSymbol runtime) noexcept {
+                return template_call_expression(
+                    intrinsic_expression(runtime),
+                    {context.lower_type(preparation.result_type)},
+                    target_expressions(std::move(left), std::move(right))
+                );
+            },
+            [&](TargetBinaryOperator operation) noexcept {
+                return binary_expression(std::move(left), operation, std::move(right));
+            }
         }
-    }
-    if (runtime.has_value()) {
-        return template_call_expression(
-            intrinsic_expression(*runtime),
-            {context.lower_type(type)},
-            target_expressions(std::move(left), std::move(right))
-        );
-    }
-    const auto target = [&]() noexcept {
-        switch (operation) {
-            case BinaryOperator::BitwiseOr:    return TargetBinaryOperator::BitwiseOr;
-            case BinaryOperator::BitwiseXor:   return TargetBinaryOperator::BitwiseXor;
-            case BinaryOperator::BitwiseAnd:   return TargetBinaryOperator::BitwiseAnd;
-            case BinaryOperator::Equal:        return TargetBinaryOperator::Equal;
-            case BinaryOperator::NotEqual:     return TargetBinaryOperator::NotEqual;
-            case BinaryOperator::Less:         return TargetBinaryOperator::Less;
-            case BinaryOperator::LessEqual:    return TargetBinaryOperator::LessEqual;
-            case BinaryOperator::Greater:      return TargetBinaryOperator::Greater;
-            case BinaryOperator::GreaterEqual: return TargetBinaryOperator::GreaterEqual;
-            case BinaryOperator::LeftShift:    return TargetBinaryOperator::LeftShift;
-            case BinaryOperator::RightShift:   return TargetBinaryOperator::RightShift;
-            case BinaryOperator::Add:          return TargetBinaryOperator::Add;
-            case BinaryOperator::Subtract:     return TargetBinaryOperator::Subtract;
-            case BinaryOperator::Multiply:     return TargetBinaryOperator::Multiply;
-            case BinaryOperator::Divide:       return TargetBinaryOperator::Divide;
-            case BinaryOperator::Remainder:    return TargetBinaryOperator::Remainder;
-        }
-        std::unreachable();
-    }();
-    auto result = binary_expression(std::move(left), target, std::move(right));
-    if (context.is_integer(type)
-        && (operation == BinaryOperator::BitwiseAnd
-            || operation == BinaryOperator::BitwiseOr
-            || operation == BinaryOperator::BitwiseXor)) {
-        return restore_integer_type(context, std::move(result), type);
+    );
+    if (preparation.restore_result_type) {
+        return {
+            .value = TargetStaticCastExpr {
+                .type = context.lower_type(preparation.result_type),
+                .operand = target_child(std::move(result))
+            }
+        };
     }
     return result;
 }
@@ -212,6 +161,7 @@ auto native_operation(
     ModuleLowering& context,
     const SemanticExpression& source,
     const SemCpp& value,
+    const OperationPreparation* preparation,
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr {
     const auto construct = [&]() noexcept -> TargetExpr {
@@ -234,20 +184,34 @@ auto native_operation(
     };
     return value.operation.visit(
         Overloaded {
-            [&](const CppCStringOperation& literal) noexcept -> TargetExpr {
-                return {
-                    .value = TargetStaticCastExpr {
-                        .type = context.lower_type(source.type.resolved()),
-                        .operand = target_child(
-                            string_expression(literal.bytes, TargetStringLiteralKind::String)
-                        )
-                    }
-                };
-            },
             [&](const CppNameOperation& name) noexcept -> TargetExpr {
                 return name_expression(context.cpp_name(name.name));
             },
-            [&](const CppConstructOperation&) noexcept -> TargetExpr { return construct(); },
+            [&](const CppConstructOperation& construction) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedNativeConstruction>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("native construction requires preparation");
+                }
+                auto delivered = std::vector<TargetExpr>();
+                for (const auto& argument : plan->arguments) {
+                    delivered.push_back(argument.visit(
+                        Overloaded {
+                            [&](std::size_t index) noexcept {
+                                return std::move(arguments.at(index));
+                            },
+                            [&](const CppConstructArgument* constant) noexcept {
+                                return context.cpp_constant_argument(*constant);
+                            }
+                        }
+                    ));
+                }
+                return {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(construction.target),
+                        .initializer = std::move(delivered)
+                    }
+                };
+            },
             [&](const CppConvertOperation& conversion) noexcept -> TargetExpr {
                 if (source.category == SemanticValueCategory::Place) {
                     return std::move(arguments.front());
@@ -262,13 +226,16 @@ auto native_operation(
                 }
                 return construct();
             },
-            [&](const CppBinaryOperation& operation) noexcept -> TargetExpr {
+            [&](const CppBinaryOperation&) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedBinary>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("binary operation requires preparation");
+                }
                 return realize_binary(
                     context,
+                    *plan,
                     std::move(arguments[0]),
-                    operation.operation,
-                    std::move(arguments[1]),
-                    source.type.resolved()
+                    std::move(arguments[1])
                 );
             },
             [&](const CppUpdateOperation& update) noexcept -> TargetExpr {
@@ -278,13 +245,12 @@ auto native_operation(
                     std::move(arguments.front())
                 );
             },
-            [&](const CppUnaryOperation& operation) noexcept -> TargetExpr {
-                const auto prefix = operation.operation == UnaryOperator::LogicalNot
-                    ? TargetPrefixOperator::LogicalNot
-                    : operation.operation == UnaryOperator::Negate
-                    ? TargetPrefixOperator::Negate
-                    : TargetPrefixOperator::BitwiseNot;
-                return prefix_expression(prefix, std::move(arguments.front()));
+            [&](const CppUnaryOperation&) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedUnary>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("unary operation requires preparation");
+                }
+                return realize_unary(context, *plan, std::move(arguments.front()));
             },
             [&](const CppMemberOperation& member) noexcept -> TargetExpr {
                 return member_expression(
@@ -318,7 +284,7 @@ auto realize_operation(
                 return native_call(context, call, std::move(operands));
             },
             [&](const SemCpp& value) noexcept -> TargetExpr {
-                return native_operation(context, source, value, std::move(operands));
+                return native_operation(context, source, value, preparation, std::move(operands));
             },
             [&](const SemDefault&) noexcept -> TargetExpr {
                 if (std::holds_alternative<PointerTypeValue>(
@@ -410,21 +376,23 @@ auto realize_operation(
             [&](const SemEnumCase& value) noexcept -> TargetExpr {
                 return enum_case_expression(context, value.enum_case, std::move(operands));
             },
-            [&](const SemUnary& value) noexcept -> TargetExpr {
-                return realize_unary(
-                    context,
-                    value.operation,
-                    std::move(operands[0]),
-                    source.type.resolved()
-                );
+            [&](const SemUnary&) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedUnary>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("unary operation requires preparation");
+                }
+                return realize_unary(context, *plan, std::move(operands[0]));
             },
-            [&](const SemBinary& value) noexcept -> TargetExpr {
+            [&](const SemBinary&) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedBinary>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("binary operation requires preparation");
+                }
                 return realize_binary(
                     context,
+                    *plan,
                     std::move(operands[0]),
-                    value.operation,
-                    std::move(operands[1]),
-                    source.type.resolved()
+                    std::move(operands[1])
                 );
             },
             [](const SemShortCircuit&) static noexcept -> TargetExpr {
@@ -599,16 +567,26 @@ auto realize_operation(
                     }
                 };
             },
-            [&](const SemBorrowCallable& value) noexcept -> TargetExpr {
+            [&](const SemBorrowCallable&) noexcept -> TargetExpr {
+                const auto* plan = std::get_if<PreparedCallableAdaptation>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("callable adaptation requires preparation");
+                }
                 return realize_callable_adaptation(
                     context,
                     std::move(operands.front()),
-                    value.source->type.resolved(),
+                    *plan,
                     source.type.resolved()
                 );
             },
             [&](const SemTake&) noexcept -> TargetExpr { return std::move(operands[0]); },
-            [&](const SemCall&) noexcept -> TargetExpr {
+            [&](const SemCall& value) noexcept -> TargetExpr {
+                if (value.target) {
+                    return call_expression(
+                        name_expression(context.callable_name(*value.target)),
+                        std::move(operands)
+                    );
+                }
                 auto callee = std::move(operands.front());
                 operands.erase(operands.begin());
                 return call_expression(std::move(callee), std::move(operands));

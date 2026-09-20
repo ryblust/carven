@@ -212,6 +212,18 @@ auto BodyRealizer::lower_match(
             break;
         }
         auto statements = LoweringStmtBuilder();
+        if (const auto* binding =
+                std::get_if<BindingPattern>(&metadata.pattern(arm.pattern).value)) {
+            declare_binding(binding->binding, name_expression(subject), statements);
+            statements.append((co_await guarded_region(arm.body, arm.guard, result, done)));
+            scope.scope(std::move(statements));
+            continue;
+        }
+        if (arm.pattern_always_matches) {
+            statements.append((co_await guarded_region(arm.body, arm.guard, result, done)));
+            scope.scope(std::move(statements));
+            continue;
+        }
         auto matcher = PatternRealizer(
             context,
             names,
@@ -274,17 +286,22 @@ auto BodyRealizer::lower_try(
         .target = exit_target(LoweringExitKind::Value)
     };
     const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
+    const auto slot =
+        FailureSlot {.storage = storage, .layout = value.protected_failures.resolved()};
     destination.emit(generated_statement(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
             .local = storage,
-            .type = context.optional_type(context.variant_type(failures)),
+            .type = context.optional_type(
+                failures.size() == 1uz ? context.lower_type(failures.front())
+                                       : context.variant_type(failures)
+            ),
             .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
         }
     ));
     const auto receiver = FailureDestination {
-        .storage = storage,
+        .slot = slot,
         .label = handler,
         .target = exit_target(LoweringExitKind::Failure)
     };
@@ -318,7 +335,7 @@ auto BodyRealizer::lower_try(
         }
         const auto previous_caught = std::exchange(
             caught,
-            CaughtFailure {.storage = storage, .failures = arm.accepted_failures.resolved()}
+            CaughtFailure {.slot = slot, .failures = arm.accepted_failures.resolved()}
         );
         auto statements = LoweringStmtBuilder();
         auto matcher = PatternRealizer(
@@ -341,39 +358,46 @@ auto BodyRealizer::lower_try(
             auto candidate = LoweringStmtBuilder();
             auto selected = std::optional<LoweringPredicate>(LoweringKnownBool {true});
             if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
-                candidate.emit(generated_statement(
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::ConstValue,
-                        .maybe_unused = false,
-                        .local = projection,
-                        .type =
-                            context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
-                        .initializer = template_call_expression(
-                            intrinsic_expression(TargetSymbol::StdGetIf),
-                            {context.lower_type(pattern->type.resolved())},
-                            target_expressions(
-                                address_expression(dereference_expression(name_expression(storage)))
-                            )
+                if (failures.size() == 1uz) {
+                    selected = candidate.accept(
+                        co_await matcher.match(
+                            pattern->inner,
+                            {.root = storage,
+                             .dereference_root = true,
+                             .payload_index = std::nullopt},
+                            state
                         )
-                    }
-                ));
-                selected = matcher.combine(
-                    ShortCircuitOperator::And,
-                    LoweringDynamicBool {binary_expression(
-                        name_expression(projection),
-                        TargetBinaryOperator::NotEqual,
-                        intrinsic_expression(TargetSymbol::StdNullptr)
-                    )},
-                    co_await matcher.match(
-                        pattern->inner,
-                        {.root = projection,
-                         .dereference_root = true,
-                         .payload_index = std::nullopt},
-                        state
-                    ),
-                    candidate
-                );
+                    );
+                } else {
+                    const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
+                    candidate.emit(generated_statement(
+                        TargetVariableStmt {
+                            .binding = TargetVariableBinding::ConstValue,
+                            .maybe_unused = false,
+                            .local = projection,
+                            .type = context.pointer_type(
+                                context.intrinsic_type(TargetSymbol::Auto, true)
+                            ),
+                            .initializer = failure_projection(slot, pattern->type.resolved())
+                        }
+                    ));
+                    selected = matcher.combine(
+                        ShortCircuitOperator::And,
+                        LoweringDynamicBool {binary_expression(
+                            name_expression(projection),
+                            TargetBinaryOperator::NotEqual,
+                            intrinsic_expression(TargetSymbol::StdNullptr)
+                        )},
+                        co_await matcher.match(
+                            pattern->inner,
+                            {.root = projection,
+                             .dereference_root = true,
+                             .payload_index = std::nullopt},
+                            state
+                        ),
+                        candidate
+                    );
+                }
             }
             predicate = matcher.combine(
                 ShortCircuitOperator::Or,
@@ -398,7 +422,7 @@ auto BodyRealizer::lower_try(
         caught = previous_caught;
         destination.scope(std::move(statements));
     }
-    transfer_failure(storage, value.residual_failures.resolved(), outer, destination);
+    transfer_failure(slot, value.residual_failures.resolved(), outer, destination);
     if (destination.exits().contains(done.target)) {
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }

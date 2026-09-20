@@ -164,40 +164,9 @@ auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
     );
 }
 
-auto BodyContractVerifier::signature_for_callable(CallableID id) const noexcept
-    -> CallableSignatureID {
-    if (id.owner() != program.identity()) {
-        invariant_violation("callable belongs to another semantic program");
-    }
-    return program.declarations().callable(id).signature;
-}
-
 auto BodyContractVerifier::signature_for_type(TypeID type) const noexcept -> CallableSignatureID {
-    return require_type(type).value.visit(
-        Overloaded {
-            [&](const FunctionTypeValue& value) noexcept {
-                return signature_for_callable(value.callable);
-            },
-            [&](const ClosureTypeValue& value) noexcept {
-                return signature_for_callable(value.callable);
-            },
-            [](const CallableViewTypeValue& value) static noexcept { return value.signature; },
-            []<typename Value>(const Value&) static noexcept -> CallableSignatureID {
-                static_assert(
-                    std::same_as<Value, BuiltinTypeValue>
-                        || std::same_as<Value, StructTypeValue>
-                        || std::same_as<Value, EnumTypeValue>
-                        || std::same_as<Value, ArrayTypeValue>
-                        || std::same_as<Value, CppTypeValue>
-                        || std::same_as<Value, PointerTypeValue>
-                        || std::same_as<Value, SliceTypeValue>
-                        || std::same_as<Value, RangeTypeValue>,
-                    "unhandled non-callable canonical type"
-                );
-                invariant_violation("value or place does not have a callable type");
-            },
-        }
-    );
+    static_cast<void>(require_type(type));
+    return program.call_signature(type);
 }
 
 auto BodyContractVerifier::compatible_pattern_type(TypeID left, TypeID right) const noexcept

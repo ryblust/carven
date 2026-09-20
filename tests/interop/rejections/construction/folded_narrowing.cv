@@ -1,0 +1,3 @@
+import "bindings/construction.hpp" using construction_probe::Byte;
+
+let value = Byte { 250 + 6 };

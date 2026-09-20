@@ -33,7 +33,7 @@ auto DeclResolver::resolve_function(
     Span item_span
 ) noexcept -> AnalysisTask<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
-    const auto entry = symbol.name == "main" && !cpp_import;
+    const auto entry = !symbol.class_operation && symbol.name == "main" && !cpp_import;
     if (function.const_span && (cpp_import || entry)) {
         co_return std::unexpected(declaration_failure(
             draft,
@@ -83,6 +83,37 @@ auto DeclResolver::resolve_function(
     parameters.reserve(function.parameters.size());
     for (const auto& parameter : function.parameters) {
         const auto access = semantic_access_mode(parameter.access);
+        const auto receiver =
+            symbol.class_operation && symbol.class_operation->receiver && parameters.empty();
+        if (receiver) {
+            if (parameter.type) {
+                co_return std::unexpected(declaration_failure(
+                    draft,
+                    symbol.module_id,
+                    parameter.span,
+                    DiagnosticCode::TypeParameterAnnotation,
+                    "class receiver requires untyped self, &self, or &&self"
+                ));
+            }
+            parameters.push_back(
+                {.access = access,
+                 .type = draft.intern_type(
+                     {.value = StructTypeValue {.structure = symbol.class_operation->owner}}
+                 )}
+            );
+            continue;
+        }
+        if (symbol.class_operation
+            && draft.source_slice_copy(symbol.module_id, binding_target_span(parameter.target))
+                == "self") {
+            co_return std::unexpected(declaration_failure(
+                draft,
+                symbol.module_id,
+                parameter.span,
+                DiagnosticCode::TypeParameterAnnotation,
+                "self must be the first class operation parameter"
+            ));
+        }
         if (entry && access != AccessMode::Read) {
             co_return std::unexpected(declaration_failure(
                 draft,
@@ -156,7 +187,8 @@ auto DeclResolver::resolve_function(
         failures = draft.add_empty_failure_term();
     } else {
         failures = draft.add_empty_failure_term();
-        policy = !entry && symbol.visibility == DeclarationVisibility::Module
+        policy = (function.is_implicit_entry
+                  || (!entry && symbol.visibility == DeclarationVisibility::Module))
             ? FailureContractPolicy::Inferred
             : FailureContractPolicy::UndeclaredExplicit;
     }

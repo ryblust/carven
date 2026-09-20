@@ -1,0 +1,10 @@
+import "bindings/shadowing.hpp";
+
+private fn text(value: i32) -> String => f"value={value}";
+
+test "generated library references bypass enclosing namespaces" {
+    let values = [1, 2, 3];
+    check(values[1] == 2);
+    let message = text(values[0]);
+    check(message == "value=1");
+}

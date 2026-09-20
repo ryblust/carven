@@ -114,6 +114,7 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
     compilation.define_declaration(
         failure_structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = compilation.intern_spelling("Failure"),
             .origin = origin,

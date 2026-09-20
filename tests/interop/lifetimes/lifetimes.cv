@@ -25,6 +25,10 @@ fn fixed_success() -> FixedOwner throw Failure => FixedOwner { 41 };
 
 fn fixed_plain() -> FixedOwner => FixedOwner { 42 };
 
+fn observe_fixed_view(callback: fn() -> FixedOwner throw Failure) throw Failure {
+    callback()?.probe(0, 0);
+}
+
 private fn known_extent_observer(extent: usize, marker: i32) -> usize {
     mark(marker);
     return extent;
@@ -96,7 +100,7 @@ struct FixedBox {
 }
 
 fn boxed_after_loop(selected: bool, skip: bool) -> FixedBox {
-    return FixedBox {
+    return {
         value: if (selected) {
             for var n = 0; n < 2; n += 1 {
                 mark(n + 1);
@@ -142,7 +146,7 @@ test "Lifetimes: failing results and callable adaptation directly construct fixe
     reset();
     let callback: fn() -> FixedOwner throw Failure = fixed_plain;
     try {
-        callback()?.probe(0, 0);
+        observe_fixed_view(callback)?;
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
@@ -956,4 +960,105 @@ test "crossed conditional owners preserve source cleanup order" {
         Failure(_) => mark(8),
     }
     check(matches("1 11 2 3 -2 -1 8 "));
+}
+
+private fn linear_fixed(succeeds: bool) throw Failure {
+    ::lifetime_probe::observe_fixed(FixedOwner { 1 }, fixed_success()?, crossed_step(3, succeeds)?);
+}
+
+test "linear immovable operands retain source order and unwind on failure" {
+    reset();
+    try {
+        linear_fixed(true)?;
+    } catch {
+        Failure(_) => fail("unexpected"),
+    }
+    check(matches("1 41 3 9 -41 -1 "));
+    reset();
+    try {
+        linear_fixed(false)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("1 41 3 -41 -1 8 "));
+}
+
+private fn observe_or_fail(owner: Owner, reject: bool) -> i32 throw Failure {
+    owner.probe();
+    if reject { throw Failure::Stop; }
+    return 7;
+}
+
+private fn nested_full_expression(reject: bool) -> i32 {
+    return try {
+        let value = observe_or_fail(Owner { 1 }, reject)?;
+        mark(value);
+        value
+    } catch {
+        Failure(_) => {
+            mark(9);
+            0
+        },
+    };
+}
+
+test "Lifetimes: nested full expressions clean operands before continuation and handler" {
+    reset();
+    check(nested_full_expression(false) == 7);
+    check(matches("1 11 -1 7 "));
+    reset();
+    check(nested_full_expression(true) == 0);
+    check(matches("1 11 -1 9 "));
+}
+
+private fn tail_owner(id: i32, reject: bool) -> Owner throw Failure {
+    mark(id + 10);
+    if reject { throw Failure::Stop; }
+    return Owner { id };
+}
+
+private fn observe_pair(first: Owner, second: Owner) -> i32 {
+    first.probe();
+    second.probe();
+    return 7;
+}
+
+private fn region_tail(first_rejects: bool, second_rejects: bool) -> i32 {
+    return try {
+        observe_pair(tail_owner(1, first_rejects)?, tail_owner(2, second_rejects)?)
+    } catch {
+        Failure(_) => {
+            mark(8);
+            0
+        },
+    };
+}
+
+private fn backed_tail(reject: bool) -> i32 {
+    return try {
+        observe_or_fail(Owner { 3 }, reject)?
+    } catch {
+        Failure(_) => {
+            mark(8);
+            0
+        },
+    };
+}
+
+test "Lifetimes: region tails retain owners through delivery and clean before handlers" {
+    reset();
+    check(region_tail(false, false) == 7);
+    check(matches("11 1 12 2 11 12 -2 -1 "));
+    reset();
+    check(region_tail(true, false) == 0);
+    check(matches("11 8 "));
+    reset();
+    check(region_tail(false, true) == 0);
+    check(matches("11 1 12 -1 8 "));
+    reset();
+    check(backed_tail(false) == 7);
+    check(matches("3 13 -3 "));
+    reset();
+    check(backed_tail(true) == 0);
+    check(matches("3 13 -3 8 "));
 }

@@ -204,6 +204,9 @@ auto validate_declaration_surfaces(
         }
     }
     for (const auto& structure : program.declarations().structures()) {
+        if (structure.value.kind == RecordKind::Class) {
+            continue;
+        }
         for (const auto& field : structure.value.fields) {
             auto validator = DeclarationSurfaceValidator(
                 program,

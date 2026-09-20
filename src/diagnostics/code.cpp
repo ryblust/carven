@@ -8,6 +8,7 @@ namespace {
 #define CARVEN_DIAGNOSTIC_CODES(X)                                                                 \
     X(Invalid, "CV-INVALID", Error, "Invalid diagnostic code.")                                    \
     X(AccessCallMismatch, "CV-ACCESS-CALL-MISMATCH", Error, "Call access mismatch.")               \
+    X(AccessClassPrivate, "CV-ACCESS-CLASS-PRIVATE", Error, "Class member is private.")            \
     X(AccessBorrowConflict,                                                                        \
       "CV-ACCESS-BORROW-CONFLICT",                                                                 \
       Error,                                                                                       \
@@ -117,7 +118,7 @@ namespace {
     X(EffectThrowPublished,                                                                        \
       "CV-EFFECT-THROW-PUBLISHED",                                                                 \
       Error,                                                                                       \
-      "Entry or published callable with failures requires an explicit throw clause.")              \
+      "Explicit entry or published callable with failures requires a throw clause.")               \
     X(EffectSignatureBound,                                                                        \
       "CV-EFFECT-SIGNATURE-BOUND",                                                                 \
       Error,                                                                                       \
@@ -180,6 +181,10 @@ namespace {
       "CV-TYPE-DEFAULT-INITIALIZATION",                                                            \
       Error,                                                                                       \
       "Type has no default value.")                                                                \
+    X(TypeConstructContext,                                                                        \
+      "CV-TYPE-CONSTRUCT-CONTEXT",                                                                 \
+      Error,                                                                                       \
+      "Construction needs a known type.")                                                          \
     X(TypeConstructArity, "CV-TYPE-CONSTRUCT-ARITY", Error, "Invalid construction arity.")         \
     X(TypeConstructDuplicateField,                                                                 \
       "CV-TYPE-CONSTRUCT-DUPLICATE-FIELD",                                                         \
@@ -244,7 +249,7 @@ namespace {
       Error,                                                                                       \
       "Function result inference cycle.")                                                          \
     X(TypeReturnValue, "CV-TYPE-RETURN-VALUE", Error, "Unexpected return value.")                  \
-    X(TypeMethodCall, "CV-TYPE-METHOD-CALL", Error, "Invalid built-in method call.")               \
+    X(TypeMethodCall, "CV-TYPE-METHOD-CALL", Error, "Invalid method call.")                        \
     X(TypeMethodCallArity,                                                                         \
       "CV-TYPE-METHOD-CALL-ARITY",                                                                 \
       Error,                                                                                       \
@@ -267,6 +272,23 @@ constexpr auto diagnostic_code_registry = std::to_array<DiagnosticCodeInfo>({
     CARVEN_DIAGNOSTIC_CODES(CARVEN_DIAGNOSTIC_INFO)
 #undef CARVEN_DIAGNOSTIC_INFO
 });
+
+static_assert(
+    [] static noexcept {
+        constexpr auto codes = std::to_array<DiagnosticCode>({
+#define CARVEN_DIAGNOSTIC_ID(identifier, spelling, severity, detail) DiagnosticCode::identifier,
+            CARVEN_DIAGNOSTIC_CODES(CARVEN_DIAGNOSTIC_ID)
+#undef CARVEN_DIAGNOSTIC_ID
+        });
+        for (auto index = 0uz; index < codes.size(); ++index) {
+            if (static_cast<std::size_t>(codes[index]) != index) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "diagnostic registry order must match its semantic identities"
+);
 
 #undef CARVEN_DIAGNOSTIC_CODES
 

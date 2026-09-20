@@ -1,6 +1,7 @@
 #pragma once
 
 #include "outcome.hpp"
+#include "passing.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -34,8 +35,10 @@ private:
 
     template<typename Source, typename Destination>
     static consteval auto result_compatible() noexcept -> bool {
-        if constexpr (direct_result<Source, Destination>) {
+        if constexpr (std::same_as<Source, Destination>) {
             return true;
+        } else if constexpr (OutcomeWidening<Source, Destination>) {
+            return std::is_constructible_v<Destination, Source&&>;
         } else if constexpr (OutcomeTraits<Destination>::is_outcome
                              && !OutcomeTraits<Source>::is_outcome) {
             using DestinationResult = typename OutcomeTraits<Destination>::Result;
@@ -44,37 +47,42 @@ private:
         return false;
     }
 
-    template<typename Destination, typename Callable, typename... CallArguments>
-        requires std::is_invocable_v<Callable, CallArguments...>
-        && (result_compatible<std::invoke_result_t<Callable, CallArguments...>, Destination>())
-    static auto invoke_adapted(Callable&& callable, CallArguments&&... arguments) noexcept
-        -> Destination {
-        using Source = std::invoke_result_t<Callable, CallArguments...>;
-        if constexpr (direct_result<Source, Destination>) {
-            if constexpr (std::is_void_v<Destination>) {
-                std::invoke(
-                    std::forward<Callable>(callable),
-                    std::forward<CallArguments>(arguments)...
-                );
-            } else {
-                return std::invoke(
-                    std::forward<Callable>(callable),
-                    std::forward<CallArguments>(arguments)...
-                );
-            }
-        } else if constexpr (std::is_void_v<Source>) {
-            std::invoke(
+    template<typename Callable>
+    static constexpr auto invocable = requires (Callable&& callable, Arguments&... arguments) {
+        std::invoke(std::forward<Callable>(callable), deliver_argument<Arguments>(arguments)...);
+    };
+
+    template<typename Callable>
+        requires invocable<Callable>
+    using InvocationResult = std::invoke_result_t<
+        Callable,
+        decltype(deliver_argument<Arguments>(std::declval<Arguments&>()))...>;
+
+    template<typename Callable>
+    static consteval auto compatible() noexcept -> bool {
+        if constexpr (invocable<Callable>) {
+            return result_compatible<InvocationResult<Callable>, Result>();
+        }
+        return false;
+    }
+
+    template<typename Callable>
+        requires (compatible<Callable>())
+    static auto invoke_adapted(Callable&& callable, Arguments&... arguments) noexcept -> Result {
+        const auto invoke = [&]() noexcept -> InvocationResult<Callable> {
+            return std::invoke(
                 std::forward<Callable>(callable),
-                std::forward<CallArguments>(arguments)...
+                deliver_argument<Arguments>(arguments)...
             );
-            return Destination::success();
+        };
+        using Source = InvocationResult<Callable>;
+        if constexpr (direct_result<Source, Result>) {
+            return invoke();
+        } else if constexpr (std::is_void_v<Source>) {
+            invoke();
+            return Result::success();
         } else {
-            return Destination::success_from([&]() -> Source {
-                return std::invoke(
-                    std::forward<Callable>(callable),
-                    std::forward<CallArguments>(arguments)...
-                );
-            });
+            return Result::success_from(invoke);
         }
     }
 
@@ -91,25 +99,25 @@ private:
             : function(value) {}
     };
 
-    using Thunk = Result (*)(Entity, Arguments&&...) noexcept;
+    using Thunk = Result (*)(Entity, Arguments&...) noexcept;
 
     template<typename Callable>
-    static auto invoke_object(Entity entity, Arguments&&... arguments) noexcept -> Result {
+    static auto invoke_object(Entity entity, Arguments&... arguments) noexcept -> Result {
         // NOLINTNEXTLINE(misc-const-correctness): FunctionRef admits stateful callables with non-const operator().
         auto& callable = *static_cast<Callable*>(const_cast<void*>(entity.object));
-        return invoke_adapted<Result>(callable, std::forward<Arguments>(arguments)...);
+        return invoke_adapted(callable, arguments...);
     }
 
     template<typename SourcePointer>
-    static auto invoke_function(Entity entity, Arguments&&... arguments) noexcept -> Result {
+    static auto invoke_function(Entity entity, Arguments&... arguments) noexcept -> Result {
         const auto function = reinterpret_cast<SourcePointer>(entity.function);
-        return invoke_adapted<Result>(function, std::forward<Arguments>(arguments)...);
+        return invoke_adapted(function, arguments...);
     }
 
     template<typename Callable>
-    static auto invoke_stateless(Entity, Arguments&&... arguments) noexcept -> Result {
+    static auto invoke_stateless(Entity, Arguments&... arguments) noexcept -> Result {
         const auto callable = Callable {};
-        return invoke_adapted<Result>(callable, std::forward<Arguments>(arguments)...);
+        return invoke_adapted(callable, arguments...);
     }
 
 public:
@@ -118,7 +126,7 @@ public:
 
     // Function targets are stored by value; object targets remain borrowed.
     template<typename SourceResult, bool Noexcept>
-        requires (result_compatible<SourceResult, Result>())
+        requires (compatible<SourceResult (*)(Arguments...) noexcept(Noexcept)>())
     FunctionRef(SourceResult (*function)(Arguments...) noexcept(Noexcept)) noexcept
         : entity(reinterpret_cast<ErasedFunctionPointer>(function)),
           thunk(&invoke_function<decltype(function)>) {
@@ -139,8 +147,7 @@ public:
                      && (!std::is_pointer_v<std::remove_cv_t<Callable>>)
                      && (!std::is_member_pointer_v<std::remove_cv_t<Callable>>)
                      && (!std::is_volatile_v<Callable>)
-                     && std::is_invocable_v<Callable&, Arguments...>
-                     && (result_compatible<std::invoke_result_t<Callable&, Arguments...>, Result>())
+                     && (compatible<Callable&>())
                      && (!std::same_as<std::remove_cv_t<Callable>, FunctionRef>)
     explicit FunctionRef(Callable& callable CARVEN_RUNTIME_LIFETIME_BOUND) noexcept
         : entity(static_cast<const void*>(std::addressof(callable))),
@@ -150,8 +157,7 @@ public:
         requires std::is_empty_v<Callable>
         && std::is_trivially_default_constructible_v<Callable>
         && std::is_trivially_destructible_v<Callable>
-        && std::is_invocable_v<const Callable&, Arguments...>
-        && (result_compatible<std::invoke_result_t<const Callable&, Arguments...>, Result>())
+        && (compatible<const Callable&>())
     static auto from_stateless(const Callable&) noexcept -> FunctionRef {
         return FunctionRef(Entity(static_cast<const void*>(nullptr)), &invoke_stateless<Callable>);
     }
@@ -162,11 +168,7 @@ public:
     auto operator=(FunctionRef&&) -> FunctionRef& = default;
 
     auto operator()(Arguments... arguments) const noexcept -> Result {
-        if constexpr (std::is_void_v<Result>) {
-            thunk(entity, std::forward<Arguments>(arguments)...);
-        } else {
-            return thunk(entity, std::forward<Arguments>(arguments)...);
-        }
+        return thunk(entity, arguments...);
     }
 
 private:

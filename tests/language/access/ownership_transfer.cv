@@ -46,7 +46,7 @@ test "Ownership: Take transfers ownership preserves order and permits var restor
     check(observed == 12);
 }
 
-fn restore_pair(&&pair: Pair) -> Pair => Pair {
+fn restore_pair(&&pair: Pair) -> Pair => {
     left: pair.left + 1,
     right: pair.right
 };

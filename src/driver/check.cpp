@@ -2,6 +2,7 @@ module carven:driver.check.impl;
 
 import :driver.analysis;
 import :driver.check;
+import :driver.diagnostic;
 import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
@@ -38,22 +39,17 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
             continue;
         }
         if (arg.starts_with('-')) {
-            std::println(std::cerr, "carven: error: unknown check option '{}'", arg);
-            std::println(std::cerr, "Run 'carven check --help' for usage.");
-            return 1;
+            return emit_driver_error(std::format("unknown check option '{}'", arg), "carven check");
         }
         paths.push_back(arg);
     }
     if (paths.empty()) {
-        std::println(std::cerr, "carven: error: check requires at least one source file");
-        std::println(std::cerr, "Run 'carven check --help' for usage.");
-        return 1;
+        return emit_driver_error("check requires at least one source file", "carven check");
     }
     auto timings = CommandTimings(show_timings, "check");
     const auto sources = collect_command_sources(executable, paths, timings.recorder());
     if (!sources) {
-        std::println(std::cerr, "carven: error: {}", sources.error());
-        return 1;
+        return emit_driver_error(sources.error());
     }
     const auto program = load_and_analyze_sources(
         sources->carven,

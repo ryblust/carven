@@ -48,6 +48,32 @@ target("carven-test-language-entry-point")
     end)
 target_end()
 
+for _, scenario in ipairs({
+    {name = "failure", status = 1},
+    {name = "recovery", status = 0},
+}) do
+    target("carven-test-language-implicit-entry-" .. scenario.name)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_languages("c++20")
+        add_files(path.join(language_dir, "entry", "implicit_" .. scenario.name .. ".cv"))
+        add_tests(scenario.name, {group = "language"})
+        on_test(function (target)
+            local stdout_file, stderr_file = os.tmpfile(), os.tmpfile()
+            local status = os.execv(target:targetfile(), {}, {
+                try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
+            })
+            local stdout = io.readfile(stdout_file) or ""
+            local stderr = io.readfile(stderr_file) or ""
+            os.tryrm(stdout_file)
+            os.tryrm(stderr_file)
+            assert(status == scenario.status, "implicit entry exit status: " .. tostring(status))
+            assert(stdout == "" and stderr == "", "implicit entry emitted unexpected output")
+            return true
+        end)
+    target_end()
+end
+
 target("carven-test-language-reporting")
     set_default(false)
     add_rules("@carven/carven", {tests = "external"})
@@ -117,7 +143,7 @@ for _, mode in ipairs({
                 .. 'PrintedState::Done(\n    42,\n    "ok",\n) PrintedState::Pending PrintedCode::Bad\n'
                 .. 'PrintedEmpty {} [\n    1,\n    2,\n    3,\n]\n[\n    4,\n    5,\n]\n'
                 .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n} 1\n'
-                .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n}\n1..=3\n',
+                .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n}\n1..=3\nPrintedBox PrintedEnvelope {\n    box: PrintedBox,\n}\n',
                 "unexpected stdout: " .. stdout)
             assert(stderr == "error: -3\n\nerror: -4status: false\n", "unexpected stderr: " .. stderr)
             return true

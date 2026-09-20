@@ -1,0 +1,112 @@
+import <vector> using std::vector;
+import <utility> using std::pair;
+import "interpolation/append.hpp";
+
+import "bindings/construction.hpp" using construction_probe::{
+    Byte,
+    Float,
+    Selected,
+    Box,
+    resource,
+    read_resource,
+    record,
+    reset,
+    recorded,
+};
+
+test "C++ construction: deduced results compose with indexing calls and copies" {
+    var values = vector { 1, 2, 3 };
+    let first = values[0];
+    values[0] = 9;
+    values.push_back(4);
+    let copy = values;
+    check(first == 1);
+    check(copy[0] == 9);
+    check(copy.size() == 4);
+    check(vector { 5, 6 }[1] == 6);
+    let nested = Box {
+        Box { 7 }
+    };
+    check(nested.read() == 7);
+    let specified = vector<i32> { 8, 9 };
+    check(specified[0] == 8);
+}
+
+test "C++ construction: deduction and construction agree on access categories" {
+    var source = 4;
+    check(Selected { 1 }.mode() == 1);
+    check(Selected { source }.mode() == 1);
+    check(Selected { &source }.mode() == 2);
+    check(Selected { &&source }.mode() == 3);
+    let owned = resource();
+    let box = Box { &&owned };
+    check(read_resource(box.read()) == 42);
+}
+
+test "C++ construction: braced operands execute once in source order" {
+    reset();
+    let result = pair { record(1), record(2) };
+    check(recorded() == 12);
+    check(result.first == 1);
+    check(result.second == 2);
+}
+
+test "C++ construction: representable scalar literals remain constant expressions" {
+    let byte = Byte { 255 };
+    let folded = Byte { 250 + 5 };
+    const limit = 255;
+    let named = Byte { limit };
+    check(folded.value == 255);
+    check(named.value == 255);
+    let value = Float { 1.5 };
+    check(byte.value == 255);
+    check(value.value == 1.5);
+}
+
+test "C++ construction: constant delivery retains prior effects and later operands" {
+    reset();
+    let value = Byte { ((record(1) == 1) && false) as i32 };
+    check(value.value == 0);
+    check(recorded() == 1);
+    reset();
+    let result = pair {
+        Byte { 250 + 5 },
+        record(2)
+    };
+    check(result.first.value == 255);
+    check(recorded() == 2);
+}
+
+struct ConstructionFailure {}
+
+fn fail_construction() -> bool throw ConstructionFailure {
+    record(4);
+    throw ConstructionFailure {};
+}
+
+test "C++ construction: known result cannot bypass a failing argument" {
+    reset();
+    let caught = try {
+        let result = pair {
+            Byte { (fail_construction()? && false) as i32 },
+            record(5)
+        };
+        false
+    } catch {
+        ConstructionFailure(_) => true,
+    };
+    check(caught);
+    check(recorded() == 4);
+}
+
+test "C++ construction: constant delivery retains temporary backing through later arguments" {
+    ::formatted_append_probe::reset();
+    let result = pair {
+        Byte { ((::formatted_append_probe::make(42).value == 42) && false) as i32 },
+        ::formatted_append_probe::record()
+    };
+    check(result.first.value == 0);
+    check(::formatted_append_probe::observed() == 1);
+    check(::formatted_append_probe::alive() == 0);
+    check(::formatted_append_probe::events() == 23);
+}

@@ -242,3 +242,15 @@ TEST_CASE("Semantic callable views: copies retain the target instead of intermed
     );
     CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::TypeCallableViewEscape));
 }
+
+TEST_CASE("Semantic availability: known function targets still require an available callee") {
+    const auto diagnostics = analyze_test_errors(R"(
+        fn plain() -> i32 => 1;
+        fn invalid() -> i32 {
+            let view: fn() -> i32 = plain;
+            let transferred = &&view;
+            return view();
+        }
+    )");
+    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessUnavailable));
+}

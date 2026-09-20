@@ -24,11 +24,6 @@ struct CppNamedType final {
     auto operator==(const CppNamedType&) const noexcept -> bool = default;
 };
 
-struct CppCStringOperation final {
-    std::string bytes;
-    auto operator==(const CppCStringOperation&) const noexcept -> bool = default;
-};
-
 struct CppConstCharPointerType final {
     auto operator==(const CppConstCharPointerType&) const noexcept -> bool = default;
 };
@@ -40,6 +35,7 @@ struct CppNameOperation final {
 };
 
 struct CppConstructOperation final {
+    TypeID target;
     auto operator==(const CppConstructOperation&) const noexcept -> bool = default;
 };
 
@@ -73,7 +69,6 @@ struct CppUnaryOperation final {
 };
 
 using CppOperation = std::variant<
-    CppCStringOperation,
     CppNameOperation,
     CppConstructOperation,
     CppMemberOperation,
@@ -119,6 +114,19 @@ struct CppCallQuery final {
     auto operator==(const CppCallQuery&) const noexcept -> bool = default;
 };
 
+struct CppConstructArgument final {
+    CppTypeOperand operand;
+    // A known scalar delivered after the source argument's evaluation obligations.
+    std::optional<ConstantID> constant;
+    auto operator==(const CppConstructArgument&) const noexcept -> bool = default;
+};
+
+struct CppConstructQuery final {
+    TypeID target;
+    std::vector<CppConstructArgument> arguments;
+    auto operator==(const CppConstructQuery&) const noexcept -> bool = default;
+};
+
 struct CppMemberQuery final {
     CppTypeOperand receiver;
     std::string member;
@@ -148,6 +156,7 @@ struct CppQueryType final {
     std::variant<
         CppNameReference,
         CppCallQuery,
+        CppConstructQuery,
         CppMemberQuery,
         CppIndexQuery,
         CppUnaryQuery,

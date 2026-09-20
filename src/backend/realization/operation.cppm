@@ -25,17 +25,15 @@ auto realize_operation(
 
 auto realize_unary(
     ModuleLowering& context,
-    UnaryOperator operation,
-    TargetExpr operand,
-    TypeID type
+    const PreparedUnary& preparation,
+    TargetExpr operand
 ) noexcept -> TargetExpr;
 
 auto realize_binary(
     ModuleLowering& context,
+    const PreparedBinary& preparation,
     TargetExpr left,
-    BinaryOperator operation,
-    TargetExpr right,
-    TypeID type
+    TargetExpr right
 ) noexcept -> TargetExpr;
 
 // Scalar and array adaptation share the source callable policy. Array inputs
@@ -43,7 +41,7 @@ auto realize_binary(
 auto realize_callable_adaptation(
     ModuleLowering& context,
     TargetExpr input,
-    TypeID from,
+    const PreparedCallableAdaptation& preparation,
     TypeID to
 ) noexcept -> TargetExpr;
 

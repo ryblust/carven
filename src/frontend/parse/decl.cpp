@@ -277,8 +277,8 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
             .value = std::move(declaration),
         });
     }
-    if (check(TokenKind::Struct)) {
-        auto parsed = parse_struct(visibility);
+    if (check(TokenKind::Struct) || check(TokenKind::Class)) {
+        auto parsed = parse_record(visibility);
         if (!parsed) {
             return std::nullopt;
         }
@@ -442,14 +442,31 @@ auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
     };
 }
 
-auto Parser::parse_struct(ASTDeclarationVisibility visibility) noexcept
-    -> std::optional<std::pair<Span, ASTStructDecl>> {
-    expect(TokenKind::Struct, "expected 'struct'");
-    const auto name = expect(TokenKind::Identifier, "expected struct name");
-    expect(TokenKind::LeftBrace, "expected '{' after struct name");
+auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
+    -> std::optional<std::pair<Span, ASTRecordDecl>> {
+    const auto kind =
+        consume().kind == TokenKind::Class ? ASTRecordKind::Class : ASTRecordKind::Struct;
+    const auto name = expect(TokenKind::Identifier, "expected record name");
+    expect(TokenKind::LeftBrace, "expected '{' after record name");
 
-    auto fields = std::vector<ASTStructField> {};
+    auto fields = std::vector<ASTRecordField> {};
+    auto operations = std::vector<ASTItemID>();
     while (!failed && !check(TokenKind::RightBrace)) {
+        if (kind == ASTRecordKind::Class && (check(TokenKind::Fn) || check(TokenKind::Private))) {
+            const auto start = current().span;
+            auto access = ASTDeclarationVisibility(ASTBareDeclarationVisibility {});
+            if (const auto keyword = match(TokenKind::Private)) {
+                access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
+            }
+            auto operation = parse_function(access, std::nullopt, std::nullopt, std::nullopt);
+            if (!operation) {
+                return std::nullopt;
+            }
+            operations.push_back(builder.append_item(
+                {.span = join(start, operation->first), .value = std::move(operation->second)}
+            ));
+            continue;
+        }
         const auto field_name = expect(TokenKind::Identifier, "expected field name");
         expect(TokenKind::Colon, "expected ':' after field name");
         const auto type = parse_type();
@@ -468,17 +485,19 @@ auto Parser::parse_struct(ASTDeclarationVisibility visibility) noexcept
             break;
         }
     }
-    const auto right = expect(TokenKind::RightBrace, "expected '}' after struct fields");
+    const auto right = expect(TokenKind::RightBrace, "expected '}' after record members");
     if (failed) {
         return std::nullopt;
     }
     return {
         std::pair {
             right.span,
-            ASTStructDecl {
+            ASTRecordDecl {
+                .kind = kind,
                 .visibility = visibility,
                 .name_span = name.span,
                 .fields = std::move(fields),
+                .operations = std::move(operations),
             },
         },
     };

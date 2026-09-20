@@ -3,6 +3,7 @@ module carven:semantic.analysis.nullability.state.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.nullability.context;
+import :semantic.semir.evaluation;
 import :semantic.semir.traversal;
 import :support.visit;
 import std;
@@ -159,14 +160,7 @@ auto NullabilityBodyAnalyzer::constant_value(const SemanticExpression& source) c
 
 auto NullabilityBodyAnalyzer::truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
-    if (source.constant) {
-        if (const auto* boolean = std::get_if<BooleanConstant>(
-                &program.constants().constant(*source.constant).value
-            )) {
-            return boolean->value;
-        }
-    }
-    return std::nullopt;
+    return known_boolean(program, source);
 }
 
 auto NullabilityBodyAnalyzer::invalidate_exposed(NullState& state) const noexcept -> void {

@@ -57,6 +57,57 @@ TEST_CASE("Semantic control: callable final signatures own their effective failu
     CHECK_EQ(test_callable_failures(program, callables[2]).members.size(), 1uz);
 }
 
+TEST_CASE("Semantic effects: known match selection excludes only unexecuted failures") {
+    const auto program = analyze_test_program(R"(
+        struct Failure {}
+        fn fail() -> i32 throw Failure { throw Failure {}; }
+        private fn selected() -> i32 {
+            let subject = 2;
+            return match subject { 1 => fail()?, 2 => 7, _ => throw Failure {}, };
+        }
+        fn invoke() -> i32 => selected();
+        private fn bounded() -> i32 {
+            return match 2 { 3..fail()? => 1, _ => 7, };
+        }
+        fn declared() -> i32 throw Failure => match true { true => 7, false => 0, };
+    )");
+    const auto callables = test_function_callables(program);
+    REQUIRE(callables.size() == 5uz);
+    CHECK(test_callable_failures(program, callables[1]).members.empty());
+    CHECK(test_callable_failures(program, callables[2]).members.empty());
+    CHECK(test_callable_failures(program, callables[3]).members.size() == 1uz);
+    CHECK(test_callable_failures(program, callables[4]).members.size() == 1uz);
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors("fn invalid() -> i32 => match true { true => 7, };"),
+        DiagnosticCode::MatchNonExhaustive
+    ));
+    CHECK(contains_diagnostic_code(
+        analyze_test_errors("fn invalid() -> i32 => match true { true => 7, false => false, };"),
+        DiagnosticCode::TypeMismatch
+    ));
+}
+
+TEST_CASE("Semantic failures: implicit entry infers the escaping failure set") {
+    const auto program = analyze_test_program(
+        "struct First {} struct Second {}\n"
+        "private fn later() throw First + Second { throw First {}; }\n"
+        "later()?;\n"
+        "throw Second {};\n"
+    );
+    const auto callables = test_function_callables(program);
+    REQUIRE_EQ(callables.size(), 2uz);
+    CHECK_EQ(test_callable_failures(program, callables.back()).members.size(), 2uz);
+
+    const auto handled = analyze_test_program(
+        "struct Failure {}\n"
+        "private fn later() throw Failure { throw Failure {}; }\n"
+        "try { later()?; } catch { Failure(_) => {}, }\n"
+    );
+    const auto handled_callables = test_function_callables(handled);
+    REQUIRE_EQ(handled_callables.size(), 2uz);
+    CHECK(test_callable_failures(handled, handled_callables.back()).members.empty());
+}
+
 TEST_CASE("Semantic failures: canonical set identity is independent of declaration order") {
     const auto program = analyze_test_program(
         "struct AlphaFailure {}\n"
@@ -146,4 +197,36 @@ TEST_CASE("Semantic failures: composite expressions retain every pending invocat
     REQUIRE_EQ(callables.size(), 5uz);
     CHECK_EQ(test_callable_failures(program, callables[3]).members.size(), 2uz);
     CHECK_EQ(test_callable_failures(program, callables[4]).members.size(), 2uz);
+}
+
+TEST_CASE("Semantic effects: known function calls use the target contract through view widening") {
+    const auto program = analyze_test_program(R"(
+        struct Failure {}
+        fn plain() -> i32 => 7;
+        fn known() -> i32 {
+            let callback: fn() -> i32 throw Failure = plain;
+            let copy = callback;
+            return copy();
+        }
+        fn declared() -> i32 throw Failure => 7;
+        fn known_declared() -> i32 throw Failure {
+            let callback: fn() -> i32 throw Failure = declared;
+            return callback()?;
+        }
+    )");
+    const auto callables = test_function_callables(program);
+    REQUIRE(callables.size() == 4uz);
+    const auto& signature = program.callable_signatures().signature(
+        program.declarations().callable(callables[1]).signature
+    );
+    CHECK(program.failure_sets().failure_set(signature.failures).members.empty());
+    const auto redundant = analyze_test_errors(R"(
+        struct Failure {}
+        fn plain() -> i32 => 7;
+        fn invalid() -> i32 {
+            let callback: fn() -> i32 throw Failure = plain;
+            return callback()?;
+        }
+    )");
+    CHECK(contains_diagnostic_code(redundant, DiagnosticCode::EffectPropagateRedundant));
 }

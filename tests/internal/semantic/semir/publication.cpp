@@ -72,6 +72,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,

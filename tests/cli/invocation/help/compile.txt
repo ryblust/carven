@@ -5,7 +5,7 @@ Usage:
 
 Output options:
   -o, --output-dir <dir>    Write files below <dir> (default: .)
-      --stdout              Print generated files with path headings
+      --stdout              Print explicit inputs with path headings
       --linkage-domain=<id> Set the private namespace identity
                             (default: derived from the output directory)
 

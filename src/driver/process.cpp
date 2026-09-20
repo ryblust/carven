@@ -18,6 +18,9 @@ import :driver.process;
 import :support.path;
 import std;
 
+#ifdef _WIN32
+namespace {
+
 auto windows_command_line(std::span<const std::string> arguments) noexcept -> std::string {
     auto command = std::string();
     for (const auto& argument : arguments) {
@@ -40,6 +43,9 @@ auto windows_command_line(std::span<const std::string> arguments) noexcept -> st
     }
     return command;
 }
+
+} // namespace
+#endif
 
 auto run_process(std::vector<std::string> arguments) noexcept -> std::expected<int, std::string> {
     if (arguments.empty() || arguments.front().empty()) {

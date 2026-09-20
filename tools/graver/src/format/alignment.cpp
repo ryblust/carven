@@ -100,7 +100,8 @@ auto align_array_rows(
         const auto line_start = newline == std::string::npos ? 0uz : newline + 1uz;
         const auto next_line = output.find('\n', end);
         auto row = ArrayRow {
-            .signature = std::string(spelling(construction->type.span)),
+            .signature = construction->type ? std::string(spelling(construction->type->span))
+                                            : std::string(),
             .columns = {},
             .line_start = line_start,
             .line_end = next_line == std::string::npos ? output.size() : next_line,

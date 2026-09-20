@@ -1,6 +1,7 @@
 module carven:backend.lowering.context.query.impl;
 
 import :backend.lowering.context;
+import :backend.lowering.constant;
 import :backend.target.symbol;
 import :support.visit;
 import std;
@@ -21,6 +22,18 @@ auto ModuleLowering::cpp_name(const CppNameReference& name) noexcept -> TargetNa
         components.push_back(TargetIdentifier::from_spelling(component));
     }
     return TargetName::globally_qualified(std::move(components));
+}
+
+auto ModuleLowering::cpp_constant_argument(
+    const CppConstructArgument& argument,
+    TypeNameScope scope
+) noexcept -> TargetExpr {
+    return {
+        .value = TargetStaticCastExpr {
+            .type = reference_type(lower_type(argument.operand.type, scope), true),
+            .operand = target_child(constant_expression(*this, *argument.constant))
+        }
+    };
 }
 
 auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept
@@ -108,6 +121,21 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope sco
                         .left = UniqueIndirect(operand(value.left)),
                         .op = operator_kind(value),
                         .right = UniqueIndirect(operand(value.right))
+                    }
+                };
+            },
+            [&](const CppConstructQuery& value) noexcept -> TargetExpr {
+                auto arguments = std::vector<TargetExpr>();
+                for (const auto& argument : value.arguments) {
+                    arguments.push_back(
+                        argument.constant ? cpp_constant_argument(argument, scope)
+                                          : operand(argument.operand)
+                    );
+                }
+                return {
+                    .value = TargetConstructionExpr {
+                        .type = lower_type(value.target, scope),
+                        .initializer = std::move(arguments)
                     }
                 };
             },

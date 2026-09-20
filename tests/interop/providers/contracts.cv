@@ -36,7 +36,7 @@ export(cpp) fn take(&&value: ::boundary::Owned) -> ::boundary::Owned => contract
 export(cpp) fn pointer(value: ptr<&i32>) -> ptr<&i32> => contract_pointer(value);
 export(cpp) fn record(value: Record) -> Record => contract_record(value);
 
-export(cpp) fn make_record() -> Record => Record {
+export(cpp) fn make_record() -> Record => {
     text: "record",
     count: 9
 };

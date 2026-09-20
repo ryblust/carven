@@ -13,6 +13,7 @@ using ConstantAtomValue = std::variant<
     BooleanConstant,
     CharacterConstant,
     StringConstant,
+    CStringConstant,
     NullPointerConstant,
     NumericEnumConstant>;
 

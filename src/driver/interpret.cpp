@@ -3,26 +3,23 @@ module carven:driver.interpret.impl;
 import :diagnostics.builder;
 import :diagnostics.report;
 import :driver.analysis;
+import :driver.diagnostic;
 import :driver.interpret;
 import :driver.sources;
 import :driver.timings;
 import :interpreter.execute;
 import :semantic.evaluation.execution;
 import :semantic.semir.decl;
+import :semantic.semir.program;
 import :source.manager;
 import :source.provenance;
 import :source.text;
 import :support.invariant;
+import :support.terminal;
 import :support.timing;
 import std;
 
 namespace {
-
-auto fail(std::string_view message) noexcept -> int {
-    std::println(std::cerr, "carven: error: {}", message);
-    std::println(std::cerr, "Run 'carven interpret --help' for usage.");
-    return 1;
-}
 
 struct RestoredSources final {
     SourceManager sources;
@@ -52,6 +49,8 @@ auto report_execution_error(
     std::optional<TestID> test_id
 ) noexcept -> void {
     const auto provenance = program.provenance();
+    const auto use_color = initialize_diagnostic_color();
+    const auto styler = TerminalStyler(use_color);
     const auto span = [&](ProgramOriginID origin) noexcept {
         const auto source = provenance.source_origin(origin);
         return locate(restored->ids[source.source_id.index()], source.span);
@@ -94,9 +93,10 @@ auto report_execution_error(
         const auto fields = message.find('\n');
         std::print(
             std::cerr,
-            "{}:{}: error: {}",
+            "{}:{}: {} {}",
             provenance.source_snapshot(source.source_id).display_origin(),
             provenance.location(error.origin),
+            styler.bold_red("error:"),
             message.substr(0, fields)
         );
         std::print(std::cerr, "{}", context);
@@ -116,10 +116,10 @@ auto report_execution_error(
             }
         }
         if (*error.report_kind == ReportKind::Assert) {
-            std::println(std::cerr, "  note: execution aborted");
+            std::println(std::cerr, "  {} execution aborted", styler.bold_cyan("note:"));
         } else if (*error.report_kind == ReportKind::Require
                    || *error.report_kind == ReportKind::Fail) {
-            std::println(std::cerr, "  note: test stopped");
+            std::println(std::cerr, "  {} test stopped", styler.bold_cyan("note:"));
         }
         std::println(std::cerr);
         return;
@@ -134,7 +134,11 @@ auto report_execution_error(
             diagnostic.related(span(origin), "while interpreting this function call");
         }
     }
-    std::print(std::cerr, "{}", render_diagnostic(diagnostic.build(), restored->sources));
+    std::print(
+        std::cerr,
+        "{}",
+        render_diagnostic(diagnostic.build(), restored->sources, use_color)
+    );
 }
 
 } // namespace
@@ -177,20 +181,21 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         }
         if (arg == "--tests") {
             if (tests) {
-                return fail("--tests may be specified only once");
+                return emit_driver_error("--tests may be specified only once", "carven interpret");
             }
             tests = true;
         } else if (arg == "--timings") {
             show_timings = true;
         } else if (arg == "--trace") {
             if (trace) {
-                return fail("--trace may be specified only once");
+                return emit_driver_error("--trace may be specified only once", "carven interpret");
             }
             trace = true;
         } else if (arg == "--max-steps") {
             if (seen_steps || ++index == args.size()) {
-                return fail(
-                    "--max-steps requires one nonnegative integer and may appear only once"
+                return emit_driver_error(
+                    "--max-steps requires one nonnegative integer and may appear only once",
+                    "carven interpret"
                 );
             }
             seen_steps = true;
@@ -198,16 +203,22 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             const auto parsed =
                 std::from_chars(text.data(), text.data() + text.size(), limits.steps);
             if (parsed.ec != std::errc() || parsed.ptr != text.data() + text.size()) {
-                return fail("--max-steps requires a nonnegative integer");
+                return emit_driver_error(
+                    "--max-steps requires a nonnegative integer",
+                    "carven interpret"
+                );
             }
         } else if (arg.starts_with('-')) {
-            return fail(std::format("unknown interpret option '{}'", arg));
+            return emit_driver_error(
+                std::format("unknown interpret option '{}'", arg),
+                "carven interpret"
+            );
         } else {
             paths.push_back(arg);
         }
     }
     if (paths.empty()) {
-        return fail("interpret requires at least one source file");
+        return emit_driver_error("interpret requires at least one source file", "carven interpret");
     }
     auto timings = CommandTimings(show_timings, "interpretation");
     const auto output =
@@ -216,7 +227,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         });
     const auto sources = collect_command_sources(executable, paths, timings.recorder());
     if (!sources) {
-        return fail(sources.error());
+        return emit_driver_error(sources.error());
     }
     const auto program = load_and_analyze_sources(sources->carven, output, timings.recorder());
     if (!program) {
@@ -230,10 +241,14 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         }
     }
     if (!tests && !entry) {
-        return fail("running a program requires an entry point");
+        return emit_missing_entry_error();
     }
     if (!sources->native.empty()) {
-        return fail("native C++ source files are not supported by the interpreter");
+        return emit_driver_error(
+            "native C++ source files are not supported by the interpreter",
+            {},
+            "run without 'interpret' to compile and execute native sources"
+        );
     }
     auto options = InterpreterOptions {.limits = limits, .trace = {}, .report = {}};
     if (trace) {
@@ -270,7 +285,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             return 1;
         }
         if (results->empty()) {
-            return fail("running tests requires at least one runtime test");
+            return emit_driver_error("running tests requires at least one runtime test");
         }
         const auto failed = std::ranges::count_if(*results, [](const auto& result) static noexcept {
             return !result.diagnostics.empty();

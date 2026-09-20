@@ -161,7 +161,15 @@ auto normalize_literal(
                     .value = CharacterConstant {.scalar = value.scalar},
                 };
             } else if constexpr (std::same_as<Value, CStringLiteralValue>) {
-                return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                if (negative || !valid_cstring_bytes(value.bytes)) {
+                    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                }
+                return ConstantFact {
+                    .type = draft.intern_type(
+                        {.value = CppTypeValue {.form = CppConstCharPointerType {}}}
+                    ),
+                    .value = CStringConstant {.value = draft.intern_spelling(value.bytes)},
+                };
             } else if constexpr (std::same_as<Value, StringLiteralValue>) {
                 if (negative) {
                     return std::unexpected(ConstantEvaluationFailure::InvalidOperation);

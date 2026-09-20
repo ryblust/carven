@@ -178,7 +178,19 @@ auto BodyElaborator::cpp_expression(
             }
             inputs.push_back({.type = *concrete, .access = operand.access});
         }
-        result_type = cpp_result_type(operation, inputs);
+        if (const auto* construction = std::get_if<CppConstructOperation>(&operation)) {
+            result_type = draft().intern_type(
+                {.value = CppTypeValue {
+                     .form = cpp_construct_query(
+                         construction->target,
+                         operands,
+                         [&](TypeID type) noexcept { return draft().type_copy(type); }
+                     )
+                 }}
+            );
+        } else {
+            result_type = cpp_result_type(operation, inputs);
+        }
     }
     auto value = active_builder().make_expression(
         *result_type,
@@ -245,7 +257,12 @@ auto BodyElaborator::cpp_construct(
             "named initializers require a Carven structure"
         ));
     }
-    auto result = cpp_expression(CppConstructOperation {}, std::move(operands), span, target);
+    const auto* concrete = std::get_if<TypeID>(&target);
+    if (concrete == nullptr) {
+        invariant_violation("C++ construction requires a concrete target description");
+    }
+    auto result =
+        cpp_expression(CppConstructOperation {.target = *concrete}, std::move(operands), span);
     if (result) {
         result->completes = completes;
     }

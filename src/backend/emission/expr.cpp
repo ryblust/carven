@@ -121,8 +121,12 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
                     case TargetStringLiteralKind::String: break;
                     case TargetStringLiteralKind::StringView:
                         result = value.bytes.empty()
-                            ? std::format("std::string_view{{{}}}", result)
-                            : std::format("std::string_view{{{}, {}}}", result, value.bytes.size());
+                            ? std::format("::std::string_view{{{}}}", result)
+                            : std::format(
+                                  "::std::string_view{{{}, {}}}",
+                                  result,
+                                  value.bytes.size()
+                              );
                         break;
                 }
                 return result;
@@ -189,8 +193,10 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 const auto own_precedence = precedence(binary.op);
                 const auto comparison = own_precedence == TargetPrecedence::Equality
                     || own_precedence == TargetPrecedence::Relational;
-                // Nested comparisons and mixed logical operators display their grouping.
-                const auto grouped = comparison                    ? TargetPrecedence::Shift
+                // Nested comparisons, shift operands with addition, and mixed logical
+                // operators display their grouping.
+                const auto grouped = comparison                 ? TargetPrecedence::Shift
+                    : own_precedence == TargetPrecedence::Shift ? TargetPrecedence::Multiplicative
                     : binary.op == TargetBinaryOperator::LogicalOr ? TargetPrecedence::BitwiseOr
                                                                    : own_precedence;
                 const auto left_precedence = grouped;
@@ -252,7 +258,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                     values.push_back(render_expression(element));
                 }
                 return concat(
-                    {text("std::array"),
+                    {text("::std::array"),
                      delimited_list(template_values, "<", ">"),
                      delimited_list(values, "{", "}")}
                 );

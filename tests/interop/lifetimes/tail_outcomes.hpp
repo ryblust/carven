@@ -54,6 +54,18 @@ static_assert(std::is_trivially_copy_constructible_v<CopyTrivial>);
 static_assert(std::is_trivially_destructible_v<CopyTrivial>);
 static_assert(!std::is_trivially_move_constructible_v<CopyTrivial>);
 
+struct CopyOnly final {
+    std::int32_t value;
+
+    explicit CopyOnly(std::int32_t source) noexcept
+        : value(source) {}
+
+    CopyOnly(const CopyOnly&) = default;
+    CopyOnly(CopyOnly&&) = delete;
+
+    auto get() const noexcept -> std::int32_t { return value; }
+};
+
 struct Self final {
     const Self* construction_address;
     char padding[64];

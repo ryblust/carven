@@ -115,13 +115,19 @@ TEST_CASE("Compiler: static checks continue and requirements stop nested calls")
     CHECK(errors.empty());
 }
 
-TEST_CASE("Compiler: const test rejects unsupported operations even on untaken paths") {
+TEST_CASE("Compiler: required execution rejects unsupported values and untaken operations") {
     const auto cases = std::array {
         CompilerErrorExpectation {
             .name = "ordinary call",
             .source = "fn ordinary() {} const test \"t\" { ordinary(); }",
             .code = "CV-CONST-ADMISSION",
             .primary_text = "ordinary()"
+        },
+        CompilerErrorExpectation {
+            .name = "native construction in constant block",
+            .source = "import <vector> using std::vector; const { let v = vector { 1, 2, 3 }; }",
+            .code = "CV-CONST-ADMISSION",
+            .primary_text = "v"
         },
         CompilerErrorExpectation {
             .name = "dead native call",
@@ -271,6 +277,9 @@ TEST_CASE("Compiler: constant blocks diagnose stage boundaries and execution fai
         Case {"const { while true {} }", "CV-CONST-LIMIT"},
         Case {"struct Error {} const { throw Error {}; }", "CV-CONST-EVALUATION"},
         Case {"const { let n = 2147483647; println(n + 1); }", "CV-CONST-OVERFLOW"},
+        Case {"const { println(c\"x\"); }", "CV-CONST-EVALUATION"},
+        Case {"const { let values = [c\"x\"]; println(values); }", "CV-CONST-EVALUATION"},
+        Case {"const equal = c\"x\" == c\"x\";", "CV-CONST-INITIALIZER"},
     };
     for (const auto& scenario : cases) {
         CAPTURE(scenario.source);

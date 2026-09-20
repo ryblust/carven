@@ -1,4 +1,21 @@
 local case_specs = {
+    ["commands/stdout_selection"] = {
+        inputs = {"input.cv", "crafts/demo/helper.cv", "crafts/demo/unrelated.cv",
+            "crafts/cycle/a.cv", "crafts/cycle/b.cv"},
+        steps = {
+            {args = {"compile", "input.cv", "--stdout"},
+                stdout_contains = {"==> input.cpp <==", "#include <carven/generated/crafts/demo/helper.hpp>"},
+                stdout_not_contains = {"==> crafts/", "==> carven/generated/crafts/", "unrelated"}},
+            {args = {"compile", "input.cv", "crafts/demo/helper.cv", "--stdout"},
+                stdout_contains = {"==> input.cpp <==", "==> crafts/demo/helper.cpp <==", "==> carven/generated/crafts/demo/helper.hpp <=="},
+                stdout_not_contains = {"unrelated", "==> crafts/carven/"}},
+            {args = {"compile", "crafts/cycle/b.cv", "--stdout"},
+                stdout_contains = {"==> crafts/cycle/b.cpp <==", "==> carven/generated/crafts/cycle/a.hpp <==", "ATag", "BTag"},
+                stdout_not_contains = {"==> crafts/cycle/a.cpp <==", "==> carven/generated/crafts/cycle/b.hpp <==", "==> input.cpp <=="}},
+            {args = {"compile", "input.cv", "-o", "emit"},
+                output_files = {"emit/input.cpp", "emit/crafts/demo/helper.cpp", "emit/crafts/demo/unrelated.cpp"}},
+        },
+    },
     ["commands/structural_display"] = {
         inputs = {"input.cv", "failure.cv"},
         steps = {
@@ -72,7 +89,7 @@ local case_specs = {
             {args = {"interpret", "input.cv", "--", "--timings"}, stdout = "run.txt"},
             {
                 args = {"interpret", "--timings", "declarations.cv"}, exit_code = 1,
-                stderr_contains = {"requires an entry point", "carven: interpretation failed in "},
+                stderr_contains = {"requires a runtime entry point", "carven: interpretation failed in "},
                 stderr_not_contains = {"Execution"},
             },
             {
@@ -383,7 +400,7 @@ case_specs["commands/native_execution"] = {
         {
             args = {"library.cv"},
             exit_code = 1,
-            stderr_contains = {"running a program requires an entry point"},
+            stderr_contains = {"running a program requires a runtime entry point"},
             absent_files = {"library.cpp", "program"},
         },
         {
@@ -397,7 +414,7 @@ case_specs["commands/native_execution"] = {
 case_specs["commands/interpretation"] = {
     fixtures = {["../../../language/functions/interpreted_runtime.cv"] = "shared.cv"},
     inputs = {
-        "input.cv", "unsupported.cv", "failure.cv", "limit.cv", "wrapping.cv",
+        "input.cv", "unsupported.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv",
     },
     steps = {
@@ -413,16 +430,21 @@ case_specs["commands/interpretation"] = {
             stderr_contains = {"CV-INTERPRET-EXECUTION", "typed failure escaped", "while interpreting this function call"},
         },
         {
+            args = {"interpret", "implicit_failure.cv"}, exit_code = 1,
+            stderr_contains = {"CV-INTERPRET-EXECUTION", "typed failure escaped"},
+        },
+        {args = {"interpret", "implicit_recovery.cv"}, exit_code = 0},
+        {
             args = {"interpret", "floating.cv"},
             stdout = "floating.txt",
         },
         {
             args = {"interpret", "declarations.cv"}, exit_code = 1,
-            stderr_contains = {"requires an entry point"},
+            stderr_contains = {"requires a runtime entry point"},
         },
         {
             args = {"interpret", "--trace", "static_only.cv", "declarations.cv"}, exit_code = 1,
-            stderr_contains = {"requires an entry point"},
+            stderr_contains = {"requires a runtime entry point"},
             stdout = "static_only.txt",
             absent_files = {"static_only.cpp", "declarations.cpp", "program"},
         },

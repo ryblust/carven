@@ -127,8 +127,8 @@ private:
     auto parse_top_level_item() noexcept -> std::optional<ASTItemID>;
     auto parse_enum(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTEnumDecl>>;
-    auto parse_struct(ASTDeclarationVisibility visibility) noexcept
-        -> std::optional<std::pair<Span, ASTStructDecl>>;
+    auto parse_record(ASTDeclarationVisibility visibility) noexcept
+        -> std::optional<std::pair<Span, ASTRecordDecl>>;
     auto parse_cpp_declaration_form(Token keyword) noexcept -> Span;
     auto parse_function(
         ASTDeclarationVisibility visibility,
@@ -188,6 +188,7 @@ private:
     auto callable_body_span(const ASTCallableBody& body) const noexcept -> Span;
     auto parse_lambda_expression() noexcept -> std::optional<ASTExprID>;
     auto construction_allowed_here() const noexcept -> bool;
+    auto starts_field_construction() const noexcept -> bool;
     auto try_parse_construction() noexcept -> std::optional<ASTExprID>;
     auto parse_expression_before_block() noexcept -> std::optional<ASTExprID>;
     auto parse_if_form() noexcept -> std::optional<ASTIfForm>;

@@ -494,3 +494,19 @@ TEST_CASE("Semantic control: report completion follows the selected continuation
         "private fn stopped() -> i32 { check(false, if true { fail(); } else { \"unused\" }); }"
     ));
 }
+
+TEST_CASE("Semantic effects: immutable function targets retain their actual test-stop contract") {
+    const auto program = analyze_test_program(R"(
+        fn plain() -> i32 => 1;
+        fn stopping() -> i32 { require(false); return 2; }
+        fn known_plain() -> i32 { let view: fn() -> i32 = plain; return view(); }
+        fn known_stopping() -> i32 { let view: fn() -> i32 = stopping; return view(); }
+        fn dynamic(view: fn() -> i32) -> i32 => view();
+    )");
+    const auto callables = test_function_callables(program);
+    const auto expected = std::array {false, true, false, true, true};
+    REQUIRE(callables.size() == expected.size());
+    for (const auto [index, callable] : std::views::enumerate(callables)) {
+        CHECK(program.may_stop_test(callable) == expected[index]);
+    }
+}

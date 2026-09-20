@@ -50,6 +50,29 @@ auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expre
     return known_boolean(semantic.constants(), expression);
 }
 
+auto integer_operation_may_trap(
+    const SemIRProgram& semantic,
+    BinaryOperator operation,
+    TypeID type,
+    std::optional<ConstantID> right
+) noexcept -> bool {
+    const auto* value = right
+        ? std::get_if<IntegerConstant>(&semantic.constants().constant(*right).value)
+        : nullptr;
+    switch (operation) {
+        case BinaryOperator::Divide:
+        case BinaryOperator::Remainder:  return value == nullptr || value->magnitude() == 0u;
+        case BinaryOperator::LeftShift:
+        case BinaryOperator::RightShift: {
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic.types().type(type).value);
+            const auto width =
+                builtin == nullptr ? std::nullopt : builtin_integer_width(builtin->kind);
+            return value == nullptr || !width || value->negative() || value->magnitude() >= *width;
+        }
+        default: return false;
+    }
+}
+
 auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
     -> EvaluationRule {
     const auto none = EvaluationRule {.action = EvaluationAction::None, .operands = {}};
@@ -89,7 +112,13 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     case BinaryOperator::Remainder:
                     case BinaryOperator::LeftShift:
                     case BinaryOperator::RightShift:
-                        if (!expression.constant) {
+                        if (!expression.constant
+                            && integer_operation_may_trap(
+                                semantic,
+                                value.operation,
+                                value.left->type.resolved(),
+                                value.right->constant
+                            )) {
                             return required;
                         }
                         break;
@@ -158,14 +187,11 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             [&](const SemArrayAdopt&) noexcept { return required; },
             [&](const SemStruct&) noexcept { return required; },
             [&](const SemEnumCase&) noexcept { return required; },
-            [&](const SemCpp& value) noexcept {
-                return std::holds_alternative<CppCStringOperation>(value.operation) ? none
-                                                                                    : required;
-            },
+            [&](const SemCpp&) noexcept { return required; },
             [&](const SemCppCall&) noexcept { return required; },
             [&](const SemCall&) noexcept { return required; },
             [&](const SemClosure&) noexcept { return required; },
-            [&](const SemBorrowCallable&) noexcept { return required; },
+            [&](const SemBorrowCallable& value) noexcept { return operands(*value.source); },
             [&](const SemTake&) noexcept { return required; },
             [&](const SemPropagate&) noexcept { return required; },
             [&](const SemIf&) noexcept { return required; },

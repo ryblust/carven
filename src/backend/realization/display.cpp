@@ -69,28 +69,32 @@ auto display_statements(
         text("...");
     } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical)) {
         const auto& declaration = context.semantic().declarations().structure(structure->structure);
-        text(std::string(context.semantic().provenance().spelling(declaration.name)) + " {");
-        for (auto index = 0uz; index < declaration.fields.size(); ++index) {
-            const auto& field = declaration.fields[index];
-            text(
-                "\n" + std::string((depth + 1) * 4, ' ')
-                + std::string(context.semantic().provenance().spelling(field.name)) + ": "
-            );
-            child(field.type, [&]() noexcept {
-                return member_expression(
-                    value(),
-                    context.name_allocator().source(
-                        context.semantic().provenance().spelling(field.name),
-                        context.semantic().provenance().spelling(declaration.name)
-                    )
-                );
-            });
-            text(",");
-        }
-        if (declaration.fields.empty()) {
+        const auto name = context.semantic().provenance().spelling(declaration.name);
+        if (declaration.kind == RecordKind::Class) {
             body.push_back(generated_statement(TargetDiscardStmt {.expression = value()}));
+            text(std::string(name));
+        } else {
+            text(std::string(name) + " {");
+            for (auto index = 0uz; index < declaration.fields.size(); ++index) {
+                const auto& field = declaration.fields[index];
+                text(
+                    "\n" + std::string((depth + 1) * 4, ' ')
+                    + std::string(context.semantic().provenance().spelling(field.name)) + ": "
+                );
+                child(field.type, [&]() noexcept {
+                    return member_expression(
+                        value(),
+                        context.name_allocator()
+                            .source(context.semantic().provenance().spelling(field.name), name)
+                    );
+                });
+                text(",");
+            }
+            if (declaration.fields.empty()) {
+                body.push_back(generated_statement(TargetDiscardStmt {.expression = value()}));
+            }
+            text(declaration.fields.empty() ? "}" : "\n" + std::string(depth * 4, ' ') + "}");
         }
-        text(declaration.fields.empty() ? "}" : "\n" + std::string(depth * 4, ' ') + "}");
     } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical)) {
         const auto& declaration =
             context.semantic().declarations().enumeration(enumeration->enumeration);
@@ -191,7 +195,8 @@ auto display_statements(
             return member_expression(value(), TargetNameAllocator::fixed("last"));
         });
     } else if (std::holds_alternative<BuiltinTypeValue>(canonical)
-               || std::holds_alternative<PointerTypeValue>(canonical)) {
+               || std::holds_alternative<PointerTypeValue>(canonical)
+               || std::holds_alternative<CppTypeValue>(canonical)) {
         emit("scalar", target_expressions(value()));
     } else {
         body.push_back(generated_statement(TargetDiscardStmt {.expression = value()}));

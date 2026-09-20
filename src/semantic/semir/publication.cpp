@@ -470,6 +470,12 @@ auto validate_publication_facts(
                     return provenance.contains(value.value)
                         && canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}};
                 },
+                [&](const CStringConstant& value) noexcept {
+                    return provenance.contains(value.value)
+                        && valid_cstring_bytes(provenance.spelling(value.value))
+                        && canonical
+                        == CanonicalTypeValue {CppTypeValue {.form = CppConstCharPointerType {}}};
+                },
                 [&](const F32Constant&) noexcept {
                     return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::F32}};
                 },

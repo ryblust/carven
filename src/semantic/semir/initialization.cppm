@@ -10,11 +10,11 @@ using InitializationType = std::variant<CanonicalType, ConstructionType>;
 
 // Both construction and publication use this type rule. Dependencies are walked
 // by type, never by array element, so large default arrays retain compact semantics.
-template<typename ReadType, typename ReadFields>
+template<typename ReadType, typename ReadDeclaration>
 auto query_default_initialization(
     ConstructionTypeRef type,
     ReadType read_type,
-    ReadFields read_fields
+    ReadDeclaration read_declaration
 ) noexcept -> DefaultInitialization {
     auto pending = std::vector<ConstructionTypeRef> {type};
     auto visited = std::set<ConstructionTypeRef>();
@@ -41,8 +41,13 @@ auto query_default_initialization(
                     }
                     return true;
                 } else if constexpr (std::same_as<Value, StructTypeValue>) {
-                    const auto fields = read_fields(value.structure);
-                    pending.insert(pending.end(), fields.rbegin(), fields.rend());
+                    const auto declaration = read_declaration(value.structure);
+                    if (declaration.kind == RecordKind::Class) {
+                        return false;
+                    }
+                    for (const auto& field : declaration.fields | std::views::reverse) {
+                        pending.push_back(field.type);
+                    }
                     return true;
                 } else if constexpr (std::same_as<Value, CppTypeValue>) {
                     result = DefaultInitialization::Native;

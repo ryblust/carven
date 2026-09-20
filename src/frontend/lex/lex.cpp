@@ -55,6 +55,7 @@ constexpr auto token_kind(SourceKeyword keyword) noexcept -> TokenKind {
         case Return:   return TokenKind::Return;
         case Rethrow:  return TokenKind::Rethrow;
         case Struct:   return TokenKind::Struct;
+        case Class:    return TokenKind::Class;
         case Test:     return TokenKind::Test;
         case Throw:    return TokenKind::Throw;
         case True:     return TokenKind::True;

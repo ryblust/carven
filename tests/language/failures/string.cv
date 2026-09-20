@@ -36,7 +36,7 @@ fn forward_failure(text: String) throw ViewError {
 fn recovered(text: String, reject: bool) -> String {
     return try {
         forward_failure(text)?;
-        String {}
+        {}
     } catch {
         ViewError(error) if reject => error.message as String,
         ViewError(error) => error.message as String,

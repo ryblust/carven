@@ -36,7 +36,6 @@ private:
     ) const noexcept -> void;
     auto compatible_pattern_type(TypeID left, TypeID right) const noexcept -> bool;
     auto pattern_bindings(PatternID id) const noexcept -> std::vector<LocalBindingID>;
-    auto signature_for_callable(CallableID id) const noexcept -> CallableSignatureID;
     auto signature_for_type(TypeID type) const noexcept -> CallableSignatureID;
     auto verify_computations() const noexcept -> void;
     auto verify_expression(const SemanticExpression& source) const noexcept -> void;

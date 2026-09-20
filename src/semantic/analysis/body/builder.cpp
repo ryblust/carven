@@ -181,6 +181,9 @@ auto BodyBuilder::remember_initializer(
     if (owner == nullptr || owner->writable) {
         return;
     }
+    if (const auto callable = known_callable(initializer)) {
+        local_callables.emplace(id, *callable);
+    }
     if (const auto extent = known_sequence_extent(initializer)) {
         local_sequence_extents.emplace(id, *extent);
     }
@@ -203,6 +206,23 @@ auto BodyBuilder::remember_initializer(
     }
 }
 
+auto BodyBuilder::known_callable(const SemanticExpression& expression) const noexcept
+    -> std::optional<CallableID> {
+    if (const auto* callable = std::get_if<SemCallable>(&expression.value)) {
+        return callable->callable;
+    }
+    if (const auto* adaptation = std::get_if<SemBorrowCallable>(&expression.value)) {
+        return known_callable(*adaptation->source);
+    }
+    if (const auto* binding = std::get_if<SemBinding>(&expression.value)) {
+        const auto found = local_callables.find(binding->binding);
+        if (found != local_callables.end()) {
+            return found->second;
+        }
+    }
+    return std::nullopt;
+}
+
 auto BodyBuilder::known_constant(const SemanticExpression& expression) const noexcept
     -> std::optional<ConstantID> {
     if (expression.constant) {
@@ -213,6 +233,39 @@ auto BodyBuilder::known_constant(const SemanticExpression& expression) const noe
         if (found != local_constants.end()) {
             return found->second;
         }
+    }
+    // Operand facts are attached after source constant folding. Derive Boolean
+    // selection here so local facts never enter checked numeric folding.
+    const auto boolean = [&](const SemanticExpression& operand) noexcept -> std::optional<bool> {
+        if (operand.constant) {
+            if (const auto* value =
+                    std::get_if<BooleanConstant>(&draft.constant(*operand.constant).value)) {
+                return value->value;
+            }
+        }
+        return std::nullopt;
+    };
+    auto value = std::optional<bool>();
+    if (const auto* unary = std::get_if<SemUnary>(&expression.value);
+        unary != nullptr && unary->operation == UnaryOperator::LogicalNot) {
+        if (const auto operand = boolean(*unary->operand)) {
+            value = !*operand;
+        }
+    } else if (const auto* logic = std::get_if<SemShortCircuit>(&expression.value)) {
+        const auto conjunction = logic->operation == ShortCircuitOperator::And;
+        const auto left = boolean(*logic->left);
+        const auto right = boolean(*logic->right);
+        if (left) {
+            value = *left == conjunction ? right : left;
+        } else if (right && *right != conjunction) {
+            value = right;
+        }
+    }
+    if (value) {
+        return draft.intern_constant(
+            {.type = draft.builtin_type(BuiltinType::Bool),
+             .value = BooleanConstant {.value = *value}}
+        );
     }
     return std::nullopt;
 }

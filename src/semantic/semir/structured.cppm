@@ -117,6 +117,8 @@ struct SemDereference final {
 };
 
 struct SemField final {
+    auto consumes_source() const noexcept -> bool;
+
     OwnedSemanticExpression source;
     FieldProjection field;
 };
@@ -178,6 +180,8 @@ struct SemCppCall final {
 
 struct SemCall final {
     OwnedSemanticExpression callee;
+    // A stable function target does not remove evaluation or availability checks of callee.
+    std::optional<CallableID> target;
     std::vector<SemCallArgument> arguments;
     BodyFailures callee_failures;
 };
@@ -232,6 +236,7 @@ struct SemTry final {
 enum class SemanticValueCategory { Value, Place };
 
 struct SemanticExpressionCleanup;
+
 using SemanticExpressionValue = TreeValue<
     SemanticExpressionCleanup,
     SemDefault,
@@ -329,6 +334,7 @@ struct SemMatchArm final {
     std::optional<SemanticExpression> guard;
     SemanticRegion body;
     bool reachable;
+    bool pattern_always_matches;
     std::vector<SemPatternBounds> pattern_bounds;
 };
 
@@ -427,6 +433,32 @@ auto visit_cpp_operands(const SemCppCall& call, Visitor visit) noexcept -> void 
     for (const auto& argument : call.arguments) {
         visit(argument.access, argument.expression);
     }
+}
+
+template<typename TypeReader>
+auto cpp_construct_query(
+    TypeID target,
+    std::span<const SemCallArgument> operands,
+    TypeReader read_type
+) noexcept -> CppQueryType {
+    auto arguments = std::vector<CppConstructArgument>();
+    for (const auto& argument : operands) {
+        const auto& expression = argument.expression;
+        const auto type = read_type(expression.type.resolved());
+        const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
+        const auto scalar = builtin != nullptr
+            && (builtin_is_numeric(builtin->kind)
+                || builtin->kind == BuiltinType::Bool
+                || builtin->kind == BuiltinType::Char);
+        arguments.push_back(
+            {.operand = {.type = expression.type.resolved(), .access = argument.access},
+             .constant =
+                 argument.access == AccessMode::Read && scalar && !expression.selects_storage()
+                 ? expression.constant
+                 : std::nullopt}
+        );
+    }
+    return {.expression = CppConstructQuery {.target = target, .arguments = std::move(arguments)}};
 }
 
 template<typename TypeReader>

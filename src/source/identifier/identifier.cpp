@@ -54,6 +54,7 @@ auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassi
         {"return", SourceKeyword::Return},
         {"rethrow", SourceKeyword::Rethrow},
         {"struct", SourceKeyword::Struct},
+        {"class", SourceKeyword::Class},
         {"test", SourceKeyword::Test},
         {"throw", SourceKeyword::Throw},
         {"true", SourceKeyword::True},

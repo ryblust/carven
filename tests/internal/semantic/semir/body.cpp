@@ -468,3 +468,49 @@ TEST_CASE("SemIR body: normal-completion facts match the expression type and pro
         }
     }
 }
+
+TEST_CASE("SemIR body invariant: match success must follow from its subject and pattern") {
+    CHECK(rejects_expression(
+        "match-selection-fact",
+        [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
+            auto subject = boolean_expression(prepared, body);
+            subject.constant = std::get<SemConstant>(subject.value).constant;
+            const auto pattern = body.builder.add_pattern({
+                .type = prepared.boolean_type,
+                .value =
+                    LiteralPattern {
+                        .constant = prepared.builder.intern_constant(
+                            {.type = prepared.boolean_type,
+                             .value = BooleanConstant {.value = false}}
+                        )
+                    },
+                .origin = prepared.origin,
+            });
+            auto arms = std::vector<SemMatchArm>();
+            arms.push_back({
+                .pattern = pattern,
+                .bindings = {},
+                .guard = std::nullopt,
+                .body =
+                    SemanticRegion {
+                        .lifetime = body.lifetime,
+                        .origin = prepared.origin,
+                        .statements = {},
+                        .result = boolean_expression(prepared, body),
+                        .failures = BodyFailures(body.failures),
+                        .exits_test = false,
+                    },
+                .reachable = true,
+                .pattern_always_matches = true,
+                .pattern_bounds = {},
+            });
+            auto result = boolean_expression(prepared, body);
+            result.value = SemMatch {
+                .subject = OwnedSemanticExpression(std::move(subject)),
+                .subject_is_place = false,
+                .arms = std::move(arms),
+            };
+            return result;
+        }
+    ));
+}

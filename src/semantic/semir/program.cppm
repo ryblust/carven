@@ -76,7 +76,9 @@ public:
     auto tests() const noexcept -> const TestStore&;
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop_test(TypeID type) const noexcept -> bool;
+    auto may_stop_test(const SemCall& call) const noexcept -> bool;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
+    auto call_signature(const SemCall& call) const noexcept -> CallableSignatureID;
 
 private:
     SemIRProgram(

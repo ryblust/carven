@@ -22,7 +22,7 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
             [](const ASTEnumDecl& value) static noexcept -> std::optional<Span> {
                 return value.name_span;
             },
-            [](const ASTStructDecl& value) static noexcept -> std::optional<Span> {
+            [](const ASTRecordDecl& value) static noexcept -> std::optional<Span> {
                 return value.name_span;
             },
             [](const ASTFunctionDecl& value) static noexcept -> std::optional<Span> {
@@ -62,7 +62,7 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
             [](const ASTEnumDecl& value) static noexcept {
                 return semantic_visibility(value.visibility);
             },
-            [](const ASTStructDecl& value) static noexcept {
+            [](const ASTRecordDecl& value) static noexcept {
                 return semantic_visibility(value.visibility);
             },
             [](const ASTFunctionDecl& value) static noexcept {
@@ -477,7 +477,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                             .callable = draft.reserve_callable_declaration(),
                         };
                     },
-                    [&](const ASTStructDecl&) noexcept -> CatalogSymbolForm {
+                    [&](const ASTRecordDecl&) noexcept -> CatalogSymbolForm {
                         const auto structure = draft.reserve_struct_declaration();
                         if (structure.index() != result.struct_symbols.size()) {
                             invariant_violation("semantic struct reservation is not aligned");
@@ -485,6 +485,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                         result.struct_symbols.push_back(symbol_id);
                         return CatalogStructForm {
                             .structure = structure,
+                            .operations = {},
                         };
                     },
                     [&](const ASTEnumDecl&) noexcept -> CatalogSymbolForm {
@@ -524,6 +525,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 .form = std::move(form),
                 .visibility = declaration_visibility(item),
                 .declaration_span = *name_span,
+                .class_operation = std::nullopt,
             });
             catalog_module.symbols.push_back(symbol_id);
             if (!implicit_entry) {
@@ -566,6 +568,60 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 }
             );
 
+            if (const auto* record = std::get_if<ASTRecordDecl>(&item.value)) {
+                auto member_names = std::flat_set<std::string>();
+                for (const auto& field : record->fields) {
+                    member_names.insert(draft.source_slice_copy(module_id, field.name_span));
+                }
+                const auto owner =
+                    std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form).structure;
+                for (const auto operation_id : record->operations) {
+                    const auto& operation = std::get<ASTFunctionDecl>(ast.item(operation_id).value);
+                    auto member_name = draft.source_slice_copy(module_id, operation.name_span);
+                    if (!member_names.insert(member_name).second) {
+                        diagnostics.push_back(catalog_error(
+                            source_id,
+                            "class member name is defined more than once",
+                            operation.name_span
+                        ));
+                        continue;
+                    }
+                    const auto member_id = CatalogSymbolID::from_index(
+                        static_cast<std::uint32_t>(result.symbols.size())
+                    );
+                    const auto function = draft.reserve_function_declaration();
+                    const auto callable = draft.reserve_callable_declaration();
+                    const auto private_member =
+                        std::holds_alternative<ASTPrivateDeclarationVisibility>(
+                            operation.visibility
+                        );
+                    const auto receiver = !operation.parameters.empty()
+                        && draft.source_slice_copy(
+                               module_id,
+                               binding_target_span(operation.parameters.front().target)
+                           ) == "self";
+                    const auto audience = result.symbols[symbol_id.index()].visibility;
+                    result.function_symbols.push_back(member_id);
+                    result.symbols.push_back({
+                        .symbol_id = member_id,
+                        .module_id = module_id,
+                        .item_id = operation_id,
+                        .name = std::move(member_name),
+                        .form = CatalogFunctionForm {.function = function, .callable = callable},
+                        .visibility = private_member ? DeclarationVisibility::Module : audience,
+                        .declaration_span = operation.name_span,
+                        .class_operation = ClassOperation {
+                            .owner = owner,
+                            .visibility = private_member ? MemberVisibility::Private
+                                                         : MemberVisibility::Public,
+                            .receiver = receiver
+                        },
+                    });
+                    std::get<CatalogStructForm>(result.symbols[symbol_id.index()].form)
+                        .operations.push_back(function);
+                    catalog_module.items.push_back({.item_id = operation_id, .form = function});
+                }
+            }
             const auto* enumeration = std::get_if<ASTEnumDecl>(&item.value);
             if (enumeration == nullptr) {
                 continue;
@@ -599,6 +655,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                         },
                     .visibility = result.symbols[symbol_id.index()].visibility,
                     .declaration_span = enum_case.name_span,
+                    .class_operation = std::nullopt,
                 });
                 std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form)
                     .cases.push_back(case_id);

@@ -169,7 +169,7 @@ auto Parser::parse_match_arm() noexcept -> std::optional<ASTMatchArm> {
                 .value = *transfer,
             };
         }
-        if (check(TokenKind::LeftBrace)) {
+        if (check(TokenKind::LeftBrace) && !starts_field_construction()) {
             const auto block = parse_branch_block();
             if (!block) {
                 return std::nullopt;
@@ -268,7 +268,7 @@ auto Parser::parse_catch_arm() noexcept -> std::optional<ASTCatchArm> {
                 .value = *transfer,
             };
         }
-        if (check(TokenKind::LeftBrace)) {
+        if (check(TokenKind::LeftBrace) && !starts_field_construction()) {
             const auto block = parse_branch_block();
             if (!block) {
                 return std::nullopt;

@@ -90,7 +90,7 @@ TEST_CASE("Parser: module root separates imports from ordered top-level items") 
     REQUIRE_EQ(enumeration.cases.size(), 2u);
     CHECK(enumeration.cases[1].initializer.has_value());
 
-    const auto& structure = get<ASTStructDecl>(ast.item(module_syntax.items[1]));
+    const auto& structure = get<ASTRecordDecl>(ast.item(module_syntax.items[1]));
     CHECK(std::holds_alternative<ASTBareDeclarationVisibility>(structure.visibility));
     const auto& function = get<ASTFunctionDecl>(ast.item(module_syntax.items[2]));
     CHECK(std::holds_alternative<ASTPrivateDeclarationVisibility>(function.visibility));
@@ -334,7 +334,7 @@ TEST_CASE("Parser: top-level constants require a name, initializer, and terminat
 
 TEST_CASE("Parser: declaration diagnostics reject malformed forms") {
     const auto empty_structure = parse_valid("struct Empty {}");
-    const auto& structure = get<ASTStructDecl>(item(empty_structure, 0));
+    const auto& structure = get<ASTRecordDecl>(item(empty_structure, 0));
     CHECK(structure.fields.empty());
     const auto empty_enumeration = parse_valid("enum State {}");
     const auto& enumeration = get<ASTEnumDecl>(item(empty_enumeration, 0));

@@ -98,10 +98,14 @@ public:
     auto optional_type(TargetTypeID value) noexcept -> TargetTypeID;
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
-    auto call_result(TypeID type) noexcept -> TargetTypeID;
+    auto call_result(const SemCall& call) noexcept -> TargetTypeID;
     auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetTypeID;
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
+    auto cpp_constant_argument(
+        const CppConstructArgument& argument,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetExpr;
     auto lower_cpp_query(
         const CppQueryType& query,
         TypeNameScope scope = TypeNameScope::Module

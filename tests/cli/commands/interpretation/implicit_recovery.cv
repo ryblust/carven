@@ -1,0 +1,7 @@
+struct Failure {}
+
+try {
+    throw Failure {};
+} catch {
+    Failure(_) => {},
+}

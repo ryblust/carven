@@ -23,6 +23,10 @@ end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 
 local rejection_cases = {
+    ["construction/deduction"] = {"no viable constructor or deduction guide", "vector", site = "source"},
+    ["construction/folded_narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
+    ["construction/read_narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
+    ["construction/narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
     ["contracts/result"] = {"no viable conversion", "contract_text", site = "source"},
     ["contracts/access"] = {"drops 'const' qualifier", "contract_replace", site = "source"},
     ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed", site = "source"},
@@ -154,7 +158,7 @@ target("carven-test-interop-structural")
     add_tests("output", {group = "interop"})
     on_test(function (target)
         local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n" and errors == "",
+        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n" and errors == "",
             "structural display invoked a custom formatter or changed output: " .. output .. errors)
         return true
     end)

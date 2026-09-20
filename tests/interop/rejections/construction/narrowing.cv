@@ -1,0 +1,4 @@
+import "bindings/construction.hpp" using construction_probe::Byte;
+
+let byte = Byte { 256 };
+println(f"{byte.value}");

@@ -14,8 +14,10 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
-    -> std::vector<PreparedOperand> {
+auto BodyPreparation::operands(
+    const SemanticExpression& source,
+    const OperationPreparation* preparation
+) const noexcept -> std::vector<PreparedOperand> {
     auto result = std::vector<PreparedOperand>();
     const auto add = [&](const SemanticExpression& input, PreparedUse use) noexcept {
         result.push_back(operand(input, use));
@@ -56,9 +58,8 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
                 });
             },
             [&](const SemField& value) noexcept {
-                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
-                    add(input, PreparedUse::ProjectionPlace);
-                });
+                add(*value.source,
+                    value.consumes_source() ? PreparedUse::Consume : PreparedUse::ProjectionPlace);
             },
             [&](const SemDereference& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
@@ -125,19 +126,13 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
                 }
             },
             [&](const SemBorrowCallable& value) noexcept {
-                auto use = PreparedUse::ConstPlace;
-                const auto& type = semantic.types().type(value.source->type.resolved()).value;
-                if (std::holds_alternative<SemCallable>(value.source->value)
-                    || value.source->type.resolved() == source.type.resolved()) {
-                    use = PreparedUse::Consume;
-                } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
-                    const auto body_id =
-                        semantic.declarations().body_for_callable(closure->callable);
-                    if (semantic.bodies().body(*body_id).inputs().captures.empty()) {
-                        use = PreparedUse::Consume;
-                    }
+                const auto* plan = std::get_if<PreparedCallableAdaptation>(preparation);
+                if (plan == nullptr) {
+                    invariant_violation("callable adaptation requires preparation");
                 }
-                add(*value.source, use);
+                add(*value.source,
+                    plan->adaptation.borrows_storage() ? PreparedUse::ConstPlace
+                                                       : PreparedUse::Consume);
             },
             [&](const SemTake& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
@@ -145,6 +140,15 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
                 });
             },
             [&](const SemCpp& value) noexcept {
+                if (const auto* conversion = std::get_if<CppConvertOperation>(&value.operation);
+                    conversion != nullptr
+                    && !conversion->explicit_cast
+                    && source.category == SemanticValueCategory::Value) {
+                    // Value initialization delivers the value into its declared
+                    // type; it is not a native call borrowing a Read argument.
+                    add(value.operands.front().expression, PreparedUse::Consume);
+                    return;
+                }
                 for (const auto& input : value.operands) {
                     if (result.empty()
                         && (std::holds_alternative<CppMemberOperation>(value.operation)
@@ -176,6 +180,9 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
                     semantic.types().type(value.callee->type.resolved()).value
                 );
                 add(*value.callee, closure ? PreparedUse::ConstPlace : PreparedUse::OperandValue);
+                if (value.target) {
+                    result.back().demand = PreparedDemand::Effects;
+                }
                 for (const auto& input : value.arguments) {
                     auto prepared = argument(input);
                     const auto* builtin = std::get_if<BuiltinTypeValue>(

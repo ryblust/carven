@@ -119,6 +119,10 @@ auto execution_equal(
     }
     const auto lhs_fact = execution_atom(values, left);
     const auto rhs_fact = execution_atom(values, right);
+    if ((lhs_fact && std::holds_alternative<CStringConstant>(lhs_fact->value))
+        || (rhs_fact && std::holds_alternative<CStringConstant>(rhs_fact->value))) {
+        return std::nullopt;
+    }
     return lhs_fact
         && rhs_fact
         && constant_value_equal(

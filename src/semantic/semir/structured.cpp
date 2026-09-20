@@ -82,9 +82,16 @@ auto BodyFailures::resolved() const noexcept -> FailureSetID {
     invariant_violation("body failures have not been resolved");
 }
 
+auto SemField::consumes_source() const noexcept -> bool {
+    // Read bindings can have Value category while still naming existing storage.
+    return source->category == SemanticValueCategory::Value && !source->selects_storage();
+}
+
 auto SemanticExpression::selects_storage() const noexcept -> bool {
+    if (const auto* field = std::get_if<SemField>(&value)) {
+        return !field->consumes_source();
+    }
     return std::holds_alternative<SemBinding>(value)
-        || std::holds_alternative<SemField>(value)
         || std::holds_alternative<SemIndex>(value)
         || std::holds_alternative<SemDereference>(value);
 }

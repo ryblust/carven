@@ -350,7 +350,10 @@ auto BodyElaborator::build_try(
             if (value_form) {
                 collect_pending(arm_pending, *guard);
             }
-            const auto known = known_boolean_constant(draft(), guard->constant());
+            const auto known = known_boolean_constant(
+                draft(),
+                active_builder().known_constant(guard->expression())
+            );
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 co_return std::unexpected(checked.error());

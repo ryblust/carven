@@ -20,5 +20,13 @@ auto known_boolean(const ConstantStore& constants, const SemanticExpression& exp
 auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
     -> std::optional<bool>;
 
+// Integer checks are independent of the C++ implementation used to produce a value.
+auto integer_operation_may_trap(
+    const SemIRProgram& semantic,
+    BinaryOperator operation,
+    TypeID type,
+    std::optional<ConstantID> right
+) noexcept -> bool;
+
 auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
     -> EvaluationRule;

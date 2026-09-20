@@ -1,0 +1,10 @@
+import <vector> using std::vector;
+import <utility> using std::pair;
+
+var values = vector { 1, 2, 3 };
+let first = values[0];
+values[0] = 9;
+values.push_back(4);
+let entry = pair { first, values.size() };
+println(f"Snapshot: {entry.first}, count: {entry.second}");
+println(f"Current first: {values[0]}");

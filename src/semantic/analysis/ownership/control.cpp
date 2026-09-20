@@ -170,6 +170,9 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             std::move(selected.state)
         ));
         accesses.resize(previous_access);
+        if (arm.pattern_always_matches) {
+            checked.no.reset();
+        }
         auto accepted = std::move(checked.yes);
         remaining = std::move(checked.no);
         result.exits.append_range(std::views::as_rvalue(checked.exits));

@@ -1,6 +1,7 @@
 module carven:semantic.analysis.ownership.expr.impl;
 
 import :semantic.analysis.ownership.context;
+import :semantic.semir.callable;
 import std;
 
 auto OwnershipBodyAnalyzer::place(
@@ -147,26 +148,6 @@ auto OwnershipBodyAnalyzer::expression(
             merge_relationships(flow.normal->value, nest_relationships(std::move(value), path));
         }
         co_return {};
-    };
-    const auto callable_for = [&](TypeID type) noexcept -> std::optional<CallableID> {
-        const auto value = program.types().type(type).value;
-        if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
-            return closure->callable;
-        }
-        if (const auto* function = std::get_if<FunctionTypeValue>(&value)) {
-            return function->callable;
-        }
-        return std::nullopt;
-    };
-    const auto stateless_callable_for = [&](TypeID type) noexcept -> std::optional<CallableID> {
-        const auto callable_id = callable_for(type);
-        if (!callable_id.has_value()) {
-            return std::nullopt;
-        }
-        const auto body_id = program.declarations().body_for_callable(*callable_id);
-        return !body_id.has_value() || program.bodies().body(*body_id).inputs().captures.empty()
-            ? callable_id
-            : std::nullopt;
     };
     if (source.category == SemanticValueCategory::Place) {
         flow = (co_await place(source, std::move(flow.normal->state)));
@@ -553,9 +534,10 @@ auto OwnershipBodyAnalyzer::expression(
                             }
                             return;
                         }
-                        if (const auto callable_id = stateless_callable_for(from)) {
+                        const auto adaptation = callable_adaptation(program, from, to);
+                        if (!adaptation.borrows_storage()) {
                             flow.normal->value.callable_loans.push_back(
-                                {path, std::nullopt, *callable_id, source.origin, false}
+                                {path, std::nullopt, *adaptation.callable, source.origin, false}
                             );
                             return;
                         }
@@ -564,7 +546,7 @@ auto OwnershipBodyAnalyzer::expression(
                             flow.normal->value.callable_loans.push_back(
                                 {path,
                                  element,
-                                 callable_for(from),
+                                 adaptation.callable,
                                  source.origin,
                                  full_expression_storage(element.object)}
                             );
@@ -575,9 +557,14 @@ auto OwnershipBodyAnalyzer::expression(
                     co_return {};
                 },
                 [&](const SemBorrowCallable& value) noexcept -> ContinuationTask<std::monostate> {
+                    const auto adaptation = callable_adaptation(
+                        program,
+                        value.source->type.resolved(),
+                        source.type.resolved()
+                    );
                     if (std::holds_alternative<SemTake>(value.source->value)
                         && analysis.contents(value.source->type.resolved()).callable_view
-                        && value.source->type.resolved() != source.type.resolved()) {
+                        && adaptation.borrows_storage()) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,
                             "taken callable storage cannot back a widened view",
@@ -592,15 +579,14 @@ auto OwnershipBodyAnalyzer::expression(
                     flow.normal->value = relationships;
                     // Equal view types copy the target description. They do not
                     // borrow the intermediate view's storage.
-                    if (value.source->type.resolved() == source.type.resolved()) {
+                    if (adaptation.kind == CallableAdaptationKind::CopyTarget) {
                         co_return {};
                     }
                     auto storage = std::move(flow.normal->value.storage_loans);
-                    if (const auto callable_id =
-                            stateless_callable_for(value.source->type.resolved())) {
+                    if (!adaptation.borrows_storage()) {
                         flow.normal->value = {
                             .callable_loans =
-                                {{{}, std::nullopt, *callable_id, source.origin, false}},
+                                {{{}, std::nullopt, *adaptation.callable, source.origin, false}},
                             .captures = {},
                             .storage_loans = std::move(storage),
                         };
@@ -614,7 +600,7 @@ auto OwnershipBodyAnalyzer::expression(
                             flow.normal->value.callable_loans.push_back(
                                 {{},
                                  selected,
-                                 callable_for(value.source->type.resolved()),
+                                 adaptation.callable,
                                  source.origin,
                                  full_expression_storage(selected.object)
                                      && analysis.contents(value.source->type.resolved())
@@ -716,7 +702,7 @@ auto OwnershipBodyAnalyzer::expression(
                 [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto previous = accesses.size();
                     const auto previous_readers = storage_readers.size();
-                    const auto concrete = callable_for(value.callee->type.resolved());
+                    const auto concrete = callable_identity(program, value.callee->type.resolved());
                     auto callee = OwnershipRelationships {};
                     auto callee_storage = std::vector<OwnershipPlace>();
                     if (concrete.has_value()

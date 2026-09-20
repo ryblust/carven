@@ -94,6 +94,10 @@ auto construct_member_expression(
         concrete ? std::optional(site.draft().type_copy(*concrete)) : std::nullopt;
     const auto* structure = canonical ? std::get_if<StructTypeValue>(&canonical->value) : nullptr;
     if (structure != nullptr) {
+        if (auto access = site.representation_access(structure->structure, source.name_span);
+            !access) {
+            return std::unexpected(access.error());
+        }
         const auto declaration =
             site.draft().construction_struct_declaration_copy(structure->structure);
         const auto field =

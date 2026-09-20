@@ -375,5 +375,9 @@ auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     if (!checked.has_value()) {
         return std::unexpected(checked.error());
     }
-    return consume_value(value, span, AccessMode::Read);
+    auto result = consume_value(value, span, AccessMode::Read);
+    if (result) {
+        result->constant = active_builder().known_constant(*result);
+    }
+    return result;
 }

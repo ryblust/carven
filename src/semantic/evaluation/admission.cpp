@@ -18,6 +18,9 @@ auto supported_execution_type(
     if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
         return true;
     }
+    if (const auto* cpp = std::get_if<CppTypeValue>(&canonical.value)) {
+        return std::holds_alternative<CppConstCharPointerType>(cpp->form);
+    }
     if (std::holds_alternative<ArrayTypeValue>(canonical.value)
         || std::holds_alternative<StructTypeValue>(canonical.value)
         || std::holds_alternative<EnumTypeValue>(canonical.value)) {

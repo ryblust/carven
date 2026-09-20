@@ -46,6 +46,8 @@ enum class EntryPointKind {
     WithArguments,
 };
 
+enum class RecordKind { Struct, Class };
+
 struct FunctionDeclaration final {
     ModuleID module_id;
     ProgramSpellingID name;
@@ -74,6 +76,7 @@ struct NominalCapabilities final {
 };
 
 struct StructDeclaration final {
+    RecordKind kind;
     ModuleID module_id;
     ProgramSpellingID name;
     ProgramOriginID origin;
@@ -83,6 +86,7 @@ struct StructDeclaration final {
 };
 
 struct ConstructionStructDeclaration final {
+    RecordKind kind;
     ModuleID module_id;
     ProgramSpellingID name;
     ProgramOriginID origin;

@@ -144,12 +144,26 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
                 "text factories must be called directly"
             ));
         }
-        auto type = (co_await site.resolve_enum_qualifier(source.operand_id));
+        auto type = (co_await site.resolve_nominal_qualifier(source.operand_id));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
         if (!type->has_value()) {
-            co_return site.invalid_enum_qualifier(site.syntax().expression(source.operand_id).span);
+            co_return site.invalid_nominal_qualifier(
+                site.syntax().expression(source.operand_id).span
+            );
+        }
+        const auto canonical = site.draft().type_copy(**type);
+        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
+            if constexpr (Site::mode == ExpressionMode::Body) {
+                co_return (co_await site.associated_reference(record->structure, source.name_span));
+            } else {
+                co_return std::unexpected(site.fail(
+                    span,
+                    DiagnosticCode::ConstAdmission,
+                    "class operations are not admitted in required constant expressions"
+                ));
+            }
         }
         co_return (co_await interpret_enum_case(
             site,

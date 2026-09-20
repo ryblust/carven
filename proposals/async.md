@@ -3,8 +3,7 @@
 - **Status:** Draft
 - **Implementation:** Not started
 - **Scope:** Async user semantics, compiler facts, lowering, and C++ interoperation boundaries
-- **Depends on:** None for the same-thread core; [memory model](memory-model.md) and
-  [threading](threading.md) for cross-thread execution
+- **Depends on:** None for the same-thread core; [cross-thread concurrency](concurrency.md) for cross-thread execution
 
 ## Summary
 
@@ -17,8 +16,8 @@ Execution context (`OPEN-01`) and suspension, borrow, and frame rules (`OPEN-02`
 block implementation. Provider selection, lowering, and explicit C++ async
 bridges remain deferred under `DEFER-08`.
 
-The same-thread core is independent of the memory model and threading proposals.
-Those dependencies apply when operations, frames, captures, or completions may
+The same-thread core is independent of the cross-thread concurrency proposal.
+That dependency applies when operations, frames, captures, or completions may
 cross threads.
 
 ## Context
@@ -715,8 +714,8 @@ This direction owns any generic async resource-disposal construct.
 
 - **Reason deferred:** Same-thread async can be designed independently; migration introduces value movement,
   sharing, happens-before, synchronization, affinity, and shutdown obligations.
-- **Depends on:** Memory model and threading
-- **Reactivation condition:** Those proposals define a concrete cross-thread value and synchronization contract
+- **Depends on:** Cross-thread concurrency
+- **Reactivation condition:** The concurrency proposal defines a concrete cross-thread value and synchronization contract
   for an actual executor or provider use case.
 
 This direction includes cross-thread resume, physical parallel execution, Send/Sync-like capability,
@@ -727,7 +726,7 @@ cross-thread completion carriers.
 
 - **Reason deferred:** Provider/lowering selection and async `import(cpp)`/`export(cpp)` implementation require
   closed source semantics, execution context, suspension lifetime, and feature-admission facts.
-- **Depends on:** `OPEN-01` and `OPEN-02`; memory model and threading for
+- **Depends on:** `OPEN-01` and `OPEN-02`; cross-thread concurrency for
   cross-thread candidates
 - **Reactivation condition:** The source contract and compiler facts form an actionable vertical slice; a
   provider or lowering may then be selected without leaking experimental types into public artifacts.

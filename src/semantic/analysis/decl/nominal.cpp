@@ -31,7 +31,7 @@ auto DeclResolver::resolve_struct(
     const CatalogSymbol& symbol,
     const CatalogStructForm& form,
     ASTView syntax,
-    const ASTStructDecl& structure,
+    const ASTRecordDecl& structure,
     Span item_span
 ) noexcept -> AnalysisTask<void> {
     auto fields = std::vector<ConstructionStructField>();
@@ -70,6 +70,7 @@ auto DeclResolver::resolve_struct(
         invariant_violation("struct declaration identity is outside its reserved table");
     }
     structures[form.structure.index()] = ConstructionStructDeclaration {
+        .kind = structure.kind == ASTRecordKind::Class ? RecordKind::Class : RecordKind::Struct,
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
         .origin = declaration_source_origin(draft, symbol.module_id, item_span),

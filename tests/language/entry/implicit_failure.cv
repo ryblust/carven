@@ -1,0 +1,7 @@
+struct Failure {}
+
+private fn fail() throw Failure {
+    throw Failure {};
+}
+
+fail()?;

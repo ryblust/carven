@@ -1,6 +1,7 @@
 module carven:semantic.analysis.ownership.state.impl;
 
 import :semantic.analysis.ownership.context;
+import :semantic.semir.evaluation;
 import std;
 
 OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
@@ -389,13 +390,7 @@ auto OwnershipBodyAnalyzer::require_available(
 
 auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
     -> std::optional<bool> {
-    if (source.constant.has_value()) {
-        const auto& constant = program.constants().constant(*source.constant);
-        if (const auto* value = std::get_if<BooleanConstant>(&constant.value)) {
-            return value->value;
-        }
-    }
-    return std::nullopt;
+    return known_boolean(program, source);
 }
 
 auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept

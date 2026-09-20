@@ -67,6 +67,15 @@ auto SemIRProgram::may_stop_test(TypeID type) const noexcept -> bool {
     invariant_violation("test-stop query requires a callable type");
 }
 
+auto SemIRProgram::may_stop_test(const SemCall& call) const noexcept -> bool {
+    return call.target ? may_stop_test(*call.target) : may_stop_test(call.callee->type.resolved());
+}
+
+auto SemIRProgram::call_signature(const SemCall& call) const noexcept -> CallableSignatureID {
+    return call.target ? declaration_store.callable(*call.target).signature
+                       : call_signature(call.callee->type.resolved());
+}
+
 auto SemIRProgram::call_signature(TypeID type) const noexcept -> CallableSignatureID {
     return type_store.type(type).value.visit(
         [&](const auto& value) noexcept -> CallableSignatureID {

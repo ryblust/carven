@@ -249,6 +249,7 @@ auto BodyElaborator::lambda_expression(
         true,
         false
     );
+    child.lexical_class = lexical_class;
     for (const auto& [name, local] : visible_locals()) {
         if (std::holds_alternative<ConstantID>(local.storage)) {
             child.inherited_locals.emplace(name, local);

@@ -9,7 +9,7 @@ enum Status: u8 {
     Done,
 }
 
-enum class {
+enum union {
     template(i32),
     namespace,
 }
@@ -23,7 +23,7 @@ enum Collision {
     as_number,
 }
 
-fn keyword_value(value: class) -> i32 {
+fn keyword_value(value: union) -> i32 {
     return match value {
         .template(item) => item,
         .namespace => 0,
@@ -48,7 +48,7 @@ test "Enums: sum values construct compare and expose constructors" {
     let contextual: Value = .Pair(1, 9);
     let factory = Value::Number;
     let from_factory = factory(13);
-    let keyword_case: class = .template(17);
+    let keyword_case: union = .template(17);
     var original: Value = .Number(19);
     let copied = original;
     original = .Empty;

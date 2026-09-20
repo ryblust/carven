@@ -1,0 +1,3 @@
+const constant_text = c"shared across modules";
+
+export fn constant_text_value() => constant_text;

@@ -1,0 +1,30 @@
+private struct Hidden {
+    value: i32,
+}
+
+private struct PointerOnly {
+    value: i32,
+}
+
+private enum Mode {
+    Ready,
+}
+
+class Box {
+    hidden: Hidden,
+
+    fn create(value: i32) -> Box {
+        return {
+            hidden: Hidden { value: value }
+        };
+    }
+
+    fn read(self) -> i32 {
+        return self.hidden.value;
+    }
+}
+
+export class Indirect {
+    hidden: ptr<PointerOnly>,
+    mode: Mode,
+}

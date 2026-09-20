@@ -236,7 +236,10 @@ auto BodyElaborator::build_if(
         if (!condition.has_value()) {
             co_return std::unexpected(condition.error());
         }
-        const auto known = known_boolean_constant(draft(), condition->constant());
+        const auto known = known_boolean_constant(
+            draft(),
+            active_builder().known_constant(condition->expression())
+        );
         if (value_form) {
             collect_pending(pending, *condition);
         }
@@ -328,7 +331,8 @@ auto BodyElaborator::while_statement(const ASTWhileStmt& source, Span span) noex
     if (!condition.has_value()) {
         co_return std::unexpected(condition.error());
     }
-    const auto known = known_boolean_constant(draft(), condition->constant());
+    const auto known =
+        known_boolean_constant(draft(), active_builder().known_constant(condition->expression()));
     auto check = require_bool(*condition, ast.expression(source.condition).span);
     if (!check.has_value()) {
         co_return std::unexpected(check.error());

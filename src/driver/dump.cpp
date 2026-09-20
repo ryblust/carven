@@ -1,6 +1,6 @@
 module carven:driver.dump.impl;
 
-import :diagnostics.report;
+import :driver.diagnostic;
 import :driver.dump;
 import :driver.timings;
 import :frontend.dump.ast;
@@ -89,9 +89,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
 
     const auto request = parse_request(args);
     if (!request) {
-        std::println(std::cerr, "carven dump: error: {}", request.error());
-        std::println(std::cerr, "Run 'carven dump --help' for usage.");
-        return 1;
+        return emit_driver_error(request.error(), "carven dump");
     }
 
     auto timings = CommandTimings(request->timings, "dump");
@@ -100,13 +98,9 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
     const auto source_id = sources.append_file(request->input_path);
     loading.stop();
     if (!source_id) {
-        std::println(
-            std::cerr,
-            "carven dump: error: {}: '{}'",
-            source_id.error().message,
-            source_id.error().origin
+        return emit_driver_error(
+            std::format("{}: '{}'", source_id.error().message, source_id.error().origin)
         );
-        return 1;
     }
 
     auto lexing = TimingScope(timings.recorder(), TimingStage::Lexing);
@@ -119,7 +113,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
         std::print("{}", render_token_dump(sources, lexical.value));
     }
     if (!lexical.diagnostics.empty()) {
-        std::print(std::cerr, "{}", render_diagnostics(lexical.diagnostics, sources));
+        emit_source_diagnostics(lexical.diagnostics, sources);
         return 1;
     }
     if (request->kind == DumpKind::Tokens) {
@@ -131,7 +125,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
     const auto parsed = parse(sources, lexical.value);
     parsing.stop();
     if (!parsed) {
-        std::print(std::cerr, "{}", render_diagnostics(parsed.error(), sources));
+        emit_source_diagnostics(parsed.error(), sources);
         return 1;
     }
     if (request->kind == DumpKind::All) {

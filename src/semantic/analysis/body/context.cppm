@@ -227,6 +227,7 @@ class BodyBatchElaborator;
 class BodyElaborator final {
     friend class BodyExprSite;
     friend class BodyBatchElaborator;
+    std::optional<StructID> lexical_class;
 
 public:
     BodyElaborator(
@@ -268,7 +269,7 @@ private:
     auto resolve_function(std::string_view name, Span span) noexcept
         -> AnalysisTask<std::optional<FunctionID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
-    auto resolve_enum_qualifier(ASTExprID expression) noexcept
+    auto resolve_nominal_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisTask<ResolvedEnumCase>;
@@ -425,7 +426,8 @@ private:
     auto call_expression(
         const ASTCallExpr& source,
         Span span,
-        std::optional<SelectedExpression> prepared_callee = std::nullopt
+        std::optional<SelectedExpression> prepared_callee = std::nullopt,
+        std::optional<BuiltExpression> receiver = std::nullopt
     ) noexcept -> AnalysisTask<BuiltExpression>;
     auto enum_case_reference(
         TypeID enumeration_type,
@@ -515,6 +517,15 @@ private:
         std::optional<ConstructionTypeRef> expected = std::nullopt,
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisTask<std::optional<BuiltExpression>>;
+    auto class_operation(StructID owner, std::string_view name, bool receiver, Span span) noexcept
+        -> AnalysisTask<BuiltExpression>;
+    auto class_call(
+        const ASTCallExpr& source,
+        const ASTMemberExpr& member,
+        StructID owner,
+        std::optional<BuiltExpression> receiver,
+        Span span
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto callable_contract(ConstructionTypeRef type, Span span) noexcept
         -> AnalysisResult<ConstructionCallableContract>;
     auto build_call_argument(
@@ -523,6 +534,13 @@ private:
         std::optional<ConstructionTypeRef> expected,
         std::optional<DiagnosticCode> mismatch_code = std::nullopt
     ) noexcept -> AnalysisTask<BuiltCallArgument>;
+    auto bind_call_argument(
+        BuiltExpression built,
+        AccessMode access_mode,
+        std::optional<ConstructionTypeRef> expected,
+        Span span,
+        std::optional<DiagnosticCode> mismatch_code
+    ) noexcept -> AnalysisResult<BuiltCallArgument>;
 
     BodyLocalNames inherited_locals;
     BodyBatchElaborator* batch;

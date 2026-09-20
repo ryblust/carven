@@ -71,6 +71,10 @@ TEST_CASE("SemIR publication: source format result types and Read operands are r
                 .type = boolean_type,
                 .value = BooleanConstant {.value = true},
             });
+            const auto native_constant = builder.intern_constant({
+                .type = native_type,
+                .value = CStringConstant {.value = builder.intern_spelling("native")},
+            });
             builder.finish_declaration_heads();
             auto reservation = builder.reserve_body(BodyKind::Test);
             builder.define_test(
@@ -95,10 +99,7 @@ TEST_CASE("SemIR publication: source format result types and Read operands are r
                               native_type,
                               lifetime,
                               facts.origin,
-                              SemCpp {
-                                  .operation = CppCStringOperation {.bytes = "native"},
-                                  .operands = {},
-                              }
+                              SemConstant {.constant = native_constant}
                           )
                         : index == 1uz
                         ? body.make_expression(

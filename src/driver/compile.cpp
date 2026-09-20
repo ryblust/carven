@@ -6,11 +6,14 @@ import :backend.generate;
 import :backend.generation.request;
 import :driver.analysis;
 import :driver.compile;
+import :driver.diagnostic;
 import :driver.options;
 import :driver.sources;
 import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
+import :source.module_path;
+import :support.path;
 import :support.invariant;
 import :support.timing;
 import :support.visit;
@@ -75,7 +78,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "\n"
             "Output options:\n"
             "  -o, --output-dir <dir>    Write files below <dir> (default: .)\n"
-            "      --stdout              Print generated files with path headings\n"
+            "      --stdout              Print explicit inputs with path headings\n"
             "      --linkage-domain=<id> Set the private namespace identity\n"
             "                            (default: derived from the output directory)\n"
             "\n"
@@ -96,23 +99,19 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     }
     auto request = parse_compile_command_options(args);
     if (!request) {
-        std::println(std::cerr, "carven: error: {}", format_compile_option_error(request.error()));
-        std::println(std::cerr, "Run 'carven compile --help' for usage.");
-        return 1;
+        return emit_driver_error(format_compile_option_error(request.error()), "carven compile");
     }
 
     auto timings = CommandTimings(request->timings, "compilation");
     auto linkage_domain = resolve_linkage_domain(*request);
     if (!linkage_domain.has_value()) {
-        std::println(std::cerr, "carven: error: {}", linkage_domain.error());
-        return 1;
+        return emit_driver_error(linkage_domain.error());
     }
 
     const auto sources =
         collect_command_sources(executable, request->input_paths, timings.recorder());
     if (!sources) {
-        std::println(std::cerr, "carven: error: {}", sources.error());
-        return 1;
+        return emit_driver_error(sources.error());
     }
     auto semantic = load_and_analyze_sources(
         sources->carven,
@@ -126,13 +125,32 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     if (!semantic) {
         return 1;
     }
+    auto displayed_modules = std::vector<CanonicalModulePath>();
+    auto selection = std::optional<std::span<const CanonicalModulePath>>();
+    if (std::holds_alternative<StandardOutputArtifactDestination>(request->destination)) {
+        for (const auto& source : sources->carven) {
+            for (const auto input : request->input_paths) {
+                auto error = std::error_code();
+                if (std::filesystem::equivalent(
+                        path_from_utf8(source.path),
+                        path_from_utf8(input),
+                        error
+                    )) {
+                    displayed_modules.push_back(source.module_path);
+                    break;
+                }
+            }
+        }
+        selection = displayed_modules;
+    }
     auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
             .test_mode = request->test_mode,
             .linkage_domain = std::move(*linkage_domain),
-        }
+        },
+        selection
     );
 
     generation.stop();
@@ -151,8 +169,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     );
     writing.stop();
     if (!written) {
-        std::println(std::cerr, "carven: error: {}", written.error());
-        return 1;
+        return emit_driver_error(written.error());
     }
     timings.set_outcome("finished");
     return 0;

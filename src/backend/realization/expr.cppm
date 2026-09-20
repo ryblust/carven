@@ -20,7 +20,11 @@ import std;
 // retain declarations in the frame and initialize them in the selected branch.
 class BodyRealizer::ExpressionBuilder final {
 public:
-    ExpressionBuilder(BodyRealizer& owner, const SemanticExpression& source) noexcept;
+    ExpressionBuilder(
+        BodyRealizer& owner,
+        const SemanticExpression& source,
+        std::optional<LifetimeRegionID> delivered_region = std::nullopt
+    ) noexcept;
     ~ExpressionBuilder() noexcept;
     auto owns(const SemanticExpression& source) const noexcept -> bool;
     auto evaluate(
@@ -82,12 +86,16 @@ private:
     BodyRealizer& owner;
     LifetimeRegionID cleanup;
     ExpressionBuilder* previous_frame;
+    bool independent_scope;
+    bool automatic_storage;
     LoweringStmtBuilder declarations;
     LoweringStmtBuilder statements;
 
     auto finish_fragment(Fragment value) noexcept -> Fragment;
     auto adopt(Fragment& value) noexcept -> void;
     auto take_statements(bool shared = false) noexcept -> LoweringStmtBuilder;
+    auto has_independent_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
+        -> bool;
 
     template<typename T>
     static auto complete(Fragment& value, T result) noexcept -> void {
@@ -104,11 +112,11 @@ private:
     auto discard_pending(Fragment& value) noexcept -> void;
     auto has_storage_read(const Fragment& value) const noexcept -> bool;
     auto has_effect(const Fragment& value) const noexcept -> bool;
+    static auto value_binding(PreparedUse use) noexcept -> TargetVariableBinding;
     auto build(
         const SemanticExpression& expression,
         bool result_needed = true,
         PreparedUse result_use = PreparedUse::Consume,
-        bool full_expression_root = false,
         bool propagate_outcome = false,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,
         bool direct_return = false,
@@ -146,7 +154,6 @@ private:
         const FallibleCall& transport,
         bool project_success,
         PreparedUse use,
-        bool direct,
         bool propagate_outcome
     ) noexcept -> void;
 };

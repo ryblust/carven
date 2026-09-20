@@ -1,33 +1,25 @@
-import std::utf.validation using {
-    UTF8Error,
-    UTF8ErrorKind,
-    validate_utf8,
-    validator,
-    push,
-    feed,
-    finish,
-};
+import std::utf.validation using { UTF8Error, UTF8ErrorKind, validate_utf8, UTF8Validator };
 
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
     let view = bytes.as_slice();
     for split in 0..=view.len() {
-        var state = validator();
+        var state = UTF8Validator::create();
         try {
-            feed(&state, view.slice(0, split))?;
-            feed(&state, view.slice(split, view.len()))?;
-            finish(state)?;
-            check(state.offset == 5);
+            state.feed(view.slice(0, split))?;
+            state.feed(view.slice(split, view.len()))?;
+            state.finish()?;
+            check(state.processed_bytes() == 5);
         } catch {
             UTF8Error(_) => check(false),
         }
     }
-    var state = validator();
+    var state = UTF8Validator::create();
     var rejected = false;
     try {
-        push(&state, 0x61)?;
-        push(&state, 0xe2)?;
-        push(&state, 0x28)?;
+        state.push(0x61)?;
+        state.push(0xe2)?;
+        state.push(0x28)?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind
@@ -37,10 +29,10 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
         },
     }
     check(rejected);
-    check(state.offset == 2);
+    check(state.processed_bytes() == 2);
     rejected = false;
     try {
-        finish(state)?;
+        state.finish()?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind
@@ -243,36 +235,37 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
         check(rejected);
         for first in 0..=bytes.len() {
             for second in first..=bytes.len() {
-                var state = validator();
+                var state = UTF8Validator::create();
                 rejected = false;
                 try {
-                    feed(&state, bytes.slice(0, first))?;
-                    feed(&state, bytes.slice(first, second))?;
-                    feed(&state, bytes.slice(second, bytes.len()))?;
-                    finish(state)?;
+                    state.feed(bytes.slice(0, first))?;
+                    state.feed(bytes.slice(first, second))?;
+                    state.feed(bytes.slice(second, bytes.len()))?;
+                    state.finish()?;
                 } catch {
                     UTF8Error(error) => { rejected = error == item.error; },
                 }
                 check(rejected);
-                check(state.offset == item.error.offset);
+                check(state.processed_bytes() == item.error.offset);
             }
         }
         if item.error.offset < bytes.len() {
-            var state = validator();
+            var state = UTF8Validator::create();
             try {
-                feed(&state, bytes.slice(0, item.error.offset))?;
+                state.feed(bytes.slice(0, item.error.offset))?;
             } catch {
                 UTF8Error(_) => check(false),
             }
             let before = state;
             rejected = false;
             try {
-                push(&state, bytes[item.error.offset])?;
+                state.push(bytes[item.error.offset])?;
             } catch {
                 UTF8Error(error) => { rejected = error == item.error; },
             }
             check(rejected);
-            check(state == before);
+            check(state.processed_bytes() == before.processed_bytes());
+            check(state.is_complete() == before.is_complete());
         }
     }
 }

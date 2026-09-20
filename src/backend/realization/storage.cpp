@@ -165,6 +165,22 @@ auto BodyRealizer::ExpressionBuilder::emit(
     return result;
 }
 
+auto BodyRealizer::ExpressionBuilder::value_binding(PreparedUse use) noexcept
+    -> TargetVariableBinding {
+    switch (use) {
+        case PreparedUse::ReadBorrow:
+        case PreparedUse::AddressValue:
+        case PreparedUse::OperandValue:
+        case PreparedUse::ConstPlace:   return TargetVariableBinding::ConstValue;
+        case PreparedUse::WritePlace:
+        case PreparedUse::Consume:
+        case PreparedUse::NativeTake:   return TargetVariableBinding::MutableValue;
+        case PreparedUse::ProjectionPlace:
+            invariant_violation("projection access was not resolved before storage");
+    }
+    std::unreachable();
+}
+
 auto BodyRealizer::ExpressionBuilder::anchor(
     Fragment& fragment,
     PreparedUse use,
@@ -198,9 +214,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         )) {
         fragment.statements.emit(generated_statement(
             TargetVariableStmt {
-                .binding = use == PreparedUse::Consume || use == PreparedUse::NativeTake
-                    ? TargetVariableBinding::MutableValue
-                    : TargetVariableBinding::ConstValue,
+                .binding = value_binding(use),
                 .maybe_unused = false,
                 .local = name,
                 .type = owner.context.lower_type(value.operation.type.resolved()),
@@ -208,28 +222,6 @@ auto BodyRealizer::ExpressionBuilder::anchor(
             }
         ));
         complete(fragment, Saved {.local = name, .kind = SavedKind::Value});
-        return;
-    }
-    if (std::holds_alternative<SemCppCall>(value.operation.value)
-        && use != PreparedUse::Consume
-        && use != PreparedUse::NativeTake) {
-        const auto* native = std::get_if<CppTypeValue>(
-            &owner.context.semantic().types().type(value.operation.type.resolved()).value
-        );
-        const auto* query = native == nullptr ? nullptr : std::get_if<CppQueryType>(&native->form);
-        if (query == nullptr) {
-            invariant_violation("native call has no result query");
-        }
-        const auto exact = owner.context.lower_cpp_query(*query);
-        const auto storage = LoweringDeferredStorage {.local = name, .value_type = exact};
-        owner.declare_deferred(storage, false, fragment.declarations);
-        owner.initialize_deferred(
-            storage,
-            raw(fragment),
-            fragment.statements,
-            owner.context.intrinsic_type(TargetSymbol::DecltypeAuto)
-        );
-        complete(fragment, Saved {.local = name, .kind = SavedKind::StoredValue});
         return;
     }
     // Consume completes a value snapshot at this barrier, not merely a
@@ -261,17 +253,55 @@ auto BodyRealizer::ExpressionBuilder::anchor(
               {.access = AccessMode::Read, .type = value.operation.type.resolved()}
           )
         : owner.context.lower_type(value.operation.type.resolved());
-    const auto storage = LoweringDeferredStorage {.local = name, .value_type = type};
+    auto storage_type = type;
+    const auto exact_call = std::holds_alternative<SemCppCall>(value.operation.value)
+        && use != PreparedUse::Consume
+        && use != PreparedUse::NativeTake;
+    if (exact_call) {
+        const auto* native = std::get_if<CppTypeValue>(
+            &owner.context.semantic().types().type(value.operation.type.resolved()).value
+        );
+        const auto* query = native == nullptr ? nullptr : std::get_if<CppQueryType>(&native->form);
+        if (query == nullptr) {
+            invariant_violation("native call has no result query");
+        }
+        storage_type = owner.context.lower_cpp_query(*query);
+    }
+    auto initializer = !exact_call
+            && (use == PreparedUse::Consume
+                || use == PreparedUse::OperandValue
+                || use == PreparedUse::WritePlace
+                || use == PreparedUse::NativeTake)
+        ? emit(fragment, use)
+        : raw(fragment);
+    if (automatic_storage) {
+        // References and ReadArg already carry access in their type. Owned
+        // snapshots instead derive their qualification from the consumer.
+        const auto access_in_type = place || (read && !read_value);
+        fragment.statements.emit(generated_statement(
+            TargetVariableStmt {
+                .binding =
+                    access_in_type ? TargetVariableBinding::MutableValue : value_binding(use),
+                .maybe_unused = false,
+                .local = name,
+                .type = storage_type,
+                .initializer = std::move(initializer)
+            }
+        ));
+        complete(
+            fragment,
+            Saved {.local = name, .kind = place ? SavedKind::Place : SavedKind::Value}
+        );
+        return;
+    }
+    const auto storage = LoweringDeferredStorage {.local = name, .value_type = storage_type};
     owner.declare_deferred(storage, false, fragment.declarations);
     owner.initialize_deferred(
         storage,
-        use == PreparedUse::Consume
-                || use == PreparedUse::OperandValue
-                || use == PreparedUse::WritePlace
-                || use == PreparedUse::NativeTake
-            ? emit(fragment, use)
-            : raw(fragment),
-        fragment.statements
+        std::move(initializer),
+        fragment.statements,
+        exact_call ? std::optional(owner.context.intrinsic_type(TargetSymbol::DecltypeAuto))
+                   : std::nullopt
     );
     complete(
         fragment,

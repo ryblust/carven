@@ -46,6 +46,13 @@ struct StringConstant final {
     constexpr auto operator==(const StringConstant&) const noexcept -> bool = default;
 };
 
+struct CStringConstant final {
+    ProgramSpellingID value;
+    constexpr auto operator==(const CStringConstant&) const noexcept -> bool = default;
+};
+
+auto valid_cstring_bytes(std::string_view bytes) noexcept -> bool;
+
 struct F32Constant final {
     float value;
 
@@ -102,6 +109,7 @@ using ConstantValue = std::variant<
     BooleanConstant,
     NullPointerConstant,
     StringConstant,
+    CStringConstant,
     F32Constant,
     F64Constant,
     CharacterConstant,

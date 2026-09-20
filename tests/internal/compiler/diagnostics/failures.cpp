@@ -423,7 +423,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
     }
 }
 
-TEST_CASE("Compiler diagnostics: entry failure contracts are explicit regardless of visibility") {
+TEST_CASE("Compiler diagnostics: explicit entry contracts and implicit entry inference") {
     struct Case final {
         std::string_view source;
         std::string_view error;
@@ -434,6 +434,13 @@ TEST_CASE("Compiler diagnostics: entry failure contracts are explicit regardless
         Case {"fn main() -> i32 { return 7; }", ""},
         Case {"struct E {} fn main() throw E { throw E {}; }", ""},
         Case {"struct E {} private fn main() throw E {}", ""},
+        Case {"struct E {} throw E {};", ""},
+        Case {"struct E {} private fn fail() throw E { throw E {}; } fail()?;", ""},
+        Case {
+            "struct E {} private fn fail() throw E { throw E {}; } "
+            "try { fail()?; } catch { E(_) => {}, }",
+            ""
+        },
         Case {"struct E {} private fn main() { throw E {}; }", "CV-EFFECT-THROW-PUBLISHED"},
         Case {"struct E {} fn main() { throw E {}; }", "CV-EFFECT-THROW-PUBLISHED"},
         Case {

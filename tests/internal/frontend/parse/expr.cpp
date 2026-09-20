@@ -74,7 +74,7 @@ TEST_CASE("Parser: primary and postfix forms keep construction types inline") {
     CHECK(is<ASTGroupExpr>(initializer(result, 1)));
 
     const auto& defaulted = get<ASTConstructionExpr>(initializer(result, 2));
-    CHECK(is<ASTNamedType>(defaulted.type));
+    CHECK(is<ASTNamedType>(*defaulted.type));
     CHECK(is<std::monostate>(defaulted.initializer));
 
     const auto& positional = get<ASTConstructionExpr>(initializer(result, 3));
@@ -89,7 +89,7 @@ TEST_CASE("Parser: primary and postfix forms keep construction types inline") {
     const auto& call = get<ASTCallExpr>(ast.expression(index.operand_id));
     CHECK_EQ(call.arguments.size(), 2u);
 
-    CHECK(is<ASTFunctionType>(get<ASTConstructionExpr>(initializer(result, 6)).type));
+    CHECK(is<ASTFunctionType>(*get<ASTConstructionExpr>(initializer(result, 6)).type));
     REQUIRE_EQ(ast.types().size(), 2u);
     CHECK(std::ranges::all_of(ast.types(), [](const ASTType& type) static noexcept {
         return is<ASTNamedType>(type);
@@ -202,7 +202,7 @@ TEST_CASE("Parser: global C++ paths preserve their root and components") {
     CHECK_EQ(slice(text, name.components[1]), "calculate");
     CHECK_EQ(slice(text, ast.expression(call.callee).span), "::vendor::calculate");
     const auto& construction = get<ASTConstructionExpr>(initializer(tree, 1uz));
-    const auto& type = get<ASTNamedType>(construction.type);
+    const auto& type = get<ASTNamedType>(*construction.type);
     REQUIRE(type.global_root.has_value());
     CHECK_EQ(slice(text, *type.global_root), "::");
 }
@@ -219,4 +219,16 @@ TEST_CASE("Parser: incomplete global C++ paths are rejected") {
     for (const auto* source : cases) {
         check_rejected(source);
     }
+}
+
+TEST_CASE("Parser: contextual construction keeps the absent type explicit") {
+    const auto tree = parse_valid("fn f() { let value: Pair = { first: 1, second: {} }; }");
+    const auto& construction = get<ASTConstructionExpr>(initializer(tree, 0uz));
+    CHECK(!construction.type.has_value());
+    const auto& fields = std::get<ASTFieldInitializerList>(construction.initializer.value).fields;
+    REQUIRE_EQ(fields.size(), 2uz);
+    const auto& empty = get<ASTConstructionExpr>(tree.view().expression(fields[1].value));
+    CHECK(!empty.type.has_value());
+    CHECK(std::holds_alternative<std::monostate>(empty.initializer.value));
+    check_invalid("fn f() { let value: Pair = { 1, 2 }; }");
 }

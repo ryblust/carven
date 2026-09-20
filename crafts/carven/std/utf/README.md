@@ -24,10 +24,10 @@ the official package sources.
 | `encode_utf8(character: char) -> UTF8Encoded` | Four-byte array `bytes` and valid `width` |
 | `char_from_u32(value: u32) -> char throw UnicodeScalarError` | Reject surrogates and values above U+10FFFF |
 | `char_to_u32(value: char) -> u32` | Unicode scalar number |
-| `validator() -> UTF8Validator` | Start an incremental validation attempt |
-| `push(&state: UTF8Validator, byte: u8) throw UTF8Error` | Accept one byte |
-| `feed(&state: UTF8Validator, bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
-| `finish(state: UTF8Validator) throw UTF8Error` | Declare logical EOF |
+| `UTF8Validator::create() -> UTF8Validator` | Start an incremental validation attempt |
+| `state.push(byte: u8) throw UTF8Error` | Accept one byte |
+| `state.feed(bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
+| `state.finish() throw UTF8Error` | Declare logical EOF |
 
 Array arguments create byte views implicitly; `as_slice()` is also available. Text exposes `[u8]`
 through `.bytes`. `from_utf8` returns a view into the input: the caller must keep
@@ -67,9 +67,11 @@ retrying with different bytes describes a different stream. An incomplete block
 is accepted, and only `finish` reports truncation. Logical stream length must
 fit `usize`.
 
-Initialize `UTF8Validator` through `validator()` and change it through `push`
-or `feed`. Its fields record byte positions and the pending sequence; it stores
-no input.
+Initialize `UTF8Validator` through `UTF8Validator::create()` and change it through
+`push` or `feed`. Its private fields record byte positions and the pending
+sequence; it stores no input. `processed_bytes()` returns the accepted byte count,
+and `is_complete()` reports whether no partial scalar is pending. Both queries
+and `finish()` use Read access; checking EOF does not consume the validator.
 
 ## Implementation and tests
 

@@ -106,7 +106,9 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         (*this)(call->callee_failures);
         const auto& type =
             canonical_types.type(types.resolve(call->callee->type.construction())).value;
-        if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
+        if (call->target) {
+            value.exits_test = test_stops[call->target->index()];
+        } else if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
             value.exits_test = test_stops[function->callable.index()];
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
             value.exits_test = test_stops[closure->callable.index()];
@@ -156,41 +158,43 @@ auto BodyResolver::operator()(SemanticRegion& value) const noexcept -> void {
 
 auto BodyResolver::operator()(SemTry& value) const noexcept -> void {
     const auto protected_failures = failures.failure_set(value.protected_failures.term());
-    if (!failure_sets.failure_set(protected_failures).members.empty()) {
-        for (auto& arm : value.arms) {
-            const auto accepted =
-                failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
-            auto useful = false;
-            for (auto& alternative : arm.alternatives) {
-                const auto matches = alternative.pattern.visit(
-                    Overloaded {
-                        [&](CatchAllPattern) noexcept { return !accepted.members.empty(); },
-                        [&](const SemTypedCatchPattern& pattern) noexcept {
-                            return std::ranges::contains(
-                                accepted.members,
-                                types.resolve(pattern.type.construction())
-                            );
-                        },
-                    }
-                );
-                alternative.reachable = alternative.reachable && matches;
-                useful = useful || alternative.reachable;
-            }
-            if (!useful) {
-                warning(
-                    DiagnosticCode::EffectCatchArmUnreachable,
-                    "catch arm cannot match any remaining protected failure",
-                    arm.origin
-                );
-            } else {
-                for (const auto& alternative : arm.alternatives) {
-                    if (!alternative.reachable) {
-                        warning(
-                            DiagnosticCode::EffectCatchAlternativeUnreachable,
-                            "catch alternative cannot match a remaining protected failure",
-                            alternative.origin
+    const auto can_fail = !failure_sets.failure_set(protected_failures).members.empty();
+    for (auto& arm : value.arms) {
+        const auto accepted =
+            failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
+        auto useful = false;
+        for (auto& alternative : arm.alternatives) {
+            const auto matches = alternative.pattern.visit(
+                Overloaded {
+                    [&](CatchAllPattern) noexcept { return !accepted.members.empty(); },
+                    [&](const SemTypedCatchPattern& pattern) noexcept {
+                        return std::ranges::contains(
+                            accepted.members,
+                            types.resolve(pattern.type.construction())
                         );
-                    }
+                    },
+                }
+            );
+            alternative.reachable = alternative.reachable && matches;
+            useful = useful || alternative.reachable;
+        }
+        if (!can_fail) {
+            continue;
+        }
+        if (!useful) {
+            warning(
+                DiagnosticCode::EffectCatchArmUnreachable,
+                "catch arm cannot match any remaining protected failure",
+                arm.origin
+            );
+        } else {
+            for (const auto& alternative : arm.alternatives) {
+                if (!alternative.reachable) {
+                    warning(
+                        DiagnosticCode::EffectCatchAlternativeUnreachable,
+                        "catch alternative cannot match a remaining protected failure",
+                        alternative.origin
+                    );
                 }
             }
         }

@@ -139,6 +139,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         holder,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = holder_name,
             .origin = origin,
@@ -157,6 +158,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     builder.define_declaration(
         guarded_failure_structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = guarded_failure_name,
             .origin = origin,
@@ -348,6 +350,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         builder.define_declaration(
             structure,
             ConstructionStructDeclaration {
+                .kind = RecordKind::Struct,
                 .module_id = module_id,
                 .name = nominal_name,
                 .origin = origin,

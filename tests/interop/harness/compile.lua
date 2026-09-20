@@ -24,7 +24,13 @@ function main(target, name, diagnostics)
         .. " (" .. tostring(run_error) .. "): " .. context)
     local primary
     if diagnostics.site == "source" then
-        primary = errors:match("probe%.cv:%d+:%d+: error: ([^\n]+)")
+        -- Type-query failures can precede the diagnostic at the actual expression.
+        for message in errors:gmatch("probe%.cv:%d+:%d+: error: ([^\n]+)") do
+            if message:find(diagnostics[1], 1, true) then
+                primary = message
+                break
+            end
+        end
         -- Standard-library template errors can attribute the call through a note.
         if not primary and diagnostics.note then
             for note in errors:gmatch("probe%.cv:%d+:%d+: note: ([^\n]+)") do

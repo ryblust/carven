@@ -39,6 +39,7 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,
@@ -99,6 +100,7 @@ TEST_CASE("SemIR publication invariant: a named declaration has one module item"
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
             .origin = facts.origin,
@@ -139,6 +141,7 @@ TEST_CASE("SemIR publication invariant: a module item agrees with its declaratio
     builder.define_declaration(
         structure,
         ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
             .module_id = first_module,
             .name = builder.intern_spelling("Structure"),
             .origin = first_facts.origin,
@@ -457,6 +460,7 @@ TEST_CASE("SemIR declaration invariant: builder rejects cross-program module ref
         first.define_declaration(
             structure,
             ConstructionStructDeclaration {
+                .kind = RecordKind::Struct,
                 .module_id = foreign_module,
                 .name = first.intern_spelling("Structure"),
                 .origin = facts.origin,

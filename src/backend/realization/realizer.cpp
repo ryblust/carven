@@ -80,7 +80,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
     }
     auto completed = std::move(statements).finish();
     auto referenced_parameters =
-        finish_body_declarations(completed, inputs.parameters, mutable_owners);
+        finish_body_declarations(completed, inputs.parameters, mutable_owners, removable_locals);
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),
@@ -100,7 +100,10 @@ auto BodyRealizer::region(
     }
     if (statements.continues()) {
         if (source.result.has_value()) {
-            (co_await result_expression(*source.result, result, statements));
+            auto delivery = LoweringStmtBuilder();
+            (co_await result_expression(*source.result, result, delivery, source.lifetime));
+            // Tail owners are initialized, observed and delivered before this block exits.
+            statements.scope(std::move(delivery));
         } else {
             deliver_result(LoweringCompleted {}, result, statements);
         }
@@ -120,7 +123,7 @@ auto BodyRealizer::fallible(const SemanticExpression& source) const noexcept
                  .failure_sets()
                  .failure_set(call->callee_failures.resolved())
                  .members.empty()
-            || context.semantic().may_stop_test(call->callee->type.resolved()))) {
+            || context.semantic().may_stop_test(*call))) {
         return FallibleCall {
             .failures = call->callee_failures.resolved(),
             .destination = current_failure

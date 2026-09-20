@@ -184,7 +184,7 @@ auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
     co_return std::optional(function->function);
 }
 
-auto BodyElaborator::resolve_enum_qualifier(ASTExprID expression) noexcept
+auto BodyElaborator::resolve_nominal_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
@@ -201,6 +201,11 @@ auto BodyElaborator::resolve_enum_qualifier(ASTExprID expression) noexcept
     auto selected = (co_await find_global(text, name->name_span));
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
+    }
+    if (const auto* record = std::get_if<CatalogStructForm>(&(*selected)->form)) {
+        co_return std::optional(
+            draft().intern_type({.value = StructTypeValue {.structure = record->structure}})
+        );
     }
     const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
     if (enumeration == nullptr) {
@@ -226,7 +231,7 @@ auto BodyElaborator::resolve_constant_enum_case(
         co_return std::unexpected(fail(
             span,
             DiagnosticCode::TypeEnumContext,
-            "enum case qualifier does not name an enum type"
+            "scope qualifier does not name an enum or class type"
         ));
     }
     const auto enumeration = draft().enum_declaration_copy(nominal->enumeration);
