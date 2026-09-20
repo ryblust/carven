@@ -23,8 +23,8 @@ runtime call.
 `title` uses direct interpolation. `make_catalog` grows a local String through a
 loop, `push`, and `append_format`; `frame` receives an owning interpolation result.
 Intermediate values keep their String type and ownership. Each completed constant
-initializer freezes text to immutable `str`, while `title_bytes` queries the text
-before that boundary.
+initializer freezes text to immutable `str`; `title_bytes` reads the byte length
+of the completed `title` constant.
 
 The source supplies no fixed capacity or manually computed result length.
 Carven knows the inputs, types, and selected operations, executes the admitted
@@ -68,7 +68,8 @@ From the repository root:
 ```
 
 `--stdout` prints artifact headings and contents without writing generated files.
-Supply every module in the source batch; imports do not discover source files.
+Supply every application module shown above. The driver also collects the
+toolchain and project Crafts; imports resolve within that combined source batch.
 
 Semantic analysis resolves operations, evaluates admitted constant bodies, and
 freezes completed values. The backend emits text literals and typed array or

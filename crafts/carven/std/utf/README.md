@@ -5,8 +5,8 @@ implements Unicode scalar conversion and UTF-8 encoding, decoding, validation,
 and text construction.
 
 Import a capability module, such as `import std::utf.text using to_string;`.
-The [Xmake integration](../../../../docs/toolchain.md#build-integration) supplies
-the official package sources and native include path.
+The `carven`, `check`, `compile`, and `interpret` commands automatically collect
+the official package sources.
 
 | Module | Responsibility |
 | --- | --- |

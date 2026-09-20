@@ -125,17 +125,17 @@ TEST_CASE("Compiler diagnostics: slices retain storage and nested borrows") {
          .primary_text = "a[0][0] = 3"},
         {.name = "temporary array retains escaping text",
          .source =
-             "fn first(a: [str; 1]) -> str => a[0]; fn bad() -> str { let s = String::from_str(\"hello\"); return first([s.as_str()]); }",
+             "fn first(a: [str; 1]) -> str => a[0]; fn bad() -> str { let s: String = \"hello\"; return first([s.as_str()]); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.as_str()"},
         {.name = "temporary aggregate field retains escaping text",
          .source =
-             "struct A { values: [str; 1] } fn first(a: A) -> str => a.values[0]; fn bad() -> str { let s = String::from_str(\"hello\"); return first(A { values: [s.as_str()] }); }",
+             "struct A { values: [str; 1] } fn first(a: A) -> str => a.values[0]; fn bad() -> str { let s: String = \"hello\"; return first(A { values: [s.as_str()] }); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.as_str()"},
         {.name = "returned temporary array element protects its owner",
          .source =
-             "fn first(a: [str; 1]) -> str => a[0]; fn bad() { var s = String::from_str(\"hello\"); let text = first([s.as_str()]); s.clear(); }",
+             "fn first(a: [str; 1]) -> str => a[0]; fn bad() { var s: String = \"hello\"; let text = first([s.as_str()]); s.clear(); }",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "s.clear()"},
         {.name = "temporary array retains escaping slice",

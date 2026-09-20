@@ -207,6 +207,16 @@ auto transfer_expression(TargetExpr value) noexcept -> TargetExpr {
     );
 }
 
+auto native_take_expression(ModuleLowering& context, TypeID type, TargetExpr value) noexcept
+    -> TargetExpr {
+    return TargetExpr {
+        .value = TargetStaticCastExpr {
+            .type = context.reference_type(context.lower_type(type), false, true),
+            .operand = target_child(std::move(value))
+        }
+    };
+}
+
 auto name_expression(TargetLocalID local) noexcept -> TargetExpr {
     return {.value = TargetLocalExpr {.local = local}};
 }

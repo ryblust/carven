@@ -15,8 +15,7 @@ From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-strings
-./xmakew run carven-example-strings
+./xmakew run carven examples/strings/main.cv
 ```
 
 Expected output:

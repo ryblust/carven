@@ -8,15 +8,15 @@ Then read `main.cv`. Its `.rates` import selects `shipping_cents` from the
 adjacent logical module. A top-level statement calls the calculation and prints
 the result with builtin `println`.
 
-The build supplies both source files to Carven. Imports resolve within that
-explicit batch; they do not discover source files on disk.
+Supply both application files to Carven. The driver also collects toolchain and
+project Crafts; imports resolve within the combined batch. The `.rates` import
+does not discover the application file automatically.
 
 From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-shipping
-./xmakew run carven-example-shipping
+./xmakew run carven examples/modules/main.cv examples/modules/rates.cv
 ```
 
 Expected output:
@@ -25,4 +25,4 @@ Expected output:
 Shipping in cents: 500
 ```
 
-Change the base price and rebuild to see the caller use the new calculation.
+Change the base price and rerun the command to see the caller use the new calculation.

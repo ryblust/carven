@@ -90,9 +90,10 @@ auto lower_cpp_import(
         for (auto index = 0uz; index < argument_names.size(); ++index) {
             auto argument = name_expression(argument_names[index]);
             if (semantic_signature.parameters[index].access == AccessMode::Take) {
-                argument = call_expression(
-                    intrinsic_expression(TargetSymbol::StdMove),
-                    target_expressions(std::move(argument))
+                argument = native_take_expression(
+                    context,
+                    semantic_signature.parameters[index].type,
+                    std::move(argument)
                 );
             }
             arguments.push_back(std::move(argument));

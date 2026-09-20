@@ -167,7 +167,10 @@ The parameter policy is shared by declarations, definitions, and callable signat
 C++ imports and export façades use this same parameter policy, type realization,
 and failure ABI. Export Take parameters are forwarded through `transfer`; import
 Take parameters use the native rvalue category. Read and Write retain their
-reference/value categories. Import bridges call the globally qualified
+reference/value categories. Import bridges and native expression operands share
+the same typed rvalue construction. Export forwarding retains the ordinary
+transfer policy even for native types with trivial copying and observable or
+deleted move constructors. Import bridges call the globally qualified
 provider directly, allowing C++ overload resolution and template deduction.
 Type lowering receives an explicit naming scope: public signatures use globally
 qualified nominal names, while module bodies retain local names. Both use the

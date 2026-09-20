@@ -142,7 +142,7 @@ and execution rules to supported operations and rejects unsupported capabilities
 
 `interpret` uses the same fixed Crafts roots, resource lookup, source sorting, and
 deduplication as native execution. Other application files remain explicit inputs.
-Required constant initializers, compile-time printing, and `const test` execute
+Required constant initializers, `const {}` blocks, and `const test` execute
 during analysis. The interpreter then checks the entry and
 its transitive direct callees against its execution subset and executes the
 published semantic operations. Program execution requires one entry: top-level
@@ -192,7 +192,7 @@ executor; nested calls share the root budget. It does not limit elapsed time or
 blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
 limits also apply. Each required constant root keeps its own analysis budget;
 this option changes only interpreted execution, with a fresh budget for each
-runtime test. Repeated options are errors.
+runtime test. Repeating `--max-steps`, `--trace`, or `--tests` is an error.
 
 Execution errors report `CV-INTERPRET-EXECUTION` with source locations and call
 context; exhausted budgets report `CV-INTERPRET-LIMIT`. Completed output remains
@@ -342,7 +342,8 @@ inspection and may change between compiler versions.
 
 ## Compile-time program output
 
-Required constant execution and `const test` may use the builtin print operations.
+Required constant execution, including `const {}` blocks and `const test`, may
+use the builtin print operations.
 The driver sends `print`/`println` to stdout and `eprint`/`eprintln` to stderr.
 With `--stdout`, all compile-time program output goes to stderr so stdout contains
 only generated artifacts. Output is emitted as execution proceeds, including on

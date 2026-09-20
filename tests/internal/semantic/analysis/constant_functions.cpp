@@ -465,7 +465,7 @@ TEST_CASE("Const aggregates: owning text executes but does not freeze into nomin
         struct Text { value: String }
         enum Message { Owned(String), Empty }
         const fn length() -> usize {
-            let values = [String::from_str("one"), String::from_str("two")];
+            let values: [String; 2] = ["one", "two"];
             let text = Text { values[0] };
             let message = Message::Owned(text.value);
             return match message { .Owned(value) => value.len(), .Empty => 0usize, };
@@ -475,10 +475,10 @@ TEST_CASE("Const aggregates: owning text executes but does not freeze into nomin
     require_integer(module_constant(program, "size"), 3);
     for (const auto source : std::to_array<std::string_view>({
              R"(struct Text { value: String }
-            const fn make() -> Text => Text { String::from_str("one") };
+            const fn make() -> Text => Text { "one" };
             const value = make();)",
              R"(enum Text { Owned(String) }
-            const fn make() -> Text => Text::Owned(String::from_str("one"));
+            const fn make() -> Text => Text::Owned("one");
             const value = make();)",
          })) {
         CAPTURE(source);

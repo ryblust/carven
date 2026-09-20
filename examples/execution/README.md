@@ -9,8 +9,9 @@ Run these commands from the repository root after building Carven:
 ./xmakew run carven compile examples/execution/main.cv --stdout
 ```
 
-Each invocation first evaluates `heading`, prints `Preparing title`, and checks
-its static test. Native execution then compiles and runs the generated program;
+During semantic analysis, a `const {}` block prints `Preparing title`, the
+`heading` initializer produces static text, and `const test` checks the prepared
+values. Native execution then compiles and runs the generated program;
 interpretation executes the published semantic operations directly. Both print:
 
 ```text

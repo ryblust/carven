@@ -100,3 +100,6 @@ test "C++ contracts: declared native failures participate in Carven handling" {
         Failure(error) => { check(error.code == 17); },
     }
 }
+
+export(cpp) fn consume_copy_trivial(&&value: ::boundary::CopyTrivial) -> i32 => value.value as i32;
+export(cpp) fn consume_copy_only(&&value: ::boundary::CopyOnly) -> i32 => value.value as i32;

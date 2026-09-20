@@ -60,28 +60,58 @@ LLVM/Clang and libc++ 23.1.0. Generated programs and support headers use C++20.
 Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
 repository commands.
 
-The repository's Hello World uses the builtin `println`:
+Save this Hello World as `main.cv` in the repository root. It uses the builtin
+`println`:
 
 ```cv
-fn main() {
-    println("Hello World");
-}
+// main.cv
+println("Hello World");
 ```
 
 From the repository root, build the compiler and run the example:
 
 ```shell
 ./xmakew build
-./xmakew run carven examples/helloworld/main.cv
+./xmakew run carven main.cv
 ```
 
 It prints `Hello World`. Bare source invocation compiles and runs a native program
-using a native C++ toolchain. Use `interpret` to execute the supported semantic
-subset without native compilation, or `compile` to inspect or retain C++ artifacts:
+using a native C++ toolchain.
+
+A source file can also include tests. Save this as `demo.cv` in the same directory:
+
+```cv
+// demo.cv
+fn twice(value: i32) -> i32 => value * 2;
+
+test "twice" {
+    check(twice(21) == 42);
+}
+
+println(twice(21));
+```
+
+Run the program or select its runtime tests using the same source file:
 
 ```shell
-./xmakew run carven interpret examples/helloworld/main.cv
-./xmakew run carven compile --stdout examples/helloworld/main.cv
+./xmakew run carven demo.cv
+./xmakew run carven --tests demo.cv
+./xmakew run carven interpret --tests demo.cv
+```
+
+The program prints `42`. With `--tests`, the driver runs the tests instead of the
+program entry and reports their results. Required constant evaluation and
+`const test` still run during analysis. Add `--timings` to see time spent in each
+command stage.
+
+Use `check` for semantic checks and compile-time execution, `interpret` to run
+the supported subset without native compilation, or `compile` to inspect or
+retain C++ artifacts:
+
+```shell
+./xmakew run carven check main.cv
+./xmakew run carven interpret main.cv
+./xmakew run carven compile --stdout main.cv
 ```
 
 The [execution example](examples/execution/README.md) combines top-level statements,
@@ -90,11 +120,13 @@ displays generated artifacts; `compile -o <dir>` writes them below the selected
 directory. With no destination option, `compile` writes below the current directory.
 The [CLI reference](docs/cli.md) defines execution limits and supported platforms.
 
-Direct execution collects sources from the compiler's `crafts/carven/` and the
-working directory's `crafts/`. Application sources remain explicit, for example
+`check`, `compile`, direct execution, and `interpret` all collect sources from
+the toolchain's `crafts/carven/` and the working directory's `crafts/`. Application
+sources outside those roots remain explicit, for example
 `carven main.cv helpers.cv`. `CXX` selects the native compiler, defaulting to
-`clang++`. See [native execution](docs/cli.md#native-execution) for source discovery,
-toolchain layout, and process behavior.
+`clang++`. See [source collection](docs/cli.md#source-collection) for the collected
+roots and toolchain layout, and [native execution](docs/cli.md#native-execution)
+for process behavior.
 
 ## C++ project integration
 
@@ -106,44 +138,41 @@ and link it with their native providers.
 
 ### Compile generated C++ directly
 
-Generated programs do not require Xmake. Invoke Carven with every `.cv` source
-in the compilation batch, then compile and link the generated `.cpp` files with
-a C++20 or newer toolchain. Pass the generated output directory and the Carven
-`crafts/` directory as C++ include roots.
+Generated programs do not require Xmake. Invoke Carven with the application
+`.cv` sources; installed Crafts are collected automatically. Then compile and
+link the generated `.cpp` files with a C++20 or newer toolchain. Pass the generated
+output directory and the Carven `crafts/` directory as C++ include roots.
 
-For example, save the Hello World above as `main.cv`. With an installed `carven`
-on `PATH`, run:
+Using the same `main.cv` from above, with an installed `carven` on `PATH`, run:
 
 ```shell
 carven compile -o out main.cv
 clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
-    out/main.cpp -o out/hello-carven
+    out/main.cpp out/crafts/carven/std/utf/*.cpp -o out/hello-carven
 ./out/hello-carven
 ```
 
 Replace `/path/to/carven/crafts` with the installed directory beside the
 toolchain's `bin/`, or use this repository's `crafts/` with the locally built
-compiler. From the repository root, the existing example can be built directly:
+compiler. From the repository root, build the same file with the local compiler:
 
 ```shell
-./xmakew run carven compile -o out/manual examples/helloworld/main.cv
+./xmakew run carven compile -o out/manual main.cv
 clang++ -std=c++20 -Iout/manual -Icrafts \
-    out/manual/examples/helloworld/main.cpp -o out/manual/hello-carven
+    out/manual/main.cpp out/manual/crafts/carven/std/utf/*.cpp \
+    -o out/manual/hello-carven
 ./out/manual/hello-carven
 ```
 
-`carven compile` does not discover imported source modules. For a `main.cv` that imports
-`std::utf.text`, explicitly include the package modules and their generated implementations:
+The commands above include the generated implementations for the bundled UTF
+Craft. A `main.cv` that imports `std::utf.text` uses the same source collection;
+there is no need to pass `/path/to/carven/crafts/carven/std/utf/*.cv` explicitly.
+When additional Crafts are installed, include their generated implementations
+and native providers in the C++ build as well.
 
-```shell
-carven compile -o out main.cv /path/to/carven/crafts/carven/std/utf/*.cv
-clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
-    out/main.cpp out/crafts/carven/std/utf/*.cpp -o out/app
-./out/app
-```
-
-Likewise, name imported project `.cv` files in the Carven invocation. Supply any
-native `.cpp` files, include directories, and libraries to the C++ toolchain.
+Name imported application `.cv` files outside Crafts roots in the Carven
+invocation. Supply any native `.cpp` files, include directories, and libraries
+to the C++ toolchain.
 The maintained Xmake rule discovers `.cv` and `.cpp` sources and adds include
 roots for the toolchain and project `crafts/` directories; native library
 dependencies remain ordinary build configuration. See the
@@ -177,7 +206,16 @@ The default build selects the compiler. Build it before running the test suite:
 ./xmakew test
 ```
 
-Use [Graver](tools/graver/README.md) to format `.cv` source files.
+Format the repository's C++ and Carven sources, or check their formatting:
+
+```shell
+./xmakew format
+./xmakew format-check
+```
+
+These commands use clang-format for C++ and [Graver](tools/graver/README.md)
+for `.cv` files. `format` applies changes; `format-check` reports violations
+without changing files.
 
 ### Module build troubleshooting
 

@@ -25,8 +25,7 @@ From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-receipt
-./xmakew run carven-example-receipt
+./xmakew run carven examples/basics/main.cv
 ```
 
 In PowerShell, use `.\xmakew.ps1`. Expected output:

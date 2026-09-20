@@ -11,8 +11,7 @@ the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-hello-world
-./xmakew run carven-example-hello-world
+./xmakew run carven examples/helloworld/main.cv
 ```
 
 Expected output:
@@ -21,10 +20,14 @@ Expected output:
 Hello World
 ```
 
-Replace `carven-example-hello-world` in the build and run commands with a target
-below. In PowerShell, use `.\xmakew.ps1`. The examples share the repository build,
-use the local compiler, and compile as C++20; they are not standalone packages.
-Initial configuration may need to obtain the Carven Xmake rule.
+Direct execution builds and runs the program with the native C++ toolchain.
+For multi-module examples, name each application `.cv` file; Crafts sources are
+collected automatically. In PowerShell, use `.\xmakew.ps1`.
+
+The targets below also support `./xmakew build <target>` and
+`./xmakew run <target>`, including the C++ host example. They share the repository
+build, use the local compiler, and compile as C++20; they are not standalone
+packages. Initial configuration may need to obtain the Carven Xmake rule.
 
 Each example occupies one directory with a single `main.cv` entry and any helper
 modules beside it. Top-level statements form the implicit program entry. The C++
@@ -42,6 +45,7 @@ constant computation, failures, and C++ integration, or choose a topic directly.
 | [Receipt](basics/) | Records, enums, match, arrays, loops, and calculation functions | `carven-example-receipt` |
 | [Inventory](ownership/) | Read, Write, Take, copying and reassignment | `carven-example-inventory` |
 | [Greeting](strings/) | UTF-8 String, independent copies, and scoped borrowing | `carven-example-strings` |
+| [Execution stages](execution/) | Constant blocks, static tests, native execution, and interpretation | `carven-example-execution` |
 | [Constant computation](constant/) | Text construction, fixed arrays, frozen slices, and typed record tables, with ordinary runtime calls | `carven-example-constant` |
 | [Failure contracts](failures/) | Expression propagation, recovery, callable contracts, and owned or borrowed failure payloads | `carven-example-failures` |
 | [Native parser](call_cpp/) | Header imports, `#[cpp]`, and native exceptions converted to declared failures | `carven-example-native-parser` |
@@ -70,6 +74,3 @@ When updating an example, keep its explanation, commands, and expected output
 consistent with the executable source. Explain providers before callers and
 keep navigation between examples in this index. Rejection and termination cases
 belong in the compiler's test suites.
-
-[Execution stages](execution/README.md) demonstrates top-level statements,
-compile-time output and tests, native execution, and interpretation of the same program.

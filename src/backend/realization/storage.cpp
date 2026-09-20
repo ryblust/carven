@@ -106,17 +106,11 @@ auto BodyRealizer::ExpressionBuilder::emit(
     if (use == PreparedUse::NativeTake) {
         // The query promises T&&. Do not first turn a trivial Take into
         // const T& via Carven transfer and then cast away constness.
-        auto value = raw(fragment, literal);
-        return TargetExpr {
-            .value = TargetStaticCastExpr {
-                .type = owner.context.reference_type(
-                    owner.context.lower_type(source(fragment).operation.type.resolved()),
-                    false,
-                    true
-                ),
-                .operand = target_child(std::move(value))
-            }
-        };
+        return native_take_expression(
+            owner.context,
+            source(fragment).operation.type.resolved(),
+            raw(fragment, literal)
+        );
     }
     auto result = raw(fragment, literal);
     if (use == PreparedUse::Consume

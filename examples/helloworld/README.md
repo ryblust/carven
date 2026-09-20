@@ -8,8 +8,7 @@ From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-hello-world
-./xmakew run carven-example-hello-world
+./xmakew run carven examples/helloworld/main.cv
 ```
 
 Expected output:

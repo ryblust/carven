@@ -36,8 +36,15 @@ auto contract_consumer() noexcept -> bool {
     }
     auto owner = contract_owner();
     const auto* identity = owner.get();
-    auto moved = api::take(std::move(owner));
+    const auto moved = api::take(std::move(owner));
     if (moved.get() != identity || *moved != 42) {
+        return false;
+    }
+    auto moves = std::int32_t {0};
+    if (api::consume_copy_trivial(boundary::CopyTrivial(moves, 42)) != 42 || moves != 0) {
+        return false;
+    }
+    if (api::consume_copy_only(boundary::CopyOnly(17)) != 17) {
         return false;
     }
     auto number = std::int32_t {3};

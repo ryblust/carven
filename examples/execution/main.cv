@@ -1,9 +1,8 @@
-const fn title(value: i32) {
+const {
     println("Preparing title");
-    return f"Build {value:04}";
 }
 
-const heading = title(42);
+const heading = f"Build {42:04}";
 
 const test "prepared heading" {
     check(heading == "Build 0042");

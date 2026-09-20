@@ -93,8 +93,10 @@ stale artifact removal, installation, and native dependency scheduling.
 
 ## Build integration
 
-The `compile` command writes artifacts directly and does not compile C++.
-The direct-run entry collects fixed Crafts roots and invokes the native compiler
+The `compile` command collects fixed Crafts roots and writes generated artifacts
+directly; it does not compile or copy collected `.cpp` sources. The consuming
+build must compile those sources alongside the generated implementations.
+The direct-run entry uses the same collection and invokes the native compiler
 to compile, link, and execute a program in a temporary directory.
 Consumers provide the output root and installed support root as include search
 paths, compile the generated implementations, and link their C++ providers.
@@ -151,6 +153,7 @@ Generated files include the self-contained support leaves they use:
 carven/runtime/passing.hpp
 carven/runtime/numeric.hpp
 carven/runtime/array.hpp
+carven/runtime/range.hpp
 carven/runtime/slice.hpp
 carven/runtime/text.hpp
 carven/runtime/utf.hpp
@@ -158,6 +161,7 @@ carven/runtime/string.hpp
 carven/runtime/format.hpp
 carven/runtime/writer.hpp
 carven/runtime/print.hpp
+carven/runtime/display.hpp
 carven/runtime/entry.hpp
 carven/runtime/deferred.hpp
 carven/runtime/outcome.hpp
@@ -178,9 +182,11 @@ contexts, failure records, and reporting in `carven::runtime`.
 `utf.hpp` supplies UTF validation, scalar encoding and decoding, and native
 representation conversions. `text.hpp` supplies text views; `string.hpp` supplies owning
 String. General interpolation uses `format.hpp` and requires C++20 `<format>`
-support. Parsed integer formatting uses `writer.hpp`; precomputed text
-uses direct String construction or append. The consumer compiler checks delegated
-format strings and native formatter availability. `print.hpp` supplies stdout
+support. Supported builtin formatting uses `writer.hpp`, including mixed integer,
+floating, bool, char, and text fields; precomputed text uses direct String
+construction or append. Structural printing uses `display.hpp`. The consumer
+compiler checks delegated format strings and native formatter availability.
+`print.hpp` supplies stdout
 and stderr printing, selecting the C++20 implementation or available C++23 library
 print support without changing the consumer's selected standard.
 

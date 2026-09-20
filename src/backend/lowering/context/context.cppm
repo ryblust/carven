@@ -155,6 +155,8 @@ auto member_expression(TargetExpr operand, TargetMemberName member) noexcept -> 
 auto scope_member_expression(TargetExpr operand, TargetMemberName member) noexcept -> TargetExpr;
 auto static_member_expression(TargetTypeID owner, TargetIdentifier member) noexcept -> TargetExpr;
 auto transfer_expression(TargetExpr value) noexcept -> TargetExpr;
+auto native_take_expression(ModuleLowering& context, TypeID type, TargetExpr value) noexcept
+    -> TargetExpr;
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto dereference_expression(TargetExpr operand) noexcept -> TargetExpr;
 auto integer_expression(std::uint64_t value) noexcept -> TargetExpr;

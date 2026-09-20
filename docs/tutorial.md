@@ -59,9 +59,7 @@ A sibling `main.cv` selects and calls it:
 ```carven
 import .math using answer;
 
-fn main() {
-    let _ = answer();
-}
+println(answer());
 ```
 
 Supply both files to the compiler, for example
@@ -241,9 +239,7 @@ Use `//` for a line comment.
 Conditions use `bool`. An `if` can select a statement block or produce a value:
 
 ```carven
-fn magnitude(value: i32) -> i32 {
-    return if value < 0 { -value } else { value };
-}
+fn magnitude(value: i32) -> i32 => if value < 0 { -value } else { value };
 
 fn accumulate() -> i32 {
     var total = 0;
@@ -260,17 +256,17 @@ fn accumulate() -> i32 {
 The range `1..4` visits 1, 2, and 3; `1..=4` also visits 4. Ranges are values:
 `let interval = 1..4;` can be used with `for n in interval`. Their type is
 `range<i32>` here, and their bounds are snapshots taken when the value is created.
+A bound can supply the integer type: `0..text.len()` is a `range<usize>`, so
+indexing text bytes does not require a cast or a suffixed zero.
 
 A range pattern classifies an integer by interval:
 
 ```carven
-fn band(value: i32) -> i32 {
-    return match value {
-        ..0 => -1,
-        0..=100 => 0,
-        101.. => 1,
-    };
-}
+fn band(value: i32) -> i32 => match value {
+    ..0 => -1,
+    0..=100 => 0,
+    101.. => 1,
+};
 ```
 
 Bounds can also be runtime expressions; then include a fallback unless the
@@ -300,13 +296,11 @@ fn read(ok: bool) -> i32 throw ReadError {
     throw ReadError { code: 7 };
 }
 
-fn recovered() -> i32 {
-    return try {
-        read(false)?
-    } catch {
-        ReadError(error) => error.code,
-    };
-}
+fn recovered() -> i32 => try {
+    read(false)?
+} catch {
+    ReadError(error) => error.code,
+};
 ```
 
 A contract may list multiple types, such as `throw ReadError + ParseError`.
@@ -337,13 +331,11 @@ A lambda lists its captured runtime bindings in brackets. `[]` captures nothing,
 `[value]` copies a value, and `[&value]` grants access to mutable storage:
 
 ```carven
-fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 {
-    return callback(value);
-}
+fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 => callback(value);
 
 fn scaled(value: i32) -> i32 {
     let factor = 2;
-    let multiply = [factor](item: i32) { return item * factor; };
+    let multiply = [factor](item: i32) => item * factor;
     return invoke(multiply, value);
 }
 ```
@@ -449,11 +441,9 @@ fn observe(p: ptr<i32>) -> i32 {
     return *p;
 }
 
-fn main() {
-    let p: ptr<&i32> = ::counter_address();
-    if p != nullptr { *p += 1; }
-    let value = observe(p);
-}
+let p: ptr<&i32> = ::counter_address();
+if p != nullptr { *p += 1; }
+println(observe(p));
 ```
 
 The `let` keeps the address slot fixed. `ptr<&i32>` permits writing the target;
@@ -489,8 +479,8 @@ carven interpret --tests tests.cv
 ```
 
 Both commands select runtime tests and leave the program entry unexecuted.
-`compile --tests` generates the corresponding C++ test sources. `const test`
-executes during analysis in all three modes.
+`compile --tests` generates the corresponding C++ test sources. Constant blocks
+and `const test` execute during analysis in all these modes, and with `check`.
 
 ## Compile-time execution
 
@@ -507,8 +497,11 @@ const {
 
 Constant blocks also work inside function bodies and can read visible constants.
 They execute during semantic analysis even if the function is never called;
-calling the function does not repeat the block. Their locals and control flow
-follow the same supported execution rules as `const fn`.
+calling the function does not repeat the block. They cannot read enclosing
+parameters or runtime locals, and their own locals stay inside the block.
+Separate blocks have no guaranteed execution order; keep ordered operations in
+one block. Their locals and control flow follow the same supported execution
+rules as `const fn`.
 
 Use `const test` to execute a test during compilation. It shares the ordinary
 `check`, `require`, `fail`, and print operations, within the supported constant
@@ -526,15 +519,17 @@ const test "sum at compile time" {
     check(sum(5) == 10);
 }
 
-test "sum through generated C++" {
+test "sum at runtime" {
     check(sum(5) == 10);
 }
 ```
 
 The first test runs during Carven compilation and produces no runtime test
-function. A failed check makes compilation fail. The ordinary test runs through
-the generated test runner, checking the C++ implementation. Calling a `const fn`
-at runtime still executes it at runtime.
+function. A failed check makes compilation fail. The ordinary test checks the
+generated C++ when run natively, or the runtime semantics when run with
+`interpret --tests`. Calling a `const fn` at runtime still executes it at runtime.
+Use `carven check source.cv` to evaluate the constant blocks, initializers, and
+static tests without running the program or ordinary tests.
 
 ## Structural printing and assertion explanations
 

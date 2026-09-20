@@ -9,11 +9,46 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace boundary {
 
 using Owned = std::unique_ptr<std::int32_t>;
+
+struct CopyTrivial final {
+    std::int32_t* moves;
+    std::int32_t value;
+
+    CopyTrivial(std::int32_t& count, std::int32_t input) noexcept
+        : moves(&count),
+          value(input) {}
+
+    CopyTrivial(const CopyTrivial&) = default;
+
+    CopyTrivial(CopyTrivial&& source) noexcept
+        : moves(source.moves),
+          value(source.value) {
+        ++*moves;
+    }
+};
+
+struct CopyOnly final {
+    std::int32_t value;
+
+    explicit CopyOnly(std::int32_t input) noexcept
+        : value(input) {}
+
+    CopyOnly(const CopyOnly&) = default;
+    CopyOnly(CopyOnly&&) = delete;
+};
+
+static_assert(std::is_trivially_copy_constructible_v<CopyTrivial>);
+static_assert(std::is_trivially_destructible_v<CopyTrivial>);
+static_assert(!std::is_trivially_move_constructible_v<CopyTrivial>);
+static_assert(std::is_trivially_copy_constructible_v<CopyOnly>);
+static_assert(std::is_trivially_destructible_v<CopyOnly>);
+
 
 } // namespace boundary
 

@@ -2,7 +2,7 @@ const version = 42;
 const title = f"Carven build-{version:04}";
 const catalog = make_catalog(4);
 const decorated = frame(f"{title}: {catalog}");
-const title_bytes = f"{title}".len();
+const title_bytes = title.len();
 
 const fn make_catalog(count: i32) -> String {
     var result = String {};

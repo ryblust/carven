@@ -17,8 +17,7 @@ From the repository root:
 
 ```sh
 ./xmakew build
-./xmakew build carven-example-inventory
-./xmakew run carven-example-inventory
+./xmakew run carven examples/ownership/main.cv
 ```
 
 Expected output:

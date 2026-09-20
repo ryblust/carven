@@ -16,18 +16,19 @@ fn relay() -> i32 throw Failure {
     };
 }
 
-fn main() {
-    let result = try {
-        relay()?
-    } catch {
-        Failure(.Invalid(code)) => code,
-        Failure(.Empty) => 0,
-    };
-    println(result);
-    let success = try {
-        read(true)?
-    } catch {
-        _ => -1,
-    };
-    println(success);
-}
+let result = try {
+    relay()?
+} catch {
+    Failure(.Invalid(code)) => code,
+    Failure(.Empty) => 0,
+};
+
+println(result);
+
+let success = try {
+    read(true)?
+} catch {
+    _ => -1,
+};
+
+println(success);

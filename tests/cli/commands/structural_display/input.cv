@@ -44,11 +44,9 @@ const fn display() {
     println(Empty {}, empty, Status::Pending);
 }
 
-const test "structural output" {
+const {
     display();
 }
 
-fn main() {
-    println(Pair { make_money(1), make_money(2) });
-    display();
-}
+println(Pair { make_money(1), make_money(2) });
+display();
