@@ -34,32 +34,52 @@ uses the same classification without removing existing BMIs.
 The content-based path applies to `clang` and `clang++` with two-phase module
 compilation enabled. The `clang-cl` path uses timestamp-based dependency checks.
 
-For the content-based path, each build batch-scans the target's owned translation
-units with `clang-scan-deps`. The scan provides P1689 module dependencies and
-textual header dependencies, including system headers. Reused modules retain
-their provider's scan ownership and dependency records. The batch shares one
-Make dependency output file, with a distinct target key for each translation
-unit, because the scanner retains output streams until it exits. Scan records are
-published after the complete batch parses successfully. The scanner uses the
-configured job count or Xmake's default parallelism. Within the current build,
-the provider target also retains the published scan records in memory. Module
-graph loading and build-input preparation reuse those records; consumers use
-the provider's records for reused units. Decoded P1689 facts are retained on
-those records and read by consumers; target-specific module paths are derived
-separately. Dependency edges use a per-target module-name index rather than
-searching the complete module list for each import. Disk records remain available
-to other entry points, including project generation. This sharing does not skip
-scanning or content checks on subsequent builds.
+Each build checks the target's owned translation units against Xmake dependency
+records using `depend.load` and `depend.is_changed`. The adapter stores content
+fingerprints in the records' `values`. Scan inputs include source and recorded
+textual headers, compiler and scanner binaries, scan flags, working directory,
+output path and include environment variables. Missing or unreadable records,
+changed scan values and rebuild mode require rescanning.
 
-Each target parses its scan records in one task. The task waits directly for
-its own scan and the scans of reused providers; batch scans do not create
-per-file placeholder tasks. Providers using per-file scanning retain those
-parallel scan jobs. Dependency-graph publication still precedes consumers’
-graph construction.
+Units requiring a scan enter one `clang-scan-deps` batch per target. When every
+owned unit has a reusable record, no scanner process is launched; input checks
+still run. The scanner produces P1689 module facts and textual header
+dependencies, including system headers. It retains dependency output streams
+until exit, so the batch shares one stream with a distinct target key per unit.
+The batch runs with the configured job count or Xmake's default parallelism.
+Updated records are published after the entire batch parses successfully, using
+stable serialization and writes on content changes. They are merged with cached
+records for unchanged units. The in-memory record set contains the current owned
+units; consumers read reused units from their provider.
+
+Depfiles list headers read during preprocessing; failed include lookups are not
+recorded. Include lookup checks fingerprint recursive file-name listings for
+source directories, explicit include/framework search roots, include environment
+paths and project-local textual-header directories. Listings are shared within each
+invocation. This detects file-name changes that can affect header shadowing or
+`__has_include` results. Adding, removing or renaming files invalidates units
+using those roots. A project-root search directory also includes build and cache
+files, whose creation can trigger another scan. The scan record is a compilation
+input, so changed lookup results also invalidate compilation.
+
+File-name changes in implicit SDK/toolchain search trees or other locations
+outside the tracked roots require a clean build. Contents of recorded headers in
+those locations are checked. Response files, VFS overlays and indirect
+include-prefix configurations force scanning and compilation on each invocation;
+their records include an invocation token. Changes to these configurations can
+affect compilation while leaving the reported file list and module facts
+unchanged.
+
+Each target parses its complete current record set in one task, after its own
+scan and the scans of reused providers. Decoded P1689 facts are shared in memory;
+target-specific module paths are derived separately. The module DAG and build
+jobs are reconstructed on each invocation, with a module-name index for edge
+lookup. Provider graph publication precedes consumer graph construction. Disk
+records also serve project generation.
 
 After prerequisites finish, each BMI and object job compares source, header,
-and imported BMI contents, compiler identity, flags, and output contents with
-its dependency record. Archive and link jobs compare their recorded inputs,
+scan-record and imported BMI contents, compiler identity, flags, and output
+contents with its dependency record. Archive and link jobs compare their recorded inputs,
 tool identity, flags, and output contents. Records are saved after successful
 execution. Content fingerprints are cached within the current invocation.
 

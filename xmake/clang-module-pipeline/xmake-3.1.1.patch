@@ -334,7 +334,7 @@
          local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
          if jobgraph.add_orders then -- jobgraph
              -- build headerunits
-@@ -787,3 +862,36 @@
+@@ -787,3 +862,39 @@
          profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
      end
  end
@@ -358,6 +358,9 @@
 +                local records = owner:data("cxx.modules.scan_records")
 +                local record = assert(records and records[sourcefile] or depend.load(owner:dependfile(sourcefile)))
 +                local files = table.clone(assert(record.files))
++                -- Search-path membership can change preprocessing even when no
++                -- previously included file changes (for example __has_include).
++                table.insert(files, owner:dependfile(sourcefile))
 +                _append_imported_bmifiles(target, module, files, {}, direct_only)
 +                content_depend.set_inputs(target, sourcefile, files)
 +            end
@@ -710,17 +713,96 @@
      local objectfile = opt and opt.objectfile
 --- a/rules/c++/modules/clang/scanner.lua
 +++ b/rules/c++/modules/clang/scanner.lua
-@@ -91,3 +91,70 @@
+@@ -26,6 +26,7 @@
+ import("utils.progress")
+ import("support")
+ import(".scanner", {inherit = true})
++import("private.action.build.content_depend", {alias = "content_depend"})
+
+ -- scan module dependencies
+ function scan_dependency_for(target, sourcefile, rescan, opt)
+@@ -91,3 +92,156 @@
      return changed
  end
 
++
++-- Depfiles cannot describe failed include lookups. Track file names in mutable
++-- search roots too, so additions and removals invalidate cached preprocessing.
++-- SDK/toolchain trees are treated as immutable until a clean build.
++function _scan_search_values(sourcefile, files, flags)
++    local roots = {path.directory(path.absolute(sourcefile))}
++    local reusable = true
++    local prefixes = {"-isystem", "-iquote", "-idirafter", "-iframework", "-I", "-F"}
++    for index, flag in ipairs(flags) do
++        if flag:startswith("@") or flag:startswith("-ivfsoverlay")
++            or flag:startswith("-iprefix") or flag:startswith("-iwithprefix") then
++            reusable = false -- Let Clang interpret indirect search configurations.
++        end
++        for _, prefix in ipairs(prefixes) do
++            if flag:startswith(prefix) then
++                local root = flag == prefix and flags[index + 1] or flag:sub(#prefix + 1)
++                if root and #root > 0 then
++                    if root:startswith("=") or root:startswith("$SYSROOT") then
++                        reusable = false
++                    else
++                        table.insert(roots, path.absolute(root))
++                    end
++                end
++                break
++            end
++        end
++    end
++    local environment = {}
++    for _, name in ipairs({"CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET"}) do
++        local value = os.getenv(name) or ""
++        table.insert(environment, name .. "=" .. value)
++        if name:endswith("PATH") and #value > 0 then
++            for _, root in ipairs(value:split(path.envsep(), {plain = true, strict = true})) do
++                table.insert(roots, path.absolute(root == "" and "." or root))
++            end
++        end
++    end
++    local projectdir = path.absolute(os.projectdir()) .. path.sep()
++    for _, file in ipairs(files) do
++        local absolute = path.absolute(file)
++        if absolute:startswith(projectdir) then
++            table.insert(roots, path.directory(absolute))
++        end
++    end
++    _g.scan_search_hashes = _g.scan_search_hashes or {}
++    local values = {}
++    for _, root in ipairs(content_depend.normalize(roots)) do
++        local fingerprint = _g.scan_search_hashes[root]
++        if not fingerprint then
++            local names = os.files(path.join(root, "**"))
++            table.sort(names)
++            fingerprint = #names > 0 and hash.strhash128(table.concat(names, "\0")) or "empty"
++            _g.scan_search_hashes[root] = fingerprint
++        end
++        table.insert(values, root .. "=" .. fingerprint)
++    end
++    return table.join(values, environment), reusable
++end
++
++function _scan_values(sourcefile, files, flags, scanner, compiler, objectfile)
++    local search, reusable = _scan_search_values(sourcefile, files, flags)
++    local values = content_depend.values(files, {compiler, flags, "module_scan.v1",
++        scanner, content_depend.fingerprint(scanner), os.curdir(), sourcefile, objectfile, search})
++    if not reusable then
++        -- Opaque search configuration may change preprocessing without changing
++        -- depfiles or P1689 facts. Make its published record invalidate builds too.
++        _g.uncached_scan = _g.uncached_scan or os.tmpfile()
++        table.insert(values, _g.uncached_scan)
++    end
++    return values, reusable
++end
 +
 +-- Scan owned translation units together. Reused units keep their provider's
 +-- scan job and dependency record.
 +function scan_dependencies_for(target, sourcefiles, opt)
 +    local scanner = assert(support.get_clang_scan_deps(target), "Clang module pipeline requires clang-scan-deps")
 +    local compinst = target:compiler("cxx")
-+    local commands, items, temporaries = {}, {}, {}
++    local commands, items, temporaries, records = {}, {}, {}, {}
 +    local database = os.tmpfile() .. ".json"
 +    local depfile = os.tmpfile()
 +    table.insert(temporaries, database)
@@ -733,15 +815,27 @@
 +                or flag:startswith("-fprebuilt-module-path=")
 +        end)
 +        local objectfile = target:objectfile(sourcefile)
-+        table.insert(commands, {directory = os.curdir(), file = sourcefile, output = objectfile,
-+            arguments = table.join({compinst:program(), "-x", "c++"}, flags,
-+                {"-MD", "-MF", depfile, "-MT", depkey, "-c", sourcefile, "-o", objectfile})})
-+        items[path.absolute(objectfile)] = {sourcefile = sourcefile, depkey = depkey}
++        local record = depend.load(target:dependfile(sourcefile))
++        local files = record and record.files or {sourcefile}
++        local values, reusable = _scan_values(sourcefile, files, flags, scanner, compinst:program(), objectfile)
++        if reusable and not target:is_rebuilt() and record and record.moduleinfo and record.files
++            and not depend.is_changed({values = record.values}, {values = values}) then
++            records[sourcefile] = record
++        else
++            table.insert(commands, {directory = os.curdir(), file = sourcefile, output = objectfile,
++                arguments = table.join({compinst:program(), "-x", "c++"}, flags,
++                    {"-MD", "-MF", depfile, "-MT", depkey, "-c", sourcefile, "-o", objectfile})})
++            items[path.absolute(objectfile)] = {sourcefile = sourcefile, depkey = depkey, flags = flags, objectfile = objectfile}
++        end
++    end
++    if #commands == 0 then
++        target:data_set("cxx.modules.scan_records", records)
++        return false
 +    end
 +    json.savefile(database, commands)
 +    try {
 +        function ()
-+            progress.show(opt.progress, "${clear}scanning.module.batch %s (%d units)", target:fullname(), #sourcefiles)
++            progress.show(opt.progress, "${clear}scanning.module.batch %s (%d units)", target:fullname(), #commands)
 +            local args = {"-format=p1689", "-j", tostring(option.get("jobs") or os.default_njob()), "-compilation-database", database}
 +            local stdout = os.iorunv(scanner, args)
 +            local data = json.decode(stdout)
@@ -755,21 +849,23 @@
 +                assert(not dependencies[key], "duplicate dependency target " .. key)
 +                dependencies[key] = parse_deps(line, {target = target})
 +            end
-+            local pending, seen, records = {}, {}, {}
++            local pending, seen = {}, {}
 +            for _, rule in ipairs(data.rules) do
 +                local key = path.absolute(rule["primary-output"])
 +                local item = assert(items[key], "scanner returned unexpected output " .. key)
 +                assert(not seen[key], "scanner returned duplicate output " .. key)
 +                seen[key] = true
-+                local files = table.unique(table.join({item.sourcefile},
++                local files = content_depend.normalize(table.join({item.sourcefile},
 +                    assert(dependencies[item.depkey], "missing dependencies for " .. item.sourcefile)))
-+                table.sort(files)
++                local values = _scan_values(item.sourcefile, files, item.flags, scanner, compinst:program(), item.objectfile)
 +                table.insert(pending, {sourcefile = item.sourcefile, path = target:dependfile(item.sourcefile),
-+                    data = {moduleinfo = json.encode({version = data.version, revision = data.revision, rules = {rule}}, {pure = true, orderkeys = true}), files = files}})
++                    data = {moduleinfo = json.encode({version = data.version, revision = data.revision, rules = {rule}}, {pure = true, orderkeys = true}), files = files, values = values}})
 +            end
-+            assert(#pending == #sourcefiles, "scanner did not return every translation unit")
++            assert(#pending == #commands, "scanner did not return every translation unit")
 +            -- Publish only after the entire batch parsed successfully.
 +            for _, record in ipairs(pending) do
++                -- The record is itself a content-tracked build input. Native
++                -- depend.save has no stable-key-order/only-changed option.
 +                io.save(record.path, record.data, {only_changed = true, orderkeys = true})
 +                records[record.sourcefile] = record.data
 +            end
@@ -780,6 +876,7 @@
 +            if not ok then raise(errors) end
 +        end}
 +    }
++    return true
 +end
 --- a/rules/c++/modules/xmake.lua
 +++ b/rules/c++/modules/xmake.lua
