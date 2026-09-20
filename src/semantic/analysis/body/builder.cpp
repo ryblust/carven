@@ -56,15 +56,20 @@ auto BodyBuilder::make_expression(
         }
         return std::nullopt;
     };
+    const auto add_selected = [&](const auto& node) noexcept {
+        visit_evaluation_children(node, truth, [&](const auto& child) noexcept {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(child)>, SemanticRegion>) {
+                add_region(child);
+            } else {
+                add(child);
+            }
+        });
+    };
     value.visit(
         Overloaded {
-            [&](const SemShortCircuit& node) noexcept {
-                add(*node.left);
-                const auto known = truth(*node.left);
-                if (!known.has_value() || *known == (node.operation == ShortCircuitOperator::And)) {
-                    add(*node.right);
-                }
-            },
+            [&](const SemShortCircuit& node) noexcept { add_selected(node); },
+            [&](const SemIf& node) noexcept { add_selected(node); },
+            [&](const SemMatch& node) noexcept { add_selected(node); },
             [&]<typename Operation>(const Operation& node) noexcept
                 requires std::same_as<Operation, SemDefault>
                              || std::same_as<Operation, SemConstant>
@@ -97,50 +102,10 @@ auto BodyBuilder::make_expression(
                 visit_semantic_children(node, add);
                 draft.add_failure_contribution(failures, node.callee_failures.term());
             },
-            [&](const SemTestReport& node) noexcept {
-                visit_semantic_children(node, add);
-                exits_test |= node.kind != TestReportKind::Check;
-            },
-            [&](const SemIf& node) noexcept {
-                auto remaining = true;
-                for (const auto& branch : node.branches) {
-                    if (!remaining) {
-                        break;
-                    }
-                    add(branch.condition);
-                    const auto known = truth(branch.condition);
-                    if (!known.has_value() || *known) {
-                        add_region(branch.body);
-                    }
-                    remaining = !known.has_value() || !*known;
-                }
-                if (remaining && node.otherwise.has_value()) {
-                    add_region(**node.otherwise);
-                }
-            },
-            [&](const SemMatch& node) noexcept {
-                add(*node.subject);
-                for (const auto& arm : node.arms) {
-                    if (!arm.reachable) {
-                        continue;
-                    }
-                    for (const auto& range : arm.pattern_bounds) {
-                        if (range.begin) {
-                            add(*range.begin);
-                        }
-                        if (range.end) {
-                            add(*range.end);
-                        }
-                    }
-                    if (arm.guard.has_value()) {
-                        add(*arm.guard);
-                        const auto known = truth(*arm.guard);
-                        if (known.has_value() && !*known) {
-                            continue;
-                        }
-                    }
-                    add_region(arm.body);
-                }
+            [&](const SemReport& node) noexcept {
+                add_selected(node);
+                exits_test |= (node.kind == ReportKind::Require || node.kind == ReportKind::Fail)
+                    && (!node.condition || truth(**node.condition) != true);
             },
             [&](const SemTry& node) noexcept {
                 draft.add_failure_contribution(failures, node.residual_failures.term());

@@ -20,7 +20,7 @@ enum class TargetTemporaryNameKind {
     PayloadProjection,
     Region,
     Continue,
-    TestValue,
+    Explanation,
     CppBoundaryParameter,
 };
 

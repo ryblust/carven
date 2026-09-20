@@ -228,10 +228,13 @@ snapshot. `NativeTake` additionally retains the queried rvalue argument category
 Borrowing a native call result and acquiring an owning value therefore have
 different storage and delivery contracts.
 
-## Builtin calls and test exit
+## Builtin calls and reports
 
-`SemPrint` lowers to runtime printing calls; `SemTestReport` lowers to reporting
-and conditional test exit. A concrete callable whose published effect admits
+`SemPrint` lowers to runtime printing calls; `SemReport` shares condition
+observation and failure reporting between assertions and tests. Its message is
+lowered inside the failure branch, including construction, effects, and cleanup.
+`Assert` calls the nonreturning runtime assertion reporter; `Require` and `Fail`
+use test-stop transport. A concrete callable whose published effect admits
 test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views
 use the same transport, with result adaptation lifting ordinary returns.
 Unaffected concrete callables retain their ordinary return representation.
@@ -263,11 +266,14 @@ printing entry. External and
 callable leaves remain opaque; no user formatter participates. The wrapper is
 consumed synchronously after ordinary Read argument sequencing.
 
-Direct comparison explanations intercept the condition's existing expression
-fragment after operand sequencing. The observer in `testing.hpp` compares once and renders
-its operands only on failure. Observation prevents replacing that comparison with
-a known Boolean while retaining operand preparation and snapshots. Short-circuit
-explanations use ordinary expression construction: selected branches observe the
+Known successful conditions retain their execution effects and need no report
+or explanation storage. Known failures need no report guard. Dynamic conditions
+form the guard directly; fatal reports terminate the lowering continuation.
+
+Comparison explanations observe the condition after operand sequencing. The
+observer in `report.hpp` compares once and renders operands on failure, before
+message evaluation can change their values. Short-circuit explanations use
+ordinary expression construction: selected branches observe the
 right Boolean result, and a skipped failing branch records `<not evaluated>`.
 Known left operands select their branch during realization. Explanation
 storage is local to the report operation and is completed before message evaluation;
@@ -278,10 +284,18 @@ Propagation returns through each Carven frame, preserving C++ scope cleanup;
 the test body consumes the exit by returning to its runner. `TestStopped` is
 internal transport and is absent from Carven failure sets.
 
-The runner activates a thread-local `TestContext` for each case. Report operations
-use that context. Native export façades remove `TestStopped` from the result
-carrier, preserving success and every declared failure. An escaping test stop
-terminates. Arbitrary C++ callbacks do not participate in Carven propagation.
+`testing.hpp` owns test-stop transport and `TestContext`, which tracks the active
+case and completed-case counts. `report.hpp` owns condition observation, failure
+text, and fatal assertions. Report calls carry the source line and column.
+The default layout groups test identity, condition, operands, and message under
+each failure location and identifies test stop or execution abort. It borrows
+the active case's module and name for every report. The runner emits a summary
+when it completes. Custom test reporters supply their own output; fatal
+assertions use the assertion reporter.
+
+Native export façades remove `TestStopped` from the result carrier, preserving
+success and every declared failure. An escaping test stop terminates. Arbitrary
+C++ callbacks do not participate in Carven propagation.
 
 Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
 otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection

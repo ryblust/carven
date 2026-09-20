@@ -1,0 +1,13 @@
+#[cpp] ---
+#include <csignal>
+#include <cstdlib>
+
+namespace {
+struct AbortHandler final {
+    AbortHandler() noexcept {
+        std::signal(SIGABRT, [](int) noexcept { std::_Exit(86); });
+    }
+};
+const auto handler = AbortHandler();
+} // namespace
+---

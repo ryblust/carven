@@ -129,8 +129,8 @@ struct SemIndex final {
 
 enum class PrintKind { Print, Println, Eprint, Eprintln };
 
-struct SemTestReport final {
-    TestReportKind kind;
+struct SemReport final {
+    ReportKind kind;
     std::optional<OwnedSemanticExpression> condition;
     std::optional<OwnedSemanticExpression> message;
     std::optional<ProgramSpellingID> condition_source;
@@ -256,7 +256,7 @@ using SemanticExpressionValue = TreeValue<
     SemTextIntrinsic,
     SemSliceIntrinsic,
     SemPrint,
-    SemTestReport,
+    SemReport,
     SemFormat,
     SemCall,
     SemClosure,

@@ -233,6 +233,24 @@ TEST_CASE("Compiler diagnostics: types failures preserve code and precise span")
             .primary_text = "i32(_)",
         },
         {
+            .name = "assert missing condition",
+            .source = "fn invalid() { assert(); }",
+            .code = "CV-TYPE-CALL-ARITY",
+            .primary_text = "assert()",
+        },
+        {
+            .name = "assert condition type",
+            .source = "fn invalid() { assert(1); }",
+            .code = "CV-TYPE-CONDITION-BOOL",
+            .primary_text = "1",
+        },
+        {
+            .name = "assert message checked even on success",
+            .source = "fn invalid() { assert(true, 1); }",
+            .code = "CV-TYPE-MISMATCH",
+            .primary_text = "1",
+        },
+        {
             .name = "inline-test missing condition",
             .source = "test \"invalid\" { check(); }",
             .code = "CV-TEST-ARGUMENT-COUNT",

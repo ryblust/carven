@@ -538,7 +538,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     if (!compared) {
                         co_return std::unexpected(compared.error());
                     }
-                    observe_test(
+                    observe_condition(
                         source,
                         *left,
                         &*right,
@@ -573,10 +573,12 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     ),
                     source.origin
                 );
-                if (compared && test_observation && test_observation->condition == &source) {
+                if (compared
+                    && condition_observation
+                    && condition_observation->condition == &source) {
                     const auto truth = boolean(*compared, source.origin);
                     if (truth) {
-                        observe_test(source, *left, &*right, *truth);
+                        observe_condition(source, *left, &*right, *truth);
                     }
                 }
                 co_return compared;
@@ -591,14 +593,14 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 }
                 const auto conjunction = operation.operation == ShortCircuitOperator::And;
                 if (*truth != conjunction) {
-                    observe_test(source, *left, nullptr, *truth);
+                    observe_condition(source, *left, nullptr, *truth);
                     co_return std::move(*left);
                 }
                 auto right = (co_await value(frame, *operation.right));
                 if (right) {
                     const auto result = boolean(*right, source.origin);
                     if (result) {
-                        observe_test(source, *left, &*right, *result);
+                        observe_condition(source, *left, &*right, *result);
                     }
                 }
                 co_return right;
@@ -632,8 +634,8 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 co_return (co_await invoke(*function, std::move(arguments), source.origin));
             } else if constexpr (std::same_as<Operation, SemPrint>) {
                 co_return (co_await print(frame, operation, source.origin));
-            } else if constexpr (std::same_as<Operation, SemTestReport>) {
-                co_return (co_await test_report(frame, operation, source.origin));
+            } else if constexpr (std::same_as<Operation, SemReport>) {
+                co_return (co_await report(frame, operation, source.origin));
             } else if constexpr (std::same_as<Operation, SemFormat>) {
                 co_return (co_await format(frame, operation, source.origin));
             } else if constexpr (std::same_as<Operation, SemTextIntrinsic>) {

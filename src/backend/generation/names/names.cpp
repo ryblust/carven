@@ -151,7 +151,7 @@ auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
         case TargetTemporaryNameKind::PayloadProjection:    return "payload";
         case TargetTemporaryNameKind::Region:               return "region";
         case TargetTemporaryNameKind::Continue:             return "continue_target";
-        case TargetTemporaryNameKind::TestValue:            return "test_value";
+        case TargetTemporaryNameKind::Explanation:          return "explanation";
         case TargetTemporaryNameKind::CppBoundaryParameter: return "cpp_boundary_parameter";
     }
     std::unreachable();

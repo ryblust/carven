@@ -17,11 +17,11 @@ test "Testing: inline tests access module-private declarations" {
     require(true);
 }
 
-test "Testing: inline-test operands are eager, ordered, and evaluated once" {
+test "Testing: inline-test conditions execute once and successful messages are skipped" {
     var trace = 0;
     check(traced_condition(&trace, 1, true), traced_message(&trace, 2, "check message"));
     require(traced_condition(&trace, 3, true), traced_message(&trace, 4, "require message"));
-    check(trace == 1234);
+    check(trace == 13);
 }
 
 test "Testing: test calls compose with control blocks and lambdas" {
@@ -86,4 +86,29 @@ test "Testing: local callable names shadow builtins in every position" {
     fail();
     assertion(println(4) == 5);
     println(4);
+}
+
+fn require_preserves_message_owner(condition: bool) {
+    var text: String = "retained";
+    require(condition, if true { &&text } else { &&text });
+    check(text == "retained");
+}
+
+fn assert_preserves_message_owner(condition: bool) {
+    var text: String = "retained";
+    assert(condition, if true { &&text } else { &&text });
+    check(text == "retained");
+}
+
+test "Assertions: successful continuation retains conditional message owners" {
+    require_preserves_message_owner(true);
+    assert_preserves_message_owner(true);
+}
+
+
+test "Assertions: callable values evaluate messages as ordinary arguments" {
+    var trace = 0;
+    let verify: fn(bool, str) -> void = assert;
+    verify(traced_condition(&trace, 1, true), traced_message(&trace, 2, "message"));
+    check(trace == 12);
 }

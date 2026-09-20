@@ -50,7 +50,7 @@ TEST_CASE("Interpreter: argument observation follows shared storage and evaluati
             CHECK(stream == ExecutionOutputStream::Standard);
             output.append(bytes);
         },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(result.has_value());
     CHECK(output == "argument;1 ab 2\n");
@@ -70,7 +70,7 @@ TEST_CASE("Interpreter: unused native functions do not constrain executed bodies
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(result.has_value());
     CHECK(output == "ready\n");
@@ -88,7 +88,7 @@ TEST_CASE("Interpreter: transitive admission rejects untaken unsupported calls b
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
@@ -104,7 +104,7 @@ TEST_CASE("Interpreter: budgets cover ordinary recursive calls") {
         program,
         entry(program),
         {},
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretLimit);
@@ -123,7 +123,7 @@ TEST_CASE("Interpreter: native source initialization cannot be silently omitted"
         program,
         entry(program),
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
@@ -161,7 +161,7 @@ TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
             program,
             entry(program),
             [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
         );
         REQUIRE(result.has_value());
         CHECK(output == "invalid retry pass pass invalid\ninside outside\n");
@@ -196,7 +196,7 @@ TEST_CASE(
         const auto results = interpret_tests(
             program,
             [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
         );
         REQUIRE(results.has_value());
         REQUIRE(results->size() == 3);
@@ -228,7 +228,7 @@ TEST_CASE("Interpreter: all runtime tests are admitted before any test executes"
     const auto results = interpret_tests(
         program,
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}}
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
     REQUIRE(!results.has_value());
     CHECK(results.error().code == DiagnosticCode::InterpretAdmission);
@@ -246,7 +246,7 @@ TEST_CASE("Interpreter: each runtime test receives an independent execution budg
     const auto results = interpret_tests(
         program,
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = limits, .trace = {}}
+        InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
     );
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 2);
@@ -254,4 +254,37 @@ TEST_CASE("Interpreter: each runtime test receives an independent execution budg
     CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretLimit);
     CHECK((*results)[1].diagnostics.empty());
     CHECK(output == "fresh\n");
+}
+
+TEST_CASE("Interpreter: fatal assertions retain earlier diagnostics and stop remaining tests") {
+    const auto program = analyze_test_program(R"(
+        test "earlier" { println("before"); check(false, "first"); println("after"); }
+        test "fatal" { check(false, "second"); assert(false, "fatal"); }
+        test "later" { println("unreachable"); }
+    )");
+    auto events = std::string();
+    const auto result = interpret_tests(
+        program,
+        [&](ExecutionOutputStream, std::string_view bytes) noexcept { events += bytes; },
+        InterpreterOptions {
+            .limits = constant_execution_limits(),
+            .trace = {},
+            .report = [&](std::optional<TestID> test,
+                          const ExecutionDiagnostic& diagnostic) noexcept {
+                CHECK(test.has_value());
+                REQUIRE(diagnostic.report_kind.has_value());
+                events += *diagnostic.report_kind == ReportKind::Assert ? "assert\n" : "check\n";
+            }
+        }
+    );
+    REQUIRE(result.has_value());
+    REQUIRE(result->size() == 2);
+    CHECK(!(*result)[0].aborted());
+    REQUIRE((*result)[0].diagnostics.size() == 1);
+    CHECK((*result)[0].diagnostics[0].message.contains("first"));
+    CHECK((*result)[1].aborted());
+    REQUIRE((*result)[1].diagnostics.size() == 2);
+    CHECK((*result)[1].diagnostics[0].message.contains("second"));
+    CHECK((*result)[1].diagnostics[1].message.contains("fatal"));
+    CHECK(events == "before\ncheck\nafter\ncheck\nassert\n");
 }

@@ -1,0 +1,55 @@
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+test "failed" {
+    eprintln("before failures");
+    var actual = Pair {
+        left: 1,
+        right: 2
+    };
+    let expected = Pair {
+        left: 1,
+        right: 3
+    };
+    check(actual == expected, "first line\nsecond line");
+    eprintln("between failures");
+    var calls = 0;
+    check(
+        false,
+        if true {
+            ++calls;
+            "CLI failure"
+        } else {
+            "unused"
+        }
+    );
+    check(calls == 1);
+    check(
+        false
+            && if true {
+                ++calls;
+                true
+            } else {
+                false
+            },
+        "second failure"
+    );
+    check(calls == 1);
+    eprintln("after failures");
+}
+
+test "required" {
+    require(false, "required condition");
+}
+
+test "explicit\nfailure" {
+    fail("");
+}
+
+test "passed" {
+    println("next");
+}
+
+println("unexpected program entry");

@@ -90,7 +90,7 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             auto& value = operation;
             child(value.source);
             child(value.index);
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemTestReport>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemReport>) {
             auto& value = operation;
             if (value.condition.has_value()) {
                 child(*value.condition);
@@ -237,4 +237,85 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
             std::invoke(visitor, edge);
         }
     });
+}
+
+// Selects possible child execution from local Boolean and coverage facts.
+// Unknown branches remain included; stored traversal still visits all source.
+template<typename Operation, typename Truth, typename Visitor>
+auto visit_evaluation_children(Operation& operation, Truth truth, Visitor visitor) noexcept
+    -> void {
+    using Value = std::remove_const_t<Operation>;
+    if constexpr (std::same_as<Value, SemanticExpressionValue>
+                  || std::same_as<Value, SemanticStatementValue>) {
+        operation.visit([&](auto& value) noexcept {
+            visit_evaluation_children(value, truth, visitor);
+        });
+    } else if constexpr (std::same_as<Value, SemReport>) {
+        if (operation.condition) {
+            visitor(**operation.condition);
+        }
+        if (operation.message && (!operation.condition || truth(**operation.condition) != true)) {
+            visitor(**operation.message);
+        }
+    } else if constexpr (std::same_as<Value, SemShortCircuit>) {
+        visitor(*operation.left);
+        const auto known = truth(*operation.left);
+        if (!known || *known == (operation.operation == ShortCircuitOperator::And)) {
+            visitor(*operation.right);
+        }
+    } else if constexpr (std::same_as<Value, SemIf>) {
+        for (auto& branch : operation.branches) {
+            visitor(branch.condition);
+            const auto known = truth(branch.condition);
+            if (known != false) {
+                visitor(branch.body);
+            }
+            if (known == true) {
+                return;
+            }
+        }
+        if (operation.otherwise) {
+            visitor(**operation.otherwise);
+        }
+    } else if constexpr (std::same_as<Value, SemMatch> || std::same_as<Value, SemTry>) {
+        if constexpr (std::same_as<Value, SemMatch>) {
+            visitor(*operation.subject);
+        } else {
+            visitor(*operation.body);
+        }
+        for (auto& arm : operation.arms) {
+            if constexpr (std::same_as<Value, SemMatch>) {
+                if (!arm.reachable) {
+                    continue;
+                }
+            }
+            for (auto& bounds : arm.pattern_bounds) {
+                if (bounds.begin) {
+                    visitor(*bounds.begin);
+                }
+                if (bounds.end) {
+                    visitor(*bounds.end);
+                }
+            }
+            if (arm.guard) {
+                visitor(*arm.guard);
+                if (truth(*arm.guard) == false) {
+                    continue;
+                }
+            }
+            visitor(arm.body);
+        }
+    } else if constexpr (std::same_as<Value, SemLoop>) {
+        visitor(*operation.initializer);
+        if (operation.condition) {
+            visitor(*operation.condition);
+            if (truth(*operation.condition) == false) {
+                return;
+            }
+        }
+        visitor(*operation.body);
+        visitor(*operation.steps);
+    } else {
+        visit_semantic_children(operation, visitor);
+    }
 }

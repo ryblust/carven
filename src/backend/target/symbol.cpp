@@ -55,16 +55,22 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             );
         case TargetSymbol::RuntimeTestStopped:
             return symbol_info("carven::runtime::TestStopped", "carven/runtime/testing.hpp");
+        case TargetSymbol::RuntimeAssertionFailed:
+            return symbol_info(
+                "carven::runtime::assertion_failed",
+                "carven/runtime/report.hpp",
+                true
+            );
         case TargetSymbol::RuntimeCurrentTest:
             return symbol_info("carven::runtime::current_test", "carven/runtime/testing.hpp", true);
         case TargetSymbol::RuntimeOutcome:
             return symbol_info("carven::runtime::Outcome", "carven/runtime/outcome.hpp");
         case TargetSymbol::RuntimeObserveComparison:
-            return symbol_info("carven::runtime::observe_comparison", "carven/runtime/testing.hpp");
+            return symbol_info("carven::runtime::observe_comparison", "carven/runtime/report.hpp");
         case TargetSymbol::RuntimeObserveShortCircuit:
             return symbol_info(
                 "carven::runtime::observe_short_circuit",
-                "carven/runtime/testing.hpp"
+                "carven/runtime/report.hpp"
             );
         case TargetSymbol::RuntimeDisplayWriter:
             return symbol_info("carven::runtime::DisplayWriter", "carven/runtime/display.hpp");

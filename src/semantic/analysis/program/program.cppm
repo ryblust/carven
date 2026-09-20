@@ -206,6 +206,7 @@ private:
         const FailureSolution& failures
     ) noexcept -> void;
     auto solve_test_stops(
+        const ConstantStore& constants,
         const CanonicalTypeStore& types,
         const TypeResolution& resolved_types,
         const DeclarationStore& declarations

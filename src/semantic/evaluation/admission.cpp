@@ -54,7 +54,7 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                           || std::same_as<Value, SemShortCircuit>
                           || std::same_as<Value, SemFormat>
                           || std::same_as<Value, SemPrint>
-                          || std::same_as<Value, SemTestReport>
+                          || std::same_as<Value, SemReport>
                           || std::same_as<Value, SemTake>
                           || std::same_as<Value, SemIf>
                           || std::same_as<Value, SemMatch>

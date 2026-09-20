@@ -1,0 +1,8 @@
+const fn verify() {
+    assert(1 == 2, "static mismatch");
+    println("unreachable");
+}
+
+const {
+    verify();
+}

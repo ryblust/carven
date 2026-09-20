@@ -219,10 +219,12 @@ auto BodyElaborator::call_expression(
         auto parameters = std::vector<ConstructionCallableParameter>();
         auto pending = BodyPendingFailureTerms();
         auto completes = true;
+        auto known = std::optional<bool>();
+        const auto conditional_report = builtin->function == BuiltinFunction::Assert
+            || builtin->function == BuiltinFunction::Check
+            || builtin->function == BuiltinFunction::Require;
         for (const auto& argument : source.arguments) {
-            const auto condition = arguments.empty()
-                && (builtin->function == BuiltinFunction::Check
-                    || builtin->function == BuiltinFunction::Require);
+            const auto condition = arguments.empty() && conditional_report;
             if (condition) {
                 builtin->condition_source = draft().intern_spelling(
                     draft().source_slice_copy(
@@ -254,7 +256,12 @@ auto BodyElaborator::call_expression(
                 condition
                     ? std::optional<ConstructionTypeRef>(draft().builtin_type(BuiltinType::Bool))
                     : std::nullopt,
-                condition ? std::optional(DiagnosticCode::TestConditionType) : std::nullopt
+                condition ? std::optional(
+                                builtin->function == BuiltinFunction::Assert
+                                    ? DiagnosticCode::TypeConditionBool
+                                    : DiagnosticCode::TestConditionType
+                            )
+                          : std::nullopt
             ));
             if (!built) {
                 co_return std::unexpected(built.error());
@@ -263,7 +270,12 @@ auto BodyElaborator::call_expression(
                 {AccessMode::Read, built->argument.expression.type.construction()}
             );
             append_pending_failures(pending, built->pending_failures);
-            completes &= built->completes;
+            if (condition) {
+                known = known_boolean_constant(draft(), built->argument.expression.constant);
+            }
+            if (!conditional_report || condition || known == false) {
+                completes &= built->completes;
+            }
             arguments.push_back(std::move(built->argument));
         }
         auto valid = validate_builtin(*builtin, parameters, argument_spans);
@@ -274,7 +286,11 @@ auto BodyElaborator::call_expression(
             .storage = builtin_operation(active_builder(), *builtin, std::move(arguments)),
             .pending_failures = std::move(pending),
             .takeable = true,
-            .completes = completes && builtin->function != BuiltinFunction::Fail
+            .completes = completes
+                && builtin->function != BuiltinFunction::Fail
+                && !(known == false
+                     && (builtin->function == BuiltinFunction::Assert
+                         || builtin->function == BuiltinFunction::Require))
         };
     }
     if (std::holds_alternative<CppSelection>(*selected_callee)

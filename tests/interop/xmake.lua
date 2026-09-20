@@ -138,7 +138,8 @@ target("carven-test-interop-print")
     add_tests("output", {group = "interop"})
     on_test(function (target)
         local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-        assert(output:gsub("\r\n", "\n") == "Literal\nValue: {123}\n" and errors == "",
+        assert(output:gsub("\r\n", "\n") == "Literal\nValue: {123}\n"
+            and errors:gsub("\r\n", "\n") == "carven: tests: 1 passed; 0 failed\n",
             "C++23 interop produced unexpected output:\n%s\n%s", output, errors)
         return true
     end)

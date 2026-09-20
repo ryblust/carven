@@ -13,7 +13,8 @@ local function run(target, scenario, payloads)
     local stderr = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
     os.tryrm(stdout_file)
     os.tryrm(stderr_file)
-    assert(stderr == "", "language entry produced stderr:\n" .. stderr)
+    assert(stderr == (scenario == "success" and payloads == "0" and ""
+        or "carven: tests: 1 passed; 0 failed\n"), "language entry produced stderr:\n" .. stderr)
     return code, stdout
 end
 

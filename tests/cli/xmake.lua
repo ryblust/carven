@@ -4,7 +4,7 @@ local case_specs = {
         steps = {
             {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
-                stderr_contains = {'actual: Money {\n    cents: 12,\n}', 'expected: Money {\n    cents: 15,\n}',
+                stderr_contains = {'actual: Money {\n        cents: 12,\n    }', 'expected: Money {\n        cents: 15,\n    }',
                     'true: <not evaluated>', '1: 1', '2: 2'}},
         },
     },
@@ -403,7 +403,7 @@ case_specs["commands/interpretation"] = {
     steps = {
         {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
         {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
-            stderr_contains = {"1 tests passed; 0 failed"}},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
         {
             args = {"interpret", "typed_failures.cv"},
             stdout = "typed_failures.txt",
@@ -495,16 +495,50 @@ case_specs["commands/test_options"] = {
 }
 
 case_specs["commands/test_report"] = {
-    inputs = {"input.cv"},
-    args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
-    stdout = "stdout.txt",
-    stderr_contains = {"CLI failure", "1 tests passed; 1 failed", "input.cv:"},
+    fixtures = {["input.cv.fixture"] = "input.cv"},
+    steps = {
+        {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
+            stdout = "stdout.txt", stderr = "stderr.txt"},
+        {args = {"--tests", "input.cv"}, exit_code = 1,
+            stdout = "stdout.txt", stderr = "stderr.txt"},
+    },
+}
+
+case_specs["commands/assertions"] = {
+    inputs = {"input.cv", "failure.cv", "abort.cv", "static_failure.cv", "fatal_test.cv"},
+    steps = {
+        {args = {"input.cv"}, stdout_contains = {"passed\n"}},
+        {args = {"interpret", "input.cv"}, stdout_contains = {"passed\n"}},
+        {args = {"--tests", "input.cv"}, stdout_contains = {"tested\n"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        {args = {"interpret", "--tests", "input.cv"}, stdout_contains = {"tested\n"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        {args = {"failure.cv", "abort.cv"}, exit_code = 86,
+            stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
+                "value: 1", "value: 2", "record mismatch", "failure.cv:", "note: execution aborted"},
+            stderr_not_contains = {"value: 99", "unreachable"}},
+        {args = {"interpret", "failure.cv"}, exit_code = 1,
+            stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
+                "value: 1", "value: 2", "record mismatch", "failure.cv:",
+                "  called from: failure.cv:", "  note: execution aborted"},
+            stderr_not_contains = {"value: 99", "unreachable"}},
+        {args = {"check", "static_failure.cv"}, exit_code = 1,
+            stderr_contains = {"CV-ASSERT", "1 == 2", "static mismatch"}},
+        {args = {"--tests", "fatal_test.cv", "abort.cv"}, exit_code = 86,
+            stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
+                "earlier failure retained", "earlier check retained", "note: execution aborted"},
+            stderr_not_contains = {"unreachable", "carven: tests:"}},
+        {args = {"interpret", "--tests", "fatal_test.cv"}, exit_code = 1,
+            stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
+                "earlier failure retained", "earlier check retained", "note: execution aborted"},
+            stderr_not_contains = {"unreachable", "carven: tests:"}},
+    },
 }
 
 case_specs["commands/test_order"] = {
     inputs = {"a.cv", "z.cv"},
     args = {"interpret", "--tests", "z.cv", "a.cv"},
-    stdout_contains = {"a1\na2\nz\n"}, stderr_contains = {"3 tests passed; 0 failed"},
+    stdout_contains = {"a1\na2\nz\n"}, stderr_contains = {"tests: 3 passed; 0 failed"},
 }
 
 case_specs["commands/execution_modes"] = {
@@ -535,7 +569,7 @@ for _, selection in ipairs({
         stdout_ordered = output,
         stdout_not_contains = mode == "compile" and {"runtime test", "runtime output"}
             or {tests and "runtime output" or "runtime test"},
-        stderr_contains = mode == "interpret" and tests and {"1 tests passed; 0 failed"} or nil,
+        stderr_contains = mode ~= "check" and mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
         stderr_ordered = mode == "native" and {"carven: run exited with code 0 in ",
             "Source collection", "Source loading", "Lexing", "Parsing", "Semantic analysis",
             "C++ generation", "Artifact writing", "Native compilation", "Execution"} or nil,

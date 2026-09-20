@@ -256,16 +256,25 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 }
                 co_return {};
             },
-            [&](const SemTestReport& value) noexcept -> ContinuationTask<std::monostate> {
+            [&](const SemReport& value) noexcept -> ContinuationTask<std::monostate> {
+                auto success = std::optional<NullNormal>();
                 if (value.condition) {
-                    static_cast<void>((co_await evaluate(**value.condition)));
+                    auto checked =
+                        (co_await condition(**value.condition, std::move(flow.normal->state)));
+                    append_null_exits(flow.exits, std::move(checked.exits));
+                    success = std::move(checked.yes);
+                    flow.normal = std::move(checked.no);
                 }
                 if (value.message) {
                     static_cast<void>((co_await evaluate(**value.message)));
                 }
-                if (flow.normal && value.kind == TestReportKind::Fail) {
-                    flow.exits.push_back({NullTransfer::Return, std::move(flow.normal->state)});
-                    flow.normal.reset();
+                if (value.kind == ReportKind::Check) {
+                    join_null_normal(flow.normal, success);
+                } else {
+                    if (flow.normal && value.kind != ReportKind::Assert) {
+                        flow.exits.push_back({NullTransfer::Return, std::move(flow.normal->state)});
+                    }
+                    flow.normal = std::move(success);
                 }
                 co_return {};
             },

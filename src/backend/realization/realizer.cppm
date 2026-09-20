@@ -129,7 +129,7 @@ private:
     auto lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
         -> ContinuationTask<std::monostate>;
     auto lower_report(
-        const SemTestReport& value,
+        const SemReport& value,
         ProgramOriginID origin,
         LoweringStmtBuilder& destination
     ) noexcept -> ContinuationTask<std::monostate>;
@@ -186,13 +186,13 @@ private:
         LoweringStmtBuilder& destination
     ) noexcept -> void;
 
-    struct TestObservation final {
+    struct ConditionObservation final {
         const SemanticExpression* expression;
         TargetLocalID writer;
         std::array<ProgramSpellingID, 2> sources;
     };
 
-    std::optional<TestObservation> test_observation;
+    std::optional<ConditionObservation> condition_observation;
     ExpressionBuilder* active_frame = nullptr;
     ModuleLowering& context;
     const BodyPreparation& preparation;

@@ -50,6 +50,7 @@ namespace {
     X(ConstInitializer, "CV-CONST-INITIALIZER", Error, "Invalid constant initializer.")            \
     X(ConstIndexBounds, "CV-CONST-INDEX-BOUNDS", Error, "Constant array index is out of bounds.")  \
     X(ConstLimit, "CV-CONST-LIMIT", Error, "Constant evaluation resource limit exceeded.")         \
+    X(AssertionFailed, "CV-ASSERT", Error, "Assertion failed.")                                    \
     X(ConstTest, "CV-CONST-TEST", Error, "Compile-time test failed.")                              \
     X(ConstLiteralRange, "CV-CONST-LITERAL-RANGE", Error, "Constant literal is out of range.")     \
     X(ConstNegativeArrayExtent, "CV-CONST-NEGATIVE-ARRAY-EXTENT", Error, "Negative array extent.") \

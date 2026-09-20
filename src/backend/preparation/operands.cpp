@@ -69,7 +69,7 @@ auto BodyPreparation::operands(const SemanticExpression& source) const noexcept
                 add(*value.source, PreparedUse::ProjectionPlace);
                 add(*value.index, PreparedUse::OperandValue);
             },
-            [](const SemTestReport&) static noexcept {},
+            [](const SemReport&) static noexcept {},
             [&](const SemPrint& value) noexcept {
                 for (const auto& input : value.operands) {
                     result.push_back(argument(input));

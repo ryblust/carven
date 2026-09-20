@@ -453,6 +453,23 @@ parameter `&p` when a helper must replace the address slot. Copying or taking a
 pointer does not release or retain the external object. Its owner or provider
 still determines how long it lives and how it must be released.
 
+## Assertions
+
+Use `assert` to check a program invariant:
+
+```carven
+fn checked_index(index: i32, size: i32) -> i32 {
+    assert(index >= 0 && index < size, f"index {index} is outside size {size}");
+    return index;
+}
+```
+
+Assertions are always enabled. A failed assertion reports the source location,
+condition, available operand values, and optional message, then terminates native
+execution. Interpretation stops with a diagnostic; compile-time execution emits
+a compilation error. Assertions work outside tests and cannot be caught by `try`.
+The condition executes once and the message is evaluated only when it fails.
+
 ## Tests
 
 A test is a named module-local body:
@@ -469,8 +486,9 @@ test "addition produces the expected value" {
 }
 ```
 
-A failed `check` reports and continues. A failed `require` reports and exits
-the test. `fail()` reports and exits unconditionally. Tests are analyzed with
+The optional message of a direct `check` or `require` call is evaluated only
+on failure. A failed `check` reports and continues. A failed `require` reports
+and exits the test. `fail()` reports and exits unconditionally. Tests are analyzed with
 the source. Run ordinary tests natively or in the interpreter's supported subset:
 
 ```shell
@@ -564,4 +582,4 @@ logical contents; large or deeply nested displays are truncated.
 A failed `check(actual == expected)` or `require(actual == expected)` includes
 the two operand values without recomputing the comparison. A failed outer Boolean
 combination shows its operands and marks a short-circuited operand as
-`<not evaluated>`. The optional message still evaluates once, even on success.
+`<not evaluated>`.

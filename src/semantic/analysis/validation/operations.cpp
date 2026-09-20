@@ -243,18 +243,18 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("short circuit requires boolean values");
                 }
             },
-            [&](const SemTestReport& value) noexcept {
-                if ((value.kind != TestReportKind::Fail
+            [&](const SemReport& value) noexcept {
+                if ((value.kind != ReportKind::Fail
                      && require_type(source.type.resolved()).value
                          != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}})
-                    || (value.kind == TestReportKind::Fail) == value.condition.has_value()
+                    || (value.kind == ReportKind::Fail) == value.condition.has_value()
                     || (value.condition
                         && require_type((*value.condition)->type.resolved()).value
                             != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}})
                     || (value.message
                         && require_type((*value.message)->type.resolved()).value
                             != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}})) {
-                    invariant_violation("invalid test report contract");
+                    invariant_violation("invalid condition report contract");
                 }
                 if (value.operand_sources) {
                     if (!value.condition_source
@@ -263,11 +263,11 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                             std::holds_alternative<SemBinary>((*value.condition)->value)
                             || std::holds_alternative<SemShortCircuit>((*value.condition)->value)
                         )) {
-                        invariant_violation("invalid test explanation shape");
+                        invariant_violation("invalid condition explanation shape");
                     }
                     for (const auto spelling : *value.operand_sources) {
                         if (!program.provenance().contains(spelling)) {
-                            invariant_violation("invalid test explanation spelling");
+                            invariant_violation("invalid condition explanation spelling");
                         }
                     }
                 }

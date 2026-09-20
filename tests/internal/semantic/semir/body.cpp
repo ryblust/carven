@@ -320,8 +320,8 @@ TEST_CASE("SemIR body: test operations carry an internal exit through ordinary f
     auto operation = boolean_expression(prepared, body);
     operation.constant.reset();
     operation.exits_test = true;
-    operation.value = SemTestReport {
-        .kind = TestReportKind::Fail,
+    operation.value = SemReport {
+        .kind = ReportKind::Fail,
         .condition = std::nullopt,
         .message = std::nullopt,
         .condition_source = std::nullopt,

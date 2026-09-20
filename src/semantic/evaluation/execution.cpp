@@ -64,6 +64,7 @@ auto finish_execution(SemanticExecutionContext& context, ExecutionResult<Value> 
                     .code = DiagnosticCode::ConstEvaluation,
                     .message = "typed failure escaped execution without recovery",
                     .calls = failure->calls,
+                    .report_kind = std::nullopt,
                 }
             );
             return std::unexpected(ExecutionFailure {});

@@ -81,7 +81,7 @@ TEST_CASE("Generation: known short circuit test operands need no selection branc
     const auto direct = inspect("fn verify(value: bool) { check(value); }");
     const auto skipped = inspect("fn verify(value: bool) { check(false && value); }");
     const auto selected = inspect("fn verify(value: bool) { check(true && value); }");
-    CHECK(skipped.branches == direct.branches);
+    CHECK(skipped.branches == 0uz);
     CHECK(selected.branches == direct.branches);
 }
 

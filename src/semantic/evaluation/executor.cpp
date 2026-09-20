@@ -17,7 +17,8 @@ SemanticExecutor::SemanticExecutor(
 auto SemanticExecutor::fail(
     ProgramOriginID origin,
     DiagnosticCode code,
-    std::string message
+    std::string message,
+    std::optional<ReportKind> report_kind
 ) noexcept -> ExecutionFailure {
     context.report(
         ExecutionDiagnostic {
@@ -25,6 +26,7 @@ auto SemanticExecutor::fail(
             .code = code,
             .message = std::move(message),
             .calls = calls,
+            .report_kind = report_kind,
         }
     );
     return ExecutionFailure {};

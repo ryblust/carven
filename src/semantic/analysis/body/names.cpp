@@ -94,6 +94,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             : text == "println"              ? std::optional(BuiltinFunction::Println)
             : text == "eprint"               ? std::optional(BuiltinFunction::Eprint)
             : text == "eprintln"             ? std::optional(BuiltinFunction::Eprintln)
+            : text == "assert"               ? std::optional(BuiltinFunction::Assert)
             : text == "check"                ? std::optional(BuiltinFunction::Check)
             : text == "require"              ? std::optional(BuiltinFunction::Require)
             : text == "fail"                 ? std::optional(BuiltinFunction::Fail)
@@ -176,22 +177,24 @@ auto BodyElaborator::validate_builtin(
     std::span<const ConstructionCallableParameter> parameters,
     std::span<const Span> argument_spans
 ) noexcept -> AnalysisResult<void> {
-    const auto testing = selection.function == BuiltinFunction::Check
+    const auto assertion = selection.function == BuiltinFunction::Assert;
+    const auto reporting = selection.function == BuiltinFunction::Assert
+        || selection.function == BuiltinFunction::Check
         || selection.function == BuiltinFunction::Require
         || selection.function == BuiltinFunction::Fail;
     const auto conditional = selection.function != BuiltinFunction::Fail;
     const auto newline = selection.function == BuiltinFunction::Println
         || selection.function == BuiltinFunction::Eprintln;
-    if (testing
+    if (reporting
         && (parameters.size() < (conditional ? 1uz : 0uz)
             || parameters.size() > (conditional ? 2uz : 1uz))) {
         return std::unexpected(fail(
             selection.span,
-            DiagnosticCode::TestArgumentCount,
-            "test operation has the wrong number of arguments"
+            assertion ? DiagnosticCode::TypeCallArity : DiagnosticCode::TestArgumentCount,
+            "report operation has the wrong number of arguments"
         ));
     }
-    if (!testing && !newline && parameters.empty()) {
+    if (!reporting && !newline && parameters.empty()) {
         return std::unexpected(fail(
             selection.span,
             DiagnosticCode::TypeCallArity,
@@ -204,7 +207,7 @@ auto BodyElaborator::validate_builtin(
         const auto canonical =
             concrete ? std::optional(draft().type_copy(*concrete)) : std::nullopt;
         const auto* type = canonical ? std::get_if<BuiltinTypeValue>(&canonical->value) : nullptr;
-        if (testing) {
+        if (reporting) {
             const auto condition = conditional && index == 0;
             if (parameter.access != AccessMode::Read
                 || type == nullptr
@@ -213,8 +216,12 @@ auto BodyElaborator::validate_builtin(
                         : type->kind != BuiltinType::Str && type->kind != BuiltinType::String)) {
                 return std::unexpected(fail(
                     parameter_span,
-                    condition ? DiagnosticCode::TestConditionType : DiagnosticCode::TestMessageType,
-                    condition ? "test condition must have type bool" : "test message must be text"
+                    condition ? (assertion ? DiagnosticCode::TypeConditionBool
+                                           : DiagnosticCode::TestConditionType)
+                              : (assertion ? DiagnosticCode::TypeMismatch
+                                           : DiagnosticCode::TestMessageType),
+                    condition ? "report condition must have type bool"
+                              : "report message must be text"
                 ));
             }
             continue;
@@ -240,7 +247,8 @@ auto BodyElaborator::builtin_operation(
     const auto site = origin(selection.span);
     const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto kind = selection.function;
-    if (kind == BuiltinFunction::Check
+    if (kind == BuiltinFunction::Assert
+        || kind == BuiltinFunction::Check
         || kind == BuiltinFunction::Require
         || kind == BuiltinFunction::Fail) {
         const auto conditional = kind != BuiltinFunction::Fail;
@@ -273,10 +281,11 @@ auto BodyElaborator::builtin_operation(
             result_type,
             builder.lifetime(),
             site,
-            SemTestReport {
-                .kind = kind == BuiltinFunction::Check ? TestReportKind::Check
-                    : kind == BuiltinFunction::Require ? TestReportKind::Require
-                                                       : TestReportKind::Fail,
+            SemReport {
+                .kind = kind == BuiltinFunction::Assert ? ReportKind::Assert
+                    : kind == BuiltinFunction::Check    ? ReportKind::Check
+                    : kind == BuiltinFunction::Require  ? ReportKind::Require
+                                                        : ReportKind::Fail,
                 .condition = std::move(condition),
                 .message = std::move(message),
                 .condition_source = selection.condition_source,

@@ -409,13 +409,12 @@ and accounts for destination growth.
 ### Calls, bindings, and control
 
 Builtin names use ordinary lookup. Direct calls publish `SemPrint` or
-`SemTestReport` expressions; a builtin used as a value materializes a stateless
-callable with its expected signature. Test-stop analysis scans each callable
-body once and propagates stop effects through reverse call dependencies.
-Callable views conservatively admit test stop. Body completion folds these call
-effects into each expression before publication. Direct reports retain source
-execution selection; calls retain conservative subtree effects, including
-inactive source. Backend consumers read the completed expression facts.
+`SemReport` expressions; a builtin used as a value materializes a stateless
+callable with its expected signature. Test-stop analysis collects possible calls
+and direct stops, then propagates effects through reverse call dependencies.
+Construction and publication use the same child-selection rules for known
+conditions and coverage. Callable views conservatively admit test stop.
+Backend consumers read the completed expression and callable effects.
 
 Bindings carry their role and access. Scope and full-expression boundaries
 record lifetimes. Function return, failure propagation, loop transfer, and test
@@ -771,7 +770,7 @@ Native retention, returned aliases, and indirect storage obey the provider/calle
 contract. Native results, including representation conversions, establish no
 inferred storage loans. Native Write view slots retain their possible old storage loans.
 
-## Structural display and test explanations
+## Structural display and condition explanations
 
 `SemPrint` reads logical values described by canonical types and completed
 declarations. `ExecutionValueAccess::display_names` provides owned type, field,
@@ -779,11 +778,22 @@ and case spellings to the shared evaluator;
 execution renders compound views without recovering source syntax. Depth, sequence,
 and output limits match the runtime display contract.
 
-Direct test calls retain the original condition and, for binary and short-circuit
-conditions, the two AST operand spellings in `SemTestReport`. The operation tree
-remains authoritative for execution. Publication verifies this metadata's shape
-and spelling ownership. The executor observes values from the original condition
-execution; constant tests report failures with their structural explanations.
+Direct assertion and test calls retain the condition source and the operand
+spellings of outer comparisons and short-circuit operations in `SemReport`.
+The operation tree remains authoritative for execution. Publication verifies
+this metadata's shape and spelling ownership. The executor observes values from
+the original condition execution; constant tests report failures with their
+structural explanations.
+
+Direct `assert`, `check`, and `require` messages execute only on failure.
+Ownership and nullability analysis split the success and failure paths: `check`
+joins their normal continuations, `require` transfers its failure path to test
+stop, and `assert` has no normal failure continuation. Shared execution reports
+assertions without a test context. An assertion diagnostic ends an interpreted
+run; the returned results retain earlier diagnostics. The interpreter delivers
+diagnostics synchronously to its optional recipient. Report diagnostics retain
+their operation kind; the driver uses it to select the compact presentation and
+execution-stop note. Each report includes the current test identity when present.
 
 ## Compile-time blocks, output and tests
 

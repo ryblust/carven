@@ -2005,13 +2005,16 @@ no active test and are rejected when executed. Static execution validates the
 executed semantic operations; generated C++ and native behavior require runtime
 tests.
 
-`check`, `require`, and `fail` are builtin callables using ordinary name lookup.
+`assert`, `check`, `require`, and `fail` are builtin callables using ordinary
+name lookup.
 Local bindings, module declarations, and explicit imports shadow builtin names
 in every expression position. A C++ namespace wildcard is a fallback for otherwise
 unresolved names; it does not hide known builtins. An explicit native selection can
-shadow a builtin. Test operations are available in helpers and lambdas:
+shadow a builtin. These operations are available in helpers and lambdas:
 
 ```text
+assert(condition);
+assert(condition, message);
 check(condition);
 check(condition, message);
 require(condition);
@@ -2021,20 +2024,34 @@ fail(message);
 ```
 
 The `condition` must have the exact Carven type `bool`; the optional `message`
-must have Carven type `str` or `String`. Invalid counts use
-`CV-TEST-ARGUMENT-COUNT`, invalid conditions use
-`CV-TEST-CONDITION-TYPE`, and invalid messages use `CV-TEST-MESSAGE-TYPE`.
+must have Carven type `str` or `String`. `assert` diagnoses invalid counts,
+conditions, and messages with `CV-TYPE-CALL-ARITY`, `CV-TYPE-CONDITION-BOOL`, and
+`CV-TYPE-MISMATCH`. Test operations use `CV-TEST-ARGUMENT-COUNT`,
+`CV-TEST-CONDITION-TYPE`, and `CV-TEST-MESSAGE-TYPE`.
 
 A builtin used as a value requires an expected concrete `fn(...) -> void`
 signature, for example `let stop: fn() -> void = fail;`. It then follows ordinary
 callable-view borrowing and failure-widening rules. No testing context argument
-is exposed to source code. The runner supplies the current test context for the
-synchronous Carven call chain; using test operations without an active test
-violates the runtime contract.
+is exposed to source code. The runner supplies the current test context for
+`check`, `require`, and `fail` along the synchronous Carven call chain. Using these
+operations without an active test violates the runtime contract.
 
-Arguments are evaluated eagerly, exactly once, and from left to right:
-condition first, then message. The message is evaluated even when the condition
-succeeds. A failed `check` reports and falls through. A failed `require`
+Direct `assert`, `check`, and `require` calls evaluate their condition exactly
+once. Only a false condition evaluates the optional message, once and after
+condition observation. `fail` always evaluates its optional message. Skipped
+messages remain subject to semantic and type checking. Binding a builtin to a
+callable value retains ordinary eager argument evaluation at indirect call sites;
+the callee receives already evaluated values.
+
+`assert` requires no test context and is always enabled, independently of native
+build configuration and `NDEBUG`. Native failure reports to stderr and aborts the
+process, without ordinary stack cleanup. Interpreted failure stops the whole
+execution, including any remaining tests. Compile-time failure emits `CV-ASSERT`
+and stops the current evaluation. Assertions are not typed failures and cannot
+be recovered by `try`. When a native assertion fails in a test, the report
+includes its module and test name.
+
+A failed `check` reports and falls through. A failed `require`
 reports and exits the whole current test, while a successful `require` falls
 through. `fail` reports and exits the whole current test. Test exit is distinct
 from return, loop transfer, and failure transfer, and is not caught by `try`.
@@ -2043,17 +2060,31 @@ runner continues to the next test. External C++ calls do not participate in this
 transport; a test stop cannot unwind through arbitrary native callbacks.
 
 Each failed operation reports the original `.cv` display origin, the 1-based
-line of its operation name, its operation kind, and an optional runtime
+line and column of its operation name, its operation kind, and an optional runtime
 message. For a builtin bound as a callable value, the source origin is its
-binding expression. Direct `check` and `require` calls additionally report the complete condition
-source: the original UTF-8 byte slice of the condition expression span,
+binding expression. Direct `assert`, `check`, and `require` calls additionally
+report the complete condition source: the original UTF-8 byte slice of the
+condition expression span,
 including parentheses, whitespace, line breaks, and comments. `fail` reports
 without a condition. The runtime reporter controls the presentation of these
-records.
+records. Default native and interpreted test reports identify failed cases by
+module and test name and finish with passed and failed case counts on stderr.
+Multiple failed checks in one test count as one failed case. Successful cases
+have no individual report; source printing retains its original stream. Native
+custom reporters retain control of their output and receive no default summary.
+Reports are emitted when the operation fails. Each failure starts with
+`file:line:column: error: description`. Indented fields contain the active
+`test` context (module and name), `condition`, `operands`, and `message` when
+present. Each failure carries its own test context. Multi-line fields use an
+indented block; an explicitly empty message appears as `message: ""`.
+Compile-time diagnostics retain their error codes and source excerpts and use
+the same condition, operand, and message layout.
+A final note identifies a stopped test or aborted execution. An aborted run has
+no completion summary.
 
-Direct `check` and `require` conditions whose outer operation is a Carven binary
-comparison additionally report its two operand source spellings and structural
-values on failure. An outer `&&` or `||` reports the two Boolean subexpressions;
+An outer comparison in a direct `assert`, `check`, or `require` condition reports
+both operand spellings and structural values on failure. An outer `&&` or `||`
+reports the two Boolean subexpressions;
 the skipped operand is marked `<not evaluated>`. Parentheses preserve this
 behavior. Nested operations are evaluated normally; explanations do not recursively
 trace their internals or search for a first differing field. Indirect builtin
@@ -2063,8 +2094,8 @@ Explanation collection uses the original evaluation and comparison, preserving
 sequencing, snapshots, short circuiting, propagation, and cleanup. It does not
 reevaluate operands or invoke formatters. Failed values are rendered before the
 optional message expression runs, so mutations from that message cannot rewrite
-the explanation. Successful checks do not render operand values. Runtime reporters
-receive a borrowed `explanation` string valid for the synchronous
+the explanation. Successful conditions do not render operand values. Runtime
+reporters receive a borrowed `explanation` string valid for the synchronous
 report callback. Constant-test diagnostics include the same explanation.
 
 ### Diagnostics

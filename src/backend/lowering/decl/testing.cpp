@@ -232,7 +232,7 @@ auto lower_test_runner_header(
     }
     body.push_back(generated_statement(
         TargetReturnStmt {
-            .expression = test_context_member_call(local, "result", {}),
+            .expression = test_context_member_call(local, "finish", {}),
         }
     ));
     auto testing_items = std::vector<TargetItem>();

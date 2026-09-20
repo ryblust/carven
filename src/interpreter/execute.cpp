@@ -54,7 +54,7 @@ private:
     std::vector<FunctionID> pending;
     std::optional<ExecutionDiagnostic> error;
     bool testing = false;
-    std::vector<ExecutionDiagnostic> test_diagnostics;
+    std::vector<InterpreterTestResult> test_results;
 };
 
 Interpreter::Interpreter(
@@ -78,8 +78,12 @@ auto Interpreter::reject(ProgramOriginID origin, std::string_view message) noexc
             .origin = origin,
             .code = DiagnosticCode::InterpretAdmission,
             .message = std::string(message),
-            .calls = {}
+            .calls = {},
+            .report_kind = std::nullopt
         };
+        if (options.report) {
+            options.report(std::nullopt, *error);
+        }
     }
 }
 
@@ -172,7 +176,8 @@ auto Interpreter::expression(const SemanticExpression& source) noexcept -> void 
         reject(source.origin, *reason);
         return;
     }
-    if (!testing && std::holds_alternative<SemTestReport>(source.value)) {
+    if (const auto* report = std::get_if<SemReport>(&source.value);
+        !testing && report != nullptr && report->kind != ReportKind::Assert) {
         reject(source.origin, "test operations require a test execution context");
         return;
     }
@@ -208,7 +213,8 @@ auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noex
                 .origin = origin,
                 .code = DiagnosticCode::InterpretAdmission,
                 .message = "function is outside the interpreter execution subset",
-                .calls = {}
+                .calls = {},
+                .report_kind = std::nullopt
             }
         );
     }
@@ -220,11 +226,15 @@ auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noex
 
 auto Interpreter::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
     auto reported = diagnostic;
-    reported.code = diagnostic.code == DiagnosticCode::ConstLimit
-        ? DiagnosticCode::InterpretLimit
-        : DiagnosticCode::InterpretExecution;
+    reported.code = diagnostic.code == DiagnosticCode::AssertionFailed
+        ? DiagnosticCode::AssertionFailed
+        : diagnostic.code == DiagnosticCode::ConstLimit ? DiagnosticCode::InterpretLimit
+                                                        : DiagnosticCode::InterpretExecution;
+    if (options.report) {
+        options.report(testing ? std::optional(test_results.back().test) : std::nullopt, reported);
+    }
     if (testing) {
-        test_diagnostics.push_back(std::move(reported));
+        test_results.back().diagnostics.push_back(std::move(reported));
     } else if (!error) {
         error = std::move(reported);
     }
@@ -316,9 +326,8 @@ auto Interpreter::run_tests() noexcept
     if (error) {
         return std::unexpected(std::move(*error));
     }
-    auto results = std::vector<InterpreterTestResult>();
     for (const auto id : selected) {
-        test_diagnostics.clear();
+        test_results.push_back({.test = id, .diagnostics = {}});
         const auto result = execute_body(
                                 values,
                                 *this,
@@ -326,17 +335,21 @@ auto Interpreter::run_tests() noexcept
                                 options.limits
         )
                                 .run();
-        if (!result && test_diagnostics.empty()) {
+        if (!result && test_results.back().diagnostics.empty()) {
             invariant_violation("interpreted test failed without a diagnostic");
         }
-        results.push_back(
-            InterpreterTestResult {.test = id, .diagnostics = std::move(test_diagnostics)}
-        );
+        if (test_results.back().aborted()) {
+            break;
+        }
     }
-    return results;
+    return std::move(test_results);
 }
 
 } // namespace
+
+auto InterpreterTestResult::aborted() const noexcept -> bool {
+    return !diagnostics.empty() && diagnostics.back().code == DiagnosticCode::AssertionFailed;
+}
 
 auto interpret(
     const SemIRProgram& program,

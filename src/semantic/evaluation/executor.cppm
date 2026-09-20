@@ -53,8 +53,12 @@ public:
 private:
     auto default_value(TypeID type, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
-    auto fail(ProgramOriginID origin, DiagnosticCode code, std::string message) noexcept
-        -> ExecutionFailure;
+    auto fail(
+        ProgramOriginID origin,
+        DiagnosticCode code,
+        std::string message,
+        std::optional<ReportKind> report_kind = std::nullopt
+    ) noexcept -> ExecutionFailure;
     auto step(ProgramOriginID origin) noexcept -> ExecutionResult<void>;
     auto account_text(std::size_t bytes, ProgramOriginID origin) noexcept -> ExecutionResult<void>;
     auto account_aggregate(std::size_t elements, ProgramOriginID origin) noexcept
@@ -126,11 +130,8 @@ private:
         -> ExecutionTask<ExecutionValue>;
     auto print(ExecutionFrame& frame, const SemPrint& operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
-    auto test_report(
-        ExecutionFrame& frame,
-        const SemTestReport& operation,
-        ProgramOriginID origin
-    ) noexcept -> ExecutionTask<ExecutionValue>;
+    auto report(ExecutionFrame& frame, const SemReport& operation, ProgramOriginID origin) noexcept
+        -> ExecutionTask<ExecutionValue>;
     auto text_storage(
         ExecutionFrame& frame,
         const ExecutionPlace& place,
@@ -149,14 +150,14 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
-    struct TestObservation final {
+    struct ConditionObservation final {
         const SemanticExpression* condition;
         std::array<ProgramSpellingID, 2> sources;
         std::string* explanation;
     };
 
-    std::optional<TestObservation> test_observation;
-    auto observe_test(
+    std::optional<ConditionObservation> condition_observation;
+    auto observe_condition(
         const SemanticExpression& source,
         const ExecutionValue& left,
         const ExecutionValue* right,

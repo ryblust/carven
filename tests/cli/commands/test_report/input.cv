@@ -1,9 +1,0 @@
-test "failed" {
-    check(false, "CLI failure");
-}
-
-test "passed" {
-    println("next");
-}
-
-println("unexpected program entry");

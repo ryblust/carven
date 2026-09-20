@@ -106,7 +106,11 @@ and native behavior, including helper assertions and execution ordering.
 
 Internal interpreter tests cover admission, failure propagation, and per-test
 execution budgets. Language tests cover generated test runners and their exit
-status. CLI tests cover test options, source ordering, and report output.
+status. CLI tests cover test options, source ordering, matching native/interpreted
+report layouts, and report ordering relative to source output on the same stream.
+Assertion tests cover conditional messages, fatal termination, and
+independence from `NDEBUG`. Generation tests check that known conditions retain
+required effects without redundant report branches or storage.
 
 Use static tests for compiler-executed behavior; retain runtime
 cases for C++ generation, runtime support, and native integration.
@@ -189,6 +193,12 @@ under `functions`. Interop `bindings` covers C++ declaration lookup and use;
 Process harnesses bound execution time. The CLI harness records stdout and
 stderr for each step, preserves failed fixtures, and removes successful temporary
 directories.
+
+Fixtures whose exact source bytes are part of the assertion use `.cv.fixture`
+and the CLI `fixtures` mapping to copy them to a `.cv` input. This keeps source
+locations and verbatim excerpts stable under repository formatting. Behavioral
+tests use ordinary `.cv` sources and avoid fixed line numbers unless source
+location is the contract under test.
 
 Generated target configuration directly expresses the boundary under test.
 Use ordinary targets and native Xmake test assertions for program execution and

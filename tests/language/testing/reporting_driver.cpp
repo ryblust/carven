@@ -52,19 +52,19 @@ auto cv_test_reporting_verify() noexcept -> void {
     if (!contains(text, "observed_boolean(&calls, true): <not evaluated>")
         || !contains(
             text,
-            "observed_boolean(&calls, true): true\n  observed_boolean(&calls, false): false"
+            "observed_boolean(&calls, true): true\nobserved_boolean(&calls, false): false"
         )
         || !contains(
             text,
-            "observed_boolean(&calls, false): false\n  observed_boolean(&calls, false): false"
+            "observed_boolean(&calls, false): false\nobserved_boolean(&calls, false): false"
         )
-        || !contains(text, "comparison_next(&calls): 1\n  comparison_next(&calls): 2")
+        || !contains(text, "comparison_next(&calls): 1\ncomparison_next(&calls): 2")
         || !contains(text, "actual: DisplayedRecord {\n    value: 12,\n    text: \"left\",\n}")
         || !contains(text, "expected: DisplayedRecord {\n    value: 15,\n    text: \"right\",\n}")
         || !contains(text, "comparison_next(&calls) == 1: <not evaluated>")
         || !contains(text, "comparison_next(&calls) == 2: false")
-        || !contains(text, "calls: 1\n  4: 4")
-        || !contains(text, "1: 1\n  2: 2")) {
+        || !contains(text, "calls: 1\n4: 4")
+        || !contains(text, "1: 1\n2: 2")) {
         std::cerr << text;
         std::abort();
     }

@@ -1,0 +1,28 @@
+struct Record {
+    value: i32,
+    text: str,
+}
+
+fn verify() {
+    var actual = Record {
+        value: 1,
+        text: "left"
+    };
+    let expected = Record {
+        value: 2,
+        text: "right"
+    };
+    assert(
+        actual == expected,
+        if true {
+            actual.value = 99;
+            eprintln("message evaluated");
+            "record mismatch"
+        } else {
+            "unused"
+        }
+    );
+    eprintln("unreachable");
+}
+
+verify();

@@ -476,8 +476,8 @@ auto realize_operation(
                     }
                 };
             },
-            [](const SemTestReport&) static noexcept -> TargetExpr {
-                invariant_violation("test report requires control-flow realization");
+            [](const SemReport&) static noexcept -> TargetExpr {
+                invariant_violation("condition report requires control-flow realization");
             },
             [&](const SemPrint& value) noexcept -> TargetExpr {
                 const auto* prepared = std::get_if<PreparedPrint>(preparation);

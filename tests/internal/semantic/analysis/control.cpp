@@ -240,7 +240,7 @@ TEST_CASE("Semantic control: test stop propagates through callable dependencies"
     }
 }
 
-TEST_CASE("Semantic control: published expressions include conservative call effects") {
+TEST_CASE("Semantic control: published effects follow possible execution") {
     const auto program = analyze_test_program(R"(
         fn direct() -> i32 { return if false { require(false); 1 } else { 2 }; }
         fn indirect() -> i32 { return if false { stop(); 1 } else { 2 }; }
@@ -255,7 +255,8 @@ TEST_CASE("Semantic control: published expressions include conservative call eff
         const auto* returned = std::get_if<SemReturn>(&body.region().statements.front().value);
         REQUIRE(returned != nullptr);
         REQUIRE(returned->value.has_value());
-        CHECK(returned->value->exits_test == (index == 1uz));
+        CHECK(!returned->value->exits_test);
+        CHECK(!program.may_stop_test(callables[index]));
     }
     for (const auto entry : program.tests().entries()) {
         const auto& body = program.bodies().body(entry.value.body);
@@ -459,5 +460,37 @@ TEST_CASE("Semantic ranges: bound sequencing preserves established pointer facts
         }
     )"),
         DiagnosticCode::PointerNonNull
+    ));
+}
+
+TEST_CASE("Semantic control: successful reports exclude message test stops") {
+    const auto program = analyze_test_program(R"(
+        fn message() -> str { fail(); }
+        fn quiet() { assert(true, message()); check(true, message()); require(true, message()); }
+        fn forward() { quiet(); }
+        fn conditional(flag: bool) { assert(flag, message()); }
+    )");
+    const auto callables = test_function_callables(program);
+    const auto expected = std::array {true, false, false, true};
+    REQUIRE(callables.size() == expected.size());
+    for (auto index = 0uz; index < expected.size(); ++index) {
+        CAPTURE(index);
+        CHECK(program.may_stop_test(callables[index]) == expected[index]);
+    }
+}
+
+TEST_CASE("Semantic control: report completion follows the selected continuation") {
+    for (const auto operation : {"assert", "require"}) {
+        CAPTURE(operation);
+        static_cast<void>(analyze_test_program(
+            std::format("private fn stopped() -> i32 {{ {}(false); }}", operation)
+        ));
+        CHECK(contains_diagnostic_code(
+            analyze_test_errors(std::format("private fn open() -> i32 {{ {}(true); }}", operation)),
+            DiagnosticCode::FlowMissingReturn
+        ));
+    }
+    static_cast<void>(analyze_test_program(
+        "private fn stopped() -> i32 { check(false, if true { fail(); } else { \"unused\" }); }"
     ));
 }

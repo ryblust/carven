@@ -350,12 +350,12 @@ auto SemanticExecutor::range_loop(
     co_return result;
 }
 
-auto SemanticExecutor::test_report(
+auto SemanticExecutor::report(
     ExecutionFrame& frame,
-    const SemTestReport& operation,
+    const SemReport& operation,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
-    if (!testing) {
+    if (!testing && operation.kind != ReportKind::Assert) {
         co_return std::unexpected(
             fail(origin, DiagnosticCode::ConstTest, "test operation requires an active test")
         );
@@ -363,16 +363,16 @@ auto SemanticExecutor::test_report(
     auto passed = false;
     auto explanation = std::string();
     if (operation.condition) {
-        const auto previous = test_observation;
+        const auto previous = condition_observation;
         if (operation.operand_sources) {
-            test_observation = TestObservation {
+            condition_observation = ConditionObservation {
                 .condition = std::addressof(**operation.condition),
                 .sources = *operation.operand_sources,
                 .explanation = &explanation
             };
         }
         auto condition = (co_await value(frame, **operation.condition));
-        test_observation = previous;
+        condition_observation = previous;
         if (!condition) {
             co_return std::unexpected(condition.error());
         }
@@ -383,7 +383,7 @@ auto SemanticExecutor::test_report(
         passed = *truth;
     }
     auto message = std::string();
-    if (operation.message) {
+    if (operation.message && !passed) {
         auto argument = (co_await value(frame, **operation.message));
         if (!argument) {
             co_return std::unexpected(argument.error());
@@ -392,49 +392,75 @@ auto SemanticExecutor::test_report(
         if (!bytes) {
             co_return std::unexpected(bytes.error());
         }
-        if (!passed) {
-            message = *bytes;
-        }
+        message = *bytes;
     }
     if (!passed) {
         test_failed = true;
-        auto detail = operation.condition_source
-            ? std::format(
-                  "{} failed: {}",
-                  operation.kind == TestReportKind::Require ? "require" : "check",
-                  values.spelling(*operation.condition_source)
-              )
-            : std::string("test failed");
-        if (!explanation.empty()) {
-            detail += "\n" + explanation;
+        auto detail = std::string(
+            operation.kind == ReportKind::Assert        ? "assertion failed"
+                : operation.kind == ReportKind::Check   ? "check failed"
+                : operation.kind == ReportKind::Require ? "requirement failed"
+                                                        : "explicit failure"
+        );
+        const auto field = [&](std::string_view label, std::string_view text) noexcept {
+            detail += "\n  ";
+            detail += label;
+            if (text.empty()) {
+                detail += " \"\"";
+            } else if (text.find('\n') == std::string_view::npos) {
+                detail += ' ';
+                detail += text;
+            } else {
+                while (!text.empty()) {
+                    detail += "\n    ";
+                    const auto newline = text.find('\n');
+                    detail += text.substr(0, newline);
+                    if (newline == std::string_view::npos) {
+                        break;
+                    }
+                    text.remove_prefix(newline + 1);
+                }
+            }
+        };
+        if (operation.condition_source) {
+            field("condition:", values.spelling(*operation.condition_source));
         }
-        if (!message.empty()) {
-            detail += ": " + message;
+        if (!explanation.empty()) {
+            field("operands:", explanation);
+        }
+        if (operation.message) {
+            field("message:", message);
         }
         if (auto checked = account_text(detail.size(), origin); !checked) {
             co_return std::unexpected(checked.error());
         }
-        const auto failure = fail(origin, DiagnosticCode::ConstTest, std::move(detail));
-        if (operation.kind != TestReportKind::Check) {
+        const auto failure = fail(
+            origin,
+            operation.kind == ReportKind::Assert ? DiagnosticCode::AssertionFailed
+                                                 : DiagnosticCode::ConstTest,
+            std::move(detail),
+            operation.kind
+        );
+        if (operation.kind != ReportKind::Check) {
             co_return std::unexpected(failure);
         }
     }
     co_return ExecutionVoid {};
 }
 
-auto SemanticExecutor::observe_test(
+auto SemanticExecutor::observe_condition(
     const SemanticExpression& source,
     const ExecutionValue& left,
     const ExecutionValue* right,
     bool passed
 ) noexcept -> void {
-    if (passed || !test_observation || test_observation->condition != &source) {
+    if (passed || !condition_observation || condition_observation->condition != &source) {
         return;
     }
-    auto& output = *test_observation->explanation;
-    output += "  " + std::string(values.spelling(test_observation->sources[0])) + ": "
+    auto& output = *condition_observation->explanation;
+    output += std::string(values.spelling(condition_observation->sources[0])) + ": "
         + display_execution_value(values, left, true).value_or("<opaque>") + "\n";
-    output += "  " + std::string(values.spelling(test_observation->sources[1])) + ": "
+    output += std::string(values.spelling(condition_observation->sources[1])) + ": "
         + (right ? display_execution_value(values, *right, true).value_or("<opaque>")
                  : "<not evaluated>")
         + "\n";

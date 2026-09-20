@@ -1,0 +1,68 @@
+before failures
+input.cv:16:5: error: check failed
+  test:
+    module: input
+    name: failed
+  condition: actual == expected
+  operands:
+    actual: Pair {
+        left: 1,
+        right: 2,
+    }
+    expected: Pair {
+        left: 1,
+        right: 3,
+    }
+  message:
+    first line
+    second line
+
+between failures
+input.cv:19:5: error: check failed
+  test:
+    module: input
+    name: failed
+  condition: false
+  message: CLI failure
+
+input.cv:29:5: error: check failed
+  test:
+    module: input
+    name: failed
+  condition:
+    false
+                && if true {
+                    ++calls;
+                    true
+                } else {
+                    false
+                }
+  operands:
+    false: false
+    if true {
+                    ++calls;
+                    true
+                } else {
+                    false
+                }: <not evaluated>
+  message: second failure
+
+after failures
+input.cv:44:5: error: requirement failed
+  test:
+    module: input
+    name: required
+  condition: false
+  message: required condition
+  note: test stopped
+
+input.cv:48:5: error: explicit failure
+  test:
+    module: input
+    name:
+      explicit
+      failure
+  message: ""
+  note: test stopped
+
+carven: tests: 1 passed; 3 failed

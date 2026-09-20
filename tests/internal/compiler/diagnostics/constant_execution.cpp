@@ -102,7 +102,7 @@ TEST_CASE("Compiler: static checks continue and requirements stop nested calls")
         errors
     );
     REQUIRE(!result.has_value());
-    CHECK(output == "message;message;continued;next;");
+    CHECK(output == "message;continued;next;");
     CHECK(
         std::ranges::count_if(
             result.error(),
@@ -358,4 +358,29 @@ TEST_CASE("Compiler: deferred blocks preserve lexical snapshots and constant usa
     CHECK(errors.empty());
     REQUIRE(result->diagnostics.size() == 1uz);
     CHECK(result->diagnostics.front().finding.code == DiagnosticCode::LintUnusedLocal);
+}
+
+TEST_CASE("Compiler: assertions fail constant execution without requiring a test context") {
+    auto output = std::string();
+    auto errors = std::string();
+    const auto result = compile_constant_program(
+        R"(
+        const fn verify(value: i32) {
+            assert(value == 2, "constant assertion");
+            println("unreachable");
+            return value;
+        }
+        const value = verify(1);
+    )",
+        output,
+        errors
+    );
+    REQUIRE(!result.has_value());
+    CHECK(output.empty());
+    CHECK(errors.empty());
+    CHECK(std::ranges::any_of(result.error(), [](const auto& diagnostic) static noexcept {
+        return diagnostic.finding.code == DiagnosticCode::AssertionFailed
+            && diagnostic.finding.message.contains("value: 1")
+            && diagnostic.finding.message.contains("constant assertion");
+    }));
 }

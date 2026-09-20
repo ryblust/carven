@@ -177,7 +177,8 @@ enum class CastKind {
 };
 
 
-enum class TestReportKind {
+enum class ReportKind {
+    Assert,
     Check,
     Require,
     Fail,

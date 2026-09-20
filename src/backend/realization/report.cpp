@@ -14,6 +14,7 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.body;
 import :semantic.semir.decl;
+import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.structured;
@@ -26,12 +27,19 @@ import :support.visit;
 import std;
 
 auto BodyRealizer::lower_report(
-    const SemTestReport& value,
+    const SemReport& value,
     ProgramOriginID origin,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    auto should_report = bool_expression(true);
-    const auto explanation = fresh_local(TargetTemporaryNameKind::TestValue);
+    const auto known = value.condition
+        ? known_boolean(context.semantic(), preparation.operation(**value.condition))
+        : std::optional(false);
+    if (known == true) {
+        static_cast<void>(destination.accept((co_await discard(**value.condition))));
+        co_return {};
+    }
+    auto should_report = std::optional<TargetExpr>();
+    const auto explanation = fresh_local(TargetTemporaryNameKind::Explanation);
     if (value.operand_sources) {
         destination.emit(generated_statement(
             TargetVariableStmt {
@@ -48,10 +56,14 @@ auto BodyRealizer::lower_report(
             }
         ));
     }
-    if (value.condition) {
-        const auto previous = test_observation;
+    if (value.condition && known == false && !value.operand_sources) {
+        if (!destination.accept((co_await discard(**value.condition)))) {
+            co_return {};
+        }
+    } else if (value.condition) {
+        const auto previous = condition_observation;
         if (value.operand_sources) {
-            test_observation = TestObservation {
+            condition_observation = ConditionObservation {
                 .expression = std::addressof(**value.condition),
                 .writer = explanation,
                 .sources = *value.operand_sources
@@ -62,31 +74,31 @@ auto BodyRealizer::lower_report(
              .use = PreparedUse::OperandValue,
              .demand = PreparedDemand::Value}
         )));
-        test_observation = previous;
+        condition_observation = previous;
         if (!condition) {
             co_return {};
         }
-        const auto observed = fresh_local(TargetTemporaryNameKind::Logic);
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .local = observed,
-                .type = context.intrinsic_type(TargetSymbol::Bool),
-                .initializer = std::move(*condition)
-            }
-        ));
-        should_report =
-            prefix_expression(TargetPrefixOperator::LogicalNot, name_expression(observed));
+        if (known == false) {
+            destination.emit(
+                generated_statement(TargetDiscardStmt {.expression = std::move(*condition)})
+            );
+        } else {
+            should_report =
+                prefix_expression(TargetPrefixOperator::LogicalNot, std::move(*condition));
+        }
     }
     auto report = LoweringStmtBuilder();
     const auto source = target_source_origin(context.semantic().provenance(), origin);
     auto arguments = std::vector<TargetExpr>();
     arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
     arguments.push_back(integer_expression(source.line));
-    const auto* operation = value.kind == TestReportKind::Check ? "check"
-        : value.kind == TestReportKind::Require                 ? "require"
-                                                                : "fail";
+    arguments.push_back(
+        integer_expression(context.semantic().provenance().location(origin).column)
+    );
+    const auto* operation = value.kind == ReportKind::Assert ? "assert"
+        : value.kind == ReportKind::Check                    ? "check"
+        : value.kind == ReportKind::Require                  ? "require"
+                                                             : "fail";
     arguments.push_back(string_expression(operation, TargetStringLiteralKind::String));
     arguments.push_back(
         value.condition_source.has_value()
@@ -96,59 +108,60 @@ auto BodyRealizer::lower_report(
               )
             : intrinsic_expression(TargetSymbol::StdNullopt)
     );
+    const auto publish_report = [&]() noexcept {
+        if (!should_report) {
+            destination.append(std::move(report));
+            return;
+        }
+        destination.record_exits(report.exits());
+        auto branches = std::vector<TargetIfBranch>();
+        branches.push_back(
+            {.condition = std::move(*should_report), .body = std::move(report).finish()}
+        );
+        destination.emit(source_statement(
+            context.semantic(),
+            origin,
+            TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+        ));
+    };
     if (value.message) {
-        auto message = destination.accept((co_await operand(
+        auto message = report.accept((co_await operand(
             {.expression = std::addressof(**value.message),
              .use = PreparedUse::ReadBorrow,
              .demand = PreparedDemand::Value}
         )));
         if (!message) {
+            publish_report();
             co_return {};
         }
-        // Reporting is conditional; evaluating its source operands is eager.
-        // Commit the residual message before entering the failure-only branch.
-        const auto observed = fresh_local(TargetTemporaryNameKind::Operand);
-        destination.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .local = observed,
-                .type = context.lower_type(preparation.operation(**value.message).type.resolved()),
-                .initializer = std::move(*message)
-            }
-        ));
-        arguments.push_back(name_expression(observed));
+        arguments.push_back(std::move(*message));
     } else {
         arguments.push_back(intrinsic_expression(TargetSymbol::StdNullopt));
-    }
-    if (!destination.continues()) {
-        co_return {};
     }
     if (value.operand_sources) {
         arguments.push_back(call_member(name_expression(explanation), "result", {}));
     } else {
         arguments.push_back(string_expression("", TargetStringLiteralKind::StringView));
     }
-    report.emit(statement_expression(call_member(
-        call_expression(intrinsic_expression(TargetSymbol::RuntimeCurrentTest), {}),
-        "report_failure",
-        std::move(arguments)
-    )));
-    if (value.kind != TestReportKind::Check) {
+    if (value.kind == ReportKind::Assert) {
+        report.terminate(
+            statement_expression(call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeAssertionFailed),
+                std::move(arguments)
+            )),
+            {.kind = LoweringExitKind::Unreachable, .identity = 0}
+        );
+    } else {
+        report.emit(statement_expression(call_member(
+            call_expression(intrinsic_expression(TargetSymbol::RuntimeCurrentTest), {}),
+            "report_failure",
+            std::move(arguments)
+        )));
+    }
+    if (value.kind == ReportKind::Require || value.kind == ReportKind::Fail) {
         emit_test_exit(report);
     }
-    if (!value.condition) {
-        destination.append(std::move(report));
-        co_return {};
-    }
-    destination.record_exits(report.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = std::move(should_report), .body = std::move(report).finish()});
-    destination.emit(source_statement(
-        context.semantic(),
-        origin,
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-    ));
+    publish_report();
     co_return {};
 }
 

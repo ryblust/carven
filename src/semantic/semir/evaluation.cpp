@@ -35,14 +35,19 @@ auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
 
 } // namespace
 
-auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
+auto known_boolean(const ConstantStore& constants, const SemanticExpression& expression) noexcept
     -> std::optional<bool> {
     if (!expression.constant) {
         return std::nullopt;
     }
     const auto* value =
-        std::get_if<BooleanConstant>(&semantic.constants().constant(*expression.constant).value);
+        std::get_if<BooleanConstant>(&constants.constant(*expression.constant).value);
     return value == nullptr ? std::nullopt : std::optional(value->value);
+}
+
+auto known_boolean(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
+    -> std::optional<bool> {
+    return known_boolean(semantic.constants(), expression);
 }
 
 auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
@@ -112,7 +117,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     ? operands(*value.operand)
                     : required;
             },
-            [&](const SemTestReport& value) noexcept {
+            [&](const SemReport& value) noexcept {
                 return EvaluationRule {
                     .action = EvaluationAction::Required,
                     .operands = {

@@ -133,8 +133,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         && (std::holds_alternative<SemBinary>(value.operation.value)
             || std::holds_alternative<SemUnary>(value.operation.value));
     retain_backing |= depth_boundary;
-    const auto observed =
-        owner.test_observation && owner.test_observation->expression == std::addressof(expression);
+    const auto observed = owner.condition_observation
+        && owner.condition_observation->expression == std::addressof(expression);
     if (!observed
         && value.operation.constant
         && !value.requires_execution
@@ -168,7 +168,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         complete(fragment, constant->constant);
         co_return finish_fragment(std::move(fragment));
     }
-    if (const auto* report = std::get_if<SemTestReport>(&value.operation.value)) {
+    if (const auto* report = std::get_if<SemReport>(&value.operation.value)) {
         (co_await owner.lower_report(*report, value.operation.origin, statements));
         co_return finish_fragment(std::move(fragment));
     }
@@ -227,8 +227,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         const auto observe = [&](bool left, std::optional<TargetExpr> right) noexcept {
             return realize_observed_short_circuit(
                 owner.context,
-                owner.test_observation->writer,
-                owner.test_observation->sources,
+                owner.condition_observation->writer,
+                owner.condition_observation->sources,
                 left,
                 std::move(right)
             );
@@ -553,8 +553,8 @@ auto BodyRealizer::ExpressionBuilder::build(
                 owner.context,
                 *binary,
                 std::move(operands),
-                owner.test_observation->writer,
-                owner.test_observation->sources
+                owner.condition_observation->writer,
+                owner.condition_observation->sources
             )
         );
     } else {

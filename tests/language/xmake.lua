@@ -81,6 +81,9 @@ target("carven-test-language-runner-failure")
         os.tryrm(stderr_file)
         assert(status == 1, "failed tests must produce exit code 1: " .. tostring(status))
         assert(stdout == "ordinary\nafter checks\nlater\n", "unexpected test execution: " .. stdout)
+        assert(stderr:find("tests: 2 passed; 3 failed", 1, true), "missing case summary: " .. stderr)
+        local _, contexts = stderr:gsub("\n  test:\n", "")
+        assert(contexts == 4, "each failure needs its test context: " .. stderr)
         for _, message in ipairs({"first check", "second check", "stop helper", "explicit failure"}) do
             assert(stderr:find(message, 1, true), "missing test failure: " .. message .. "\n" .. stderr)
         end

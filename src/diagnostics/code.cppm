@@ -43,6 +43,7 @@ enum class DiagnosticCode {
     ConstInitializer,
     ConstIndexBounds,
     ConstLimit,
+    AssertionFailed,
     ConstTest,
     ConstLiteralRange,
     ConstNegativeArrayExtent,

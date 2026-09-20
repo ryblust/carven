@@ -1,0 +1,78 @@
+const fn verify() {
+    var calls = 0;
+    assert(
+        true,
+        if true {
+            ++calls;
+            "unexpected"
+        } else {
+            "unused"
+        }
+    );
+    assert(calls == 0);
+    var text: String = "retained";
+    assert(true, if true { &&text } else { &&text });
+    assert(text == "retained");
+}
+
+const {
+    verify();
+}
+
+const test "static messages are conditional" {
+    var calls = 0;
+    check(
+        true,
+        if true {
+            ++calls;
+            "unexpected"
+        } else {
+            "unused"
+        }
+    );
+    require(
+        true,
+        if true {
+            ++calls;
+            "unexpected"
+        } else {
+            "unused"
+        }
+    );
+    assert(calls == 0);
+}
+
+fn stop_message() -> str {
+    fail("message must not execute");
+}
+
+test "runtime messages are conditional" {
+    check(true, stop_message());
+    require(true, stop_message());
+    assert(true, stop_message());
+    verify();
+    var calls = 0;
+    check(
+        true,
+        if true {
+            ++calls;
+            "unexpected"
+        } else {
+            "unused"
+        }
+    );
+    require(
+        true,
+        if true {
+            ++calls;
+            "unexpected"
+        } else {
+            "unused"
+        }
+    );
+    assert(calls == 0);
+    println("tested");
+}
+
+verify();
+println("passed");

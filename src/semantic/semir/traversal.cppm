@@ -19,67 +19,46 @@ public:
 
     template<typename Root>
     auto operator()(Root& root) noexcept -> void {
-        pending.emplace_back(std::addressof(root));
+        pending.push_back({.node = std::addressof(root), .leaving = false});
         while (!pending.empty()) {
             const auto next = pending.back();
             pending.pop_back();
-            next.visit(
-                Overloaded {
-                    [&](Node<SemanticExpression>* expression) noexcept { enter(*expression); },
-                    [&](Node<SemanticRegion>* region) noexcept { enter(*region); },
-                    [&](Node<SemanticStatement>* statement) noexcept { enter(*statement); },
-                    [&](Leave leave) noexcept {
-                        if constexpr (requires { visitor.leave(*leave.expression); }) {
-                            visitor.leave(*leave.expression);
-                        }
-                    },
+            next.node.visit([&](auto* node) noexcept {
+                if (next.leaving) {
+                    if constexpr (requires { visitor.leave(*node); }) {
+                        visitor.leave(*node);
+                    }
+                } else {
+                    enter(*node);
                 }
-            );
+            });
         }
     }
 
 private:
-    struct Leave final {
-        Node<SemanticExpression>* expression;
+    struct Event final {
+        std::variant<Node<SemanticExpression>*, Node<SemanticRegion>*, Node<SemanticStatement>*>
+            node;
+        bool leaving;
     };
 
-    using Event = std::
-        variant<Node<SemanticExpression>*, Node<SemanticRegion>*, Node<SemanticStatement>*, Leave>;
-
-    auto enter(Node<SemanticExpression>& expression) noexcept -> void {
-        if constexpr (std::invocable<Visitor&, Node<SemanticExpression>&>) {
-            std::invoke(visitor, expression);
+    template<typename Value>
+    auto enter(Value& value) noexcept -> void {
+        if constexpr (std::invocable<Visitor&, Value&>) {
+            std::invoke(visitor, value);
         }
-        if constexpr (requires { visitor.leave(expression); }) {
-            pending.emplace_back(Leave {.expression = std::addressof(expression)});
+        if constexpr (requires { visitor.leave(value); }) {
+            pending.push_back({.node = std::addressof(value), .leaving = true});
         }
         const auto first_child = pending.size();
-        visit_semantic_children(expression.value, [&](auto& child) noexcept {
-            pending.emplace_back(std::addressof(child));
-        });
-        std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
-    }
-
-    auto enter(Node<SemanticRegion>& region) noexcept -> void {
-        if constexpr (std::invocable<Visitor&, Node<SemanticRegion>&>) {
-            std::invoke(visitor, region);
-        }
-        const auto first_child = pending.size();
-        visit_semantic_children(region, [&](auto& child) noexcept {
-            pending.emplace_back(std::addressof(child));
-        });
-        std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
-    }
-
-    auto enter(Node<SemanticStatement>& statement) noexcept -> void {
-        if constexpr (std::invocable<Visitor&, Node<SemanticStatement>&>) {
-            std::invoke(visitor, statement);
-        }
-        const auto first_child = pending.size();
-        const auto child = [&](auto& value) noexcept {
-            pending.emplace_back(std::addressof(value));
+        const auto child = [&](auto& source) noexcept {
+            pending.push_back({.node = std::addressof(source), .leaving = false});
         };
-        visit_semantic_children(statement.value, child);
+        if constexpr (std::same_as<std::remove_const_t<Value>, SemanticRegion>) {
+            visit_semantic_children(value, child);
+        } else {
+            visit_semantic_children(value.value, child);
+        }
         std::reverse(pending.begin() + static_cast<std::ptrdiff_t>(first_child), pending.end());
     }
 

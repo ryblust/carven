@@ -14,6 +14,7 @@ struct ExecutionDiagnostic final {
     DiagnosticCode code;
     std::string message;
     std::vector<ProgramOriginID> calls;
+    std::optional<ReportKind> report_kind;
 };
 
 // A requested semantic dependency failed and its owner has already diagnosed it.

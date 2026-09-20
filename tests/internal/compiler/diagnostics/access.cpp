@@ -18,6 +18,13 @@ import std;
 TEST_CASE("Compiler diagnostics: access failures preserve code and precise span") {
     static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {
+            .name = "check message may consume an owner before continuing",
+            .source = "fn bad(condition: bool) { var text: String = \"owned\"; "
+                      "check(condition, if true { &&text } else { &&text }); println(text); }",
+            .code = "CV-ACCESS-UNAVAILABLE",
+            .primary_text = "text",
+        },
+        {
             .name = "immutable assignment",
             .source = "fn invalid() { let value = 1; value = 2; }",
             .code = "CV-ACCESS-IMMUTABLE",

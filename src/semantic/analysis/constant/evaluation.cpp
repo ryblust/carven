@@ -64,6 +64,7 @@ auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID 
                 .code = DiagnosticCode::ConstAdmission,
                 .message = "constant execution can call only const fn",
                 .calls = {},
+                .report_kind = std::nullopt,
             }
         );
     }

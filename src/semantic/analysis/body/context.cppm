@@ -77,7 +77,7 @@ struct CppSelection final {
     Span span;
 };
 
-enum class BuiltinFunction { Print, Println, Eprint, Eprintln, Check, Require, Fail };
+enum class BuiltinFunction { Print, Println, Eprint, Eprintln, Assert, Check, Require, Fail };
 
 struct BuiltinSelection final {
     BuiltinFunction function;

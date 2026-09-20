@@ -1,9 +1,8 @@
 #pragma once
 
-#include "display.hpp"
 #include "outcome.hpp"
+#include "report.hpp"
 
-#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -13,48 +12,6 @@
 #include <type_traits>
 
 namespace carven::runtime {
-
-template<typename Left, typename EmitLeft, typename Right, typename EmitRight, typename Compare>
-auto observe_comparison(
-    DisplayWriter& writer,
-    const StructuralDisplay<Left, EmitLeft>& left,
-    const StructuralDisplay<Right, EmitRight>& right,
-    Compare compare,
-    std::string_view left_source,
-    std::string_view right_source
-) noexcept -> bool {
-    const auto passed = compare(left.value, right.value);
-    if (!passed) {
-        writer.text("  ");
-        writer.text(left_source);
-        writer.text(": ");
-        left.emit(writer, left.value);
-        writer.text("\n  ");
-        writer.text(right_source);
-        writer.text(": ");
-        right.emit(writer, right.value);
-        writer.text("\n");
-    }
-    return passed;
-}
-
-inline auto observe_short_circuit(
-    DisplayWriter& writer,
-    bool left,
-    std::optional<bool> right,
-    std::string_view left_source,
-    std::string_view right_source
-) noexcept -> bool {
-    const auto passed = right.value_or(left);
-    if (!passed) {
-        writer.text("  ");
-        writer.text(left_source);
-        writer.text(left ? ": true\n  " : ": false\n  ");
-        writer.text(right_source);
-        writer.text(right ? ": false\n" : ": <not evaluated>\n");
-    }
-    return passed;
-}
 
 struct TestStopped final {};
 
@@ -114,6 +71,7 @@ struct TestFailure final {
     std::string_view case_name;
     std::string_view file;
     std::uint32_t line;
+    std::uint32_t column;
     std::string_view operation;
     std::optional<std::string_view> condition;
     std::optional<std::string_view> message;
@@ -124,33 +82,16 @@ using TestReporter = void (*)(const TestFailure&) noexcept;
 
 namespace detail {
 
-inline auto write(std::string_view text) noexcept -> void {
-    std::fwrite(text.data(), sizeof(char), text.size(), stderr);
-}
-
 inline auto default_reporter(const TestFailure& failure) noexcept -> void {
-    write("[carven] ");
-    write(failure.module_name);
-    write("::");
-    write(failure.case_name);
-    write("\n");
-    write(failure.file);
-    std::fprintf(stderr, ":%" PRIu32 ": ", failure.line);
-    write(failure.operation);
-    write(" failed\n");
-    if (failure.condition.has_value()) {
-        write("condition: ");
-        write(*failure.condition);
-        write("\n");
-    }
-    if (!failure.explanation.empty()) {
-        write(failure.explanation);
-    }
-    if (failure.message.has_value()) {
-        write("message: ");
-        write(*failure.message);
-        write("\n");
-    }
+    write_failure(
+        failure.file,
+        failure.line,
+        failure.column,
+        failure.operation,
+        failure.condition,
+        failure.message,
+        failure.explanation
+    );
 }
 
 } // namespace detail
@@ -171,9 +112,11 @@ public:
         if (active.has_value()) {
             detail::testing_contract_error();
         }
+        case_failed = false;
         previous_context = detail::active_test_context;
         detail::active_test_context = this;
-        active = ActiveTestCase {.module_name = module_name, .case_name = case_name};
+        active = TestReportContext {.module_name = module_name, .case_name = case_name};
+        active_test_report = &*active;
     }
 
     auto end_case() noexcept -> void {
@@ -181,13 +124,17 @@ public:
             detail::testing_contract_error();
         }
         detail::active_test_context = previous_context;
+        active_test_report = previous_context != nullptr ? &*previous_context->active : nullptr;
         previous_context = nullptr;
+        ++total;
+        failures += case_failed ? 1u : 0u;
         active.reset();
     }
 
     auto report_failure(
         std::string_view file,
         std::uint32_t line,
+        std::uint32_t column,
         std::string_view operation,
         std::optional<std::string_view> condition,
         std::optional<std::string_view> message,
@@ -196,12 +143,13 @@ public:
         if (!active.has_value()) {
             detail::testing_contract_error();
         }
-        failed = true;
+        case_failed = true;
         reporter({
             .module_name = active->module_name,
             .case_name = active->case_name,
             .file = file,
             .line = line,
+            .column = column,
             .operation = operation,
             .condition = condition,
             .message = message,
@@ -213,19 +161,29 @@ public:
         if (active.has_value()) {
             detail::testing_contract_error();
         }
-        return failed ? 1 : 0;
+        return failures != 0 ? 1 : 0;
+    }
+
+    auto finish() const noexcept -> int {
+        const auto status = result();
+        if (reporter == &detail::default_reporter) {
+            std::fprintf(
+                stderr,
+                "carven: tests: %zu passed; %zu failed\n",
+                total - failures,
+                failures
+            );
+        }
+        return status;
     }
 
 private:
-    struct ActiveTestCase final {
-        std::string_view module_name;
-        std::string_view case_name;
-    };
-
     TestContext* previous_context = nullptr;
     TestReporter reporter;
-    bool failed = false;
-    std::optional<ActiveTestCase> active;
+    bool case_failed = false;
+    std::size_t total = 0;
+    std::size_t failures = 0;
+    std::optional<TestReportContext> active;
 };
 
 inline auto current_test() noexcept -> TestContext& {

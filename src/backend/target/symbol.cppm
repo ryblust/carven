@@ -28,6 +28,7 @@ enum class TargetSymbol {
     RuntimeNativeTestResult,
     RuntimeTestStopped,
     RuntimeCurrentTest,
+    RuntimeAssertionFailed,
     RuntimeOutcome,
     RuntimeString,
     RuntimeSlice,

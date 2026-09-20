@@ -3,6 +3,8 @@ module carven:semantic.analysis.body.resolve.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.body.resolve;
+import :semantic.semir.children;
+import :semantic.semir.evaluation;
 import :semantic.semir.traversal;
 import :support.visit;
 import std;
@@ -14,6 +16,7 @@ public:
     BodyResolver(
         const TypeResolution& types,
         const CanonicalTypeStore& canonical_types,
+        const ConstantStore& constants,
         const std::vector<bool>& test_stops,
         const FailureSolution& failures,
         const FailureSetStore& failure_sets,
@@ -27,6 +30,8 @@ public:
     auto operator()(BodyFailures& term) const noexcept -> void;
     auto operator()(SemanticExpression& value) noexcept -> void;
     auto leave(SemanticExpression& value) noexcept -> void;
+    auto leave(SemanticRegion& value) noexcept -> void;
+    auto child_stops(const SemanticStatement& value) const noexcept -> bool;
     auto operator()(SemanticRegion& value) const noexcept -> void;
     auto operator()(SemTry& value) const noexcept -> void;
     auto operator()(ElaboratedLocalBinding&& value) const noexcept -> LocalBinding;
@@ -36,7 +41,7 @@ private:
     const TypeResolution& types;
     const CanonicalTypeStore& canonical_types;
     const std::vector<bool>& test_stops;
-    std::vector<bool> call_stops;
+    const ConstantStore& constants;
     const FailureSolution& failures;
     const FailureSetStore& failure_sets;
     CompilationProvenanceReader provenance;
@@ -46,6 +51,7 @@ private:
 BodyResolver::BodyResolver(
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
+    const ConstantStore& constants,
     const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -55,6 +61,7 @@ BodyResolver::BodyResolver(
     : types(types),
       canonical_types(canonical_types),
       test_stops(test_stops),
+      constants(constants),
       failures(failures),
       failure_sets(failure_sets),
       provenance(provenance),
@@ -83,7 +90,6 @@ auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
 }
 
 auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
-    call_stops.push_back(false);
     (*this)(value.type);
     (*this)(value.failures);
     while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
@@ -101,11 +107,11 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         const auto& type =
             canonical_types.type(types.resolve(call->callee->type.construction())).value;
         if (const auto* function = std::get_if<FunctionTypeValue>(&type)) {
-            call_stops.back() = test_stops[function->callable.index()];
+            value.exits_test = test_stops[function->callable.index()];
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type)) {
-            call_stops.back() = test_stops[closure->callable.index()];
+            value.exits_test = test_stops[closure->callable.index()];
         } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
-            call_stops.back() = true;
+            value.exits_test = true;
         }
     }
     if (auto* attempt = std::get_if<SemTry>(&value.value)) {
@@ -114,12 +120,33 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
 }
 
 auto BodyResolver::leave(SemanticExpression& value) noexcept -> void {
-    const auto stops = static_cast<bool>(call_stops.back());
-    call_stops.pop_back();
-    value.exits_test |= stops;
-    // Calls retain conservative subtree effects; direct reports retain source selection.
-    if (!call_stops.empty()) {
-        call_stops.back() = call_stops.back() || stops;
+    const auto truth = [&](const SemanticExpression& expression) noexcept {
+        return known_boolean(constants, expression);
+    };
+    // Construction owns direct report effects; completion adds selected call effects.
+    visit_evaluation_children(value.value, truth, [&](const auto& child) noexcept {
+        value.exits_test |= child.exits_test;
+    });
+}
+
+auto BodyResolver::child_stops(const SemanticStatement& value) const noexcept -> bool {
+    auto stops = false;
+    visit_evaluation_children(
+        value.value,
+        [&](const SemanticExpression& expression) noexcept {
+            return known_boolean(constants, expression);
+        },
+        [&](const auto& child) noexcept { stops |= child.exits_test; }
+    );
+    return stops;
+}
+
+auto BodyResolver::leave(SemanticRegion& value) noexcept -> void {
+    for (const auto& statement : value.statements) {
+        value.exits_test |= child_stops(statement);
+    }
+    if (value.result) {
+        value.exits_test |= value.result->exits_test;
     }
 }
 
@@ -214,6 +241,7 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
+    const ConstantStore& constants,
     const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -223,6 +251,7 @@ auto resolve_body(
     const auto resolve = BodyResolver(
         types,
         canonical_types,
+        constants,
         test_stops,
         failures,
         failure_sets,

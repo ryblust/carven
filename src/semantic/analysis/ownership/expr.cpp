@@ -370,22 +370,27 @@ auto OwnershipBodyAnalyzer::expression(
                     }
                     co_return {};
                 },
-                [&](const SemTestReport& value) noexcept -> ContinuationTask<std::monostate> {
+                [&](const SemReport& value) noexcept -> ContinuationTask<std::monostate> {
                     if (value.condition.has_value()) {
                         (co_await evaluate(**value.condition));
-                    }
-                    if (value.message.has_value()) {
-                        (co_await evaluate(**value.message));
                     }
                     const auto known = value.condition.has_value()
                         ? constant_truth(**value.condition)
                         : std::optional(false);
-                    if (flow.normal && value.kind != TestReportKind::Check && known != true) {
-                        flow.exits.push_back({OwnershipTestStopped {}, flow.normal->state});
+                    const auto success = known == false ? std::nullopt : flow.normal;
+                    if (known == true) {
+                        co_return {};
                     }
-                    if (value.kind == TestReportKind::Fail
-                        || (value.kind == TestReportKind::Require && known == false)) {
-                        flow.normal.reset();
+                    if (value.message) {
+                        (co_await evaluate(**value.message));
+                    }
+                    if (value.kind == ReportKind::Check) {
+                        join_normal_ownership(flow.normal, success);
+                    } else {
+                        if (flow.normal && value.kind != ReportKind::Assert) {
+                            flow.exits.push_back({OwnershipTestStopped {}, flow.normal->state});
+                        }
+                        flow.normal = success;
                     }
                     co_return {};
                 },
