@@ -86,7 +86,7 @@ auto DeclResolver::prepare_type(
     if (!result) {
         co_return result;
     }
-    // Resolve the whole graph before computing capabilities, including cyclic
+    // Resolve the whole graph before computing enum equality, including cyclic
     // nominal shapes. Nested construction requests get their own traversal.
     for (const auto id : prepared) {
         result = publish_declaration(require_catalog_symbol(catalog, id));
@@ -242,17 +242,13 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
                 }
             },
             [&](const CatalogStructForm& form) noexcept {
-                const auto type =
-                    draft.intern_type({.value = StructTypeValue {.structure = form.structure}});
-                auto& declaration = *structures[form.structure.index()];
-                declaration.capabilities.equality = supports_equality(type);
-                draft.define_declaration(form.structure, declaration);
+                draft.define_declaration(form.structure, *structures[form.structure.index()]);
             },
             [&](const CatalogEnumForm& form) noexcept {
                 const auto type =
                     draft.intern_type({.value = EnumTypeValue {.enumeration = form.enumeration}});
                 auto& declaration = *enumerations[form.enumeration.index()];
-                declaration.capabilities.equality = supports_equality(type);
+                declaration.supports_equality = supports_equality(type);
                 draft.define_declaration(form.enumeration, declaration);
             },
             [&](const CatalogEnumCaseForm& form) noexcept {

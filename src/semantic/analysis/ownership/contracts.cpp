@@ -49,7 +49,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
         return id && is_writable(*id);
     };
     const auto write = [&](const SemanticExpression& source) noexcept {
-        if (!root(source) && analysis.contents(source.type.resolved()).callable_view) {
+        if (!root(source) && analysis.contents(source.type.resolved()).contains_callable_view) {
             diagnose(
                 DiagnosticCode::TypeCallableViewEscape,
                 "indirect storage cannot carry a tracked Carven callable borrow",
@@ -158,7 +158,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
                 }
                 if (const auto* value = std::get_if<SemReturn>(&source.value); value != nullptr
                     && value->value.has_value()
-                    && analysis.contents(value->value->type.resolved()).callable_view) {
+                    && analysis.contents(value->value->type.resolved()).contains_callable_view) {
                     diagnose(
                         DiagnosticCode::TypeCallableViewEscape,
                         "callable view cannot be returned",

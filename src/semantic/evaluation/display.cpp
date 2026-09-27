@@ -116,6 +116,10 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         return false;
     }
     const auto names = values.display_names(*type);
+    if (names.is_class) {
+        text(names.name);
+        return true;
+    }
     const auto compound = execution_compound_view(values, value, memory);
     auto enum_case = compound ? compound->enum_case : std::nullopt;
     const auto atom = execution_atom(values, value);

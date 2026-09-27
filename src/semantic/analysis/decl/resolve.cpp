@@ -28,7 +28,7 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto DeclResolver::equality_capabilities(std::span<const ConstructionTypeRef> roots) noexcept
+auto DeclResolver::resolve_equality_support(std::span<const ConstructionTypeRef> roots) noexcept
     -> std::vector<bool> {
     auto indices = std::map<ConstructionTypeRef, std::size_t>();
     auto types = std::vector<ConstructionTypeRef>();
@@ -68,21 +68,7 @@ auto DeclResolver::equality_capabilities(std::span<const ConstructionTypeRef> ro
                     [&](const BuiltinTypeValue& value) noexcept {
                         supported[index] = builtin_type_supports_equality(value.kind);
                     },
-                    [&](const StructTypeValue& value) noexcept {
-                        if (value.structure.index() >= structures.size()
-                            || !structures[value.structure.index()].has_value()) {
-                            supported[index] = false;
-                            return;
-                        }
-                        const auto& declaration = *structures[value.structure.index()];
-                        if (declaration.kind == RecordKind::Class) {
-                            supported[index] = false;
-                            return;
-                        }
-                        for (const auto& field : declaration.fields) {
-                            depend(field.type);
-                        }
-                    },
+                    [&](const StructTypeValue&) noexcept { supported[index] = false; },
                     [&](const EnumTypeValue& value) noexcept {
                         if (value.enumeration.index() >= enumerations.size()
                             || !enumerations[value.enumeration.index()].has_value()) {
@@ -140,28 +126,23 @@ auto DeclResolver::equality_capabilities(std::span<const ConstructionTypeRef> ro
 }
 
 auto DeclResolver::supports_equality(ConstructionTypeRef type) noexcept -> bool {
-    return equality_capabilities(std::array {type}).front();
+    return resolve_equality_support(std::array {type}).front();
 }
 
-auto DeclResolver::finish_capabilities() noexcept -> void {
+auto DeclResolver::finish_enum_equality() noexcept -> void {
     auto types = std::vector<ConstructionTypeRef>();
-    auto capabilities = std::vector<bool*>();
+    auto declarations = std::vector<EnumDeclaration*>();
     for (const auto& symbol : catalog.symbols()) {
-        if (const auto* form = std::get_if<CatalogStructForm>(&symbol.form)) {
-            types.push_back(
-                draft.intern_type({.value = StructTypeValue {.structure = form->structure}})
-            );
-            capabilities.push_back(&structures[form->structure.index()]->capabilities.equality);
-        } else if (const auto* form = std::get_if<CatalogEnumForm>(&symbol.form)) {
+        if (const auto* form = std::get_if<CatalogEnumForm>(&symbol.form)) {
             types.push_back(
                 draft.intern_type({.value = EnumTypeValue {.enumeration = form->enumeration}})
             );
-            capabilities.push_back(&enumerations[form->enumeration.index()]->capabilities.equality);
+            declarations.push_back(&*enumerations[form->enumeration.index()]);
         }
     }
-    const auto supported = equality_capabilities(types);
+    const auto supported = resolve_equality_support(types);
     for (auto index = 0uz; index < supported.size(); ++index) {
-        *capabilities[index] = supported[index];
+        declarations[index]->supports_equality = supported[index];
     }
 }
 
@@ -345,7 +326,7 @@ auto DeclResolver::run() noexcept -> AnalysisTask<void> {
     if (const auto failure = draft.diagnostics().failure()) {
         co_return std::unexpected(*failure);
     }
-    finish_capabilities();
+    finish_enum_equality();
     finish_declarations();
     co_return {};
 }

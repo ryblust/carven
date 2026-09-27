@@ -9,7 +9,7 @@ class ExecutionMemory final {
 public:
     ExecutionMemory() noexcept;
     auto create(ExecutionValue value) noexcept -> ExecutionPlace;
-    auto text_bytes(std::shared_ptr<ExecutionTextStorage> storage, TypeID element) noexcept
+    auto text_bytes(const std::shared_ptr<ExecutionTextStorage>& storage, TypeID element) noexcept
         -> ExecutionPlace;
     auto release(const ExecutionPlace& place) noexcept -> void;
     // Returned borrows end when the object is assigned, released, or memory is destroyed.

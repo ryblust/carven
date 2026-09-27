@@ -176,3 +176,34 @@ test "Evaluation: Read value snapshots preserve observations through pointers an
     check(observe_read_pointer(addressof(&value)) == 19);
     check(value == 9);
 }
+
+fn preserve_text_snapshot(original: str, &slot: str, replacement: str) -> str {
+    slot = replacement;
+    return original;
+}
+
+fn forward_text_snapshot(external: str) -> str {
+    var slot = external;
+    let local: String = "temporary";
+    return preserve_text_snapshot(slot, &slot, local.as_str());
+}
+
+test "Evaluation: Read text snapshots survive replacement of the argument holder" {
+    let owner: String = "original";
+    check(forward_text_snapshot(owner.as_str()) == "original");
+}
+
+fn snapshot_fallback() -> i32 => 1;
+
+fn invoke_callable_snapshot(original: fn() -> i32, &slot: fn() -> i32) -> i32 {
+    slot = snapshot_fallback;
+    return original();
+}
+
+test "Evaluation: Read callable snapshots keep their target when the holder is replaced" {
+    let captured = 2;
+    let owner = [captured]() => captured;
+    var slot: fn() -> i32 = owner;
+    check(invoke_callable_snapshot(slot, &slot) == 2);
+    check(slot() == 1);
+}

@@ -430,10 +430,9 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
 
-template<typename StructCapability, typename EnumCapability, typename ElementCapability>
+template<typename EnumCapability, typename ElementCapability>
 auto supports_equality(
     const CanonicalType& canonical,
-    StructCapability structure,
     EnumCapability enumeration,
     ElementCapability element
 ) noexcept -> bool {
@@ -442,7 +441,7 @@ auto supports_equality(
             [](const BuiltinTypeValue& value) noexcept {
                 return builtin_type_supports_equality(value.kind);
             },
-            [&](const StructTypeValue& value) noexcept { return structure(value.structure); },
+            [](const StructTypeValue&) static noexcept { return false; },
             [&](const EnumTypeValue& value) noexcept { return enumeration(value.enumeration); },
             [&](const ArrayTypeValue& value) noexcept { return element(value.element); },
             [](const FunctionTypeValue&) static noexcept { return false; },
@@ -467,10 +466,7 @@ auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type)
     }
     return supports_equality(
         draft.type_copy(*concrete),
-        [&](StructID id) noexcept {
-            return draft.construction_struct_declaration_copy(id).capabilities.equality;
-        },
-        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).capabilities.equality; },
+        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).supports_equality; },
         [&](TypeID id) noexcept { return type_supports_equality(draft, ConstructionTypeRef {id}); }
     );
 }
@@ -482,8 +478,7 @@ auto type_supports_equality(
 ) noexcept -> bool {
     return supports_equality(
         types.type(type),
-        [&](StructID id) noexcept { return declarations.structure(id).capabilities.equality; },
-        [&](EnumID id) noexcept { return declarations.enumeration(id).capabilities.equality; },
+        [&](EnumID id) noexcept { return declarations.enumeration(id).supports_equality; },
         [&](TypeID id) noexcept { return type_supports_equality(types, declarations, id); }
     );
 }

@@ -589,7 +589,7 @@ auto SemanticExecutor::detach_views(
             if (!selected) {
                 return std::unexpected(selected.error());
             }
-            auto* target = memory.resolve(*selected);
+            const auto* target = memory.resolve(*selected);
             if (target == nullptr) {
                 return std::unexpected(
                     fail(origin, DiagnosticCode::ConstEvaluation, "slice element is unavailable")

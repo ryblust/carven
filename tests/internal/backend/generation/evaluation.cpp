@@ -1505,3 +1505,66 @@ TEST_CASE("Generation: a sole failure needs no type selection in its handler or 
     }
     CHECK(branches == 1uz); // The call's success/failure distinction remains.
 }
+
+TEST_CASE("Generation: explicit pure owner returns permit native return construction") {
+    struct Scenario final {
+        const char* name;
+        const char* source;
+        bool returns_name;
+    };
+
+    const auto scenarios = std::array {
+        Scenario {
+            .name = "local Take",
+            .source = R"(fn f() -> String { let value: String = "text"; return &&value; })",
+            .returns_name = true
+        },
+        Scenario {
+            .name = "parameter Take",
+            .source = "fn f(&&value: String) -> String => &&value;",
+            .returns_name = true
+        },
+        Scenario {
+            .name = "local copy",
+            .source = R"(fn f() -> String { let value: String = "text"; return value; })",
+            .returns_name = false
+        },
+        Scenario {
+            .name = "native Take",
+            .source =
+                "import <string> using std::string; fn f(&&value: string) -> string => &&value;",
+            .returns_name = false
+        },
+    };
+    for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.name);
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(scenario.source),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("return_construction")}
+        );
+
+        struct Query final {
+            std::size_t returns;
+            std::size_t named_returns;
+
+            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
+                    returned != nullptr && returned->expression) {
+                    ++returns;
+                    named_returns +=
+                        std::holds_alternative<TargetLocalExpr>(returned->expression->value);
+                }
+                return true;
+            }
+        };
+
+        auto query = Query {.returns = 0uz, .named_returns = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            REQUIRE(traverse_target_unit(unit.sections(), query));
+        }
+        REQUIRE_EQ(query.returns, 1uz);
+        CHECK_EQ(query.named_returns, scenario.returns_name ? 1uz : 0uz);
+    }
+}

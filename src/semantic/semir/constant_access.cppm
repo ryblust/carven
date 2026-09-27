@@ -25,6 +25,7 @@ struct EnumCaseTypes final {
 
 struct ExecutionDisplayNames final {
     std::string name;
+    bool is_class;
     std::vector<std::string> fields;
     std::vector<std::pair<EnumCaseID, std::string>> cases;
 };

@@ -355,17 +355,11 @@ auto BodyElaborator::build_pattern(
                         ));
                     }
                 }
-                const auto declaration = draft().enum_declaration_copy(owner);
                 const auto case_name = spelling(case_pattern.name_span);
-                auto selected_id = std::optional<EnumCaseID>();
+                const auto selected_id = catalog().enum_case_named(owner, case_name);
                 auto selected = std::optional<ConstructionEnumCaseDeclaration>();
-                for (const auto case_id : declaration.cases) {
-                    auto candidate = draft().construction_enum_case_declaration_copy(case_id);
-                    if (draft().spelling_copy(candidate.name) == case_name) {
-                        selected_id = case_id;
-                        selected = std::move(candidate);
-                        break;
-                    }
+                if (selected_id.has_value()) {
+                    selected = draft().construction_enum_case_declaration_copy(*selected_id);
                 }
                 if (!selected.has_value()) {
                     co_return std::unexpected(fail(

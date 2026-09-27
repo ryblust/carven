@@ -252,3 +252,16 @@ test "String: temporary backing survives range and match consumption" {
         _ => fail("temporary match subject lost its contents"),
     }
 }
+
+fn return_text_owner(text: str) -> String {
+    let value = String::from_str(text);
+    return &&value;
+}
+
+fn forward_text_owner(&&text: String) -> String => &&text;
+
+test "String: explicit owner returns preserve content through local and parameter transfer" {
+    let local = return_text_owner("returned content");
+    let forwarded = forward_text_owner(&&local);
+    check(forwarded.as_str() == "returned content");
+}

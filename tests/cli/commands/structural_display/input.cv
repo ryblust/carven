@@ -50,3 +50,23 @@ const {
 
 println(Pair { make_money(1), make_money(2) });
 display();
+
+class Token {
+    secret: i32,
+
+    fn create(secret: i32) -> Token => { secret: secret };
+}
+
+class EmptyToken {
+
+    fn create() -> EmptyToken => {};
+}
+
+struct Envelope {
+    token: Token,
+    empty: EmptyToken,
+}
+
+println(Token::create(42), EmptyToken::create());
+println(Envelope { Token::create(7), EmptyToken::create() });
+println([Token::create(1), Token::create(2)]);

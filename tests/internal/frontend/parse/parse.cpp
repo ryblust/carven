@@ -164,6 +164,7 @@ TEST_CASE("Parser: moving SyntaxTree preserves its module and owned IDs") {
     auto moved = std::move(parsed);
     REQUIRE(moved.has_value());
     const auto ast = moved->view();
+    CHECK_EQ(ast.items().size(), 1u);
     CHECK_EQ(ast.ast_module().items.size(), 1u);
     CHECK_EQ(
         slice(
@@ -176,17 +177,6 @@ TEST_CASE("Parser: moving SyntaxTree preserves its module and owned IDs") {
         "helper"
     );
     CHECK_EQ(slice(text, get<ASTFunctionDecl>(ast.item(item_id)).name_span), "answer");
-}
-
-TEST_CASE("Parser: AST storage builder creates a complete ID graph") {
-    const auto parsed =
-        parse_valid("fn answer(value: [i32; 4]) -> i32 { let values = [1, 2]; return value; }");
-    const auto ast = parsed.view();
-    CHECK_EQ(ast.ast_module().items.size(), 1u);
-    CHECK_EQ(ast.items().size(), 1u);
-    CHECK(!ast.types().empty());
-    CHECK(!ast.expressions().empty());
-    CHECK(!ast.statements().empty());
 }
 
 TEST_CASE("Parser: incomplete construction fields require an initializer") {

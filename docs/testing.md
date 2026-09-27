@@ -178,12 +178,11 @@ owning boundaries. Measure runtime cost and compilation time separately;
 code size alone establishes neither. Keep measurement logs outside reference
 documents.
 
-`xmake/build_pulse.lua` measures fresh build throughput, module scaling, and
-private-edit locality. `xmake/analysis_pulse.lua` measures call-chain ordering,
-shared nominal and native-query dependencies, and structured loop depth. After
-building the compiler, run `./xmakew bench-build` or `./xmakew bench-analysis`.
-Use `--samples=<count>` and `--warmups=<count>` to set measured and warmup runs,
-and `--compiler=<path>` to select another compiler executable.
+`./xmakew bench compile` measures source-to-C++ compilation for module batches
+and structured workloads. `./xmakew bench incremental` measures build times and
+C++ object rebuild counts in a small module dependency fixture. Both update the
+configured compiler before measuring. See [Benchmarks](../xmake/README.md#benchmarks)
+for workloads, measurement boundaries, and sampling options.
 
 ## Organization
 
@@ -217,11 +216,11 @@ tests. Share the executable when their build requirements match.
 
 Native compilation rejection fixtures live under `tests/interop/rejections/`.
 Each fixture is registered independently with an expected diagnostic, subject,
-and source or generated-header attribution. The shared compile harness
-requires Carven generation to succeed, then checks native compiler exit status
-`1` and the expected diagnostic. It retains artifacts on failure. Accepted
-counterparts belong to the ordinary interop sources and are checked by the
-normal build. Rejection fixtures compile on each test run.
+and source attribution, either directly or through a configured template note.
+The shared compile harness requires Carven generation to succeed, then checks
+native compiler exit status `1` and the expected diagnostic. It retains artifacts
+on failure. Accepted counterparts belong to the ordinary interop sources and are
+checked by the normal build. Rejection fixtures compile on each test run.
 
 Cases initialize their own observable state. Temporary directories and captured
 streams use fresh paths for each invocation, including concurrent suite runs.

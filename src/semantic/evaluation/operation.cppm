@@ -36,6 +36,7 @@ auto load_constant_fact(
     const ExecutionValueAccess& values,
     std::optional<ConstantID> constant
 ) noexcept -> std::expected<const ConstantFact*, ConstantEvaluationFailure>;
+// Operands have passed semantic admission for language equality.
 auto constant_value_equal(
     const ConstantValueReader& values,
     const ConstantValue& left,

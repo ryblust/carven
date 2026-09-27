@@ -72,6 +72,20 @@ static_assert(wrapping_integer_contract<std::uint64_t>());
 static_assert(wrapping_integer_contract<std::ptrdiff_t>());
 static_assert(wrapping_integer_contract<std::size_t>());
 
+// Signed right shift retains the arithmetic result during constant evaluation.
+static_assert(
+    carven::runtime::integer_right_shift(std::int8_t {-1}, std::int8_t {1}) == std::int8_t {-1}
+);
+static_assert(
+    carven::runtime::integer_right_shift(std::int16_t {-8}, std::int16_t {2}) == std::int16_t {-2}
+);
+static_assert(
+    carven::runtime::integer_right_shift(std::int32_t {-7}, std::int32_t {1}) == std::int32_t {-4}
+);
+static_assert(
+    carven::runtime::integer_right_shift(std::int64_t {-7}, std::int64_t {1}) == std::int64_t {-4}
+);
+
 } // namespace
 
 TEST_CASE("Runtime: integer helpers cover every fixed width") {
@@ -85,14 +99,6 @@ TEST_CASE("Runtime: integer helpers cover every fixed width") {
     static_assert(ordinary_integer_contract<std::uint64_t>());
     CHECK(ordinary_integer_contract<std::ptrdiff_t>());
     CHECK(ordinary_integer_contract<std::size_t>());
-}
-
-TEST_CASE("Runtime: signed right shift is arithmetic") {
-    using namespace carven::runtime;
-    static_assert(integer_right_shift(std::int8_t {-1}, std::int8_t {1}) == std::int8_t {-1});
-    static_assert(integer_right_shift(std::int16_t {-8}, std::int16_t {2}) == std::int16_t {-2});
-    static_assert(integer_right_shift(std::int32_t {-7}, std::int32_t {1}) == std::int32_t {-4});
-    static_assert(integer_right_shift(std::int64_t {-7}, std::int64_t {1}) == std::int64_t {-4});
 }
 
 TEST_CASE("Runtime: invalid arithmetic always terminates") {

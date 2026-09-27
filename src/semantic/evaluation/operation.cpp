@@ -559,21 +559,14 @@ auto constant_value_equal(
                 }
             }
             return true;
-        } else if constexpr (std::same_as<Value, ArrayConstant>
-                             || std::same_as<Value, StructConstant>) {
-            const auto children =
-                [](const Value& value) static noexcept -> std::span<const ConstantID> {
-                if constexpr (std::same_as<Value, StructConstant>) {
-                    return value.fields;
-                } else {
-                    return value.elements;
-                }
-            };
-            if (children(left_value).size() != children(right_value).size()) {
+        } else if constexpr (std::same_as<Value, StructConstant>) {
+            invariant_violation("structure constants do not support language equality");
+        } else if constexpr (std::same_as<Value, ArrayConstant>) {
+            if (left_value.elements.size() != right_value.elements.size()) {
                 return false;
             }
             for (const auto [left_child, right_child] :
-                 std::views::zip(children(left_value), children(right_value))) {
+                 std::views::zip(left_value.elements, right_value.elements)) {
                 const auto& left_fact = values.constant(left_child);
                 const auto& right_fact = values.constant(right_child);
                 if (left_fact.type != right_fact.type

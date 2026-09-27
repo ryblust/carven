@@ -59,8 +59,8 @@ auto cv_test_reporting_verify() noexcept -> void {
             "observed_boolean(&calls, false): false\nobserved_boolean(&calls, false): false"
         )
         || !contains(text, "comparison_next(&calls): 1\ncomparison_next(&calls): 2")
-        || !contains(text, "actual: DisplayedRecord {\n    value: 12,\n    text: \"left\",\n}")
-        || !contains(text, "expected: DisplayedRecord {\n    value: 15,\n    text: \"right\",\n}")
+        || !contains(text, "actual: [\n    12,\n    13,\n]")
+        || !contains(text, "expected: [\n    15,\n    16,\n]")
         || !contains(text, "comparison_next(&calls) == 1: <not evaluated>")
         || !contains(text, "comparison_next(&calls) == 2: false")
         || !contains(text, "calls: 1\n4: 4")

@@ -93,9 +93,6 @@ auto require_violation(
     CHECK_EQ(result.error().kind, kind);
 }
 
-static_assert(std::is_aggregate_v<TargetExpr>);
-static_assert(std::is_aggregate_v<TargetStmt>);
-static_assert(std::is_aggregate_v<TargetItem>);
 static_assert(!std::copy_constructible<TargetExpr>);
 static_assert(!std::copy_constructible<TargetStmt>);
 static_assert(std::move_constructible<TargetExpr>);

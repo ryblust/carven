@@ -93,7 +93,9 @@ TEST_CASE("UTF craft: returned text retains input storage") {
         }
         REQUIRE(diagnostic != nullptr);
         REQUIRE(diagnostic->attachment.primary.has_value());
-        CHECK_EQ(fixture.sources.slice(diagnostic->attachment.primary->span), item.primary_text);
+        const auto* expected = std::get_if<std::string_view>(&item.primary_text);
+        REQUIRE(expected != nullptr);
+        CHECK_EQ(fixture.sources.slice(diagnostic->attachment.primary->span), *expected);
     }
 }
 

@@ -22,7 +22,7 @@ auto validate_global_semantic_contracts(
 ) noexcept -> AnalysisResult<void> {
     auto failure = std::optional<AnalysisFailure>();
     const auto reject = [&](TypeID type, ProgramOriginID origin) noexcept {
-        if (!program.type_contents(type).callable_view) {
+        if (!program.type_contents(type).contains_callable_view) {
             return;
         }
         failure =

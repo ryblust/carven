@@ -57,11 +57,12 @@ auto PublishedConstantValues::enum_case_types(EnumID enumeration) const noexcept
 }
 
 auto PublishedConstantValues::display_names(TypeID type) const noexcept -> ExecutionDisplayNames {
-    auto result = ExecutionDisplayNames {.name = {}, .fields = {}, .cases = {}};
+    auto result = ExecutionDisplayNames {.name = {}, .is_class = false, .fields = {}, .cases = {}};
     const auto canonical = type_copy(type);
     if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
         const auto& declaration = program.declarations().structure(structure->structure);
         result.name = spelling(declaration.name);
+        result.is_class = declaration.kind == RecordKind::Class;
         for (const auto& field : declaration.fields) {
             result.fields.emplace_back(spelling(field.name));
         }

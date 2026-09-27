@@ -23,7 +23,9 @@ auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& pro
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
         const auto contents = program.type_contents(expression.type.resolved());
         if (!expression.selects_storage()
-            && (contents.closure_owner || contents.callable_view || contents.storage_owner)) {
+            && (contents.contains_closure_owner
+                || contents.contains_callable_view
+                || contents.contains_storage_owner)) {
             facts.temporaries.emplace(
                 std::addressof(expression),
                 add(expression.type.resolved(), expression.origin, expression.lifetime)

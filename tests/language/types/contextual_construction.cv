@@ -7,7 +7,6 @@ struct Group {
     items: [Item; 2],
 }
 
-struct Empty {}
 struct Failed {}
 
 const fn item(value: i32) -> Item {
@@ -24,7 +23,7 @@ fn choose(value: i32) -> Item {
     };
 }
 
-fn empty(value: bool) -> Empty => match value {
+fn default_item(value: bool) -> Item => match value {
     true => ({}),
     false => { {} },
 };
@@ -70,7 +69,8 @@ test "contextual construction follows declared destinations" {
     check(choose(8).value == 9);
     check(recover(false).value == 4);
     check(recover(true).value == 5);
-    check(empty(true) == empty(false));
+    check(default_item(true).value == 0);
+    check(default_item(false).value == 0);
     let zero: i32 = {};
     check(zero == 0);
     let selected: Item = if true { { value: 11 } } else { {} };

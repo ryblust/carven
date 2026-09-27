@@ -14,8 +14,6 @@ struct ConstantTextEntry {
     enabled: bool,
 }
 
-struct ConstantEmpty {}
-
 const entry_literal = ConstantEntry {
     value: 9,
     key: 3
@@ -186,7 +184,6 @@ const fn entry_assignment_order() -> [i32; 3] {
 }
 
 const fn entry_text(text: str) -> ConstantTextEntry => ConstantTextEntry { text, '我', true };
-const fn entry_zero() -> ConstantEmpty => {};
 fn entry_view() -> [ConstantEntry] => entry_middle;
 
 // Constant functions and frozen constant slices retain existing struct semantics.
@@ -208,7 +205,7 @@ test "Const structs: typed records and arrays retain static views and ordinary r
     check(entry_empty.is_empty());
     var seed = 3;
     let ordinary = entry_build(seed);
-    check(ordinary[2] == entry_table[2]);
+    check_entry_fields(ordinary[2], entry_table[2]);
     var copy = entry_literal;
     copy.key = 20;
     check(entry_literal.key == 3);
@@ -216,12 +213,10 @@ test "Const structs: typed records and arrays retain static views and ordinary r
 
 test "Const structs: copies Take and nested fields preserve independent storage" {
     const group = entry_copy_take();
-    const empty = entry_zero();
     check(group.entries[0].value == 9);
     check(group.entries[1].value == 8);
     check(group.enabled);
-    check(entry_copy_take() == group);
-    check(entry_zero() == empty);
+    check_group_fields(entry_copy_take(), group);
 }
 
 test "Const structs: field order projected Read and scalar snapshots match runtime execution" {
@@ -241,19 +236,23 @@ test "Const structs: field order projected Read and scalar snapshots match runti
     check(pair.second == 7);
     check(entry_read_order() == observed);
     check(entry_storage_read_order() == storage_observed);
-    check(entry_field_order() == ordered);
+    check_entry_fields(entry_field_order(), ordered);
     check(entry_assignment_order() == assigned);
-    check(entry_constructor_copy() == pair);
+    let runtime_pair = entry_constructor_copy();
+    check_group_fields(runtime_pair.first, pair.first);
+    check(runtime_pair.second == pair.second);
 }
 
 test "Const structs: static text fields retain UTF8 bytes NUL and scalar types" {
     const entry = entry_text("我\0😀");
-    const same = entry == ConstantTextEntry { "我\0😀", '我', true };
     check(entry.text.len() == 8usize);
     check(entry.marker == '我');
     check(entry.enabled);
-    check(same);
-    check(entry_text("我\0😀") == entry);
+    check(entry.text == "我\0😀");
+    let runtime_entry = entry_text("我\0😀");
+    check(runtime_entry.text == entry.text);
+    check(runtime_entry.marker == entry.marker);
+    check(runtime_entry.enabled == entry.enabled);
 }
 
 private struct PrivateConstantRecord {
@@ -267,4 +266,16 @@ test "Const structs: private record definitions precede their static backing" {
     ];
     var index = 1;
     check(records[index].value == 9);
+}
+
+fn check_entry_fields(actual: ConstantEntry, expected: ConstantEntry) {
+    check(actual.key == expected.key);
+    check(actual.value == expected.value);
+}
+
+fn check_group_fields(actual: ConstantEntryGroup, expected: ConstantEntryGroup) {
+    for index in 0..2 {
+        check_entry_fields(actual.entries[index], expected.entries[index]);
+    }
+    check(actual.enabled == expected.enabled);
 }

@@ -78,7 +78,6 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
         }
     );
     builder.define_declaration(
@@ -100,7 +99,7 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
             .visibility = DeclarationVisibility::Module,
             .representation = PayloadEnumRepresentation {},
             .cases = {enum_case},
-            .capabilities = NominalCapabilities {.equality = true},
+            .supports_equality = true,
         }
     );
     builder.define_declaration(
@@ -305,7 +304,7 @@ TEST_CASE("SemIR publication: type contents belong to the completed program") {
               .read_borrows_storage());
     for (const auto [id, type] : program.types().entries()) {
         if (std::holds_alternative<StructTypeValue>(type.value)) {
-            CHECK(program.type_contents(id).storage_owner);
+            CHECK(program.type_contents(id).contains_storage_owner);
             CHECK(program.type_contents(id).read_borrows_storage());
         }
     }

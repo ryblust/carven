@@ -144,15 +144,13 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .name = holder_name,
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
-            .fields =
-                {
-                    ConstructionStructField {
-                        .name = field_name,
-                        .type = boolean_array,
-                        .origin = origin,
-                    },
+            .fields = {
+                ConstructionStructField {
+                    .name = field_name,
+                    .type = boolean_array,
+                    .origin = origin,
                 },
-            .capabilities = NominalCapabilities {.equality = false},
+            },
         }
     );
     builder.define_declaration(
@@ -164,7 +162,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
         }
     );
     builder.define_declaration(
@@ -341,7 +338,7 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
                 .visibility = DeclarationVisibility::Module,
                 .representation = PayloadEnumRepresentation {},
                 .cases = {enum_case},
-                .capabilities = NominalCapabilities {.equality = false},
+                .supports_equality = false,
             }
         );
         item = ModuleItem {enumeration};
@@ -355,15 +352,13 @@ auto require_callable_view_storage_rejected(bool use_enum) noexcept -> void {
                 .name = nominal_name,
                 .origin = origin,
                 .visibility = DeclarationVisibility::Module,
-                .fields =
-                    {
-                        ConstructionStructField {
-                            .name = member_name,
-                            .type = nested_array,
-                            .origin = origin,
-                        },
+                .fields = {
+                    ConstructionStructField {
+                        .name = member_name,
+                        .type = nested_array,
+                        .origin = origin,
                     },
-                .capabilities = NominalCapabilities {.equality = false},
+                },
             }
         );
         item = ModuleItem {structure};

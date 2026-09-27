@@ -72,6 +72,7 @@ enum class DiagnosticCode {
     LintUnusedImport,
     LintUnusedLocal,
     LintUnusedParameter,
+    LintReturnCopy,
     MatchDuplicateAlternative,
     MatchNonExhaustive,
     MatchBindingMismatch,

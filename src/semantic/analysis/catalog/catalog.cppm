@@ -33,6 +33,8 @@ struct CatalogStructForm final {
 struct CatalogEnumForm final {
     EnumID enumeration;
     std::vector<EnumCaseID> cases;
+    // Source case names; a repeated name keeps its first case for diagnostics.
+    std::map<std::string, EnumCaseID, std::less<>> case_names;
 };
 
 struct CatalogEnumCaseForm final {
@@ -175,6 +177,8 @@ public:
     auto struct_symbol(StructID id) const noexcept -> CatalogSymbolID;
     auto enum_symbol(EnumID id) const noexcept -> CatalogSymbolID;
     auto enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID;
+    auto enum_case_named(EnumID enumeration, std::string_view name) const noexcept
+        -> std::optional<EnumCaseID>;
     auto module_constant_symbol(ModuleConstantID id) const noexcept -> CatalogSymbolID;
     auto function_count() const noexcept -> std::size_t;
     auto struct_count() const noexcept -> std::size_t;

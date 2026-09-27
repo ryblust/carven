@@ -13,8 +13,8 @@ configuration.
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
-| [`build_pulse.lua`](build_pulse.lua) | Fresh module-batch timings and incremental C++ rebuild observations |
-| [`analysis_pulse.lua`](analysis_pulse.lua) | End-to-end compiler timings for structured source workloads |
+| [`incremental_bench.lua`](incremental_bench.lua) | Incremental build timings, C++ rebuild counts, and artifact checks |
+| [`compile_bench.lua`](compile_bench.lua) | Module-batch and structured source-to-C++ compiler timings |
 | [`benchmark.lua`](benchmark.lua) | Shared compiler selection, sampling, medians, and temporary-directory cleanup |
 
 ## Build and maintenance commands
@@ -59,73 +59,104 @@ diagnosing implementation code:
 ./xmakew build
 ```
 
-## Performance pulses
+## Benchmarks
 
-The pulses report compiler timings and C++ rebuild counts for manual comparison.
-Build the configured compiler before running either task:
+Run either benchmark without additional flags. Each invocation updates the
+configured compiler before measuring:
 
 ```shell
-./xmakew build
-./xmakew bench-build
-./xmakew bench-analysis
+./xmakew bench compile
+./xmakew bench incremental
 ```
 
-Both tasks use the existing Carven executable selected by Xmake's current project
-configuration. Temporary workloads are removed after execution.
+Both benchmarks use the Carven executable selected by Xmake's current project
+configuration. `--compiler` selects an existing executable and skips the build;
+its build mode is reported as unknown. Temporary workloads are removed even
+when a benchmark fails.
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `--compiler=<path>` | Override the compiler executable | Current `carven` target output |
-| `--samples=<count>` | Positive number of measured runs | Build: 5; analysis: 3 |
+| `--compiler=<path>` | Use an existing compiler executable | Current `carven` target output |
+| `--samples=<count>` | Positive number of measured runs | 3 for both benchmarks |
 | `--warmups=<count>` | Nonnegative number of warmup runs | 1 |
+| `--verbose` | Show individual samples, case identifiers or changed object paths | Off |
 
-For example, `./xmakew bench-analysis --samples=5 --warmups=2` changes repetition.
-For `bench-build`, `--verbose` shows individual samples and changed object paths.
+For example, `./xmakew bench --samples=2 --warmups=0 incremental` performs two
+measured runs per scenario. `./xmakew bench --help` lists the available options.
+Output identifies the compiler, build mode, and sampling settings, and reports
+median wall time in milliseconds for each scenario. Timings are observations,
+with no performance pass/fail threshold.
 
-### Build pulse
+### Incremental build
 
-`build_pulse.lua` reports:
+`incremental_bench.lua` uses a small `library -> facade -> app` dependency chain
+alongside an unchanged, independent `unrelated` module in the same target:
 
-- median compiler wall time for fresh batches of 16 and 128 independent modules;
-- the ratio of the 128-module median to the 16-module median;
-- changed C++ object counts after a private function-body edit;
-- changed C++ object counts after adding and removing an independent module.
+| Scenario | Operation |
+| --- | --- |
+| No changes | Rebuild the already built project |
+| Identical content rewrite | Rewrite the library with exactly the same bytes |
+| Private function edit | Change a private function body in the library |
+| Public interface edit | Add a field to the exported value type and initialize it |
+| Add module | Add an independent exported structure |
+| Remove module | Remove that independent module |
 
-Each timed batch launches the compiler and writes to a fresh output directory.
-The elapsed time includes process startup, frontend analysis, backend generation,
-and artifact output. The medians describe batch throughput; the ratio describes
-scaling across module counts.
+The temporary native project uses Debug mode and C++20 regardless of the selected
+Carven compiler's build mode. Each scenario has its own temporary project. The
+first run uses the initial build as its baseline. Later edit runs restore and
+build that baseline before applying the operation; no-change runs reuse the
+already built project. Setup, restoration, edits, and filesystem timestamp waits
+are outside the timed region. Timings include Xmake startup, Carven generation,
+native compilation, and linking as required by that build.
 
-The incremental fixture uses a `library -> facade -> app` dependency chain with a
-fixed linkage domain. It builds a temporary Debug project, applies each edit,
-rebuilds, and compares C++ object modification times. Counts include new objects
-and existing objects whose timestamps changed. Cached objects left by removed
-sources contribute when their timestamps change. Before each edit, the fixture
-waits for the filesystem timestamp to advance beyond the previous object times.
+Each row reports the median build time and the number of new or timestamp-changed
+C++ object files. If counts differ across measured runs, the output shows their
+minimum and maximum. Counts include any cached object files that change; deleted
+objects are not counted as rebuilt. The fixture crosses a whole-second timestamp
+boundary before each operation so fast rebuilds remain observable. Module add
+and remove operations also check that generated headers and sources appear and
+disappear as expected. These small scenarios observe build locality, not large
+project scaling.
+
+The `Unrelated` column reports rebuilt objects for the independent module.
+Counts have no pass/fail threshold. Identical rewrites change the source timestamp
+while preserving content and source locations.
 
 The fixture uses the selected Carven compiler, the rule repository associated
 with Xmake's selected Carven package, and the running Xmake executable. This
 also supports local rule repositories used in dual-repository checkouts.
 
-### Structured analysis pulse
+### Compile
 
-`analysis_pulse.lua` reports median compiler wall time for these workloads:
+`compile_bench.lua` measures source-to-C++ compilation, including process
+startup, parsing, analysis, and generation. Native C++ compilation and linking
+are excluded.
 
-| Workload | Sizes |
+Module batches compile independent modules into fresh output directories;
+these timings include generated-artifact writes. Structured workloads launch
+the compiler on temporary source files with a fixed linkage domain and send
+C++ inspection output to the null device.
+
+| Structured workload | Input distinction |
 | --- | --- |
-| Independent functions and call chains in caller-first and callee-first declaration order | 64, 128, 256 functions |
-| Shared nominal field dependencies | Depths 8, 16, 24 |
-| Shared native result queries | Depths 4, 8, 12 |
-| Repeated and distinct constants | 128, 256, 512, 1024 functions |
-| Nested loops that exit with `break` | Depths 4, 8, 12, 16 |
-| Wide operand lists with reads or interleaved effects | 64, 128, 256 operands |
-| Fallible root calls | 64, 128, 256 calls |
-| Nested expressions | Depths 16, 32, 64 |
+| Independent functions and call chains | Independent bodies, caller-first order, and callee-first order |
+| Test-stop chains | Test termination propagated through calls |
+| Shared dependencies | Repeated nominal field dependencies and native result-type queries |
+| Pattern coverage | Wide enums with one arm per case; boolean payloads with one independently constrained field per arm and a wildcard fallback |
+| Constants | Repeated values and distinct values |
+| Nested loops | Loop nesting with explicit `break` exits |
+| Wide argument lists | Reads alone and reads interleaved with side effects |
+| Fallible calls | Repeated calls that propagate typed failures |
+| Nested expressions | Nested function-call expressions |
 
-Each run launches the compiler on a temporary source file with a fixed linkage
-domain and directs generated C++ to the null device. Timings use `os.mclock()`
-in milliseconds and include process startup, parsing, analysis, and generation.
 Independent functions provide a reference for comparing call-chain timings.
+Call-chain comparisons, shared dependencies, and pattern coverage use multiple
+sizes to observe timing growth. The payload workload increases both field and arm
+counts; its source size grows quadratically because each arm lists every field.
+
+The output reports input sizes; workload definitions live in
+[`compile_bench.lua`](compile_bench.lua). Timings include process startup, which
+can dominate small inputs.
 
 ### Comparing results
 

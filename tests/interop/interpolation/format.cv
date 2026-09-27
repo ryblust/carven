@@ -114,6 +114,9 @@ test "Interpolation interop: C++ formatter receives its specification and reads 
     f"{::interpolation_probe::make(7)}";
     check(::interpolation_probe::calls() == calls + 2);
     check(::interpolation_probe::alive() == 0);
+    check(f"{42:04x} {::interpolation_probe::make(7):q}" == "002a 7");
+    check(::interpolation_probe::calls() == calls + 3);
+    check(::interpolation_probe::alive() == 0);
 }
 
 test "Interpolation interop: propagation cleans pending values before the handler" {

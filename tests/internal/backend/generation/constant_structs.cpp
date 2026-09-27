@@ -42,7 +42,11 @@ struct DeclarationFacts final {
 
 auto DeclarationFacts::enter_declaration(const TargetDecl& declaration) noexcept -> bool {
     if (const auto* record = std::get_if<TargetStructDecl>(&declaration)) {
-        record_defined |= record->name.spelling() == "Entry";
+        if (record->name.spelling() == "Entry") {
+            record_defined = true;
+            REQUIRE(record->members.size() == 1uz);
+            CHECK(std::holds_alternative<TargetStructField>(record->members.front()));
+        }
     }
     if (const auto* variable = std::get_if<TargetVariableDecl>(&declaration)) {
         CHECK(record_defined);

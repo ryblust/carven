@@ -39,11 +39,6 @@ auto BodyElaborator::build_try(
         std::optional<ASTPatternID> source_pattern;
     };
 
-    struct CatchCoverageSourceArm final {
-        std::vector<CatchCoverageAlternative> alternatives;
-        bool guarded;
-    };
-
     const auto try_origin = origin(span);
     const auto outer_failure = failure_context_for_current_path();
     const auto protected_failures = draft().add_empty_failure_term();
@@ -68,8 +63,14 @@ auto BodyElaborator::build_try(
 
     auto arms = std::vector<SemCatchArm>();
     arms.reserve(source.arms.size());
-    auto coverage_history = std::vector<CatchCoverageSourceArm>();
-    auto coverage_types = std::flat_set<TypeID>();
+
+    struct CatchCoverageSourceAlternative final {
+        std::size_t catch_alternative;
+        std::optional<std::size_t> inner_alternative;
+    };
+
+    // Only unguarded preceding arms contribute definite coverage.
+    auto type_coverage = std::map<TypeID, std::vector<PatternCoverageArm>>();
     auto catch_all_covered = false;
     auto incoming_failures = protected_failures;
     for (const auto& arm : source.arms) {
@@ -118,7 +119,10 @@ auto BodyElaborator::build_try(
                 coverage_pattern = pattern->pattern;
                 coverage_source_pattern = typed->inner;
                 coverage_type = *concrete;
-                coverage_types.insert(*concrete);
+                const auto [entry, inserted] = type_coverage.try_emplace(*concrete);
+                if (inserted && catch_all_covered) {
+                    entry->second.push_back({.alternatives = {std::nullopt}, .guarded = false});
+                }
                 semantic_pattern = SemTypedCatchPattern {
                     .type = BodyType(*failure_type),
                     .inner = pattern->pattern,
@@ -126,6 +130,13 @@ auto BodyElaborator::build_try(
                 accepted_piece =
                     draft().add_intersection_failure_term(incoming_failures, {*concrete});
             } else {
+                if (catches_all) {
+                    co_return std::unexpected(fail(
+                        alternative.span,
+                        DiagnosticCode::MatchDuplicateAlternative,
+                        "catch or-pattern contains a repeated catch-all alternative"
+                    ));
+                }
                 catches_all = true;
             }
             if (!expected_names.has_value()) {
@@ -157,76 +168,61 @@ auto BodyElaborator::build_try(
         if (arm.pattern.alternatives.empty()) {
             invariant_violation("catch arm has no alternatives");
         }
-        coverage_history.push_back(
-            CatchCoverageSourceArm {
-                .alternatives = std::move(coverage_alternatives),
-                .guarded = false,
-            }
-        );
         auto alternative_useful = std::vector<bool>(alternatives.size(), false);
         auto exhaustive_types = std::vector<TypeID>();
-        for (const auto failure_type : coverage_types) {
-            struct CoverageSourceAlternative final {
-                std::size_t catch_alternative;
-                std::optional<std::size_t> inner_alternative;
-            };
-
-            auto coverage_arms = std::vector<PatternCoverageArm>();
-            auto source_arms = std::vector<std::size_t>();
-            auto source_alternatives = std::vector<std::vector<CoverageSourceAlternative>>();
-            for (auto arm_index = 0uz; arm_index < coverage_history.size(); ++arm_index) {
-                auto patterns = std::vector<std::optional<PatternID>>();
-                auto indices = std::vector<CoverageSourceAlternative>();
-                for (auto alternative_index = 0uz;
-                     alternative_index < coverage_history[arm_index].alternatives.size();
-                     ++alternative_index) {
-                    const auto& candidate =
-                        coverage_history[arm_index].alternatives[alternative_index];
-                    if (candidate.failure_type.has_value()
-                        && *candidate.failure_type != failure_type) {
-                        continue;
-                    }
-                    if (candidate.pattern.has_value()) {
-                        const auto semantic = body_builder.pattern_copy(*candidate.pattern);
-                        if (const auto* disjunction = std::get_if<OrPattern>(&semantic.value)) {
-                            for (auto inner = 0uz; inner < disjunction->alternatives.size();
-                                 ++inner) {
-                                patterns.emplace_back(disjunction->alternatives[inner]);
-                                indices.push_back(
-                                    CoverageSourceAlternative {
-                                        .catch_alternative = alternative_index,
-                                        .inner_alternative = inner,
-                                    }
-                                );
-                            }
-                            continue;
-                        }
-                    }
-                    patterns.push_back(candidate.pattern);
-                    indices.push_back(
-                        CoverageSourceAlternative {
-                            .catch_alternative = alternative_index,
-                            .inner_alternative = std::nullopt,
-                        }
-                    );
-                }
-                if (patterns.empty()) {
+        auto covered_types = std::vector<TypeID>();
+        // Adds one catch arm to a failure type's coverage input. Typed alternatives
+        // of other types do not participate; catch-all alternatives apply to all.
+        const auto append_arm =
+            [&](std::vector<PatternCoverageArm>& coverage,
+                TypeID failure_type) noexcept -> std::vector<CatchCoverageSourceAlternative> {
+            auto patterns = std::vector<std::optional<PatternID>>();
+            auto indices = std::vector<CatchCoverageSourceAlternative>();
+            for (auto alternative_index = 0uz; alternative_index < coverage_alternatives.size();
+                 ++alternative_index) {
+                const auto& candidate = coverage_alternatives[alternative_index];
+                if (candidate.failure_type.has_value() && *candidate.failure_type != failure_type) {
                     continue;
                 }
-                coverage_arms.push_back(
-                    PatternCoverageArm {
-                        .alternatives = std::move(patterns),
-                        .guarded = coverage_history[arm_index].guarded,
+                if (candidate.pattern.has_value()) {
+                    const auto semantic = body_builder.pattern_copy(*candidate.pattern);
+                    if (const auto* disjunction = std::get_if<OrPattern>(&semantic.value)) {
+                        for (auto inner = 0uz; inner < disjunction->alternatives.size(); ++inner) {
+                            patterns.emplace_back(disjunction->alternatives[inner]);
+                            indices.push_back({
+                                .catch_alternative = alternative_index,
+                                .inner_alternative = inner,
+                            });
+                        }
+                        continue;
                     }
-                );
-                source_arms.push_back(arm_index);
-                source_alternatives.push_back(std::move(indices));
+                }
+                patterns.push_back(candidate.pattern);
+                indices.push_back({
+                    .catch_alternative = alternative_index,
+                    .inner_alternative = std::nullopt,
+                });
             }
+            if (patterns.empty()) {
+                return indices;
+            }
+            coverage.push_back({
+                .alternatives = std::move(patterns),
+                .guarded = false,
+            });
+            return indices;
+        };
+        for (auto& [failure_type, type_state] : type_coverage) {
+            const auto source_alternatives = append_arm(type_state, failure_type);
+            if (source_alternatives.empty()) {
+                continue;
+            }
+            covered_types.push_back(failure_type);
             auto coverage = compute_pattern_coverage(
                 draft(),
                 body_builder.pattern_table(),
                 failure_type,
-                coverage_arms
+                type_state
             );
             if (!coverage.has_value()) {
                 co_return std::unexpected(fail(
@@ -235,20 +231,17 @@ auto BodyElaborator::build_try(
                     std::format("invalid catch pattern coverage: {}", coverage.error())
                 ));
             }
+            const auto coverage_index = type_state.size() - 1uz;
             for (const auto redundant : coverage->redundant_alternatives) {
-                const auto source_arm = source_arms[redundant.arm];
-                if (source_arm + 1uz != coverage_history.size()) {
+                if (redundant.arm != coverage_index) {
                     continue;
                 }
-                const auto source_alternative =
-                    source_alternatives[redundant.arm][redundant.alternative];
+                const auto source_alternative = source_alternatives[redundant.alternative];
                 auto diagnostic_span =
                     arm.pattern.alternatives[source_alternative.catch_alternative].span;
                 if (source_alternative.inner_alternative.has_value()) {
                     const auto source_pattern =
-                        coverage_history.back()
-                            .alternatives[source_alternative.catch_alternative]
-                            .source_pattern;
+                        coverage_alternatives[source_alternative.catch_alternative].source_pattern;
                     if (source_pattern.has_value()) {
                         const auto* disjunction =
                             std::get_if<ASTOrPattern>(&ast.pattern(*source_pattern).value);
@@ -270,14 +263,8 @@ auto BodyElaborator::build_try(
                     "catch or-pattern contains a repeated or subsumed alternative"
                 ));
             }
-            const auto current = std::ranges::find(source_arms, coverage_history.size() - 1uz);
-            if (current == source_arms.end()) {
-                continue;
-            }
-            const auto coverage_index =
-                static_cast<std::size_t>(std::distance(source_arms.begin(), current));
-            for (auto index = 0uz; index < source_alternatives[coverage_index].size(); ++index) {
-                const auto source_alternative = source_alternatives[coverage_index][index];
+            for (auto index = 0uz; index < source_alternatives.size(); ++index) {
+                const auto source_alternative = source_alternatives[index];
                 alternative_useful[source_alternative.catch_alternative] =
                     alternative_useful[source_alternative.catch_alternative]
                     || coverage->alternative_usefulness[coverage_index][index];
@@ -289,7 +276,7 @@ auto BodyElaborator::build_try(
             }
         }
         for (auto index = 0uz; index < alternatives.size(); ++index) {
-            if (!coverage_history.back().alternatives[index].failure_type.has_value()) {
+            if (!coverage_alternatives[index].failure_type.has_value()) {
                 alternative_useful[index] = alternative_useful[index] || !catch_all_covered;
             }
             alternatives[index].reachable = alternative_useful[index];
@@ -393,7 +380,11 @@ auto BodyElaborator::build_try(
              std::move(*body),
              std::move(pattern_bounds)}
         );
-        coverage_history.back().guarded = guard_may_reject;
+        if (guard_may_reject) {
+            for (const auto type : covered_types) {
+                type_coverage.at(type).pop_back();
+            }
+        }
         catch_all_covered |= catches_all && !guard_may_reject;
         incoming_failures =
             guard_may_reject ? draft().add_union_failure_term({residual, accepted}) : residual;

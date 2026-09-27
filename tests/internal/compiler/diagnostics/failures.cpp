@@ -15,17 +15,6 @@ import :source.text;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-namespace {
-
-struct ErrorExpectation final {
-    std::string_view name;
-    std::string_view source;
-    std::string_view code;
-    std::string_view primary_text;
-};
-
-} // namespace
-
 TEST_CASE("Compiler diagnostics: failure copyability closes after nominal signatures") {
     auto sources = SourceManager();
     const auto source_id = *sources.append_virtual(
@@ -118,98 +107,98 @@ TEST_CASE("Compiler diagnostics: catch reachability has one precisely owned subj
 }
 
 TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semantic contracts") {
-    static constexpr auto cases = std::to_array<ErrorExpectation>({
+    static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
         {
             .name = "array of slices rejects callable failure narrowing",
             .source =
                 "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure]; 0]) { let adopted: [[fn() -> i32]; 0] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "array of slices rejects callable failure widening",
             .source =
                 "struct Failure {} fn invalid(source: [[fn() -> i32]; 1]) { let adopted: [[fn() -> i32 throw Failure]; 1] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "array callable failure narrowing",
             .source =
                 "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 1]) { let adopted: [fn() -> i32; 1] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "empty array callable failure narrowing",
             .source =
                 "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 0]) { let adopted: [fn() -> i32; 0] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "nested array callable failure narrowing",
             .source =
                 "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure; 1]; 1]) { let adopted: [[fn() -> i32; 1]; 1] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "callable parameter failure invariance",
             .source =
                 "struct Failure {} fn invalid(source: fn(fn() -> i32 throw Failure) -> i32) { let adopted: fn(fn() -> i32) -> i32 = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "callable parameter failure invariance in arrays",
             .source =
                 "struct Failure {} fn invalid(source: [fn(fn() -> i32) -> i32; 0]) { let adopted: [fn(fn() -> i32 throw Failure) -> i32; 0] = source; }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "void return rejects a data result",
             .source = "fn invalid() -> void { return 42; }",
             .code = "CV-TYPE-RETURN-VALUE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "value return rejects void",
             .source = "fn action() {} fn invalid() -> i32 { return action(); }",
             .code = "CV-TYPE-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "void cannot initialize a binding",
             .source = "fn action() {} fn invalid() { let value = action(); }",
             .code = "CV-TYPE-VALUE-REQUIRED",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "void forwarding requires failure consumption",
             .source =
                 "struct Failure {} fn action() throw Failure { throw Failure {}; } fn invalid() throw Failure { return action(); }",
             .code = "CV-EFFECT-UNMARKED",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "missing return",
             .source = "fn value() -> i32 {}",
             .code = "CV-FLOW-MISSING-RETURN",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "nonconstant binding",
             .source = "fn invalid(input: i32) { const value = input; }",
             .code = "CV-CONST-INITIALIZER",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "nonexhaustive match",
             .source = "fn invalid(value: i32) { match value { 1 => {}, } }",
             .code = "CV-MATCH-NON-EXHAUSTIVE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "pattern binding mismatch",
@@ -217,7 +206,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "fn invalid(value: Value) -> i32 { return match value { "
                       ".Integer(item) | .Flag(_) => 1, _ => 0, }; }",
             .code = "CV-MATCH-BINDING-MISMATCH",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "duplicate pattern binding",
@@ -225,7 +214,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "fn invalid(value: Value) -> i32 { return match value { "
                       ".Pair(item, item) => item, }; }",
             .code = "CV-NAME-DUPLICATE-LOCAL",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "subsumed or-pattern alternative",
@@ -247,32 +236,32 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
             .name = "recursive value storage",
             .source = "enum Recursive { Next(Recursive), End }",
             .code = "CV-TYPE-RECURSIVE-STORAGE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "published surface visibility leak",
             .source = "struct Hidden {} export enum Public { Value(Hidden), Empty }",
             .code = "CV-TYPE-VISIBILITY-LEAK",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "module-domain surface visibility leak",
             .source = "private struct Hidden {} fn shared() -> Hidden { return Hidden {}; }",
             .code = "CV-TYPE-VISIBILITY-LEAK",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "nested callable surface visibility leak",
             .source = "private struct Hidden {} "
                       "export fn shared(callback: fn(Hidden) -> i32) {}",
             .code = "CV-TYPE-VISIBILITY-LEAK",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "failure surface visibility leak",
             .source = "private struct Hidden {} export fn shared() throw Hidden {}",
             .code = "CV-TYPE-VISIBILITY-LEAK",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "unmarked inferred failure",
@@ -280,20 +269,20 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "private fn caller() -> i32 { return failing(); } "
                       "private fn failing() -> i32 { throw Failure {}; }",
             .code = "CV-EFFECT-UNMARKED",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "published callable requires a declared failure contract",
             .source = "struct Failure {} fn failing() { throw Failure {}; }",
             .code = "CV-EFFECT-THROW-PUBLISHED",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "declared failure contract does not expand",
             .source = "struct First {} struct Second {} "
                       "fn bounded() throw First { throw Second {}; }",
             .code = "CV-EFFECT-SIGNATURE-BOUND",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "partial catch",
@@ -302,7 +291,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "fn invalid() -> i32 { return try { fail()? } catch { "
                       "Failure(.First(value)) => value, }; }",
             .code = "CV-EFFECT-CATCH-NON-EXHAUSTIVE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "escaping capturing closure",
@@ -310,20 +299,20 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "let callback: fn(i32) -> i32 = "
                       "[value](input: i32) { return input + value; }; }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "stored callable view",
             .source = "struct Invalid { callback: fn(i32) -> i32 }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "returned callable view",
             .source = "fn invalid(callback: fn(i32) -> i32) -> fn(i32) -> i32 { "
                       "return callback; }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "inferred lambda return join cannot escape as a callable view",
@@ -332,7 +321,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "fn invalid() { let choose = [](flag: bool) { "
                       "if flag { return first; } return second; }; }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "widened view cannot outlive its source view storage",
@@ -343,7 +332,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "if true { let inner: fn(i32) -> i32 throw First = narrow; "
                       "outer = inner; } }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "taken stored view cannot be failure-widened",
@@ -353,7 +342,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "let source: fn(i32) -> i32 throw First = narrow; "
                       "let widened: fn(i32) -> i32 throw First + Second = &&source; }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "Write-borrow callable storage rejects a capturing target",
@@ -362,7 +351,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "let owner = [offset](value: i32) { return value + offset; }; "
                       "destination = owner; }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "captured callable view",
@@ -370,7 +359,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
                       "let wrapper = [callback](value: i32) { return callback(value); }; "
                       "let result = wrapper(1); }",
             .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-            .primary_text = {},
+            .primary_text = NonemptyPrimarySpan {},
         },
         {
             .name = "Take conflicts with an active callable-view loan",
@@ -383,43 +372,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
         },
     });
 
-    for (const auto& expectation : cases) {
-        CAPTURE(expectation.name);
-        auto sources = SourceManager();
-        const auto source_id =
-            *sources.append_virtual("diagnostic.cv", std::string(expectation.source));
-        const auto input = SourceModuleInput {
-            .source_id = source_id,
-            .module_path = *CanonicalModulePath::from_value("diagnostic"),
-        };
-
-        const auto result = compile(
-            sources,
-            SourceBatch {.modules = std::span(&input, 1)},
-            TargetPlanningRequest {
-                .test_mode = TestGenerationMode::None,
-                .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
-            }
-        );
-
-        CHECK(!result.has_value());
-        if (result.has_value()) {
-            continue;
-        }
-        const auto* diagnostic = find_compiler_diagnostic(result.error(), expectation.code);
-        CHECK(diagnostic != nullptr);
-        if (diagnostic == nullptr) {
-            continue;
-        }
-        CHECK(diagnostic->attachment.primary.has_value());
-        if (!diagnostic->attachment.primary.has_value()) {
-            continue;
-        }
-        CHECK(!diagnostic->attachment.primary->span.span.empty());
-        if (!expectation.primary_text.empty()) {
-            CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), expectation.primary_text);
-        }
-    }
+    check_compiler_errors(cases);
 }
 
 TEST_CASE("Compiler diagnostics: explicit entry contracts and implicit entry inference") {
@@ -627,4 +580,12 @@ TEST_CASE("Compiler: array adoption preserves equal nested callable contracts") 
         }
     );
     CHECK(result.has_value());
+}
+
+TEST_CASE("Compiler diagnostics: duplicate catch-all alternatives need no known failure type") {
+    check_compiler_error(
+        "fn f() { try {} catch { _ | _ => {}, } }",
+        "CV-MATCH-DUPLICATE-ALTERNATIVE",
+        std::string_view("_")
+    );
 }

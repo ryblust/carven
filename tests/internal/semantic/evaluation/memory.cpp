@@ -49,8 +49,8 @@ auto enum_value(TypeID type, EnumCaseID member, TypeID element, std::int64_t pay
 } // namespace
 
 TEST_CASE("Execution memory: equal values retain distinct object identities") {
-    auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto fixture = ConstantEvaluationFixture();
+    const auto& values = fixture.compilation;
     const auto integer = values.builtin_type(BuiltinType::I32);
     auto memory = ExecutionMemory();
     const auto first = memory.create(integer_value(integer, 7));
@@ -75,9 +75,8 @@ TEST_CASE("Execution memory: ordinary root and field assignment preserve address
     auto memory = ExecutionMemory();
 
     const auto scalar = memory.create(integer_value(integer, 1));
-    const auto scalar_address = scalar;
     REQUIRE(memory.assign(scalar, integer_value(integer, 2)));
-    check_integer(values, memory.resolve(scalar_address), 2);
+    check_integer(values, memory.resolve(scalar), 2);
 
     const auto aggregate = memory.create(pair_value(pair, integer, 3, 4));
     const auto first_field = memory.project(aggregate, 0uz);
@@ -134,7 +133,7 @@ TEST_CASE("Execution memory: borrowed slice observations validate live backing a
 }
 
 TEST_CASE("Execution memory: release and another session cannot reuse an address") {
-    auto fixture = ConstantEvaluationFixture();
+    const auto fixture = ConstantEvaluationFixture();
     const auto integer = fixture.compilation.builtin_type(BuiltinType::I32);
     auto first_memory = ExecutionMemory();
     const auto old_object = first_memory.create(integer_value(integer, 1));
@@ -190,8 +189,8 @@ TEST_CASE("Execution memory: text byte views borrow their owner and preserve sel
 }
 
 TEST_CASE("Execution memory: taking String ends old byte coordinates without copying its content") {
-    auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto fixture = ConstantEvaluationFixture();
+    const auto& values = fixture.compilation;
     const auto byte = values.builtin_type(BuiltinType::U8);
     auto memory = ExecutionMemory();
     const auto owner = memory.create(make_owned_execution_text("ab"));

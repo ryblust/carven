@@ -9,6 +9,22 @@ module carven:test.internal.runtime.string;
 
 import std;
 
+namespace {
+
+// String ownership operations remain available during constant evaluation.
+static_assert([]() static noexcept {
+    auto value = carven::runtime::String::from_str("a");
+    value.push(U'我');
+    auto copy = value;
+    value.clear();
+    auto moved = std::move(copy);
+    moved.append("!");
+    value = moved;
+    return value == moved && value.size() == 5uz;
+}());
+
+} // namespace
+
 TEST_CASE("Runtime: owning String preserves UTF-8 and independent copies") {
     const auto inputs = std::array {
         std::string_view(),
@@ -58,19 +74,6 @@ TEST_CASE("Runtime: String push encodes every UTF-8 width and scalar boundary") 
     CHECK(std::ranges::equal(decoded, scalars));
     const auto moved = std::move(text);
     CHECK(moved.size() == 26uz);
-}
-
-TEST_CASE("Runtime: String operations can execute during constant evaluation") {
-    static_assert([]() static noexcept {
-        auto value = carven::runtime::String::from_str("a");
-        value.push(U'我');
-        auto copy = value;
-        value.clear();
-        auto moved = std::move(copy);
-        moved.append("!");
-        value = moved;
-        return value == moved && value.size() == 5uz;
-    }());
 }
 
 TEST_CASE("Runtime String: validated native storage is adopted") {

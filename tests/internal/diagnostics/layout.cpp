@@ -159,7 +159,6 @@ TEST_CASE("Diagnostic report: adjacent multi-line spans do not add an ellipsis")
     );
     const auto output = render_diagnostic(diagnostic, source);
 
-    CHECK(!output.contains("..."));
     CHECK_EQ(output, R"REPORT(error [CV-LEXICAL]: two lines
  --> app.cv:1:3
   |

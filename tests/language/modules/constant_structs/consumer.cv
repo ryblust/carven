@@ -11,7 +11,8 @@ test "Modules: frozen user records retain types fields and static backing across
     var index = 1;
     check(provider[index].key == 15);
     check(provider[index].label == "我\0😀");
-    check(consumer[0] == provider[1]);
+    check(consumer[0].key == provider[1].key);
+    check(consumer[0].label == provider[1].label);
     check(first_record.key == 4);
     check(selected_key == 15);
     check(empty_records.is_empty());

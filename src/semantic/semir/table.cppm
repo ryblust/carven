@@ -178,6 +178,14 @@ public:
         storage[id.index()] = std::move(value);
     }
 
+    // Borrows end on append, replacement, move, or seal.
+    auto mutate(ID id) noexcept -> Value& {
+        require_valid(id);
+        return storage[id.index()];
+    }
+
+    auto mutable_values() noexcept -> std::span<Value> { return storage; }
+
     auto size() const noexcept -> std::size_t { return storage.size(); }
 
     auto seal() && noexcept -> ImmutableProgramTable<Value, ID> {
@@ -246,6 +254,12 @@ public:
     auto copy_defined(ID id) const noexcept -> Value
         requires std::copy_constructible<Value>
     {
+        require_defined(id);
+        return *storage[id.index()];
+    }
+
+    // Valid until the next reservation.
+    auto get_defined(ID id) const noexcept -> const Value& {
         require_defined(id);
         return *storage[id.index()];
     }

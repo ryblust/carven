@@ -51,7 +51,7 @@ auto OwnershipBodyAnalyzer::place(
         result = slice ? (co_await expression(*index->source, std::move(result.normal->state)))
                        : (co_await place(*index->source, std::move(result.normal->state)));
         if (result.normal.has_value()) {
-            auto relationships = std::move(result.normal->value);
+            const auto relationships = std::move(result.normal->value);
             auto storage = slice ? select_element_storage(
                                        program.types(),
                                        index->source->type.resolved(),
@@ -88,7 +88,7 @@ auto OwnershipBodyAnalyzer::place(
         if (result.normal->storage.empty()) {
             result.normal->value = {};
             if (source.category == SemanticValueCategory::Value
-                && analysis.contents(source.type.resolved()).callable_view) {
+                && analysis.contents(source.type.resolved()).contains_callable_view) {
                 diagnose(
                     DiagnosticCode::TypeCallableViewEscape,
                     "an indirect target cannot establish a Carven callable borrow",
@@ -170,7 +170,7 @@ auto OwnershipBodyAnalyzer::expression(
         flow = (co_await place(source, std::move(flow.normal->state)));
     } else {
         const auto external = [&](const auto& value) noexcept -> ContinuationTask<std::monostate> {
-            if (analysis.contents(source.type.resolved()).callable_view) {
+            if (analysis.contents(source.type.resolved()).contains_callable_view) {
                 diagnose(
                     DiagnosticCode::TypeCallableViewEscape,
                     "an undeclared C++ contract cannot establish a Carven callable borrow",
@@ -588,7 +588,7 @@ auto OwnershipBodyAnalyzer::expression(
                         source.type.resolved()
                     );
                     if (std::holds_alternative<SemTake>(value.source->value)
-                        && analysis.contents(value.source->type.resolved()).callable_view
+                        && analysis.contents(value.source->type.resolved()).contains_callable_view
                         && adaptation.borrows_storage()) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,
@@ -629,7 +629,7 @@ auto OwnershipBodyAnalyzer::expression(
                                  source.origin,
                                  full_expression_storage(selected.object)
                                      && analysis.contents(value.source->type.resolved())
-                                            .closure_owner}
+                                            .contains_closure_owner}
                             );
                         }
                     }
@@ -641,40 +641,13 @@ auto OwnershipBodyAnalyzer::expression(
                         co_return {};
                     }
                     const auto target = flow.normal->storage.front();
-                    check_storage_write(flow.normal->state, target, source.origin);
-                    for (const auto& holder : flow.normal->state.objects) {
-                        for (const auto& loan : holder.relationships.callable_loans) {
-                            if (loan.backing.has_value() && overlaps(*loan.backing, target)) {
-                                diagnose(
-                                    DiagnosticCode::AccessBorrowConflict,
-                                    "Take conflicts with a live callable view",
-                                    source.origin,
-                                    loan.origin
-                                );
-                            }
-                        }
-                    }
-                    for (const auto& access : accesses) {
-                        if (overlaps(access.place, target)) {
-                            diagnose(
-                                DiagnosticCode::AccessOperationConflict,
-                                "Take conflicts with an active access",
-                                source.origin
-                            );
-                        }
-                    }
-                    for (const auto& holder : flow.normal->state.objects) {
-                        for (const auto& capture :
-                             references(holder.relationships, flow.normal->state)) {
-                            if (capture.target.object == target.object) {
-                                diagnose(
-                                    DiagnosticCode::AccessCaptureConflict,
-                                    "Take conflicts with a live Write capture",
-                                    source.origin,
-                                    capture.origin
-                                );
-                            }
-                        }
+                    if (const auto conflict = take_conflict(flow.normal->state, target)) {
+                        diagnose(
+                            conflict->code,
+                            std::string(conflict->message),
+                            source.origin,
+                            conflict->related
+                        );
                     }
                     auto& owner = flow.normal->state.objects[target.object];
                     flow.normal->value = owner.relationships;

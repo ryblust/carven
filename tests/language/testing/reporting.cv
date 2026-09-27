@@ -142,29 +142,24 @@ test "Testing: callable reports retain temporary messages" {
     );
 }
 
-struct DisplayedRecord {
-    value: i32,
-    text: str
-}
-
 fn comparison_next(&calls: i32) -> i32 {
     calls += 1;
     return calls;
 }
 
-fn comparison_message(&record: DisplayedRecord) -> str {
-    record.value = 99;
-    return "message mutated record";
+fn comparison_message(&values: [i32; 2]) -> str {
+    values[0] = 99;
+    return "message mutated array";
 }
 
 test "Testing: comparison explanations preserve values and single evaluation" {
     var calls = 0;
     check(comparison_next(&calls) == comparison_next(&calls));
     check(calls == 2);
-    var actual = DisplayedRecord { 12, "left" };
-    let expected = DisplayedRecord { 15, "right" };
+    var actual = [12, 13];
+    let expected = [15, 16];
     check(actual == expected, comparison_message(&actual));
-    check(actual.value == 99);
+    check(actual[0] == 99);
     check(1 > 2);
 }
 

@@ -200,156 +200,161 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
         }
     };
 
-    for (const auto seeded : {false, true}) {
-        for (const auto reverse : {false, true}) {
-            CAPTURE(seeded);
-            CAPTURE(reverse);
-            auto types = CanonicalTypeStoreBuilder(program.identity());
-            auto declarations =
-                DeclarationBuilder(program.identity(), program.provenance().identity());
-            const auto module_id = declarations.reserve_module();
-            const auto first = declarations.reserve_struct();
-            const auto second = declarations.reserve_struct();
-            const auto enumeration = declarations.reserve_enum();
-            const auto enum_case = declarations.reserve_enum_case();
-            const auto& source = program.declarations().structure(first);
-            auto nominal = std::vector<TypeID>();
-            for (const auto id : {first, second}) {
-                nominal.push_back(types.intern({.value = StructTypeValue {.structure = id}}));
-            }
-            auto slices = std::vector<TypeID>();
-            for (const auto type : nominal) {
-                slices.push_back(types.intern({.value = SliceTypeValue {.element = type}}));
-            }
-            auto failure_terms = MutableProgramTable<int, FailureTermID>(program.identity());
-            auto failure_sets = FailureSetStoreBuilder(program.identity());
-            const auto reader = FailureReader {
-                .identity = program.identity(),
-                .term = failure_terms.add(0),
-                .set = failure_sets.intern({}),
+    struct Scenario final {
+        bool seeded;
+        bool reverse;
+    };
+
+    const auto scenarios = std::to_array<Scenario>({
+        {.seeded = false, .reverse = false},
+        {.seeded = true, .reverse = false},
+        {.seeded = true, .reverse = true},
+    });
+    for (const auto& [seeded, reverse] : scenarios) {
+        CAPTURE(seeded);
+        CAPTURE(reverse);
+        auto types = CanonicalTypeStoreBuilder(program.identity());
+        auto declarations = DeclarationBuilder(program.identity(), program.provenance().identity());
+        const auto module_id = declarations.reserve_module();
+        const auto first = declarations.reserve_struct();
+        const auto second = declarations.reserve_struct();
+        const auto enumeration = declarations.reserve_enum();
+        const auto enum_case = declarations.reserve_enum_case();
+        const auto& source = program.declarations().structure(first);
+        auto nominal = std::vector<TypeID>();
+        for (const auto id : {first, second}) {
+            nominal.push_back(types.intern({.value = StructTypeValue {.structure = id}}));
+        }
+        auto slices = std::vector<TypeID>();
+        for (const auto type : nominal) {
+            slices.push_back(types.intern({.value = SliceTypeValue {.element = type}}));
+        }
+        auto failure_terms = MutableProgramTable<int, FailureTermID>(program.identity());
+        auto failure_sets = FailureSetStoreBuilder(program.identity());
+        const auto reader = FailureReader {
+            .identity = program.identity(),
+            .term = failure_terms.add(0),
+            .set = failure_sets.intern({}),
+        };
+        auto signatures = CallableSignatureStoreBuilder(program.identity());
+        auto construction = ConstructionTypeStore(program.identity());
+        const auto view_term = construction.append(
+            {.value = ConstructionCallableViewTypeValue {
+                 .parameters = {},
+                 .result = types.builtin_type(BuiltinType::I32),
+                 .failures = reader.term,
+             }}
+        );
+        const auto resolution = std::move(construction).canonicalize(reader, types, signatures);
+        const auto view = resolution.resolve(view_term);
+        const auto pointer = types.intern(
+            {.value = PointerTypeValue {
+                 .target = nominal.front(),
+                 .access = PointerAccess::Read,
+             }}
+        );
+        const auto owner = types.intern(
+            {.value = ArrayTypeValue {
+                 .element = view,
+                 .extent = 1u,
+             }}
+        );
+        const auto native =
+            types.intern({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
+        const auto native_array =
+            types.intern({.value = ArrayTypeValue {.element = native, .extent = 1u}});
+        const auto native_pointer = types.intern(
+            {.value = PointerTypeValue {
+                 .target = native,
+                 .access = PointerAccess::Read,
+             }}
+        );
+        const auto native_slice = types.intern({.value = SliceTypeValue {.element = native}});
+        for (auto index = 0uz; index < nominal.size(); ++index) {
+            auto fields = std::vector<ConstructionStructField> {
+                {.name = source.name, .type = slices[1uz - index], .origin = source.origin},
             };
-            auto signatures = CallableSignatureStoreBuilder(program.identity());
-            auto construction = ConstructionTypeStore(program.identity());
-            const auto view_term = construction.append(
-                {.value = ConstructionCallableViewTypeValue {
-                     .parameters = {},
-                     .result = types.builtin_type(BuiltinType::I32),
-                     .failures = reader.term,
-                 }}
-            );
-            const auto resolution = std::move(construction).canonicalize(reader, types, signatures);
-            const auto view = resolution.resolve(view_term);
-            const auto pointer = types.intern(
-                {.value = PointerTypeValue {
-                     .target = nominal.front(),
-                     .access = PointerAccess::Read,
-                 }}
-            );
-            const auto owner = types.intern(
-                {.value = ArrayTypeValue {
-                     .element = view,
-                     .extent = 1u,
-                 }}
-            );
-            const auto native =
-                types.intern({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
-            const auto native_array =
-                types.intern({.value = ArrayTypeValue {.element = native, .extent = 1u}});
-            const auto native_pointer = types.intern(
-                {.value = PointerTypeValue {
-                     .target = native,
-                     .access = PointerAccess::Read,
-                 }}
-            );
-            const auto native_slice = types.intern({.value = SliceTypeValue {.element = native}});
-            for (auto index = 0uz; index < nominal.size(); ++index) {
-                auto fields = std::vector<ConstructionStructField> {
-                    {.name = source.name, .type = slices[1uz - index], .origin = source.origin},
-                };
-                if (index == 0uz && seeded) {
-                    fields.push_back(
-                        {.name = source.fields.front().name, .type = owner, .origin = source.origin}
-                    );
-                    fields.push_back(
-                        {.name = program.declarations().structure(second).name,
-                         .type = native,
-                         .origin = source.origin}
-                    );
-                }
-                if (reverse) {
-                    std::ranges::reverse(fields);
-                }
-                const auto id = index == 0uz ? first : second;
-                declarations.define(
-                    id,
-                    ConstructionStructDeclaration {
-                        .kind = RecordKind::Struct,
-                        .module_id = module_id,
-                        .name = program.declarations().structure(id).name,
-                        .origin = source.origin,
-                        .visibility = source.visibility,
-                        .fields = std::move(fields),
-                        .capabilities = {.equality = false},
-                    }
+            if (index == 0uz && seeded) {
+                fields.push_back(
+                    {.name = source.fields.front().name, .type = owner, .origin = source.origin}
+                );
+                fields.push_back(
+                    {.name = program.declarations().structure(second).name,
+                     .type = native,
+                     .origin = source.origin}
                 );
             }
+            if (reverse) {
+                std::ranges::reverse(fields);
+            }
+            const auto id = index == 0uz ? first : second;
             declarations.define(
-                enum_case,
-                ConstructionEnumCaseDeclaration {
-                    .owner = enumeration,
-                    .name = source.fields.front().name,
-                    .origin = source.origin,
-                    .payload_types = {nominal.front()},
-                    .constant = std::nullopt,
-                }
-            );
-            declarations.define(
-                enumeration,
-                EnumDeclaration {
+                id,
+                ConstructionStructDeclaration {
+                    .kind = RecordKind::Struct,
                     .module_id = module_id,
-                    .name = source.name,
+                    .name = program.declarations().structure(id).name,
                     .origin = source.origin,
                     .visibility = source.visibility,
-                    .representation = PayloadEnumRepresentation {},
-                    .cases = {enum_case},
-                    .capabilities = {.equality = false},
+                    .fields = std::move(fields),
                 }
             );
-            const auto enum_type =
-                types.intern({.value = EnumTypeValue {.enumeration = enumeration}});
-            declarations.define(module_id, program.declarations().module_decl(module_id));
-            static_cast<void>(declarations.finish_heads());
-            for (const auto type : nominal) {
-                CHECK_EQ(
-                    query_type_contents(types, declarations.construction_view(), type)
-                        .callable_view,
-                    seeded
-                );
-            }
-            declarations.finish_callable_signatures();
-            const auto closed_declarations = std::move(declarations).seal(resolution);
-            const auto closed_types = std::move(types).seal();
-            const auto contents = compute_type_contents(closed_types, closed_declarations);
-            for (const auto type : {nominal[0], nominal[1], slices[0], slices[1]}) {
-                CHECK_EQ(contents[type.index()].callable_view, seeded);
-                CHECK_FALSE(contents[type.index()].closure_owner);
-            }
-            CHECK(contents[native.index()].contains_native_value);
-            CHECK(contents[native_array.index()].contains_native_value);
-            CHECK_EQ(contents[nominal[0].index()].contains_native_value, seeded);
-            CHECK_FALSE(contents[nominal[1].index()].contains_native_value);
-            CHECK_EQ(contents[enum_type.index()].contains_native_value, seeded);
-            CHECK_FALSE(contents[native_pointer.index()].contains_native_value);
-            CHECK_FALSE(contents[native_slice.index()].contains_native_value);
-            CHECK_FALSE(contents[pointer.index()].contains_native_value);
-            CHECK_FALSE(contents[slices[0].index()].contains_native_value);
-            CHECK_FALSE(contents[slices[1].index()].contains_native_value);
-            CHECK_EQ(contents[nominal[0].index()].storage_owner, seeded);
-            CHECK_FALSE(contents[nominal[1].index()].storage_owner);
-            CHECK_FALSE(contents[slices[0].index()].storage_owner);
-            CHECK_FALSE(contents[slices[1].index()].storage_owner);
-            CHECK_FALSE(contents[pointer.index()].callable_view);
-            CHECK_FALSE(contents[pointer.index()].storage_owner);
         }
+        declarations.define(
+            enum_case,
+            ConstructionEnumCaseDeclaration {
+                .owner = enumeration,
+                .name = source.fields.front().name,
+                .origin = source.origin,
+                .payload_types = {nominal.front()},
+                .constant = std::nullopt,
+            }
+        );
+        declarations.define(
+            enumeration,
+            EnumDeclaration {
+                .module_id = module_id,
+                .name = source.name,
+                .origin = source.origin,
+                .visibility = source.visibility,
+                .representation = PayloadEnumRepresentation {},
+                .cases = {enum_case},
+                .supports_equality = false,
+            }
+        );
+        const auto enum_type = types.intern({.value = EnumTypeValue {.enumeration = enumeration}});
+        declarations.define(module_id, program.declarations().module_decl(module_id));
+        static_cast<void>(declarations.finish_heads());
+        for (const auto type : nominal) {
+            CHECK_EQ(
+                query_type_contents(types, declarations.construction_view(), type)
+                    .contains_callable_view,
+                seeded
+            );
+        }
+        declarations.finish_callable_signatures();
+        const auto closed_declarations = std::move(declarations).seal(resolution);
+        const auto closed_types = std::move(types).seal();
+        const auto contents = compute_type_contents(closed_types, closed_declarations);
+        for (const auto type : {nominal[0], nominal[1], slices[0], slices[1]}) {
+            CHECK_EQ(contents[type.index()].contains_callable_view, seeded);
+            CHECK_FALSE(contents[type.index()].contains_closure_owner);
+        }
+        CHECK(contents[native.index()].contains_native_value);
+        CHECK(contents[native_array.index()].contains_native_value);
+        CHECK_EQ(contents[nominal[0].index()].contains_native_value, seeded);
+        CHECK_FALSE(contents[nominal[1].index()].contains_native_value);
+        CHECK_EQ(contents[enum_type.index()].contains_native_value, seeded);
+        CHECK_FALSE(contents[native_pointer.index()].contains_native_value);
+        CHECK_FALSE(contents[native_slice.index()].contains_native_value);
+        CHECK_FALSE(contents[pointer.index()].contains_native_value);
+        CHECK_FALSE(contents[slices[0].index()].contains_native_value);
+        CHECK_FALSE(contents[slices[1].index()].contains_native_value);
+        CHECK_EQ(contents[nominal[0].index()].contains_storage_owner, seeded);
+        CHECK_FALSE(contents[nominal[1].index()].contains_storage_owner);
+        CHECK_FALSE(contents[slices[0].index()].contains_storage_owner);
+        CHECK_FALSE(contents[slices[1].index()].contains_storage_owner);
+        CHECK_FALSE(contents[pointer.index()].contains_callable_view);
+        CHECK_FALSE(contents[pointer.index()].contains_storage_owner);
     }
 }

@@ -72,10 +72,6 @@ struct ConstructionStructField final {
     ProgramOriginID origin;
 };
 
-struct NominalCapabilities final {
-    bool equality;
-};
-
 struct StructDeclaration final {
     RecordKind kind;
     ModuleID module_id;
@@ -83,7 +79,6 @@ struct StructDeclaration final {
     ProgramOriginID origin;
     DeclarationVisibility visibility;
     std::vector<StructField> fields;
-    NominalCapabilities capabilities;
 };
 
 struct ConstructionStructDeclaration final {
@@ -93,7 +88,6 @@ struct ConstructionStructDeclaration final {
     ProgramOriginID origin;
     DeclarationVisibility visibility;
     std::vector<ConstructionStructField> fields;
-    NominalCapabilities capabilities;
 };
 
 struct NumericEnumRepresentation final {
@@ -111,7 +105,7 @@ struct EnumDeclaration final {
     DeclarationVisibility visibility;
     EnumRepresentation representation;
     std::vector<EnumCaseID> cases;
-    NominalCapabilities capabilities;
+    bool supports_equality;
 };
 
 struct EnumCaseDeclaration final {
@@ -260,6 +254,8 @@ public:
     auto function(FunctionID id) const noexcept -> FunctionDeclaration;
     auto structure(StructID id) const noexcept -> ConstructionStructDeclaration;
     auto enumeration(EnumID id) const noexcept -> EnumDeclaration;
+    // Borrowed until the next enum reservation.
+    auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
     auto enum_case(EnumCaseID id) const noexcept -> ConstructionEnumCaseDeclaration;
     auto module_constant(ModuleConstantID id) const noexcept -> ModuleConstantDeclaration;
     auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;

@@ -19,8 +19,12 @@ import std;
 namespace {
 
 struct AppendQuery final {
-    std::vector<TargetSymbol> entries;
-    std::vector<std::size_t> argument_counts;
+    struct Entry final {
+        TargetSymbol symbol;
+        std::size_t argument_count;
+    };
+
+    std::vector<Entry> entries;
     std::vector<std::string> events;
     std::size_t owning_formats;
 
@@ -36,8 +40,7 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
         if (name->symbol == TargetSymbol::RuntimeAppendFormat
             || name->symbol == TargetSymbol::RuntimeAppendFormatValidUTF8) {
-            entries.push_back(name->symbol);
-            argument_counts.push_back(call->arguments.size());
+            entries.push_back({.symbol = name->symbol, .argument_count = call->arguments.size()});
             events.push_back("format_append");
             REQUIRE(call->arguments.size() >= 2uz);
             // The writable destination precedes the normalized format and holes.
@@ -73,8 +76,7 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("formatted_append")}
     );
-    auto query =
-        AppendQuery {.entries = {}, .argument_counts = {}, .events = {}, .owning_formats = 0uz};
+    auto query = AppendQuery {.entries = {}, .events = {}, .owning_formats = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         REQUIRE(traverse_target_unit(unit.sections(), query));
@@ -124,9 +126,8 @@ TEST_CASE("Generation: formatted append selects its entry and passes only residu
             continue;
         }
         REQUIRE(query.entries.size() == 1uz);
-        CHECK(query.entries.front() == *scenario.entry);
-        REQUIRE(query.argument_counts.size() == 1uz);
-        CHECK(query.argument_counts.front() == scenario.arguments);
+        CHECK(query.entries.front().symbol == *scenario.entry);
+        CHECK(query.entries.front().argument_count == scenario.arguments);
         CHECK(query.owning_formats == 0uz);
     }
 }

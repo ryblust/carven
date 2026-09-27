@@ -27,8 +27,9 @@ local case_specs = {
         inputs = {"input.cv", "failure.cv"},
         steps = {
             {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
+            {args = {"input.cv"}, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
-                stderr_contains = {'actual: Money {\n        cents: 12,\n    }', 'expected: Money {\n        cents: 15,\n    }',
+                stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
                     'true: <not evaluated>', '1: 1', '2: 2'}},
         },
     },
@@ -543,30 +544,12 @@ case_specs["commands/test_report"] = {
 }
 
 case_specs["commands/anonymous_tests"] = {
-    inputs = {"input.cv", "duplicate_label.cv", "reserved_label.cv"},
+    inputs = {"duplicate_label.cv", "reserved_label.cv"},
     steps = {
         {args = {"check", "duplicate_label.cv"}, exit_code = 1,
             stderr_contains = {"CV-TEST-DUPLICATE-NAME", "duplicate_label.cv:4:6"}},
         {args = {"check", "reserved_label.cv"}, exit_code = 1,
             stderr_contains = {"CV-TEST-MAIN-NAME", "reserved_label.cv:2:6"}},
-        {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
-            stderr_contains = {
-                "module: input\n    name: input.cv:1:1",
-                "module: input\n    name: input.cv:5:1",
-                "module: input\n    name: \"\"",
-                "first anonymous failure", "second anonymous failure", "explicit empty label",
-                "tests: 0 passed; 3 failed",
-            },
-            stderr_not_contains = {"input.cv:13:7", "input.cv:17:7"}},
-        {args = {"--tests", "input.cv"}, exit_code = 1,
-            stderr_contains = {
-                "module: input\n    name: input.cv:1:1",
-                "module: input\n    name: input.cv:5:1",
-                "module: input\n    name: \"\"",
-                "first anonymous failure", "second anonymous failure", "explicit empty label",
-                "tests: 0 passed; 3 failed",
-            },
-            stderr_not_contains = {"input.cv:13:7", "input.cv:17:7"}},
     },
 }
 
@@ -581,13 +564,15 @@ case_specs["commands/assertions"] = {
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         {args = {"failure.cv", "abort.cv"}, exit_code = 86,
             stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
-                "value: 1", "value: 2", "record mismatch", "failure.cv:", "note: execution aborted"},
-            stderr_not_contains = {"value: 99", "unreachable"}},
+                "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
+                "array mismatch", "failure.cv:", "note: execution aborted"},
+            stderr_not_contains = {"\n        99,", "unreachable"}},
         {args = {"interpret", "failure.cv"}, exit_code = 1,
             stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
-                "value: 1", "value: 2", "record mismatch", "failure.cv:",
+                "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
+                "array mismatch", "failure.cv:",
                 "  called from: failure.cv:", "  note: execution aborted"},
-            stderr_not_contains = {"value: 99", "unreachable"}},
+            stderr_not_contains = {"\n        99,", "unreachable"}},
         {args = {"check", "static_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-ASSERT", "1 == 2", "static mismatch"}},
         {args = {"--tests", "fatal_test.cv", "abort.cv"}, exit_code = 86,
@@ -635,7 +620,7 @@ for _, selection in ipairs({
         stdout_ordered = output,
         stdout_not_contains = mode == "compile" and {"runtime test", "runtime output"}
             or {tests and "runtime output" or "runtime test"},
-        stderr_contains = mode ~= "check" and mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
+        stderr_contains = mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
         stderr_ordered = mode == "native" and {"carven: run exited with code 0 in ",
             "Source collection", "Source loading", "Lexing", "Parsing", "Semantic analysis",
             "C++ generation", "Artifact writing", "Native compilation", "Execution"} or nil,

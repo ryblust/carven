@@ -154,7 +154,7 @@ auto OwnershipBodyAnalyzer::call(
     CallableID callable,
     const OwnershipRelationships& captures,
     std::optional<OwnershipPlace> capture_owner,
-    std::span<const OwnershipCallArgument> parameters,
+    std::span<const OwnershipCallArgument> arguments,
     OwnershipState state,
     ProgramOriginID origin
 ) noexcept -> OwnershipFlow {
@@ -171,6 +171,19 @@ auto OwnershipBodyAnalyzer::call(
         return result;
     }
     const auto& target = analysis.body(*target_id);
+    // Argument evaluation has already checked accesses. Value Read parameters
+    // copy contained relationships, not the source holder's storage identity.
+    auto parameters = std::vector<OwnershipCallArgument>(arguments.begin(), arguments.end());
+    for (auto&& [id, argument] : std::views::zip(target.inputs().parameters, parameters)) {
+        const auto& binding = target.binding(id);
+        const auto* parameter = std::get_if<ParameterBindingStorage>(&binding.storage);
+        if (parameter != nullptr
+            && parameter->access == AccessMode::Read
+            && analysis.contents(binding.type).read_is_value_snapshot()) {
+            argument.alias.reset();
+            argument.storage.clear();
+        }
+    }
     auto raw_captures = std::vector<OwnershipCallArgument>();
     for (const auto [index, id] : std::views::enumerate(target.inputs().captures)) {
         auto value = project_relationships(captures, OwnershipProjectionPath {index});
@@ -353,7 +366,6 @@ auto OwnershipBodyAnalyzer::call(
                 row.backing = map_place(std::move(*row.backing));
             }
         }
-        normalize_relationships(value);
         return value;
     };
     const auto map_argument = [&](OwnershipCallArgument argument) noexcept {

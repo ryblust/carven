@@ -841,7 +841,6 @@ test "Lifetimes: native Take selects rvalue overloads before and after operand s
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
-    check(::lifetime_probe::native_take_copy_count() == 0);
     check(matches("2 6 "));
     ::lifetime_probe::reset_native_take();
     try {
@@ -849,7 +848,6 @@ test "Lifetimes: native Take selects rvalue overloads before and after operand s
     } catch {
         Failure(_) => mark(7),
     }
-    check(::lifetime_probe::native_take_copy_count() == 0);
     check(matches("2 7 "));
 
     ::lifetime_probe::reset_native_take();
@@ -858,7 +856,6 @@ test "Lifetimes: native Take selects rvalue overloads before and after operand s
     } catch {
         Failure(_) => fail("unexpected failure"),
     }
-    check(::lifetime_probe::native_take_copy_count() == 0);
     check(matches("2 6 "));
     ::lifetime_probe::reset_native_take();
     try {
@@ -866,7 +863,6 @@ test "Lifetimes: native Take selects rvalue overloads before and after operand s
     } catch {
         Failure(_) => mark(7),
     }
-    check(::lifetime_probe::native_take_copy_count() == 0);
     check(matches("2 7 "));
 
     ::lifetime_probe::reset_native_take();

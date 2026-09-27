@@ -217,7 +217,7 @@ public:
 
 private:
     CompilationProvenanceStorage storage;
-    std::flat_map<std::string, ProgramSpellingID, std::less<>> spelling_ids_by_value;
+    std::map<std::string, ProgramSpellingID, std::less<>> spelling_ids_by_value;
 };
 
 class CompilationProvenanceBuilder final {
@@ -248,5 +248,5 @@ private:
     CompilationProvenanceStorage storage;
     std::flat_map<SourceID, ProgramSourceID> program_source_ids_by_source_id;
     std::flat_map<CanonicalModulePath, ProgramModuleID> module_ids_by_path;
-    std::flat_map<std::string, ProgramSpellingID, std::less<>> spelling_ids_by_value;
+    std::map<std::string, ProgramSpellingID, std::less<>> spelling_ids_by_value;
 };

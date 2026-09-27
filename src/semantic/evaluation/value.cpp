@@ -108,7 +108,7 @@ auto execution_text(const ConstantValueReader& values, const ExecutionValue& val
 
 auto transfer_owned_text(ExecutionValue& value) noexcept -> void {
     if (auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-        auto previous = std::move(text->storage);
+        const auto previous = std::move(text->storage);
         *text = make_owned_execution_text(std::move(std::get<std::string>(previous->bytes)));
     }
     for (auto& element : execution_elements(value)) {

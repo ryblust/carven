@@ -29,10 +29,13 @@ import std;
 
 using namespace semir_test;
 
-TEST_CASE("SemIR publication invariant: every named declaration has a module item") {
+namespace {
+
+auto check_module_item_multiplicity(std::string_view scenario, std::size_t multiplicity) noexcept
+    -> void {
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.missing_item");
+    auto builder = begin_compilation(sources, diagnostics, "semir.publication.module_item");
     const auto facts = module_facts(builder);
     const auto module_id = builder.reserve_module_declaration();
     const auto structure = builder.reserve_struct_declaration();
@@ -45,7 +48,55 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
             .origin = facts.origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
+        }
+    );
+    const auto entries = std::vector<ModuleItem>(multiplicity, structure);
+    builder.define_declaration(
+        module_id,
+        ModuleDeclaration {
+            .provenance_module = facts.provenance_module,
+            .origin = facts.origin,
+            .cpp_headers = {},
+            .cpp_source_fragments = {},
+            .items = entries,
+        }
+    );
+    builder.finish_declaration_heads();
+    CHECK(expect_termination(scenario, [&] noexcept {
+        static_cast<void>(std::move(builder).finish());
+    }));
+}
+
+auto check_enum_case_multiplicity(std::string_view scenario, std::size_t multiplicity) noexcept
+    -> void {
+    auto sources = SourceManager();
+    auto diagnostics = DiagnosticSink();
+    auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_case");
+    const auto facts = module_facts(builder);
+    const auto module_id = builder.reserve_module_declaration();
+    const auto enumeration = builder.reserve_enum_declaration();
+    const auto enum_case = builder.reserve_enum_case_declaration();
+    builder.define_declaration(
+        enum_case,
+        ConstructionEnumCaseDeclaration {
+            .owner = enumeration,
+            .name = builder.intern_spelling("Case"),
+            .origin = facts.origin,
+            .payload_types = {},
+            .constant = std::nullopt,
+        }
+    );
+    const auto entries = std::vector<EnumCaseID>(multiplicity, enum_case);
+    builder.define_declaration(
+        enumeration,
+        EnumDeclaration {
+            .module_id = module_id,
+            .name = builder.intern_spelling("Enumeration"),
+            .origin = facts.origin,
+            .visibility = DeclarationVisibility::Module,
+            .representation = PayloadEnumRepresentation {},
+            .cases = entries,
+            .supports_equality = true,
         }
     );
     builder.define_declaration(
@@ -55,13 +106,19 @@ TEST_CASE("SemIR publication invariant: every named declaration has a module ite
             .origin = facts.origin,
             .cpp_headers = {},
             .cpp_source_fragments = {},
-            .items = {},
+            .items = {enumeration},
         }
     );
     builder.finish_declaration_heads();
-    CHECK(expect_termination("semir-publication-orphan-module-item", [&] noexcept {
+    CHECK(expect_termination(scenario, [&] noexcept {
         static_cast<void>(std::move(builder).finish());
     }));
+}
+
+} // namespace
+
+TEST_CASE("SemIR publication invariant: every named declaration has a module item") {
+    check_module_item_multiplicity("semir-publication-orphan-module-item", 0uz);
 }
 
 TEST_CASE("SemIR publication invariant: every provenance module has one semantic module") {
@@ -91,38 +148,7 @@ TEST_CASE("SemIR publication invariant: every provenance module has one semantic
 }
 
 TEST_CASE("SemIR publication invariant: a named declaration has one module item") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.module_item");
-    const auto facts = module_facts(builder);
-    const auto module_id = builder.reserve_module_declaration();
-    const auto structure = builder.reserve_struct_declaration();
-    builder.define_declaration(
-        structure,
-        ConstructionStructDeclaration {
-            .kind = RecordKind::Struct,
-            .module_id = module_id,
-            .name = builder.intern_spelling("Structure"),
-            .origin = facts.origin,
-            .visibility = DeclarationVisibility::Module,
-            .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
-        }
-    );
-    builder.define_declaration(
-        module_id,
-        ModuleDeclaration {
-            .provenance_module = facts.provenance_module,
-            .origin = facts.origin,
-            .cpp_headers = {},
-            .cpp_source_fragments = {},
-            .items = {structure, structure},
-        }
-    );
-    builder.finish_declaration_heads();
-    CHECK(expect_termination("semir-publication-duplicate-module-item", [&] noexcept {
-        static_cast<void>(std::move(builder).finish());
-    }));
+    check_module_item_multiplicity("semir-publication-duplicate-module-item", 2uz);
 }
 
 TEST_CASE("SemIR publication invariant: a module item agrees with its declaration owner") {
@@ -147,7 +173,6 @@ TEST_CASE("SemIR publication invariant: a module item agrees with its declaratio
             .origin = first_facts.origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
         }
     );
     builder.define_declaration(
@@ -177,95 +202,11 @@ TEST_CASE("SemIR publication invariant: a module item agrees with its declaratio
 }
 
 TEST_CASE("SemIR publication invariant: enum owner and case list are bidirectional") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_case");
-    const auto facts = module_facts(builder);
-    const auto module_id = builder.reserve_module_declaration();
-    const auto enumeration = builder.reserve_enum_declaration();
-    const auto enum_case = builder.reserve_enum_case_declaration();
-    builder.define_declaration(
-        enum_case,
-        ConstructionEnumCaseDeclaration {
-            .owner = enumeration,
-            .name = builder.intern_spelling("Case"),
-            .origin = facts.origin,
-            .payload_types = {},
-            .constant = std::nullopt,
-        }
-    );
-    builder.define_declaration(
-        enumeration,
-        EnumDeclaration {
-            .module_id = module_id,
-            .name = builder.intern_spelling("Enumeration"),
-            .origin = facts.origin,
-            .visibility = DeclarationVisibility::Module,
-            .representation = PayloadEnumRepresentation {},
-            .cases = {},
-            .capabilities = NominalCapabilities {.equality = true},
-        }
-    );
-    builder.define_declaration(
-        module_id,
-        ModuleDeclaration {
-            .provenance_module = facts.provenance_module,
-            .origin = facts.origin,
-            .cpp_headers = {},
-            .cpp_source_fragments = {},
-            .items = {enumeration},
-        }
-    );
-    builder.finish_declaration_heads();
-    CHECK(expect_termination("semir-publication-orphan-enum-case", [&] noexcept {
-        static_cast<void>(std::move(builder).finish());
-    }));
+    check_enum_case_multiplicity("semir-publication-orphan-enum-case", 0uz);
 }
 
 TEST_CASE("SemIR publication invariant: an enum case appears once in its owner list") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_unique");
-    const auto facts = module_facts(builder);
-    const auto module_id = builder.reserve_module_declaration();
-    const auto enumeration = builder.reserve_enum_declaration();
-    const auto enum_case = builder.reserve_enum_case_declaration();
-    builder.define_declaration(
-        enum_case,
-        ConstructionEnumCaseDeclaration {
-            .owner = enumeration,
-            .name = builder.intern_spelling("Case"),
-            .origin = facts.origin,
-            .payload_types = {},
-            .constant = std::nullopt,
-        }
-    );
-    builder.define_declaration(
-        enumeration,
-        EnumDeclaration {
-            .module_id = module_id,
-            .name = builder.intern_spelling("Enumeration"),
-            .origin = facts.origin,
-            .visibility = DeclarationVisibility::Module,
-            .representation = PayloadEnumRepresentation {},
-            .cases = {enum_case, enum_case},
-            .capabilities = NominalCapabilities {.equality = true},
-        }
-    );
-    builder.define_declaration(
-        module_id,
-        ModuleDeclaration {
-            .provenance_module = facts.provenance_module,
-            .origin = facts.origin,
-            .cpp_headers = {},
-            .cpp_source_fragments = {},
-            .items = {enumeration},
-        }
-    );
-    builder.finish_declaration_heads();
-    CHECK(expect_termination("semir-publication-duplicate-enum-case", [&] noexcept {
-        static_cast<void>(std::move(builder).finish());
-    }));
+    check_enum_case_multiplicity("semir-publication-duplicate-enum-case", 2uz);
 }
 
 TEST_CASE("SemIR publication invariant: one callable belongs to one function") {
@@ -465,7 +406,6 @@ TEST_CASE("SemIR declaration invariant: builder rejects cross-program module ref
                 .origin = facts.origin,
                 .visibility = DeclarationVisibility::Module,
                 .fields = {},
-                .capabilities = NominalCapabilities {.equality = true},
             }
         );
     }));

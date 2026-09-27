@@ -10,7 +10,7 @@ const fn make_catalog(count: i32) -> String {
         if index != 0 { result.push(','); }
         result.append_format(f"{index:02}");
     }
-    return result;
+    return &&result;
 }
 
 const fn frame(value: String) -> String => f"[{value}]";

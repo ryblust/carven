@@ -6,8 +6,11 @@ module carven:test.internal.semantic.analysis.ownership;
 
 import :diagnostics.code;
 import :diagnostics.diagnostic;
+import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.analysis.diagnostics;
+import :semantic.analysis.ownership.context;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
@@ -330,34 +333,6 @@ TEST_CASE("Semantic calls: recursive view replacement updates caller loans") {
     }
 }
 
-TEST_CASE("Nominal capabilities: shared type dependencies retain equality and ownership facts") {
-    for (const auto supported : {true, false}) {
-        CAPTURE(supported);
-        auto source =
-            std::string(supported ? "struct N0 { value: i32 }\n" : "struct N0 { value: [i32] }\n");
-        for (auto index = 1uz; index < 28uz; ++index) {
-            source += std::format(
-                "struct N{} {{ left: N{}, right: N{} }}\n",
-                index,
-                index - 1,
-                index - 1
-            );
-        }
-        source += "fn accept(value: N27) {}\n";
-        const auto program = analyze_test_program(source);
-        for (const auto [id, declaration] : program.declarations().structures()) {
-            static_cast<void>(id);
-            CHECK_EQ(declaration.capabilities.equality, supported);
-        }
-        source += "fn equal(left: N27, right: N27) -> bool { return left == right; }\n";
-        const auto diagnostics = analyze_test_errors(std::move(source));
-        CHECK_EQ(
-            contains_diagnostic_code(diagnostics, DiagnosticCode::TypeEqualityUnsupported),
-            !supported
-        );
-    }
-}
-
 TEST_CASE("Semantic ownership: recursive returned views require live backing") {
     const auto diagnostics = analyze_test_errors(
         "fn recurse(flag: bool, input: [i32]) -> [i32] { "
@@ -485,4 +460,181 @@ TEST_CASE("Semantic ownership: later capture reads follow closure rebinding") {
         "}\n"
     );
     CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::AccessBorrowConflict));
+}
+
+TEST_CASE("Semantic ownership: forwarding chains reuse linearly bounded query contexts") {
+    // Each shape forwards caller storage through a call chain. Query identity must
+    // not depend on which ancestor allocated the forwarded object.
+    struct ChainShape final {
+        const char* name;
+        const char* declaration;
+        const char* forward;
+        const char* last;
+    };
+
+    const auto shapes = std::array {
+        ChainShape {
+            .name = "i32 Read",
+            .declaration = "(value: i32) -> i32",
+            .forward = "return f{}(value);",
+            .last = "return value;"
+        },
+        ChainShape {
+            .name = "Value Read",
+            .declaration = "(value: Value) -> Value",
+            .forward = "return f{}(value);",
+            .last = "return value;"
+        },
+        ChainShape {
+            .name = "str Read",
+            .declaration = "(value: str) -> str",
+            .forward = "return f{}(value);",
+            .last = "return value;"
+        },
+        ChainShape {
+            .name = "String Read",
+            .declaration = "(value: String) -> usize",
+            .forward = "return f{}(value);",
+            .last = "return 0;"
+        },
+        ChainShape {
+            .name = "i32 Write",
+            .declaration = "(&value: i32)",
+            .forward = "f{}(&value);",
+            .last = "value = 1;"
+        },
+        ChainShape {
+            .name = "String Write",
+            .declaration = "(&value: String)",
+            .forward = "f{}(&value);",
+            .last = "value.append(\"x\");"
+        },
+        ChainShape {
+            .name = "local String Write",
+            .declaration = "(&value: String)",
+            .forward = "var local: String = \"y\"; f{}(&local); value.append(local.as_str());",
+            .last = "value.append(\"x\");",
+        },
+    };
+    const auto chain_lengths = std::array {16uz, 32uz};
+    const auto declaration_orders = std::array {false, true};
+    for (const auto& shape : shapes) {
+        for (const auto count : chain_lengths) {
+            for (const auto reversed : declaration_orders) {
+                CAPTURE(shape.name);
+                CAPTURE(count);
+                CAPTURE(reversed);
+                auto source = std::string("struct Value { number: i32 }\n");
+                for (auto ordinal = 0uz; ordinal < count; ++ordinal) {
+                    const auto index = reversed ? count - ordinal - 1uz : ordinal;
+                    const auto next = index + 1uz;
+                    source += std::format(
+                        "fn f{}{} {{ {} }}\n",
+                        index,
+                        shape.declaration,
+                        next == count ? std::string(shape.last)
+                                      : std::vformat(shape.forward, std::make_format_args(next))
+                    );
+                }
+                const auto program = analyze_test_program(std::move(source));
+                auto diagnostics = DiagnosticSink();
+                const auto summary =
+                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+                REQUIRE(summary.has_value());
+                CHECK_FALSE(diagnostics.has_errors());
+                CHECK(summary->query_count <= 2uz * count);
+                CHECK(summary->evaluation_count <= 4uz * count);
+            }
+        }
+    }
+}
+
+TEST_CASE("Semantic ownership: recursive local forwarding preserves valid borrows") {
+    static_cast<void>(analyze_test_program(R"(
+        fn f(&text: String, depth: i32) -> void {
+            var local: String = "a";
+            local.append(text.as_str());
+            if depth > 0 { f(&local, depth - 1); g(&text, depth - 1); }
+        }
+        fn g(&text: String, depth: i32) -> void {
+            var other: String = "b";
+            if depth > 0 { f(&other, depth - 1); }
+            text.append(other.as_str());
+        }
+        fn apply(action: fn(&String) -> void, &text: String) { action(&text); }
+        fn step(&text: String) -> void {
+            var next: String = "d";
+            apply(step, &next);
+            text.append(next.as_str());
+        }
+    )"));
+}
+
+TEST_CASE("Semantic ownership: forwarded Write reaches a live borrow through a call chain") {
+    const auto text = analyze_test_errors(R"(
+        fn f3(&text: String) { text.append("x"); }
+        fn f2(&text: String) { f3(&text); }
+        fn f1(&text: String) { f2(&text); }
+        fn keep(&text: String, view: str) -> str { f1(&text); return view; }
+        fn invalid() -> usize {
+            var owner: String = "hello";
+            let view = keep(&owner, owner.as_str());
+            return view.len();
+        }
+    )");
+    CHECK(contains_diagnostic_code(text, DiagnosticCode::AccessBorrowConflict));
+}
+
+TEST_CASE(
+    "Semantic ownership: Read view snapshots retain backing after source holder replacement"
+) {
+    const auto text = analyze_test_errors(R"(
+        fn pick(value: str, effect: fn() -> void) -> str { effect(); return value; }
+        fn invalid() {
+            let owner: String = "hello";
+            var selected: str = owner.as_str();
+            let reset = [&selected]() { selected = ""; };
+            let kept = pick(selected, reset);
+            let moved = &&owner;
+            let length = kept.len();
+        }
+    )");
+    CHECK(contains_diagnostic_code(text, DiagnosticCode::AccessBorrowConflict));
+}
+
+TEST_CASE("Semantic ownership: indirect calls preserve recursive components") {
+    const auto program = analyze_test_program(R"(
+        fn apply(action: fn() -> void) { action(); }
+        fn recursive() -> void { apply(recursive); }
+        fn leaf() {}
+        fn caller() { apply(leaf); }
+    )");
+    const auto components = ownership_recursion_components(program);
+    const auto callables = test_function_callables(program);
+    REQUIRE_EQ(callables.size(), 4uz);
+    const auto component = [&](std::size_t index) noexcept {
+        const auto body = program.declarations().body_for_callable(callables[index]);
+        REQUIRE(body.has_value());
+        return components.at(*body);
+    };
+    CHECK_EQ(component(0uz), component(1uz));
+    CHECK_NE(component(0uz), component(2uz));
+    CHECK_NE(component(0uz), component(3uz));
+    CHECK_NE(component(2uz), component(3uz));
+}
+
+TEST_CASE("Semantic ownership: immediately called closures are not dynamic call targets") {
+    const auto program = analyze_test_program(R"(
+        fn apply(action: fn() -> void) { action(); }
+        fn leaf() {}
+        fn caller() { []() { apply(leaf); }(); }
+    )");
+    const auto components = ownership_recursion_components(program);
+    auto distinct = std::flat_set<std::uint32_t>();
+    for (const auto& [body, component] : components) {
+        static_cast<void>(body);
+        distinct.insert(component);
+    }
+    REQUIRE_EQ(components.size(), 4uz);
+    CHECK_EQ(distinct.size(), components.size());
 }

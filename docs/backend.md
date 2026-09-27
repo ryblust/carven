@@ -75,6 +75,7 @@ types, template arguments, and specialized runtime entries.
 Target calls carry ordered type or boolean/integer literal template arguments.
 These describe native C++ syntax, with type dependencies visited normally.
 
+Structure declarations lower to C++ aggregates containing their declared fields.
 Payload enum factories, storage constructors, and projections are ordinary C++
 functions. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
@@ -122,6 +123,12 @@ at lowering as completed values through the usual freezing path.
 Constant functions also retain ordinary runtime bodies. Runtime calls use normal
 lowering, operand evaluation, ownership, cleanup, and wrapping integer arithmetic.
 The qualifier alone supplies no call-result fact or permission to discard a call.
+
+A direct Take return of a named automatic owner uses a C++ name expression when
+its type contains neither native values nor closures. C++ can then elide the
+local return or move from the parameter. Ordinary named returns retain copy
+semantics. Native-containing values, closure captures, deferred storage, and
+failure transport retain explicit transfer realization.
 
 Read parameters, Read argument temporaries, and Read range bindings preserve
 Carven array, String, and closure storage, including storage in Carven aggregate

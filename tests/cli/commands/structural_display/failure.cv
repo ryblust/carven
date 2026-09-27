@@ -1,10 +1,6 @@
-struct Money {
-    cents: i64
-}
-
 const test "explanations" {
-    let actual = Money { 12 };
-    let expected = Money { 15 };
+    let actual = [12i64];
+    let expected = [15i64];
     check(actual == expected);
     check(false && true);
     check(1 > 2);

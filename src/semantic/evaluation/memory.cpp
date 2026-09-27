@@ -13,7 +13,7 @@ auto ExecutionMemory::create(ExecutionValue value) noexcept -> ExecutionPlace {
 }
 
 auto ExecutionMemory::text_bytes(
-    std::shared_ptr<ExecutionTextStorage> storage,
+    const std::shared_ptr<ExecutionTextStorage>& storage,
     TypeID element
 ) noexcept -> ExecutionPlace {
     if (storage->byte_backing && storage->byte_backing->owner == identity) {

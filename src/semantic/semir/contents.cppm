@@ -4,17 +4,24 @@ import :semantic.semir.decl;
 import :semantic.semir.type;
 import std;
 
+// Containment facts include the type itself and propagate through
+// struct fields, array elements, and enum payloads; pointers propagate none.
 struct TypeContents final {
-    bool closure_owner;
-    bool callable_view;
-    bool storage_owner;
-    // A value contains a native C++ value by value. Its Read ABI must retain
-    // native copy/destruction behavior even inside Carven aggregates.
+    bool contains_closure_owner;
+    // Also propagates through slice element types and native C++ template arguments.
+    bool contains_callable_view;
+    // Owned Array or String storage.
+    bool contains_storage_owner;
+    // Native C++ values held by value, including inside Carven aggregates.
     bool contains_native_value;
+    // Possible String storage held by value; zero-length arrays stop propagation.
+    // Implies contains_storage_owner.
+    bool contains_string_storage;
 
-    // Read preserves the identity of Carven-owned storage. Native value
-    // containment is queried separately and does not imply Carven-owned storage.
+    // Read preserves the identity of owned Array, String, or closure storage.
     auto read_borrows_storage() const noexcept -> bool;
+    // Read is a value snapshot with no owned Carven storage or native value.
+    auto read_is_value_snapshot() const noexcept -> bool;
 };
 
 auto compute_type_contents(

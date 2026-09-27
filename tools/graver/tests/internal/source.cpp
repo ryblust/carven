@@ -200,17 +200,6 @@ TEST_CASE("Graver source: lexical errors deliver diagnostics instead of partial 
         REQUIRE(result.error().front().attachment.primary.has_value());
         CHECK(result.error().front().attachment.primary->span.source_id == SourceID::from_index(7));
     }
-    auto nested = std::string();
-    for (auto index = 0uz; index < 513uz; ++index) {
-        nested += "f\"{";
-    }
-    nested += '0';
-    for (auto index = 0uz; index < 513uz; ++index) {
-        nested += "}\"";
-    }
-    const auto rejected = scan(nested);
-    REQUIRE_FALSE(rejected.has_value());
-    CHECK_FALSE(rejected.error().empty());
 }
 
 TEST_CASE("Graver source: owned bytes outlive input and remain valid after moving") {

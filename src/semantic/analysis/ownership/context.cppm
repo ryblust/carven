@@ -231,6 +231,9 @@ auto join_normal_ownership(
     const std::optional<OwnershipNormal>& source
 ) noexcept -> void;
 auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void;
+// Bodies share a component when analysis may enter one from the other and return.
+auto ownership_recursion_components(const SemIRProgram& program) noexcept
+    -> std::flat_map<BodyID, std::uint32_t>;
 
 class OwnershipBatchAnalyzer;
 
@@ -282,6 +285,24 @@ private:
         ProgramOriginID origin,
         bool definite = true
     ) noexcept -> void;
+    // Records whether a returned owner could have been transferred instead of copied.
+    auto observe_returned_copy(
+        const SemanticExpression& source,
+        const OwnershipState& state
+    ) noexcept -> void;
+
+    struct TakeConflict final {
+        DiagnosticCode code;
+        std::string_view message;
+        std::optional<ProgramOriginID> related;
+    };
+
+    auto take_conflict(const OwnershipState& state, const OwnershipPlace& target) const noexcept
+        -> std::optional<TakeConflict>;
+    auto storage_write_conflict(
+        const OwnershipState& state,
+        const OwnershipPlace& target
+    ) const noexcept -> std::optional<ProgramOriginID>;
     auto check_storage_write(
         const OwnershipState& state,
         const OwnershipPlace& target,
@@ -333,7 +354,7 @@ private:
         CallableID callable,
         const OwnershipRelationships& captures,
         std::optional<OwnershipPlace> capture_owner,
-        std::span<const OwnershipCallArgument> parameters,
+        std::span<const OwnershipCallArgument> arguments,
         OwnershipState state,
         ProgramOriginID origin
     ) noexcept -> OwnershipFlow;
@@ -367,10 +388,16 @@ private:
     std::optional<LifetimeRegionID> full_expression;
 };
 
+struct OwnershipAnalysisSummary final {
+    std::size_t query_count;
+    // Worklist evaluations only; excludes contract checks and diagnostic replay.
+    std::size_t evaluation_count;
+};
+
 class OwnershipBatchAnalyzer final {
 public:
     OwnershipBatchAnalyzer(const SemIRProgram& program, AnalysisDiagnostics diagnostics) noexcept;
-    auto run() noexcept -> AnalysisResult<void>;
+    auto run() noexcept -> AnalysisResult<OwnershipAnalysisSummary>;
     auto body(BodyID id) const noexcept -> const SemIRBody&;
     auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(TypeID type) const noexcept -> TypeContents;
@@ -382,6 +409,8 @@ public:
         ProgramOriginID origin,
         std::optional<ProgramOriginID> related
     ) noexcept -> void;
+    // A return copy is reported only when every diagnosed context admits Take.
+    auto observe_returned_copy(ProgramOriginID origin, bool transferable) noexcept -> void;
 
     const SemIRProgram& program;
 
@@ -391,10 +420,12 @@ private:
     AnalysisDiagnostics diagnostics;
     const BodyStore& bodies;
     std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
+    std::flat_map<BodyID, std::uint32_t> recursion_components;
     std::vector<std::unique_ptr<OwnershipCallQuery>> queries;
     std::flat_map<BodyID, std::vector<std::size_t>> body_queries;
     std::deque<std::size_t> pending_queries;
     std::optional<std::size_t> active_query;
     bool queries_sealed = false;
     std::optional<AnalysisFailure> failure;
+    std::map<ProgramOriginID, bool> returned_copies;
 };

@@ -3,16 +3,6 @@ fn record(&trace: i32, marker: i32) -> i32 {
     return marker;
 }
 
-struct Point {
-    x: i32,
-    y: i32,
-}
-
-struct Envelope {
-    point: Point,
-    values: [i32; 2],
-}
-
 enum Status: u8 {
     Ready = 4,
     Done,
@@ -21,7 +11,7 @@ enum Status: u8 {
 enum Value {
     Number(i32),
     Pair(i32, i32),
-    Wrapped(Envelope),
+    Wrapped([i32; 2]),
     Empty,
 }
 
@@ -31,35 +21,20 @@ fn traced_value(&trace: i32, value: i32) -> Value {
 }
 
 test "Equality: structural equality compares values recursively" {
-    let first_point = Point {
-        x: 1,
-        y: 2
-    };
-    let same_point = Point {
-        x: 1,
-        y: 2
-    };
-    let other_point = Point {
-        x: 1,
-        y: 3
-    };
-    let first_envelope = Envelope {
-        point: first_point,
-        values: [3, 4]
-    };
-    let same_envelope = Envelope {
-        point: same_point,
-        values: [3, 4]
-    };
-    let other_envelope = Envelope {
-        point: other_point,
-        values: [3, 4]
-    };
-
-    check(first_point == same_point);
-    check(first_point != other_point);
-    check(first_envelope == same_envelope);
-    check(first_envelope != other_envelope);
+    let first = [
+        [1, 2],
+        [3, 4]
+    ];
+    let same = [
+        [1, 2],
+        [3, 4]
+    ];
+    let other = [
+        [1, 2],
+        [3, 5]
+    ];
+    check(first == same);
+    check(first != other);
 
     check(Status::Ready != Status::Done);
 
@@ -67,8 +42,8 @@ test "Equality: structural equality compares values recursively" {
     check(Value::Number(7) != Value::Number(8));
     check(Value::Pair(1, 2) == Value::Pair(1, 2));
     check(Value::Pair(1, 2) != Value::Pair(1, 3));
-    check(Value::Wrapped(first_envelope) == Value::Wrapped(same_envelope));
-    check(Value::Wrapped(first_envelope) != Value::Wrapped(other_envelope));
+    check(Value::Wrapped([1, 2]) == Value::Wrapped([1, 2]));
+    check(Value::Wrapped([1, 2]) != Value::Wrapped([1, 3]));
     check(Value::Empty == Value::Empty);
     check(Value::Number(7) != Value::Empty);
 

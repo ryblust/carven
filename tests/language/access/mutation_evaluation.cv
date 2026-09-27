@@ -1,8 +1,3 @@
-fn next_index(&calls: i32) -> i32 {
-    calls += 1;
-    return 0;
-}
-
 fn ordered_index(&trace: i32) -> i32 {
     trace = trace * 10 + 1;
     return 0;
@@ -18,16 +13,7 @@ fn ordered_writes(&first: i32, &second: i32) {
     second = 2;
 }
 
-test "Mutation: compound mutation evaluates its target once" {
-    var calls = 0;
-    var values: [i32; 2] = [4, 9];
-    values[next_index(&calls)] += 3;
-
-    check(calls == 1);
-    check(values[0] == 7);
-}
-
-test "Mutation: target evaluation precedes the assigned value" {
+test "Mutation: compound target evaluates once and before the assigned value" {
     var trace = 0;
     var values: [i32; 2] = [4, 9];
     values[ordered_index(&trace)] += ordered_value(&trace);

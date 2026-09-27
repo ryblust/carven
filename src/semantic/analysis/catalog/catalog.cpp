@@ -270,6 +270,17 @@ auto AnalysisCatalogView::enum_symbol(EnumID id) const noexcept -> CatalogSymbol
     return symbol;
 }
 
+auto AnalysisCatalogView::enum_case_named(EnumID enumeration, std::string_view name) const noexcept
+    -> std::optional<EnumCaseID> {
+    const auto symbol = enum_symbol(enumeration);
+    const auto* form = std::get_if<CatalogEnumForm>(&catalog->symbols[symbol.index()].form);
+    const auto found = form->case_names.find(name);
+    if (found == form->case_names.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
 auto AnalysisCatalogView::enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID {
     if (id.index() >= catalog->enum_case_symbols.size()) {
         invariant_violation("catalog enum-case lookup used an invalid identity");
@@ -499,6 +510,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                         return CatalogEnumForm {
                             .enumeration = enumeration,
                             .cases = {},
+                            .case_names = {},
                         };
                     },
                     [&](const ASTConstantDecl&) noexcept -> CatalogSymbolForm {
@@ -659,8 +671,12 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     .declaration_span = enum_case.name_span,
                     .class_operation = std::nullopt,
                 });
-                std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form)
-                    .cases.push_back(case_id);
+                auto& owner = std::get<CatalogEnumForm>(result.symbols[symbol_id.index()].form);
+                owner.cases.push_back(case_id);
+                owner.case_names.try_emplace(
+                    draft.source_slice_copy(module_id, enum_case.name_span),
+                    case_id
+                );
             }
         }
         auto cpp_bindings = std::vector<CatalogCppBinding>();

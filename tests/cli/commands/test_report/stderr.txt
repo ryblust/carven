@@ -1,31 +1,31 @@
 before failures
-input.cv:16:5: error: check failed
+input.cv:11:5: error: check failed
   test:
     module: input
     name: failed
   condition: actual == expected
   operands:
-    actual: Pair {
-        left: 1,
-        right: 2,
-    }
-    expected: Pair {
-        left: 1,
-        right: 3,
-    }
+    actual: [
+        1,
+        2,
+    ]
+    expected: [
+        1,
+        3,
+    ]
   message:
     first line
     second line
 
 between failures
-input.cv:19:5: error: check failed
+input.cv:14:5: error: check failed
   test:
     module: input
     name: failed
   condition: false
   message: CLI failure
 
-input.cv:29:5: error: check failed
+input.cv:24:5: error: check failed
   test:
     module: input
     name: failed
@@ -48,7 +48,7 @@ input.cv:29:5: error: check failed
   message: second failure
 
 after failures
-input.cv:44:5: error: requirement failed
+input.cv:39:5: error: requirement failed
   test:
     module: input
     name: required
@@ -56,7 +56,7 @@ input.cv:44:5: error: requirement failed
   message: required condition
   note: test stopped
 
-input.cv:48:5: error: explicit failure
+input.cv:43:5: error: explicit failure
   test:
     module: input
     name:
@@ -65,4 +65,25 @@ input.cv:48:5: error: explicit failure
   message: ""
   note: test stopped
 
-carven: tests: 1 passed; 3 failed
+input.cv:53:5: error: check failed
+  test:
+    module: input
+    name: input.cv:52:1
+  condition: false
+  message: first anonymous failure
+
+input.cv:57:5: error: check failed
+  test:
+    module: input
+    name: input.cv:56:1
+  condition: false
+  message: second anonymous failure
+
+input.cv:61:5: error: check failed
+  test:
+    module: input
+    name: ""
+  condition: false
+  message: explicit empty label
+
+carven: tests: 1 passed; 6 failed

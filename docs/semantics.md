@@ -914,6 +914,12 @@ type. Taking a complete owner makes that binding unavailable, including for a
 copyable type. This is a static state transition, not a runtime wrapper or a
 promise of a particular C++ move operation.
 
+Returning a named owner copies it; a return ends the owner but does not imply
+Take. `CV-LINT-RETURN-COPY` reports a returned owner whose type can hold Carven
+`String` storage by value, excluding zero-length array elements, and has no
+native value component, when Take is admitted at that return in every analyzed
+call context. Writing `return &&owner;` states the transfer and removes the warning.
+
 Every use of an unavailable binding is invalid. A complete plain assignment to
 a `var` is the only operation that may restore it, and restoration happens only
 after the right-hand side completes normally. Partial assignment, compound
@@ -1084,7 +1090,7 @@ Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
 Structs support positional and named construction, field access and assignment,
-equality, independent copies, whole-binding Take, and parameters and results.
+independent copies, whole-binding Take, and parameters and results.
 Enums support case construction, payload matching, equality, copies, Take, and
 parameters and results. Fields, elements, and payloads follow the same execution
 type rules recursively; publishing a completed constant also requires each
@@ -1341,7 +1347,7 @@ Valid existing class values remain copyable or transferable under their field
 contracts. A type name is not callable.
 
 The compiler uses private fields for type contents, ownership, and cleanup. A
-class has no implicit equality; an operation can define its own comparison.
+class does not support `==` or `!=`; its operations can expose named comparisons.
 Structural display prints the class name without expanding its fields. Generated
 C++ represents checked operations as ordinary functions. External C++
 implementations follow their explicit interoperation contracts.
@@ -1444,8 +1450,8 @@ greater than or equal to the extent is diagnosed before lowering. A dynamic
 out-of-bounds index terminates deterministically. Receiver and index are each
 evaluated once, receiver first. Element mutation requires a mutable receiver.
 
-Structure equality is available only when every field supports equality. Array
-equality is available only when its element type supports equality. Nominal
+Structures do not support `==` or `!=`. Array equality is available only when its
+element type supports equality, including for zero-length arrays. Nominal
 declarations may not form a by-value storage cycle through structure fields,
 enum payloads, or arrays; a zero-length array still contributes its element
 edge. Function parameter and result types do not contribute storage edges.
@@ -1489,11 +1495,10 @@ Ordering requires identical numeric operands. Logical `&&` and `||` require
 
 Equality requires compatible operands and an equality-capable type. It is
 available for `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
-whose elements support equality, structures whose fields all support equality,
-numeric enums, payload enums whose payloads all support equality, and pointers
-with identical target types. Classes have no implicit equality. Callable
-types, process-entry arguments, slices, and `str.chars` iteration views do
-not support equality.
+whose elements support equality, numeric enums, payload enums whose payloads all
+support equality, and pointers with identical target types. Structures and classes
+do not support `==` or `!=`. Callable types, process-entry arguments, slices, and
+`str.chars` iteration views do not support equality.
 
 Payload enum values with different cases compare unequal. Values of the same
 case compare payloads in position order with short-circuiting. Floating-point
@@ -2302,6 +2307,7 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-LINT-UNUSED-IMPORT` | Warning | An import selects no uniquely referenced binding |
 | `CV-LINT-UNUSED-LOCAL` | Warning | A named local binding is unused |
 | `CV-LINT-UNUSED-PARAMETER` | Warning | A named parameter is unused |
+| `CV-LINT-RETURN-COPY` | Warning | A returned owner containing `String` is copied where Take would be admitted |
 | `CV-MATCH-DUPLICATE-ALTERNATIVE` | Error | An or-pattern contains a repeated or subsumed alternative |
 | `CV-TEST-ARGUMENT-COUNT` | Error | A builtin test operation has the wrong argument count |
 | `CV-TEST-CONDITION-TYPE` | Error | A `check` or `require` condition is not exactly `bool` |

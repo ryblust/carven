@@ -45,7 +45,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
 }
 
 private struct UTFCase {
-    bytes: [u8; 11],
+    bytes: [u8; 5],
     length: usize,
     error: UTF8Error,
 }
@@ -53,7 +53,7 @@ private struct UTFCase {
 test "UTF8: all rejection classes and chunk partitions preserve position and progress" {
     let cases = [
         UTFCase {
-            bytes: [0x61, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0x80, 0x00, 0x00, 0x00],
             length: 2,
             error: UTF8Error {
                 kind:.InvalidLead,
@@ -62,7 +62,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xc0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xc0, 0x80, 0x00, 0x00],
             length: 3,
             error: UTF8Error {
                 kind:.InvalidLead,
@@ -71,7 +71,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xc1, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xc1, 0xbf, 0x00, 0x00],
             length: 3,
             error: UTF8Error {
                 kind:.InvalidLead,
@@ -80,7 +80,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf5, 0x80, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf5, 0x80, 0x80, 0x80],
             length: 5,
             error: UTF8Error {
                 kind:.InvalidLead,
@@ -89,7 +89,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xff, 0x00, 0x00, 0x00],
             length: 2,
             error: UTF8Error {
                 kind:.InvalidLead,
@@ -98,7 +98,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.InvalidContinuation,
@@ -107,7 +107,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x9f, 0x21, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.InvalidContinuation,
@@ -116,7 +116,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21],
             length: 5,
             error: UTF8Error {
                 kind:.InvalidContinuation,
@@ -125,7 +125,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.Overlong,
@@ -134,7 +134,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80],
             length: 5,
             error: UTF8Error {
                 kind:.Overlong,
@@ -143,7 +143,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xed, 0xa0, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xed, 0xa0, 0x80, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.Surrogate,
@@ -152,7 +152,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xed, 0xbf, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xed, 0xbf, 0xbf, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.Surrogate,
@@ -161,7 +161,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf4, 0x90, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf4, 0x90, 0x80, 0x80],
             length: 5,
             error: UTF8Error {
                 kind:.TooLarge,
@@ -170,7 +170,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xc2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xc2, 0x00, 0x00, 0x00],
             length: 2,
             error: UTF8Error {
                 kind:.Truncated,
@@ -179,7 +179,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xe2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xe2, 0x00, 0x00, 0x00],
             length: 2,
             error: UTF8Error {
                 kind:.Truncated,
@@ -188,7 +188,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xe2, 0x82, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xe2, 0x82, 0x00, 0x00],
             length: 3,
             error: UTF8Error {
                 kind:.Truncated,
@@ -197,7 +197,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x00, 0x00, 0x00],
             length: 2,
             error: UTF8Error {
                 kind:.Truncated,
@@ -206,7 +206,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x9f, 0x00, 0x00],
             length: 3,
             error: UTF8Error {
                 kind:.Truncated,
@@ -215,7 +215,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             }
         },
         UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00],
             length: 4,
             error: UTF8Error {
                 kind:.Truncated,
@@ -230,7 +230,12 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
         try {
             validate_utf8(bytes)?;
         } catch {
-            UTF8Error(error) => { rejected = error == item.error; },
+            UTF8Error(error) => {
+                rejected = error.kind
+                    == item.error.kind
+                    && error.offset == item.error.offset
+                    && error.sequence_start == item.error.sequence_start;
+            },
         }
         check(rejected);
         for first in 0..=bytes.len() {
@@ -243,7 +248,12 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
                     state.feed(bytes.slice(second, bytes.len()))?;
                     state.finish()?;
                 } catch {
-                    UTF8Error(error) => { rejected = error == item.error; },
+                    UTF8Error(error) => {
+                        rejected = error.kind
+                            == item.error.kind
+                            && error.offset == item.error.offset
+                            && error.sequence_start == item.error.sequence_start;
+                    },
                 }
                 check(rejected);
                 check(state.processed_bytes() == item.error.offset);
@@ -261,7 +271,12 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             try {
                 state.push(bytes[item.error.offset])?;
             } catch {
-                UTF8Error(error) => { rejected = error == item.error; },
+                UTF8Error(error) => {
+                    rejected = error.kind
+                        == item.error.kind
+                        && error.offset == item.error.offset
+                        && error.sequence_start == item.error.sequence_start;
+                },
             }
             check(rejected);
             check(state.processed_bytes() == before.processed_bytes());

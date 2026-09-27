@@ -13,7 +13,7 @@ auto SemanticExecutor::text_identity(const ExecutionValue& value, ProgramOriginI
         return text->storage;
     }
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
-        const auto storage = execution_text_storage(*text);
+        auto storage = execution_text_storage(*text);
         if (!storage) {
             return std::unexpected(
                 fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")

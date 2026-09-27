@@ -416,25 +416,111 @@ auto OwnershipBodyAnalyzer::restore_storage_readers(std::size_t count) noexcept 
     );
 }
 
+auto OwnershipBodyAnalyzer::observe_returned_copy(
+    const SemanticExpression& source,
+    const OwnershipState& state
+) noexcept -> void {
+    const auto* binding = std::get_if<SemBinding>(&source.value);
+    if (!diagnosing || binding == nullptr) {
+        return;
+    }
+    const auto& local = body.binding(binding->binding);
+    const auto* parameter = std::get_if<ParameterBindingStorage>(&local.storage);
+    const auto owner = std::holds_alternative<OwnerBindingStorage>(local.storage)
+        || (parameter != nullptr && parameter->access == AccessMode::Take);
+    const auto contents = analysis.contents(local.type);
+    if (!owner || !contents.contains_string_storage || contents.contains_native_value) {
+        return;
+    }
+    // The owner ends with the return, so the copy is redundant exactly when
+    // Take would be admitted here.
+    const auto target = binding_place(binding->binding);
+    const auto transferable =
+        state.objects[target.object].available && !take_conflict(state, target).has_value();
+    analysis.observe_returned_copy(source.origin, transferable);
+}
+
+auto OwnershipBodyAnalyzer::take_conflict(
+    const OwnershipState& state,
+    const OwnershipPlace& target
+) const noexcept -> std::optional<TakeConflict> {
+    if (const auto loan = storage_write_conflict(state, target)) {
+        return TakeConflict {
+            .code = DiagnosticCode::AccessBorrowConflict,
+            .message = "operation conflicts with a live borrowed view",
+            .related = loan,
+        };
+    }
+    for (const auto& holder : state.objects) {
+        for (const auto& loan : holder.relationships.callable_loans) {
+            if (loan.backing.has_value() && overlaps(*loan.backing, target)) {
+                return TakeConflict {
+                    .code = DiagnosticCode::AccessBorrowConflict,
+                    .message = "Take conflicts with a live callable view",
+                    .related = loan.origin,
+                };
+            }
+        }
+    }
+    for (const auto& access : accesses) {
+        if (overlaps(access.place, target)) {
+            return TakeConflict {
+                .code = DiagnosticCode::AccessOperationConflict,
+                .message = "Take conflicts with an active access",
+                .related = std::nullopt,
+            };
+        }
+    }
+    for (const auto& holder : state.objects) {
+        for (const auto& capture : references(holder.relationships, state)) {
+            if (capture.target.object == target.object) {
+                return TakeConflict {
+                    .code = DiagnosticCode::AccessCaptureConflict,
+                    .message = "Take conflicts with a live Write capture",
+                    .related = capture.origin,
+                };
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+auto OwnershipBodyAnalyzer::storage_write_conflict(
+    const OwnershipState& state,
+    const OwnershipPlace& target
+) const noexcept -> std::optional<ProgramOriginID> {
+    const auto conflict = [&](
+                              std::span<const OwnershipStorageLoan> loans
+                          ) noexcept -> std::optional<ProgramOriginID> {
+        for (const auto& loan : loans) {
+            if (overlaps(loan.backing, target)) {
+                return loan.origin;
+            }
+        }
+        return std::nullopt;
+    };
+    if (const auto loan = conflict(storage_readers)) {
+        return loan;
+    }
+    for (const auto& object : state.objects) {
+        if (const auto loan = conflict(object.relationships.storage_loans)) {
+            return loan;
+        }
+    }
+    return std::nullopt;
+}
+
 auto OwnershipBodyAnalyzer::check_storage_write(
     const OwnershipState& state,
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
-    const auto check = [&](std::span<const OwnershipStorageLoan> loans) noexcept {
-        for (const auto& loan : loans) {
-            if (overlaps(loan.backing, target)) {
-                diagnose(
-                    DiagnosticCode::AccessBorrowConflict,
-                    "operation conflicts with a live borrowed view",
-                    origin,
-                    loan.origin
-                );
-            }
-        }
-    };
-    check(storage_readers);
-    for (const auto& object : state.objects) {
-        check(object.relationships.storage_loans);
+    if (const auto loan = storage_write_conflict(state, target)) {
+        diagnose(
+            DiagnosticCode::AccessBorrowConflict,
+            "operation conflicts with a live borrowed view",
+            origin,
+            loan
+        );
     }
 }

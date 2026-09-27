@@ -40,6 +40,9 @@ auto OwnershipBodyAnalyzer::region(
         append_ownership_exits(result, next);
     }
     if (result.normal.has_value() && source.result.has_value()) {
+        if (std::addressof(source) == std::addressof(body.region())) {
+            observe_returned_copy(*source.result, result.normal->state);
+        }
         auto next = (co_await expression(*source.result, std::move(result.normal->state)));
         result.normal = std::move(next.normal);
 
@@ -88,6 +91,9 @@ auto OwnershipBodyAnalyzer::statement(
         Overloaded {
             [&](const SemReturn& value) noexcept -> ContinuationTask<std::monostate> {
                 if (value.value.has_value()) {
+                    if (result.normal.has_value()) {
+                        observe_returned_copy(*value.value, result.normal->state);
+                    }
                     (co_await evaluate(*value.value));
                 }
                 transfer(OwnershipReturn {});

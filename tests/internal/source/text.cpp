@@ -19,15 +19,3 @@ TEST_CASE("Source: slicing never escapes the borrowed snapshot") {
     CHECK(!try_slice(source, Span::from_bounds(99, 100)).has_value());
     CHECK(!try_slice(source, Span::from_bounds(0, 100)).has_value());
 }
-
-TEST_CASE("Source view: memory input keeps text and origin on one borrowed path") {
-    const auto storage = std::string("fn main() {}");
-    const auto source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = storage,
-        .origin = "memory-test.cv",
-    };
-
-    CHECK_EQ(source.text, "fn main() {}");
-    CHECK_EQ(source.origin, "memory-test.cv");
-}

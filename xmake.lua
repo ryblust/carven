@@ -95,19 +95,22 @@ task("format-check")
     end)
 task_end()
 
-for _, pulse in ipairs({{name = "analysis", samples = "3"}, {name = "build", samples = "5"}}) do
-    task("bench-" .. pulse.name)
-        set_menu({
-            usage = "xmake bench-" .. pulse.name .. " [options]",
-            description = "Measure the Carven " .. pulse.name .. " performance pulse",
-            options = {
-                {nil, "samples", "kv", pulse.samples, "Number of measured runs"},
-                {nil, "warmups", "kv", "1", "Number of warmup runs"},
-                {nil, "compiler", "kv", nil, "Override the configured Carven executable"},
-            },
-        })
-        on_run(function ()
-            import("xmake." .. pulse.name .. "_pulse").main()
-        end)
-    task_end()
-end
+task("bench")
+    set_menu({
+        usage = "xmake bench [options] <name>",
+        description = "Build the compiler and run a Carven benchmark",
+        options = {
+            {nil, "samples", "kv", nil, "Number of measured runs (default: 3)"},
+            {nil, "warmups", "kv", "1", "Number of warmup runs"},
+            {nil, "compiler", "kv", nil, "Use another Carven executable without building"},
+            {nil, "name", "v", nil, "Benchmark to run", values = {"compile", "incremental"}},
+        },
+    })
+    on_run(function ()
+        import("core.base.option")
+        local name = option.get("name")
+        assert(name == "compile" or name == "incremental",
+            "select compile or incremental: ./xmakew bench <name>")
+        import("xmake." .. name .. "_bench").main()
+    end)
+task_end()

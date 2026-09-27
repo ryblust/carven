@@ -101,18 +101,16 @@ TEST_CASE("Const functions: required execution cannot observe or publish expired
          )",
          .code = "CV-CONST-EVALUATION",
          .primary_text = "=="},
-        {.name = "nested aggregate equality rejects invalidated text fields",
+        {.name = "nested array equality rejects invalidated text elements",
          .source = R"(
-             struct Entry { value: str }
-             struct Group { entry: Entry }
-             const fn reset(address: ptr<&String>) -> Group {
+             const fn reset(address: ptr<&String>) -> [[str; 1]; 1] {
                  if address != nullptr { (*address).clear(); }
-                 return Group { Entry { "old" } };
+                 return [["old"]];
              }
              const fn compare() -> bool {
                  var text: String = "old";
                  let address = addressof(&text);
-                 return Group { Entry { text.as_str() } } != reset(address);
+                 return [[text.as_str()]] != reset(address);
              }
              const result = compare();
          )",

@@ -234,14 +234,10 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
-    const auto enumeration = draft().enum_declaration_copy(nominal->enumeration);
-    for (const auto case_id : enumeration.cases) {
-        const auto declaration = draft().construction_enum_case_declaration_copy(case_id);
-        if (draft().spelling_copy(declaration.name) != name) {
-            continue;
-        }
+    if (const auto case_id = catalog().enum_case_named(nominal->enumeration, name)) {
+        const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
         co_return ResolvedEnumCase {
-            .id = case_id,
+            .id = *case_id,
             .owner = declaration.owner,
             .payload_types = declaration.payload_types,
             .constant = declaration.constant,

@@ -393,3 +393,47 @@ TEST_CASE("Compiler diagnostics: callable result inference is independent of bod
     });
     check_compiler_errors(cases);
 }
+
+TEST_CASE("Compiler diagnostics: structure equality is unavailable across source contexts") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "scalar fields do not imply equality",
+         .source =
+             "struct Record { value: i32 } fn compare(a: Record, b: Record) -> bool => a == b;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "const function bodies obey the same operand rules",
+         .source =
+             "struct Record { value: i32 } const fn compare(a: Record, b: Record) -> bool => a != b;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "!="},
+        {.name = "array equality requires element equality",
+         .source =
+             "struct Record { value: i32 } fn compare(a: [Record; 1], b: [Record; 1]) -> bool => a == b;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "zero extent does not waive element equality",
+         .source =
+             "struct Record { value: i32 } fn compare(a: [Record; 0], b: [Record; 0]) -> bool => a == b;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "enum equality requires every payload to support equality",
+         .source =
+             "struct Record { value: i32 } enum Payload { Value(Record), Empty } const equal = Payload::Empty == Payload::Empty;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "empty structure",
+         .source = "struct Empty {} fn compare(a: Empty, b: Empty) -> bool => a == b;",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "required constant equality",
+         .source = "struct Record { value: i32 } const equal = Record { 1 } == Record { 1 };",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "=="},
+        {.name = "constant block inequality",
+         .source =
+             "struct Record { value: i32 } const { let equal = Record { 1 } != Record { 1 }; }",
+         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
+         .primary_text = "!="},
+    });
+    check_compiler_errors(cases);
+}

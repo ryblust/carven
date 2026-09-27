@@ -120,7 +120,6 @@ TEST_CASE("Semantic type compatibility: owning callables differ from structural 
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
-            .capabilities = NominalCapabilities {.equality = true},
         }
     );
     compilation.define_declaration(

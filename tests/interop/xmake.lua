@@ -23,26 +23,26 @@ end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 
 local rejection_cases = {
-    ["construction/deduction"] = {"no viable constructor or deduction guide", "vector", site = "source"},
-    ["construction/folded_narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
-    ["construction/read_narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
-    ["construction/narrowing"] = {"cannot be narrowed", "unsigned char", site = "source"},
-    ["contracts/result"] = {"no viable conversion", "contract_text", site = "source"},
-    ["contracts/access"] = {"drops 'const' qualifier", "contract_replace", site = "source"},
-    ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed", site = "source"},
-    ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed", site = "source"},
-    ["pointers/native_double_output"] = {"cannot initialize a parameter", "pointer_probe::output", site = "source"},
-    ["interpolation/invalid_specification"] = {"format", "format", site = "source"},
-    ["interpolation/mixed_invalid_specification"] = {"format", "format", site = "source"},
-    ["interpolation/append_invalid_specification"] = {"format", "format", site = "source"},
-    ["interpolation/wrong_type"] = {"format", "format", site = "source"},
-    ["interpolation/cstring_pointer_specification"] = {"format", "format", site = "source"},
-    ["interpolation/unicode_char_is_text"] = {"format", "format", site = "source"},
+    ["construction/deduction"] = {"no viable constructor or deduction guide", "vector"},
+    ["construction/folded_narrowing"] = {"cannot be narrowed", "unsigned char"},
+    ["construction/read_narrowing"] = {"cannot be narrowed", "unsigned char"},
+    ["construction/narrowing"] = {"cannot be narrowed", "unsigned char"},
+    ["contracts/result"] = {"no viable conversion", "contract_text"},
+    ["contracts/access"] = {"drops 'const' qualifier", "contract_replace"},
+    ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed"},
+    ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed"},
+    ["pointers/native_double_output"] = {"cannot initialize a parameter", "pointer_probe::output"},
+    ["interpolation/invalid_specification"] = {"format", "format"},
+    ["interpolation/mixed_invalid_specification"] = {"format", "format"},
+    ["interpolation/append_invalid_specification"] = {"format", "format"},
+    ["interpolation/wrong_type"] = {"format", "format"},
+    ["interpolation/cstring_pointer_specification"] = {"format", "format"},
+    ["interpolation/unicode_char_is_text"] = {"format", "format"},
     ["interpolation/missing_formatter"] = {
-        "format", "formatter", site = "source", note = "std::basic_format_string",
+        "format", "formatter", note = "std::basic_format_string",
     },
     ["interpolation/append_missing_formatter"] = {
-        "format", "formatter", site = "source", note = "std::basic_format_string",
+        "format", "formatter", note = "std::basic_format_string",
     },
 }
 

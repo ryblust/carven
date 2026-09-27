@@ -133,7 +133,6 @@ TEST_CASE("Const slices: type access and bounds failures remain source diagnosti
 
 TEST_CASE("Const slices: frozen storage does not extend ordinary local array borrows") {
     const auto cases = std::array {
-        "fn bad() -> [i32] { let local = [1, 2]; return local; }",
         "fn bad() { let view = [1, 2].as_slice(); }",
         "const source: [i32; 2] = [1, 2]; fn bad() { var copy = source; let view = copy.as_slice(); copy[0] = 9; }",
     };

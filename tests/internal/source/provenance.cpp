@@ -80,7 +80,6 @@ TEST_CASE("Program provenance: a frozen owner preserves source correlation") {
     REQUIRE_EQ(view.module_records().size(), 1u);
     REQUIRE_EQ(view.spellings().size(), 1u);
     REQUIRE_EQ(view.origins().size(), 2u);
-    CHECK_EQ(view.source_snapshot(program_source_id).manager_source_id(), *source_id);
     CHECK_EQ(view.find_program_module(path("sample")), module_id);
     CHECK_EQ(view.module_record(module_id).source_id, program_source_id);
     CHECK_EQ(view.source_snapshot(program_source_id).manager_source_id(), *source_id);

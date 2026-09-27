@@ -168,7 +168,6 @@ TEST_CASE("Runtime Outcome: success and failure may have the same source type") 
     auto* failure = failed.failure_if<int>();
     REQUIRE(failure != nullptr);
     CHECK_EQ(*failure, 7);
-    CHECK_EQ(*failure, 7);
 }
 
 TEST_CASE("Runtime Outcome: widening preserves success and failure states") {

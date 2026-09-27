@@ -65,7 +65,7 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
         struct Holder { value: i32 }
         enum Choice { Named(Holder), Empty }
         fn seed() -> i32 { let wrapped = Holder { value: marker }; return wrapped.value; }
-        fn typed(value: Choice) -> bool { return value == value; }
+        fn typed(value: Choice) -> Choice { return value; }
         fn closure() -> i32 { let call = []() => seed(); return call(); }
     )");
     for (auto index = 0uz; index < 32uz; ++index) {
@@ -202,4 +202,33 @@ TEST_CASE("Program construction: long inferred dependencies complete or diagnose
             );
         }
     }
+}
+
+TEST_CASE("Analysis catalog: enum name lookup respects program identity") {
+    with_catalog(
+        "enum Choice { First, Second }",
+        [](ProgramDraft&,
+           AnalysisCatalogView catalog,
+           ImportUsage&,
+           DiagnosticSink&) static noexcept {
+            const auto found = std::ranges::find(catalog.symbols(), "Choice", &CatalogSymbol::name);
+            REQUIRE(found != catalog.symbols().end());
+            const auto* form = std::get_if<CatalogEnumForm>(&found->form);
+            REQUIRE(form != nullptr);
+            const auto enumeration = form->enumeration;
+            REQUIRE(catalog.enum_case_named(enumeration, "First").has_value());
+            CHECK_FALSE(catalog.enum_case_named(enumeration, "Missing").has_value());
+            with_catalog(
+                "enum Choice { First, Second }",
+                [&](ProgramDraft&,
+                    AnalysisCatalogView other,
+                    ImportUsage&,
+                    DiagnosticSink&) noexcept {
+                    CHECK(expect_termination("enum-name-foreign-owner", [&] {
+                        static_cast<void>(other.enum_case_named(enumeration, "First"));
+                    }));
+                }
+            );
+        }
+    );
 }

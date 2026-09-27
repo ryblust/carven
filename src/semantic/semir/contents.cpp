@@ -13,7 +13,9 @@ constexpr auto closure_content = 1u;
 constexpr auto callable_content = 2u;
 constexpr auto storage_content = 4u;
 constexpr auto native_content = 8u;
-constexpr auto all_contents = closure_content | callable_content | storage_content | native_content;
+constexpr auto string_storage_content = 16u;
+constexpr auto all_contents =
+    closure_content | callable_content | storage_content | native_content | string_storage_content;
 
 struct ContentDependent final {
     std::size_t index;
@@ -68,7 +70,10 @@ auto solve_type_contents(
                 [&](const CallableViewTypeValue&) noexcept { contents[index] = callable_content; },
                 [&](const ArrayTypeValue& value) noexcept {
                     contents[index] = storage_content;
-                    depend(value.element, all_contents);
+                    depend(
+                        value.element,
+                        value.extent == 0u ? all_contents & ~string_storage_content : all_contents
+                    );
                 },
                 [&](const StructTypeValue& value) noexcept {
                     const auto& declaration = declarations.structure(value.structure);
@@ -90,7 +95,7 @@ auto solve_type_contents(
                 },
                 [&](const BuiltinTypeValue& value) noexcept {
                     if (value.kind == BuiltinType::String) {
-                        contents[index] = storage_content;
+                        contents[index] = storage_content | string_storage_content;
                     }
                 },
                 [&](const CppTypeValue& value) noexcept {
@@ -138,10 +143,11 @@ auto solve_type_contents(
     result.reserve(roots.size());
     for (const auto index : root_indices) {
         result.push_back({
-            .closure_owner = (contents[index] & closure_content) != 0u,
-            .callable_view = (contents[index] & callable_content) != 0u,
-            .storage_owner = (contents[index] & storage_content) != 0u,
+            .contains_closure_owner = (contents[index] & closure_content) != 0u,
+            .contains_callable_view = (contents[index] & callable_content) != 0u,
+            .contains_storage_owner = (contents[index] & storage_content) != 0u,
             .contains_native_value = (contents[index] & native_content) != 0u,
+            .contains_string_storage = (contents[index] & string_storage_content) != 0u,
         });
     }
     return result;
@@ -163,7 +169,11 @@ auto compute_type_contents(
 }
 
 auto TypeContents::read_borrows_storage() const noexcept -> bool {
-    return storage_owner || closure_owner;
+    return contains_storage_owner || contains_closure_owner;
+}
+
+auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
+    return !read_borrows_storage() && !contains_native_value;
 }
 
 auto query_type_contents(

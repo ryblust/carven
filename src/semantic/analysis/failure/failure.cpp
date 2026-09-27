@@ -57,10 +57,13 @@ auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noex
 
 auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) noexcept
     -> FailureTermID {
+    for (const auto input : inputs) {
+        require_term(input);
+    }
     return term_table.add(
         FailureTerm {
             .direct_members = {},
-            .inputs = normalize_inputs(std::move(inputs)),
+            .inputs = std::move(inputs),
             .guarded_inputs = {},
             .excluded_members = {},
             .retained_members = std::nullopt,
@@ -110,10 +113,11 @@ auto FailureConstraintStore::add_member(FailureTermID destination, TypeID member
     if (member.owner() != program_identity) {
         invariant_violation("failure term member belongs to another semantic program");
     }
-    auto term = term_table.copy(destination);
-    term.direct_members.push_back(member);
-    term.direct_members = normalize_members(std::move(term.direct_members));
-    term_table.replace(destination, std::move(term));
+    auto& members = term_table.mutate(destination).direct_members;
+    const auto position = std::ranges::lower_bound(members, member.index(), {}, &TypeID::index);
+    if (position == members.end() || *position != member) {
+        members.insert(position, member);
+    }
 }
 
 auto FailureConstraintStore::add_contribution(
@@ -122,10 +126,8 @@ auto FailureConstraintStore::add_contribution(
 ) noexcept -> void {
     require_term(destination);
     require_term(source);
-    auto term = term_table.copy(destination);
-    term.inputs.push_back(source);
-    term.inputs = normalize_inputs(std::move(term.inputs));
-    term_table.replace(destination, std::move(term));
+    // Inputs are an unordered set; finish() normalizes each term once.
+    term_table.mutate(destination).inputs.push_back(source);
 }
 
 auto FailureConstraintStore::add_guarded_contribution(
@@ -136,22 +138,13 @@ auto FailureConstraintStore::add_guarded_contribution(
     require_term(destination);
     require_term(gate);
     require_term(source);
-    auto term = term_table.copy(destination);
-    term.guarded_inputs.push_back(
-        FailureTerm::GuardedContribution {
-            .gate = gate,
-            .source = source,
-        }
-    );
-    std::ranges::sort(term.guarded_inputs, [](const auto& left, const auto& right) static noexcept {
-        return std::tuple(left.gate.index(), left.source.index())
-            < std::tuple(right.gate.index(), right.source.index());
-    });
-    term.guarded_inputs.erase(
-        std::ranges::unique(term.guarded_inputs).begin(),
-        term.guarded_inputs.end()
-    );
-    term_table.replace(destination, std::move(term));
+    term_table.mutate(destination)
+        .guarded_inputs.push_back(
+            FailureTerm::GuardedContribution {
+                .gate = gate,
+                .source = source,
+            }
+        );
 }
 
 auto FailureConstraintStore::equate(FailureTermID left, FailureTermID right) noexcept -> void {
@@ -251,6 +244,16 @@ auto FailureConstraintStore::require_declared_contract(
 }
 
 auto FailureConstraintStore::finish() && noexcept -> FrozenFailureConstraints {
+    for (auto& term : term_table.mutable_values()) {
+        term.inputs = normalize_inputs(std::move(term.inputs));
+        std::ranges::sort(term.guarded_inputs, {}, [](const auto& input) static noexcept {
+            return std::pair(input.gate.index(), input.source.index());
+        });
+        term.guarded_inputs.erase(
+            std::ranges::unique(term.guarded_inputs).begin(),
+            term.guarded_inputs.end()
+        );
+    }
     return FrozenFailureConstraints(
         std::move(term_table).seal(),
         std::move(requirements),

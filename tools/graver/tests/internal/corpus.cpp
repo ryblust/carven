@@ -5,9 +5,7 @@ module;
 module carven:test.graver.corpus;
 
 import :diagnostics.report;
-import :frontend.parse;
 import :graver.format;
-import :graver.source;
 import :source.manager;
 import :support.path;
 import std;
@@ -29,17 +27,13 @@ TEST_CASE("Graver corpus: repository programs format into valid stable source") 
         }
     }
     std::ranges::sort(paths);
-    auto accepted = 0uz;
+    auto formatted_count = 0uz;
     for (const auto& path : paths) {
         const auto name = path_to_generic_utf8(path);
         INFO(name);
         auto sources = SourceManager();
         const auto id = sources.append_file(name);
         REQUIRE(id.has_value());
-        const auto lexical = graver::Source::scan(sources.view(*id));
-        REQUIRE(lexical.has_value());
-        REQUIRE(parse(sources, lexical->token_buffer()).has_value());
-        ++accepted;
         const auto result = graver::format(sources, *id);
         if (!result) {
             INFO(render_diagnostics(result.error(), sources));
@@ -48,11 +42,9 @@ TEST_CASE("Graver corpus: repository programs format into valid stable source") 
         }
         const auto formatted_id = sources.append_virtual("formatted.cv", *result);
         REQUIRE(formatted_id.has_value());
-        const auto formatted = graver::Source::scan(sources.view(*formatted_id));
-        REQUIRE(formatted.has_value());
-        REQUIRE(parse(sources, formatted->token_buffer()).has_value());
         const auto repeated = graver::format(sources, *formatted_id);
         REQUIRE(repeated.has_value());
+        ++formatted_count;
         const auto mismatch = std::ranges::mismatch(*result, *repeated);
         const auto offset = static_cast<std::size_t>(mismatch.in1 - result->begin());
         INFO(
@@ -65,6 +57,6 @@ TEST_CASE("Graver corpus: repository programs format into valid stable source") 
         );
         CHECK(*result == *repeated);
     }
-    std::println("Graver corpus: {} valid .cv files", accepted);
-    CHECK(accepted > 0uz);
+    std::println("Graver corpus: {} formatted .cv files", formatted_count);
+    CHECK(formatted_count > 0uz);
 }

@@ -124,6 +124,7 @@ public:
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
     auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
+    auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
     auto construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
         -> ConstructionEnumCaseDeclaration;
     auto module_constant_declaration_copy(ModuleConstantID id) const noexcept

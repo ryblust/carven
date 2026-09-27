@@ -27,6 +27,7 @@ import :source.manager;
 import :source.module_path;
 import :source.text;
 import :test.internal.frontend.parse.fixture;
+import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
@@ -101,7 +102,7 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
                     .underlying_type = underlying,
                 },
             .cases = {},
-            .capabilities = NominalCapabilities {.equality = true},
+            .supports_equality = true,
         }
     );
     return compilation.intern_type(
@@ -410,4 +411,22 @@ TEST_CASE("Semantic operations: evaluator failures retain stable diagnostic boun
     CHECK_FALSE(
         constant_evaluation_diagnostic(ConstantEvaluationFailure::OperandNotConstant).has_value()
     );
+}
+
+TEST_CASE("Equality: shared enum payload dependencies propagate unsupported leaves") {
+    for (const auto supported : {true, false}) {
+        CAPTURE(supported);
+        auto source = std::string(
+            supported ? "enum N0 { Value(i32) }\n"
+                      : "struct Record { value: i32 } enum N0 { Value(Record) }\n"
+        );
+        for (auto index = 1uz; index < 28uz; ++index) {
+            source += std::format("enum N{} {{ Pair(N{}, N{}) }}\n", index, index - 1, index - 1);
+        }
+        const auto program = analyze_test_program(source);
+        for (const auto [id, declaration] : program.declarations().enumerations()) {
+            static_cast<void>(id);
+            CHECK_EQ(declaration.supports_equality, supported);
+        }
+    }
 }

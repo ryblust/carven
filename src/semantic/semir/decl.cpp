@@ -245,6 +245,11 @@ auto DeclarationConstructionView::enumeration(EnumID id) const noexcept -> EnumD
     return declaration_builder->enumerations.copy_defined(id);
 }
 
+auto DeclarationConstructionView::enum_cases(EnumID id) const noexcept
+    -> std::span<const EnumCaseID> {
+    return declaration_builder->enumerations.get_defined(id).cases;
+}
+
 auto DeclarationConstructionView::enum_case(EnumCaseID id) const noexcept
     -> ConstructionEnumCaseDeclaration {
     return declaration_builder->enum_cases.copy_defined(id);
@@ -731,7 +736,6 @@ auto DeclarationBuilder::seal(const TypeResolution& type_resolution) && noexcept
                 .origin = declaration.origin,
                 .visibility = declaration.visibility,
                 .fields = std::move(fields),
-                .capabilities = declaration.capabilities,
             }
         );
         if (final_id != id) {

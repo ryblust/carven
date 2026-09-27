@@ -23,43 +23,23 @@ function main(target, name, diagnostics)
     assert(code == 1, "expected native diagnostic rejection, got " .. tostring(code)
         .. " (" .. tostring(run_error) .. "): " .. context)
     local primary
-    if diagnostics.site == "source" then
-        -- Type-query failures can precede the diagnostic at the actual expression.
-        for message in errors:gmatch("probe%.cv:%d+:%d+: error: ([^\n]+)") do
-            if message:find(diagnostics[1], 1, true) then
-                primary = message
+    -- Type-query failures can precede the diagnostic at the actual expression.
+    for message in errors:gmatch("probe%.cv:%d+:%d+: error: ([^\n]+)") do
+        if message:find(diagnostics[1], 1, true) then
+            primary = message
+            break
+        end
+    end
+    -- Standard-library template errors can attribute the call through a note.
+    if not primary and diagnostics.note then
+        for note in errors:gmatch("probe%.cv:%d+:%d+: note: ([^\n]+)") do
+            if note:find(diagnostics.note, 1, true) then
+                primary = errors:match(": error: ([^\n]+)")
                 break
             end
         end
-        -- Standard-library template errors can attribute the call through a note.
-        if not primary and diagnostics.note then
-            for note in errors:gmatch("probe%.cv:%d+:%d+: note: ([^\n]+)") do
-                if note:find(diagnostics.note, 1, true) then
-                    primary = errors:match(": error: ([^\n]+)")
-                    break
-                end
-            end
-        end
-        assert(primary, "missing diagnostic attributed to fixture: " .. context)
-    elseif diagnostics.site == "header" then
-        primary = errors:match(": error: ([^\n]+)") or ""
-        local header = io.readfile(path.join(generated, "carven", "generated", "probe.hpp"))
-        local lines = {}
-        for text in (header .. "\n"):gmatch("(.-)\n") do
-            table.insert(lines, text)
-        end
-        local selected = false
-        for line, note in errors:gmatch("probe%.hpp:(%d+):%d+: note: ([^\n]+)") do
-            local text = lines[tonumber(line)]
-            if note:find(diagnostics.note, 1, true)
-                and text and text:find(diagnostics.line_contains, 1, true) then
-                selected = true
-            end
-        end
-        assert(selected, "missing diagnostic at expected generated header line: " .. context)
-    else
-        raise("unknown diagnostic site: " .. tostring(diagnostics.site))
     end
+    assert(primary, "missing diagnostic attributed to fixture: " .. context)
     assert(primary:find(diagnostics[1], 1, true), "unexpected native diagnostic: " .. context)
     assert(errors:find(diagnostics[2], 1, true), "missing diagnostic subject: " .. context)
     os.rm(temporary)

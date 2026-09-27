@@ -84,7 +84,8 @@ test "Defaults: nested aggregates retain independent initialized storage" {
         choice:.Other
     };
     let positional = Selected { .Other, 0 };
-    check(named == positional);
+    check(named.choice == positional.choice);
+    check(named.count == positional.count);
     check(named.choice == .Other);
     check(named.count == 0);
 }

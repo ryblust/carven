@@ -44,6 +44,9 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
             perturbed += lexical->spelling(tokens[index].span);
         }
     }
+    if (perturbed == input) {
+        return;
+    }
     const auto perturbed_id = sources.append_virtual("perturbed.cv", std::move(perturbed));
     REQUIRE(perturbed_id.has_value());
     const auto normalized = graver::format(sources, *perturbed_id);

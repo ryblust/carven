@@ -16,6 +16,7 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :semantic.semir.body;
 import :semantic.semir.constant;
+import :semantic.semir.contents;
 import :semantic.semir.delegation;
 import :semantic.semir.format;
 import :semantic.semir.ids;
@@ -533,10 +534,19 @@ auto BodyRealizer::ExpressionBuilder::build(
         ));
     }
     if (std::holds_alternative<SemTake>(value.operation.value)) {
+        const auto contents =
+            owner.context.semantic().type_contents(value.operation.type.resolved());
+        // A named automatic owner can use native return elision or implicit move.
+        // Native values and closure captures retain their selected transfer policy.
+        const auto implicit_transfer = direct_return
+            && !contents.contains_native_value
+            && !contents.contains_closure_owner
+            && std::holds_alternative<TargetLocalExpr>(operands.front().value);
         complete(
             fragment,
-            result_use == PreparedUse::NativeTake ? std::move(operands.front())
-                                                  : transfer_expression(std::move(operands.front()))
+            result_use == PreparedUse::NativeTake || implicit_transfer
+                ? std::move(operands.front())
+                : transfer_expression(std::move(operands.front()))
         );
     } else if (owning_field) {
         auto projected = realize_operation(

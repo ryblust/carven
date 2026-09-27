@@ -18,8 +18,7 @@ auto stable_binding(const SemIRProgram& semantic, const LocalBinding& binding) n
     if (parameter == nullptr || parameter->access != AccessMode::Read) {
         return false;
     }
-    const auto contents = semantic.type_contents(binding.type);
-    return !contents.read_borrows_storage() && !contents.contains_native_value;
+    return semantic.type_contents(binding.type).read_is_value_snapshot();
 }
 
 template<typename Operation>

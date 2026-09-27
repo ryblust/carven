@@ -70,11 +70,17 @@ properties, template instantiation, optimization, and machine code. Runtime
 support uses standard-library numerical conversion.
 
 `SemIRProgram` owns immutable `TypeContents` computed after storage topology
-validation. These facts include native C++ values contained by value, so backend
-Read realization can account for native copy and destruction behavior inside
-Carven aggregates. Published-program consumers read these facts through an identity-checked
-query. Constant execution during construction queries the draft's type facts,
-including types whose dependencies are still being completed.
+validation. Containment facts can coexist and propagate according to each
+property's storage and borrowing rules. String storage containment excludes
+zero-length array elements. Read queries derive storage-borrowing
+and value-snapshot guarantees from these facts. Native value containment lets
+the backend preserve C++ copy and destruction behavior within Carven aggregates;
+Read passing for native values without owned Carven storage is resolved through
+C++ traits.
+
+Published-program consumers read these facts through an identity-checked query.
+Constant execution during construction queries the draft's type facts, including
+types whose dependencies are still being completed.
 
 Semantic facts retain the identity and scope of the operation or storage they
 describe. Ownership, nullability, normal-completion constants, and slice extents
@@ -280,10 +286,12 @@ the same mechanism for dependent expression traversal. Syntax ownership checking
 and the shared SemIR walker use explicit worklists; the latter preserves source
 order and expression leave events.
 
-Nominal equality capability is the conjunction of its reachable field and payload
-capabilities. A temporary dependency graph propagates unsupported leaves to their
-consumers. Construction queries use the currently completed reachable declarations;
-head completion solves all nominal roots together.
+Enum declarations retain their resolved equality support. Numeric enums support
+comparison; payload enums require equality support from every payload type.
+A temporary dependency graph propagates unsupported leaves through arrays and
+enum payloads without repeatedly expanding shared dependencies. Construction
+queries use the currently completed reachable declarations; head completion
+solves all enum roots together. Structure and class types are unsupported leaves.
 
 `ProgramDraft` owns pending function heads. A complete callable contract includes
 its result. Declaration-head completion closes the nominal tables; solving requires
@@ -379,6 +387,12 @@ retain static interval facts; match and catch arms own dynamic bound expressions
 keyed by pattern identity. Recursive pattern selection executes those expressions
 only when that pattern is attempted. Integer coverage partitions the type domain
 at interval boundaries and composes with enum payload and or-pattern coverage.
+Coverage searches for a value matched by a query pattern and not covered by a
+set of patterns. This set-difference query supplies usefulness, redundancy,
+exhaustiveness, and missing witnesses. A wildcard row covers the residual product;
+without covering rows, each query column needs only one inhabitant. Catch
+construction retains definite coverage per failure type; a preceding catch-all
+also covers types first encountered in later arms.
 
 `semantic.semir.children` visits direct child expressions and regions in stored
 order, including inactive branches. `semantic.semir.traversal` walks them with an
@@ -742,8 +756,12 @@ Expression results carry selected storage separately from their value's containe
 relationships. Bindings and projections select existing objects; owned value
 results establish temporary storage. Copying into a destination copies contained
 relationships, not the source object's identity. Read parameters and range bindings
-use the shared resolved-type storage policy to retain selected objects, including
-multiple possible backing objects of a slice. The backend consumes that same policy.
+use the shared resolved-type storage policy. Guaranteed value Read parameters
+copy contained relationships without retaining the source holder identity;
+borrowing Read parameters retain selected objects, including multiple possible
+backing objects of a slice. Native-containing Read types retain conservative
+storage handling because their ABI depends on C++ traits. The backend consumes
+the same policy.
 
 Storage loans record known Carven backing separately from callable loans and Write
 captures. Backing can select projected owner storage. Literal storage needs no
@@ -769,7 +787,11 @@ bindings; rethrow forwards its payload relationships.
 copy, function target, stateless closure, or object borrow. Ownership and backend
 preparation share this query; array elements use the same classification.
 
-Calls map parameters and captures to actual storage, preserving Read storage aliases.
+Calls map borrowing parameters and captures to actual storage. Guaranteed value
+Read parameters discard outer aliases before reachable-object discovery, while
+retaining their contained loans and captures. Abstract root inputs use the same
+policy. Argument evaluation still checks direct Read/Take conflicts before this
+call-boundary normalization. Capture holders retain their existing storage rules.
 Unpassed holders that constrain reachable storage backing contribute reader loans
 without introducing holder identities into recursive queries. Passed Write
 holders retain their identity so exact replacement can release their loans.
@@ -784,8 +806,15 @@ part of semantic identity.
 Recursive storage uses direct backing edges. Call normalization preserves exact
 identities for unambiguous interface roots and their inline callable/capture
 storage. Other reachable objects are grouped by allocation site
-`(BodyID, slot, input-or-local)`. A summary that may represent multiple objects
-retains that property through subsequent calls. Exact inline traversal stops at
+`(BodyID, slot, input-or-local)`. Query identity retains a local site only when its
+body shares the callee's recursion component, because only such a body can
+allocate at that site again during the callee's execution. Other sites are
+renamed to callee-relative input sites in first-occurrence order, preserving their
+equality within the input without recording which ancestor allocated them.
+Recursion components are strongly connected components of direct call targets;
+a call without a concrete target conservatively reaches every body that is used
+as a callable value outside an immediate call. A summary that may represent
+multiple objects retains that property through subsequent calls. Exact inline traversal stops at
 slice backing and ambiguous or unknown-index targets. The semantic restrictions
 on callable-view storage in nominal types and captures bound inline callable
 chains. Allocation identity is separate from diagnostic provenance.
@@ -800,7 +829,9 @@ backing alternatives. Ambiguous same-site summaries retain possible loans;
 exact replacement requires a definite singleton target.
 
 The ownership solver tracks dependencies between call queries. Recursive calls
-read the current answer; changed answers trigger dependent analysis. Normal,
+read the current answer; changed answers trigger dependent analysis. Internal
+query and worklist counts measure solver growth, excluding contract checks and
+diagnostic replay. Normal,
 typed-failure and test-stop answers join monotonically. The finite source sites,
 inline paths, distinguished roles, and graph relations bound query identity.
 An escaping callee-local relationship produces an invalid completion, stops

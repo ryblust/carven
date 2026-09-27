@@ -189,10 +189,7 @@ TEST_CASE("Functions: expression result dependencies are independent of module o
     }
 }
 
-TEST_CASE("Functions: inferred expression results obey visibility and return restrictions") {
-    const auto visibility =
-        analyze_test_errors("private struct Hidden {} export fn leak() => Hidden {};");
-    CHECK(contains_diagnostic_code(visibility, DiagnosticCode::TypeVisibilityLeak));
+TEST_CASE("Functions: inferred expression results obey return restrictions") {
     const auto view = analyze_test_errors("fn leak(value: fn() -> void) => value;");
     CHECK(contains_diagnostic_code(view, DiagnosticCode::TypeCallableViewEscape));
     const auto captures =

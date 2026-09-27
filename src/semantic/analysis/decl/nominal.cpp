@@ -35,7 +35,7 @@ auto DeclResolver::resolve_struct(
     Span item_span
 ) noexcept -> AnalysisTask<void> {
     auto fields = std::vector<ConstructionStructField>();
-    auto names = std::flat_map<std::string, Span, std::less<>>();
+    auto names = std::map<std::string, Span, std::less<>>();
     fields.reserve(structure.fields.size());
     for (const auto& field : structure.fields) {
         auto name = draft.source_slice_copy(symbol.module_id, field.name_span);
@@ -76,7 +76,6 @@ auto DeclResolver::resolve_struct(
         .origin = declaration_source_origin(draft, symbol.module_id, item_span),
         .visibility = symbol.visibility,
         .fields = std::move(fields),
-        .capabilities = {.equality = false},
     };
     co_return {};
 }
@@ -114,7 +113,7 @@ auto DeclResolver::resolve_enum(
         ));
     }
 
-    auto names = std::flat_map<std::string, Span, std::less<>>();
+    auto names = std::map<std::string, Span, std::less<>>();
     for (auto index = 0uz; index < enumeration.cases.size(); ++index) {
         const auto& source_case = enumeration.cases[index];
         auto name = draft.source_slice_copy(symbol.module_id, source_case.name_span);
@@ -207,7 +206,7 @@ auto DeclResolver::resolve_enum(
         .visibility = symbol.visibility,
         .representation = representation,
         .cases = form.cases,
-        .capabilities = {.equality = false},
+        .supports_equality = false,
     };
     co_return {};
 }

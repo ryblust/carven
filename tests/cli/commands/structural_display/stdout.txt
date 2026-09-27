@@ -64,3 +64,12 @@ Status::Done(
     },
 ]
 Empty {} [] Status::Pending
+Token EmptyToken
+Envelope {
+    token: Token,
+    empty: EmptyToken,
+}
+[
+    Token,
+    Token,
+]

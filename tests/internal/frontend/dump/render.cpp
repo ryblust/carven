@@ -275,7 +275,6 @@ TEST_CASE("Dump: non-printing display-path bytes use hexadecimal escapes") {
 
     const auto output = render_token_dump(owned.sources, lexical.value);
     CHECK_EQ(output, "Tokens \"line\\n\\t\\x01.cv\"\n└─ <empty>\n");
-    CHECK(output.ends_with('\n'));
 }
 
 TEST_CASE("Dump: invalid UTF-8 token bytes use hexadecimal escapes") {

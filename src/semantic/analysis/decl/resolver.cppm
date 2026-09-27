@@ -138,11 +138,11 @@ private:
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<ResolvedEnumCase>;
-    auto equality_capabilities(std::span<const ConstructionTypeRef> roots) noexcept
+    auto resolve_equality_support(std::span<const ConstructionTypeRef> roots) noexcept
         -> std::vector<bool>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
-    auto finish_capabilities() noexcept -> void;
+    auto finish_enum_equality() noexcept -> void;
     auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;
     auto publish_declaration(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;

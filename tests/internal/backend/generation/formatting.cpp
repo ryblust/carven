@@ -18,8 +18,12 @@ import std;
 namespace {
 
 struct FormatQuery final {
-    std::vector<TargetSymbol> entries;
-    std::vector<std::size_t> argument_counts;
+    struct Entry final {
+        TargetSymbol symbol;
+        std::size_t argument_count;
+    };
+
+    std::vector<Entry> entries;
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
@@ -34,8 +38,7 @@ auto FormatQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (name != nullptr
         && (name->symbol == TargetSymbol::RuntimeFormat
             || name->symbol == TargetSymbol::RuntimeFormatValidUTF8)) {
-        entries.push_back(name->symbol);
-        argument_counts.push_back(call->arguments.size());
+        entries.push_back({.symbol = name->symbol, .argument_count = call->arguments.size()});
     }
     return true;
 }
@@ -84,8 +87,7 @@ TEST_CASE(
             continue;
         }
         REQUIRE(query.entries.size() == 1uz);
-        CHECK(query.entries.front() == *scenario.entry);
-        REQUIRE(query.argument_counts.size() == 1uz);
-        CHECK(query.argument_counts.front() == scenario.arguments);
+        CHECK(query.entries.front().symbol == *scenario.entry);
+        CHECK(query.entries.front().argument_count == scenario.arguments);
     }
 }

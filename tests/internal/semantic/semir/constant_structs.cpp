@@ -42,16 +42,14 @@ auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
             .name = draft.intern_spelling("Entry"),
             .origin = origin,
             .visibility = DeclarationVisibility::Module,
-            .fields =
-                {
-                    {.name = draft.intern_spelling("value"),
-                     .type = draft.builtin_type(BuiltinType::I32),
-                     .origin = origin},
-                    {.name = draft.intern_spelling("enabled"),
-                     .type = draft.builtin_type(BuiltinType::Bool),
-                     .origin = origin},
-                },
-            .capabilities = {.equality = true},
+            .fields = {
+                {.name = draft.intern_spelling("value"),
+                 .type = draft.builtin_type(BuiltinType::I32),
+                 .origin = origin},
+                {.name = draft.intern_spelling("enabled"),
+                 .type = draft.builtin_type(BuiltinType::Bool),
+                 .origin = origin},
+            },
         }
     );
     draft.finish_declaration_heads();

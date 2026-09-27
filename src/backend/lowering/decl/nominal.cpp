@@ -37,30 +37,6 @@ auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDec
             }
         );
     }
-    if (declaration.capabilities.equality) {
-        const auto type = context.named_type(context.structure_name(id));
-        members.push_back(
-            TargetMemberFunctionDecl {
-                .name = TargetOperatorName::Equality,
-                .parameters = target_parameters(
-                    {.local = std::nullopt,
-                     .type = context.reference_type(type, true),
-                     .default_value = std::nullopt},
-                    {.local = std::nullopt,
-                     .type = context.reference_type(type, true),
-                     .default_value = std::nullopt}
-                ),
-                .result = context.intrinsic_type(TargetSymbol::Bool),
-                .form = TargetMemberFunctionDefaulted {},
-                .maybe_unused = true,
-                .static_specifier = false,
-                .constexpr_specifier = false,
-                .friend_specifier = true,
-                .result_reference = false,
-                .const_qualified = false,
-            }
-        );
-    }
     return TargetStructDecl {
         .name = context.names().structure_identifier(id),
         .members = std::move(members),
@@ -148,7 +124,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             }
         );
     }
-    if (declaration.capabilities.equality) {
+    if (declaration.supports_equality) {
         public_members.push_back(
             TargetMemberFunctionDecl {
                 .name = TargetOperatorName::Equality,
@@ -187,7 +163,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         }
         const auto record = representation.cases[case_index].record_type;
         const auto record_type = context.named_type(TargetName {record});
-        if (declaration.capabilities.equality) {
+        if (declaration.supports_equality) {
             record_members.push_back(
                 TargetMemberFunctionDecl {
                     .name = TargetOperatorName::Equality,

@@ -491,8 +491,8 @@ TEST_CASE("Constant execution: slice display borrows its elements") {
             const auto atom = execution_atom(draft, *result);
             REQUIRE(atom.has_value());
             CHECK(std::get<BooleanConstant>(atom->value).value);
-            CHECK(context.output.contains("1"));
-            CHECK(context.output.contains("2"));
+            CHECK(context.output.contains('1'));
+            CHECK(context.output.contains('2'));
             CHECK(context.diagnostics.empty());
         }
     );

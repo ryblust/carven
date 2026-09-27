@@ -10,7 +10,8 @@ OwnershipBatchAnalyzer::OwnershipBatchAnalyzer(
 ) noexcept
     : program(program),
       diagnostics(diagnostics),
-      bodies(program.bodies()) {
+      bodies(program.bodies()),
+      recursion_components(ownership_recursion_components(program)) {
     for (const auto [id, body] : bodies.entries()) {
         body_facts.emplace(id, prepare_ownership_body_facts(body, program));
     }
@@ -45,6 +46,16 @@ auto OwnershipBatchAnalyzer::diagnose(
     failure = diagnostics.error(diagnostic.build());
 }
 
+auto OwnershipBatchAnalyzer::observe_returned_copy(
+    ProgramOriginID origin,
+    bool transferable
+) noexcept -> void {
+    const auto [found, inserted] = returned_copies.emplace(origin, transferable);
+    if (!inserted) {
+        found->second = found->second && transferable;
+    }
+}
+
 auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
     auto& query = *queries[index];
     if (!query.queued) {
@@ -69,8 +80,22 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
         std::ranges::sort(capture.storage);
         capture.storage.erase(std::ranges::unique(capture.storage).begin(), capture.storage.end());
     }
+    // Only a body in the callee's recursion component can allocate at a local
+    // site again; other sites need only their equality within this input.
+    auto canonical_sites = std::flat_map<OwnershipAllocationSite, OwnershipAllocationSite>();
     for (auto& object : input.objects) {
         normalize_relationships(object.state.relationships);
+        if (!object.site.input
+            && recursion_components.at(object.site.body)
+                == recursion_components.at(input.body_id)) {
+            continue;
+        }
+        const auto canonical = OwnershipAllocationSite {
+            .body = input.body_id,
+            .slot = canonical_sites.size(),
+            .input = true,
+        };
+        object.site = canonical_sites.emplace(object.site, canonical).first->second;
     }
     auto& candidates = body_queries[input.body_id];
     const auto found = std::ranges::find_if(candidates, [&](std::size_t index) noexcept {
@@ -106,7 +131,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                                     ProgramOriginID origin) noexcept -> OwnershipRelationships {
         auto relationships = OwnershipRelationships {};
         const auto facts = contents(type);
-        if (!facts.closure_owner && !facts.callable_view) {
+        if (!facts.contains_closure_owner && !facts.contains_callable_view) {
             return relationships;
         }
         const auto value = program.types().type(type).value;
@@ -142,7 +167,8 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 }
             }
         } else if (const auto* array = std::get_if<ArrayTypeValue>(&value); array != nullptr
-                   && (contents(type).callable_view || contents(type).closure_owner)) {
+                   && (contents(type).contains_callable_view
+                       || contents(type).contains_closure_owner)) {
             relationships = nest_relationships(
                 self(array->element, origin),
                 OwnershipProjectionPath {std::nullopt}
@@ -150,7 +176,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
         }
 
         if (const auto* slice = std::get_if<SliceTypeValue>(&value);
-            slice != nullptr && contents(type).callable_view) {
+            slice != nullptr && contents(type).contains_callable_view) {
             auto elements = nest_relationships(self(slice->element, origin), {std::nullopt});
             const auto backing = result.objects.size();
             result.objects.push_back(
@@ -195,8 +221,10 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
             auto relationships = abstract_value(binding.type, binding.origin);
             const auto borrowed = binding.storage.visit(
                 Overloaded {
-                    [](const ParameterBindingStorage& value) static noexcept {
-                        return value.access != AccessMode::Take;
+                    [&](const ParameterBindingStorage& value) noexcept {
+                        return value.access == AccessMode::Write
+                            || (value.access == AccessMode::Read
+                                && !contents(binding.type).read_is_value_snapshot());
                     },
                     [](const CaptureBindingStorage&) static noexcept {
                         // A closure invocation borrows its stored captures; it
@@ -229,7 +257,8 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
     return result;
 }
 
-auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
+auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisSummary> {
+    auto evaluation_count = 0uz;
     for (const auto [id, source] : bodies.entries()) {
         auto input = root_input(source);
         OwnershipBodyAnalyzer(*this, input, true).check_contracts();
@@ -246,6 +275,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
         auto& query = *queries[index];
         query.queued = false;
         active_query = index;
+        ++evaluation_count;
         auto answer = OwnershipBodyAnalyzer(*this, query.input, false).run();
         active_query.reset();
         if (!answer.has_value()) {
@@ -262,6 +292,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
                 );
             }
             return std::unexpected(*failure);
+        }
+        if (*answer == query.answer) {
+            continue;
         }
         auto joined = query.answer;
         for (const auto& completion : *answer) {
@@ -305,10 +338,27 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<void> {
             invariant_violation("ownership diagnosis changed a solved call answer");
         }
     }
-    return {};
+    for (const auto [origin, transferable] : returned_copies) {
+        if (transferable) {
+            diagnostics.warning(
+                DiagnosticBuilder(
+                    DiagnosticCode::LintReturnCopy,
+                    "returned owner is copied; transfer it with '&&' to avoid the copy"
+                )
+                    .primary(program.provenance().source_span(origin))
+                    .build()
+            );
+        }
+    }
+    return OwnershipAnalysisSummary {
+        .query_count = queries.size(),
+        .evaluation_count = evaluation_count,
+    };
 }
 
 auto analyze_body_batch(const SemIRProgram& program, AnalysisDiagnostics diagnostics) noexcept
     -> AnalysisResult<void> {
-    return OwnershipBatchAnalyzer(program, diagnostics).run();
+    return OwnershipBatchAnalyzer(program, diagnostics)
+        .run()
+        .transform([](const OwnershipAnalysisSummary&) static noexcept {});
 }

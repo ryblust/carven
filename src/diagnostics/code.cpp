@@ -91,6 +91,10 @@ namespace {
     X(LintUnusedImport, "CV-LINT-UNUSED-IMPORT", Warning, "Unused import.")                        \
     X(LintUnusedLocal, "CV-LINT-UNUSED-LOCAL", Warning, "Unused local binding.")                   \
     X(LintUnusedParameter, "CV-LINT-UNUSED-PARAMETER", Warning, "Unused function parameter.")      \
+    X(LintReturnCopy,                                                                              \
+      "CV-LINT-RETURN-COPY",                                                                       \
+      Warning,                                                                                     \
+      "Returned owner is copied where it could be transferred.")                                   \
     X(MatchDuplicateAlternative,                                                                   \
       "CV-MATCH-DUPLICATE-ALTERNATIVE",                                                            \
       Error,                                                                                       \
