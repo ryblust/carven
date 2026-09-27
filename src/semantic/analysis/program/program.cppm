@@ -39,7 +39,7 @@ struct PendingFunctionContract final {
     FailureContractPolicy policy;
 };
 
-class ProgramDraft final : public ConstantValueAccess {
+class ProgramDraft final : public ExecutionValueAccess {
 public:
     static auto begin(
         SyntaxProgram&& syntax,
@@ -73,7 +73,7 @@ public:
     auto module_path_copy(ProgramModuleID id) const noexcept -> CanonicalModulePath;
     auto source_slice_copy(ProgramSourceID source, Span span) const noexcept -> std::string;
     auto source_slice_copy(ProgramModuleID id, Span span) const noexcept -> std::string;
-    auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID override;
+    auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_source_origin(ProgramSourceID source, Span span) noexcept -> ProgramOriginID;
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
@@ -82,7 +82,7 @@ public:
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
-    auto intern_constant(ConstantFact fact) noexcept -> ConstantID override;
+    auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
     auto struct_field_types(StructID structure) const noexcept
         -> std::optional<std::vector<TypeID>> override;

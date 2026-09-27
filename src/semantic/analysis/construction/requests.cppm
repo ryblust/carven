@@ -7,24 +7,23 @@ import :semantic.semir.type;
 import :source.provenance.ids;
 import :source.text;
 
-class ConstructionRequests {
+class ProgramConstruction;
+
+// Borrowed completion port. Its coordinator outlives every request and continuation.
+class ConstructionRequests final {
 public:
-    virtual ~ConstructionRequests() = default;
-    virtual auto ensure_declaration(
-        CatalogSymbolID id,
-        ProgramModuleID requester,
-        Span span
-    ) noexcept -> AnalysisTask<void> = 0;
-    virtual auto ensure_function_signature(
-        FunctionID id,
-        ProgramModuleID requester,
-        Span span
-    ) noexcept -> AnalysisTask<void> = 0;
-    virtual auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
-        -> AnalysisTask<BodyID> = 0;
-    virtual auto ensure_type(
-        ConstructionTypeRef type,
-        ProgramModuleID requester,
-        Span span
-    ) noexcept -> AnalysisTask<void> = 0;
+    auto ensure_declaration(CatalogSymbolID id, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<void>;
+    auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<void>;
+    auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<BodyID>;
+    auto ensure_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
+        -> AnalysisTask<void>;
+
+private:
+    explicit ConstructionRequests(ProgramConstruction& owner) noexcept;
+    ProgramConstruction& owner;
+
+    friend class ProgramConstruction;
 };

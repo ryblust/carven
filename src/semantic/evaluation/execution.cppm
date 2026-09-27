@@ -94,14 +94,14 @@ public:
 };
 
 auto execute_constant_root(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<ExecutionValue>;
 
 auto execute_body(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     ExecutionBody body,
     ExecutionLimits limits = constant_execution_limits()
@@ -110,7 +110,7 @@ auto execute_body(
 // Starts a typed entry function with no language arguments. Calls inside its
 // body use their SemCall operands.
 auto execute_function(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     FunctionID function,
     ProgramOriginID origin,

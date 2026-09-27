@@ -15,8 +15,9 @@ ProgramConstruction::ProgramConstruction(
 ) noexcept
     : draft(draft),
       catalog(catalog),
-      declarations(draft, catalog, usage, *this),
-      bodies(draft, catalog, usage, *this) {}
+      requests(*this),
+      declarations(draft, catalog, usage, requests),
+      bodies(draft, catalog, usage, requests) {}
 
 auto ProgramConstruction::run() noexcept -> AnalysisResult<void> {
     return construct().run();
@@ -35,34 +36,6 @@ auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
     co_return (co_await bodies.run());
 }
 
-auto ProgramConstruction::ensure_declaration(
-    CatalogSymbolID id,
-    ProgramModuleID requester,
-    Span span
-) noexcept -> AnalysisTask<void> {
-    return declarations.ensure_available(id, requester, span);
-}
-
-auto ProgramConstruction::ensure_function_signature(
-    FunctionID id,
-    ProgramModuleID requester,
-    Span span
-) noexcept -> AnalysisTask<void> {
-    return bodies.ensure_function_signature(id, requester, span);
-}
-
-auto ProgramConstruction::ensure_function_body(
-    FunctionID id,
-    ProgramModuleID requester,
-    Span span
-) noexcept -> AnalysisTask<BodyID> {
-    return bodies.ensure_function_body(id, requester, span);
-}
-
-auto ProgramConstruction::ensure_type(
-    ConstructionTypeRef type,
-    ProgramModuleID requester,
-    Span span
-) noexcept -> AnalysisTask<void> {
-    return declarations.prepare_type(type, requester, span);
+auto ProgramConstruction::construction_requests() noexcept -> ConstructionRequests& {
+    return requests;
 }

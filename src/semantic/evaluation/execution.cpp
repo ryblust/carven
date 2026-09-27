@@ -108,7 +108,7 @@ auto finish_execution(SemanticExecutionContext& context, ExecutionResult<Value> 
 } // namespace
 
 auto execute_constant_root(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
     ExecutionLimits limits
@@ -118,7 +118,7 @@ auto execute_constant_root(
 }
 
 auto execute_body(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     ExecutionBody body,
     ExecutionLimits limits
@@ -128,7 +128,7 @@ auto execute_body(
 }
 
 auto execute_function(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     FunctionID function,
     ProgramOriginID origin,

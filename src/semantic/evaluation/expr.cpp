@@ -332,8 +332,11 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     !checked) {
                     co_return std::unexpected(checked.error());
                 }
-                auto elements =
-                    std::vector<ExecutionValue>(operation.fields.size(), ExecutionVoid {});
+                auto elements = std::vector<ExecutionValue>();
+                elements.reserve(operation.fields.size());
+                for (auto index = 0uz; index < operation.fields.size(); ++index) {
+                    elements.emplace_back(ExecutionVoid {});
+                }
                 for (const auto& field : operation.fields) {
                     auto evaluated = (co_await value(frame, field.value));
                     if (!evaluated) {

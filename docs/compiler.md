@@ -165,9 +165,12 @@ Compound types remain demand-driven. Shared execution may consume either a draft
 or a published program, but type queries have the same guarantees in both contexts.
 Operations use their resolved result types where available.
 
-`semantic.semir.constant_access` separates immutable `ConstantValueReader` queries
-from `ConstantValueAccess` construction writes. `ProgramDraft` implements construction
-access; `PublishedConstantValues` adapts a sealed program for read-only consumers.
+`semantic.semir.constant_access` defines `ConstantValueReader` queries and their
+execution-specific extension, `ExecutionValueAccess`. `ProgramDraft` supplies
+construction facts; `PublishedConstantValues` reads a sealed program. Execution
+borrows these interfaces through const references. `analysis.constant.freeze`
+retains completed execution results through a single `ProgramDraft`, which supplies
+both type queries and canonical interning. Retained IDs belong to that program.
 Canonical facts and spellings remain stable across appends; moving or sealing their
 owner ends outstanding borrows. Types still return copies during construction.
 Constant interning uses a hash index with exact equality checks and deterministic
@@ -264,11 +267,14 @@ imports retain their delegated contracts.
 
 The analysis driver collects declaration identities, then `analysis.construction`
 owns `ProgramConstruction`, which coordinates declaration resolution and body
-elaboration. Its `ConstructionRequests`
-interface provides completion requests for declarations, function signatures,
-function bodies and type dependencies. Declaration resolution and required
-constant execution request bodies through this interface; the coordinator owns
-the declaration resolver and body elaborator.
+elaboration. It owns a concrete `ConstructionRequests` port alongside the
+declaration resolver and body elaborator. The port borrows its noncopyable,
+nonmovable coordinator and provides completion requests for declarations,
+function signatures, function bodies and type dependencies. Its implementation
+routes to the domain owners. Construction establishes borrows without executing
+requests. Requests and their continuations finish before the coordinator dies or
+the draft is consumed.
+Declaration and body completion retain their separate state and cycle policies.
 
 Function results are completed on demand. A dependency on an active, unknown
 result produces an inference-cycle diagnostic. Known signatures support recursive
@@ -533,10 +539,12 @@ assignment, and parameter storage materialize retained aggregate children into
 independently mutable values.
 
 Execution frames hold owned values or aliases to an addressable object and a
-projection path. Execution memory gives each owner a stable object identity;
-local pointers retain an execution-local coordinate without retaining the
-target's lifetime. Reads and writes resolve that coordinate through the same
-storage operations.
+projection path. `SemanticExecutor` and `ExecutionMemory` are noncopyable and
+nonmovable; one execution domain has exactly one object store. Places contain a
+fresh `ExecutionIdentity`, an object index and a projection path. Domain identities
+and object indices are never reused; exhaustion terminates. Local pointers retain
+these coordinates without retaining the target's lifetime. Reads and writes
+resolve coordinates through the same storage operations.
 Array and slice iteration use the same sequence view as indexing and slice
 queries. Iteration evaluates its source once, retains temporary owners until loop
 exit, and binds elements using the source Read or Write policy. Scalar Read
@@ -575,17 +583,23 @@ and storage transfers create no additional slots.
 Evaluator state and call stacks belong to one required root and end with that
 request. Existing `ConstantID` values borrow retained inputs. Computed `ConstantAtom`
 values remain execution-local and cannot carry compound storage; they hold scalar
-data or a retained text identity. `ExecutionTextStorage` holds owned bytes or a
-borrowed retained spelling. `ExecutionOwnedText` owns String storage through a
-shared pointer. `ExecutionText` either shares immutable text or weakly borrows
-String storage. `as_str` creates the weak borrow without copying bytes or charging
-text work. String copying creates fresh storage; Take and mutation replace its
-storage identity. Releasing that storage expires its weak borrowers. Formatting,
+data or a retained text identity. `ExecutionValue` is move-only: host movement
+transports execution results, while `copy_value` performs language copying and
+accounts for aggregate and text work. Atoms, coordinates and immutable text handles
+remain copyable.
+`ExecutionTextStorage` privately holds owned bytes or a borrowed retained spelling.
+The move-only `ExecutionOwnedText` encapsulates String ownership;
+`ExecutionText` either shares immutable content or weakly borrows String storage.
+`as_str` creates the weak borrow without copying bytes or charging text work.
+String copying creates fresh storage;
+source Take and mutation replace its storage identity, whereas host moves preserve
+it. Releasing that storage expires its weak borrowers. Formatting,
 queries, and equality read text without freezing it. At the initializer boundary,
 borrowed results detach before execution storage is released, and owning String
 becomes canonical `str`.
 
-`ExecutionMemory` registers one `TextBytes` backing per text identity on demand.
+`ExecutionMemory` owns a weak identity index and registers one `TextBytes` backing
+per text identity on demand. Each execution domain keeps its own byte coordinates.
 Byte slices and their copies retain its coordinate and range. `TextBytes` weakly
 borrows the text storage; reads observe `u8` values on demand through
 `ExecutionByteView`, without constructing a complete byte array. Byte projections
@@ -606,7 +620,7 @@ use declaration order. Publication verifies the type, arity, and exact child
 types; compound constants reference already interned children.
 
 At a constant initializer, an explicit slice destination or `as_slice()` can
-produce an execution-local slice and retain it through `evaluation.freeze`.
+produce an execution-local slice and retain it through `analysis.constant.freeze`.
 The selected freeze preserves each element's type. `SliceConstant` records ordered canonical element IDs under
 a `SliceTypeValue`; it contains no host address, allocator state, or capacity.
 Store construction checks child identity and availability; publication checks the
@@ -997,8 +1011,8 @@ failures, and entry uniqueness; interpretation does not introduce an AST checker
 
 The executor borrows construction or published bodies through `ExecutionBody`.
 Execution needs read access to canonical values, compound type facts, and builtin
-types through `ExecutionValueAccess`. `ConstantValueAccess` additionally permits
-interning completed constants and spellings during construction and freezing.
+types through a const `ExecutionValueAccess` borrow. Analysis freezes completed
+results into its program draft; interpreter execution reads the published program.
 Published execution does not mutate semantic tables or clone operation trees.
 
 The call context supplies bodies, output, diagnostics, and optional source trace

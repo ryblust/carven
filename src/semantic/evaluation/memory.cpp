@@ -4,7 +4,7 @@ import :semantic.evaluation.memory;
 import std;
 
 ExecutionMemory::ExecutionMemory() noexcept
-    : identity(std::make_shared<const ExecutionStorageIdentity>()) {}
+    : identity(ExecutionIdentity::fresh()) {}
 
 auto ExecutionMemory::create(ExecutionValue value) noexcept -> ExecutionPlace {
     const auto index = objects.size();
@@ -12,18 +12,19 @@ auto ExecutionMemory::create(ExecutionValue value) noexcept -> ExecutionPlace {
     return {.owner = identity, .object = index, .path = {}};
 }
 
-auto ExecutionMemory::text_bytes(
-    const std::shared_ptr<ExecutionTextStorage>& storage,
-    TypeID element
-) noexcept -> ExecutionPlace {
-    if (storage->byte_backing && storage->byte_backing->owner == identity) {
-        return *storage->byte_backing;
+auto ExecutionMemory::text_bytes(const ExecutionText& text, TypeID element) noexcept
+    -> std::optional<ExecutionPlace> {
+    const auto storage = text.lock();
+    if (!storage) {
+        return std::nullopt;
+    }
+    if (const auto found = text_backings.find(storage); found != text_backings.end()) {
+        return ExecutionPlace {.owner = identity, .object = found->second, .path = {}};
     }
     const auto index = objects.size();
     objects.emplace_back(TextBytes {.storage = storage, .element = element, .observed = {}});
-    auto place = ExecutionPlace {.owner = identity, .object = index, .path = {}};
-    storage->byte_backing = place;
-    return place;
+    text_backings.emplace(storage, index);
+    return ExecutionPlace {.owner = identity, .object = index, .path = {}};
 }
 
 auto ExecutionMemory::release(const ExecutionPlace& place) noexcept -> void {
@@ -41,7 +42,7 @@ auto ExecutionMemory::resolve(const ExecutionPlace& place) const noexcept -> con
     }
     if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
         const auto storage = text->storage.lock();
-        const auto bytes = storage ? std::optional(execution_text_bytes(*storage)) : std::nullopt;
+        const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
         if (!bytes || place.path.size() != 1uz || place.path[0] >= bytes->size()) {
             return nullptr;
         }
@@ -80,7 +81,7 @@ auto ExecutionMemory::view(const ExecutionSlice& slice) const noexcept
     }
     if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
         const auto storage = text->storage.lock();
-        const auto bytes = storage ? std::optional(execution_text_bytes(*storage)) : std::nullopt;
+        const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
         if (!bytes
             || !place.path.empty()
             || slice.offset > bytes->size()
@@ -107,8 +108,7 @@ auto ExecutionMemory::project(ExecutionPlace place, std::size_t index) noexcept
     if (place.owner == identity && place.object < objects.size()) {
         if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
             const auto storage = text->storage.lock();
-            const auto bytes =
-                storage ? std::optional(execution_text_bytes(*storage)) : std::nullopt;
+            const auto bytes = storage ? std::optional(storage->view()) : std::nullopt;
             if (!bytes || !place.path.empty() || index >= bytes->size()) {
                 return std::nullopt;
             }

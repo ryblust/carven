@@ -40,12 +40,6 @@ public:
         -> std::optional<std::vector<EnumCaseTypes>> = 0;
 };
 
-class ConstantValueAccess : public ExecutionValueAccess {
-public:
-    virtual auto intern_constant(ConstantFact fact) noexcept -> ConstantID = 0;
-    virtual auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID = 0;
-};
-
 class SemIRProgram;
 
 // The published program outlives this view and all returned borrows.

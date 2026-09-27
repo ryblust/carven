@@ -3,7 +3,17 @@ module carven:semantic.evaluation.value.impl;
 import :semantic.evaluation.memory;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.value;
+import :support.invariant;
 import std;
+
+auto ExecutionIdentity::fresh() noexcept -> ExecutionIdentity {
+    static auto next_identity = std::atomic<std::uint64_t> {1u};
+    const auto value = next_identity.fetch_add(1u, std::memory_order_relaxed);
+    if (value == std::numeric_limits<std::uint64_t>::max()) {
+        resource_limit_exceeded("execution identity space exhausted");
+    }
+    return ExecutionIdentity(value);
+}
 
 auto constant_atom(const ConstantFact& fact) noexcept -> std::optional<ConstantAtom> {
     return fact.value.visit([&](const auto& value) noexcept -> std::optional<ConstantAtom> {
@@ -65,38 +75,90 @@ auto execution_atom(const ConstantValueReader& values, const ExecutionValue& val
     return std::nullopt;
 }
 
-auto execution_text_storage(const ExecutionText& text) noexcept
-    -> std::shared_ptr<ExecutionTextStorage> {
-    if (const auto* owned = std::get_if<std::shared_ptr<ExecutionTextStorage>>(&text.storage)) {
+ExecutionTextStorage::ExecutionTextStorage(
+    std::variant<std::string, std::string_view> bytes
+) noexcept
+    : bytes(std::move(bytes)) {}
+
+auto ExecutionTextStorage::view() const noexcept -> std::string_view {
+    return bytes.visit([](const auto& value) static noexcept { return std::string_view(value); });
+}
+
+ExecutionText::ExecutionText(std::string bytes) noexcept
+    : storage(std::make_shared<const ExecutionTextStorage>(std::move(bytes))) {}
+
+ExecutionText::ExecutionText(std::shared_ptr<const ExecutionTextStorage> storage) noexcept
+    : storage(std::move(storage)) {}
+
+ExecutionText::ExecutionText(std::weak_ptr<const ExecutionTextStorage> storage) noexcept
+    : storage(std::move(storage)) {}
+
+auto ExecutionText::retained(std::string_view bytes) noexcept -> ExecutionText {
+    return ExecutionText(std::make_shared<const ExecutionTextStorage>(bytes));
+}
+
+auto ExecutionText::lock() const noexcept -> std::shared_ptr<const ExecutionTextStorage> {
+    if (const auto* owned = std::get_if<std::shared_ptr<const ExecutionTextStorage>>(&storage)) {
         return *owned;
     }
-    return std::get<std::weak_ptr<ExecutionTextStorage>>(text.storage).lock();
+    return std::get<std::weak_ptr<const ExecutionTextStorage>>(storage).lock();
 }
 
-auto make_owned_execution_text(std::string bytes) noexcept -> ExecutionOwnedText {
-    return {.storage = make_execution_text(std::move(bytes))};
-}
-
-auto make_execution_text(std::string bytes) noexcept -> std::shared_ptr<ExecutionTextStorage> {
-    return std::make_shared<ExecutionTextStorage>(
-        ExecutionTextStorage {.bytes = std::move(bytes), .byte_backing = std::nullopt}
-    );
-}
-
-auto execution_text_bytes(const ExecutionTextStorage& storage) noexcept -> std::string_view {
-    return storage.bytes.visit([](const auto& bytes) static noexcept {
-        return std::string_view(bytes);
+auto ExecutionText::borrow() const noexcept -> ExecutionText {
+    return storage.visit([](const auto& source) static noexcept {
+        return ExecutionText(std::weak_ptr<const ExecutionTextStorage>(source));
     });
+}
+
+auto ExecutionText::is_borrowed() const noexcept -> bool {
+    return std::holds_alternative<std::weak_ptr<const ExecutionTextStorage>>(storage);
+}
+
+auto ExecutionText::bytes() const noexcept -> std::optional<std::string_view> {
+    const auto selected = lock();
+    if (!selected) {
+        return std::nullopt;
+    }
+    return selected->view();
+}
+
+ExecutionOwnedText::ExecutionOwnedText(std::string bytes) noexcept
+    : storage(std::make_shared<ExecutionTextStorage>(std::move(bytes))) {}
+
+auto ExecutionOwnedText::bytes() const noexcept -> std::string_view {
+    return storage->view();
+}
+
+auto ExecutionOwnedText::borrow() const noexcept -> ExecutionText {
+    return ExecutionText(std::weak_ptr<const ExecutionTextStorage>(storage));
+}
+
+auto ExecutionOwnedText::append(std::string_view bytes) noexcept -> void {
+    auto* owned = std::get_if<std::string>(&storage->bytes);
+    if (owned == nullptr) {
+        invariant_violation("owning execution text has no owned bytes");
+    }
+    auto replacement = std::move(*owned);
+    replacement += bytes;
+    storage = std::make_shared<ExecutionTextStorage>(std::move(replacement));
+}
+
+auto ExecutionOwnedText::transfer() noexcept -> void {
+    auto* owned = std::get_if<std::string>(&storage->bytes);
+    if (owned == nullptr) {
+        invariant_violation("owning execution text has no owned bytes");
+    }
+    auto replacement = std::move(*owned);
+    storage = std::make_shared<ExecutionTextStorage>(std::move(replacement));
 }
 
 auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> std::optional<std::string_view> {
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
-        const auto storage = execution_text_storage(*text);
-        return storage ? std::optional(execution_text_bytes(*storage)) : std::nullopt;
+        return text->bytes();
     }
     if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-        return execution_text_bytes(*text->storage);
+        return text->bytes();
     }
     if (const auto atom = execution_atom(values, value)) {
         if (const auto* text = std::get_if<StringConstant>(&atom->value)) {
@@ -108,8 +170,7 @@ auto execution_text(const ConstantValueReader& values, const ExecutionValue& val
 
 auto transfer_owned_text(ExecutionValue& value) noexcept -> void {
     if (auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-        const auto previous = std::move(text->storage);
-        *text = make_owned_execution_text(std::move(std::get<std::string>(previous->bytes)));
+        text->transfer();
     }
     for (auto& element : execution_elements(value)) {
         transfer_owned_text(element);

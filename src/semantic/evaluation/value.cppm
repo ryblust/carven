@@ -27,39 +27,91 @@ auto constant_fact(const ConstantAtom& atom) noexcept -> ConstantFact;
 
 struct ExecutionVoid final {};
 
-struct ExecutionStorageIdentity final {};
+class ExecutionMemory;
+
+class ExecutionIdentity final {
+public:
+    constexpr auto operator==(const ExecutionIdentity&) const noexcept -> bool = default;
+
+private:
+    explicit constexpr ExecutionIdentity(std::uint64_t value) noexcept
+        : value(value) {}
+
+    static auto fresh() noexcept -> ExecutionIdentity;
+
+    std::uint64_t value;
+
+    friend class ExecutionMemory;
+};
 
 // Coordinates survive host container movement, but never retain a target's lifetime.
 struct ExecutionPlace final {
-    std::shared_ptr<const ExecutionStorageIdentity> owner;
+    ExecutionIdentity owner;
     std::size_t object;
     std::vector<std::size_t> path;
 
     auto operator==(const ExecutionPlace&) const -> bool = default;
 };
 
-// String owns its execution-local content identity. Retained text borrows stable reader bytes.
-// Transferring or changing String storage establishes a fresh identity.
-struct ExecutionTextStorage final {
+class ExecutionOwnedText;
+
+// Storage is private to text handles and memory. Only the String owner can mutate bytes.
+class ExecutionTextStorage final {
+public:
+    explicit ExecutionTextStorage(std::variant<std::string, std::string_view> bytes) noexcept;
+
+private:
+    auto view() const noexcept -> std::string_view;
     std::variant<std::string, std::string_view> bytes;
-    std::optional<ExecutionPlace> byte_backing;
+
+    friend class ExecutionText;
+    friend class ExecutionOwnedText;
+    friend class ExecutionMemory;
 };
 
-struct ExecutionOwnedText final {
+// Computed text shares immutable content. A String view retains only a weak borrow.
+class ExecutionText final {
+public:
+    explicit ExecutionText(std::string bytes) noexcept;
+    // The reader's spelling storage must outlive every handle and byte observation.
+    static auto retained(std::string_view bytes) noexcept -> ExecutionText;
+    auto borrow() const noexcept -> ExecutionText;
+    auto is_borrowed() const noexcept -> bool;
+    // The view ends when its backing is changed or released; it never keeps a String alive.
+    auto bytes() const noexcept -> std::optional<std::string_view>;
+
+private:
+    explicit ExecutionText(std::shared_ptr<const ExecutionTextStorage> storage) noexcept;
+    explicit ExecutionText(std::weak_ptr<const ExecutionTextStorage> storage) noexcept;
+    auto lock() const noexcept -> std::shared_ptr<const ExecutionTextStorage>;
+
+    std::variant<
+        std::shared_ptr<const ExecutionTextStorage>,
+        std::weak_ptr<const ExecutionTextStorage>>
+        storage;
+
+    friend class ExecutionOwnedText;
+    friend class ExecutionMemory;
+};
+
+// Host moves transport an owner; source Take and mutation explicitly end its old borrows.
+class ExecutionOwnedText final {
+public:
+    explicit ExecutionOwnedText(std::string bytes) noexcept;
+    ExecutionOwnedText(const ExecutionOwnedText&) = delete;
+    ExecutionOwnedText(ExecutionOwnedText&&) = default;
+    auto operator=(const ExecutionOwnedText&) -> ExecutionOwnedText& = delete;
+    auto operator=(ExecutionOwnedText&&) -> ExecutionOwnedText& = default;
+    ~ExecutionOwnedText() = default;
+    auto bytes() const noexcept -> std::string_view;
+    auto borrow() const noexcept -> ExecutionText;
+    // Callers account for produced bytes before mutation; input must be disjoint.
+    auto append(std::string_view bytes) noexcept -> void;
+    auto transfer() noexcept -> void;
+
+private:
     std::shared_ptr<ExecutionTextStorage> storage;
 };
-
-// Immutable execution text shares its content; as_str holds only a weak String borrow.
-struct ExecutionText final {
-    std::variant<std::shared_ptr<ExecutionTextStorage>, std::weak_ptr<ExecutionTextStorage>>
-        storage;
-};
-
-auto execution_text_storage(const ExecutionText& text) noexcept
-    -> std::shared_ptr<ExecutionTextStorage>;
-auto make_owned_execution_text(std::string bytes) noexcept -> ExecutionOwnedText;
-auto make_execution_text(std::string bytes) noexcept -> std::shared_ptr<ExecutionTextStorage>;
-auto execution_text_bytes(const ExecutionTextStorage& storage) noexcept -> std::string_view;
 
 struct ExecutionPointer final {
     TypeID type;
@@ -107,6 +159,11 @@ struct ExecutionValue final : std::variant<
                                   ExecutionEnumValue> {
     using variant::variant;
     using variant::operator=;
+    ExecutionValue(const ExecutionValue&) = delete;
+    ExecutionValue(ExecutionValue&&) = default;
+    auto operator=(const ExecutionValue&) -> ExecutionValue& = delete;
+    auto operator=(ExecutionValue&&) -> ExecutionValue& = default;
+    ~ExecutionValue() = default;
 };
 
 auto execution_atom(const ConstantValueReader& values, const ExecutionValue& value) noexcept
@@ -114,7 +171,6 @@ auto execution_atom(const ConstantValueReader& values, const ExecutionValue& val
 // Views borrow the retained value or execution owner; mutation ends the borrow.
 auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> std::optional<std::string_view>;
-class ExecutionMemory;
 
 enum class ExecutionComparisonFailure { StepLimit, ExpiredText, Unsupported };
 

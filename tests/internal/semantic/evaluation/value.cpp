@@ -10,22 +10,26 @@ import :semantic.semir.type;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 
+static_assert(!std::is_copy_constructible_v<ExecutionValue>);
+static_assert(!std::is_copy_assignable_v<ExecutionValue>);
+static_assert(!std::is_copy_constructible_v<ExecutionOwnedText>);
+
 TEST_CASE(
     "Constant values: text observation and equality are independent of storage representation"
 ) {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto& values = fixture.compilation;
     const auto bytes = std::string("a\0我", 5uz);
     const auto fact = ConstantFact {
         .type = values.builtin_type(BuiltinType::Str),
-        .value = StringConstant {.value = values.intern_spelling(bytes)}
+        .value = StringConstant {.value = fixture.compilation.intern_spelling(bytes)}
     };
-    const auto retained = values.intern_constant(fact);
+    const auto retained = fixture.compilation.intern_constant(fact);
     const auto representations = std::array<ExecutionValue, 4> {
         retained,
         *constant_atom(fact),
-        ExecutionText {.storage = make_execution_text(bytes)},
-        make_owned_execution_text(bytes)
+        ExecutionText(bytes),
+        ExecutionOwnedText(bytes)
     };
     for (auto index = 0uz; index < representations.size(); ++index) {
         CAPTURE(index);
@@ -49,10 +53,10 @@ TEST_CASE(
 
 TEST_CASE("Constant values: comparison distinguishes expired text, unsupported values and limits") {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
-    auto storage = make_execution_text("text");
-    const auto borrowed = ExecutionValue(ExecutionText {.storage = std::weak_ptr(storage)});
-    const auto owned = ExecutionValue(make_owned_execution_text("text"));
+    const auto& values = fixture.compilation;
+    auto storage = std::optional(ExecutionText(std::string("text")));
+    const auto borrowed = ExecutionValue(storage->borrow());
+    const auto owned = ExecutionValue(ExecutionOwnedText("text"));
     auto steps = 0uz;
     CHECK(execution_equal(values, borrowed, owned, steps, 1uz) == true);
     const auto exhausted = execution_equal(values, borrowed, owned, steps, 1uz);
@@ -76,13 +80,41 @@ TEST_CASE("Constant values: comparison distinguishes expired text, unsupported v
 
     const auto cstring = ExecutionValue(
         ConstantAtom {
-            .type =
-                values.intern_type({.value = CppTypeValue {.form = CppConstCharPointerType {}}}),
-            .value = CStringConstant {.value = values.intern_spelling("text")}
+            .type = fixture.compilation.intern_type(
+                {.value = CppTypeValue {.form = CppConstCharPointerType {}}}
+            ),
+            .value = CStringConstant {.value = fixture.compilation.intern_spelling("text")}
         }
     );
     steps = 0uz;
     const auto unsupported = execution_equal(values, cstring, cstring, steps, 1uz);
     REQUIRE_FALSE(unsupported.has_value());
     CHECK(unsupported.error() == ExecutionComparisonFailure::Unsupported);
+}
+
+TEST_CASE("Execution text: shared content and String borrows have separate lifetimes") {
+    auto owner = ExecutionOwnedText("a");
+    const auto borrowed = owner.borrow();
+    const auto copied_borrow = borrowed;
+    REQUIRE(borrowed.bytes() == "a");
+    auto moved_owner = std::move(owner);
+    CHECK(copied_borrow.bytes() == "a");
+    moved_owner.append("b");
+    CHECK(moved_owner.bytes() == "ab");
+    CHECK_FALSE(borrowed.bytes().has_value());
+    CHECK_FALSE(copied_borrow.bytes().has_value());
+
+    const auto before_take = moved_owner.borrow();
+    moved_owner.transfer();
+    CHECK(moved_owner.bytes() == "ab");
+    CHECK_FALSE(before_take.bytes().has_value());
+
+    auto text = std::optional(ExecutionText(std::string("shared")));
+    auto shared = std::optional(*text);
+    const auto view = text->borrow();
+    text.reset();
+    CHECK(shared->bytes() == "shared");
+    CHECK(view.bytes() == "shared");
+    shared.reset();
+    CHECK_FALSE(view.bytes().has_value());
 }

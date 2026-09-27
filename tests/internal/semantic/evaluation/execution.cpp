@@ -20,7 +20,7 @@ class ExecutionContext final : public SemanticExecutionContext {
 public:
     ExecutionContext(
         ProgramDraft& draft,
-        ProgramConstruction& construction,
+        ConstructionRequests& requests,
         ProgramModuleID module_id
     ) noexcept;
     auto function_for_callable(CallableID callable) const noexcept
@@ -37,17 +37,17 @@ public:
 
 private:
     ProgramDraft& draft;
-    ProgramConstruction& construction;
+    ConstructionRequests& requests;
     ProgramModuleID module_id;
 };
 
 ExecutionContext::ExecutionContext(
     ProgramDraft& draft,
-    ProgramConstruction& construction,
+    ConstructionRequests& requests,
     ProgramModuleID module_id
 ) noexcept
     : draft(draft),
-      construction(construction),
+      requests(requests),
       module_id(module_id) {}
 
 auto ExecutionContext::write(ExecutionOutputStream, std::string_view bytes) noexcept -> void {
@@ -62,7 +62,7 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
     calls.push_back(function);
-    const auto body = co_await construction.ensure_function_body(
+    const auto body = co_await requests.ensure_function_body(
         function,
         module_id,
         draft.source_origin(origin).span
@@ -97,7 +97,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     REQUIRE(construction.run().has_value());
     const auto module_id = view.modules().front().module_id;
     const auto origin = draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
-    auto context = ExecutionContext(draft, construction, module_id);
+    auto context = ExecutionContext(draft, construction.construction_requests(), module_id);
     const auto evaluate = [&](std::string_view name,
                               ExecutionLimits limits = constant_execution_limits()) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);

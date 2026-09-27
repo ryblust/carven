@@ -12,6 +12,11 @@ import :semantic.semir.type;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 
+static_assert(!std::is_copy_constructible_v<ExecutionMemory>);
+static_assert(!std::is_move_constructible_v<ExecutionMemory>);
+static_assert(!std::is_copy_assignable_v<ExecutionMemory>);
+static_assert(!std::is_move_assignable_v<ExecutionMemory>);
+
 namespace {
 
 auto integer_value(TypeID type, std::int64_t value) noexcept -> ExecutionValue {
@@ -31,19 +36,17 @@ auto check_integer(
 
 auto pair_value(TypeID type, TypeID element, std::int64_t first, std::int64_t second) noexcept
     -> ExecutionValue {
-    return ExecutionAggregateValue {
-        .type = type,
-        .elements = {integer_value(element, first), integer_value(element, second)}
-    };
+    auto elements = std::vector<ExecutionValue>();
+    elements.push_back(integer_value(element, first));
+    elements.push_back(integer_value(element, second));
+    return ExecutionAggregateValue {.type = type, .elements = std::move(elements)};
 }
 
 auto enum_value(TypeID type, EnumCaseID member, TypeID element, std::int64_t payload) noexcept
     -> ExecutionValue {
-    return ExecutionEnumValue {
-        .type = type,
-        .enum_case = member,
-        .payload = {integer_value(element, payload)}
-    };
+    auto elements = std::vector<ExecutionValue>();
+    elements.push_back(integer_value(element, payload));
+    return ExecutionEnumValue {.type = type, .enum_case = member, .payload = std::move(elements)};
 }
 
 } // namespace
@@ -67,9 +70,9 @@ TEST_CASE("Execution memory: equal values retain distinct object identities") {
 
 TEST_CASE("Execution memory: ordinary root and field assignment preserve addresses") {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto& values = fixture.compilation;
     const auto integer = values.builtin_type(BuiltinType::I32);
-    const auto pair = values.intern_type(
+    const auto pair = fixture.compilation.intern_type(
         CanonicalType {.value = ArrayTypeValue {.element = integer, .extent = 2u}}
     );
     auto memory = ExecutionMemory();
@@ -93,12 +96,13 @@ TEST_CASE("Execution memory: ordinary root and field assignment preserve address
 
 TEST_CASE("Execution memory: enum payload values do not expose storage projections") {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto& values = fixture.compilation;
     const auto integer = values.builtin_type(BuiltinType::I32);
-    const auto enumeration = values.reserve_enum_declaration();
-    const auto member = values.reserve_enum_case_declaration();
-    const auto enum_type =
-        values.intern_type(CanonicalType {.value = EnumTypeValue {.enumeration = enumeration}});
+    const auto enumeration = fixture.compilation.reserve_enum_declaration();
+    const auto member = fixture.compilation.reserve_enum_case_declaration();
+    const auto enum_type = fixture.compilation.intern_type(
+        CanonicalType {.value = EnumTypeValue {.enumeration = enumeration}}
+    );
     auto memory = ExecutionMemory();
     const auto object = memory.create(enum_value(enum_type, member, integer, 1));
     CHECK_FALSE(memory.project(object, 0uz).has_value());
@@ -106,11 +110,13 @@ TEST_CASE("Execution memory: enum payload values do not expose storage projectio
 
 TEST_CASE("Execution memory: borrowed slice observations validate live backing and bounds") {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto& values = fixture.compilation;
     const auto integer = values.builtin_type(BuiltinType::I32);
-    const auto array =
-        values.intern_type({.value = ArrayTypeValue {.element = integer, .extent = 2u}});
-    const auto slice_type = values.intern_type({.value = SliceTypeValue {.element = integer}});
+    const auto array = fixture.compilation.intern_type(
+        {.value = ArrayTypeValue {.element = integer, .extent = 2u}}
+    );
+    const auto slice_type =
+        fixture.compilation.intern_type({.value = SliceTypeValue {.element = integer}});
     auto memory = ExecutionMemory();
     const auto backing = memory.create(pair_value(array, integer, 3, 4));
     const auto slice = ExecutionValue(
@@ -154,52 +160,56 @@ TEST_CASE("Execution memory: release and another session cannot reuse an address
 
 TEST_CASE("Execution memory: text byte views borrow their owner and preserve selected addresses") {
     auto fixture = ConstantEvaluationFixture();
-    auto& values = fixture.compilation;
+    const auto& values = fixture.compilation;
     const auto byte = values.builtin_type(BuiltinType::U8);
-    const auto slice_type = values.intern_type({.value = SliceTypeValue {.element = byte}});
+    const auto slice_type =
+        fixture.compilation.intern_type({.value = SliceTypeValue {.element = byte}});
     auto memory = ExecutionMemory();
-    const auto owner = memory.create(make_owned_execution_text("ab"));
+    const auto owner = memory.create(ExecutionOwnedText("ab"));
     const auto* text = std::get_if<ExecutionOwnedText>(memory.resolve(owner));
     REQUIRE(text != nullptr);
-    const auto backing = memory.text_bytes(text->storage, byte);
-    CHECK(memory.text_bytes(text->storage, byte) == backing);
-    const auto borrowed = ExecutionValue(ExecutionText {.storage = std::weak_ptr(text->storage)});
+    const auto backing = memory.text_bytes(text->borrow(), byte);
+    REQUIRE(backing.has_value());
+    CHECK(memory.text_bytes(text->borrow(), byte) == backing);
+    const auto borrowed = ExecutionValue(text->borrow());
     const auto slice =
-        ExecutionSlice {.type = slice_type, .backing = backing, .offset = 1uz, .extent = 1uz};
-    const auto element = memory.project(backing, 1uz);
+        ExecutionSlice {.type = slice_type, .backing = *backing, .offset = 1uz, .extent = 1uz};
+    const auto element = memory.project(*backing, 1uz);
     REQUIRE(element.has_value());
     check_integer(values, memory.resolve(*element), 98);
     const auto view = execution_compound_view(values, slice, &memory);
     REQUIRE(view.has_value());
     REQUIRE(display_execution_value(values, slice, false, &memory).has_value());
     CHECK(execution_text(values, borrowed) == "ab");
-    REQUIRE(memory.assign(owner, make_owned_execution_text("cd")));
+    REQUIRE(memory.assign(owner, ExecutionOwnedText("cd")));
     CHECK_FALSE(execution_text(values, borrowed).has_value());
     CHECK(memory.resolve(*element) == nullptr);
     CHECK_FALSE(memory.view(slice).has_value());
 
     auto* replacement = std::get_if<ExecutionOwnedText>(memory.resolve(owner));
     REQUIRE(replacement != nullptr);
-    const auto new_backing = memory.text_bytes(replacement->storage, byte);
+    const auto new_backing = memory.text_bytes(replacement->borrow(), byte);
     CHECK(new_backing != backing);
-    const auto new_element = memory.project(new_backing, 0uz);
+    REQUIRE(new_backing.has_value());
+    const auto new_element = memory.project(*new_backing, 0uz);
     REQUIRE(new_element.has_value());
     memory.release(owner);
     CHECK(memory.resolve(*new_element) == nullptr);
 }
 
-TEST_CASE("Execution memory: taking String ends old byte coordinates without copying its content") {
+TEST_CASE("Execution memory: taking String invalidates byte coordinates and preserves content") {
     const auto fixture = ConstantEvaluationFixture();
     const auto& values = fixture.compilation;
     const auto byte = values.builtin_type(BuiltinType::U8);
     auto memory = ExecutionMemory();
-    const auto owner = memory.create(make_owned_execution_text("ab"));
+    const auto owner = memory.create(ExecutionOwnedText("ab"));
     auto* value = memory.resolve(owner);
     REQUIRE(value != nullptr);
     const auto* text = std::get_if<ExecutionOwnedText>(value);
     REQUIRE(text != nullptr);
-    const auto previous = memory.text_bytes(text->storage, byte);
-    const auto old_element = memory.project(previous, 0uz);
+    const auto previous = memory.text_bytes(text->borrow(), byte);
+    REQUIRE(previous.has_value());
+    const auto old_element = memory.project(*previous, 0uz);
     REQUIRE(old_element.has_value());
     transfer_owned_text(*value);
     const auto moved = memory.create(std::move(*value));
@@ -207,9 +217,60 @@ TEST_CASE("Execution memory: taking String ends old byte coordinates without cop
     CHECK(memory.resolve(*old_element) == nullptr);
     const auto* moved_text = std::get_if<ExecutionOwnedText>(memory.resolve(moved));
     REQUIRE(moved_text != nullptr);
-    const auto backing = memory.text_bytes(moved_text->storage, byte);
+    const auto backing = memory.text_bytes(moved_text->borrow(), byte);
+    REQUIRE(backing.has_value());
     CHECK(backing != previous);
-    const auto element = memory.project(backing, 1uz);
+    const auto element = memory.project(*backing, 1uz);
     REQUIRE(element.has_value());
     check_integer(values, memory.resolve(*element), 98);
+}
+
+TEST_CASE("Execution memory: dead domains and expired text cannot acquire new storage") {
+    const auto fixture = ConstantEvaluationFixture();
+    const auto integer = fixture.compilation.builtin_type(BuiltinType::I32);
+    const auto stale = [&]() noexcept {
+        auto memory = ExecutionMemory();
+        return memory.create(integer_value(integer, 1));
+    }();
+    auto memory = ExecutionMemory();
+    const auto current = memory.create(integer_value(integer, 2));
+    CHECK(current.owner != stale.owner);
+    CHECK(memory.resolve(stale) == nullptr);
+
+    const auto borrowed = []() static noexcept {
+        const auto owner = ExecutionOwnedText("old");
+        return owner.borrow();
+    }();
+    CHECK_FALSE(memory.text_bytes(borrowed, fixture.compilation.builtin_type(BuiltinType::U8)));
+}
+
+TEST_CASE("Execution memory: shared text has stable byte coordinates in each domain") {
+    const auto fixture = ConstantEvaluationFixture();
+    const auto& values = fixture.compilation;
+    const auto byte = values.builtin_type(BuiltinType::U8);
+    auto first = ExecutionMemory();
+    auto second = ExecutionMemory();
+    auto text = std::optional(ExecutionText(std::string("ab")));
+    const auto borrowed = text->borrow();
+    const auto first_backing = first.text_bytes(*text, byte);
+    const auto second_backing = second.text_bytes(*text, byte);
+    REQUIRE(first_backing.has_value());
+    REQUIRE(second_backing.has_value());
+    CHECK(first_backing != second_backing);
+    CHECK(first.text_bytes(borrowed, byte) == first_backing);
+    CHECK(second.text_bytes(borrowed, byte) == second_backing);
+    const auto first_byte = first.project(*first_backing, 0uz);
+    const auto second_byte = second.project(*second_backing, 0uz);
+    REQUIRE(first_byte.has_value());
+    REQUIRE(second_byte.has_value());
+    check_integer(values, first.resolve(*first_byte), 97);
+    check_integer(values, second.resolve(*second_byte), 97);
+    CHECK(first.resolve(*second_byte) == nullptr);
+    CHECK(second.resolve(*first_byte) == nullptr);
+    text.reset();
+    CHECK_FALSE(borrowed.bytes().has_value());
+    CHECK(first.resolve(*first_byte) == nullptr);
+    CHECK(second.resolve(*second_byte) == nullptr);
+    CHECK_FALSE(first.text_bytes(borrowed, byte).has_value());
+    CHECK_FALSE(second.text_bytes(borrowed, byte).has_value());
 }

@@ -1,6 +1,6 @@
-module carven:semantic.evaluation.freeze.impl;
+module carven:semantic.analysis.constant.freeze.impl;
 
-import :semantic.evaluation.freeze;
+import :semantic.analysis.constant.freeze;
 import :semantic.evaluation.limits;
 import :semantic.evaluation.shape;
 import std;
@@ -8,21 +8,22 @@ import std;
 namespace {
 
 auto freeze_value(
-    ConstantValueAccess& values,
+    ProgramDraft& draft,
     const ExecutionTypeShapes& shapes,
     ExecutionValue value,
     std::size_t depth
 ) noexcept -> std::optional<ConstantID> {
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
+        static_cast<void>(draft.constant(*constant));
         return *constant;
     }
     if (const auto* atom = std::get_if<ConstantAtom>(&value)) {
-        return values.intern_constant(constant_fact(*atom));
+        return draft.intern_constant(constant_fact(*atom));
     }
-    if (const auto text = execution_text(values, value)) {
-        return values.intern_constant({
-            .type = values.builtin_type(BuiltinType::Str),
-            .value = StringConstant {.value = values.intern_spelling(*text)},
+    if (const auto text = execution_text(draft, value)) {
+        return draft.intern_constant({
+            .type = draft.builtin_type(BuiltinType::Str),
+            .value = StringConstant {.value = draft.intern_spelling(*text)},
         });
     }
     const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);
@@ -35,7 +36,7 @@ auto freeze_value(
             || children.size() > maximum_constant_aggregate_elements) {
             return std::nullopt;
         }
-        const auto canonical = values.type_copy(type);
+        const auto canonical = draft.type_copy(type);
         if (enum_case.has_value() != std::holds_alternative<EnumTypeValue>(canonical.value)) {
             return std::nullopt;
         }
@@ -43,10 +44,10 @@ auto freeze_value(
         const auto* slice = std::get_if<SliceTypeValue>(&canonical.value);
         const auto* structure = std::get_if<StructTypeValue>(&canonical.value);
         const auto fields =
-            structure ? values.struct_field_types(structure->structure) : std::nullopt;
+            structure ? draft.struct_field_types(structure->structure) : std::nullopt;
         auto payload = std::optional<std::vector<TypeID>>();
         if (const auto* enumeration_type = std::get_if<EnumTypeValue>(&canonical.value)) {
-            const auto cases = values.enum_case_types(enumeration_type->enumeration);
+            const auto cases = draft.enum_case_types(enumeration_type->enumeration);
             if (!cases) {
                 return std::nullopt;
             }
@@ -74,7 +75,7 @@ auto freeze_value(
         elements.reserve(children.size());
         for (auto index = 0uz; index < children.size(); ++index) {
             auto& child = children[index];
-            const auto reference = execution_value_type(values, child);
+            const auto reference = execution_value_type(draft, child);
             const auto* actual = std::get_if<TypeID>(&reference);
             if (!actual) {
                 return std::nullopt;
@@ -87,8 +88,8 @@ auto freeze_value(
             if (*actual != expected) {
                 return std::nullopt;
             }
-            const auto frozen = freeze_value(values, shapes, std::move(child), depth + 1uz);
-            if (!frozen || values.constant(*frozen).type != expected) {
+            const auto frozen = freeze_value(draft, shapes, std::move(child), depth + 1uz);
+            if (!frozen || draft.constant(*frozen).type != expected) {
                 return std::nullopt;
             }
             elements.push_back(*frozen);
@@ -108,15 +109,15 @@ auto freeze_value(
             }
             return StructConstant {.fields = std::move(elements)};
         }();
-        return values.intern_constant({.type = type, .value = std::move(frozen)});
+        return draft.intern_constant({.type = type, .value = std::move(frozen)});
     }
     return std::nullopt;
 }
 
 } // namespace
 
-auto freeze_constant_value(ConstantValueAccess& values, ExecutionValue value) noexcept
+auto freeze_constant_value(ProgramDraft& draft, ExecutionValue value) noexcept
     -> std::optional<ConstantID> {
-    const auto shapes = ExecutionTypeShapes(values);
-    return freeze_value(values, shapes, std::move(value), 0);
+    const auto shapes = ExecutionTypeShapes(draft);
+    return freeze_value(draft, shapes, std::move(value), 0);
 }

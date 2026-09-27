@@ -8,9 +8,14 @@ import std;
 class ExecutionMemory final {
 public:
     ExecutionMemory() noexcept;
+    ExecutionMemory(const ExecutionMemory&) = delete;
+    ExecutionMemory(ExecutionMemory&&) = delete;
+    auto operator=(const ExecutionMemory&) -> ExecutionMemory& = delete;
+    auto operator=(ExecutionMemory&&) -> ExecutionMemory& = delete;
+    ~ExecutionMemory() = default;
     auto create(ExecutionValue value) noexcept -> ExecutionPlace;
-    auto text_bytes(const std::shared_ptr<ExecutionTextStorage>& storage, TypeID element) noexcept
-        -> ExecutionPlace;
+    auto text_bytes(const ExecutionText& text, TypeID element) noexcept
+        -> std::optional<ExecutionPlace>;
     auto release(const ExecutionPlace& place) noexcept -> void;
     // Returned borrows end when the object is assigned, released, or memory is destroyed.
     auto resolve(const ExecutionPlace& place) noexcept -> ExecutionValue*;
@@ -20,7 +25,7 @@ public:
     auto assign(const ExecutionPlace& place, ExecutionValue value) noexcept -> bool;
 
 private:
-    std::shared_ptr<const ExecutionStorageIdentity> identity;
+    ExecutionIdentity identity;
 
     struct TextBytes final {
         std::weak_ptr<const ExecutionTextStorage> storage;
@@ -29,4 +34,6 @@ private:
     };
 
     std::deque<std::variant<std::optional<ExecutionValue>, TextBytes>> objects;
+    std::map<std::weak_ptr<const ExecutionTextStorage>, std::size_t, std::owner_less<>>
+        text_backings;
 };

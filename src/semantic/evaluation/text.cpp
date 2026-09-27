@@ -7,19 +7,18 @@ import :semantic.format.builtin;
 import :support.utf8;
 import std;
 
-auto SemanticExecutor::text_identity(const ExecutionValue& value, ProgramOriginID origin) noexcept
-    -> ExecutionResult<std::shared_ptr<ExecutionTextStorage>> {
+auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionText> {
     if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-        return text->storage;
+        return text->borrow();
     }
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
-        auto storage = execution_text_storage(*text);
-        if (!storage) {
+        if (!text->bytes()) {
             return std::unexpected(
                 fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
             );
         }
-        return storage;
+        return *text;
     }
     const auto atom = execution_atom(values, value);
     const auto* text = atom ? std::get_if<StringConstant>(&atom->value) : nullptr;
@@ -30,11 +29,9 @@ auto SemanticExecutor::text_identity(const ExecutionValue& value, ProgramOriginI
         return found->second;
     }
     // Spellings remain stable while this execution borrows its value reader.
-    auto storage = std::make_shared<ExecutionTextStorage>(
-        ExecutionTextStorage {.bytes = values.spelling(text->value), .byte_backing = std::nullopt}
-    );
-    retained_text.emplace(text->value, storage);
-    return storage;
+    auto handle = ExecutionText::retained(values.spelling(text->value));
+    retained_text.emplace(text->value, handle);
+    return handle;
 }
 
 auto SemanticExecutor::text_storage(const ExecutionPlace& place, ProgramOriginID origin) noexcept
@@ -60,16 +57,13 @@ auto SemanticExecutor::append_text(
     if (!target) {
         return std::unexpected(target.error());
     }
-    auto& storage = (*target)->storage;
-    if (bytes.size() > maximum_constant_text_bytes - execution_text_bytes(*storage).size()) {
+    if (bytes.size() > maximum_constant_text_bytes - (*target)->bytes().size()) {
         return std::unexpected(fail(origin, DiagnosticCode::ConstLimit, "text exceeds 1 MiB"));
     }
     if (auto checked = account_text(bytes.size(), origin); !checked) {
         return std::unexpected(checked.error());
     }
-    auto replacement = std::move(std::get<std::string>(storage->bytes));
-    replacement += bytes;
-    storage = make_execution_text(std::move(replacement));
+    (*target)->append(bytes);
     return ExecutionVoid {};
 }
 
@@ -92,7 +86,7 @@ auto SemanticExecutor::text_intrinsic(
                 if (!target) {
                     co_return std::unexpected(target.error());
                 }
-                (*target)->storage = make_execution_text({});
+                **target = ExecutionOwnedText(std::string());
                 co_return ExecutionVoid {};
             }
             auto operand = (co_await value(frame, operation.operands[1].expression));
@@ -145,8 +139,7 @@ auto SemanticExecutor::text_intrinsic(
         auto& temporary = std::get<ExecutionValue>(*operand);
         const auto* text = std::get_if<ExecutionText>(&temporary);
         if (std::holds_alternative<ExecutionOwnedText>(temporary)
-            || (text
-                && std::holds_alternative<std::shared_ptr<ExecutionTextStorage>>(text->storage))) {
+            || (text && !text->is_borrowed())) {
             auto place = memory.create(std::move(temporary));
             frame.temporaries.push_back(place);
             *operand = std::move(place);
@@ -169,19 +162,25 @@ auto SemanticExecutor::text_intrinsic(
             if (auto checked = account_text(bytes->size(), origin); !checked) {
                 co_return std::unexpected(checked.error());
             }
-            co_return make_owned_execution_text(std::string(*bytes));
+            co_return ExecutionOwnedText(std::string(*bytes));
         case TextIntrinsic::AsStr:
         case TextIntrinsic::Bytes: {
-            auto storage = text_identity(*receiver, origin);
-            if (!storage) {
-                co_return std::unexpected(storage.error());
+            auto handle = text_handle(*receiver, origin);
+            if (!handle) {
+                co_return std::unexpected(handle.error());
             }
             if (operation.intrinsic == TextIntrinsic::AsStr) {
-                co_return ExecutionText {.storage = std::weak_ptr(*storage)};
+                co_return handle->borrow();
+            }
+            auto backing = memory.text_bytes(*handle, values.builtin_type(BuiltinType::U8));
+            if (!backing) {
+                co_return std::unexpected(
+                    fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+                );
             }
             co_return ExecutionSlice {
                 .type = result_type,
-                .backing = memory.text_bytes(*storage, values.builtin_type(BuiltinType::U8)),
+                .backing = std::move(*backing),
                 .offset = 0uz,
                 .extent = bytes->size()
             };
@@ -267,7 +266,7 @@ auto SemanticExecutor::format(
     if (destination) {
         co_return append_text(*destination, *result, origin);
     }
-    co_return make_owned_execution_text(std::move(*result));
+    co_return ExecutionOwnedText(std::move(*result));
 }
 
 auto SemanticExecutor::print(

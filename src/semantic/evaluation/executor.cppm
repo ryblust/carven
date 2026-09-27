@@ -38,10 +38,15 @@ using ExecutionOperand = std::variant<ExecutionValue, ExecutionPlace>;
 class SemanticExecutor final {
 public:
     SemanticExecutor(
-        ExecutionValueAccess& values,
+        const ExecutionValueAccess& values,
         SemanticExecutionContext& context,
         ExecutionLimits limits
     ) noexcept;
+    SemanticExecutor(const SemanticExecutor&) = delete;
+    SemanticExecutor(SemanticExecutor&&) = delete;
+    auto operator=(const SemanticExecutor&) -> SemanticExecutor& = delete;
+    auto operator=(SemanticExecutor&&) -> SemanticExecutor& = delete;
+    ~SemanticExecutor() = default;
     auto evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void>;
     auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto detach_result(ExecutionValue value, ProgramOriginID origin) noexcept
@@ -150,8 +155,8 @@ private:
         -> ExecutionTask<ExecutionValue>;
     auto report(ExecutionFrame& frame, const SemReport& operation, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
-    auto text_identity(const ExecutionValue& value, ProgramOriginID origin) noexcept
-        -> ExecutionResult<std::shared_ptr<ExecutionTextStorage>>;
+    auto text_handle(const ExecutionValue& value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionText>;
     auto text_storage(const ExecutionPlace& place, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionOwnedText*>;
     auto append_text(
@@ -179,14 +184,14 @@ private:
         const ExecutionValue* right,
         bool passed
     ) noexcept -> void;
-    ExecutionValueAccess& values;
+    const ExecutionValueAccess& values;
     SemanticExecutionContext& context;
     const ExecutionLimits limits;
     ExecutionTypeShapes shapes;
     ExecutionMemory memory;
     std::map<ConstantID, ExecutionPlace> retained_slice_backings;
     std::map<TypeID, bool> storage_reads;
-    std::map<ProgramSpellingID, std::shared_ptr<ExecutionTextStorage>> retained_text;
+    std::map<ProgramSpellingID, ExecutionText> retained_text;
     std::vector<ProgramOriginID> calls;
     bool testing = false;
     bool test_failed = false;

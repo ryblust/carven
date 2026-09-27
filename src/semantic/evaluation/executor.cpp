@@ -2,10 +2,11 @@ module carven:semantic.evaluation.executor.impl;
 
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
+import :support.invariant;
 import std;
 
 SemanticExecutor::SemanticExecutor(
-    ExecutionValueAccess& values,
+    const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     ExecutionLimits limits
 ) noexcept
@@ -224,19 +225,27 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             return ExecutionAggregateValue {.type = compound->type, .elements = std::move(*copied)};
         }
         if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-            const auto bytes = execution_text_bytes(*text->storage);
+            const auto bytes = text->bytes();
             if (auto checked = account_text(bytes.size(), origin); !checked) {
                 return std::unexpected(checked.error());
             }
-            return make_owned_execution_text(std::string(bytes));
+            return ExecutionOwnedText(std::string(bytes));
         }
-        if (const auto* text = std::get_if<ExecutionText>(&value);
-            text && !execution_text_storage(*text)) {
+        if (const auto* text = std::get_if<ExecutionText>(&value); text && !text->bytes()) {
             return std::unexpected(
                 fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
             );
         }
-        return value;
+        return value.visit([](const auto& atom) static noexcept -> ExecutionValue {
+            using Atom = std::remove_cvref_t<decltype(atom)>;
+            if constexpr (std::same_as<Atom, ExecutionAggregateValue>
+                          || std::same_as<Atom, ExecutionEnumValue>
+                          || std::same_as<Atom, ExecutionOwnedText>) {
+                invariant_violation("owned execution value bypassed semantic copying");
+            } else {
+                return atom;
+            }
+        });
     };
     return copy(source, 0);
 }
@@ -551,19 +560,17 @@ auto SemanticExecutor::detach_views(
             fail(origin, DiagnosticCode::ConstLimit, "aggregate exceeds its nesting limit")
         );
     }
-    if (const auto* text = std::get_if<ExecutionText>(&value);
-        text && std::holds_alternative<std::weak_ptr<ExecutionTextStorage>>(text->storage)) {
-        const auto storage = execution_text_storage(*text);
-        if (!storage) {
+    if (const auto* text = std::get_if<ExecutionText>(&value); text && text->is_borrowed()) {
+        const auto bytes = text->bytes();
+        if (!bytes) {
             return std::unexpected(
                 fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
             );
         }
-        const auto bytes = execution_text_bytes(*storage);
-        if (auto checked = account_text(bytes.size(), origin); !checked) {
+        if (auto checked = account_text(bytes->size(), origin); !checked) {
             return std::unexpected(checked.error());
         }
-        return ExecutionText {.storage = make_execution_text(std::string(bytes))};
+        return ExecutionText(std::string(*bytes));
     }
     if (const auto* constant = std::get_if<ConstantID>(&value);
         constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
@@ -700,7 +707,7 @@ auto SemanticExecutor::invoke(
          .function = function,
          .depth = calls.size()}
     );
-    const auto run = co_await [&]() noexcept -> ExecutionTask<ExecutionValue> {
+    auto run = co_await [&]() noexcept -> ExecutionTask<ExecutionValue> {
         if (auto checked = step(origin); !checked) {
             co_return std::unexpected(checked.error());
         }

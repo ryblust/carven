@@ -17,7 +17,7 @@ import std;
 
 TEST_CASE("Semantic constant evaluation: integer folds use the runtime arithmetic contract") {
     auto fixture = ConstantEvaluationFixture();
-    ConstantValueAccess& values = fixture.compilation;
+    auto& values = fixture.compilation;
     const auto boolean = values.builtin_type(BuiltinType::Bool);
     const auto i8 = values.builtin_type(BuiltinType::I8);
     const auto u8 = values.builtin_type(BuiltinType::U8);
@@ -68,7 +68,7 @@ TEST_CASE("Semantic constant evaluation: integer folds use the runtime arithmeti
 
 TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canonical facts") {
     auto fixture = ConstantEvaluationFixture();
-    ConstantValueAccess& values = fixture.compilation;
+    auto& values = fixture.compilation;
     const auto i8 = values.builtin_type(BuiltinType::I8);
     const auto u8 = values.builtin_type(BuiltinType::U8);
     const auto usize = values.builtin_type(BuiltinType::Usize);
@@ -119,8 +119,8 @@ TEST_CASE("Semantic constant evaluation: casts and text intrinsics return canoni
 TEST_CASE("Semantic constant evaluation: operand facts retain program owner evidence") {
     const auto first = ConstantEvaluationFixture();
     const auto second = ConstantEvaluationFixture();
-    const ConstantValueAccess& first_values = first.compilation;
-    const ConstantValueAccess& second_values = second.compilation;
+    const auto& first_values = first.compilation;
+    const auto& second_values = second.compilation;
     const auto first_i32 = first_values.builtin_type(BuiltinType::I32);
     const auto second_i32 = second_values.builtin_type(BuiltinType::I32);
     const auto foreign = constant_test_integer_fact(first_i32, 1);
@@ -135,7 +135,7 @@ TEST_CASE(
     "Semantic constants: floating identity preserves signed zero while equality compares values"
 ) {
     auto fixture = ConstantEvaluationFixture();
-    ConstantValueAccess& values = fixture.compilation;
+    auto& values = fixture.compilation;
     const auto check_zero = [&]<typename Floating>(BuiltinType builtin) noexcept {
         const auto type = values.builtin_type(builtin);
         const auto positive = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
@@ -253,7 +253,7 @@ TEST_CASE(
     "Semantic execution: floating operations preserve native values without runtime folding"
 ) {
     auto fixture = ConstantEvaluationFixture();
-    ConstantValueAccess& values = fixture.compilation;
+    auto& values = fixture.compilation;
     const auto boolean = values.builtin_type(BuiltinType::Bool);
     const auto exercise = [&]<typename Floating>(BuiltinType builtin) noexcept {
         const auto type = values.builtin_type(builtin);

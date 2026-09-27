@@ -4,8 +4,8 @@ module;
 
 module carven:test.internal.semantic.semir.constant_structs;
 
+import :semantic.analysis.constant.freeze;
 import :semantic.analysis.program;
-import :semantic.evaluation.freeze;
 import :semantic.evaluation.shape;
 import :semantic.evaluation.value;
 import :semantic.semir.constant;
@@ -68,28 +68,29 @@ TEST_CASE("SemIR constants: typed execution fields freeze in declaration order")
     const auto boolean = draft.intern_constant(
         {.type = draft.builtin_type(BuiltinType::Bool), .value = BooleanConstant {.value = true}}
     );
-    const auto value = ExecutionAggregateValue {.type = type, .elements = {integer, boolean}};
-    const auto frozen = freeze_constant_value(draft, value);
+    const auto make_value = [&](std::initializer_list<ConstantID> fields) noexcept {
+        auto elements = std::vector<ExecutionValue>();
+        for (const auto field : fields) {
+            elements.emplace_back(field);
+        }
+        return ExecutionAggregateValue {.type = type, .elements = std::move(elements)};
+    };
+    const auto frozen = freeze_constant_value(draft, make_value({integer, boolean}));
     REQUIRE(frozen.has_value());
     CHECK(draft.constant(*frozen).type == type);
     CHECK(
         std::get<StructConstant>(draft.constant(*frozen).value).fields
         == std::vector<ConstantID> {integer, boolean}
     );
-    CHECK(freeze_constant_value(draft, value) == frozen);
+    CHECK(freeze_constant_value(draft, make_value({integer, boolean})) == frozen);
+    CHECK_FALSE(freeze_constant_value(draft, make_value({boolean, integer})));
+    CHECK_FALSE(freeze_constant_value(draft, make_value({integer})));
+    auto invalid_fields = std::vector<ExecutionValue>();
+    invalid_fields.emplace_back(ExecutionOwnedText("7"));
+    invalid_fields.emplace_back(boolean);
     CHECK_FALSE(freeze_constant_value(
         draft,
-        ExecutionAggregateValue {.type = type, .elements = {boolean, integer}}
-    ));
-    CHECK_FALSE(
-        freeze_constant_value(draft, ExecutionAggregateValue {.type = type, .elements = {integer}})
-    );
-    CHECK_FALSE(freeze_constant_value(
-        draft,
-        ExecutionAggregateValue {
-            .type = type,
-            .elements = {make_owned_execution_text("7"), boolean}
-        }
+        ExecutionAggregateValue {.type = type, .elements = std::move(invalid_fields)}
     ));
     CHECK(std::move(draft).finish().has_value());
 }

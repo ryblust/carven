@@ -77,7 +77,7 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
            AnalysisCatalogView catalog,
            ImportUsage& usage,
            DiagnosticSink&) static noexcept {
-            auto requests = ProgramConstruction(draft, catalog, usage);
+            auto construction = ProgramConstruction(draft, catalog, usage);
             const auto module_id = catalog.modules().front().module_id;
             const auto seed = function_named(catalog, "seed");
             const auto last = function_named(catalog, "value_31");
@@ -94,8 +94,9 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 const auto reserved = draft.reserve_body(BodyKind::Function);
                 static_cast<void>(draft.body_draft(reserved.id()));
             }));
-            auto first_body =
-                requests.ensure_function_body(seed.function, module_id, Span::at(0u)).run();
+            auto first_body = construction.construction_requests()
+                                  .ensure_function_body(seed.function, module_id, Span::at(0u))
+                                  .run();
             REQUIRE(first_body.has_value());
             const auto* saved = std::addressof(draft.body_draft(*first_body));
             CHECK(draft.function_for_callable(seed.callable) == seed.function);
@@ -107,7 +108,7 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 if (function == nullptr) {
                     continue;
                 }
-                const auto body = requests
+                const auto body = construction.construction_requests()
                                       .ensure_function_body(
                                           function->function,
                                           symbol.module_id,
@@ -119,11 +120,12 @@ TEST_CASE("Program construction: demand bodies reuse completion and keep stable 
                 CHECK(std::addressof(draft.body_draft(*first_body)) == saved);
             }
             CHECK_EQ(completed_bodies.size(), 35uz);
-            const auto repeated =
-                requests.ensure_function_body(seed.function, module_id, Span::at(0u)).run();
+            const auto repeated = construction.construction_requests()
+                                      .ensure_function_body(seed.function, module_id, Span::at(0u))
+                                      .run();
             REQUIRE(repeated.has_value());
             CHECK(*repeated == *first_body);
-            REQUIRE(requests.run().has_value());
+            REQUIRE(construction.run().has_value());
             CHECK(std::addressof(draft.body_draft(*first_body)) == saved);
             auto program = std::move(draft).finish();
             REQUIRE(program.has_value());
@@ -142,7 +144,7 @@ TEST_CASE("Construction: pending results require completion before contract acce
             auto construction = ProgramConstruction(draft, catalog, usage);
             const auto function = function_named(catalog, "inferred");
             const auto module_id = catalog.modules().front().module_id;
-            REQUIRE(construction
+            REQUIRE(construction.construction_requests()
                         .ensure_declaration(
                             catalog.function_symbol(function.function),
                             module_id,
@@ -154,7 +156,7 @@ TEST_CASE("Construction: pending results require completion before contract acce
             CHECK(expect_termination("pending-function-contract-read", [&] {
                 static_cast<void>(draft.construction_callable_contract_copy(function.callable));
             }));
-            REQUIRE(construction
+            REQUIRE(construction.construction_requests()
                         .ensure_function_signature(function.function, module_id, Span::at(0u))
                         .run()
                         .has_value());
@@ -196,8 +198,8 @@ TEST_CASE("Program construction: long inferred dependencies complete or diagnose
                     AnalysisCatalogView catalog,
                     ImportUsage& usage,
                     DiagnosticSink&) noexcept {
-                    auto requests = ProgramConstruction(draft, catalog, usage);
-                    CHECK(requests.run().has_value() == !failed);
+                    auto construction = ProgramConstruction(draft, catalog, usage);
+                    CHECK(construction.run().has_value() == !failed);
                 }
             );
         }
