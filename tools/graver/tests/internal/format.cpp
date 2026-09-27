@@ -209,3 +209,27 @@ TEST_CASE("Graver format: import trailing commas follow layout and preserve comm
         "import math using { first };\n\nfn f() {\n    call(1,);\n}\n"
     );
 }
+
+TEST_CASE("Graver format: raw and multiline text retain their authored layout") {
+    check_format(
+        "fn f(){let raw=r#\"{value} \\n\"#;let block=r\"\"\"\n  A\n    B\n\"\"\";"
+        "let message=f\"\"\"\n  {value}\n    tail\n\"\"\";}",
+        "fn f() {\n    let raw = r#\"{value} \\n\"#;\n    let block = r\"\"\"\n  A\n    B\n\"\"\";\n"
+        "    let message = f\"\"\"\n  {value}\n    tail\n\"\"\";\n}\n"
+    );
+}
+
+TEST_CASE("Graver format: multiline interpolation text and hole layout are independent") {
+    check_format(
+        "fn f(){let s=f\"\"\"\n  first\n  { value+1 }\n    tail\n\"\"\";}",
+        "fn f() {\n    let s = f\"\"\"\n  first\n  {value + 1}\n    tail\n\"\"\";\n}\n"
+    );
+    check_format(
+        "fn f(){let s=f\"\"\"\r\n{\r\n value // note\r\n +1\r\n} tail\r\n\"\"\";}",
+        "fn f() {\n    let s = f\"\"\"\r\n{value // note\n            + 1} tail\r\n\"\"\";\n}\n"
+    );
+    check_format(
+        "fn f(){let s=f\"\"\"\n  {f\"\"\"\n    { value+1 }\n\"\"\"}\n  tail\n\"\"\";}",
+        "fn f() {\n    let s = f\"\"\"\n  {f\"\"\"\n    {value + 1}\n\"\"\"}\n  tail\n\"\"\";\n}\n"
+    );
+}

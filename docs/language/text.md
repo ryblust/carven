@@ -6,6 +6,7 @@ This page defines Unicode values, owning text, borrowing, and interpolation.
 Direct output and structural display are defined in [Printing](execution.md#printing).
 
 - [Unicode text](#unicode-text)
+- [String literals and multiline layout](#string-literals-and-multiline-layout)
 - [Unchecked text construction](#unchecked-text-construction)
 - [Owning String and text borrowing](#owning-string-and-text-borrowing)
 - [String interpolation](#string-interpolation)
@@ -38,6 +39,84 @@ The `chars` view type cannot be spelled and supports only Read range iteration
 and inferred value bindings. Byte views support all slice operations. User structures may declare same-named fields because member
 resolution depends on the receiver type.
 
+
+## String literals and multiline layout
+
+| Kind | Single-line | Multiline | Escapes | Interpolation |
+| --- | --- | --- | --- | --- |
+| Ordinary | `"..."` | `"""..."""` | Yes | No |
+| Raw | `r"..."` | `r"""..."""` | No | No |
+| Interpolated | `f"..."` | `f"""..."""` | Yes | Yes |
+
+Ordinary and raw literals produce `str` with static storage. Multiline
+interpolation follows the same type, ownership, and evaluation rules as
+single-line interpolation. All text must be valid UTF-8; no Unicode normalization
+is performed. `c"..."` is single-line and NUL-free, with ordinary escapes.
+Prefixes are adjacent to their delimiters. `r` and `f` are ordinary identifiers
+elsewhere. Prefix combinations such as `fr`, `rf`, and
+`cr` are not string forms.
+
+Raw strings preserve backslashes and braces literally. Matching `#` characters
+extend their delimiters to distinguish the closing boundary from body text:
+
+```carven
+let path = r"C:\tools\bin\";
+let json = r#"{"name": "{name}"}"#;
+let example = r#"""
+    A literal """ sequence.
+    Backslashes such as \n remain text.
+"""#;
+```
+
+The first complete closing sequence ends the literal: one or three quotes,
+followed by the number of `#` characters in the opening delimiter. Extra `#`
+characters after that sequence are outside the literal.
+
+Single-line text cannot contain physical line endings. Multiline opening
+markers must be immediately followed by LF or CRLF. A closing marker must be
+on a separate line, preceded only by spaces or tabs; normal code such as `;`,
+`,`, or `)` may follow it. The closing line's indentation does not determine
+the string value.
+
+```carven
+let text = """
+    Hello
+      Carven
+    World
+""";
+// Equivalent to "Hello\n  Carven\nWorld".
+```
+
+Multiline layout uses these rules:
+
+1. Exclude the opening line ending and the closing line's indentation. Exclude
+   the line ending immediately preceding the closing line, if distinct from
+   the opening line ending. Additional blank body lines remain content.
+2. Find the longest common space/tab prefix of nonblank body lines. Match
+   characters, not display columns. Blank lines do not determine this prefix.
+3. Remove that prefix from nonblank lines. On blank lines, remove only the
+   leading characters matching the prefix, stopping at its end, the line's end,
+   or the first mismatch. Preserve remaining spaces, tabs, and trailing spaces.
+   A nonblank line with no indentation makes the common prefix empty.
+4. If every body line is blank, remove all spaces and tabs on those lines while
+   retaining their separating line endings. Zero or one blank body line gives
+   an empty string; two blank body lines give one LF.
+5. Normalize physical LF and CRLF to LF. A standalone CR in literal text is
+   invalid. Then interpret escapes and interpolation; their produced whitespace
+   is never treated as source indentation.
+
+In multiline interpolation, each hole counts as one nonblank content unit.
+The hole's code, including nested strings, comments, format specifications, and
+physical line endings, does not participate in the surrounding text's layout.
+Text after the hole continues the same logical body line until a text line
+ending. Format specifications follow the escape and newline rules in
+[Grammar](grammar.md#24-character-and-string-literals). Inserted values retain
+their own whitespace; no indentation is removed or added.
+
+Multiline layout applies equally to ordinary, raw, and interpolated strings.
+Escapes such as `\t` and `\u{20}` express content indentation independently of
+source indentation in ordinary and interpolated strings. Backslash line
+continuation and implicit adjacent-literal concatenation are not supported.
 
 ## Unchecked text construction
 
@@ -171,7 +250,7 @@ and unrepresentable lengths terminate.
 
 ## String interpolation
 
-An `f"..."` expression produces an independent owning `String`, including `f""`
+An `f"..."` or `f"""..."""` expression produces an independent owning `String`, including `f""`
 and text without holes. `String.append_format` consumes this syntax directly as
 formatting content, as described below. Ordinary string literals remain `str`.
 

@@ -163,7 +163,7 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
     auto pending = std::vector<Frame> {{.id = root, .indentation = 0, .flat = false}};
     auto output = std::string();
     auto column = 0uz;
-    auto at_line_start = true;
+    auto pending_indentation = true;
     while (!pending.empty()) {
         const auto frame = pending.back();
         pending.pop_back();
@@ -172,7 +172,7 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
             if (text.empty()) {
                 return;
             }
-            if (at_line_start && text.front() != '\r' && text.front() != '\n') {
+            if (pending_indentation && text.front() != '\r' && text.front() != '\n') {
                 output.append(frame.indentation, ' ');
                 column = frame.indentation;
             }
@@ -180,7 +180,7 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
             const auto last_break = text.find_last_of("\r\n");
             column = last_break == std::string_view::npos ? add_width(column, text.size())
                                                           : text.size() - last_break - 1uz;
-            at_line_start = last_break != std::string_view::npos && column == 0;
+            pending_indentation = false;
         };
         switch (value.kind) {
             case Kind::Text:
@@ -194,7 +194,7 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
             case Kind::HardLine:
                 output += '\n';
                 column = 0;
-                at_line_start = true;
+                pending_indentation = true;
                 break;
             case Kind::Concat:
                 for (const auto child : value.children | std::views::reverse) {
@@ -213,7 +213,7 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
                 );
                 break;
             case Kind::Group: {
-                const auto current_column = at_line_start ? frame.indentation : column;
+                const auto current_column = pending_indentation ? frame.indentation : column;
                 const auto remaining = width > current_column ? width - current_column : 0uz;
                 const auto flat = frame.flat
                     || (value.flat_width

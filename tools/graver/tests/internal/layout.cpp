@@ -79,3 +79,33 @@ TEST_CASE("Graver layout: deeply nested documents preserve output") {
     const auto expected = std::string(4096, '(') + "x" + std::string(4096, ')');
     CHECK(doc.render(root, 1) == expected);
 }
+
+TEST_CASE("Graver layout: source line breaks do not request generated indentation") {
+    auto doc = graver::Document();
+    const auto source = std::string_view("first\r\nsecond\n");
+    const auto layout = [&](std::vector<graver::DocID> fragments) noexcept {
+        return doc.concat({
+            doc.text("{"),
+            doc.indent(doc.concat({
+                doc.hardline(),
+                doc.concat(std::move(fragments)),
+                doc.text("tail"),
+                doc.hardline(),
+                doc.text("generated"),
+            })),
+            doc.hardline(),
+            doc.text("}"),
+        });
+    };
+    const auto expected = "{\n    first\r\nsecond\ntail\n    generated\n}";
+    CHECK(doc.render(layout({doc.verbatim(source)})) == expected);
+    for (auto split = 1uz; split < source.size(); ++split) {
+        CAPTURE(split);
+        CHECK(
+            doc.render(
+                layout({doc.verbatim(source.substr(0, split)), doc.verbatim(source.substr(split))})
+            )
+            == expected
+        );
+    }
+}

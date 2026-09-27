@@ -52,6 +52,10 @@ auto TokenBuffer::tokens() const noexcept -> std::span<const Token> {
 
 auto TokenBuffer::literal_value(std::size_t token_index) const noexcept
     -> const TokenLiteralValue& {
+    return literal_values[literal_value_index(token_index)];
+}
+
+auto TokenBuffer::literal_value_index(std::size_t token_index) const noexcept -> std::size_t {
     if (token_index >= token_storage.size()) {
         invariant_violation("literal value lookup used an invalid token index");
     }
@@ -72,7 +76,16 @@ auto TokenBuffer::literal_value(std::size_t token_index) const noexcept
     if (token.kind != literal_token_kind(value)) {
         invariant_violation("literal token kind does not match its value");
     }
-    return value;
+    return value_index;
+}
+
+auto TokenBuffer::replace_interpolation_text(std::size_t token_index, std::string bytes) noexcept
+    -> void {
+    const auto index = literal_value_index(token_index);
+    if (!std::holds_alternative<InterpolationTextValue>(literal_values[index])) {
+        invariant_violation("layout replacement requires an interpolation text token");
+    }
+    literal_values[index] = InterpolationTextValue {.bytes = std::move(bytes)};
 }
 
 auto TokenBuffer::reserve_tokens(std::size_t count) noexcept -> void {

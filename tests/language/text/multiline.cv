@@ -1,0 +1,79 @@
+// Text: raw boundaries and multiline layout preserve values in constants and native code.
+const raw_path = r"C:\tools\bin\";
+const raw_template = r#"{"name": "{name}", "newline": "\n"}"#;
+
+const block = """
+    Hello
+      Carven
+    World
+""";
+
+const raw_block = r#"""
+    """ is text
+    \n{name}
+"""#;
+
+const fn multiline_value() -> str => "line\n  next";
+
+const test "text blocks: constants share literal and interpolation semantics" {
+    check(raw_path == "C:\\tools\\bin\\");
+    check(raw_template == "{\"name\": \"{name}\", \"newline\": \"\\n\"}");
+    check(block == "Hello\n  Carven\nWorld");
+    check(raw_block == "\"\"\" is text\n\\n{name}");
+    check(
+        f"""
+        Value: {0:04}
+          {multiline_value()}
+    """
+            == "Value: 0000\n  line\n  next"
+    );
+    check(
+        """
+    """
+            == ""
+    );
+}
+
+test "text blocks: generated values and raw literal patterns" {
+    check(raw_path == r"C:\tools\bin\");
+    check(block == "Hello\n  Carven\nWorld");
+    check(
+        match raw_path {
+            r"C:\tools\bin\" => true,
+            _ => false,
+        }
+    );
+    let value = 42;
+    let width = 4;
+    let report = f"""
+        Value: {value:0{width}}
+          {multiline_value()}
+        {{done}}
+    """;
+    check(report == "Value: 0042\n  line\n  next\n{done}");
+    var output = String {};
+    output.append_format(
+        f"""
+        {value}
+        done
+    """
+    );
+    check(output == "42\ndone");
+    check(
+        f"""
+        {f"""
+            nested: {value}
+        """}
+        tail
+    """
+            == "nested: 42\ntail"
+    );
+    check(
+        """
+        \tA\0我
+        B
+
+    """
+            == "\tA\0我\nB\n"
+    );
+}

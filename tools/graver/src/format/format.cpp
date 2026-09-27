@@ -894,7 +894,8 @@ auto SyntaxFormatter::sequence(
                 : nonempty_block                ? Separation::SoftSpace
                 : brace_list                    ? Separation::SoftSpace
                                                 : Separation::SoftEmpty;
-            auto parts = std::vector<DocID> {document.text(source.spelling(tokens[index].span))};
+            auto parts =
+                std::vector<DocID> {document.verbatim(source.spelling(tokens[index].span))};
             const auto inner = sequence(index + 1uz, close, boundary);
             parts.push_back(
                 tokens[index].kind == TokenKind::InterpolationStart ? inner : document.indent(inner)

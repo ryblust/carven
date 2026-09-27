@@ -70,3 +70,81 @@ TEST_CASE("Lexer: nested interpolation has a bounded scanning depth") {
     REQUIRE(!result.diagnostics.empty());
     CHECK(result.diagnostics.front().finding.message == "interpolation nesting limit exceeded");
 }
+
+TEST_CASE("Lexer: multiline interpolation excludes hole code from text layout") {
+    const auto source = SourceView {
+        .source_id = SourceID::from_index(0),
+        .text = "f\"\"\"\n    Result: {\n0\n    :04}\n      {{done}}\\n\n\"\"\";",
+        .origin = "multiline.cv",
+    };
+    const auto result = lex(source);
+    REQUIRE(result.diagnostics.empty());
+    auto text = std::vector<std::string>();
+    for (auto index = 0uz; index < result.value.tokens().size(); ++index) {
+        if (result.value.tokens()[index].kind == TokenKind::InterpolationText) {
+            text.push_back(
+                std::get<InterpolationTextValue>(result.value.literal_value(index)).bytes
+            );
+        }
+    }
+    CHECK(text == std::vector<std::string> {"Result: ", "04", "\n  {done}\n"});
+    CHECK(slice(source.text, result.value.tokens().front().span) == "f\"\"\"\n");
+    CHECK(result.value.tokens().back().kind == TokenKind::Semicolon);
+}
+
+TEST_CASE("Lexer: multiline interpolation shares text block boundary rules") {
+    struct Case final {
+        std::string_view source;
+        std::string_view expected;
+    };
+
+    const auto cases = std::to_array<Case>({
+        {"f\"\"\"\n\"\"\"", ""},
+        {"f\"\"\"\n  \n \t\n\"\"\"", "\n"},
+        {"f\"\"\"\r\n  A\r\n    B\r\n\"\"\"", "A\n  B"},
+        {"f\"\"\"\n  \\n\\u{20}\\0\n\"\"\"", std::string_view("\n \0", 3)},
+        {"f\"\"\"\n  \"quoted\"\n  {{literal}}\n\"\"\"", "\"quoted\"\n{literal}"},
+        {"f\"\"\"\n    {\n0\n}\n      tail\n\"\"\"", "\n  tail"},
+        {"f\"\"\"\n  before {\n0\n} after\n    tail\n\"\"\"", "before  after\n  tail"},
+    });
+    for (const auto& item : cases) {
+        CAPTURE(item.source);
+        const auto result =
+            lex(SourceView {
+                .source_id = SourceID::from_index(0),
+                .text = item.source,
+                .origin = "multiline.cv",
+            });
+        REQUIRE(result.diagnostics.empty());
+        auto text = std::string();
+        for (auto index = 0uz; index < result.value.tokens().size(); ++index) {
+            if (result.value.tokens()[index].kind == TokenKind::InterpolationText) {
+                const auto* value =
+                    std::get_if<InterpolationTextValue>(&result.value.literal_value(index));
+                REQUIRE(value != nullptr);
+                text += value->bytes;
+            }
+        }
+        CHECK(text == item.expected);
+    }
+    const auto invalid = std::to_array<std::string_view>({
+        "f\"\"\"inline\"\"\"",
+        "f\"\"\"\nA\"\"\"",
+        "f\"\"\"\n{0}\"\"\"",
+        "f\"\"\"\nA",
+        "f\"\"\"\nA\rB\n\"\"\"",
+        "f\"\"\"\n\\\n\"\"\"",
+        "f\"\"\"\n}\n\"\"\"",
+        "f\"\"\"\n\xff\n\"\"\"",
+    });
+    for (const auto input : invalid) {
+        CAPTURE(input);
+        const auto result =
+            lex(SourceView {
+                .source_id = SourceID::from_index(0),
+                .text = input,
+                .origin = "invalid-multiline.cv",
+            });
+        CHECK_FALSE(result.diagnostics.empty());
+    }
+}

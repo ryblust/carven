@@ -250,3 +250,21 @@ TEST_CASE("Compiler diagnostics: String relationships survive joins and projecte
     });
     check_compiler_errors(cases);
 }
+
+TEST_CASE("Compiler diagnostics: multiline errors retain original source locations") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "escape after indentation",
+         .source = "fn invalid() { let s = \"\"\"\n    \\q\n\"\"\"; }",
+         .code = "CV-LEXICAL",
+         .primary_text = "\\"},
+        {.name = "inline closing delimiter",
+         .source = "fn invalid() { let s = r\"\"\"\n    text\"\"\"; }",
+         .code = "CV-LEXICAL",
+         .primary_text = "\"\"\""},
+        {.name = "interpolated inline closing delimiter",
+         .source = "fn invalid() { let s = f\"\"\"\n    {0}\"\"\"; }",
+         .code = "CV-LEXICAL",
+         .primary_text = "\"\"\""},
+    });
+    check_compiler_errors(cases);
+}

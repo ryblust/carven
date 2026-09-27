@@ -303,7 +303,7 @@ TEST_CASE("Lexer: C strings share decoding and reject NUL at its source") {
     }
     const auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
     for (const auto text : zeros) {
-        const auto result = scan_string_literal(text, true);
+        const auto result = scan_string_literal(text, StringLiteralKind::CString);
         REQUIRE_FALSE(result.has_value());
         CHECK_EQ(result.error().error_offset, 2uz);
         CHECK_EQ(result.error().error_length, text.size() - 4uz);
@@ -317,4 +317,103 @@ TEST_CASE("Lexer: C strings share decoding and reject NUL at its source") {
         TokenCase {R"("x")", TokenKind::StringLiteral}
     };
     check_token_sequence(R"(c "x")", separated);
+}
+
+TEST_CASE("Lexer: raw boundaries preserve literal text and UTF-8") {
+    struct Case final {
+        std::string_view source;
+        std::string_view expected;
+    };
+
+    const auto cases = std::to_array<Case>({
+        {R"CV(r"C:\tools\bin\")CV", "C:\\tools\\bin\\"},
+        {R"CV(r#"{"name": "我", "value": "\n"}"#)CV", R"({"name": "我", "value": "\n"})"},
+        {R"CV(r##"a"#b"##)CV", "a\"#b"},
+        {R"CV(r"{name} {{}} \u{0}")CV", R"({name} {{}} \u{0})"},
+        {"r\"\"", ""},
+    });
+    for (const auto& item : cases) {
+        CAPTURE(item.source);
+        const auto result = scan_string_literal(item.source);
+        REQUIRE(result.has_value());
+        CHECK(result->consumed == item.source.size());
+        CHECK(result->value.bytes == item.expected);
+        check_token(item.source, TokenKind::StringLiteral);
+    }
+    const auto separated = std::array {
+        TokenCase {"r", TokenKind::Identifier},
+        TokenCase {R"("x")", TokenKind::StringLiteral},
+    };
+    check_token_sequence(R"(r "x")", separated);
+    const auto boundary = scan_string_literal(R"CV(r#"text"##)CV");
+    REQUIRE(boundary.has_value());
+    CHECK(boundary->consumed == 9uz);
+    CHECK(boundary->value.bytes == "text");
+    const auto malformed = std::to_array<std::string_view>({
+        "r#",
+        "r#\"x\"",
+        "r##\"x\"#",
+        "r\"a\nb\"",
+        "r\"a\rb\"",
+        "r\"\xff\"",
+    });
+    for (const auto input : malformed) {
+        CAPTURE(input);
+        check_lexical_error(input);
+    }
+}
+
+TEST_CASE("Lexer: multiline layout preserves relative whitespace before decoding") {
+    struct Case final {
+        std::string_view source;
+        std::string_view expected;
+    };
+
+    const auto cases = std::to_array<Case>({
+        {"\"\"\"\n    A\n      B\n\"\"\"", "A\n  B"},
+        {"\"\"\"\n    A\n      B\n          \"\"\"", "A\n  B"},
+        {"\"\"\"\n    A  \n      \n  \n    B\n\"\"\"", "A  \n  \n\nB"},
+        {"\"\"\"\n\t A\n\t  B\n\"\"\"", "A\n B"},
+        {"\"\"\"\n \tA\n\t B\n\"\"\"", " \tA\n\t B"},
+        {"\"\"\"\n  A\n \t \n  B\n\"\"\"", "A\n\t \nB"},
+        {"\"\"\"\n  A\nB\n\"\"\"", "  A\nB"},
+        {"\"\"\"\r\n  A\r\n  B\r\n\"\"\"", "A\nB"},
+        {"\"\"\"\n  \\tA\n  \\u{20}B\n\"\"\"", "\tA\n B"},
+        {"\"\"\"\n  a\\0我\n\"\"\"", std::string_view("a\0我", 5)},
+        {"\"\"\"\n  \\n\n  B\n\"\"\"", "\n\nB"},
+        {"\"\"\"\n\n  A\n\n\"\"\"", "\nA\n"},
+        {"\"\"\"\n\"\"\"", ""},
+        {"\"\"\"\n  \t\"\"\"", ""},
+        {"\"\"\"\n  \n\"\"\"", ""},
+        {"\"\"\"\n  \n\t\n\"\"\"", "\n"},
+        {"r\"\"\"\n  \\n{name}\n\"\"\"", R"(\n{name})"},
+        {"r#\"\"\"\n  \"\"\" and \"#\n\"\"\"#", "\"\"\" and \"#"},
+        {"\"\"\"\n  \\\"\"\"\n\"\"\"", "\"\"\""},
+    });
+    for (const auto& item : cases) {
+        CAPTURE(item.source);
+        const auto result = scan_string_literal(item.source);
+        REQUIRE(result.has_value());
+        CHECK(result->consumed == item.source.size());
+        CHECK(result->value.bytes == item.expected);
+        check_token(item.source, TokenKind::StringLiteral);
+    }
+    const auto invalid = std::to_array<std::string_view>({
+        "\"\"\"inline\"\"\"",
+        "\"\"\" \n\"\"\"",
+        "\"\"\"\nA\"\"\"",
+        "\"\"\"\nA",
+        "\"\"\"\nA\rB\n\"\"\"",
+        "\"\"\"\r\"\"\"",
+        "\"\"\"\n\\\n\"\"\"",
+        "\"\"\"\n\\q\n\"\"\"",
+        "\"\"\"\n\xff\n\"\"\"",
+        "r#\"\"\"\nA\n\"\"\"",
+        "r\"\"\"\nA\"\"\"",
+        "c\"\"\"\nA\n\"\"\"",
+    });
+    for (const auto input : invalid) {
+        CAPTURE(input);
+        check_lexical_error(input);
+    }
 }

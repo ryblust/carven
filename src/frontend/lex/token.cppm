@@ -133,12 +133,15 @@ public:
 
     auto source_id() const noexcept -> SourceID;
     auto tokens() const noexcept -> std::span<const Token>;
+    // Appending may invalidate borrows; replacement invalidates the replaced text's contents.
     auto literal_value(std::size_t token_index) const noexcept -> const TokenLiteralValue&;
+    auto replace_interpolation_text(std::size_t token_index, std::string bytes) noexcept -> void;
     auto reserve_tokens(std::size_t count) noexcept -> void;
     auto append_token(TokenKind kind, Span span) noexcept -> void;
     auto append_literal_token(Span span, TokenLiteralValue value) noexcept -> void;
 
 private:
+    auto literal_value_index(std::size_t token_index) const noexcept -> std::size_t;
     SourceID source;
     std::vector<Token> token_storage;
     std::vector<std::uint32_t> literal_token_indices;

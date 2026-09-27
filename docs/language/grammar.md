@@ -157,17 +157,27 @@ CHAR_LITERAL = "'",
                ( character-scalar | simple-escape | unicode-escape ),
                "'";
 
-C_STRING_LITERAL = "c", STRING_LITERAL;  (* adjacent prefix; decoded NUL forbidden *)
+C_STRING_LITERAL = "c", single-line-string;  (* adjacent prefix; decoded NUL forbidden *)
 
-STRING_LITERAL = "\"",
+single-line-string = "\"",
                  { string-scalar | simple-escape | unicode-escape },
                  "\"";
+
+STRING_LITERAL = single-line-string | multiline-string | raw-string;
 ```
+
+`multiline-string` uses three quotes and the layout rules in
+[Text: string literals and multiline layout](text.md#string-literals-and-multiline-layout).
+`raw-string` starts with adjacent `r`, zero or more `#`, and one or three
+quotes; its closing delimiter uses the same quote count followed by the same
+number of `#`. Its body has no escapes or interpolation. The one-quote form is
+single-line; the three-quote form uses multiline layout. These forms produce
+the same `StringLiteral` token and decoded value as an ordinary literal.
 
 `character-scalar` is one directly encoded UTF-8 Unicode scalar other than
 `'`, `\`, or a line terminator. `string-scalar` is one directly encoded UTF-8
-Unicode scalar other than `"`, `\`, or a line terminator. A literal must
-terminate on the line on which it begins.
+Unicode scalar other than `"`, `\`, or a line terminator. Character and
+single-line string literals must terminate on the line on which they begin.
 
 The decoded value of a character literal must contain exactly one Unicode
 scalar. A Unicode escape must denote a scalar in `U+0000..U+10FFFF` excluding
@@ -179,7 +189,8 @@ Interpolated strings are expressions with an adjacent `f"` prefix. A standalone
 `f` remains an identifier. Their text uses the same escapes and UTF-8 rules:
 
 ```ebnf
-interpolated-string = 'f"', { interpolation-text | interpolation-hole }, '"';
+interpolated-string = 'f"', { interpolation-text | interpolation-hole }, '"'
+                    | 'f"""', multiline-interpolation-body, '"""';
 interpolation-hole = "{", expression, [ ":", format-specification ], "}";
 format-specification = { format-text | interpolation-hole };
 ```
@@ -192,6 +203,11 @@ expressions under ordinary expression rules. Parentheses, brackets, braces,
 strings, and nested interpolation belong to the hole expression; only a
 top-level `:` distinct from `::` starts its format specification. Empty holes
 are invalid.
+
+`multiline-interpolation-body` follows the shared multiline boundary and layout
+rules. Individual double quotes and pairs of double quotes are ordinary text; an
+unescaped triple quote is its closing delimiter. Escaped braces and holes
+retain the rules above. Raw and interpolated prefixes cannot be combined.
 
 Adjacent string literal tokens do not form one token and are not implicitly
 concatenated by the Carven grammar.

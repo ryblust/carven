@@ -175,5 +175,7 @@ pass token/comment comparison and parse validation.
 
 `Document` owns text and child IDs in an arena, caches flat widths, and renders
 with an explicit stack. Fit checks include following material such as closing
-punctuation. Indentation is emitted when text begins a line, keeping blank lines
-free of generated spaces.
+punctuation. Layout-generated line breaks defer indentation until text is emitted,
+keeping blank lines free of generated spaces. Line breaks within source text do
+not request indentation; splitting a source fragment into document nodes preserves
+its bytes.

@@ -4,11 +4,13 @@ import :diagnostics.builder;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
 import :frontend.lex;
+import :frontend.lex.layout;
 import :frontend.lex.literal;
 import :frontend.lex.token;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
+import :support.invariant;
 import :support.utf8;
 import std;
 
@@ -92,7 +94,7 @@ private:
     auto diagnose_invalid(std::string_view message) noexcept -> void;
     auto consume_utf8() noexcept -> bool;
     auto skip_whitespace_and_comments() noexcept -> void;
-    auto scan_interpolation(bool specification) noexcept -> void;
+    auto scan_interpolation(bool specification, bool multiline = false) noexcept -> void;
     auto scan_interpolation_expression() noexcept -> void;
     auto scan_token() noexcept -> void;
     auto scan_identifier() noexcept -> void;
@@ -210,7 +212,7 @@ auto Lexer::skip_whitespace_and_comments() noexcept -> void {
     }
 }
 
-auto Lexer::scan_interpolation(bool specification) noexcept -> void {
+auto Lexer::scan_interpolation(bool specification, bool multiline) noexcept -> void {
     if (++interpolation_depth > 512) {
         diagnose("interpolation nesting limit exceeded", span());
         position = static_cast<std::uint32_t>(source.size());
@@ -218,18 +220,50 @@ auto Lexer::scan_interpolation(bool specification) noexcept -> void {
         return;
     }
     auto bytes = std::string();
+    auto layout = std::optional<StringBlockLayout>();
+    if (multiline) {
+        layout.emplace();
+    }
+    auto text_tokens = std::vector<std::size_t>();
     token_start = position;
     const auto flush = [&]() noexcept {
         if (position != token_start) {
+            if (multiline) {
+                text_tokens.push_back(result.value.tokens().size());
+            }
             append_literal_token(InterpolationTextValue {.bytes = std::move(bytes)});
             bytes.clear();
         }
     };
     while (!at_end()) {
         const auto value = current();
-        if ((!specification && value == '"') || (specification && value == '}')) {
+        if ((!specification
+             && (multiline ? source.substr(position).starts_with("\"\"\"") : value == '"'))
+            || (specification && value == '}')) {
             flush();
-            token_start = position++;
+            token_start = position;
+            position += multiline ? 3u : 1u;
+            if (multiline) {
+                if (!layout->closing_line_is_blank()) {
+                    diagnose(
+                        "multiline string closing delimiter must be on a separate line",
+                        span()
+                    );
+                }
+                const auto removals = layout->finish();
+                auto offset = 0uz;
+                for (const auto index : text_tokens) {
+                    const auto* text =
+                        std::get_if<InterpolationTextValue>(&result.value.literal_value(index));
+                    if (text == nullptr) {
+                        invariant_violation("multiline layout requires interpolation text");
+                    }
+                    const auto size = text->bytes.size();
+                    auto normalized = apply_string_layout(text->bytes, offset, removals);
+                    result.value.replace_interpolation_text(index, std::move(normalized));
+                    offset += size;
+                }
+            }
             append_token(
                 specification ? TokenKind::InterpolationClose : TokenKind::InterpolationEnd
             );
@@ -239,6 +273,9 @@ auto Lexer::scan_interpolation(bool specification) noexcept -> void {
         if (value == '{' || value == '}') {
             if (!specification && current(1) == value) {
                 bytes.push_back(value);
+                if (multiline) {
+                    layout->append(source.substr(position, 2), 1uz);
+                }
                 position += 2;
                 continue;
             }
@@ -248,9 +285,18 @@ auto Lexer::scan_interpolation(bool specification) noexcept -> void {
                 diagnose_invalid("unmatched '}' in interpolation text");
             } else {
                 append_token(TokenKind::InterpolationOpen);
+                if (multiline) {
+                    layout->hole();
+                }
                 scan_interpolation_expression();
             }
             token_start = position;
+            continue;
+        }
+        if (multiline && (value == '\n' || (value == '\r' && current(1) == '\n'))) {
+            position += value == '\r' ? 2u : 1u;
+            bytes += '\n';
+            layout->newline();
             continue;
         }
         const auto decoded = scan_literal_scalar(source.substr(position));
@@ -267,7 +313,11 @@ auto Lexer::scan_interpolation(bool specification) noexcept -> void {
             position += static_cast<std::uint32_t>(std::max(decoded.error().consumed, 1uz));
             continue;
         }
+        const auto byte_start = bytes.size();
         append_utf8(bytes, decoded->scalar);
+        if (multiline) {
+            layout->append(source.substr(position, decoded->consumed), bytes.size() - byte_start);
+        }
         position += static_cast<std::uint32_t>(decoded->consumed);
     }
     flush();
@@ -315,9 +365,27 @@ auto Lexer::scan_token() noexcept -> void {
     const auto value = advance();
 
     if (value == 'f' && current() == '"') {
-        ++position;
+        const auto multiline = source.substr(position).starts_with("\"\"\"");
+        position += multiline ? 3u : 1u;
+        if (multiline) {
+            if (current() == '\n') {
+                ++position;
+            } else if (current() == '\r' && current(1) == '\n') {
+                position += 2;
+            } else {
+                diagnose(
+                    "expected a line ending after the multiline string opening delimiter",
+                    span()
+                );
+            }
+        }
         append_token(TokenKind::InterpolationStart);
-        scan_interpolation(false);
+        scan_interpolation(false, multiline);
+        return;
+    }
+
+    if (value == 'r' && (current() == '"' || current() == '#')) {
+        scan_string();
         return;
     }
 
@@ -443,7 +511,10 @@ auto Lexer::scan_number() noexcept -> void {
 
 auto Lexer::scan_string(bool c_string) noexcept -> void {
     const auto prefix = c_string ? 1u : 0u;
-    auto scanned = scan_string_literal(source.substr(token_start + prefix), c_string);
+    auto scanned = scan_string_literal(
+        source.substr(token_start + prefix),
+        c_string ? StringLiteralKind::CString : StringLiteralKind::Text
+    );
     const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
     position = token_start + prefix + static_cast<std::uint32_t>(consumed);
     if (scanned.has_value()) {
@@ -463,7 +534,18 @@ auto Lexer::scan_string(bool c_string) noexcept -> void {
             Span::from_bounds(start, end)
         );
     } else {
-        diagnose_invalid("malformed string literal");
+        append_token(TokenKind::Invalid);
+        const auto start = token_start + static_cast<std::uint32_t>(scanned.error().error_offset);
+        diagnose(
+            "malformed string literal",
+            Span::from_bounds(
+                start,
+                std::min(
+                    static_cast<std::uint32_t>(source.size()),
+                    start + static_cast<std::uint32_t>(scanned.error().error_length)
+                )
+            )
+        );
     }
 }
 

@@ -1,5 +1,6 @@
 module carven:frontend.lex.literal.impl;
 
+import :frontend.lex.layout;
 import :frontend.lex.literal;
 import :frontend.literal;
 import :support.invariant;
@@ -219,6 +220,97 @@ auto walk_quoted_literal(
         }
     }
     return fail(spelling.size());
+}
+
+auto scan_raw_or_multiline_string(std::string_view text) noexcept
+    -> std::expected<StringLiteralScan, QuotedLiteralScanError> {
+    const auto raw = text.starts_with('r');
+    auto offset = raw ? 1uz : 0uz;
+    const auto hash_start = offset;
+    while (raw && offset < text.size() && text[offset] == '#') {
+        ++offset;
+    }
+    const auto hashes = offset - hash_start;
+    const auto multiline = text.substr(offset).starts_with("\"\"\"");
+    const auto quotes = multiline ? 3uz : 1uz;
+    const auto closing = std::string(quotes, '"') + std::string(hashes, '#');
+    auto bytes = std::string();
+    auto layout = std::optional<StringBlockLayout>();
+    const auto fail = [&](std::size_t error, std::size_t length = 1uz) noexcept
+        -> std::expected<StringLiteralScan, QuotedLiteralScanError> {
+        return std::unexpected(
+            QuotedLiteralScanError {
+                .consumed = std::max(offset, 1uz),
+                .error_offset = error,
+                .error_length = length,
+            }
+        );
+    };
+    if (offset >= text.size() || text[offset] != '"') {
+        return fail(offset);
+    }
+    offset += quotes;
+    const auto line_ending_size = [&]() noexcept -> std::size_t {
+        if (text.substr(offset).starts_with("\r\n")) {
+            return 2uz;
+        }
+        return offset < text.size() && text[offset] == '\n' ? 1uz : 0uz;
+    };
+    if (multiline) {
+        layout.emplace();
+        const auto width = line_ending_size();
+        if (width == 0) {
+            return fail(offset);
+        }
+        offset += width;
+    }
+    while (offset < text.size()) {
+        if (text.substr(offset).starts_with(closing)) {
+            const auto end = offset;
+            offset += closing.size();
+            if (multiline && !layout->closing_line_is_blank()) {
+                return fail(end, closing.size());
+            }
+            if (multiline) {
+                bytes = apply_string_layout(bytes, 0uz, layout->finish());
+            }
+            return StringLiteralScan {
+                .consumed = offset,
+                .value = StringLiteralValue {.bytes = std::move(bytes)},
+            };
+        }
+        if (text[offset] == '\n' || text[offset] == '\r') {
+            const auto width = line_ending_size();
+            if (!multiline || width == 0) {
+                return fail(offset);
+            }
+            bytes += '\n';
+            layout->newline();
+            offset += width;
+            continue;
+        }
+        const auto start = offset;
+        const auto byte_start = bytes.size();
+        if (raw) {
+            const auto scalar = UTF8Decoder::decode(text, offset);
+            if (!scalar.valid) {
+                return fail(offset);
+            }
+            bytes.append(text.substr(offset, scalar.width));
+            offset += scalar.width;
+        } else {
+            const auto scalar = scan_literal_scalar(text.substr(offset));
+            if (!scalar) {
+                return fail(offset + scalar.error().error_offset, scalar.error().error_length);
+            }
+            append_utf8(bytes, scalar->scalar);
+            offset += scalar->consumed;
+        }
+        if (multiline) {
+            layout->append(text.substr(start, offset - start), bytes.size() - byte_start);
+        }
+    }
+    return fail(offset, 0uz);
 }
 
 } // namespace
@@ -444,11 +536,17 @@ auto scan_numeric_literal(std::string_view text, std::uint32_t source_offset) no
     };
 }
 
-auto scan_string_literal(std::string_view text, bool reject_nul) noexcept
+auto scan_string_literal(std::string_view text, StringLiteralKind kind) noexcept
     -> std::expected<StringLiteralScan, QuotedLiteralScanError> {
+    if (kind == StringLiteralKind::Text && (text.starts_with('r') || text.starts_with("\"\"\""))) {
+        return scan_raw_or_multiline_string(text);
+    }
     const auto extent = quoted_extent(text, '"');
-    auto decoded =
-        walk_quoted_literal(text.substr(0, extent), QuotedLiteralKind::String, reject_nul);
+    auto decoded = walk_quoted_literal(
+        text.substr(0, extent),
+        QuotedLiteralKind::String,
+        kind == StringLiteralKind::CString
+    );
     const auto valid = decoded.valid && decoded.consumed == extent;
     if (!valid) {
         return std::unexpected(
