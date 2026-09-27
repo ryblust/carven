@@ -3,7 +3,7 @@
 - **Status:** Draft
 - **Implementation:** Not started
 - **Scope:** Runtime values whose concrete type is hidden behind a checked contract
-- **Depends on:** Ordinary [value and access rules](../docs/semantics.md#ordinary-value-classes);
+- **Depends on:** Ordinary [value and access rules](../docs/language/aggregates.md#ordinary-value-classes);
   generic dynamic operations also depend on [Generics](generics.md)
 
 ## Current boundary

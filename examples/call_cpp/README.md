@@ -49,4 +49,4 @@ Invalid port
 Invalid port
 ```
 
-For direct header calls, see [Calling C++](../../docs/tutorial.md#calling-c).
+For direct header calls, see [Calling C++](../../docs/language/tutorial.md#calling-c).

@@ -118,14 +118,14 @@ The [execution example](examples/execution/README.md) combines top-level stateme
 compile-time output, static tests, and ordinary function calls. `compile --stdout`
 displays generated artifacts; `compile -o <dir>` writes them below the selected
 directory. With no destination option, `compile` writes below the current directory.
-The [CLI reference](docs/cli.md) defines execution limits and supported platforms.
+The [CLI reference](docs/toolchain/cli.md) defines execution limits and supported platforms.
 
 `check`, `compile`, direct execution, and `interpret` all collect sources from
 the toolchain's `crafts/carven/` and the working directory's `crafts/`. Application
 sources outside those roots remain explicit, for example
 `carven main.cv helpers.cv`. `CXX` selects the native compiler, defaulting to
-`clang++`. See [source collection](docs/cli.md#source-collection) for the collected
-roots and toolchain layout, and [native execution](docs/cli.md#native-execution)
+`clang++`. See [source collection](docs/toolchain/cli.md#source-collection) for the collected
+roots and toolchain layout, and [native execution](docs/toolchain/cli.md#native-execution)
 for process behavior.
 
 ## C++ project integration
@@ -176,22 +176,22 @@ to the C++ toolchain.
 The maintained Xmake rule discovers `.cv` and `.cpp` sources and adds include
 roots for the toolchain and project `crafts/` directories; native library
 dependencies remain ordinary build configuration. See the
-[CLI reference](docs/cli.md) for source paths and generated artifact destinations.
+[CLI reference](docs/toolchain/cli.md) for source paths and generated artifact destinations.
 
 ## Documentation
 
 - **Run examples:** [Learning examples](examples/README.md) and the
   [failure-contract example](examples/failures/README.md)
-- **Learn the language:** [Tutorial](docs/tutorial.md),
-  [Grammar](docs/grammar.md), and [Semantics](docs/semantics.md)
-- **Use the compiler:** [CLI Reference](docs/cli.md) and
-  [Toolchain and artifacts](docs/toolchain.md)
-- **Understand the implementation:** [Compiler Architecture](docs/compiler.md)
-  and [C++ Backend](docs/backend.md)
-- **Develop the repository:** [Testing](docs/testing.md) and
-  [C++ Conventions](docs/conventions.md), with
+- **Learn the language:** [Tutorial](docs/language/tutorial.md),
+  [Grammar](docs/language/grammar.md), and [Language Reference](docs/language/README.md)
+- **Use the compiler:** [CLI Reference](docs/toolchain/cli.md) and
+  [Toolchain and artifacts](docs/toolchain/artifacts.md)
+- **Understand the implementation:** [Compiler Architecture](docs/compiler/README.md)
+  and [C++ Backend](docs/compiler/backend/README.md)
+- **Develop the repository:** [Testing](docs/development/testing.md) and
+  [C++ Conventions](docs/development/conventions.md), with
   [Xmake support](xmake/README.md)
-- **Explore the design:** [Design Principles](docs/principles.md),
+- **Explore the design:** [Design Principles](docs/development/principles.md),
   [Proposals](proposals/), and [Learning Notes](notes/)
 
 The [Documentation Index](docs/README.md) provides the complete guide to language,

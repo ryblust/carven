@@ -40,8 +40,8 @@ Build Graver with `./xmakew build graver`. Both commands use it for `.cv` files
 under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
 Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
 `format.lua` are excluded. Other formatting or parse failures fail the command.
-See [C++ conventions](../docs/conventions.md) for source conventions and
-[Testing](../docs/testing.md) for test responsibilities and validation workflow.
+See [C++ conventions](../docs/development/conventions.md) for source conventions and
+[Testing](../docs/development/testing.md) for test responsibilities and validation workflow.
 
 The root build copies `.clang-tidy` into each target's generated directory and
 `generated.clang-tidy` into its `rules/` subdirectory. The latter inherits the

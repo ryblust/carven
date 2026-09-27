@@ -57,7 +57,7 @@ to helpers and callers. Change the small inputs, rebuild, and run to observe the
 result. Restore the documented inputs before checking expected output.
 
 For an introduction to individual language concepts, use the
-[tutorial](../docs/tutorial.md).
+[tutorial](../docs/language/tutorial.md).
 
 ## Check the examples
 

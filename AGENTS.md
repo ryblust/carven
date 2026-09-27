@@ -6,14 +6,14 @@ Carven compiles `.cv` source files to C++ using xmake. The main areas are
 
 ## Project documentation
 
-- `docs/conventions.md` defines conventions for project-authored C++ in
+- `docs/development/conventions.md` defines conventions for project-authored C++ in
   `src/`, `tests/`, and `crafts/`.
-- `docs/compiler.md` defines the compiler pipeline, semantic
+- `docs/compiler/README.md` defines the compiler pipeline, semantic
   representations, ownership and lifetime boundaries, publication gates, and
   dependency direction.
-- `docs/backend.md` defines semantic-to-C++ realization, target-program
+- `docs/compiler/backend/README.md` defines semantic-to-C++ realization, target-program
   construction, lowering, emission, and generated-artifact boundaries.
-- `docs/testing.md` defines test-suite responsibilities, test placement,
+- `docs/development/testing.md` defines test-suite responsibilities, test placement,
   fixtures, assertions, build integration, and the validation workflow.
 
 ## Build and validation

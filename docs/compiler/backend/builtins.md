@@ -1,0 +1,189 @@
+# Builtin realization
+
+These implementations use the common [preparation](preparation.md),
+[operand sequencing and storage](realization.md), and
+[representation](representation.md) contracts. Format plans and their budgets
+belong to preparation; this reference describes runtime and target operations
+that consume those plans.
+
+## Owning text realization
+
+Text byte and scalar queries use `runtime::text_bytes` and `runtime::text_chars`.
+C++ overload resolution selects the `std::string_view` or `const String&` adapter;
+both return views of the input storage. Semantic loans and generated cleanup
+scopes retain the backing owner.
+
+Builtin String lowers to the owner in `string.hpp`, with private `std::string`
+storage. The shared Read storage policy preserves caller aliasing for named owners and
+projected fields/elements across sequencing and failure barriers. Text operations
+select runtime factories and members through target syntax and record their
+support-header dependencies. Write receivers remain places; range projections
+borrow the receiver's text storage.
+
+Native byte storage enters through `String::from_utf8`, which validates UTF-8
+before adopting it.
+
+All formatting forms complete their hole operands in source order under the
+Read storage policy before constructing or appending text. Scalar snapshots,
+String aliases, failures, and temporary backing follow ordinary operand
+construction. Discarding an owning result retains String construction.
+
+An owning `SemFormat` with `PreparedFormatText` lowers to `String::from_str` with
+an explicit byte-length literal. Mixed preparation maps retained operands to the
+selected format; folded operands retain their execution obligations. String
+contents are observed after all holes complete.
+
+`PreparedWriterFormat` lowers through the shared statement builder in
+`realization.format` to `runtime::Writer` in `writer.hpp`. Formatted append emits
+ordinary statements after the expression builder completes its inputs and flushes
+pending earlier work. A direct owning return with the native return ABI creates a
+local String, writes its fields, and returns it by name, permitting C++ NRVO.
+Nested owning expressions, initialization, and failure-transport returns retain an
+expression lambda to preserve their construction and delivery boundary. Its
+parameters use the existing Read storage policy.
+
+Both forms append static text and call
+`integer<base, uppercase, zero_pad>(value, width)` or
+`integer_dynamic_width<base, uppercase, zero_pad>(value, width)` in order, copy
+text fields, select boolean text, and encode Unicode scalars directly. Floating fields call
+`floating(value)`, `fixed<precision>(value)`, `scientific<precision>(value)`, or
+`general<precision>(value)`. These small runtime entries use `std::to_chars` with
+a bounded stack buffer and append converted bytes directly to the destination.
+Writer realization consumes completed operands before emitting reservation and
+field writes.
+
+The prepared minimum and maximum byte counts for statically bounded fragments
+reach the writer as ordinary arguments, followed by an initializer list of
+explicit dynamic text byte lengths. Carven emits each `.size()` query after all
+holes complete. Runtime
+adds these lengths to both bounds with checked arithmetic; it does not
+rediscover field types or parse format policies.
+
+When the minimum exceeds available capacity, runtime reserves for the maximum, capped at the
+destination's size limit. Otherwise normal storage growth applies. Equal bounds
+reserve an exact size for the counted fragments; dynamic-width fields are excluded.
+An upper bound alone does not force allocation for a short result. Runtime checks
+size arithmetic and performs integer conversion
+with `std::to_chars`, sign handling, and padding. Writer integer inputs use the
+same `runtime::Integer` domain as arithmetic; boolean and character fields use
+their separate operations.
+
+The writer borrows private String storage and requires valid text and disjoint
+inputs. Direct conversions need no format parsing or output validation scan.
+Unsupported fields retain the complete selected general format call. Writer
+paths have no `<format>` dependency; fully precomputed contents use direct text
+construction or append.
+
+Reservation requests do not prescribe the native String's exact capacity or
+allocation alignment; the native String implementation selects both.
+
+Other owning `SemFormat` operations pass their selected argument pack. The
+prepared `PreparedDelegatedFormat::encoding` selects `format_valid_utf8` for
+`ValidUTF8` and `format` for `Unproven`. Realization embeds the prepared bytes as a
+compile-time `std::string_view` with an explicit byte length. Inside that call, String
+aliases provide text views and `char` values encode to UTF-8 Strings. C++ checks
+`std::format_string` and formatter availability; source directives attribute those diagnostics to the
+interpolation. Both entries are `noexcept` and use the same argument adapters
+and `std::format` call. The general entry passes the completed buffer through
+`String::from_utf8`; the proved entry adopts it without scanning it again.
+`StringFormatAccess` privately adopts that buffer using the shared String move
+constructor, without an additional byte copy or allocation. Entry selection
+consumes the preparation-owned encoding proof.
+
+An append `SemFormat` places its Write receiver before the hole operands in target
+construction. Realization selects the receiver once, then completes all holes using
+the same Read, failure, and temporary-backing rules. Preparation operand indices
+exclude the receiver. Known contents lower to `receiver.append(static_text)` after
+required hole execution. Prepared builtin fields use the writer above. Otherwise,
+`PreparedDelegatedFormat::encoding` selects `append_format_valid_utf8`
+or `append_format`, with the receiver followed by the selected format and argument pack.
+
+The append entries reuse their corresponding owning formatter, then append the
+completed valid text. The proved entry formats once, adopts that buffer, and avoids
+a UTF-8 validation scan. Standard formatting owns any partial byte writes until
+completion in a temporary native buffer. Known contents lower to direct append.
+`Writer::append` requires each supplied fragment to be complete valid text.
+
+Both entries are `noexcept` and require the source operation's destination/input
+separation, without rollback after formatting begins. Capacity growth and native
+formatter allocations remain runtime concerns.
+
+Ownership analysis establishes borrowing validity before lowering. Runtime views
+carry no owner metadata. String owners, pending operands, retained range sources,
+closure captures, and Outcome payloads use ordinary construction and cleanup frames.
+
+Unchecked character construction lowers to a C++ cast to the character
+representation. Unchecked UTF-8 construction calls `utf8_text` from `text.hpp`
+to create a view over the input bytes. Neither operation validates content;
+semantic ownership analysis preserves the text's input backing before lowering.
+The backend supplies runtime includes without a source-level header import.
+
+## Builtin calls and reports
+
+`SemPrint` lowers to runtime printing calls; `SemReport` shares condition
+observation and failure reporting between assertions and tests. Its message is
+lowered inside the failure branch, including construction, effects, and cleanup.
+`Assert` calls the nonreturning runtime assertion reporter; `Require` and `Fail`
+use test-stop transport.
+
+[Failure and test-stop ABI](representation.md#failure-and-test-stop-abi) defines
+the result carrier; [transport realization](realization.md#failure-dispatch-and-transport)
+propagates a test stop with normal scope cleanup.
+
+Prepared scalar print operands pass their known text to the ordinary runtime
+printing entry. Preparation retains the original operand's execution under its
+normal access and sequencing rules. The fallback writes the prepared bytes directly;
+when library feature detection admits `std::print`, it prints the text through that
+facility. Earlier values and separators remain observable if a later value's
+formatting or output fails. An inner formatted String still completes, including
+its owning construction, before
+subsequent print arguments execute. Allocation counts and incidental buffers
+inside scalar output conversion are not source guarantees; source String
+construction and operand completion retain their boundaries.
+
+Structural print operands use a borrowing wrapper with a generated stateless,
+const-callable display helper. `realization.display` reads published nominal
+fields and enum cases and constructs direct field accesses and writer statements.
+`ModuleLowering` shares helpers by semantic type and display depth across all use
+sites in the module. Helpers are emitted in dependency order after complete
+private type declarations, before consuming functions. Fully qualified helper
+types avoid local name lookup; no function pointer or captured helper state is
+needed. Generated size follows the reachable type-depth pairs and their fields,
+plus constant-size use sites. Field layout is emitted as literal text;
+sequence emitters receive the known depth for indentation and visit runtime
+elements within display limits. `DisplayWriter` handles scalar conversion, nested text
+escaping, and bounded output. Its completed text uses the ordinary runtime
+printing entry. Callable leaves remain opaque. Native leaves use the runtime scalar classifier;
+unsupported types remain opaque and no user formatter participates. The wrapper is
+consumed synchronously after ordinary Read argument sequencing.
+The wrapper routes top-level C strings to the text printing entry. Nested C strings
+use the writer's quoting and escaping rules; null C strings render as `nullptr`.
+
+Known successful conditions retain their execution effects and need no report
+or explanation storage. Known failures need no report guard. Dynamic conditions
+form the guard directly; fatal reports terminate the lowering continuation.
+
+Comparison explanations observe the condition after operand sequencing. The
+observer in `report.hpp` compares once and renders operands on failure, before
+message evaluation can change their values. Short-circuit explanations use
+ordinary expression construction: selected branches observe the
+right Boolean result, and a skipped failing branch records `<not evaluated>`.
+Known left operands select their branch during realization. Explanation
+storage is local to the report operation and is completed before message evaluation;
+`TestFailure` borrows it only during the reporter callback.
+
+`testing.hpp` owns test-stop transport and `TestContext`, which tracks the active
+case and completed-case counts. `report.hpp` owns condition observation, failure
+text, and fatal assertions. Report calls carry the source line and column.
+The default layout groups test identity, condition, operands, and message under
+each failure location and identifies test stop or execution abort. It borrows
+the active case's module and name for every report. The runner emits a summary
+when it completes. Custom test reporters supply their own output; fatal
+assertions use the assertion reporter.
+
+Runtime `print.hpp` selects C++23 `std::print` using library feature detection and
+otherwise supplies the C++20 `std::format`/`fwrite` implementation. This selection
+belongs to consumer compilation and preserves the user's selected C++ standard.
+Values, structural display text, separators, and newlines share this output policy.
+The C++20 fallback writes UTF-8 bytes; Windows console Unicode rendering depends
+on the console configuration. `std::print` supplies native Unicode terminal handling.

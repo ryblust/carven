@@ -181,7 +181,7 @@ documents.
 `./xmakew bench compile` measures source-to-C++ compilation for module batches
 and structured workloads. `./xmakew bench incremental` measures build times and
 C++ object rebuild counts in a small module dependency fixture. Both update the
-configured compiler before measuring. See [Benchmarks](../xmake/README.md#benchmarks)
+configured compiler before measuring. See [Benchmarks](../../xmake/README.md#benchmarks)
 for workloads, measurement boundaries, and sampling options.
 
 ## Organization

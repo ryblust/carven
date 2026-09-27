@@ -4,6 +4,30 @@ This tutorial introduces the basic forms used to write Carven programs.
 It starts with a first program, then covers imports, types, functions, and their
 bodies. Each snippet is a separate example, with declarations before their uses.
 
+## Reading guide
+
+Follow the lessons in order, or use the language reference to look up the full
+rules for a topic. Each reference can be read independently of this tutorial.
+
+| Lesson | Language reference |
+| --- | --- |
+| [A first program](#a-first-program) | [Entries, output, and tests](execution.md) |
+| [Modules](#modules) | [Modules and names](modules.md) |
+| [Records and arrays](#records-and-arrays) | [Aggregates](aggregates.md) |
+| [Enums and matches](#enums-and-matches) | [Enums](aggregates.md#enums) and [pattern matching](control-flow.md#patterns-and-matches) |
+| [Functions](#functions) | [Functions and callable values](functions.md) |
+| [Read, Write, and Take](#read-write-and-take) | [Access and ownership](ownership.md) |
+| [Bindings and values](#bindings-and-values) | [Access and ownership](ownership.md) |
+| [Conditions and loops](#conditions-and-loops) | [Evaluation and control flow](control-flow.md) |
+| [Recoverable failures](#recoverable-failures) | [Failure contracts](failures.md) |
+| [Closures and callbacks](#closures-and-callbacks) | [Functions and callable values](functions.md) |
+| [Calling C++](#calling-c) | [C++ interoperation](interop.md) |
+| [Acquiring an external address](#acquiring-an-external-address) | [Pointers](pointers.md) |
+| [Assertions](#assertions) | [Entries, output, and tests](execution.md) |
+| [Tests](#tests) | [Entries, output, and tests](execution.md) |
+| [Compile-time execution](#compile-time-execution) | [Compile-time execution](constants.md) |
+| [Structural printing and assertion explanations](#structural-printing-and-assertion-explanations) | [Entries, output, and tests](execution.md) |
+
 ## A first program
 
 Save this program as `main.cv`:

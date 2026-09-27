@@ -3,29 +3,27 @@
 This directory contains Carven's tutorial, language and implementation references,
 and development guidance for the current checkout.
 
-## Documents
+## Domains
 
-| Document | Scope |
+| Domain | Scope |
 | --- | --- |
-| [Tutorial](tutorial.md) | Basic concepts and examples in learning order |
-| [Grammar](grammar.md) | Encoding, tokens, syntax, precedence, and parsing |
-| [Semantics](semantics.md) | Program validity and observable behavior |
-| [CLI](cli.md) | Invocation, input paths, output writes, and process status |
-| [Toolchain](toolchain.md) | Native requirements, artifact interfaces, compilation, linking, and build integration |
-| [Compiler](compiler.md) | Orchestration, semantic analysis, ownership, dependencies, and publication |
-| [Backend](backend.md) | Published semantics to C++ representation, target syntax, and emitted artifacts |
-| [Conventions](conventions.md) | Handwritten C++ organization, naming, and coding rules |
-| [Testing](testing.md) | Suite responsibilities, fixtures, assertions, and validation procedures |
-| [Principles](principles.md) | Design principles and guidance for language and implementation decisions |
+| [Language](language/README.md) | Learning, syntax, program validity, and observable behavior |
+| [Toolchain](toolchain/README.md) | Compiler invocation, native requirements, generated artifacts, and build integration |
+| [Compiler](compiler/README.md) | Semantic construction, analysis, execution, and C++ generation |
+| [Development](development/README.md) | Coding conventions, validation, and design principles |
 
 Runnable programs live in [examples](../examples/README.md); unfinished designs
 live in [proposals](../proposals/README.md). Craft APIs and Xmake procedures are
 documented alongside their sources.
 
-Grammar and Semantics together define the language reference. Tutorial examples
-introduce those rules in learning order. Compiler and Backend describe their
-implementation; Principles states design criteria. Each rule belongs to the
-reference that owns its scope.
+The language tutorial introduces concepts in learning order. Grammar and the
+topic references define source rules. Compiler documentation describes their
+implementation; toolchain documentation defines how to invoke the compiler and
+consume its output. Development documents guide changes to the project.
+Each rule belongs to the reference that owns its scope.
+
+Maintain the language and implementation references with the code they describe.
+Their rules and mechanisms apply to the same checkout.
 
 ## Maintenance
 

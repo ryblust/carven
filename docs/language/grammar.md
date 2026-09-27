@@ -414,7 +414,7 @@ parameters require ordinary type annotations. Class fields and operations
 may be interleaved. Class forms, nested declarations, `const fn`, and C++ boundary
 operations are not admitted within class bodies.
 
-### Functions
+#### Functions
 
 ```ebnf
 function-definition = function-head, function-body;
